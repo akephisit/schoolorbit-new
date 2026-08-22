@@ -9,18 +9,6 @@ use uuid::Uuid;
 
 use crate::modules::school_fonts::models::SchoolFontStyle;
 
-// Removed by Task 4 when the OpenAPI registry switches to the shared DTO names.
-pub type CertificateFontStyle = SchoolFontStyle;
-pub type CertificateFontUploadStatus = crate::modules::school_fonts::models::SchoolFontUploadStatus;
-pub type InspectCertificateFontUploadsRequest =
-    crate::modules::school_fonts::models::InspectSchoolFontUploadsRequest;
-pub type AttachCertificateFontBatchRequest =
-    crate::modules::school_fonts::models::AttachSchoolFontBatchRequest;
-pub type CertificateFontUploadInspectionFile =
-    crate::modules::school_fonts::models::SchoolFontUploadInspectionFile;
-pub type CertificateFontUploadInspection =
-    crate::modules::school_fonts::models::SchoolFontUploadInspection;
-
 macro_rules! string_enum {
     ($name:ident { $($variant:ident),+ $(,)? }) => {
         #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, ToSchema)]

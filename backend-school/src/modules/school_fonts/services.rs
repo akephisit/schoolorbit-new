@@ -48,7 +48,6 @@ pub(crate) struct SchoolFontRecord {
 #[derive(Clone, Debug, FromRow)]
 struct SchoolFontRow {
     id: Uuid,
-    file_id: Uuid,
     display_name: String,
     font_family: String,
     font_weight: i16,
@@ -98,7 +97,7 @@ pub async fn list_for_manager(
 
 pub(crate) async fn list_authorized(pool: &PgPool) -> Result<SchoolFontListResponse, AppError> {
     let rows = sqlx::query_as::<_, SchoolFontRow>(
-        "SELECT font.id, font.file_id, font.display_name, font.font_family,
+        "SELECT font.id, font.display_name, font.font_family,
                 font.font_weight, font.font_style, font.created_at,
                 COUNT(reference.font_id) AS reference_count
          FROM school_fonts AS font

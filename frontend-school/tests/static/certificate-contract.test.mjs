@@ -18,6 +18,67 @@ async function listFiles(directory) {
 	return files;
 }
 
+test('shared school-font contract replaces template-owned font assets', async () => {
+	const openapi = JSON.parse(
+		await readFile(path.join(repoRoot, 'contracts/openapi/school-api.json'), 'utf8')
+	);
+	const generated = await readFile(
+		path.join(repoRoot, 'frontend-school/src/lib/api/generated/school-api.ts'),
+		'utf8'
+	);
+	for (const [route, method, operationId] of [
+		['/api/school-fonts', 'get', 'listSchoolFonts'],
+		['/api/school-fonts/inspect', 'post', 'inspectSchoolFontUploads'],
+		['/api/school-fonts/batch', 'post', 'attachSchoolFontBatch'],
+		['/api/school-fonts/{font_id}', 'delete', 'deleteSchoolFont'],
+		['/api/certificates/templates/{template_id}/fonts', 'get', 'listCertificateSchoolFonts'],
+		[
+			'/api/certificates/templates/{template_id}/fonts/inspect',
+			'post',
+			'inspectCertificateFontUploads'
+		],
+		[
+			'/api/certificates/templates/{template_id}/fonts/batch',
+			'post',
+			'attachCertificateFontBatch'
+		]
+	]) {
+		assert.equal(openapi.paths?.[route]?.[method]?.operationId, operationId);
+		assert.match(generated, new RegExp(`\\b${operationId}:\\s*\\{`));
+	}
+	for (const legacyPath of [
+		'/api/certificates/templates/{template_id}/assets/fonts/inspect',
+		'/api/certificates/templates/{template_id}/assets/fonts/batch'
+	]) {
+		assert.equal(openapi.paths?.[legacyPath], undefined);
+	}
+	for (const schema of [
+		'SchoolFontStyle',
+		'SchoolFontUploadStatus',
+		'SchoolFontSummary',
+		'SchoolFontListResponse',
+		'InspectSchoolFontUploadsRequest',
+		'AttachSchoolFontBatchRequest',
+		'SchoolFontUploadInspectionFile',
+		'SchoolFontUploadInspection',
+		'SchoolFontDeleteConflict'
+	]) {
+		assert.ok(openapi.components?.schemas?.[schema], `missing generated schema ${schema}`);
+	}
+
+	const fontSource = JSON.stringify(openapi.components.schemas.CertificateFontSource);
+	assert.match(fontSource, /school_font/);
+	assert.match(fontSource, /font_id/);
+	assert.doesNotMatch(fontSource, /asset_id/);
+	assert.ok(
+		openapi.components.schemas.CertificateRenderFontGrant.required.includes('schoolFontId')
+	);
+	assert.equal(
+		openapi.components.schemas.CertificateRenderFontGrant.properties.assetId,
+		undefined
+	);
+});
+
 test('certificate permission contract exposes the complete approved capability set', async () => {
 	const contract = JSON.parse(
 		await readFile(path.join(repoRoot, 'contracts/permissions.json'), 'utf8')
@@ -85,12 +146,17 @@ test('certificate campaign API is generated and its wrapper consumes named DTOs'
 		],
 		['/api/certificates/templates/{template_id}/assets', 'post', 'attachCertificateTemplateAsset'],
 		[
-			'/api/certificates/templates/{template_id}/assets/fonts/inspect',
+			'/api/certificates/templates/{template_id}/fonts',
+			'get',
+			'listCertificateSchoolFonts'
+		],
+		[
+			'/api/certificates/templates/{template_id}/fonts/inspect',
 			'post',
 			'inspectCertificateFontUploads'
 		],
 		[
-			'/api/certificates/templates/{template_id}/assets/fonts/batch',
+			'/api/certificates/templates/{template_id}/fonts/batch',
 			'post',
 			'attachCertificateFontBatch'
 		],
@@ -202,12 +268,15 @@ test('certificate campaign API is generated and its wrapper consumes named DTOs'
 		'UpdateCertificateTemplateRequest',
 		'AttachCertificateBackgroundRequest',
 		'AttachCertificateAssetRequest',
-		'InspectCertificateFontUploadsRequest',
-		'AttachCertificateFontBatchRequest',
-		'CertificateFontUploadInspection',
-		'CertificateFontUploadInspectionFile',
-		'CertificateFontUploadStatus',
-		'CertificateFontStyle',
+		'InspectSchoolFontUploadsRequest',
+		'AttachSchoolFontBatchRequest',
+		'SchoolFontUploadInspection',
+		'SchoolFontUploadInspectionFile',
+		'SchoolFontUploadStatus',
+		'SchoolFontStyle',
+		'SchoolFontSummary',
+		'SchoolFontListResponse',
+		'SchoolFontDeleteConflict',
 		'CertificateTemplateAsset',
 		'CertificateTemplateDeleteResult',
 		'CertificateTemplateVariableCatalog',
@@ -269,10 +338,13 @@ test('certificate campaign API is generated and its wrapper consumes named DTOs'
 		undefined,
 		'single-file attach must derive font weight from inspected file metadata'
 	);
-	assert.ok(
-		openapi.components.schemas.CertificateTemplateAsset.required.includes('fontStyle'),
-		'template assets must expose the inspected font style explicitly'
-	);
+	for (const removedFontField of ['fontFamily', 'fontWeight', 'fontStyle']) {
+		assert.equal(
+			openapi.components.schemas.CertificateTemplateAsset.properties[removedFontField],
+			undefined,
+			`template image assets must not expose ${removedFontField}`
+		);
+	}
 	assert.ok(
 		openapi.components.schemas.CertificateTemplateAsset.required.includes('imageWidthPixels') &&
 			openapi.components.schemas.CertificateTemplateAsset.required.includes('imageHeightPixels'),
@@ -292,7 +364,7 @@ test('certificate campaign API is generated and its wrapper consumes named DTOs'
 		['/api/certificates/templates/{template_id}', 'delete'],
 		['/api/certificates/templates/{template_id}/background', 'put'],
 		['/api/certificates/templates/{template_id}/assets', 'post'],
-		['/api/certificates/templates/{template_id}/assets/fonts/batch', 'post'],
+		['/api/certificates/templates/{template_id}/fonts/batch', 'post'],
 		['/api/certificates/templates/{template_id}/assets/{asset_id}', 'delete'],
 		['/api/certificates/campaigns/{campaign_id}/candidates/bulk', 'post'],
 		['/api/certificates/candidates/{candidate_id}', 'put'],
@@ -315,7 +387,6 @@ test('certificate campaign API is generated and its wrapper consumes named DTOs'
 	assert.match(wrapper, /Schemas\['CertificateCampaignDetail'\]/);
 	assert.match(wrapper, /Schemas\['CreateCertificateCampaignRequest'\]/);
 	assert.match(wrapper, /Schemas\['CertificateTemplateDetail'\]/);
-	assert.match(wrapper, /Schemas\['CertificateFontUploadInspection'\]/);
 	assert.match(wrapper, /Schemas\['CertificateRenderManifest'\]/);
 	assert.match(wrapper, /inspectCertificateFontUploads/);
 	assert.match(wrapper, /attachCertificateFontBatch/);

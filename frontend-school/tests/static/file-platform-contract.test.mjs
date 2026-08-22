@@ -47,11 +47,12 @@ test('generated contract publishes the provider-neutral file platform routes', a
 	for (const purpose of [
 		'certificate_template_background',
 		'certificate_template_image',
-		'certificate_template_font'
+		'school_font'
 	]) {
 		assert.ok(filePurposes.includes(purpose), `missing FilePurpose ${purpose}`);
 		assert.match(generated, new RegExp(`['"]${purpose}['"]`));
 	}
+	assert.ok(!filePurposes.includes('certificate_template_font'));
 
 	const grant = contract.components?.schemas?.FileDownloadGrantResponse;
 	assert.deepEqual(grant?.required?.toSorted(), ['expiresAt', 'url']);

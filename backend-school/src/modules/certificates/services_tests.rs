@@ -17,23 +17,21 @@ use crate::{
     modules::certificates::{
         models::{
             AttachCertificateAssetRequest, AttachCertificateBackgroundRequest,
-            AttachCertificateFontBatchRequest, CandidateMatchStatus, CandidateNameSource,
-            CandidateValidationCode, CandidateValidationStatus, CertificateAccountSearchQuery,
-            CertificateCampaignListQuery, CertificateCampaignPurgeCounts,
-            CertificateCampaignPurgeImpact, CertificateCampaignPurgePhase,
-            CertificateCampaignPurgeStatus, CertificateCampaignStatus,
-            CertificateCandidateBulkRequest, CertificateCandidateListQuery, CertificateElement,
-            CertificateFontSource, CertificateFontUploadStatus, CertificateImportRequest,
-            CertificateImportRowInput, CertificateImportSource, CertificateIssueCode,
-            CertificateIssueRequestListQuery, CertificateIssueRequestStatus, CertificateLayoutV1,
-            CertificatePreviewKind, CertificatePreviewManifestRequest,
+            CandidateMatchStatus, CandidateNameSource, CandidateValidationCode,
+            CandidateValidationStatus, CertificateAccountSearchQuery, CertificateCampaignListQuery,
+            CertificateCampaignPurgeCounts, CertificateCampaignPurgeImpact,
+            CertificateCampaignPurgePhase, CertificateCampaignPurgeStatus,
+            CertificateCampaignStatus, CertificateCandidateBulkRequest,
+            CertificateCandidateListQuery, CertificateElement, CertificateFontSource,
+            CertificateImportRequest, CertificateImportRowInput, CertificateImportSource,
+            CertificateIssueCode, CertificateIssueRequestListQuery, CertificateIssueRequestStatus,
+            CertificateLayoutV1, CertificatePreviewKind, CertificatePreviewManifestRequest,
             CertificateRenderManifestBatchRequest, CertificateStatus, CertificateTemplateAssetKind,
             CertificateTemplateDeleteDisposition, ChangeCertificateCampaignStatusRequest,
             CreateAccountCertificateCandidateRequest, CreateCertificateCampaignRequest,
             CreateCertificateTemplateRequest, CreateManualExternalCandidateRequest, ElementFrame,
-            GeometryAction, ImageElement, InspectCertificateFontUploadsRequest,
-            IssueCertificateOutcome, IssueCertificateRequest, IssuedCertificateSummary,
-            ManualCertificateVerificationRequest, NullableUuidUpdate,
+            GeometryAction, ImageElement, IssueCertificateOutcome, IssueCertificateRequest,
+            IssuedCertificateSummary, ManualCertificateVerificationRequest, NullableUuidUpdate,
             QrCertificateVerificationRequest, RecipientType, RevokeCertificateRequest,
             StartCertificateCampaignPurgeRequest, TextAlignment, TextElement,
             UpdateCertificateCampaignRequest, UpdateCertificateCandidateRequest,
@@ -44,7 +42,10 @@ use crate::{
             request_service, template_service, verification_service,
         },
     },
-    modules::school_fonts::models::SchoolFontStyle,
+    modules::school_fonts::models::{
+        AttachSchoolFontBatchRequest, InspectSchoolFontUploadsRequest, SchoolFontStyle,
+        SchoolFontUploadStatus,
+    },
     permissions::registry::codes,
     policies::{
         certificate_access_policy::{require_owner_action, CertificateAction},
@@ -1089,7 +1090,7 @@ async fn certificate_font_context_uses_shared_library_with_exact_template_author
         &pool,
         &actor,
         template.id,
-        InspectCertificateFontUploadsRequest {
+        InspectSchoolFontUploadsRequest {
             file_ids: vec![bold, regular],
         },
     )
@@ -1106,7 +1107,7 @@ async fn certificate_font_context_uses_shared_library_with_exact_template_author
     assert!(inspected
         .files
         .iter()
-        .all(|file| file.status == CertificateFontUploadStatus::Ready));
+        .all(|file| file.status == SchoolFontUploadStatus::Ready));
     assert_eq!(inspected.files[1].font_style, Some(SchoolFontStyle::Normal));
 
     assert!(matches!(
@@ -1114,7 +1115,7 @@ async fn certificate_font_context_uses_shared_library_with_exact_template_author
             &pool,
             &actor,
             sibling.id,
-            InspectCertificateFontUploadsRequest {
+            InspectSchoolFontUploadsRequest {
                 file_ids: vec![regular],
             },
         )
@@ -1126,7 +1127,7 @@ async fn certificate_font_context_uses_shared_library_with_exact_template_author
             &pool,
             &actor,
             sibling.id,
-            AttachCertificateFontBatchRequest {
+            AttachSchoolFontBatchRequest {
                 file_ids: vec![regular],
                 rights_confirmed: true,
             },
@@ -1155,7 +1156,7 @@ async fn certificate_font_context_uses_shared_library_with_exact_template_author
             &pool,
             &ordinary,
             template.id,
-            InspectCertificateFontUploadsRequest {
+            InspectSchoolFontUploadsRequest {
                 file_ids: vec![regular],
             },
         )
@@ -1168,7 +1169,7 @@ async fn certificate_font_context_uses_shared_library_with_exact_template_author
             &pool,
             &actor,
             template.id,
-            AttachCertificateFontBatchRequest {
+            AttachSchoolFontBatchRequest {
                 file_ids: vec![regular, bold],
                 rights_confirmed: false,
             },
@@ -1181,7 +1182,7 @@ async fn certificate_font_context_uses_shared_library_with_exact_template_author
             &pool,
             &actor,
             template.id,
-            AttachCertificateFontBatchRequest {
+            AttachSchoolFontBatchRequest {
                 file_ids: vec![regular, variable],
                 rights_confirmed: true,
             },
@@ -1199,7 +1200,7 @@ async fn certificate_font_context_uses_shared_library_with_exact_template_author
         &pool,
         &actor,
         template.id,
-        AttachCertificateFontBatchRequest {
+        AttachSchoolFontBatchRequest {
             file_ids: vec![bold, regular],
             rights_confirmed: true,
         },
@@ -1264,7 +1265,7 @@ async fn certificate_font_context_uses_shared_library_with_exact_template_author
         &pool,
         &actor,
         template.id,
-        InspectCertificateFontUploadsRequest {
+        InspectSchoolFontUploadsRequest {
             file_ids: vec![duplicate_existing],
         },
     )
@@ -1272,7 +1273,7 @@ async fn certificate_font_context_uses_shared_library_with_exact_template_author
     .unwrap();
     assert_eq!(
         existing.files[0].status,
-        CertificateFontUploadStatus::DuplicateExisting
+        SchoolFontUploadStatus::DuplicateExisting
     );
 }
 #[tokio::test]

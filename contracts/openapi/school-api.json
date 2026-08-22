@@ -1054,6 +1054,40 @@
         ],
         "type": "object"
       },
+      "ApiErrorResponseWithData_SchoolFontDeleteConflict": {
+        "properties": {
+          "data": {
+            "properties": {
+              "referenceCount": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "referenceCount"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "error",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiErrorResponseWithOptionalData_CertificateResourceLocked": {
         "properties": {
           "data": {
@@ -2331,35 +2365,6 @@
             "required": [
               "items",
               "summary"
-            ],
-            "type": "object"
-          },
-          "message": {
-            "type": "string"
-          },
-          "success": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "success",
-          "data"
-        ],
-        "type": "object"
-      },
-      "ApiResponse_CertificateFontUploadInspection": {
-        "properties": {
-          "data": {
-            "properties": {
-              "files": {
-                "items": {
-                  "$ref": "#/components/schemas/CertificateFontUploadInspectionFile"
-                },
-                "type": "array"
-              }
-            },
-            "required": [
-              "files"
             ],
             "type": "object"
           },
@@ -5061,6 +5066,64 @@
               "is_system",
               "created_at",
               "updated_at"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_SchoolFontListResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "items": {
+                "items": {
+                  "$ref": "#/components/schemas/SchoolFontSummary"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "items"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_SchoolFontUploadInspection": {
+        "properties": {
+          "data": {
+            "properties": {
+              "files": {
+                "items": {
+                  "$ref": "#/components/schemas/SchoolFontUploadInspectionFile"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "files"
             ],
             "type": "object"
           },
@@ -10673,9 +10736,6 @@
           },
           "kind": {
             "$ref": "#/components/schemas/CertificateTemplateAssetKind"
-          },
-          "rightsConfirmed": {
-            "type": "boolean"
           }
         },
         "required": [
@@ -10706,7 +10766,7 @@
         ],
         "type": "object"
       },
-      "AttachCertificateFontBatchRequest": {
+      "AttachSchoolFontBatchRequest": {
         "additionalProperties": false,
         "properties": {
           "fileIds": {
@@ -11378,7 +11438,7 @@
             "type": "string"
           },
           "style": {
-            "$ref": "#/components/schemas/CertificateFontStyle"
+            "$ref": "#/components/schemas/SchoolFontStyle"
           },
           "weight": {
             "format": "int32",
@@ -12401,104 +12461,24 @@
           },
           {
             "properties": {
-              "asset_id": {
+              "font_id": {
                 "format": "uuid",
                 "type": "string"
               },
               "type": {
                 "enum": [
-                  "asset"
+                  "school_font"
                 ],
                 "type": "string"
               }
             },
             "required": [
-              "asset_id",
+              "font_id",
               "type"
             ],
             "type": "object"
           }
         ]
-      },
-      "CertificateFontStyle": {
-        "enum": [
-          "normal",
-          "italic"
-        ],
-        "type": "string"
-      },
-      "CertificateFontUploadInspection": {
-        "properties": {
-          "files": {
-            "items": {
-              "$ref": "#/components/schemas/CertificateFontUploadInspectionFile"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "files"
-        ],
-        "type": "object"
-      },
-      "CertificateFontUploadInspectionFile": {
-        "properties": {
-          "displayFilename": {
-            "type": "string"
-          },
-          "fileId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "fontFamily": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "fontStyle": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/CertificateFontStyle"
-              }
-            ]
-          },
-          "fontWeight": {
-            "format": "int32",
-            "minimum": 0,
-            "type": [
-              "integer",
-              "null"
-            ]
-          },
-          "status": {
-            "$ref": "#/components/schemas/CertificateFontUploadStatus"
-          }
-        },
-        "required": [
-          "fileId",
-          "displayFilename",
-          "fontFamily",
-          "fontWeight",
-          "fontStyle",
-          "status"
-        ],
-        "type": "object"
-      },
-      "CertificateFontUploadStatus": {
-        "enum": [
-          "ready",
-          "duplicate_selection",
-          "duplicate_existing",
-          "unsupported_variable",
-          "unsupported_weight",
-          "missing_family",
-          "unavailable"
-        ],
-        "type": "string"
       },
       "CertificateImportBatchSummary": {
         "properties": {
@@ -13305,10 +13285,6 @@
       },
       "CertificateRenderFontGrant": {
         "properties": {
-          "assetId": {
-            "format": "uuid",
-            "type": "string"
-          },
           "expiresAt": {
             "format": "date-time",
             "type": "string"
@@ -13320,8 +13296,12 @@
             "format": "uuid",
             "type": "string"
           },
+          "schoolFontId": {
+            "format": "uuid",
+            "type": "string"
+          },
           "style": {
-            "$ref": "#/components/schemas/CertificateFontStyle"
+            "$ref": "#/components/schemas/SchoolFontStyle"
           },
           "url": {
             "type": "string"
@@ -13333,7 +13313,7 @@
           }
         },
         "required": [
-          "assetId",
+          "schoolFontId",
           "fileId",
           "family",
           "weight",
@@ -13527,30 +13507,6 @@
             "format": "uuid",
             "type": "string"
           },
-          "fontFamily": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "fontStyle": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/CertificateFontStyle"
-              }
-            ]
-          },
-          "fontWeight": {
-            "format": "int32",
-            "minimum": 0,
-            "type": [
-              "integer",
-              "null"
-            ]
-          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -13573,9 +13529,6 @@
           },
           "kind": {
             "$ref": "#/components/schemas/CertificateTemplateAssetKind"
-          },
-          "rightsConfirmed": {
-            "type": "boolean"
           }
         },
         "required": [
@@ -13583,20 +13536,15 @@
           "fileId",
           "kind",
           "displayName",
-          "fontFamily",
-          "fontWeight",
-          "fontStyle",
           "imageWidthPixels",
           "imageHeightPixels",
-          "rightsConfirmed",
           "createdAt"
         ],
         "type": "object"
       },
       "CertificateTemplateAssetKind": {
         "enum": [
-          "image",
-          "font"
+          "image"
         ],
         "type": "string"
       },
@@ -16109,7 +16057,7 @@
           "generic_private_document",
           "certificate_template_background",
           "certificate_template_image",
-          "certificate_template_font"
+          "school_font"
         ],
         "type": "string"
       },
@@ -16427,7 +16375,7 @@
         ],
         "type": "object"
       },
-      "InspectCertificateFontUploadsRequest": {
+      "InspectSchoolFontUploadsRequest": {
         "additionalProperties": false,
         "properties": {
           "fileIds": {
@@ -18807,6 +18755,153 @@
         ],
         "type": "object"
       },
+      "SchoolFontDeleteConflict": {
+        "properties": {
+          "referenceCount": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "referenceCount"
+        ],
+        "type": "object"
+      },
+      "SchoolFontListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SchoolFontSummary"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "SchoolFontStyle": {
+        "enum": [
+          "normal",
+          "italic"
+        ],
+        "type": "string"
+      },
+      "SchoolFontSummary": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "fontFamily": {
+            "type": "string"
+          },
+          "fontStyle": {
+            "$ref": "#/components/schemas/SchoolFontStyle"
+          },
+          "fontWeight": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "referenceCount": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "fontFamily",
+          "fontWeight",
+          "fontStyle",
+          "referenceCount",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "SchoolFontUploadInspection": {
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/SchoolFontUploadInspectionFile"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "files"
+        ],
+        "type": "object"
+      },
+      "SchoolFontUploadInspectionFile": {
+        "properties": {
+          "displayFilename": {
+            "type": "string"
+          },
+          "fileId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "fontFamily": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fontStyle": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SchoolFontStyle"
+              }
+            ]
+          },
+          "fontWeight": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/SchoolFontUploadStatus"
+          }
+        },
+        "required": [
+          "fileId",
+          "displayFilename",
+          "fontFamily",
+          "fontWeight",
+          "fontStyle",
+          "status"
+        ],
+        "type": "object"
+      },
+      "SchoolFontUploadStatus": {
+        "enum": [
+          "ready",
+          "duplicate_selection",
+          "duplicate_existing",
+          "unsupported_variable",
+          "unsupported_weight",
+          "missing_family",
+          "invalid_display_name",
+          "unavailable"
+        ],
+        "type": "string"
+      },
       "SchoolSettingsResponse": {
         "properties": {
           "logoFileId": {
@@ -20469,7 +20564,7 @@
             "$ref": "#/components/schemas/CertificateFontSource"
           },
           "fontStyle": {
-            "$ref": "#/components/schemas/CertificateFontStyle"
+            "$ref": "#/components/schemas/SchoolFontStyle"
           },
           "fontWeight": {
             "format": "int32",
@@ -35430,160 +35525,6 @@
         ]
       }
     },
-    "/api/certificates/templates/{template_id}/assets/fonts/batch": {
-      "post": {
-        "operationId": "attachCertificateFontBatch",
-        "parameters": [
-          {
-            "description": "Certificate template ID",
-            "in": "path",
-            "name": "template_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AttachCertificateFontBatchRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_CertificateTemplateDetail"
-                }
-              }
-            },
-            "description": "Reviewed static font variants attached atomically"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Authentication required"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Certificate template update permission or file relationship denied"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_CertificateResourceLocked"
-                }
-              }
-            },
-            "description": "Duplicate variant or template locked"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid batch, unsupported font, or rights not confirmed"
-          }
-        },
-        "tags": [
-          "certificate"
-        ]
-      }
-    },
-    "/api/certificates/templates/{template_id}/assets/fonts/inspect": {
-      "post": {
-        "operationId": "inspectCertificateFontUploads",
-        "parameters": [
-          {
-            "description": "Certificate template ID",
-            "in": "path",
-            "name": "template_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/InspectCertificateFontUploadsRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_CertificateFontUploadInspection"
-                }
-              }
-            },
-            "description": "Private font uploads inspected for exact variants"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Authentication required"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Certificate template update permission or file relationship denied"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid font file selection"
-          }
-        },
-        "tags": [
-          "certificate"
-        ]
-      }
-    },
     "/api/certificates/templates/{template_id}/background": {
       "put": {
         "operationId": "attachCertificateTemplateBackground",
@@ -35659,6 +35600,222 @@
               }
             },
             "description": "Invalid PDF geometry"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/certificates/templates/{template_id}/fonts": {
+      "get": {
+        "operationId": "listCertificateSchoolFonts",
+        "parameters": [
+          {
+            "description": "Certificate template ID",
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SchoolFontListResponse"
+                }
+              }
+            },
+            "description": "Shared school fonts available to the template"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate template read permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate template not found"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/certificates/templates/{template_id}/fonts/batch": {
+      "post": {
+        "operationId": "attachCertificateFontBatch",
+        "parameters": [
+          {
+            "description": "Certificate template ID",
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachSchoolFontBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SchoolFontListResponse"
+                }
+              }
+            },
+            "description": "Reviewed static font variants attached atomically to the school library"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate template update permission or file relationship denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_CertificateResourceLocked"
+                }
+              }
+            },
+            "description": "Duplicate variant or template locked"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid batch, unsupported font, or rights not confirmed"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/certificates/templates/{template_id}/fonts/inspect": {
+      "post": {
+        "operationId": "inspectCertificateFontUploads",
+        "parameters": [
+          {
+            "description": "Certificate template ID",
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InspectSchoolFontUploadsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SchoolFontUploadInspection"
+                }
+              }
+            },
+            "description": "Private school-font uploads inspected for exact variants"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate template update permission or file relationship denied"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid font file selection"
           }
         },
         "tags": [
@@ -39677,6 +39834,248 @@
         },
         "tags": [
           "roles"
+        ]
+      }
+    },
+    "/api/school-fonts": {
+      "get": {
+        "operationId": "listSchoolFonts",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SchoolFontListResponse"
+                }
+              }
+            },
+            "description": "Shared school fonts"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "School font manager permission required"
+          }
+        },
+        "tags": [
+          "school-font"
+        ]
+      }
+    },
+    "/api/school-fonts/{font_id}": {
+      "delete": {
+        "operationId": "deleteSchoolFont",
+        "parameters": [
+          {
+            "description": "Shared school font ID",
+            "in": "path",
+            "name": "font_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Unreferenced school font deleted"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "School font manager permission required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "School font not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseWithData_SchoolFontDeleteConflict"
+                }
+              }
+            },
+            "description": "School font is still referenced"
+          }
+        },
+        "tags": [
+          "school-font"
+        ]
+      }
+    },
+    "/api/school-fonts/batch": {
+      "post": {
+        "operationId": "attachSchoolFontBatch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachSchoolFontBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SchoolFontListResponse"
+                }
+              }
+            },
+            "description": "Reviewed static font variants attached atomically"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "School font manager permission required"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "School font variant conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid batch or font rights not confirmed"
+          }
+        },
+        "tags": [
+          "school-font"
+        ]
+      }
+    },
+    "/api/school-fonts/inspect": {
+      "post": {
+        "operationId": "inspectSchoolFontUploads",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InspectSchoolFontUploadsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SchoolFontUploadInspection"
+                }
+              }
+            },
+            "description": "School font uploads inspected in caller order"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "School font manager permission required"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid or unavailable school font selection"
+          }
+        },
+        "tags": [
+          "school-font"
         ]
       }
     },

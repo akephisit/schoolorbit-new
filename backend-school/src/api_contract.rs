@@ -77,21 +77,19 @@ use crate::modules::calendar::models::{
     CalendarPublicEvent, CalendarTag, CalendarViewerEvent,
 };
 use crate::modules::certificates::models::{
-    AttachCertificateAssetRequest, AttachCertificateBackgroundRequest,
-    AttachCertificateFontBatchRequest, CandidateMatchStatus, CandidateNameSource,
-    CandidateValidationCode, CandidateValidationStatus, CertificateAccountSearchQuery,
-    CertificateBuiltInFont, CertificateCampaignCapabilities, CertificateCampaignDetail,
-    CertificateCampaignListQuery, CertificateCampaignPurgeCounts, CertificateCampaignPurgeImpact,
-    CertificateCampaignPurgePhase, CertificateCampaignPurgeStatus, CertificateCampaignStatus,
-    CertificateCampaignSummary, CertificateCandidateAccount, CertificateCandidateBulkRequest,
-    CertificateCandidateBulkResult, CertificateCandidateCapabilities, CertificateCandidateDetail,
-    CertificateCandidateImportResult, CertificateCandidateListQuery,
-    CertificateCandidateListResponse, CertificateCandidateSummary, CertificateCapabilities,
-    CertificateElement, CertificateFontSource, CertificateFontStyle,
-    CertificateFontUploadInspection, CertificateFontUploadInspectionFile,
-    CertificateFontUploadStatus, CertificateImportBatchSummary, CertificateImportRequest,
-    CertificateImportRowInput, CertificateImportSource, CertificateIssueCandidateProblem,
-    CertificateIssueCode, CertificateIssueRequestCapabilities, CertificateIssueRequestDetail,
+    AttachCertificateAssetRequest, AttachCertificateBackgroundRequest, CandidateMatchStatus,
+    CandidateNameSource, CandidateValidationCode, CandidateValidationStatus,
+    CertificateAccountSearchQuery, CertificateBuiltInFont, CertificateCampaignCapabilities,
+    CertificateCampaignDetail, CertificateCampaignListQuery, CertificateCampaignPurgeCounts,
+    CertificateCampaignPurgeImpact, CertificateCampaignPurgePhase, CertificateCampaignPurgeStatus,
+    CertificateCampaignStatus, CertificateCampaignSummary, CertificateCandidateAccount,
+    CertificateCandidateBulkRequest, CertificateCandidateBulkResult,
+    CertificateCandidateCapabilities, CertificateCandidateDetail, CertificateCandidateImportResult,
+    CertificateCandidateListQuery, CertificateCandidateListResponse, CertificateCandidateSummary,
+    CertificateCapabilities, CertificateElement, CertificateFontSource,
+    CertificateImportBatchSummary, CertificateImportRequest, CertificateImportRowInput,
+    CertificateImportSource, CertificateIssueCandidateProblem, CertificateIssueCode,
+    CertificateIssueRequestCapabilities, CertificateIssueRequestDetail,
     CertificateIssueRequestItem, CertificateIssueRequestListQuery, CertificateIssueRequestStatus,
     CertificateIssueRequestSummary, CertificateLayoutV1, CertificatePageBox,
     CertificatePageGeometry, CertificatePreviewKind, CertificatePreviewManifestRequest,
@@ -104,13 +102,13 @@ use crate::modules::certificates::models::{
     ChangeCertificateCampaignStatusRequest, CreateAccountCertificateCandidateRequest,
     CreateCertificateCampaignRequest, CreateCertificateTemplateRequest,
     CreateManualExternalCandidateRequest, ElementFrame, GeometryAction, ImageElement,
-    InspectCertificateFontUploadsRequest, IssueCertificateOutcome, IssueCertificateRequest,
-    IssuedCertificateDetail, IssuedCertificateListQuery, IssuedCertificateSummary,
-    ManualCertificateVerificationRequest, NullableUuidUpdate, PublicCertificateRenderRequest,
-    PublicCertificateVerificationData, QrCertificateVerificationRequest, QrElement, RecipientType,
-    ReturnCertificateIssueRequest, RevokeCertificateRequest, RevokeCertificateResult,
-    StartCertificateCampaignPurgeRequest, SubmitCertificateIssueRequest, TextAlignment,
-    TextElement, TextShadow, UpdateCertificateCampaignRequest, UpdateCertificateCandidateRequest,
+    IssueCertificateOutcome, IssueCertificateRequest, IssuedCertificateDetail,
+    IssuedCertificateListQuery, IssuedCertificateSummary, ManualCertificateVerificationRequest,
+    NullableUuidUpdate, PublicCertificateRenderRequest, PublicCertificateVerificationData,
+    QrCertificateVerificationRequest, QrElement, RecipientType, ReturnCertificateIssueRequest,
+    RevokeCertificateRequest, RevokeCertificateResult, StartCertificateCampaignPurgeRequest,
+    SubmitCertificateIssueRequest, TextAlignment, TextElement, TextShadow,
+    UpdateCertificateCampaignRequest, UpdateCertificateCandidateRequest,
     UpdateCertificateTemplateRequest,
 };
 use crate::modules::facility::models::Room;
@@ -137,6 +135,11 @@ use crate::modules::notification::models::{ListNotificationsResponse, Notificati
 use crate::modules::parents::models::{ChildDto, ParentProfile};
 use crate::modules::school::handlers::PublicSchoolInfoData;
 use crate::modules::school::models::SchoolSettingsResponse;
+use crate::modules::school_fonts::models::{
+    AttachSchoolFontBatchRequest, InspectSchoolFontUploadsRequest, SchoolFontDeleteConflict,
+    SchoolFontListResponse, SchoolFontStyle, SchoolFontSummary, SchoolFontUploadInspection,
+    SchoolFontUploadInspectionFile, SchoolFontUploadStatus,
+};
 use crate::modules::staff::handlers::organization_delegations::{
     CreateDelegationRequest, DelegationIdData, DelegationItem,
 };
@@ -187,6 +190,10 @@ use utoipa::OpenApi;
         crate::modules::files::handlers::delete_file,
         crate::modules::files::handlers::get_public_file_content,
         crate::modules::files::handlers::get_public_file_delivery,
+        crate::modules::school_fonts::handlers::list_school_fonts,
+        crate::modules::school_fonts::handlers::inspect_school_font_uploads,
+        crate::modules::school_fonts::handlers::attach_school_font_batch,
+        crate::modules::school_fonts::handlers::delete_school_font,
         crate::modules::admission::handlers::applications::staff_upload_document,
         crate::modules::admission::handlers::applications::staff_delete_document,
         crate::modules::admission::handlers::portal::portal_upload_document,
@@ -256,6 +263,7 @@ use utoipa::OpenApi;
         crate::modules::certificates::handlers::delete_certificate_template,
         crate::modules::certificates::handlers::attach_certificate_template_background,
         crate::modules::certificates::handlers::attach_certificate_template_asset,
+        crate::modules::certificates::handlers::list_certificate_school_fonts,
         crate::modules::certificates::handlers::inspect_certificate_font_uploads,
         crate::modules::certificates::handlers::attach_certificate_font_batch,
         crate::modules::certificates::handlers::delete_certificate_template_asset,
@@ -520,8 +528,15 @@ use utoipa::OpenApi;
         CertificateLayoutV1,
         CertificateElement,
         CertificateFontSource,
-        CertificateFontStyle,
-        CertificateFontUploadStatus,
+        SchoolFontStyle,
+        SchoolFontUploadStatus,
+        SchoolFontSummary,
+        SchoolFontListResponse,
+        InspectSchoolFontUploadsRequest,
+        AttachSchoolFontBatchRequest,
+        SchoolFontUploadInspectionFile,
+        SchoolFontUploadInspection,
+        SchoolFontDeleteConflict,
         ElementFrame,
         TextElement,
         TextAlignment,
@@ -532,10 +547,6 @@ use utoipa::OpenApi;
         UpdateCertificateTemplateRequest,
         AttachCertificateBackgroundRequest,
         AttachCertificateAssetRequest,
-        InspectCertificateFontUploadsRequest,
-        AttachCertificateFontBatchRequest,
-        CertificateFontUploadInspectionFile,
-        CertificateFontUploadInspection,
         CertificatePageBox,
         CertificatePageGeometry,
         CertificateTemplateCapabilities,
@@ -552,7 +563,9 @@ use utoipa::OpenApi;
         CertificateRenderManifest,
         ApiResponse<Vec<CertificateTemplateDetail>>,
         ApiResponse<CertificateTemplateDetail>,
-        ApiResponse<CertificateFontUploadInspection>,
+        ApiResponse<SchoolFontListResponse>,
+        ApiResponse<SchoolFontUploadInspection>,
+        ApiErrorResponseWithData<SchoolFontDeleteConflict>,
         ApiResponse<CertificateTemplateDeleteResult>,
         ApiResponse<CertificateTemplateVariableCatalog>,
         ApiResponse<CertificateRenderManifest>,
@@ -3224,12 +3237,17 @@ mod tests {
                     "attachCertificateTemplateAsset",
                 ),
                 (
-                    "/api/certificates/templates/{template_id}/assets/fonts/inspect",
+                    "/api/certificates/templates/{template_id}/fonts",
+                    "get",
+                    "listCertificateSchoolFonts",
+                ),
+                (
+                    "/api/certificates/templates/{template_id}/fonts/inspect",
                     "post",
                     "inspectCertificateFontUploads",
                 ),
                 (
-                    "/api/certificates/templates/{template_id}/assets/fonts/batch",
+                    "/api/certificates/templates/{template_id}/fonts/batch",
                     "post",
                     "attachCertificateFontBatch",
                 ),
@@ -3655,7 +3673,7 @@ mod tests {
             ),
             ("/api/certificates/templates/{template_id}/assets", "post"),
             (
-                "/api/certificates/templates/{template_id}/assets/fonts/batch",
+                "/api/certificates/templates/{template_id}/fonts/batch",
                 "post",
             ),
             (
@@ -3709,6 +3727,84 @@ mod tests {
                 ["content"]["application/json"]["schema"]["$ref"],
             "#/components/schemas/ApiResponse_Vec_OrganizationUnitLookupItem"
         );
+    }
+
+    #[test]
+    fn school_font_contracts_are_shared_and_forward_only() {
+        let document = school_api_value().expect("document should serialize");
+        assert_operations(
+            &document,
+            &[
+                ("/api/school-fonts", "get", "listSchoolFonts"),
+                (
+                    "/api/school-fonts/inspect",
+                    "post",
+                    "inspectSchoolFontUploads",
+                ),
+                ("/api/school-fonts/batch", "post", "attachSchoolFontBatch"),
+                ("/api/school-fonts/{font_id}", "delete", "deleteSchoolFont"),
+                (
+                    "/api/certificates/templates/{template_id}/fonts",
+                    "get",
+                    "listCertificateSchoolFonts",
+                ),
+                (
+                    "/api/certificates/templates/{template_id}/fonts/inspect",
+                    "post",
+                    "inspectCertificateFontUploads",
+                ),
+                (
+                    "/api/certificates/templates/{template_id}/fonts/batch",
+                    "post",
+                    "attachCertificateFontBatch",
+                ),
+            ],
+        );
+
+        for legacy_path in [
+            "/api/certificates/templates/{template_id}/assets/fonts/inspect",
+            "/api/certificates/templates/{template_id}/assets/fonts/batch",
+        ] {
+            assert!(
+                document["paths"].get(legacy_path).is_none(),
+                "legacy template-owned font path must be absent: {legacy_path}"
+            );
+        }
+
+        let schemas = &document["components"]["schemas"];
+        for schema_name in [
+            "SchoolFontStyle",
+            "SchoolFontUploadStatus",
+            "SchoolFontSummary",
+            "SchoolFontListResponse",
+            "InspectSchoolFontUploadsRequest",
+            "AttachSchoolFontBatchRequest",
+            "SchoolFontUploadInspectionFile",
+            "SchoolFontUploadInspection",
+            "SchoolFontDeleteConflict",
+        ] {
+            assert!(
+                !schemas[schema_name].is_null(),
+                "missing shared school-font schema {schema_name}"
+            );
+        }
+
+        let font_source = serde_json::to_string(&schemas["CertificateFontSource"]).unwrap();
+        assert!(font_source.contains("school_font"));
+        assert!(font_source.contains("font_id"));
+        assert!(!font_source.contains("asset_id"));
+
+        let grant = &schemas["CertificateRenderFontGrant"];
+        assert!(required(grant).contains(&"schoolFontId"));
+        assert!(grant["properties"].get("assetId").is_none());
+
+        let purposes = schemas["FilePurpose"]["enum"]
+            .as_array()
+            .expect("FilePurpose must be an enum");
+        assert!(purposes.iter().any(|value| value == "school_font"));
+        assert!(!purposes
+            .iter()
+            .any(|value| value == "certificate_template_font"));
     }
 
     #[test]
@@ -3796,13 +3892,16 @@ mod tests {
         for purpose in [
             "certificate_template_background",
             "certificate_template_image",
-            "certificate_template_font",
+            "school_font",
         ] {
             assert!(
                 file_purposes.iter().any(|value| value == purpose),
                 "FilePurpose must expose {purpose}"
             );
         }
+        assert!(!file_purposes
+            .iter()
+            .any(|value| value == "certificate_template_font"));
 
         let grant = &schemas["FileDownloadGrantResponse"];
         assert!(required(grant).contains(&"url"));

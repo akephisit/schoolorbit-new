@@ -399,16 +399,19 @@ fn valid_color(color: &str) -> bool {
 mod tests {
     use uuid::Uuid;
 
-    use crate::modules::certificates::{
-        models::{
-            CertificateElement, CertificateFontStyle, CertificateLayoutV1, ElementFrame,
-            ImageElement, PageGeometry, QrElement, TextAlignment, TextElement,
+    use crate::modules::{
+        certificates::{
+            models::{
+                CertificateElement, CertificateLayoutV1, ElementFrame, ImageElement, PageGeometry,
+                QrElement, TextAlignment, TextElement,
+            },
+            services::layout::{
+                adapt_layout_for_background, paper_label, recognize_paper, validate_layout,
+                validate_safe_margin, BackgroundLayoutAction, LayoutValidationError, PaperKind,
+                PaperOrientation,
+            },
         },
-        services::layout::{
-            adapt_layout_for_background, paper_label, recognize_paper, validate_layout,
-            validate_safe_margin, BackgroundLayoutAction, LayoutValidationError, PaperKind,
-            PaperOrientation,
-        },
+        school_fonts::models::SchoolFontStyle,
     };
 
     fn text_layout() -> CertificateLayoutV1 {
@@ -427,7 +430,7 @@ mod tests {
                 font_source: Default::default(),
                 font_family: "Sarabun".into(),
                 font_weight: 400,
-                font_style: CertificateFontStyle::Normal,
+                font_style: SchoolFontStyle::Normal,
                 font_size: 24.0,
                 min_font_size: 12.0,
                 color: "#112233".into(),
@@ -462,9 +465,9 @@ mod tests {
     fn rejects_unsupported_built_in_font_family_weight_and_style() {
         let page = PageGeometry::new(200.0, 100.0, 0).unwrap();
         for (family, weight, style) in [
-            ("Unknown Thai", 400, CertificateFontStyle::Normal),
-            ("Sarabun", 500, CertificateFontStyle::Normal),
-            ("Sarabun", 400, CertificateFontStyle::Italic),
+            ("Unknown Thai", 400, SchoolFontStyle::Normal),
+            ("Sarabun", 500, SchoolFontStyle::Normal),
+            ("Sarabun", 400, SchoolFontStyle::Italic),
         ] {
             let mut layout = text_layout();
             let CertificateElement::Text(text) = &mut layout.elements[0] else {
@@ -650,7 +653,7 @@ mod tests {
         let CertificateElement::Text(text) = &layout.elements[0] else {
             panic!("expected text")
         };
-        assert_eq!(text.font_style, CertificateFontStyle::Normal);
+        assert_eq!(text.font_style, SchoolFontStyle::Normal);
         let CertificateElement::Image(image) = &layout.elements[1] else {
             panic!("expected image")
         };

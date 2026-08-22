@@ -180,6 +180,22 @@ fn protected_routes() -> Router<AppState> {
                 .delete(modules::achievement::handlers::delete_achievement),
         )
         .route(
+            "/api/school-fonts",
+            get(modules::school_fonts::handlers::list_school_fonts),
+        )
+        .route(
+            "/api/school-fonts/inspect",
+            post(modules::school_fonts::handlers::inspect_school_font_uploads),
+        )
+        .route(
+            "/api/school-fonts/batch",
+            post(modules::school_fonts::handlers::attach_school_font_batch),
+        )
+        .route(
+            "/api/school-fonts/{font_id}",
+            delete(modules::school_fonts::handlers::delete_school_font),
+        )
+        .route(
             "/api/certificates/campaigns",
             get(modules::certificates::handlers::list_certificate_campaigns)
                 .post(modules::certificates::handlers::create_certificate_campaign),
@@ -233,11 +249,15 @@ fn protected_routes() -> Router<AppState> {
             post(modules::certificates::handlers::attach_certificate_template_asset),
         )
         .route(
-            "/api/certificates/templates/{template_id}/assets/fonts/inspect",
+            "/api/certificates/templates/{template_id}/fonts",
+            get(modules::certificates::handlers::list_certificate_school_fonts),
+        )
+        .route(
+            "/api/certificates/templates/{template_id}/fonts/inspect",
             post(modules::certificates::handlers::inspect_certificate_font_uploads),
         )
         .route(
-            "/api/certificates/templates/{template_id}/assets/fonts/batch",
+            "/api/certificates/templates/{template_id}/fonts/batch",
             post(modules::certificates::handlers::attach_certificate_font_batch),
         )
         .route(

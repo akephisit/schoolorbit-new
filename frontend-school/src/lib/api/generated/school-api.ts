@@ -2024,7 +2024,39 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
-	'/api/certificates/templates/{template_id}/assets/fonts/batch': {
+	'/api/certificates/templates/{template_id}/background': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['attachCertificateTemplateBackground'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/certificates/templates/{template_id}/fonts': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listCertificateSchoolFonts'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/certificates/templates/{template_id}/fonts/batch': {
 		parameters: {
 			query?: never;
 			header?: never;
@@ -2040,7 +2072,7 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
-	'/api/certificates/templates/{template_id}/assets/fonts/inspect': {
+	'/api/certificates/templates/{template_id}/fonts/inspect': {
 		parameters: {
 			query?: never;
 			header?: never;
@@ -2050,22 +2082,6 @@ export interface paths {
 		get?: never;
 		put?: never;
 		post: operations['inspectCertificateFontUploads'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/certificates/templates/{template_id}/background': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put: operations['attachCertificateTemplateBackground'];
-		post?: never;
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -2867,6 +2883,70 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/school-fonts': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listSchoolFonts'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/school-fonts/{font_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['deleteSchoolFont'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/school-fonts/batch': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['attachSchoolFontBatch'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/school-fonts/inspect': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['inspectSchoolFontUploads'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/school/public': {
 		parameters: {
 			query?: never;
@@ -3405,6 +3485,15 @@ export interface components {
 			message?: string | null;
 			success: boolean;
 		};
+		ApiErrorResponseWithData_SchoolFontDeleteConflict: {
+			data: {
+				/** Format: int64 */
+				referenceCount: number;
+			};
+			error: string;
+			message?: string | null;
+			success: boolean;
+		};
 		ApiErrorResponseWithOptionalData_CertificateResourceLocked: {
 			data?: {
 				code: components['schemas']['CertificateResourceLockCode'];
@@ -3743,13 +3832,6 @@ export interface components {
 			data: {
 				items: components['schemas']['CertificateCandidateDetail'][];
 				summary: components['schemas']['CertificateCandidateSummary'];
-			};
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_CertificateFontUploadInspection: {
-			data: {
-				files: components['schemas']['CertificateFontUploadInspectionFile'][];
 			};
 			message?: string;
 			success: boolean;
@@ -4467,6 +4549,20 @@ export interface components {
 				/** Format: date-time */
 				updated_at: string;
 				user_type: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_SchoolFontListResponse: {
+			data: {
+				items: components['schemas']['SchoolFontSummary'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_SchoolFontUploadInspection: {
+			data: {
+				files: components['schemas']['SchoolFontUploadInspectionFile'][];
 			};
 			message?: string;
 			success: boolean;
@@ -5946,7 +6042,6 @@ export interface components {
 			/** Format: uuid */
 			fileId: string;
 			kind: components['schemas']['CertificateTemplateAssetKind'];
-			rightsConfirmed?: boolean;
 		};
 		AttachCertificateBackgroundRequest: {
 			/** Format: uuid */
@@ -5954,7 +6049,7 @@ export interface components {
 			geometryAction: components['schemas']['GeometryAction'];
 			previewConfirmed: boolean;
 		};
-		AttachCertificateFontBatchRequest: {
+		AttachSchoolFontBatchRequest: {
 			fileIds: string[];
 			rightsConfirmed?: boolean;
 		};
@@ -6149,7 +6244,7 @@ export interface components {
 		CertificateBuiltInFont: {
 			assetPath: string;
 			family: string;
-			style: components['schemas']['CertificateFontStyle'];
+			style: components['schemas']['SchoolFontStyle'];
 			/** Format: int32 */
 			weight: number;
 		};
@@ -6416,34 +6511,10 @@ export interface components {
 			  }
 			| {
 					/** Format: uuid */
-					asset_id: string;
+					font_id: string;
 					/** @enum {string} */
-					type: 'asset';
+					type: 'school_font';
 			  };
-		/** @enum {string} */
-		CertificateFontStyle: 'normal' | 'italic';
-		CertificateFontUploadInspection: {
-			files: components['schemas']['CertificateFontUploadInspectionFile'][];
-		};
-		CertificateFontUploadInspectionFile: {
-			displayFilename: string;
-			/** Format: uuid */
-			fileId: string;
-			fontFamily: string | null;
-			fontStyle: null | components['schemas']['CertificateFontStyle'];
-			/** Format: int32 */
-			fontWeight: number | null;
-			status: components['schemas']['CertificateFontUploadStatus'];
-		};
-		/** @enum {string} */
-		CertificateFontUploadStatus:
-			| 'ready'
-			| 'duplicate_selection'
-			| 'duplicate_existing'
-			| 'unsupported_variable'
-			| 'unsupported_weight'
-			| 'missing_family'
-			| 'unavailable';
 		CertificateImportBatchSummary: {
 			/** Format: uuid */
 			campaignId: string;
@@ -6667,14 +6738,14 @@ export interface components {
 			url: string;
 		};
 		CertificateRenderFontGrant: {
-			/** Format: uuid */
-			assetId: string;
 			/** Format: date-time */
 			expiresAt: string;
 			family: string;
 			/** Format: uuid */
 			fileId: string;
-			style: components['schemas']['CertificateFontStyle'];
+			/** Format: uuid */
+			schoolFontId: string;
+			style: components['schemas']['SchoolFontStyle'];
 			url: string;
 			/** Format: int32 */
 			weight: number;
@@ -6732,10 +6803,6 @@ export interface components {
 			displayName: string;
 			/** Format: uuid */
 			fileId: string;
-			fontFamily: string | null;
-			fontStyle: null | components['schemas']['CertificateFontStyle'];
-			/** Format: int32 */
-			fontWeight: number | null;
 			/** Format: uuid */
 			id: string;
 			/** Format: int32 */
@@ -6743,10 +6810,9 @@ export interface components {
 			/** Format: int32 */
 			imageWidthPixels: number | null;
 			kind: components['schemas']['CertificateTemplateAssetKind'];
-			rightsConfirmed: boolean;
 		};
 		/** @enum {string} */
-		CertificateTemplateAssetKind: 'image' | 'font';
+		CertificateTemplateAssetKind: 'image';
 		CertificateTemplateCapabilities: {
 			canDelete: boolean;
 			canPreview: boolean;
@@ -7419,7 +7485,7 @@ export interface components {
 			| 'generic_private_document'
 			| 'certificate_template_background'
 			| 'certificate_template_image'
-			| 'certificate_template_font';
+			| 'school_font';
 		FileUploadMultipart: {
 			/** Format: binary */
 			file: string;
@@ -7516,7 +7582,7 @@ export interface components {
 			/** Format: double */
 			rotation: number;
 		};
-		InspectCertificateFontUploadsRequest: {
+		InspectSchoolFontUploadsRequest: {
 			fileIds: string[];
 		};
 		InstructorInfo: {
@@ -8136,6 +8202,51 @@ export interface components {
 			/** Format: date-time */
 			updated_at: string;
 		};
+		SchoolFontDeleteConflict: {
+			/** Format: int64 */
+			referenceCount: number;
+		};
+		SchoolFontListResponse: {
+			items: components['schemas']['SchoolFontSummary'][];
+		};
+		/** @enum {string} */
+		SchoolFontStyle: 'normal' | 'italic';
+		SchoolFontSummary: {
+			/** Format: date-time */
+			createdAt: string;
+			displayName: string;
+			fontFamily: string;
+			fontStyle: components['schemas']['SchoolFontStyle'];
+			/** Format: int32 */
+			fontWeight: number;
+			/** Format: uuid */
+			id: string;
+			/** Format: int64 */
+			referenceCount: number;
+		};
+		SchoolFontUploadInspection: {
+			files: components['schemas']['SchoolFontUploadInspectionFile'][];
+		};
+		SchoolFontUploadInspectionFile: {
+			displayFilename: string;
+			/** Format: uuid */
+			fileId: string;
+			fontFamily: string | null;
+			fontStyle: null | components['schemas']['SchoolFontStyle'];
+			/** Format: int32 */
+			fontWeight: number | null;
+			status: components['schemas']['SchoolFontUploadStatus'];
+		};
+		/** @enum {string} */
+		SchoolFontUploadStatus:
+			| 'ready'
+			| 'duplicate_selection'
+			| 'duplicate_existing'
+			| 'unsupported_variable'
+			| 'unsupported_weight'
+			| 'missing_family'
+			| 'invalid_display_name'
+			| 'unavailable';
 		SchoolSettingsResponse: {
 			/** Format: uuid */
 			logoFileId: string | null;
@@ -8585,7 +8696,7 @@ export interface components {
 			/** Format: double */
 			fontSize: number;
 			fontSource: components['schemas']['CertificateFontSource'];
-			fontStyle: components['schemas']['CertificateFontStyle'];
+			fontStyle: components['schemas']['SchoolFontStyle'];
 			/** Format: int32 */
 			fontWeight: number;
 			frame: components['schemas']['ElementFrame'];
@@ -19477,123 +19588,6 @@ export interface operations {
 			};
 		};
 	};
-	attachCertificateFontBatch: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Certificate template ID */
-				template_id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['AttachCertificateFontBatchRequest'];
-			};
-		};
-		responses: {
-			/** @description Reviewed static font variants attached atomically */
-			201: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_CertificateTemplateDetail'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Certificate template update permission or file relationship denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Duplicate variant or template locked */
-			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponseWithOptionalData_CertificateResourceLocked'];
-				};
-			};
-			/** @description Invalid batch, unsupported font, or rights not confirmed */
-			422: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	inspectCertificateFontUploads: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Certificate template ID */
-				template_id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['InspectCertificateFontUploadsRequest'];
-			};
-		};
-		responses: {
-			/** @description Private font uploads inspected for exact variants */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_CertificateFontUploadInspection'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Certificate template update permission or file relationship denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Invalid font file selection */
-			422: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
 	attachCertificateTemplateBackground: {
 		parameters: {
 			query?: never;
@@ -19647,6 +19641,173 @@ export interface operations {
 				};
 			};
 			/** @description Invalid PDF geometry */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listCertificateSchoolFonts: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Certificate template ID */
+				template_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Shared school fonts available to the template */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SchoolFontListResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate template read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate template not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	attachCertificateFontBatch: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Certificate template ID */
+				template_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['AttachSchoolFontBatchRequest'];
+			};
+		};
+		responses: {
+			/** @description Reviewed static font variants attached atomically to the school library */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SchoolFontListResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate template update permission or file relationship denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Duplicate variant or template locked */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponseWithOptionalData_CertificateResourceLocked'];
+				};
+			};
+			/** @description Invalid batch, unsupported font, or rights not confirmed */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	inspectCertificateFontUploads: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Certificate template ID */
+				template_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['InspectSchoolFontUploadsRequest'];
+			};
+		};
+		responses: {
+			/** @description Private school-font uploads inspected for exact variants */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SchoolFontUploadInspection'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate template update permission or file relationship denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Invalid font file selection */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -22419,6 +22580,214 @@ export interface operations {
 			};
 			/** @description System role cannot be deactivated */
 			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listSchoolFonts: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Shared school fonts */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SchoolFontListResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description School font manager permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteSchoolFont: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Shared school font ID */
+				font_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Unreferenced school font deleted */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description School font manager permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description School font not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description School font is still referenced */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponseWithData_SchoolFontDeleteConflict'];
+				};
+			};
+		};
+	};
+	attachSchoolFontBatch: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['AttachSchoolFontBatchRequest'];
+			};
+		};
+		responses: {
+			/** @description Reviewed static font variants attached atomically */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SchoolFontListResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description School font manager permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description School font variant conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Invalid batch or font rights not confirmed */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	inspectSchoolFontUploads: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['InspectSchoolFontUploadsRequest'];
+			};
+		};
+		responses: {
+			/** @description School font uploads inspected in caller order */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SchoolFontUploadInspection'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description School font manager permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Invalid or unavailable school font selection */
+			422: {
 				headers: {
 					[name: string]: unknown;
 				};
