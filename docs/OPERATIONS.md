@@ -276,6 +276,12 @@ Backend-school deployment keeps the school API in maintenance mode while it call
 
 The one-time legacy rebaseline is complete and its operational scripts are retired. If a tenant with legacy `_sqlx_migrations` history is discovered, stop the rollout and prepare a new reviewed recovery plan. Never point the current release at that database, copy migration history, or edit SQLx checksum records.
 
+### School font library cutover
+
+Migration `040_school_font_library.sql` is an intentional empty-state cutover. Before entering the all-tenant migration gate, verify every active tenant has zero legacy certificate font assets, zero `certificate_template_font` staging rows, and zero text elements whose `fontSource.type` is `asset`. The migration enforces the same prerequisite and stops with `legacy certificate template fonts must be empty before migration 040` if any old row remains. Do not silently convert, copy, or delete a non-empty tenant during deployment; stop and use a separately reviewed data-removal or migration procedure.
+
+Deploy migration 040, the backend routes, generated API contract, and the matching frontend together while school-api remains in maintenance mode. If any tenant fails, keep maintenance active, retain the new image, correct the tenant state through an approved operation, and fix forward through the centralized migration gate. Once any tenant has applied migration 040, never deploy an older backend that expects template-owned font columns, edit the applied migration, or alter `_sqlx_migrations` checksums.
+
 ## Permission and Menu Synchronization
 
 Permission definitions originate in `contracts/permissions.json` and are materialized into generated registries plus tenant DB data. Deploy the contract artifacts and any new sequential permission migration together.
@@ -309,7 +315,7 @@ Do not use legacy PostgreSQL `pgcrypto`, `ALTER ROLE`, or database session setti
 Backend-school owns a provider-neutral File Platform. Business modules and frontends store a logical file ID; they never store an R2 key, bucket, provider URL, or signed URL. The platform selects storage from the registered purpose:
 
 - `R2_PUBLIC_BUCKET_NAME` contains only public purposes such as school branding. `R2_PUBLIC_URL` is the delivery base for this bucket.
-- `R2_PRIVATE_BUCKET_NAME` contains profiles, achievements, admissions, question-bank images, and documents. It must have no public custom domain or `r2.dev` access.
+- `R2_PRIVATE_BUCKET_NAME` contains profiles, achievements, admissions, question-bank images, documents, and `school_font` originals. It must have no public custom domain or `r2.dev` access.
 - `R2_PRIVATE_BUCKET_NAME` allows browser delivery only through short-lived signed `GET`/`HEAD` requests from `https://*.schoolorbit.app`. The backend-school deployment applies and verifies this CORS policy without making the bucket public.
 - The two bucket names must be present and different. `R2_BUCKET_NAME` and `CDN_URL` are not compatibility fallbacks.
 
@@ -379,6 +385,14 @@ When reconciliation is unhealthy:
 3. restore scanner or bucket access before retrying terminal work;
 4. compare file/version/derivative rows with object counts using file IDs and tenant/purpose aggregates;
 5. do not manually delete metadata rows or reuse object keys.
+
+### School font ownership and recovery
+
+`school_font` is a private, scanned File Platform purpose. A new upload is staged either for the central school-font manager or for one exact certificate template; attaching a reviewed batch promotes the files into the school-owned library. The promoted font is not owned by a campaign or template, and campaign purge removes only its template references. Delivery remains grant-based and must never expose a bucket name, object key, provider URL, or signed URL in logs or persistent client state.
+
+Deletion is reference-safe. `DELETE /api/school-fonts/{font_id}` returns `409` with the authoritative reference count while any template layout uses the font. Remove or purge those template references through the supported certificate workflow, re-list the library, and retry central deletion only after the count reaches zero. Never bypass this check by deleting `school_fonts`, `certificate_template_font_references`, File Platform metadata, or provider objects manually.
+
+A successful central delete revokes file delivery in metadata before object cleanup. If provider deletion is delayed, leave the durable file operation intact and let the File Platform reconciler retry it with its normal lease, backoff, and terminal-attempt rules. Diagnose with safe file IDs, purpose totals, reconciliation counters, and error codes only. Restore scanner or bucket access before retrying terminal work; do not recreate the font row, reuse its object key, or purge the private bucket.
 
 ### Permanent certificate campaign purge
 

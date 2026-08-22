@@ -23,7 +23,9 @@ type OrganizationUnit = Schemas['OrganizationUnitLookupItem'];
 type CertificateCampaign = Schemas['CertificateCampaignDetail'];
 type CertificateTemplate = Schemas['CertificateTemplateDetail'];
 type CertificateTemplateAsset = Schemas['CertificateTemplateAsset'];
-type CertificateFontUploadInspection = Schemas['CertificateFontUploadInspection'];
+type SchoolFontSummary = Schemas['SchoolFontSummary'];
+type SchoolFontListResponse = Schemas['SchoolFontListResponse'];
+type SchoolFontUploadInspection = Schemas['SchoolFontUploadInspection'];
 type CertificateLayout = Schemas['CertificateLayoutV1'];
 type FileMetadata = Schemas['FileMetadata'];
 type CertificateCandidateAccount = Schemas['CertificateCandidateAccount'];
@@ -37,6 +39,7 @@ type CertificateRenderManifest = Schemas['CertificateRenderManifest'];
 type RevokeCertificateResult = Schemas['RevokeCertificateResult'];
 type CertificateCampaignPurgeImpact = Schemas['CertificateCampaignPurgeImpact'];
 type CertificateCampaignPurgeStatus = Schemas['CertificateCampaignPurgeStatus'];
+type EmptyData = Schemas['EmptyData'];
 
 type ApiFetchOptions = NonNullable<Parameters<APIRequestContext['fetch']>[1]>;
 type ApiCallOptions = Pick<ApiFetchOptions, 'data' | 'multipart'>;
@@ -71,6 +74,8 @@ interface UploadedFile {
 interface LifecycleState {
 	campaignId: string | null;
 	campaignName: string | null;
+	schoolFontId: string | null;
+	stagedSchoolFontFile: UploadedFile | null;
 	uploadedFiles: UploadedFile[];
 }
 
@@ -293,10 +298,7 @@ async function uploadTemplateFile(
 	api: SchoolApi,
 	state: LifecycleState,
 	templateId: string,
-	purpose:
-		| 'certificate_template_background'
-		| 'certificate_template_image'
-		| 'certificate_template_font',
+	purpose: 'certificate_template_background' | 'certificate_template_image',
 	file: { name: string; mimeType: string; buffer: Buffer }
 ): Promise<FileMetadata> {
 	const uploaded = await api.request<FileMetadata>('POST', '/api/files', {
@@ -310,9 +312,26 @@ async function uploadTemplateFile(
 	return waitForFileReady(api, uploaded.id, templateId);
 }
 
+async function uploadSchoolFontFile(
+	api: SchoolApi,
+	state: LifecycleState,
+	templateId: string,
+	file: { name: string; mimeType: string; buffer: Buffer }
+): Promise<FileMetadata> {
+	const uploaded = await api.request<FileMetadata>('POST', '/api/files', {
+		multipart: {
+			purpose: 'school_font',
+			resource_id: templateId,
+			file
+		}
+	});
+	state.stagedSchoolFontFile = { fileId: uploaded.id, templateId };
+	return waitForFileReady(api, uploaded.id, templateId);
+}
+
 function buildLayout(
 	template: CertificateTemplate,
-	assets?: { image: CertificateTemplateAsset; font: CertificateTemplateAsset }
+	assets?: { image: CertificateTemplateAsset; font: SchoolFontSummary }
 ): CertificateLayout {
 	if (!template.pageGeometry) throw new Error('Ready certificate template has no page geometry.');
 	const width = template.pageGeometry.displayedWidthPoints;
@@ -323,7 +342,7 @@ function buildLayout(
 		content: 'มอบให้ {ชื่อ} {นามสกุล}',
 		frame: { x: width * 0.2, y: height * 0.42, width: width * 0.6, height: 64 },
 		rotation: 0,
-		fontSource: assets ? { type: 'asset', asset_id: assets.font.id } : { type: 'built_in' },
+		fontSource: assets ? { type: 'school_font', font_id: assets.font.id } : { type: 'built_in' },
 		fontFamily: assets?.font.fontFamily ?? 'Sarabun',
 		fontWeight: assets?.font.fontWeight ?? 400,
 		fontStyle: assets?.font.fontStyle ?? 'normal',
@@ -614,17 +633,36 @@ async function cleanupLifecycleResources(
 	state: LifecycleState
 ): Promise<void> {
 	if (!api) return;
+	if (state.stagedSchoolFontFile) {
+		const staged = state.stagedSchoolFontFile;
+		const status = await api.bestEffort(
+			'DELETE',
+			`/api/files/${encodeURIComponent(staged.fileId)}?resource_id=${encodeURIComponent(staged.templateId)}`
+		);
+		if (status === 200 || status === 404) state.stagedSchoolFontFile = null;
+		else return;
+	}
+	let campaignPurged = false;
 	try {
 		await purgeLifecycleCampaign(api, state);
-		return;
+		campaignPurged = true;
 	} catch {
 		// Fall back only for unattached leftovers from a partially-created isolated fixture.
 	}
-	for (const upload of state.uploadedFiles.toReversed()) {
-		await api.bestEffort(
+	if (!campaignPurged) {
+		for (const upload of state.uploadedFiles.toReversed()) {
+			await api.bestEffort(
+				'DELETE',
+				`/api/files/${encodeURIComponent(upload.fileId)}?resource_id=${encodeURIComponent(upload.templateId)}`
+			);
+		}
+	}
+	if (state.schoolFontId) {
+		const status = await api.bestEffort(
 			'DELETE',
-			`/api/files/${encodeURIComponent(upload.fileId)}?resource_id=${encodeURIComponent(upload.templateId)}`
+			`/api/school-fonts/${encodeURIComponent(state.schoolFontId)}`
 		);
+		if (status === 200 || status === 404) state.schoolFontId = null;
 	}
 }
 
@@ -672,6 +710,8 @@ test.describe.serial('complete certificate issuance lifecycle', () => {
 		const state: LifecycleState = {
 			campaignId: null,
 			campaignName: null,
+			schoolFontId: null,
+			stagedSchoolFontFile: null,
 			uploadedFiles: []
 		};
 		let preparer: ActorSession | null = null;
@@ -814,25 +854,18 @@ test.describe.serial('complete certificate issuance lifecycle', () => {
 					data: {
 						fileId: imageFile.id,
 						kind: 'image',
-						displayName: 'ตราสัญลักษณ์ทดสอบ',
-						rightsConfirmed: false
+						displayName: 'ตราสัญลักษณ์ทดสอบ'
 					}
 				}
 			);
-			const fontFile = await uploadTemplateFile(
-				preparer.api,
-				state,
-				studentTemplate.id,
-				'certificate_template_font',
-				{
-					name: `sarabun-${suffix}.ttf`,
-					mimeType: 'font/ttf',
-					buffer: await readFile(fontPath)
-				}
-			);
-			const fontInspection = await preparer.api.request<CertificateFontUploadInspection>(
+			const fontFile = await uploadSchoolFontFile(preparer.api, state, studentTemplate.id, {
+				name: `sarabun-${suffix}.ttf`,
+				mimeType: 'font/ttf',
+				buffer: await readFile(fontPath)
+			});
+			const fontInspection = await preparer.api.request<SchoolFontUploadInspection>(
 				'POST',
-				`/api/certificates/templates/${encodeURIComponent(studentTemplate.id)}/assets/fonts/inspect`,
+				`/api/certificates/templates/${encodeURIComponent(studentTemplate.id)}/fonts/inspect`,
 				{
 					data: {
 						fileIds: [fontFile.id]
@@ -841,9 +874,9 @@ test.describe.serial('complete certificate issuance lifecycle', () => {
 			);
 			expect(fontInspection.files).toHaveLength(1);
 			expect(fontInspection.files[0].status).toBe('ready');
-			studentTemplate = await preparer.api.request<CertificateTemplate>(
+			const attachedFonts = await preparer.api.request<SchoolFontListResponse>(
 				'POST',
-				`/api/certificates/templates/${encodeURIComponent(studentTemplate.id)}/assets/fonts/batch`,
+				`/api/certificates/templates/${encodeURIComponent(studentTemplate.id)}/fonts/batch`,
 				{
 					data: {
 						fileIds: [fontFile.id],
@@ -852,14 +885,16 @@ test.describe.serial('complete certificate issuance lifecycle', () => {
 				}
 			);
 			const imageAsset = studentTemplate.assets.find((asset) => asset.fileId === imageFile.id);
-			const fontAsset = studentTemplate.assets.find((asset) => asset.fileId === fontFile.id);
-			if (!imageAsset || !fontAsset || !fontAsset.fontFamily || !fontAsset.fontStyle) {
-				throw new Error('Template image/font assets were not inspected and attached.');
+			const schoolFont = attachedFonts.items[0];
+			if (!imageAsset || !schoolFont) {
+				throw new Error('Template image or shared school font was not attached.');
 			}
+			state.stagedSchoolFontFile = null;
+			state.schoolFontId = schoolFont.id;
 			studentTemplate = await saveTemplateLayout(
 				preparer.api,
 				studentTemplate,
-				buildLayout(studentTemplate, { image: imageAsset, font: fontAsset })
+				buildLayout(studentTemplate, { image: imageAsset, font: schoolFont })
 			);
 			staffTemplate = await saveTemplateLayout(
 				preparer.api,
@@ -1157,6 +1192,9 @@ test.describe.serial('complete certificate issuance lifecycle', () => {
 				'POST',
 				`/api/certificates/${encodeURIComponent(studentCertificate.id)}/render-manifest`
 			);
+			expect(issuedManifest.fontGrants.some((grant) => grant.schoolFontId === schoolFont.id)).toBe(
+				true
+			);
 			let canonicalQrUrl: URL;
 			try {
 				canonicalQrUrl = new URL(issuedManifest.qrPayload);
@@ -1347,6 +1385,22 @@ test.describe.serial('complete certificate issuance lifecycle', () => {
 					[404]
 				);
 			}
+			const centralFontsAfterPurge = await preparer.api.request<SchoolFontListResponse>(
+				'GET',
+				'/api/school-fonts'
+			);
+			const survivingFont = centralFontsAfterPurge.items.find((font) => font.id === schoolFont.id);
+			expect(survivingFont?.referenceCount).toBe(0);
+			await preparer.api.request<EmptyData>(
+				'DELETE',
+				`/api/school-fonts/${encodeURIComponent(schoolFont.id)}`
+			);
+			state.schoolFontId = null;
+			const centralFontsAfterCleanup = await preparer.api.request<SchoolFontListResponse>(
+				'GET',
+				'/api/school-fonts'
+			);
+			expect(centralFontsAfterCleanup.items.some((font) => font.id === schoolFont.id)).toBe(false);
 			state.campaignId = null;
 			state.campaignName = null;
 		} catch {

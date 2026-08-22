@@ -333,6 +333,28 @@ npx playwright test tests/e2e/session-security.spec.ts
 
 Set `E2E_OTHER_TENANT_URL` to another tenant when tenant-isolation proof is available; only that optional case skips when the variable is absent. The suite never changes the account password.
 
+### School font library
+
+Run central authorization, inspection, atomic attach, reference-safe delete, and File Platform relationship checks from the repository root:
+
+```bash
+./scripts/test_backend_school.sh modules::school_fonts -- --nocapture --test-threads=1
+./scripts/test_backend_school.sh modules::certificates -- --nocapture --test-threads=1
+```
+
+Run the generated-contract, reusable-uploader, manager-only route, upload retry/cleanup, and delete-conflict coverage from `frontend-school`:
+
+```bash
+node --test tests/static/school-font-library.test.mjs \
+  tests/static/certificate-*.test.mjs --test-concurrency=1
+npx playwright test tests/e2e/school-font-library.spec.ts \
+  tests/e2e/certificate-editor.spec.ts \
+  tests/e2e/certificate-renderer.spec.ts --workers=1
+npx playwright test --list tests/e2e/certificate-lifecycle.spec.ts --workers=1
+```
+
+The non-live browser suites use local harnesses and do not mutate a tenant. The live certificate lifecycle is separate: it uploads one private `school_font` through an exact template context, attaches and renders with it, proves the font survives campaign purge in the central manager list with a zero reference count, and deletes it only through `DELETE /api/school-fonts/{font_id}` afterward. Do not substitute direct File Platform deletion for this cleanup sequence.
+
 Run the complete certificate lifecycle against an isolated tenant with dedicated preparer, issuer, and student accounts. From the repository root, run the focused backend checks first:
 
 ```bash
@@ -357,9 +379,9 @@ The live lifecycle requires all of these variables, supplied only at runtime:
 - `E2E_CERT_STUDENT_USERNAME`
 - `E2E_CERT_STUDENT_PASSWORD`
 
-The three accounts must be distinct. The preparer needs exact-unit campaign/template/candidate/submit/delete access without school issue access; the issuer needs school read, issue, revoke, and download access; and the student must be an active linked student account. The isolated tenant also needs a current academic year, a second active organization unit outside the preparer's owner options, and working private-file storage and scanning.
+The three accounts must be distinct. The preparer needs exact-unit campaign/template/candidate/submit/delete access, `font.manage.school` for the post-purge central list/delete assertion, and no school issue access; the issuer needs school read, issue, revoke, and download access; and the student must be an active linked student account. The isolated tenant also needs a current academic year, a second active organization unit outside the preparer's owner options, and working private-file storage and scanning.
 
-Do not print or retain credential values, recipient data, verification proofs, render receipts, or delivery grants. Run this destructive lifecycle only against an isolated tenant: the fixture permanently purges the campaign it creates through the guarded impact/start/status API, then verifies that its issued and replacement certificates, own-certificate rows, file objects, and file metadata are unavailable. A failed purge is retried only through the supported purge API and the fixture still attempts the same guarded cleanup from `finally`. If any required variable is unavailable, the `--list` command must still pass; report the live lifecycle as unrun, not passing or skipped coverage.
+Do not print or retain credential values, recipient data, verification proofs, render receipts, or delivery grants. Run this destructive lifecycle only against an isolated tenant: the fixture permanently purges the campaign it creates through the guarded impact/start/status API, then verifies that its issued and replacement certificates, own-certificate rows, campaign-owned file objects, and file metadata are unavailable while the school font survives campaign purge. It then confirms the font reference count is zero and removes the font through the central delete API. A failed purge is retried only through the supported purge API and the fixture still attempts the same guarded cleanup from `finally`. If any required variable is unavailable, the `--list` command must still pass; report the live lifecycle as unrun, not passing or skipped coverage.
 
 Use `npm run test:e2e:headed` only when interactive debugging is needed. Retain traces, screenshots, and videos only when they contain no sensitive data.
 

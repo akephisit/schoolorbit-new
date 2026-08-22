@@ -192,3 +192,21 @@ test('canonical docs own the school session and cutover contract', async () => {
 	assert.match(auth002, /\/api\/auth\/me\/profile/);
 	assert.match(auth002, /default `\/api\/auth\/me` minimization is complete/i);
 });
+
+test('canonical docs own the school-font rollout and lifecycle contract', async () => {
+	const [operations, testing] = await Promise.all([
+		readFile(path.join(repoRoot, 'docs/OPERATIONS.md'), 'utf8'),
+		readFile(path.join(repoRoot, 'docs/TESTING.md'), 'utf8')
+	]);
+
+	assert.match(operations, /040_school_font_library\.sql/);
+	assert.match(operations, /legacy certificate template fonts must be empty/i);
+	assert.match(operations, /school_font[\s\S]*private/i);
+	assert.match(operations, /fix forward|fail-forward/i);
+	assert.match(operations, /reference-safe|reference count/i);
+	assert.match(operations, /reconciler/i);
+	assert.match(testing, /modules::school_fonts/);
+	assert.match(testing, /school-font-library\.spec\.ts/);
+	assert.match(testing, /certificate-lifecycle\.spec\.ts/);
+	assert.match(testing, /survives campaign purge/i);
+});

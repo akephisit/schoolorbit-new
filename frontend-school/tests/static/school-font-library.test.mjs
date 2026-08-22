@@ -74,7 +74,29 @@ test('reusable uploader preserves central and exact-template file relationships'
 	assert.match(uploader, /rightsConfirmed/);
 	assert.match(uploader, /cleanupTemporary/);
 	assert.match(uploader, /onattached/);
-	assert.match(library, /ApiClientError<SchoolFontDeleteConflict>/);
+	assert.match(library, /schoolFontDeleteConflict/);
+	assert.match(library, /error instanceof ApiClientError/);
 	assert.match(library, /referenceCount/);
 	assert.match(library, /SchoolFontBatchUpload/);
+});
+
+test('certificate lifecycle proves a shared font survives campaign purge before central deletion', async () => {
+	const lifecycle = await readRepoFile('frontend-school/tests/e2e/certificate-lifecycle.spec.ts');
+	assert.match(lifecycle, /purpose:\s*['"]school_font['"]/);
+	assert.match(lifecycle, /\/api\/certificates\/templates\/\$\{[^}]+\}\/fonts\/inspect/);
+	assert.match(lifecycle, /\/api\/certificates\/templates\/\$\{[^}]+\}\/fonts\/batch/);
+	assert.match(lifecycle, /type:\s*['"]school_font['"],\s*font_id:/);
+	assert.match(lifecycle, /issuedManifest\.fontGrants[\s\S]*schoolFontId/);
+	assert.doesNotMatch(lifecycle, /certificate_template_font|\/assets\/fonts\//);
+
+	const purgePhase = lifecycle.indexOf("lifecyclePhase = 'permanent campaign purge'");
+	const purge = lifecycle.indexOf('await purgeLifecycleCampaign(preparer.api, state)', purgePhase);
+	const centralList = lifecycle.indexOf("'/api/school-fonts'", purge);
+	const centralDelete = lifecycle.indexOf('`/api/school-fonts/${encodeURIComponent(', centralList);
+	assert.ok(purge >= 0, 'lifecycle must purge its isolated campaign');
+	assert.ok(centralList > purge, 'central manager must list the font after campaign purge');
+	assert.ok(
+		centralDelete > centralList,
+		'central delete must run only after the survival assertion'
+	);
 });
