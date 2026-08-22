@@ -673,6 +673,118 @@ mod tests {
         bytes
     }
 
+    fn sfnt_checksum(data: &[u8]) -> u32 {
+        data.chunks(4).fold(0_u32, |checksum, chunk| {
+            let mut word = [0_u8; 4];
+            word[..chunk.len()].copy_from_slice(chunk);
+            checksum.wrapping_add(u32::from_be_bytes(word))
+        })
+    }
+
+    fn small_otf_fixture() -> Vec<u8> {
+        let cff = vec![
+            1, 0, 4, 1, // CFF header
+            0, 1, 1, 1, 9, b'O', b'r', b'b', b'i', b't', b'O', b'T', b'F', // Name INDEX
+            0, 1, 1, 1, 3, 167, 17, // Top DICT: CharStrings offset 28
+            0, 0, // empty String INDEX
+            0, 0, // empty Global Subr INDEX
+            0, 1, 1, 1, 2, 14, // one .notdef CharString containing endchar
+        ];
+
+        let mut head = vec![0_u8; 54];
+        head[0..4].copy_from_slice(&0x0001_0000_u32.to_be_bytes());
+        head[12..16].copy_from_slice(&0x5F0F_3CF5_u32.to_be_bytes());
+        head[18..20].copy_from_slice(&1000_u16.to_be_bytes());
+        head[40..42].copy_from_slice(&500_i16.to_be_bytes());
+        head[42..44].copy_from_slice(&700_i16.to_be_bytes());
+        head[46..48].copy_from_slice(&8_u16.to_be_bytes());
+
+        let mut hhea = vec![0_u8; 36];
+        hhea[0..4].copy_from_slice(&0x0001_0000_u32.to_be_bytes());
+        hhea[4..6].copy_from_slice(&800_i16.to_be_bytes());
+        hhea[6..8].copy_from_slice(&(-200_i16).to_be_bytes());
+        hhea[34..36].copy_from_slice(&1_u16.to_be_bytes());
+
+        let mut os2 = vec![0_u8; 78];
+        os2[4..6].copy_from_slice(&500_u16.to_be_bytes());
+        os2[6..8].copy_from_slice(&5_u16.to_be_bytes());
+        os2[62..64].copy_from_slice(&(1_u16 << 6).to_be_bytes());
+        os2[68..70].copy_from_slice(&800_i16.to_be_bytes());
+        os2[70..72].copy_from_slice(&(-200_i16).to_be_bytes());
+        os2[74..76].copy_from_slice(&800_u16.to_be_bytes());
+        os2[76..78].copy_from_slice(&200_u16.to_be_bytes());
+
+        let family_name = "Orbit Test"
+            .encode_utf16()
+            .flat_map(u16::to_be_bytes)
+            .collect::<Vec<_>>();
+        let mut name = Vec::with_capacity(18 + family_name.len());
+        name.extend_from_slice(&0_u16.to_be_bytes());
+        name.extend_from_slice(&1_u16.to_be_bytes());
+        name.extend_from_slice(&18_u16.to_be_bytes());
+        name.extend_from_slice(&3_u16.to_be_bytes());
+        name.extend_from_slice(&1_u16.to_be_bytes());
+        name.extend_from_slice(&0x0409_u16.to_be_bytes());
+        name.extend_from_slice(&16_u16.to_be_bytes());
+        name.extend_from_slice(
+            &u16::try_from(family_name.len())
+                .expect("small OTF family name must fit u16")
+                .to_be_bytes(),
+        );
+        name.extend_from_slice(&0_u16.to_be_bytes());
+        name.extend_from_slice(&family_name);
+
+        let tables = vec![
+            (*b"CFF ", cff),
+            (*b"OS/2", os2),
+            (*b"head", head),
+            (*b"hhea", hhea),
+            (*b"maxp", vec![0, 0, 0x50, 0, 0, 1]),
+            (*b"name", name),
+        ];
+        let mut next_offset = 12 + tables.len() * 16;
+        let records = tables
+            .iter()
+            .map(|(_, table)| {
+                let offset = next_offset;
+                next_offset += (table.len() + 3) & !3;
+                (offset, table.len(), sfnt_checksum(table))
+            })
+            .collect::<Vec<_>>();
+
+        let mut font = Vec::with_capacity(next_offset);
+        font.extend_from_slice(b"OTTO");
+        font.extend_from_slice(&6_u16.to_be_bytes());
+        font.extend_from_slice(&64_u16.to_be_bytes());
+        font.extend_from_slice(&2_u16.to_be_bytes());
+        font.extend_from_slice(&32_u16.to_be_bytes());
+        for ((tag, _), (offset, length, checksum)) in tables.iter().zip(&records) {
+            font.extend_from_slice(tag);
+            font.extend_from_slice(&checksum.to_be_bytes());
+            font.extend_from_slice(
+                &u32::try_from(*offset)
+                    .expect("small OTF table offset must fit u32")
+                    .to_be_bytes(),
+            );
+            font.extend_from_slice(
+                &u32::try_from(*length)
+                    .expect("small OTF table length must fit u32")
+                    .to_be_bytes(),
+            );
+        }
+        for (_, table) in &tables {
+            font.extend_from_slice(table);
+            while font.len() % 4 != 0 {
+                font.push(0);
+            }
+        }
+
+        let head_offset = records[2].0;
+        let checksum_adjustment = 0xB1B0_AFBA_u32.wrapping_sub(sfnt_checksum(&font));
+        font[head_offset + 8..head_offset + 12].copy_from_slice(&checksum_adjustment.to_be_bytes());
+        font
+    }
+
     fn xref_table_pdf() -> Vec<u8> {
         let mut pdf = b"%PDF-1.7\n".to_vec();
         let catalog_offset = pdf.len();
@@ -931,6 +1043,32 @@ mod tests {
         assert_eq!(
             inspect_file(FilePurpose::SchoolFont, &vec![0_u8; 5 * 1024 * 1024 + 1]),
             Err(FileInspectionError::ByteLimitExceeded)
+        );
+    }
+
+    #[test]
+    fn school_font_accepts_otf_with_trusted_metadata() {
+        let otf = small_otf_fixture();
+        let face = ttf_parser::Face::parse(&otf, 0)
+            .expect("the compact fixture must be a structurally valid OpenType face");
+        assert_eq!(
+            face.tables().cff.map(|table| table.number_of_glyphs()),
+            Some(1),
+            "the OTF fixture must contain a real CFF outline table"
+        );
+        let inspected = inspect_file(FilePurpose::SchoolFont, &otf)
+            .expect("a structurally valid CFF OpenType font should be accepted");
+
+        assert_eq!(inspected.detected_content(), DetectedContent::Otf);
+        assert_eq!(
+            inspected.metadata(),
+            &FileInspectionMetadata::Font {
+                family_name: Some("Orbit Test".to_string()),
+                units_per_em: 1000,
+                weight: 500,
+                style: FontInspectionStyle::Normal,
+                is_variable: false,
+            }
         );
     }
 

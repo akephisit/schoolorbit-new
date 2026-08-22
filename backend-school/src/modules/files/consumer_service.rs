@@ -165,11 +165,11 @@ pub async fn request_deletions(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::test_helpers::{create_named_test_pool, create_test_user, run_test_migrations};
 
-    async fn insert_file(pool: &PgPool, actor_id: Uuid) -> Uuid {
+    pub(crate) async fn insert_file(pool: &PgPool, actor_id: Uuid) -> Uuid {
         sqlx::query_scalar(
             "INSERT INTO files (
                 display_filename, purpose_code, visibility, lifecycle_status,
@@ -186,7 +186,7 @@ mod tests {
         .expect("school-font file fixture should insert")
     }
 
-    async fn insert_template(pool: &PgPool, actor_id: Uuid) -> Uuid {
+    pub(crate) async fn insert_template(pool: &PgPool, actor_id: Uuid) -> Uuid {
         let academic_year_id: Uuid = sqlx::query_scalar(
             "INSERT INTO academic_years (year, name, start_date, end_date)
              VALUES (2998, 'School font upload test', '2998-01-01', '2998-12-31')
@@ -215,6 +215,37 @@ mod tests {
         .fetch_one(pool)
         .await
         .expect("template fixture should insert")
+    }
+
+    pub(crate) async fn school_font_upload_relations(
+        pool: &PgPool,
+        file_id: Uuid,
+    ) -> (i64, Vec<Uuid>) {
+        let central_count =
+            sqlx::query_scalar("SELECT COUNT(*) FROM school_font_file_uploads WHERE file_id = $1")
+                .bind(file_id)
+                .fetch_one(pool)
+                .await
+                .expect("central school-font staging rows should be countable");
+        let template_ids = sqlx::query_scalar(
+            "SELECT template_id
+             FROM certificate_school_font_file_uploads
+             WHERE file_id = $1
+             ORDER BY template_id",
+        )
+        .bind(file_id)
+        .fetch_all(pool)
+        .await
+        .expect("certificate school-font staging rows should be queryable");
+        (central_count, template_ids)
+    }
+
+    pub(crate) async fn file_lifecycle_status(pool: &PgPool, file_id: Uuid) -> String {
+        sqlx::query_scalar("SELECT lifecycle_status FROM files WHERE id = $1")
+            .bind(file_id)
+            .fetch_one(pool)
+            .await
+            .expect("file lifecycle status should be queryable")
     }
 
     #[tokio::test]

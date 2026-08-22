@@ -25,7 +25,7 @@ use super::{
         FileAccessQuery, FileDeleteResult, FileDownloadGrantResponse, FileMetadata,
         FileUploadMultipart, PublicFileDeliveryResponse,
     },
-    platform_service::{FilePlatformError, UploadCommand},
+    platform_service::{FilePlatform, FilePlatformError, UploadCommand},
     platform_types::FilePurpose,
     purpose_registry::{purpose_definition, purpose_from_code},
     repository::SqlFileRepository,
@@ -119,64 +119,15 @@ pub async fn upload_file(
         .await
         .map_err(map_platform_error)?;
 
-    let relation_result = match purpose {
-        FilePurpose::CertificateTemplateBackground | FilePurpose::CertificateTemplateImage => {
-            let template_id = resource_id.ok_or_else(|| {
-                AppError::InternalServerError(
-                    "certificate_template_upload_resource_missing".to_string(),
-                )
-            })?;
-            Some(
-                record_certificate_template_upload(
-                    &context.tenant.pool,
-                    file.id,
-                    template_id,
-                    purpose,
-                    context.actor.user_id,
-                )
-                .await,
-            )
-        }
-        FilePurpose::SchoolFont => Some(match resource_id {
-            Some(template_id) => {
-                record_certificate_school_font_upload(
-                    &context.tenant.pool,
-                    file.id,
-                    template_id,
-                    context.actor.user_id,
-                )
-                .await
-            }
-            None => {
-                record_school_font_upload(&context.tenant.pool, file.id, context.actor.user_id)
-                    .await
-            }
-        }),
-        _ => None,
-    };
-    if let Some(Err(error)) = relation_result {
-        if request_deletions(
-            state.file_platform.as_ref(),
-            &context.tenant.pool,
-            [file.id],
-        )
-        .await
-        .is_err()
-        {
-            let compensation_action = match purpose {
-                FilePurpose::SchoolFont => "school_font_upload_compensation",
-                _ => "certificate_template_upload_compensation",
-            };
-            tracing::warn!(
-                file_id = %file.id,
-                purpose = purpose.code(),
-                action = compensation_action,
-                result = "cleanup_request_failed",
-                "File Platform compensation needs temporary-retention fallback"
-            );
-        }
-        return Err(error);
-    }
+    record_upload_relation_or_request_cleanup(
+        state.file_platform.as_ref(),
+        &repository,
+        file.id,
+        purpose,
+        resource_id,
+        context.actor.user_id,
+    )
+    .await?;
 
     tracing::info!(
         file_id = %file.id,
@@ -191,6 +142,68 @@ pub async fn upload_file(
         Json(ApiResponse::ok(FileMetadata::from(file))),
     )
         .into_response())
+}
+
+async fn record_upload_relation_or_request_cleanup(
+    platform: &FilePlatform,
+    repository: &SqlFileRepository,
+    file_id: Uuid,
+    purpose: FilePurpose,
+    resource_id: Option<Uuid>,
+    actor_user_id: Uuid,
+) -> Result<(), AppError> {
+    let relation_result = match purpose {
+        FilePurpose::CertificateTemplateBackground | FilePurpose::CertificateTemplateImage => {
+            let template_id = resource_id.ok_or_else(|| {
+                AppError::InternalServerError(
+                    "certificate_template_upload_resource_missing".to_string(),
+                )
+            })?;
+            Some(
+                record_certificate_template_upload(
+                    repository.pool(),
+                    file_id,
+                    template_id,
+                    purpose,
+                    actor_user_id,
+                )
+                .await,
+            )
+        }
+        FilePurpose::SchoolFont => Some(match resource_id {
+            Some(template_id) => {
+                record_certificate_school_font_upload(
+                    repository.pool(),
+                    file_id,
+                    template_id,
+                    actor_user_id,
+                )
+                .await
+            }
+            None => record_school_font_upload(repository.pool(), file_id, actor_user_id).await,
+        }),
+        _ => None,
+    };
+    if let Some(Err(error)) = relation_result {
+        if request_deletions(platform, repository.pool(), [file_id])
+            .await
+            .is_err()
+        {
+            let compensation_action = match purpose {
+                FilePurpose::SchoolFont => "school_font_upload_compensation",
+                _ => "certificate_template_upload_compensation",
+            };
+            tracing::warn!(
+                file_id = %file_id,
+                purpose = purpose.code(),
+                action = compensation_action,
+                result = "cleanup_request_failed",
+                "File Platform compensation needs temporary-retention fallback"
+            );
+        }
+        return Err(error);
+    }
+    Ok(())
 }
 
 #[utoipa::path(
@@ -484,4 +497,173 @@ fn audit_allowed(
         result = "allowed",
         "File Platform policy decision"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{sync::Arc, time::Duration};
+
+    use async_trait::async_trait;
+    use bytes::Bytes;
+    use url::Url;
+
+    use super::*;
+    use crate::{
+        modules::files::{
+            consumer_service::tests::{
+                file_lifecycle_status, insert_file, insert_template, school_font_upload_relations,
+            },
+            malware_scanner::{MalwareScanner, ScanOutcome},
+            platform_service::FilePlatform,
+            platform_types::DownloadGrant,
+            storage_provider::{ObjectMetadata, StorageError, StorageProvider, StoredObject},
+        },
+        test_helpers::{create_named_test_pool, create_test_user, run_test_migrations},
+    };
+
+    struct UnexpectedStorageProvider;
+
+    #[async_trait]
+    impl StorageProvider for UnexpectedStorageProvider {
+        async fn check_readiness(&self) -> Result<(), StorageError> {
+            panic!("upload-relation orchestration must not check provider readiness")
+        }
+
+        async fn put(&self, _object: &StoredObject, _body: Bytes) -> Result<(), StorageError> {
+            panic!("upload-relation orchestration must not store another object")
+        }
+
+        async fn get(
+            &self,
+            _object: &StoredObject,
+            _max_bytes: u64,
+        ) -> Result<Bytes, StorageError> {
+            panic!("upload-relation orchestration must not read object bytes")
+        }
+
+        async fn head(
+            &self,
+            _object: &StoredObject,
+        ) -> Result<Option<ObjectMetadata>, StorageError> {
+            panic!("upload-relation orchestration must not inspect provider metadata")
+        }
+
+        async fn delete(&self, _object: &StoredObject) -> Result<(), StorageError> {
+            panic!("a versionless failed upload must complete deletion without provider work")
+        }
+
+        async fn private_download_grant(
+            &self,
+            _object: &StoredObject,
+            _filename: &str,
+            _ttl: Duration,
+        ) -> Result<DownloadGrant, StorageError> {
+            panic!("upload-relation orchestration must not issue download grants")
+        }
+
+        fn public_location(&self, _object: &StoredObject) -> Result<Url, StorageError> {
+            panic!("upload-relation orchestration must not expose public locations")
+        }
+    }
+
+    struct UnexpectedScanner;
+
+    #[async_trait]
+    impl MalwareScanner for UnexpectedScanner {
+        async fn scan(&self, _content: &[u8]) -> ScanOutcome {
+            panic!("upload-relation orchestration runs after scanning")
+        }
+    }
+
+    fn file_platform() -> FilePlatform {
+        FilePlatform::new(
+            Arc::new(UnexpectedStorageProvider),
+            Arc::new(UnexpectedScanner),
+        )
+    }
+
+    async fn test_context(test_name: &str) -> (SqlFileRepository, Uuid) {
+        let pool = create_named_test_pool(test_name).await;
+        run_test_migrations(&pool).await;
+        let actor_id =
+            create_test_user(&pool, &format!("{test_name}@example.test"), "test-password")
+                .await
+                .expect("actor fixture should insert");
+        (SqlFileRepository::new(pool), actor_id)
+    }
+
+    #[tokio::test]
+    async fn central_school_font_dispatch_records_only_central_staging() {
+        let (repository, actor_id) = test_context("handler_central_school_font_dispatch").await;
+        let file_id = insert_file(repository.pool(), actor_id).await;
+
+        record_upload_relation_or_request_cleanup(
+            &file_platform(),
+            &repository,
+            file_id,
+            FilePurpose::SchoolFont,
+            None,
+            actor_id,
+        )
+        .await
+        .expect("central school-font dispatch should persist its staging relation");
+
+        assert_eq!(
+            school_font_upload_relations(repository.pool(), file_id).await,
+            (1, Vec::new())
+        );
+    }
+
+    #[tokio::test]
+    async fn template_school_font_dispatch_records_only_the_exact_template_staging() {
+        let (repository, actor_id) = test_context("handler_template_school_font_dispatch").await;
+        let template_id = insert_template(repository.pool(), actor_id).await;
+        let file_id = insert_file(repository.pool(), actor_id).await;
+
+        record_upload_relation_or_request_cleanup(
+            &file_platform(),
+            &repository,
+            file_id,
+            FilePurpose::SchoolFont,
+            Some(template_id),
+            actor_id,
+        )
+        .await
+        .expect("template school-font dispatch should persist its staging relation");
+
+        assert_eq!(
+            school_font_upload_relations(repository.pool(), file_id).await,
+            (0, vec![template_id])
+        );
+    }
+
+    #[tokio::test]
+    async fn relation_failure_requests_file_deletion_and_returns_the_relation_error() {
+        let (repository, actor_id) = test_context("handler_school_font_relation_failure").await;
+        let file_id = insert_file(repository.pool(), actor_id).await;
+
+        let error = record_upload_relation_or_request_cleanup(
+            &file_platform(),
+            &repository,
+            file_id,
+            FilePurpose::SchoolFont,
+            Some(Uuid::new_v4()),
+            actor_id,
+        )
+        .await
+        .expect_err("a missing exact template must reject relation recording");
+
+        assert!(matches!(
+            error,
+            AppError::NotFound(message) if message == "ไม่พบแม่แบบเกียรติบัตร"
+        ));
+        assert_eq!(
+            file_lifecycle_status(repository.pool(), file_id).await,
+            "deleted"
+        );
+        assert_eq!(
+            school_font_upload_relations(repository.pool(), file_id).await,
+            (0, Vec::new())
+        );
+    }
 }
