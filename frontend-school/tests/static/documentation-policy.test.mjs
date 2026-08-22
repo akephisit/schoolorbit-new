@@ -26,8 +26,6 @@ const MARKDOWN_ALLOWLIST = [
 	'frontend-school/README.md'
 ].sort();
 
-const REPOSITORY_SKILL_MARKDOWN_ALLOWLIST = ['.agents/skills/schoolorbit-workflow/SKILL.md'].sort();
-
 const SUPERPOWERS_SPEC_PATTERN =
 	/^docs\/superpowers\/specs\/\d{4}-\d{2}-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*-design\.md$/;
 const SUPERPOWERS_PLAN_PATTERN =
@@ -36,7 +34,6 @@ const SUPERPOWERS_PLAN_PATTERN =
 function isAllowedMarkdown(relativePath) {
 	return (
 		MARKDOWN_ALLOWLIST.includes(relativePath) ||
-		REPOSITORY_SKILL_MARKDOWN_ALLOWLIST.includes(relativePath) ||
 		SUPERPOWERS_SPEC_PATTERN.test(relativePath) ||
 		SUPERPOWERS_PLAN_PATTERN.test(relativePath)
 	);
@@ -104,32 +101,14 @@ test('Superpowers Markdown is limited to dated spec and plan artifacts', () => {
 	}
 });
 
-test('repository skill Markdown is limited to the executable SchoolOrbit entry point', () => {
-	const accepted = ['.agents/skills/schoolorbit-workflow/SKILL.md'];
-	const rejected = [
-		'.agents/skills/README.md',
-		'.agents/skills/schoolorbit-workflow/README.md',
-		'.agents/skills/schoolorbit-workflow/references/workflow.md',
-		'.agents/skills/another-workflow/SKILL.md'
-	];
-
-	for (const relativePath of accepted) {
-		assert.equal(isAllowedMarkdown(relativePath), true, `must allow ${relativePath}`);
-	}
-	for (const relativePath of rejected) {
-		assert.equal(isAllowedMarkdown(relativePath), false, `must reject ${relativePath}`);
-	}
-});
-
-test('repository Markdown is limited to approved entry points and Superpowers artifacts', async () => {
+test('repository Markdown is limited to canonical docs and Superpowers artifacts', async () => {
 	const existing = await existingRepositoryMarkdown();
-	const requiredMarkdown = [...MARKDOWN_ALLOWLIST, ...REPOSITORY_SKILL_MARKDOWN_ALLOWLIST];
-	const missingRequired = requiredMarkdown.filter(
+	const missingCanonical = MARKDOWN_ALLOWLIST.filter(
 		(relativePath) => !existing.includes(relativePath)
 	);
 	const unexpected = existing.filter((relativePath) => !isAllowedMarkdown(relativePath));
 
-	assert.deepEqual(missingRequired, []);
+	assert.deepEqual(missingCanonical, []);
 	assert.deepEqual(unexpected, []);
 });
 
@@ -166,7 +145,6 @@ test('project rules own durable development and verification workflows', async (
 		'TODO.md',
 		'docs/superpowers/specs/',
 		'docs/superpowers/plans/',
-		'.agents/skills/schoolorbit-workflow/SKILL.md',
 		'contracts/permissions.json',
 		'npm run generate:permissions',
 		'npm run check:permissions',
