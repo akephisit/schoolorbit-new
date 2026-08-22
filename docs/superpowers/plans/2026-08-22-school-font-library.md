@@ -75,7 +75,7 @@ Playwright.
 - `contracts/permissions.json` and generated permission artifacts.
 - `backend-school/src/modules.rs`, `backend-school/src/app.rs`, and
   `backend-school/src/api_contract.rs`.
-- `backend-school/src/modules/files/{platform_types,purpose_registry,handlers,consumer_service}.rs`.
+- `backend-school/src/modules/files/{platform_types,purpose_registry,file_inspector,handlers,consumer_service}.rs`.
 - `backend-school/src/policies/{file_access_policy,certificate_access_policy}.rs`.
 - `backend-school/src/modules/{files,certificates}/{schema_tests,services_tests}.rs`.
 - `backend-school/src/modules/certificates/{models,handlers}.rs` and certificate services for
@@ -122,12 +122,14 @@ fixes, and starts `schoolorbit_verifier` at `gpt-5.6-terra`/`high` only after re
 - Generate: `frontend-school/src/lib/permissions/registry.generated.ts`
 - Modify: `backend-school/src/modules/files/platform_types.rs`
 - Modify: `backend-school/src/modules/files/purpose_registry.rs`
+- Modify: `backend-school/src/modules/files/file_inspector.rs`
 - Modify: `backend-school/src/modules/files/consumer_service.rs`
 - Modify: `backend-school/src/modules/files/handlers.rs`
 - Modify: `backend-school/src/policies/file_access_policy.rs`
 - Modify: `backend-school/src/policies/certificate_access_policy.rs`
 - Test: `backend-school/src/modules/files/schema_tests.rs`
 - Test: `backend-school/src/modules/certificates/schema_tests.rs`
+- Test: `backend-school/tests/static_architecture.rs`
 
 **Interfaces:**
 
@@ -141,8 +143,8 @@ fixes, and starts `schoolorbit_verifier` at `gpt-5.6-terra`/`high` only after re
 
 - [ ] **Step 1: Add failing migration and purpose guards**
 
-Add static/schema tests requiring migration 040, the new permission, the four tables, the legacy
-preflight, and the private purpose:
+Add static/schema and inspector tests requiring migration 040, the new permission, the four tables,
+the legacy preflight, the private purpose, and removal of the legacy runtime purpose:
 
 ```rust
 #[test]
@@ -328,6 +330,7 @@ Expected: all commands exit 0 and generated constants include `FONT_MANAGE_SCHOO
 ./scripts/test_backend_school.sh modules::files::schema_tests -- --nocapture --test-threads=1
 cd backend-school
 cargo test modules::files::purpose_registry --bin backend-school -- --nocapture
+cargo test modules::files::file_inspector --bin backend-school -- --nocapture
 cargo test --test static_architecture
 ```
 
@@ -340,12 +343,14 @@ git add backend-school/migrations/040_school_font_library.sql \
   frontend-school/src/lib/permissions/registry.generated.ts \
   backend-school/src/modules/files/platform_types.rs \
   backend-school/src/modules/files/purpose_registry.rs \
+  backend-school/src/modules/files/file_inspector.rs \
   backend-school/src/modules/files/consumer_service.rs \
   backend-school/src/modules/files/handlers.rs \
   backend-school/src/modules/files/schema_tests.rs \
   backend-school/src/policies/file_access_policy.rs \
   backend-school/src/policies/certificate_access_policy.rs \
-  backend-school/src/modules/certificates/schema_tests.rs
+  backend-school/src/modules/certificates/schema_tests.rs \
+  backend-school/tests/static_architecture.rs
 git commit -m "feat(fonts): add school font library foundation"
 ```
 
@@ -508,7 +513,6 @@ git commit -m "feat(fonts): manage shared school fonts"
 - Modify: `backend-school/src/modules/certificates/services/issuance_service.rs`
 - Modify: `backend-school/src/modules/certificates/services/purge_service.rs`
 - Test: `backend-school/src/modules/certificates/services_tests.rs`
-- Test: `backend-school/tests/static_architecture.rs`
 
 **Interfaces:**
 
@@ -628,7 +632,7 @@ CARGO_BUILD_JOBS=1 cargo test --manifest-path backend-school/Cargo.toml \
 - [ ] **Step 8: Commit the certificate consumer lane**
 
 ```bash
-git add backend-school/src/modules/certificates backend-school/tests/static_architecture.rs
+git add backend-school/src/modules/certificates
 git commit -m "feat(certificates): consume shared school fonts"
 ```
 
