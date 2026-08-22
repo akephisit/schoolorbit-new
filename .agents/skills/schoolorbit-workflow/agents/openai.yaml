@@ -1,0 +1,7 @@
+interface:
+  display_name: "SchoolOrbit Workflow"
+  short_description: "Plan, delegate, review, and verify SchoolOrbit work"
+  default_prompt: "Use $schoolorbit-workflow to plan and execute this SchoolOrbit change."
+
+policy:
+  allow_implicit_invocation: true
