@@ -10,8 +10,12 @@ export type PublicFileDeliveryResponse = Schemas['PublicFileDeliveryResponse'];
 export type FilePurpose = Schemas['FilePurpose'];
 export type CertificateTemplateFilePurpose = Extract<
 	FilePurpose,
-	'certificate_template_background' | 'certificate_template_image' | 'certificate_template_font'
+	'certificate_template_background' | 'certificate_template_image'
 >;
+
+export type SchoolFontUploadContext =
+	| { type: 'central' }
+	| { type: 'certificate_template'; templateId: string };
 
 function resourceQuery(resourceId?: string): string {
 	if (!resourceId) return '';
@@ -44,6 +48,15 @@ export function uploadCertificateTemplateFile(
 	return uploadFile(file, purpose, templateId);
 }
 
+export function uploadSchoolFontFile(
+	file: File,
+	context: SchoolFontUploadContext
+): Promise<FileMetadata> {
+	return context.type === 'central'
+		? uploadFile(file, 'school_font')
+		: uploadFile(file, 'school_font', context.templateId);
+}
+
 export function getFileMetadata(fileId: string, resourceId?: string): Promise<FileMetadata> {
 	return apiClient
 		.get<FileMetadata>(`/api/files/${fileId}${resourceQuery(resourceId)}`)
@@ -54,6 +67,13 @@ export function deleteFile(fileId: string, resourceId?: string): Promise<FileDel
 	return apiClient
 		.delete<FileDeleteResult>(`/api/files/${fileId}${resourceQuery(resourceId)}`)
 		.then((response) => requireApiData(response, 'ลบไฟล์ไม่สำเร็จ'));
+}
+
+export function deleteSchoolFontTemporaryFile(
+	fileId: string,
+	context: SchoolFontUploadContext
+): Promise<FileDeleteResult> {
+	return context.type === 'central' ? deleteFile(fileId) : deleteFile(fileId, context.templateId);
 }
 
 async function downloadExternalFile(url: string, signal?: AbortSignal): Promise<Blob> {
