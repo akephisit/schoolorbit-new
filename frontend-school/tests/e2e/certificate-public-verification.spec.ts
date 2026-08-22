@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer, type Plugin, type ViteDevServer } from 'vite';
@@ -10,14 +10,24 @@ const resolvedVirtualModuleId = `\0${virtualModuleId}`;
 const stubPrefix = '\0certificate-public-verification-stub:';
 
 const publicCertificateApiStub = `
-	export async function verifyCertificateManually(payload, options) {
+	export async function verifyCertificateManually(payload, options = {}) {
 		return window.__certificatePublicApi.verifyManual(payload, options);
 	}
-	export async function verifyCertificateByQr(payload, options) {
+	export async function verifyCertificateByQr(payload, options = {}) {
 		return window.__certificatePublicApi.verifyQr(payload, options);
 	}
-	export async function createPublicCertificateRenderManifest(payload, options) {
+	export async function createPublicCertificateRenderManifest(payload, options = {}) {
 		return window.__certificatePublicApi.render(payload, options);
+	}
+`;
+
+const apiClientStub = `
+	export class ApiClientError extends Error {
+		constructor(message, status) {
+			super(message);
+			this.name = 'ApiClientError';
+			this.status = status;
+		}
 	}
 `;
 
@@ -25,6 +35,21 @@ const rendererStub = `
 	export async function loadCertificateRenderer() {
 		window.__certificatePublicRendererLoads += 1;
 		return {
+			renderPreview: async (manifest, canvas, options = {}) => {
+				options.signal?.throwIfAborted();
+				await window.__certificatePublicPreviewControl.beforeRender(options.signal);
+				options.signal?.throwIfAborted();
+				const scale = options.scale ?? 1;
+				canvas.width = Math.max(1, Math.round(manifest.pageGeometry.displayedWidthPoints * scale));
+				canvas.height = Math.max(1, Math.round(manifest.pageGeometry.displayedHeightPoints * scale));
+				window.__certificatePublicPreviews.push(manifest.certificateNumber);
+				return {
+					widthPoints: manifest.pageGeometry.displayedWidthPoints,
+					heightPoints: manifest.pageGeometry.displayedHeightPoints,
+					widthPixels: canvas.width,
+					heightPixels: canvas.height
+				};
+			},
 			buildCertificatePdf: async (manifests) => {
 				window.__certificatePublicBuilds.push(manifests.map((item) => item.certificateNumber));
 				return new Uint8Array([37, 80, 68, 70]);
@@ -40,6 +65,7 @@ const downloadStub = `
 `;
 
 const stubModules = new Map([
+	['$lib/api/client', apiClientStub],
 	['$lib/api/public-certificates', publicCertificateApiStub],
 	['$lib/certificates/renderer', rendererStub],
 	['$lib/certificates/download', downloadStub]
@@ -69,6 +95,7 @@ function harnessPlugin(): Plugin {
 			if (id !== resolvedVirtualModuleId) return;
 			return `
 				import { mount } from 'svelte';
+				import { ApiClientError } from '$lib/api/client';
 				import '/src/routes/layout.css';
 				import PublicCertificateVerification from '/src/lib/components/certificates/PublicCertificateVerification.svelte';
 
@@ -80,8 +107,35 @@ function harnessPlugin(): Plugin {
 				window.__certificatePublicRendererLoads = 0;
 				window.__certificatePublicBuilds = [];
 				window.__certificatePublicDownloads = [];
+				window.__certificatePublicPreviews = [];
+				let failPreviewCount = mode === 'preview-error' ? 1 : 0;
+				let holdNextPreview = mode === 'loading' || mode === 'stale';
+				let releaseHeldPreview = null;
+				let verificationAttempt = 0;
+				let manifestAttempt = 0;
+
+				window.__certificatePublicPreviewControl = {
+					async beforeRender() {
+						if (failPreviewCount > 0) {
+							failPreviewCount -= 1;
+							throw new Error('controlled preview failure');
+						}
+						if (!holdNextPreview) return;
+						holdNextPreview = false;
+						await new Promise((resolve) => { releaseHeldPreview = resolve; });
+					},
+					release() {
+						const release = releaseHeldPreview;
+						releaseHeldPreview = null;
+						release?.();
+					}
+				};
 
 				function result(status) {
+					const refreshedReceipt =
+						(mode === 'expired' || mode === 'revoked-after-expiry') && verificationAttempt > 1
+							? 'refreshed-public-render-receipt'
+							: 'receipt-for-public-render';
 					return {
 						status,
 						certificateNumber,
@@ -91,7 +145,7 @@ function harnessPlugin(): Plugin {
 						awardOrRole: 'รองชนะเลิศอันดับที่ 1', issueDate: '2026-08-14',
 						issuerSchoolName: 'โรงเรียนตัวอย่าง',
 						replacementCertificateNumber: status === 'revoked' ? '2569-0042-000124-2' : null,
-						receipt: status === 'issued' ? 'receipt-for-public-render' : null,
+						receipt: status === 'issued' ? refreshedReceipt : null,
 						receiptExpiresAt: status === 'issued' ? '2099-01-01T00:00:00Z' : null
 					};
 				}
@@ -112,16 +166,28 @@ function harnessPlugin(): Plugin {
 				}
 
 				window.__certificatePublicApi = {
-					async verifyManual(payload) {
+					async verifyManual(payload, options = {}) {
+						options.signal?.throwIfAborted();
+						verificationAttempt += 1;
 						verificationCalls.push({ kind: 'manual', payload: structuredClone(payload), hashAtCall: window.location.hash });
-						return result('issued');
+						return result(mode === 'revoked-after-expiry' && verificationAttempt > 1 ? 'revoked' : 'issued');
 					},
-					async verifyQr(payload) {
+					async verifyQr(payload, options = {}) {
+						options.signal?.throwIfAborted();
+						verificationAttempt += 1;
 						verificationCalls.push({ kind: 'qr', payload: structuredClone(payload), hashAtCall: window.location.hash });
 						return result(mode === 'revoked' ? 'revoked' : 'issued');
 					},
-					async render(payload) {
+					async render(payload, options = {}) {
+						options.signal?.throwIfAborted();
+						manifestAttempt += 1;
 						renderCalls.push(structuredClone(payload));
+						if (
+							(mode === 'expired' || mode === 'revoked-after-expiry') &&
+							payload.receipt === 'receipt-for-public-render'
+						) {
+							throw new ApiClientError('ไม่พบข้อมูลที่ตรงกัน', 404);
+						}
 						return manifest();
 					}
 				};
@@ -130,15 +196,17 @@ function harnessPlugin(): Plugin {
 					verificationCalls: () => structuredClone(verificationCalls),
 					renderCalls: () => structuredClone(renderCalls),
 					rendererLoads: () => window.__certificatePublicRendererLoads,
+					previews: () => structuredClone(window.__certificatePublicPreviews),
 					builds: () => structuredClone(window.__certificatePublicBuilds),
-					downloads: () => structuredClone(window.__certificatePublicDownloads)
+					downloads: () => structuredClone(window.__certificatePublicDownloads),
+					releaseHeldPreview: () => window.__certificatePublicPreviewControl.release()
 				};
 
 				mount(PublicCertificateVerification, {
 					target: document.getElementById('app'),
 					props: {
-						initialNumber: mode === 'manual' ? '' : certificateNumber,
-						autoVerifyQr: mode !== 'manual'
+						initialNumber: mode === 'qr' || mode === 'revoked' ? certificateNumber : '',
+						autoVerifyQr: mode === 'qr' || mode === 'revoked'
 					}
 				});
 			`;
@@ -181,16 +249,24 @@ test.afterAll(async () => {
 	await devServer.close();
 });
 
+async function completeManualVerification(
+	page: Page,
+	firstName = 'กมลชนก',
+	lastName = 'ใจดี'
+): Promise<void> {
+	await page
+		.getByRole('textbox', { name: 'เลขเกียรติบัตร', exact: true })
+		.fill('2569-0042-000123-4');
+	await page.getByLabel('ชื่อ', { exact: true }).fill(firstName);
+	await page.getByLabel('นามสกุล').fill(lastName);
+	await page.getByRole('button', { name: 'ตรวจสอบข้อมูล' }).click();
+}
+
 test('manual verification submits three fields and downloads only through the receipt', async ({
 	page
 }) => {
 	await page.goto(`${baseUrl}${harnessPath}?mode=manual`);
-	await page
-		.getByRole('textbox', { name: 'เลขเกียรติบัตร', exact: true })
-		.fill('2569-0042-000123-4');
-	await page.getByLabel('ชื่อ', { exact: true }).fill('กมลชนก');
-	await page.getByLabel('นามสกุล').fill('ใจดี');
-	await page.getByRole('button', { name: 'ตรวจสอบข้อมูล' }).click();
+	await completeManualVerification(page);
 
 	await expect(page.getByTestId('verification-result')).toContainText('ใช้ได้');
 	await expect
@@ -206,11 +282,18 @@ test('manual verification submits three fields and downloads only through the re
 				hashAtCall: ''
 			}
 		]);
+	await expect
+		.poll(() => page.evaluate(() => window.certificatePublicHarness.renderCalls()))
+		.toEqual([{ receipt: 'receipt-for-public-render' }]);
+	await expect(page.getByLabel('ภาพเกียรติบัตรที่ตรวจสอบแล้ว')).toBeVisible();
 
 	await page.getByRole('button', { name: 'ดาวน์โหลดเกียรติบัตร' }).click();
 	await expect
 		.poll(() => page.evaluate(() => window.certificatePublicHarness.renderCalls()))
-		.toEqual([{ receipt: 'receipt-for-public-render' }]);
+		.toEqual([
+			{ receipt: 'receipt-for-public-render' },
+			{ receipt: 'receipt-for-public-render' }
+		]);
 	await expect
 		.poll(() => page.evaluate(() => window.certificatePublicHarness.downloads()))
 		.toEqual([{ byteLength: 4, filename: '2569-0042-000123-4.pdf' }]);
@@ -234,6 +317,10 @@ test('QR verification removes the proof fragment before the POST begins', async 
 			}
 		]);
 	await expect(page.locator('body')).not.toContainText('opaque-qr-proof');
+	await expect(page.getByLabel('ภาพเกียรติบัตรที่ตรวจสอบแล้ว')).toBeVisible();
+	await expect
+		.poll(() => page.evaluate(() => window.certificatePublicHarness.renderCalls()))
+		.toEqual([{ receipt: 'receipt-for-public-render' }]);
 });
 
 test('revoked QR result shows replacement but never requests a render manifest', async ({
@@ -253,6 +340,48 @@ test('revoked QR result shows replacement but never requests a render manifest',
 		.toBe(0);
 });
 
+test('issued public preview reports font and render progress', async ({ page }) => {
+	await page.goto(`${baseUrl}${harnessPath}?mode=loading`);
+	await completeManualVerification(page);
+	await expect(page.getByText('กำลังสร้างภาพเกียรติบัตร…')).toBeVisible();
+	await page.evaluate(() => window.certificatePublicHarness.releaseHeldPreview());
+	await expect(page.getByLabel('ภาพเกียรติบัตรที่ตรวจสอบแล้ว')).toBeVisible();
+});
+
+test('issued preview retry re-verifies one expired receipt', async ({ page }) => {
+	await page.goto(`${baseUrl}${harnessPath}?mode=expired`);
+	await completeManualVerification(page);
+	await expect(page.getByText('สร้างภาพเกียรติบัตรไม่สำเร็จ')).toBeVisible();
+	await page.getByRole('button', { name: 'ลองโหลดภาพอีกครั้ง' }).click();
+	await expect(page.getByLabel('ภาพเกียรติบัตรที่ตรวจสอบแล้ว')).toBeVisible();
+	await expect
+		.poll(() => page.evaluate(() => window.certificatePublicHarness.verificationCalls().length))
+		.toBe(2);
+});
+
+test('preview failure keeps verified details and PDF download usable', async ({ page }) => {
+	await page.goto(`${baseUrl}${harnessPath}?mode=preview-error`);
+	await completeManualVerification(page);
+	const verifiedResult = page.getByTestId('verification-result');
+	await expect(verifiedResult).toContainText('ใช้ได้');
+	await expect(verifiedResult).toContainText('กมลชนก ใจดี');
+	await expect(page.getByText('สร้างภาพเกียรติบัตรไม่สำเร็จ')).toBeVisible();
+	await page.getByRole('button', { name: 'ดาวน์โหลดเกียรติบัตร' }).click();
+	await expect
+		.poll(() => page.evaluate(() => window.certificatePublicHarness.downloads()))
+		.toEqual([{ byteLength: 4, filename: '2569-0042-000123-4.pdf' }]);
+});
+
+test('receipt retry that discovers revocation removes preview and download', async ({ page }) => {
+	await page.goto(`${baseUrl}${harnessPath}?mode=revoked-after-expiry`);
+	await completeManualVerification(page);
+	await expect(page.getByText('สร้างภาพเกียรติบัตรไม่สำเร็จ')).toBeVisible();
+	await page.getByRole('button', { name: 'ลองโหลดภาพอีกครั้ง' }).click();
+	await expect(page.getByTestId('verification-result')).toContainText('เพิกถอนแล้ว');
+	await expect(page.getByRole('button', { name: 'ดาวน์โหลดเกียรติบัตร' })).toHaveCount(0);
+	await expect(page.getByLabel('ภาพเกียรติบัตรที่ตรวจสอบแล้ว')).toHaveCount(0);
+});
+
 declare global {
 	interface Window {
 		__certificatePublicApi: {
@@ -263,6 +392,11 @@ declare global {
 		__certificatePublicRendererLoads: number;
 		__certificatePublicBuilds: string[][];
 		__certificatePublicDownloads: Array<{ byteLength: number; filename: string }>;
+		__certificatePublicPreviews: string[];
+		__certificatePublicPreviewControl: {
+			beforeRender(signal?: AbortSignal): Promise<void>;
+			release(): void;
+		};
 		certificatePublicHarness: {
 			verificationCalls(): Array<{
 				kind: string;
@@ -271,8 +405,10 @@ declare global {
 			}>;
 			renderCalls(): Array<{ receipt: string }>;
 			rendererLoads(): number;
+			previews(): string[];
 			builds(): string[][];
 			downloads(): Array<{ byteLength: number; filename: string }>;
+			releaseHeldPreview(): void;
 		};
 	}
 }

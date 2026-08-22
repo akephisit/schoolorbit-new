@@ -76,6 +76,11 @@ test('revoked public results never expose the PDF download action', async () => 
 	assert.match(component, /createPublicCertificateRenderManifest/);
 	assert.match(component, /loadCertificateRenderer/);
 	assert.match(component, /downloadCertificatePdf/);
+	assert.match(component, /CertificatePreviewSurface/);
+	assert.match(component, /status\s*!==\s*['"]issued['"][\s\S]*!verified\.receipt/);
+	assert.match(component, /loadPublicPreview\(verified, false\)/);
+	assert.doesNotMatch(component, /(?:localStorage|sessionStorage)\./);
+	assert.doesNotMatch(component, /console\.(?:log|debug|info|warn|error)/);
 });
 
 test('public verification pages declare no-referrer metadata', async () => {

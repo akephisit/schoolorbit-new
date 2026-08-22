@@ -3,10 +3,16 @@
 		createPublicCertificateRenderManifest,
 		verifyCertificateByQr,
 		verifyCertificateManually,
+		type CertificateRenderManifest,
+		type ManualCertificateVerificationRequest,
+		type QrCertificateVerificationRequest,
 		type PublicCertificateVerificationData
 	} from '$lib/api/public-certificates';
+	import { ApiClientError } from '$lib/api/client';
 	import { downloadCertificatePdf } from '$lib/certificates/download';
+	import type { CertificatePreviewState } from '$lib/certificates/preview-fit';
 	import { loadCertificateRenderer } from '$lib/certificates/renderer';
+	import CertificatePreviewSurface from '$lib/components/certificates/CertificatePreviewSurface.svelte';
 	import {
 		Award,
 		Building2,
@@ -30,6 +36,10 @@
 	} = $props();
 
 	const genericFailure = 'ไม่พบข้อมูลที่ตรงกัน';
+	type VerificationContext =
+		| { kind: 'manual'; payload: ManualCertificateVerificationRequest }
+		| { kind: 'qr'; payload: QrCertificateVerificationRequest };
+
 	let certificateNumber = $state('');
 	let firstName = $state('');
 	let lastName = $state('');
@@ -38,8 +48,14 @@
 	let downloadError = $state('');
 	let verifying = $state(false);
 	let downloading = $state(false);
+	let verificationContext = $state.raw<VerificationContext | null>(null);
+	let previewManifest = $state.raw<CertificateRenderManifest | null>(null);
+	let previewManifestLoading = $state(false);
+	let previewManifestError = $state('');
+	let previewState = $state<CertificatePreviewState>('idle');
 	let requestSequence = 0;
 	let verificationController: AbortController | null = null;
+	let previewController: AbortController | null = null;
 	let downloadController: AbortController | null = null;
 
 	const canDownload = $derived(
@@ -62,52 +78,146 @@
 				`${window.location.pathname}${window.location.search}`
 			);
 			if (proof && certificateNumber.trim()) {
-				void verifyQrProof(proof);
+				void runVerification({
+					kind: 'qr',
+					payload: { certificateNumber: certificateNumber.trim(), proof }
+				});
 			} else {
 				verificationError = genericFailure;
 			}
 		}
 
 		return () => {
+			requestSequence += 1;
 			verificationController?.abort();
+			previewController?.abort();
 			downloadController?.abort();
 		};
 	});
 
-	async function runVerification(
-		request: (signal: AbortSignal) => Promise<PublicCertificateVerificationData>
-	): Promise<void> {
+	function verifyContext(
+		context: VerificationContext,
+		signal: AbortSignal
+	): Promise<PublicCertificateVerificationData> {
+		return context.kind === 'manual'
+			? verifyCertificateManually(context.payload, { signal })
+			: verifyCertificateByQr(context.payload, { signal });
+	}
+
+	function clearPreview(): void {
+		previewController?.abort();
+		previewController = null;
+		previewManifest = null;
+		previewManifestLoading = false;
+		previewManifestError = '';
+		previewState = 'idle';
+	}
+
+	function clearDownload(): void {
+		downloadController?.abort();
+		downloadController = null;
+		downloading = false;
+		downloadError = '';
+	}
+
+	async function runVerification(context: VerificationContext): Promise<void> {
 		const sequence = ++requestSequence;
 		verificationController?.abort();
+		clearPreview();
+		clearDownload();
 		const controller = new AbortController();
 		verificationController = controller;
 		verifying = true;
 		verificationError = '';
-		downloadError = '';
+		verificationContext = null;
 		result = null;
 
 		try {
-			const verified = await request(controller.signal);
+			const verified = await verifyContext(context, controller.signal);
 			if (sequence !== requestSequence || controller.signal.aborted) return;
+			verificationContext = context;
 			result = verified;
+			if (verified.status === 'issued' && verified.receipt) {
+				void loadPublicPreview(verified, false);
+			}
 		} catch {
 			if (sequence !== requestSequence || controller.signal.aborted) return;
 			verificationError = genericFailure;
 		} finally {
-			if (sequence === requestSequence) verifying = false;
+			if (sequence === requestSequence && verificationController === controller) {
+				verificationController = null;
+				verifying = false;
+			}
 		}
 	}
 
-	async function verifyQrProof(proof: string): Promise<void> {
-		await runVerification((signal) =>
-			verifyCertificateByQr(
-				{
-					certificateNumber: certificateNumber.trim(),
-					proof
-				},
-				{ signal }
-			)
-		);
+	async function loadPublicPreview(
+		verified: PublicCertificateVerificationData,
+		allowReceiptRefresh: boolean
+	): Promise<void> {
+		if (verified.status !== 'issued' || !verified.receipt) return;
+		const initialReceipt = verified.receipt;
+		const contextSnapshot = verificationContext;
+		previewController?.abort();
+		const controller = new AbortController();
+		previewController = controller;
+		previewManifest = null;
+		previewManifestLoading = true;
+		previewManifestError = '';
+		previewState = 'loading';
+		try {
+			let manifest: CertificateRenderManifest;
+			try {
+				manifest = await createPublicCertificateRenderManifest(
+					{ receipt: initialReceipt },
+					{ signal: controller.signal }
+				);
+			} catch (error) {
+				if (
+					controller.signal.aborted ||
+					!allowReceiptRefresh ||
+					!(error instanceof ApiClientError) ||
+					error.status !== 404 ||
+					!contextSnapshot
+				) {
+					throw error;
+				}
+				const refreshed = await verifyContext(contextSnapshot, controller.signal);
+				controller.signal.throwIfAborted();
+				result = refreshed;
+				if (refreshed.status !== 'issued' || !refreshed.receipt) {
+					previewManifest = null;
+					return;
+				}
+				manifest = await createPublicCertificateRenderManifest(
+					{ receipt: refreshed.receipt },
+					{ signal: controller.signal }
+				);
+			}
+			controller.signal.throwIfAborted();
+			previewManifest = manifest;
+		} catch {
+			if (controller.signal.aborted || previewController !== controller) return;
+			previewManifestError = 'สร้างภาพเกียรติบัตรไม่สำเร็จ';
+			previewState = 'error';
+		} finally {
+			if (previewController === controller) {
+				previewController = null;
+				previewManifestLoading = false;
+			}
+		}
+	}
+
+	function retryPublicPreview(): void {
+		if (
+			result?.status !== 'issued' ||
+			!result.receipt ||
+			previewManifestLoading ||
+			previewState === 'loading'
+		) {
+			return;
+		}
+		void loadPublicPreview(result, true);
 	}
 
 	async function submitManualVerification(event: SubmitEvent): Promise<void> {
@@ -118,16 +228,14 @@
 			return;
 		}
 
-		await runVerification((signal) =>
-			verifyCertificateManually(
-				{
-					certificateNumber: certificateNumber.trim(),
-					firstName: firstName.trim(),
-					lastName: lastName.trim()
-				},
-				{ signal }
-			)
-		);
+		await runVerification({
+			kind: 'manual',
+			payload: {
+				certificateNumber: certificateNumber.trim(),
+				firstName: firstName.trim(),
+				lastName: lastName.trim()
+			}
+		});
 	}
 
 	async function downloadCertificate(): Promise<void> {
@@ -308,6 +416,19 @@
 						</dl>
 
 						{#if result.status === 'issued' && result.receipt}
+							<div class="public-certificate-preview">
+								<CertificatePreviewSurface
+									manifest={previewManifest}
+									manifestLoading={previewManifestLoading}
+									manifestError={previewManifestError}
+									ariaLabel="ภาพเกียรติบัตรที่ตรวจสอบแล้ว"
+									loadingLabel="กำลังสร้างภาพเกียรติบัตร…"
+									renderFailureMessage="สร้างภาพเกียรติบัตรไม่สำเร็จ"
+									retryLabel="ลองโหลดภาพอีกครั้ง"
+									onretry={retryPublicPreview}
+									onstatechange={(state) => (previewState = state)}
+								/>
+							</div>
 							<button
 								class="download-button"
 								type="button"
@@ -556,6 +677,12 @@
 		transition:
 			transform 150ms ease,
 			background 150ms ease;
+	}
+
+	.public-certificate-preview {
+		height: min(56dvh, 32rem);
+		min-height: 18rem;
+		min-width: 0;
 	}
 
 	.verify-button {

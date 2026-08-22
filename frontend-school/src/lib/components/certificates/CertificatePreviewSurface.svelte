@@ -67,11 +67,6 @@
 				if (entry) updateSize(entry.contentRect.width, entry.contentRect.height);
 			});
 			observer.observe(node);
-			const style = getComputedStyle(node);
-			updateSize(
-				node.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
-				node.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)
-			);
 			return () => observer.disconnect();
 		};
 	}
