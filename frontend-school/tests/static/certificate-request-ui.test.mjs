@@ -97,6 +97,9 @@ test('school review is read-only and queue rows do not expose recipient names', 
 	assert.doesNotMatch(review, /issueCertificateRequest/);
 	assert.match(review, /canIssue/);
 	assert.match(review, /previewKind:\s*['"]candidate['"]/);
+	assert.match(review, /CertificatePreviewDialog/);
+	assert.doesNotMatch(review, /window\.innerWidth/);
+	assert.doesNotMatch(review, /max-w-none/);
 
 	const queue = await source('src/lib/components/certificates/CertificateIssueQueue.svelte');
 	assert.doesNotMatch(queue, /request\.items/);

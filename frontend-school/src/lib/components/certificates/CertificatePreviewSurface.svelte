@@ -58,14 +58,20 @@
 
 	function observeStage(): Attachment<HTMLElement> {
 		return (node) => {
-			const updateSize = () => {
-				const rect = node.getBoundingClientRect();
-				availableWidth = Math.max(0, node.clientWidth || rect.width);
-				availableHeight = Math.max(0, node.clientHeight || rect.height);
+			const updateSize = (width: number, height: number) => {
+				availableWidth = Math.max(0, width);
+				availableHeight = Math.max(0, height);
 			};
-			const observer = new ResizeObserver(updateSize);
+			const observer = new ResizeObserver((entries) => {
+				const entry = entries.at(-1);
+				if (entry) updateSize(entry.contentRect.width, entry.contentRect.height);
+			});
 			observer.observe(node);
-			updateSize();
+			const style = getComputedStyle(node);
+			updateSize(
+				node.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+				node.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)
+			);
 			return () => observer.disconnect();
 		};
 	}

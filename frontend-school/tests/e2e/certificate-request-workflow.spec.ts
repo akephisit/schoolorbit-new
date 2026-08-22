@@ -53,14 +53,28 @@ const certificateApiStub = `
 	export async function issueCertificates(requestId, payload) {
 		return window.__certificateRequestApi.issue(requestId, payload);
 	}
-	export async function createCertificateTemplatePreviewManifest(templateId, payload) {
-		return window.__certificateRequestApi.preview(templateId, payload);
+	export async function createCertificateTemplatePreviewManifest(templateId, payload, options = {}) {
+		return window.__certificateRequestApi.preview(templateId, payload, options);
 	}
 `;
 
 const rendererStub = `
 	export async function loadCertificateRenderer() {
-		return { renderPreview: async () => undefined };
+		return {
+			async renderPreview(manifest, canvas, options = {}) {
+				options.signal?.throwIfAborted();
+				const scale = options.scale ?? 1;
+				canvas.width = Math.max(1, Math.round(manifest.pageGeometry.displayedWidthPoints * scale));
+				canvas.height = Math.max(1, Math.round(manifest.pageGeometry.displayedHeightPoints * scale));
+				window.__certificateRequestPreviewRenders += 1;
+				return {
+					widthPoints: manifest.pageGeometry.displayedWidthPoints,
+					heightPoints: manifest.pageGeometry.displayedHeightPoints,
+					widthPixels: canvas.width,
+					heightPixels: canvas.height
+				};
+			}
+		};
 	}
 `;
 
@@ -162,7 +176,35 @@ function harnessPlugin(): Plugin {
 				let issueAttempt = 0;
 				const pendingReviewResolvers = new Map();
 				const reviewCalls = [];
+				const previewCalls = [];
+				window.__certificateRequestPreviewRenders = 0;
 				const view = new URLSearchParams(window.location.search).get('view');
+				function candidateManifest(templateId) {
+					return {
+						templateId,
+						certificateNumber: 'PREVIEW',
+						suggestedFilename: 'preview.pdf',
+						layout: { schemaVersion: 1, elements: [] },
+						pageGeometry: {
+							paperLabel: 'A4 แนวตั้ง', rotation: 0,
+							displayedWidthPoints: 595, displayedHeightPoints: 842,
+							mediaBox: { xPoints: 0, yPoints: 0, widthPoints: 595, heightPoints: 842 },
+							cropBox: { xPoints: 0, yPoints: 0, widthPoints: 595, heightPoints: 842 }
+						},
+						backgroundGrant: {
+							fileId: '51000000-0000-4000-8000-000000000001',
+							url: '/candidate-background.pdf', expiresAt: '2099-01-01T00:00:00Z'
+						},
+						fontGrants: [], imageGrants: [], builtInFonts: [],
+						qrPayload: 'candidate-preview',
+						recipientValues: { ชื่อ: 'กมลชนก', นามสกุล: 'ใจดี' },
+						campaignValues: {
+							academicYear: '2569', campaignName: 'กิจกรรมวันภาษาไทย',
+							eventDate: '2026-08-01', issueDate: '2026-08-14',
+							ownerOrganizationUnitName: 'กลุ่มสาระภาษาไทย', schoolName: 'โรงเรียนตัวอย่าง'
+						}
+					};
+				}
 				const reviewingState = (current) => ({
 					...current,
 					status: 'reviewing',
@@ -230,7 +272,11 @@ function harnessPlugin(): Plugin {
 							}))
 						};
 					},
-					async preview() { throw new Error('preview is not used in this workflow test'); }
+					async preview(templateId, payload, options = {}) {
+						options.signal?.throwIfAborted();
+						previewCalls.push({ templateId, ...structuredClone(payload) });
+						return candidateManifest(templateId);
+					}
 				};
 				window.certificateRequestHarness = {
 					submittedIds: () => [...submittedIds],
@@ -238,6 +284,7 @@ function harnessPlugin(): Plugin {
 					issuePayloads: () => structuredClone(issuePayloads),
 					requestIds: () => [requestId, secondRequestId],
 					reviewCalls: () => [...reviewCalls],
+					previewCalls: () => structuredClone(previewCalls),
 					resolveReview: (id) => {
 						const resolve = pendingReviewResolvers.get(id);
 						if (!resolve) throw new Error('review request is not pending');
@@ -364,6 +411,44 @@ test('issue confirmation retries with the same idempotency key until issued', as
 	expect(payloads[1].idempotencyKey).toBe(payloads[0].idempotencyKey);
 });
 
+test('candidate preview fits the real review dialog without horizontal scrolling', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 1920, height: 1080 });
+	await page.goto(`${baseUrl}${harnessPath}?view=review`);
+	await page.getByRole('button', { name: 'เริ่มตรวจคำขอ' }).click();
+	await page.getByRole('button', { name: 'ออกเกียรติบัตร 2 ใบ' }).click();
+	await page.getByRole('button', { name: 'ดูตัวอย่างแบบนี้' }).first().click();
+
+	const previewDialog = page.getByRole('dialog', { name: 'ตัวอย่างเกียรติบัตร' });
+	await expect(previewDialog).toBeVisible();
+	const stage = previewDialog.getByTestId('certificate-preview-stage');
+	const canvas = stage.getByLabel('ตัวอย่างเกียรติบัตรสำหรับตรวจคำขอ');
+	await expect(canvas).toBeVisible();
+	await expect
+		.poll(() => page.evaluate(() => window.certificateRequestHarness.previewCalls().at(-1)))
+		.toEqual({
+			templateId: '30000000-0000-4000-8000-000000000001',
+			previewKind: 'candidate',
+			candidateId: '40000000-0000-4000-8000-000000000001'
+		});
+	const metrics = await stage.evaluate((node) => {
+		const paper = node.querySelector('canvas');
+		if (!(paper instanceof HTMLCanvasElement)) throw new Error('preview canvas missing');
+		const outer = node.getBoundingClientRect();
+		const inner = paper.getBoundingClientRect();
+		return {
+			overflow: node.scrollWidth > node.clientWidth + 1,
+			inside:
+				inner.left >= outer.left - 1 &&
+				inner.right <= outer.right + 1 &&
+				inner.top >= outer.top - 1 &&
+				inner.bottom <= outer.bottom + 1
+		};
+	});
+	expect(metrics).toEqual({ overflow: false, inside: true });
+});
+
 test('review action loading stays scoped to the request after route changes', async ({ page }) => {
 	await page.goto(`${baseUrl}${harnessPath}?view=race`);
 	const [firstRequestId, secondRequestId] = await page.evaluate(() =>
@@ -397,6 +482,11 @@ declare global {
 			issuePayloads(): Array<{ idempotencyKey: string }>;
 			requestIds(): [string, string];
 			reviewCalls(): string[];
+			previewCalls(): Array<{
+				templateId: string;
+				previewKind: 'candidate';
+				candidateId: string;
+			}>;
 			resolveReview(requestId: string): void;
 			setReviewRequestId(requestId: string): void;
 		};

@@ -8,18 +8,19 @@
 		returnCertificateIssueRequest,
 		startCertificateIssueRequestReview,
 		type CertificateIssueCode,
+		type CertificateRenderManifest,
 		type CertificateIssueRequestDetail,
 		type CertificateIssueRequestItem,
 		type CertificateIssueRequestStatus,
 		type IssueCertificateOutcome
 	} from '$lib/api/certificates';
-	import { loadCertificateRenderer } from '$lib/certificates/renderer';
+	import type { CertificatePreviewState } from '$lib/certificates/preview-fit';
 	import { PageShell } from '$lib/components/app-layout';
 	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
 	import CertificateIssueConfirmationDialog from '$lib/components/certificates/CertificateIssueConfirmationDialog.svelte';
+	import CertificatePreviewDialog from '$lib/components/certificates/CertificatePreviewDialog.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Table from '$lib/components/ui/table';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import {
@@ -33,7 +34,7 @@
 		ShieldCheck,
 		UsersRound
 	} from 'lucide-svelte';
-	import { onDestroy, onMount, tick } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	let {
@@ -77,10 +78,11 @@
 	let requestedRequestId = '';
 	let loadGeneration = 0;
 	let previewOpen = $state(false);
-	let previewing = $state(false);
-	let previewError = $state('');
+	let previewState = $state<CertificatePreviewState>('idle');
 	let previewItem = $state.raw<CertificateIssueRequestItem | null>(null);
-	let previewCanvas = $state<HTMLCanvasElement>();
+	let previewManifest = $state.raw<CertificateRenderManifest | null>(null);
+	let previewManifestLoading = $state(false);
+	let previewManifestError = $state('');
 	let previewController: AbortController | null = null;
 	let issueDialogOpen = $state(false);
 	let issueError = $state('');
@@ -89,6 +91,7 @@
 	type ReturnedOutcome = Extract<IssueCertificateOutcome, { outcome: 'returned' }>;
 	let issuedOutcome = $state.raw<IssuedOutcome | null>(null);
 	let issueReturnedOutcome = $state.raw<ReturnedOutcome | null>(null);
+	const previewing = $derived(previewState === 'loading' || previewManifestLoading);
 
 	const canReturn = $derived(
 		request?.capabilities.canReturn === true &&
@@ -268,58 +271,49 @@
 		previewController = controller;
 		previewItem = item;
 		previewOpen = true;
-		previewing = true;
-		previewError = '';
+		previewState = 'loading';
+		previewManifest = null;
+		previewManifestLoading = true;
+		previewManifestError = '';
 		try {
-			await tick();
-			const manifest = await createCertificateTemplatePreviewManifest(item.templateId, {
-				previewKind: 'candidate',
-				candidateId: item.candidateId
-			});
-			controller.signal.throwIfAborted();
-			await tick();
-			if (!previewCanvas) throw new Error('ไม่พบพื้นที่แสดงตัวอย่าง');
-			const renderer = await loadCertificateRenderer();
-			const scale = Math.min(
-				1.25,
-				Math.max(
-					0.35,
-					Math.min(
-						(window.innerWidth - 96) / manifest.pageGeometry.displayedWidthPoints,
-						(window.innerHeight - 220) / manifest.pageGeometry.displayedHeightPoints
-					)
-				)
+			const manifest = await createCertificateTemplatePreviewManifest(
+				item.templateId,
+				{
+					previewKind: 'candidate',
+					candidateId: item.candidateId
+				},
+				{ signal: controller.signal }
 			);
-			await renderer.renderPreview(manifest, previewCanvas, {
-				scale,
-				signal: controller.signal
-			});
+			controller.signal.throwIfAborted();
+			previewManifest = manifest;
 		} catch (previewFailure) {
-			if (controller.signal.aborted) return;
-			previewError =
+			if (controller.signal.aborted || previewController !== controller) return;
+			previewManifestError =
 				previewFailure instanceof Error ? previewFailure.message : 'สร้างตัวอย่างไม่สำเร็จ';
+			previewState = 'error';
 		} finally {
 			if (previewController === controller) {
 				previewController = null;
-				previewing = false;
+				previewManifestLoading = false;
 			}
 		}
+	}
+
+	function retryPreview() {
+		if (previewState !== 'error' || !previewItem) return;
+		previewState = 'idle';
+		void preview(previewItem);
 	}
 
 	function closePreview() {
 		previewController?.abort();
 		previewController = null;
 		previewOpen = false;
-		previewing = false;
-		previewError = '';
+		previewState = 'idle';
 		previewItem = null;
-	}
-
-	function capturePreviewCanvas(canvas: HTMLCanvasElement) {
-		previewCanvas = canvas;
-		return () => {
-			if (previewCanvas === canvas) previewCanvas = undefined;
-		};
+		previewManifest = null;
+		previewManifestLoading = false;
+		previewManifestError = '';
 	}
 
 	function ensureLoaded() {
@@ -655,26 +649,17 @@
 	/>
 {/if}
 
-<Dialog.Root open={previewOpen} onOpenChange={(open) => !open && closePreview()}>
-	<Dialog.Content class="max-h-[94vh] overflow-auto sm:max-w-5xl">
-		<Dialog.Header>
-			<Dialog.Title>ตัวอย่างเกียรติบัตร</Dialog.Title>
-			<Dialog.Description>
-				{previewItem ? displayName(previewItem) : ''} · ข้อมูลพรีวิว ไม่ใช่เกียรติบัตรที่ออกเลขแล้ว
-			</Dialog.Description>
-		</Dialog.Header>
-		{#if previewError}
-			<div
-				class="rounded-lg border border-destructive/30 bg-destructive/5 p-5 text-center text-sm text-destructive"
-			>
-				<AlertTriangle class="mx-auto mb-2 size-5" />
-				{previewError}
-			</div>
-		{:else}
-			<div class="min-h-64 overflow-auto rounded-lg bg-slate-200 p-4">
-				<canvas {@attach capturePreviewCanvas} class="mx-auto max-w-none bg-white shadow-xl"
-				></canvas>
-			</div>
-		{/if}
-	</Dialog.Content>
-</Dialog.Root>
+<CertificatePreviewDialog
+	open={previewOpen}
+	title="ตัวอย่างเกียรติบัตร"
+	description={`${previewItem ? displayName(previewItem) : ''} · ข้อมูลพรีวิว ไม่ใช่เกียรติบัตรที่ออกเลขแล้ว`}
+	manifest={previewManifest}
+	manifestLoading={previewManifestLoading}
+	manifestError={previewManifestError}
+	ariaLabel="ตัวอย่างเกียรติบัตรสำหรับตรวจคำขอ"
+	loadingLabel="กำลังโหลดฟอนต์และสร้างตัวอย่าง…"
+	renderFailureMessage="สร้างตัวอย่างเกียรติบัตรไม่สำเร็จ"
+	onretry={retryPreview}
+	onstatechange={(state) => (previewState = state)}
+	onopenchange={(open) => !open && closePreview()}
+/>
