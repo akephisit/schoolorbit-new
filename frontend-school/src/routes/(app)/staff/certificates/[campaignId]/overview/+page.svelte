@@ -303,7 +303,7 @@
 								<CalendarDays class="size-4" /> ปีการศึกษาและวันที่จัด
 							</dt>
 							<dd class="font-medium">
-								ปีการศึกษา {campaign.academicYearName} · {formatDate(campaign.eventDate)}
+								{campaign.academicYearName} · {formatDate(campaign.eventDate)}
 							</dd>
 						</div>
 						<div class="space-y-1">

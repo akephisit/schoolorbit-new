@@ -113,7 +113,7 @@
 			<Select.Content>
 				<Select.Item value="all">ทุกปีการศึกษา</Select.Item>
 				{#each academicYears as [id, name] (id)}
-					<Select.Item value={id}>ปีการศึกษา {name}</Select.Item>
+					<Select.Item value={id}>{name}</Select.Item>
 				{/each}
 			</Select.Content>
 		</Select.Root>
@@ -174,7 +174,7 @@
 						<div class="flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted-foreground">
 							<span class="inline-flex items-center gap-1.5">
 								<CalendarDays class="size-4" />
-								ปีการศึกษา {campaign.academicYearName} · {formatDate(campaign.eventDate)}
+								{campaign.academicYearName} · {formatDate(campaign.eventDate)}
 							</span>
 							<span class="inline-flex items-center gap-1.5">
 								<Building2 class="size-4" />
