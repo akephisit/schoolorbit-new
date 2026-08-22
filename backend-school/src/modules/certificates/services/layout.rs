@@ -2,14 +2,15 @@ use std::collections::BTreeSet;
 
 use crate::modules::certificates::{
     models::{
-        CertificateBuiltInFont, CertificateElement, CertificateFontSource, CertificateFontStyle,
-        CertificateLayoutV1, ElementFrame, PageGeometry,
+        CertificateBuiltInFont, CertificateElement, CertificateFontSource, CertificateLayoutV1,
+        ElementFrame, PageGeometry,
     },
     services::import_validation::{
         classify_header, normalize_name_for_match, referenced_variables, HeaderClass,
         RENDERABLE_STANDARD_VARIABLES, RESERVED_RENDER_VARIABLES,
     },
 };
+use crate::modules::school_fonts::models::SchoolFontStyle;
 
 const POINTS_PER_MM: f64 = 72.0 / 25.4;
 const PAPER_TOLERANCE_POINTS: f64 = POINTS_PER_MM;
@@ -21,7 +22,7 @@ const MAX_ELEMENTS: usize = 500;
 struct BuiltInFontVariant {
     family: &'static str,
     weight: u16,
-    style: CertificateFontStyle,
+    style: SchoolFontStyle,
     asset_path: &'static str,
 }
 
@@ -29,13 +30,13 @@ const BUILT_IN_FONT_VARIANTS: [BuiltInFontVariant; 2] = [
     BuiltInFontVariant {
         family: "Sarabun",
         weight: 400,
-        style: CertificateFontStyle::Normal,
+        style: SchoolFontStyle::Normal,
         asset_path: "/fonts/Sarabun-Regular.ttf",
     },
     BuiltInFontVariant {
         family: "Sarabun",
         weight: 700,
-        style: CertificateFontStyle::Normal,
+        style: SchoolFontStyle::Normal,
         asset_path: "/fonts/Sarabun-Bold.ttf",
     },
 ];
@@ -52,7 +53,7 @@ pub(super) fn built_in_fonts() -> Vec<CertificateBuiltInFont> {
         .collect()
 }
 
-fn is_supported_built_in_font(family: &str, weight: u16, style: CertificateFontStyle) -> bool {
+fn is_supported_built_in_font(family: &str, weight: u16, style: SchoolFontStyle) -> bool {
     BUILT_IN_FONT_VARIANTS.iter().any(|variant| {
         variant.family == family && variant.weight == weight && variant.style == style
     })

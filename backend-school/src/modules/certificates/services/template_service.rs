@@ -10,18 +10,22 @@ use crate::{
     middleware::permission::ActorContext,
     modules::{
         certificates::models::{
-            AttachCertificateAssetRequest, AttachCertificateBackgroundRequest,
-            AttachCertificateFontBatchRequest, CertificateElement, CertificateFontSource,
-            CertificateFontStyle, CertificateFontUploadInspection,
-            CertificateFontUploadInspectionFile, CertificateFontUploadStatus, CertificateLayoutV1,
-            CertificatePageBox, CertificatePageGeometry, CertificateTemplateAsset,
-            CertificateTemplateAssetKind, CertificateTemplateCapabilities,
-            CertificateTemplateDeleteDisposition, CertificateTemplateDeleteResult,
-            CertificateTemplateDetail, CertificateTemplateVariableCatalog,
-            CreateCertificateTemplateRequest, GeometryAction, InspectCertificateFontUploadsRequest,
+            AttachCertificateAssetRequest, AttachCertificateBackgroundRequest, CertificateElement,
+            CertificateFontSource, CertificateLayoutV1, CertificatePageBox,
+            CertificatePageGeometry, CertificateTemplateAsset, CertificateTemplateAssetKind,
+            CertificateTemplateCapabilities, CertificateTemplateDeleteDisposition,
+            CertificateTemplateDeleteResult, CertificateTemplateDetail,
+            CertificateTemplateVariableCatalog, CreateCertificateTemplateRequest, GeometryAction,
             PageGeometry, RecipientType, UpdateCertificateTemplateRequest,
         },
-        files::platform_types::{FileInspectionMetadata, FontInspectionStyle, PdfPageBox},
+        files::platform_types::{FileInspectionMetadata, PdfPageBox},
+        school_fonts::{
+            models::{
+                AttachSchoolFontBatchRequest, InspectSchoolFontUploadsRequest,
+                SchoolFontListResponse, SchoolFontUploadInspection,
+            },
+            services::{self as school_font_services, SchoolFontStagingRelation},
+        },
     },
     policies::certificate_access_policy::{require_owner_action, CertificateAction},
 };
@@ -42,7 +46,6 @@ const POINTS_PER_MM: f64 = 72.0 / 25.4;
 const MIN_PAGE_SIDE_MM: f64 = 25.0;
 const MAX_PAGE_SIDE_MM: f64 = 600.0;
 const MAX_PAGE_AREA_MM2: f64 = 250_000.0;
-const MAX_FONT_BATCH_FILES: usize = 40;
 
 #[derive(Debug)]
 pub struct CertificateTemplateMutationOutcome {
@@ -92,10 +95,6 @@ struct AssetRow {
     file_id: Uuid,
     kind: String,
     display_name: String,
-    font_family: Option<String>,
-    font_weight: Option<i16>,
-    font_style: Option<String>,
-    rights_confirmed_by: Option<Uuid>,
     created_at: DateTime<Utc>,
     lifecycle_status: String,
     inspection_metadata: sqlx::types::Json<FileInspectionMetadata>,
@@ -134,18 +133,6 @@ struct TemplateCapabilityFlags {
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum ExpectedAsset {
     Image,
-    Font {
-        family: String,
-        weight: u16,
-        style: CertificateFontStyle,
-    },
-}
-
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-struct FontVariantKey {
-    family: String,
-    weight: u16,
-    style: CertificateFontStyle,
 }
 
 const TEMPLATE_SELECT: &str = r#"
@@ -361,6 +348,9 @@ pub async fn update_template(
     } else {
         Vec::new()
     };
+    if payload.layout.is_some() {
+        sync_school_font_references(&mut tx, template_id, &next_layout).await?;
+    }
 
     let missing_count = if payload.layout.is_some() && locked.issued_certificate_count > 0 {
         let previous_variables = variables_in_layout(&locked.layout.0)?;
@@ -554,6 +544,7 @@ pub async fn attach_background(
     let custom_variables = load_custom_headers_tx(&mut tx, locked.campaign_id).await?;
     validate_layout(&next_layout, new_page, &custom_variables).map_err(layout_error)?;
     validate_layout_asset_references(&mut tx, template_id, &next_layout).await?;
+    sync_school_font_references(&mut tx, template_id, &next_layout).await?;
     let (displayed_width, displayed_height) = new_page.displayed_size();
     validate_safe_margin(locked.safe_margin_points, displayed_width, displayed_height)
         .map_err(layout_error)?;
@@ -643,10 +634,7 @@ pub async fn attach_asset(
     )
     .await?;
     let display_name = validate_asset_name(&payload.display_name)?;
-    let expected_purpose = match payload.kind {
-        CertificateTemplateAssetKind::Image => "certificate_template_image",
-        CertificateTemplateAssetKind::Font => "certificate_template_font",
-    };
+    let expected_purpose = "certificate_template_image";
 
     let mut tx = pool.begin().await.map_err(template_db_error)?;
     require_locked_campaign_owner_unchanged(
@@ -660,76 +648,25 @@ pub async fn attach_asset(
     require_template_not_locked(&mut tx, template_id, can_read_locked_request).await?;
     let file = load_uploaded_file(&mut tx, template_id, payload.file_id, expected_purpose).await?;
     require_ready_file(&file)?;
-    let metadata = file.inspection_metadata.0;
-    let (font_family, font_weight, font_style, rights_by) = match (payload.kind, metadata) {
-        (CertificateTemplateAssetKind::Image, FileInspectionMetadata::Image { .. }) => {
-            if payload.rights_confirmed {
-                return Err(AppError::ValidationError(
-                    "ข้อมูลสิทธิ์ฟอนต์ใช้ได้เฉพาะไฟล์ฟอนต์".to_string(),
-                ));
-            }
-            (None, None, None, None)
-        }
-        (
-            CertificateTemplateAssetKind::Font,
-            FileInspectionMetadata::Font {
-                family_name,
-                weight,
-                style,
-                is_variable,
-                ..
-            },
-        ) => {
-            if !payload.rights_confirmed {
-                return Err(AppError::ValidationError(
-                    "ต้องยืนยันสิทธิ์การใช้งานฟอนต์ก่อนแนบ".to_string(),
-                ));
-            }
-            if is_variable {
-                return Err(AppError::ValidationError(
-                    "ยังไม่รองรับ variable font กรุณาใช้ไฟล์น้ำหนักคงที่".to_string(),
-                ));
-            }
-            let family = family_name
-                .map(|value| normalize_display_text(&value))
-                .filter(|value| !value.is_empty() && value.chars().count() <= 200)
-                .ok_or_else(|| {
-                    AppError::ValidationError("ไม่สามารถอ่านชื่อ family จากไฟล์ฟอนต์".to_string())
-                })?;
-            if !(100..=900).contains(&weight) || weight % 100 != 0 {
-                return Err(AppError::ValidationError(
-                    "น้ำหนักฟอนต์ต้องเป็น 100 ถึง 900 ทีละ 100".to_string(),
-                ));
-            }
-            let style = match style {
-                FontInspectionStyle::Normal => CertificateFontStyle::Normal,
-                FontInspectionStyle::Italic => CertificateFontStyle::Italic,
-            };
-            (Some(family), Some(weight), Some(style), Some(actor.user_id))
-        }
-        _ => {
-            return Err(AppError::ValidationError(
-                "ชนิดไฟล์ไม่ตรงกับชนิดทรัพยากรแม่แบบ".to_string(),
-            ))
-        }
-    };
+    if !matches!(
+        file.inspection_metadata.0,
+        FileInspectionMetadata::Image { .. }
+    ) {
+        return Err(AppError::ValidationError(
+            "ชนิดไฟล์ไม่ตรงกับชนิดทรัพยากรแม่แบบ".to_string(),
+        ));
+    }
 
     let asset_id: Uuid = sqlx::query_scalar(
         "INSERT INTO certificate_template_assets (
-            template_id, file_id, kind, display_name, font_family, font_weight, font_style,
-            rights_confirmed_by, rights_confirmed_at, created_by
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
-                   CASE WHEN $8::uuid IS NULL THEN NULL ELSE now() END, $9)
+            template_id, file_id, kind, display_name, created_by
+         ) VALUES ($1, $2, $3, $4, $5)
          RETURNING id",
     )
     .bind(template_id)
     .bind(payload.file_id)
     .bind(payload.kind.as_str())
     .bind(display_name)
-    .bind(font_family)
-    .bind(font_weight.map(|weight| weight as i16))
-    .bind(font_style.map(CertificateFontStyle::as_str))
-    .bind(rights_by)
     .bind(actor.user_id)
     .fetch_one(&mut *tx)
     .await
@@ -763,13 +700,28 @@ pub async fn attach_asset(
     fetch_detail_with_capabilities(pool, actor, template_id).await
 }
 
+pub async fn list_fonts(
+    pool: &PgPool,
+    actor: &ActorContext,
+    template_id: Uuid,
+) -> Result<SchoolFontListResponse, AppError> {
+    let authorization = fetch_template_row(pool, template_id).await?;
+    require_owner_action(
+        pool,
+        actor,
+        authorization.owner_organization_unit_id,
+        CertificateAction::Read,
+    )
+    .await?;
+    school_font_services::list_authorized(pool).await
+}
+
 pub async fn inspect_font_uploads(
     pool: &PgPool,
     actor: &ActorContext,
     template_id: Uuid,
-    payload: InspectCertificateFontUploadsRequest,
-) -> Result<CertificateFontUploadInspection, AppError> {
-    let file_ids = validate_font_file_ids(payload.file_ids)?;
+    payload: InspectSchoolFontUploadsRequest,
+) -> Result<SchoolFontUploadInspection, AppError> {
     let authorization = fetch_template_row(pool, template_id).await?;
     require_owner_action(
         pool,
@@ -778,19 +730,20 @@ pub async fn inspect_font_uploads(
         CertificateAction::Update,
     )
     .await?;
-
-    let uploads = load_font_uploads(pool, template_id, &file_ids).await?;
-    let existing = load_existing_font_variants(pool, template_id).await?;
-    Ok(classify_font_uploads(&uploads, &existing))
+    school_font_services::inspect_authorized(
+        pool,
+        SchoolFontStagingRelation::CertificateTemplate(template_id),
+        payload,
+    )
+    .await
 }
 
 pub async fn attach_font_batch(
     pool: &PgPool,
     actor: &ActorContext,
     template_id: Uuid,
-    payload: AttachCertificateFontBatchRequest,
-) -> Result<CertificateTemplateDetail, AppError> {
-    let file_ids = validate_font_file_ids(payload.file_ids)?;
+    payload: AttachSchoolFontBatchRequest,
+) -> Result<SchoolFontListResponse, AppError> {
     let authorization = fetch_template_row(pool, template_id).await?;
     require_owner_action(
         pool,
@@ -799,100 +752,13 @@ pub async fn attach_font_batch(
         CertificateAction::Update,
     )
     .await?;
-    if !payload.rights_confirmed {
-        return Err(AppError::ValidationError(
-            "ต้องยืนยันสิทธิ์การใช้งานฟอนต์ก่อนแนบ".to_string(),
-        ));
-    }
-    let can_read_locked_request = super::request_service::can_read_request(
+    school_font_services::attach_authorized(
         pool,
-        actor,
-        authorization.owner_organization_unit_id,
-    )
-    .await?;
-
-    let mut tx = pool.begin().await.map_err(template_db_error)?;
-    require_locked_campaign_owner_unchanged(
-        &mut tx,
-        authorization.owner_organization_unit_id,
-        authorization.campaign_id,
-    )
-    .await?;
-    let locked = lock_template(&mut tx, template_id).await?;
-    require_template_campaign_unchanged(authorization.campaign_id, locked.campaign_id)?;
-    require_template_not_locked(&mut tx, template_id, can_read_locked_request).await?;
-    let uploads = load_font_uploads_for_update(&mut tx, template_id, &file_ids).await?;
-    let existing = load_existing_font_variants_tx(&mut tx, template_id).await?;
-    let inspection = classify_font_uploads(&uploads, &existing);
-    if inspection
-        .files
-        .iter()
-        .any(|file| file.status != CertificateFontUploadStatus::Ready)
-    {
-        return Err(AppError::ValidationError(
-            "ชุดไฟล์ฟอนต์มีรายการที่ยังแนบไม่ได้ กรุณาตรวจสอบอีกครั้ง".to_string(),
-        ));
-    }
-
-    let mut asset_ids = Vec::with_capacity(inspection.files.len());
-    for file in &inspection.files {
-        let family = file
-            .font_family
-            .as_deref()
-            .ok_or_else(invalid_persisted_template)?;
-        let weight = file.font_weight.ok_or_else(invalid_persisted_template)?;
-        let style = file.font_style.ok_or_else(invalid_persisted_template)?;
-        let display_name = validate_asset_name(&file.display_filename)?;
-        let asset_id: Uuid = sqlx::query_scalar(
-            "INSERT INTO certificate_template_assets (
-                template_id, file_id, kind, display_name, font_family, font_weight, font_style,
-                rights_confirmed_by, rights_confirmed_at, created_by
-             ) VALUES ($1, $2, 'font', $3, $4, $5, $6, $7, now(), $7)
-             RETURNING id",
-        )
-        .bind(template_id)
-        .bind(file.file_id)
-        .bind(display_name)
-        .bind(family)
-        .bind(weight as i16)
-        .bind(style.as_str())
-        .bind(actor.user_id)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(template_db_error)?;
-        asset_ids.push(asset_id);
-    }
-    for file_id in &file_ids {
-        promote_file(&mut tx, *file_id).await?;
-    }
-    sqlx::query(
-        "UPDATE certificate_templates
-         SET updated_by = $2, updated_at = clock_timestamp()
-         WHERE id = $1",
-    )
-    .bind(template_id)
-    .bind(actor.user_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(template_db_error)?;
-    record_template_audit(
-        &mut tx,
         actor.user_id,
-        "attach_font_batch",
-        CertificateTemplateAuditMetadata {
-            campaign_id: locked.campaign_id,
-            template_id,
-            asset_id: None,
-            file_id: None,
-            asset_ids,
-            file_ids,
-            changed_fields: vec!["assets".to_string()],
-            affected_certificate_count: Some(locked.issued_certificate_count),
-        },
+        SchoolFontStagingRelation::CertificateTemplate(template_id),
+        payload,
     )
-    .await?;
-    tx.commit().await.map_err(template_db_error)?;
-    fetch_detail_with_capabilities(pool, actor, template_id).await
+    .await
 }
 
 pub async fn delete_asset(
@@ -1314,8 +1180,7 @@ async fn load_assets_for_templates(
         return Ok(BTreeMap::new());
     }
     let rows = sqlx::query_as::<_, AssetRow>(
-        "SELECT a.template_id, a.id, a.file_id, a.kind, a.display_name, a.font_family,
-                a.font_weight, a.font_style, a.rights_confirmed_by, a.created_at,
+        "SELECT a.template_id, a.id, a.file_id, a.kind, a.display_name, a.created_at,
                 f.lifecycle_status, f.inspection_metadata
          FROM certificate_template_assets a
          JOIN files f ON f.id = a.file_id
@@ -1334,11 +1199,8 @@ async fn load_assets_for_templates(
 }
 
 fn asset_response(row: AssetRow) -> Result<CertificateTemplateAsset, AppError> {
-    let (kind, font_style, image_width_pixels, image_height_pixels) = match row.kind.as_str() {
+    let (image_width_pixels, image_height_pixels) = match row.kind.as_str() {
         "image" => {
-            if row.font_style.is_some() {
-                return Err(invalid_persisted_template());
-            }
             let FileInspectionMetadata::Image {
                 width_px,
                 height_px,
@@ -1346,276 +1208,19 @@ fn asset_response(row: AssetRow) -> Result<CertificateTemplateAsset, AppError> {
             else {
                 return Err(invalid_persisted_template());
             };
-            (
-                CertificateTemplateAssetKind::Image,
-                None,
-                Some(width_px),
-                Some(height_px),
-            )
-        }
-        "font" => {
-            if !matches!(
-                row.inspection_metadata.0,
-                FileInspectionMetadata::Font { .. }
-            ) {
-                return Err(invalid_persisted_template());
-            }
-            let style = row
-                .font_style
-                .as_deref()
-                .and_then(CertificateFontStyle::parse)
-                .ok_or_else(invalid_persisted_template)?;
-            (CertificateTemplateAssetKind::Font, Some(style), None, None)
+            (Some(width_px), Some(height_px))
         }
         _ => return Err(invalid_persisted_template()),
     };
     Ok(CertificateTemplateAsset {
         id: row.id,
         file_id: row.file_id,
-        kind,
+        kind: CertificateTemplateAssetKind::Image,
         display_name: row.display_name,
-        font_family: row.font_family,
-        font_weight: row.font_weight.map(|weight| weight as u16),
-        font_style,
         image_width_pixels,
         image_height_pixels,
-        rights_confirmed: row.rights_confirmed_by.is_some(),
         created_at: row.created_at,
     })
-}
-
-fn validate_font_file_ids(file_ids: Vec<Uuid>) -> Result<Vec<Uuid>, AppError> {
-    if file_ids.is_empty() || file_ids.len() > MAX_FONT_BATCH_FILES {
-        return Err(AppError::ValidationError(
-            "เลือกไฟล์ฟอนต์ได้ครั้งละ 1 ถึง 40 ไฟล์".to_string(),
-        ));
-    }
-    if file_ids.iter().copied().collect::<BTreeSet<_>>().len() != file_ids.len() {
-        return Err(AppError::ValidationError(
-            "รายการไฟล์ฟอนต์ต้องไม่ซ้ำกัน".to_string(),
-        ));
-    }
-    Ok(file_ids)
-}
-
-async fn load_font_uploads(
-    pool: &PgPool,
-    template_id: Uuid,
-    file_ids: &[Uuid],
-) -> Result<Vec<UploadedFileRow>, AppError> {
-    let rows = sqlx::query_as::<_, UploadedFileRow>(
-        "SELECT f.id AS file_id, f.display_filename, f.purpose_code,
-                f.lifecycle_status, f.retention_class, f.inspection_metadata,
-                v.storage_status, v.scan_status
-         FROM certificate_template_file_uploads upload
-         JOIN files f ON f.id = upload.file_id
-         LEFT JOIN file_versions v
-           ON v.id = f.current_version_id AND v.file_id = f.id
-         WHERE upload.template_id = $1
-           AND upload.purpose_code = 'certificate_template_font'
-           AND f.purpose_code = 'certificate_template_font'
-           AND f.id = ANY($2::uuid[])
-         ORDER BY f.id",
-    )
-    .bind(template_id)
-    .bind(file_ids)
-    .fetch_all(pool)
-    .await
-    .map_err(template_db_error)?;
-    order_font_uploads(file_ids, rows)
-}
-
-async fn load_font_uploads_for_update(
-    tx: &mut Transaction<'_, Postgres>,
-    template_id: Uuid,
-    file_ids: &[Uuid],
-) -> Result<Vec<UploadedFileRow>, AppError> {
-    let rows = sqlx::query_as::<_, UploadedFileRow>(
-        "SELECT f.id AS file_id, f.display_filename, f.purpose_code,
-                f.lifecycle_status, f.retention_class, f.inspection_metadata,
-                v.storage_status, v.scan_status
-         FROM certificate_template_file_uploads upload
-         JOIN files f ON f.id = upload.file_id
-         LEFT JOIN file_versions v
-           ON v.id = f.current_version_id AND v.file_id = f.id
-         WHERE upload.template_id = $1
-           AND upload.purpose_code = 'certificate_template_font'
-           AND f.purpose_code = 'certificate_template_font'
-           AND f.id = ANY($2::uuid[])
-         ORDER BY f.id
-         FOR UPDATE OF f",
-    )
-    .bind(template_id)
-    .bind(file_ids)
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(template_db_error)?;
-    order_font_uploads(file_ids, rows)
-}
-
-fn order_font_uploads(
-    file_ids: &[Uuid],
-    rows: Vec<UploadedFileRow>,
-) -> Result<Vec<UploadedFileRow>, AppError> {
-    if rows.len() != file_ids.len() {
-        return Err(AppError::Forbidden(
-            "ไฟล์นี้ไม่ได้อัปโหลดสำหรับแม่แบบและชนิดที่ระบุ".to_string(),
-        ));
-    }
-    let mut by_id = rows
-        .into_iter()
-        .map(|row| (row.file_id, row))
-        .collect::<BTreeMap<_, _>>();
-    file_ids
-        .iter()
-        .map(|file_id| {
-            by_id.remove(file_id).ok_or_else(|| {
-                AppError::Forbidden("ไฟล์นี้ไม่ได้อัปโหลดสำหรับแม่แบบและชนิดที่ระบุ".to_string())
-            })
-        })
-        .collect()
-}
-
-async fn load_existing_font_variants(
-    pool: &PgPool,
-    template_id: Uuid,
-) -> Result<BTreeSet<FontVariantKey>, AppError> {
-    let rows = sqlx::query_as::<_, (Option<String>, Option<i16>, Option<String>)>(
-        "SELECT font_family, font_weight, font_style
-         FROM certificate_template_assets
-         WHERE template_id = $1 AND kind = 'font'",
-    )
-    .bind(template_id)
-    .fetch_all(pool)
-    .await
-    .map_err(template_db_error)?;
-    persisted_font_variant_set(rows)
-}
-
-async fn load_existing_font_variants_tx(
-    tx: &mut Transaction<'_, Postgres>,
-    template_id: Uuid,
-) -> Result<BTreeSet<FontVariantKey>, AppError> {
-    let rows = sqlx::query_as::<_, (Option<String>, Option<i16>, Option<String>)>(
-        "SELECT font_family, font_weight, font_style
-         FROM certificate_template_assets
-         WHERE template_id = $1 AND kind = 'font'",
-    )
-    .bind(template_id)
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(template_db_error)?;
-    persisted_font_variant_set(rows)
-}
-
-fn persisted_font_variant_set(
-    rows: Vec<(Option<String>, Option<i16>, Option<String>)>,
-) -> Result<BTreeSet<FontVariantKey>, AppError> {
-    rows.into_iter()
-        .map(|(family, weight, style)| {
-            let family = family.ok_or_else(invalid_persisted_template)?;
-            let weight = weight
-                .and_then(|value| u16::try_from(value).ok())
-                .ok_or_else(invalid_persisted_template)?;
-            let style = style
-                .as_deref()
-                .and_then(CertificateFontStyle::parse)
-                .ok_or_else(invalid_persisted_template)?;
-            Ok(FontVariantKey {
-                family: normalize_name_for_match(&family),
-                weight,
-                style,
-            })
-        })
-        .collect()
-}
-
-fn classify_font_uploads(
-    uploads: &[UploadedFileRow],
-    existing: &BTreeSet<FontVariantKey>,
-) -> CertificateFontUploadInspection {
-    let mut candidates = uploads
-        .iter()
-        .map(|upload| {
-            let available = upload.retention_class == "temporary"
-                && upload.lifecycle_status == "ready"
-                && upload.storage_status.as_deref() == Some("stored")
-                && upload.scan_status.as_deref() == Some("clean");
-            let (family, weight, style, is_variable, metadata_is_font) =
-                match &upload.inspection_metadata.0 {
-                    FileInspectionMetadata::Font {
-                        family_name,
-                        weight,
-                        style,
-                        is_variable,
-                        ..
-                    } => (
-                        family_name
-                            .as_deref()
-                            .map(normalize_display_text)
-                            .filter(|value| !value.is_empty() && value.chars().count() <= 200),
-                        Some(*weight),
-                        Some(match style {
-                            FontInspectionStyle::Normal => CertificateFontStyle::Normal,
-                            FontInspectionStyle::Italic => CertificateFontStyle::Italic,
-                        }),
-                        *is_variable,
-                        true,
-                    ),
-                    _ => (None, None, None, false, false),
-                };
-            let status = if !available || !metadata_is_font {
-                Some(CertificateFontUploadStatus::Unavailable)
-            } else if family.is_none() {
-                Some(CertificateFontUploadStatus::MissingFamily)
-            } else if is_variable {
-                Some(CertificateFontUploadStatus::UnsupportedVariable)
-            } else if weight.is_none_or(|value| !(100..=900).contains(&value) || value % 100 != 0) {
-                Some(CertificateFontUploadStatus::UnsupportedWeight)
-            } else {
-                None
-            };
-            let key = if status.is_none() {
-                Some(FontVariantKey {
-                    family: normalize_name_for_match(family.as_deref().unwrap_or_default()),
-                    weight: weight.unwrap_or_default(),
-                    style: style.unwrap_or(CertificateFontStyle::Normal),
-                })
-            } else {
-                None
-            };
-            (
-                CertificateFontUploadInspectionFile {
-                    file_id: upload.file_id,
-                    display_filename: upload.display_filename.clone(),
-                    font_family: family,
-                    font_weight: weight,
-                    font_style: style,
-                    status: status.unwrap_or(CertificateFontUploadStatus::Ready),
-                },
-                key,
-            )
-        })
-        .collect::<Vec<_>>();
-    let mut selected_counts = BTreeMap::<FontVariantKey, usize>::new();
-    for (_, key) in &candidates {
-        if let Some(key) = key {
-            *selected_counts.entry(key.clone()).or_default() += 1;
-        }
-    }
-    for (file, key) in &mut candidates {
-        let Some(key) = key else {
-            continue;
-        };
-        if selected_counts.get(key).copied().unwrap_or_default() > 1 {
-            file.status = CertificateFontUploadStatus::DuplicateSelection;
-        } else if existing.contains(key) {
-            file.status = CertificateFontUploadStatus::DuplicateExisting;
-        }
-    }
-    CertificateFontUploadInspection {
-        files: candidates.into_iter().map(|(file, _)| file).collect(),
-    }
 }
 
 async fn load_uploaded_file(
@@ -1743,56 +1348,20 @@ async fn validate_layout_asset_references(
     template_id: Uuid,
     layout: &CertificateLayoutV1,
 ) -> Result<(), AppError> {
-    let mut expected = BTreeMap::new();
-    for element in &layout.elements {
-        match element {
-            CertificateElement::Image(image) => {
-                if expected
-                    .insert(image.asset_id, ExpectedAsset::Image)
-                    .is_some_and(|previous| previous != ExpectedAsset::Image)
-                {
-                    return Err(AppError::ValidationError(
-                        "ทรัพยากรเดียวกันใช้เป็นทั้งรูปและฟอนต์ไม่ได้".to_string(),
-                    ));
-                }
-            }
-            CertificateElement::Text(text) => {
-                if let CertificateFontSource::Asset { asset_id } = text.font_source {
-                    let next = ExpectedAsset::Font {
-                        family: text.font_family.clone(),
-                        weight: text.font_weight,
-                        style: text.font_style,
-                    };
-                    if expected
-                        .insert(asset_id, next.clone())
-                        .is_some_and(|previous| previous != next)
-                    {
-                        return Err(AppError::ValidationError(
-                            "ฟอนต์ที่อัปโหลดหนึ่งรายการต้องใช้ family น้ำหนัก และรูปแบบเดียวกัน".to_string(),
-                        ));
-                    }
-                }
-            }
-            CertificateElement::Qr(_) => {}
-        }
-    }
+    let expected = layout
+        .elements
+        .iter()
+        .filter_map(|element| match element {
+            CertificateElement::Image(image) => Some((image.asset_id, ExpectedAsset::Image)),
+            CertificateElement::Text(_) | CertificateElement::Qr(_) => None,
+        })
+        .collect::<BTreeMap<_, _>>();
     if expected.is_empty() {
         return Ok(());
     }
     let ids = expected.keys().copied().collect::<Vec<_>>();
-    let rows = sqlx::query_as::<
-        _,
-        (
-            Uuid,
-            String,
-            String,
-            Option<String>,
-            Option<i16>,
-            Option<String>,
-        ),
-    >(
-        "SELECT asset.id, asset.kind, file.lifecycle_status,
-                asset.font_family, asset.font_weight, asset.font_style
+    let rows = sqlx::query_as::<_, (Uuid, String, String)>(
+        "SELECT asset.id, asset.kind, file.lifecycle_status
          FROM certificate_template_assets asset
          JOIN files file ON file.id = asset.file_id
          WHERE asset.template_id = $1 AND asset.id = ANY($2::uuid[])",
@@ -1803,30 +1372,97 @@ async fn validate_layout_asset_references(
     .await
     .map_err(template_db_error)?;
     if rows.len() != expected.len()
-        || rows
-            .iter()
-            .any(|(id, kind, status, family, weight, style)| {
-                let metadata_matches = match expected.get(id) {
-                    Some(ExpectedAsset::Image) => kind == "image",
-                    Some(ExpectedAsset::Font {
-                        family: expected_family,
-                        weight: expected_weight,
-                        style: expected_style,
-                    }) => {
-                        kind == "font"
-                            && family.as_ref() == Some(expected_family)
-                            && weight.map(|value| value as u16) == Some(*expected_weight)
-                            && style.as_deref() == Some(expected_style.as_str())
-                    }
-                    None => false,
-                };
-                !metadata_matches || status != "ready"
-            })
+        || rows.iter().any(|(id, kind, status)| {
+            expected.get(id).is_none() || kind != "image" || status != "ready"
+        })
     {
         return Err(AppError::Conflict(
-            "งานออกแบบอ้างถึงรูปหรือฟอนต์ที่ไม่พร้อมใช้งาน".to_string(),
+            "งานออกแบบอ้างถึงรูปที่ไม่พร้อมใช้งาน".to_string(),
         ));
     }
+    Ok(())
+}
+
+pub(super) fn referenced_school_font_ids(layout: &CertificateLayoutV1) -> BTreeSet<Uuid> {
+    layout
+        .elements
+        .iter()
+        .filter_map(|element| match element {
+            CertificateElement::Text(text) => match text.font_source {
+                CertificateFontSource::SchoolFont { font_id } => Some(font_id),
+                CertificateFontSource::BuiltIn => None,
+            },
+            CertificateElement::Image(_) | CertificateElement::Qr(_) => None,
+        })
+        .collect()
+}
+
+async fn sync_school_font_references(
+    tx: &mut Transaction<'_, Postgres>,
+    template_id: Uuid,
+    layout: &CertificateLayoutV1,
+) -> Result<(), AppError> {
+    let mut expected = BTreeMap::new();
+    for element in &layout.elements {
+        let CertificateElement::Text(text) = element else {
+            continue;
+        };
+        let CertificateFontSource::SchoolFont { font_id } = text.font_source else {
+            continue;
+        };
+        let next = (text.font_family.clone(), text.font_weight, text.font_style);
+        if expected
+            .insert(font_id, next.clone())
+            .is_some_and(|previous| previous != next)
+        {
+            return Err(AppError::ValidationError(
+                "ฟอนต์กลางหนึ่งรายการต้องใช้ family น้ำหนัก และรูปแบบเดียวกัน".to_string(),
+            ));
+        }
+    }
+
+    let font_ids = expected.keys().copied().collect::<Vec<_>>();
+    let fonts = match school_font_services::lock_authorized(tx, &font_ids).await {
+        Err(AppError::NotFound(_)) => {
+            return Err(AppError::Conflict(
+                "งานออกแบบอ้างถึงฟอนต์กลางที่ไม่พร้อมใช้งาน".to_string(),
+            ));
+        }
+        result => result?,
+    };
+    if fonts.iter().any(|font| {
+        expected
+            .get(&font.id)
+            .is_none_or(|(family, weight, style)| {
+                font.font_family != *family
+                    || font.font_weight != *weight
+                    || font.font_style != *style
+            })
+    }) {
+        return Err(AppError::Conflict(
+            "family น้ำหนัก หรือรูปแบบของฟอนต์กลางไม่ตรงกับงานออกแบบ".to_string(),
+        ));
+    }
+
+    sqlx::query(
+        "INSERT INTO certificate_template_font_references (template_id, font_id)
+         SELECT $1, unnest($2::uuid[])
+         ON CONFLICT (template_id, font_id) DO NOTHING",
+    )
+    .bind(template_id)
+    .bind(&font_ids)
+    .execute(&mut **tx)
+    .await
+    .map_err(template_db_error)?;
+    sqlx::query(
+        "DELETE FROM certificate_template_font_references
+         WHERE template_id = $1 AND NOT (font_id = ANY($2::uuid[]))",
+    )
+    .bind(template_id)
+    .bind(&font_ids)
+    .execute(&mut **tx)
+    .await
+    .map_err(template_db_error)?;
     Ok(())
 }
 
@@ -1836,10 +1472,7 @@ pub(super) fn referenced_asset_ids(layout: &CertificateLayoutV1) -> BTreeSet<Uui
         .iter()
         .filter_map(|element| match element {
             CertificateElement::Image(image) => Some(image.asset_id),
-            CertificateElement::Text(text) => match text.font_source {
-                CertificateFontSource::Asset { asset_id } => Some(asset_id),
-                CertificateFontSource::BuiltIn => None,
-            },
+            CertificateElement::Text(_) => None,
             CertificateElement::Qr(_) => None,
         })
         .collect()

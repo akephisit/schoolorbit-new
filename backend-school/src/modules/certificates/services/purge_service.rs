@@ -625,9 +625,7 @@ async fn validate_inventory(
     for file in inventory {
         if !matches!(
             file.purpose_code.as_str(),
-            "certificate_template_background"
-                | "certificate_template_image"
-                | "certificate_template_font"
+            "certificate_template_background" | "certificate_template_image"
         ) || file.visibility != "private"
         {
             return Err(AppError::Conflict(
@@ -665,7 +663,6 @@ SELECT EXISTS (
     WHERE template.campaign_id = $1
       AND file.purpose_code <> CASE asset.kind
           WHEN 'image' THEN 'certificate_template_image'
-          WHEN 'font' THEN 'certificate_template_font'
           ELSE ''
       END
 )

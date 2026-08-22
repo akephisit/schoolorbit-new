@@ -7,14 +7,17 @@ use uuid::Uuid;
 use crate::{
     error::AppError,
     middleware::permission::ActorContext,
-    modules::certificates::models::{
-        CandidateValidationCode, CandidateValidationStatus, CertificateCapabilities,
-        CertificateElement, CertificateFontSource, CertificateIssueCandidateProblem,
-        CertificateIssueCode, CertificateLayoutV1, CertificateNumber,
-        CertificateReplacementCandidate, CertificateStatus, IssueCertificateOutcome,
-        IssueCertificateRequest, IssuedCertificateDetail, IssuedCertificateListQuery,
-        IssuedCertificateSummary, PageGeometry, RecipientType, RevokeCertificateRequest,
-        RevokeCertificateResult,
+    modules::{
+        certificates::models::{
+            CandidateValidationCode, CandidateValidationStatus, CertificateCapabilities,
+            CertificateElement, CertificateFontSource, CertificateIssueCandidateProblem,
+            CertificateIssueCode, CertificateLayoutV1, CertificateNumber,
+            CertificateReplacementCandidate, CertificateStatus, IssueCertificateOutcome,
+            IssueCertificateRequest, IssuedCertificateDetail, IssuedCertificateListQuery,
+            IssuedCertificateSummary, PageGeometry, RecipientType, RevokeCertificateRequest,
+            RevokeCertificateResult,
+        },
+        school_fonts::models::SchoolFontStyle,
     },
     permissions::registry::codes,
     policies::certificate_access_policy::{require_owner_action, CertificateAction},
@@ -140,15 +143,26 @@ struct AssetRow {
     id: Uuid,
     template_id: Uuid,
     kind: String,
-    font_family: Option<String>,
-    font_weight: Option<i16>,
     lifecycle_status: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum ExpectedAsset {
     Image,
-    Font { family: String, weight: u16 },
+}
+
+#[derive(Debug, FromRow)]
+struct SchoolFontRow {
+    id: Uuid,
+    font_family: String,
+    font_weight: i16,
+    font_style: String,
+    purpose_code: String,
+    visibility: String,
+    lifecycle_status: String,
+    retention_class: String,
+    storage_status: String,
+    scan_status: String,
 }
 
 #[derive(Debug, FromRow)]
@@ -303,6 +317,7 @@ pub async fn issue_request(
         .map_err(issuance_db_error)?;
     let accounts = load_accounts(&mut tx, &candidates).await?;
     let assets = lock_assets(&mut tx, &templates).await?;
+    let school_fonts = lock_school_fonts(&mut tx, &templates).await?;
     let custom_headers = load_custom_headers(&mut tx, campaign.id).await?;
     let catalog = variable_catalog(&custom_headers).map_err(|_| {
         AppError::InternalServerError("certificate_variable_catalog_invalid".to_string())
@@ -315,6 +330,7 @@ pub async fn issue_request(
         &templates,
         &accounts,
         &assets,
+        &school_fonts,
         &catalog,
     );
     if !problems.is_empty() {
@@ -1308,8 +1324,7 @@ async fn lock_assets(
         return Ok(BTreeMap::new());
     }
     let rows = sqlx::query_as::<_, AssetRow>(
-        "SELECT asset.id, asset.template_id, asset.kind, asset.font_family,
-                asset.font_weight, file.lifecycle_status
+        "SELECT asset.id, asset.template_id, asset.kind, file.lifecycle_status
          FROM certificate_template_assets asset
          JOIN files file ON file.id = asset.file_id
          WHERE asset.template_id = ANY($1::uuid[])
@@ -1325,6 +1340,45 @@ async fn lock_assets(
         grouped.entry(row.template_id).or_default().push(row);
     }
     Ok(grouped)
+}
+
+async fn lock_school_fonts(
+    tx: &mut Transaction<'_, Postgres>,
+    templates: &[TemplateRow],
+) -> Result<BTreeMap<Uuid, SchoolFontRow>, AppError> {
+    let font_ids = templates
+        .iter()
+        .flat_map(|template| template.layout.elements.iter())
+        .filter_map(|element| match element {
+            CertificateElement::Text(text) => match text.font_source {
+                CertificateFontSource::SchoolFont { font_id } => Some(font_id),
+                CertificateFontSource::BuiltIn => None,
+            },
+            CertificateElement::Image(_) | CertificateElement::Qr(_) => None,
+        })
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    if font_ids.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    sqlx::query_as::<_, SchoolFontRow>(
+        "SELECT font.id, font.font_family, font.font_weight, font.font_style,
+                file.purpose_code, file.visibility, file.lifecycle_status,
+                file.retention_class, version.storage_status, version.scan_status
+         FROM school_fonts AS font
+         JOIN files AS file ON file.id = font.file_id
+         JOIN file_versions AS version
+           ON version.id = file.current_version_id AND version.file_id = file.id
+         WHERE font.id = ANY($1::uuid[])
+         ORDER BY font.id
+         FOR SHARE OF font, file, version",
+    )
+    .bind(&font_ids)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(issuance_db_error)
+    .map(|rows| rows.into_iter().map(|font| (font.id, font)).collect())
 }
 
 async fn load_custom_headers(
@@ -1357,6 +1411,7 @@ fn revalidate(
     templates: &[TemplateRow],
     accounts: &BTreeMap<Uuid, AccountRow>,
     assets: &BTreeMap<Uuid, Vec<AssetRow>>,
+    school_fonts: &BTreeMap<Uuid, SchoolFontRow>,
     catalog: &[String],
 ) -> BTreeMap<Uuid, BTreeSet<CertificateIssueCode>> {
     let mut problems = BTreeMap::<Uuid, BTreeSet<CertificateIssueCode>>::new();
@@ -1436,7 +1491,7 @@ fn revalidate(
                 .or_default()
                 .insert(CertificateIssueCode::TemplateNotReady);
         }
-        if !template_assets_are_ready(template, assets.get(&template.id)) {
+        if !template_resources_are_ready(template, assets.get(&template.id), school_fonts) {
             problems
                 .entry(candidate.id)
                 .or_default()
@@ -1516,76 +1571,70 @@ fn template_layout_is_valid(template: &TemplateRow, catalog: &[String]) -> bool 
         .is_some_and(|page| validate_layout(&template.layout.0, page, catalog).is_ok())
 }
 
-fn template_assets_are_ready(template: &TemplateRow, assets: Option<&Vec<AssetRow>>) -> bool {
+fn template_resources_are_ready(
+    template: &TemplateRow,
+    assets: Option<&Vec<AssetRow>>,
+    school_fonts: &BTreeMap<Uuid, SchoolFontRow>,
+) -> bool {
     if template.background_lifecycle_status.as_deref() != Some("ready") {
         return false;
     }
-    let mut expected = BTreeMap::<Uuid, ExpectedAsset>::new();
+    let mut expected_assets = BTreeMap::<Uuid, ExpectedAsset>::new();
+    let mut expected_fonts = BTreeMap::new();
     for element in &template.layout.elements {
-        let next = match element {
-            CertificateElement::Image(image) => Some((image.asset_id, ExpectedAsset::Image)),
-            CertificateElement::Text(text) => match text.font_source {
-                CertificateFontSource::Asset { asset_id } => Some((
-                    asset_id,
-                    ExpectedAsset::Font {
-                        family: text.font_family.clone(),
-                        weight: text.font_weight,
-                    },
-                )),
-                CertificateFontSource::BuiltIn => None,
-            },
-            CertificateElement::Qr(_) => None,
-        };
-        let Some((asset_id, expected_asset)) = next else {
-            continue;
-        };
-        if expected
-            .insert(asset_id, expected_asset.clone())
-            .is_some_and(|previous| previous != expected_asset)
-        {
-            return false;
+        match element {
+            CertificateElement::Image(image) => {
+                expected_assets.insert(image.asset_id, ExpectedAsset::Image);
+            }
+            CertificateElement::Text(text) => {
+                let CertificateFontSource::SchoolFont { font_id } = text.font_source else {
+                    continue;
+                };
+                let next = (text.font_family.clone(), text.font_weight, text.font_style);
+                if expected_fonts
+                    .insert(font_id, next.clone())
+                    .is_some_and(|previous| previous != next)
+                {
+                    return false;
+                }
+            }
+            CertificateElement::Qr(_) => {}
         }
     }
-    if expected.is_empty() {
-        return true;
-    }
-    let Some(assets) = assets else {
-        return false;
-    };
-    let by_id = assets
-        .iter()
-        .map(|asset| (asset.id, asset))
-        .collect::<BTreeMap<_, _>>();
-    expected.into_iter().all(|(asset_id, expected_asset)| {
-        by_id.get(&asset_id).is_some_and(|asset| {
-            asset.lifecycle_status == "ready"
-                && asset_metadata_is_valid(asset)
-                && match expected_asset {
-                    ExpectedAsset::Image => asset.kind == "image",
-                    ExpectedAsset::Font { family, weight } => {
-                        asset.kind == "font"
-                            && asset.font_family.as_deref() == Some(family.as_str())
-                            && asset.font_weight.map(|value| value as u16) == Some(weight)
-                    }
-                }
+    let images_ready = if expected_assets.is_empty() {
+        true
+    } else {
+        let Some(assets) = assets else {
+            return false;
+        };
+        let by_id = assets
+            .iter()
+            .map(|asset| (asset.id, asset))
+            .collect::<BTreeMap<_, _>>();
+        expected_assets.keys().all(|asset_id| {
+            by_id
+                .get(asset_id)
+                .is_some_and(|asset| asset.kind == "image" && asset.lifecycle_status == "ready")
         })
-    })
+    };
+    images_ready
+        && expected_fonts.into_iter().all(|(font_id, expected)| {
+            school_fonts.get(&font_id).is_some_and(|font| {
+                school_font_is_ready(font)
+                    && font.font_family == expected.0
+                    && u16::try_from(font.font_weight).ok() == Some(expected.1)
+                    && SchoolFontStyle::parse(&font.font_style) == Some(expected.2)
+            })
+        })
 }
 
-fn asset_metadata_is_valid(asset: &AssetRow) -> bool {
-    match asset.kind.as_str() {
-        "image" => asset.font_family.is_none() && asset.font_weight.is_none(),
-        "font" => {
-            asset
-                .font_family
-                .as_ref()
-                .is_some_and(|family| !family.trim().is_empty())
-                && asset
-                    .font_weight
-                    .is_some_and(|weight| (100..=900).contains(&weight) && weight % 100 == 0)
-        }
-        _ => false,
-    }
+fn school_font_is_ready(font: &SchoolFontRow) -> bool {
+    font.purpose_code == "school_font"
+        && font.visibility == "private"
+        && font.lifecycle_status == "ready"
+        && font.retention_class == "standard"
+        && font.storage_status == "stored"
+        && font.scan_status == "clean"
 }
 
 async fn persist_returned_outcome(

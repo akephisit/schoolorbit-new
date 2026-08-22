@@ -16,14 +16,13 @@ use crate::{
         certificates::{
             models::{
                 AttachCertificateAssetRequest, AttachCertificateBackgroundRequest,
-                AttachCertificateFontBatchRequest, CertificateAccountSearchQuery,
-                CertificateCampaignDetail, CertificateCampaignListQuery,
-                CertificateCampaignPurgeImpact, CertificateCampaignPurgeStatus,
-                CertificateCampaignSummary, CertificateCandidateAccount,
-                CertificateCandidateBulkRequest, CertificateCandidateBulkResult,
-                CertificateCandidateDetail, CertificateCandidateImportResult,
-                CertificateCandidateListQuery, CertificateCandidateListResponse,
-                CertificateFontUploadInspection, CertificateImportRequest,
+                CertificateAccountSearchQuery, CertificateCampaignDetail,
+                CertificateCampaignListQuery, CertificateCampaignPurgeImpact,
+                CertificateCampaignPurgeStatus, CertificateCampaignSummary,
+                CertificateCandidateAccount, CertificateCandidateBulkRequest,
+                CertificateCandidateBulkResult, CertificateCandidateDetail,
+                CertificateCandidateImportResult, CertificateCandidateListQuery,
+                CertificateCandidateListResponse, CertificateImportRequest,
                 CertificateIssueRequestDetail, CertificateIssueRequestListQuery,
                 CertificateIssueRequestSummary, CertificatePreviewManifestRequest,
                 CertificateRenderManifest, CertificateRenderManifestBatchRequest,
@@ -31,12 +30,12 @@ use crate::{
                 CertificateTemplateDetail, CertificateTemplateVariableCatalog,
                 ChangeCertificateCampaignStatusRequest, CreateAccountCertificateCandidateRequest,
                 CreateCertificateCampaignRequest, CreateCertificateTemplateRequest,
-                CreateManualExternalCandidateRequest, InspectCertificateFontUploadsRequest,
-                IssueCertificateOutcome, IssueCertificateRequest, IssuedCertificateDetail,
-                IssuedCertificateListQuery, IssuedCertificateSummary,
-                ManualCertificateVerificationRequest, PublicCertificateRenderRequest,
-                PublicCertificateVerificationData, QrCertificateVerificationRequest,
-                ReturnCertificateIssueRequest, RevokeCertificateRequest, RevokeCertificateResult,
+                CreateManualExternalCandidateRequest, IssueCertificateOutcome,
+                IssueCertificateRequest, IssuedCertificateDetail, IssuedCertificateListQuery,
+                IssuedCertificateSummary, ManualCertificateVerificationRequest,
+                PublicCertificateRenderRequest, PublicCertificateVerificationData,
+                QrCertificateVerificationRequest, ReturnCertificateIssueRequest,
+                RevokeCertificateRequest, RevokeCertificateResult,
                 StartCertificateCampaignPurgeRequest, SubmitCertificateIssueRequest,
                 UpdateCertificateCampaignRequest, UpdateCertificateCandidateRequest,
                 UpdateCertificateTemplateRequest,
@@ -48,6 +47,10 @@ use crate::{
         },
         files::consumer_service::request_deletions,
         lookup::models::OrganizationUnitLookupItem,
+        school_fonts::models::{
+            AttachSchoolFontBatchRequest, InspectSchoolFontUploadsRequest, SchoolFontListResponse,
+            SchoolFontUploadInspection,
+        },
     },
     permissions::registry::codes,
     utils::{
@@ -774,14 +777,38 @@ pub async fn attach_certificate_template_asset(
 }
 
 #[utoipa::path(
+    get,
+    path = "/api/certificates/templates/{template_id}/fonts",
+    operation_id = "listCertificateSchoolFonts",
+    tag = "certificate",
+    params(("template_id" = Uuid, Path, description = "Certificate template ID")),
+    responses(
+        (status = 200, description = "Shared school fonts available to the template", body = ApiResponse<SchoolFontListResponse>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Certificate template read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Certificate template not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_certificate_school_fonts(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(template_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let fonts =
+        template_service::list_fonts(&context.tenant.pool, &context.actor, template_id).await?;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(fonts))).into_response())
+}
+
+#[utoipa::path(
     post,
-    path = "/api/certificates/templates/{template_id}/assets/fonts/inspect",
+    path = "/api/certificates/templates/{template_id}/fonts/inspect",
     operation_id = "inspectCertificateFontUploads",
     tag = "certificate",
     params(("template_id" = Uuid, Path, description = "Certificate template ID")),
-    request_body = InspectCertificateFontUploadsRequest,
+    request_body = InspectSchoolFontUploadsRequest,
     responses(
-        (status = 200, description = "Private font uploads inspected for exact variants", body = ApiResponse<CertificateFontUploadInspection>),
+        (status = 200, description = "Private school-font uploads inspected for exact variants", body = ApiResponse<SchoolFontUploadInspection>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Certificate template update permission or file relationship denied", body = ApiErrorResponse),
         (status = 422, description = "Invalid font file selection", body = ApiErrorResponse)
@@ -791,7 +818,7 @@ pub async fn inspect_certificate_font_uploads(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(template_id): Path<Uuid>,
-    Json(payload): Json<InspectCertificateFontUploadsRequest>,
+    Json(payload): Json<InspectSchoolFontUploadsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let inspection = template_service::inspect_font_uploads(
@@ -806,13 +833,13 @@ pub async fn inspect_certificate_font_uploads(
 
 #[utoipa::path(
     post,
-    path = "/api/certificates/templates/{template_id}/assets/fonts/batch",
+    path = "/api/certificates/templates/{template_id}/fonts/batch",
     operation_id = "attachCertificateFontBatch",
     tag = "certificate",
     params(("template_id" = Uuid, Path, description = "Certificate template ID")),
-    request_body = AttachCertificateFontBatchRequest,
+    request_body = AttachSchoolFontBatchRequest,
     responses(
-        (status = 201, description = "Reviewed static font variants attached atomically", body = ApiResponse<CertificateTemplateDetail>),
+        (status = 201, description = "Reviewed static font variants attached atomically to the school library", body = ApiResponse<SchoolFontListResponse>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Certificate template update permission or file relationship denied", body = ApiErrorResponse),
         (status = 409, description = "Duplicate variant or template locked", body = ApiErrorResponseWithOptionalData<CertificateResourceLocked>),
@@ -823,17 +850,17 @@ pub async fn attach_certificate_font_batch(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(template_id): Path<Uuid>,
-    Json(payload): Json<AttachCertificateFontBatchRequest>,
+    Json(payload): Json<AttachSchoolFontBatchRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    let template = template_service::attach_font_batch(
+    let fonts = template_service::attach_font_batch(
         &context.tenant.pool,
         &context.actor,
         template_id,
         payload,
     )
     .await?;
-    Ok((StatusCode::CREATED, Json(ApiResponse::ok(template))).into_response())
+    Ok((StatusCode::CREATED, Json(ApiResponse::ok(fonts))).into_response())
 }
 
 #[utoipa::path(

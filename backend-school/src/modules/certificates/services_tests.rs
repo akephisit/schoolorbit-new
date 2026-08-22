@@ -23,10 +23,10 @@ use crate::{
             CertificateCampaignPurgeImpact, CertificateCampaignPurgePhase,
             CertificateCampaignPurgeStatus, CertificateCampaignStatus,
             CertificateCandidateBulkRequest, CertificateCandidateListQuery, CertificateElement,
-            CertificateFontSource, CertificateFontStyle, CertificateFontUploadStatus,
-            CertificateImportRequest, CertificateImportRowInput, CertificateImportSource,
-            CertificateIssueCode, CertificateIssueRequestListQuery, CertificateIssueRequestStatus,
-            CertificateLayoutV1, CertificatePreviewKind, CertificatePreviewManifestRequest,
+            CertificateFontSource, CertificateFontUploadStatus, CertificateImportRequest,
+            CertificateImportRowInput, CertificateImportSource, CertificateIssueCode,
+            CertificateIssueRequestListQuery, CertificateIssueRequestStatus, CertificateLayoutV1,
+            CertificatePreviewKind, CertificatePreviewManifestRequest,
             CertificateRenderManifestBatchRequest, CertificateStatus, CertificateTemplateAssetKind,
             CertificateTemplateDeleteDisposition, ChangeCertificateCampaignStatusRequest,
             CreateAccountCertificateCandidateRequest, CreateCertificateCampaignRequest,
@@ -44,6 +44,7 @@ use crate::{
             request_service, template_service, verification_service,
         },
     },
+    modules::school_fonts::models::SchoolFontStyle,
     permissions::registry::codes,
     policies::{
         certificate_access_policy::{require_owner_action, CertificateAction},
@@ -57,6 +58,34 @@ use crate::{
 };
 
 use chrono::NaiveDate;
+
+#[test]
+fn certificate_layout_accepts_school_font_source_and_rejects_removed_asset_source() {
+    let font_id = Uuid::new_v4();
+    let source = CertificateFontSource::SchoolFont { font_id };
+    assert_eq!(
+        serde_json::to_value(&source).unwrap(),
+        serde_json::json!({"type": "school_font", "font_id": font_id})
+    );
+    assert_eq!(
+        serde_json::from_value::<CertificateFontSource>(serde_json::json!({
+            "type": "school_font",
+            "font_id": font_id
+        }))
+        .unwrap(),
+        source
+    );
+    assert!(
+        serde_json::from_value::<CertificateFontSource>(serde_json::json!({
+            "type": "asset",
+            "asset_id": Uuid::new_v4()
+        }))
+        .is_err()
+    );
+
+    let serialized_style = serde_json::to_value(SchoolFontStyle::Italic).unwrap();
+    assert_eq!(serialized_style, "italic");
+}
 
 #[test]
 fn purge_contract_serializes_camel_case_and_rejects_unknown_fields() {
@@ -679,7 +708,7 @@ fn text_layout(font_source: CertificateFontSource) -> CertificateLayoutV1 {
             font_source,
             font_family: "Sarabun".to_string(),
             font_weight: 400,
-            font_style: CertificateFontStyle::Normal,
+            font_style: SchoolFontStyle::Normal,
             font_size: 24.0,
             min_font_size: 12.0,
             color: "#112233".to_string(),
@@ -701,7 +730,6 @@ async fn insert_ready_template_file(
     let (purpose_segment, detected_mime_type, extension) = match purpose {
         "certificate_template_background" => ("template-background", "application/pdf", "pdf"),
         "certificate_template_image" => ("template-image", "image/jpeg", "jpg"),
-        "certificate_template_font" => ("template-font", "font/ttf", "ttf"),
         _ => panic!("unsupported certificate test purpose"),
     };
     let file_id: Uuid = sqlx::query_scalar(
@@ -759,6 +787,104 @@ async fn insert_ready_template_file(
     .await
     .unwrap();
     file_id
+}
+
+async fn insert_ready_school_font_upload(
+    pool: &PgPool,
+    actor: &ActorContext,
+    template_id: Uuid,
+    filename: &str,
+    family: Option<&str>,
+    weight: u16,
+    style: &str,
+    is_variable: bool,
+) -> Uuid {
+    let file_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO files (
+            owner_user_id, display_filename, created_by, purpose_code, visibility,
+            lifecycle_status, retention_class, expires_at, inspection_metadata
+         ) VALUES ($1, $2, $1, 'school_font', 'private', 'processing',
+                   'temporary', now() + interval '1 hour', $3)
+         RETURNING id",
+    )
+    .bind(actor.user_id)
+    .bind(filename)
+    .bind(font_inspection(family, weight, style, is_variable))
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let version_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO file_versions (
+            file_id, version_number, provider_code, storage_class, storage_status,
+            object_key, detected_mime_type, canonical_extension, byte_size, checksum,
+            scan_status, scanned_at, created_by
+         ) VALUES ($1, 1, 'test', 'private', 'stored', $2, 'font/ttf', 'ttf',
+                   1024, repeat('a', 64), 'clean', now(), $3)
+         RETURNING id",
+    )
+    .bind(file_id)
+    .bind(format!(
+        "tenants/{}/school/font/{file_id}/v1/original.ttf",
+        Uuid::nil()
+    ))
+    .bind(actor.user_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE files SET current_version_id = $2, lifecycle_status = 'ready' WHERE id = $1",
+    )
+    .bind(file_id)
+    .bind(version_id)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO certificate_school_font_file_uploads (file_id, template_id, uploaded_by)
+         VALUES ($1, $2, $3)",
+    )
+    .bind(file_id)
+    .bind(template_id)
+    .bind(actor.user_id)
+    .execute(pool)
+    .await
+    .unwrap();
+    file_id
+}
+
+async fn attach_school_font_fixture(
+    pool: &PgPool,
+    actor: &ActorContext,
+    template_id: Uuid,
+    filename: &str,
+    family: &str,
+    weight: u16,
+    style: &str,
+) -> crate::modules::school_fonts::models::SchoolFontSummary {
+    let file_id = insert_ready_school_font_upload(
+        pool,
+        actor,
+        template_id,
+        filename,
+        Some(family),
+        weight,
+        style,
+        false,
+    )
+    .await;
+    template_service::attach_font_batch(
+        pool,
+        actor,
+        template_id,
+        crate::modules::school_fonts::models::AttachSchoolFontBatchRequest {
+            file_ids: vec![file_id],
+            rights_confirmed: true,
+        },
+    )
+    .await
+    .unwrap()
+    .items
+    .remove(0)
 }
 
 #[tokio::test]
@@ -846,7 +972,6 @@ async fn certificate_layout_contract_persists_explicit_font_and_image_fields() {
             file_id: image_file_id,
             kind: CertificateTemplateAssetKind::Image,
             display_name: "ตราสัญลักษณ์".to_string(),
-            rights_confirmed: false,
         },
     )
     .await
@@ -890,7 +1015,7 @@ async fn certificate_layout_contract_persists_explicit_font_and_image_fields() {
     let CertificateElement::Text(text) = &updated.layout.elements[0] else {
         panic!("expected text")
     };
-    assert_eq!(text.font_style, CertificateFontStyle::Normal);
+    assert_eq!(text.font_style, SchoolFontStyle::Normal);
     let CertificateElement::Image(image) = &updated.layout.elements[1] else {
         panic!("expected image")
     };
@@ -910,7 +1035,7 @@ async fn certificate_layout_contract_persists_explicit_font_and_image_fields() {
 }
 
 #[tokio::test]
-async fn font_upload_batch_is_inspected_and_attached_atomically() {
+async fn certificate_font_context_uses_shared_library_with_exact_template_authority() {
     let (pool, actor, academic_year_id) =
         school_campaign_fixture("certificate_font_upload_batch", 3161).await;
     let template = create_template_fixture(&pool, &actor, academic_year_id).await;
@@ -926,165 +1051,117 @@ async fn font_upload_batch_is_inspected_and_attached_atomically() {
     .await
     .unwrap();
 
-    let regular = insert_ready_template_file(
+    let regular = insert_ready_school_font_upload(
         &pool,
         &actor,
         template.id,
-        "certificate_template_font",
-        font_inspection(Some("Reviewed Thai"), 400, "normal", false),
+        "reviewed-regular.ttf",
+        Some("Reviewed Thai"),
+        400,
+        "normal",
+        false,
     )
     .await;
-    let bold = insert_ready_template_file(
+    let bold = insert_ready_school_font_upload(
         &pool,
         &actor,
         template.id,
-        "certificate_template_font",
-        font_inspection(Some("Reviewed Thai"), 700, "normal", false),
+        "reviewed-bold.ttf",
+        Some("Reviewed Thai"),
+        700,
+        "normal",
+        false,
     )
     .await;
-    for file_ids in [Vec::new(), vec![regular, regular], vec![regular; 41]] {
-        assert!(matches!(
-            template_service::inspect_font_uploads(
-                &pool,
-                &actor,
-                template.id,
-                InspectCertificateFontUploadsRequest { file_ids },
-            )
-            .await,
-            Err(AppError::ValidationError(_))
-        ));
-    }
+    let variable = insert_ready_school_font_upload(
+        &pool,
+        &actor,
+        template.id,
+        "variable.ttf",
+        Some("Variable Thai"),
+        400,
+        "italic",
+        true,
+    )
+    .await;
+
     let inspected = template_service::inspect_font_uploads(
         &pool,
         &actor,
         template.id,
         InspectCertificateFontUploadsRequest {
-            file_ids: vec![regular, bold],
+            file_ids: vec![bold, regular],
         },
     )
     .await
     .unwrap();
-    assert_eq!(inspected.files.len(), 2);
+    assert_eq!(
+        inspected
+            .files
+            .iter()
+            .map(|file| file.file_id)
+            .collect::<Vec<_>>(),
+        vec![bold, regular]
+    );
     assert!(inspected
         .files
         .iter()
         .all(|file| file.status == CertificateFontUploadStatus::Ready));
-    assert_eq!(
-        inspected.files[0].font_family.as_deref(),
-        Some("Reviewed Thai")
-    );
-    assert_eq!(inspected.files[0].font_weight, Some(400));
-    assert_eq!(
-        inspected.files[0].font_style,
-        Some(CertificateFontStyle::Normal)
-    );
+    assert_eq!(inspected.files[1].font_style, Some(SchoolFontStyle::Normal));
 
-    let duplicate_selection = insert_ready_template_file(
+    assert!(matches!(
+        template_service::inspect_font_uploads(
+            &pool,
+            &actor,
+            sibling.id,
+            InspectCertificateFontUploadsRequest {
+                file_ids: vec![regular],
+            },
+        )
+        .await,
+        Err(AppError::ValidationError(_))
+    ));
+    assert!(matches!(
+        template_service::attach_font_batch(
+            &pool,
+            &actor,
+            sibling.id,
+            AttachCertificateFontBatchRequest {
+                file_ids: vec![regular],
+                rights_confirmed: true,
+            },
+        )
+        .await,
+        Err(AppError::ValidationError(_))
+    ));
+
+    let ordinary_user_id = create_test_user(
         &pool,
-        &actor,
-        template.id,
-        "certificate_template_font",
-        font_inspection(Some(" Reviewed Thai "), 400, "normal", false),
-    )
-    .await;
-    let duplicates = template_service::inspect_font_uploads(
-        &pool,
-        &actor,
-        template.id,
-        InspectCertificateFontUploadsRequest {
-            file_ids: vec![regular, duplicate_selection],
-        },
+        "certificate-font-context-ordinary@example.invalid",
+        "test-password",
     )
     .await
     .unwrap();
-    assert!(duplicates
-        .files
-        .iter()
-        .all(|file| file.status == CertificateFontUploadStatus::DuplicateSelection));
-
-    let variable = insert_ready_template_file(
-        &pool,
-        &actor,
-        template.id,
-        "certificate_template_font",
-        font_inspection(Some("Variable Thai"), 400, "normal", true),
-    )
-    .await;
-    let unsupported_weight = insert_ready_template_file(
-        &pool,
-        &actor,
-        template.id,
-        "certificate_template_font",
-        font_inspection(Some("Odd Thai"), 350, "normal", false),
-    )
-    .await;
-    let missing_family = insert_ready_template_file(
-        &pool,
-        &actor,
-        template.id,
-        "certificate_template_font",
-        font_inspection(None, 400, "normal", false),
-    )
-    .await;
-    let unavailable = insert_ready_template_file(
-        &pool,
-        &actor,
-        template.id,
-        "certificate_template_font",
-        font_inspection(Some("Unavailable Thai"), 400, "normal", false),
-    )
-    .await;
-    sqlx::query("UPDATE files SET lifecycle_status = 'processing' WHERE id = $1")
-        .bind(unavailable)
-        .execute(&pool)
-        .await
-        .unwrap();
-    let rejected = template_service::inspect_font_uploads(
-        &pool,
-        &actor,
-        template.id,
-        InspectCertificateFontUploadsRequest {
-            file_ids: vec![variable, unsupported_weight, missing_family, unavailable],
-        },
-    )
-    .await
-    .unwrap();
-    assert_eq!(
-        rejected
-            .files
-            .iter()
-            .map(|file| file.status)
-            .collect::<Vec<_>>(),
-        vec![
-            CertificateFontUploadStatus::UnsupportedVariable,
-            CertificateFontUploadStatus::UnsupportedWeight,
-            CertificateFontUploadStatus::MissingFamily,
-            CertificateFontUploadStatus::Unavailable,
-        ]
-    );
-
-    let wrong_purpose = insert_ready_template_file(
-        &pool,
-        &actor,
-        template.id,
-        "certificate_template_image",
-        serde_json::json!({"kind": "image", "width_px": 1200, "height_px": 800}),
-    )
-    .await;
-    for (target_template_id, file_id) in [(template.id, wrong_purpose), (sibling.id, regular)] {
-        assert!(matches!(
-            template_service::inspect_font_uploads(
-                &pool,
-                &actor,
-                target_template_id,
-                InspectCertificateFontUploadsRequest {
-                    file_ids: vec![file_id],
-                },
-            )
-            .await,
-            Err(AppError::Forbidden(_))
-        ));
-    }
+    let ordinary = ActorContext {
+        user_id: ordinary_user_id,
+        permissions: Vec::new(),
+    };
+    assert!(matches!(
+        template_service::list_fonts(&pool, &ordinary, template.id).await,
+        Err(AppError::Forbidden(_))
+    ));
+    assert!(matches!(
+        template_service::inspect_font_uploads(
+            &pool,
+            &ordinary,
+            template.id,
+            InspectCertificateFontUploadsRequest {
+                file_ids: vec![regular],
+            },
+        )
+        .await,
+        Err(AppError::Forbidden(_))
+    ));
 
     assert!(matches!(
         template_service::attach_font_batch(
@@ -1112,68 +1189,75 @@ async fn font_upload_batch_is_inspected_and_attached_atomically() {
         .await,
         Err(AppError::ValidationError(_))
     ));
-    let asset_count_before: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM certificate_template_assets WHERE template_id = $1",
-    )
-    .bind(template.id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(asset_count_before, 0);
-    let regular_retention: String =
-        sqlx::query_scalar("SELECT retention_class FROM files WHERE id = $1")
-            .bind(regular)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert_eq!(regular_retention, "temporary");
+    let before_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM school_fonts")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(before_count, 0);
 
     let attached = template_service::attach_font_batch(
         &pool,
         &actor,
         template.id,
         AttachCertificateFontBatchRequest {
-            file_ids: vec![regular, bold],
+            file_ids: vec![bold, regular],
             rights_confirmed: true,
         },
     )
     .await
     .unwrap();
-    assert_eq!(attached.assets.len(), 2);
-    assert!(attached.assets.iter().all(|asset| {
-        asset.kind == CertificateTemplateAssetKind::Font
-            && asset.font_style == Some(CertificateFontStyle::Normal)
-            && asset.image_width_pixels.is_none()
-            && asset.image_height_pixels.is_none()
-    }));
-    let promoted_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM files
-         WHERE id = ANY($1::uuid[]) AND retention_class = 'standard'",
-    )
-    .bind(vec![regular, bold])
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(promoted_count, 2);
-    let audit: serde_json::Value = sqlx::query_scalar(
-        "SELECT metadata FROM audit_logs
-         WHERE entity_type = 'certificate_template' AND entity_id = $1
-           AND action = 'attach_font_batch'
-         ORDER BY created_at DESC LIMIT 1",
+    assert_eq!(attached.items.len(), 2);
+    assert_eq!(attached.items[0].font_weight, 700);
+    assert_eq!(attached.items[1].font_weight, 400);
+    assert!(attached
+        .items
+        .iter()
+        .all(|font| font.font_style == SchoolFontStyle::Normal));
+
+    let asset_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM certificate_template_assets WHERE template_id = $1",
     )
     .bind(template.id)
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(audit["assetIds"].as_array().unwrap().len(), 2);
-    assert_eq!(audit["fileIds"].as_array().unwrap().len(), 2);
+    assert_eq!(asset_count, 0);
+    let staging_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM certificate_school_font_file_uploads
+         WHERE file_id = ANY($1::uuid[])",
+    )
+    .bind(vec![regular, bold])
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(staging_count, 0);
 
-    let duplicate_existing = insert_ready_template_file(
+    let listed = template_service::list_fonts(&pool, &actor, sibling.id)
+        .await
+        .unwrap();
+    assert_eq!(listed.items.len(), 2);
+    assert_eq!(
+        listed
+            .items
+            .iter()
+            .map(|font| font.id)
+            .collect::<BTreeSet<_>>(),
+        attached
+            .items
+            .iter()
+            .map(|font| font.id)
+            .collect::<BTreeSet<_>>()
+    );
+
+    let duplicate_existing = insert_ready_school_font_upload(
         &pool,
         &actor,
         template.id,
-        "certificate_template_font",
-        font_inspection(Some("reviewed thai"), 400, "normal", false),
+        "existing.ttf",
+        Some("ＲＥＶＩＥＷＥＤ ＴＨＡＩ"),
+        400,
+        "normal",
+        false,
     )
     .await;
     let existing = template_service::inspect_font_uploads(
@@ -1190,32 +1274,9 @@ async fn font_upload_batch_is_inspected_and_attached_atomically() {
         existing.files[0].status,
         CertificateFontUploadStatus::DuplicateExisting
     );
-
-    let image = template_service::attach_asset(
-        &pool,
-        &actor,
-        template.id,
-        AttachCertificateAssetRequest {
-            file_id: wrong_purpose,
-            kind: CertificateTemplateAssetKind::Image,
-            display_name: "ภาพอัตราส่วนต้นฉบับ".to_string(),
-            rights_confirmed: false,
-        },
-    )
-    .await
-    .unwrap();
-    let image_asset = image
-        .assets
-        .iter()
-        .find(|asset| asset.kind == CertificateTemplateAssetKind::Image)
-        .unwrap();
-    assert_eq!(image_asset.image_width_pixels, Some(1200));
-    assert_eq!(image_asset.image_height_pixels, Some(800));
-    assert_eq!(image_asset.font_style, None);
 }
-
 #[tokio::test]
-async fn preview_manifest_preserves_exact_font_style() {
+async fn preview_manifest_preserves_exact_shared_font_style_and_omits_unused_fonts() {
     let (pool, actor, academic_year_id) =
         school_campaign_fixture("certificate_template_preview_manifest", 3118).await;
     let template = create_template_fixture(&pool, &actor, academic_year_id).await;
@@ -1239,69 +1300,35 @@ async fn preview_manifest_preserves_exact_font_style() {
     )
     .await
     .unwrap();
-    let font_file_id = insert_ready_template_file(
+
+    let font = attach_school_font_fixture(
         &pool,
         &actor,
         template.id,
-        "certificate_template_font",
-        font_inspection(Some("Preview Thai Font"), 400, "italic", false),
+        "preview-italic.ttf",
+        "Preview Thai Font",
+        400,
+        "italic",
     )
     .await;
-    let with_font = template_service::attach_asset(
+    let unused_font = attach_school_font_fixture(
         &pool,
         &actor,
         template.id,
-        AttachCertificateAssetRequest {
-            file_id: font_file_id,
-            kind: CertificateTemplateAssetKind::Font,
-            display_name: "ฟอนต์พรีวิว".to_string(),
-            rights_confirmed: true,
-        },
-    )
-    .await
-    .unwrap();
-    let font_asset = with_font
-        .assets
-        .iter()
-        .find(|asset| asset.file_id == font_file_id)
-        .unwrap()
-        .clone();
-    let unused_font_file_id = insert_ready_template_file(
-        &pool,
-        &actor,
-        template.id,
-        "certificate_template_font",
-        font_inspection(Some("Unused Preview Font"), 700, "normal", false),
+        "preview-unused.ttf",
+        "Unused Preview Font",
+        700,
+        "normal",
     )
     .await;
-    template_service::attach_asset(
-        &pool,
-        &actor,
-        template.id,
-        AttachCertificateAssetRequest {
-            file_id: unused_font_file_id,
-            kind: CertificateTemplateAssetKind::Font,
-            display_name: "ฟอนต์ที่ไม่ได้ใช้ในพรีวิว".to_string(),
-            rights_confirmed: true,
-        },
-    )
-    .await
-    .unwrap();
-    let mut local_layout = text_layout(CertificateFontSource::Asset {
-        asset_id: font_asset.id,
-    });
+    let mut local_layout = text_layout(CertificateFontSource::SchoolFont { font_id: font.id });
     let CertificateElement::Text(local_text) = &mut local_layout.elements[0] else {
         panic!("expected text element")
     };
-    local_text.font_family = font_asset.font_family.clone().unwrap();
-    local_text.font_weight = font_asset.font_weight.unwrap();
-    local_text.font_style = font_asset.font_style.unwrap();
-    let audit_count_before: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM audit_logs WHERE entity_type = 'certificate_template'",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    local_text.font_family = font.font_family.clone();
+    local_text.font_weight = font.font_weight;
+    local_text.font_style = font.font_style;
+
     let platform = crate::modules::files::platform_service::FilePlatform::new(
         Arc::new(PreviewStorage),
         Arc::new(PreviewScanner),
@@ -1310,7 +1337,7 @@ async fn preview_manifest_preserves_exact_font_style() {
     let CertificateElement::Text(mismatched_text) = &mut mismatched_layout.elements[0] else {
         panic!("expected text element")
     };
-    mismatched_text.font_style = CertificateFontStyle::Normal;
+    mismatched_text.font_style = SchoolFontStyle::Normal;
     assert!(matches!(
         render_service::preview_manifest(
             &pool,
@@ -1326,8 +1353,9 @@ async fn preview_manifest_preserves_exact_font_style() {
             },
         )
         .await,
-        Err(AppError::ValidationError(_))
+        Err(AppError::Conflict(_))
     ));
+
     let requested_at = chrono::Utc::now();
     let manifest = render_service::preview_manifest(
         &pool,
@@ -1358,24 +1386,16 @@ async fn preview_manifest_preserves_exact_font_style() {
     assert!(manifest
         .built_in_fonts
         .iter()
-        .all(|font| font.style == CertificateFontStyle::Normal));
+        .all(|font| font.style == SchoolFontStyle::Normal));
     assert_eq!(manifest.layout, local_layout);
     assert_eq!(manifest.font_grants.len(), 1);
-    assert_eq!(manifest.font_grants[0].asset_id, font_asset.id);
-    assert_eq!(manifest.font_grants[0].style, CertificateFontStyle::Italic);
+    assert_eq!(manifest.font_grants[0].school_font_id, font.id);
+    assert_eq!(manifest.font_grants[0].style, SchoolFontStyle::Italic);
     assert!(manifest
         .font_grants
         .iter()
-        .all(|grant| grant.file_id != unused_font_file_id));
-    let audit_count_after: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM audit_logs WHERE entity_type = 'certificate_template'",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(audit_count_after, audit_count_before);
+        .all(|grant| grant.school_font_id != unused_font.id));
 }
-
 #[tokio::test]
 async fn background_rejects_wrong_relation_unready_pages_and_unsafe_geometry() {
     let (pool, actor, academic_year_id) =
@@ -1855,7 +1875,7 @@ async fn active_request_locks_referenced_template_mutations() {
 }
 
 #[tokio::test]
-async fn font_rights_and_referenced_asset_deletion_are_enforced() {
+async fn layout_save_synchronizes_shared_font_references_and_blocks_central_delete() {
     let (pool, actor, academic_year_id) =
         school_campaign_fixture("certificate_template_font_rights", 3115).await;
     let template = create_template_fixture(&pool, &actor, academic_year_id).await;
@@ -1867,7 +1887,7 @@ async fn font_rights_and_referenced_asset_deletion_are_enforced() {
         pdf_inspection(841.89, 595.28, 0),
     )
     .await;
-    let with_background = template_service::attach_background(
+    template_service::attach_background(
         &pool,
         &actor,
         template.id,
@@ -1878,66 +1898,51 @@ async fn font_rights_and_referenced_asset_deletion_are_enforced() {
         },
     )
     .await
-    .unwrap()
-    .template;
-    let font_file_id = insert_ready_template_file(
-        &pool,
-        &actor,
-        template.id,
-        "certificate_template_font",
-        serde_json::json!({
-            "kind": "font",
-            "family_name": "Test Thai Font",
-            "units_per_em": 1000
-        }),
-    )
-    .await;
-    let unconfirmed = template_service::attach_asset(
-        &pool,
-        &actor,
-        template.id,
-        AttachCertificateAssetRequest {
-            file_id: font_file_id,
-            kind: CertificateTemplateAssetKind::Font,
-            display_name: "ฟอนต์ทดสอบ".to_string(),
-            rights_confirmed: false,
-        },
-    )
-    .await;
-    assert!(matches!(unconfirmed, Err(AppError::ValidationError(_))));
-
-    let with_font = template_service::attach_asset(
-        &pool,
-        &actor,
-        template.id,
-        AttachCertificateAssetRequest {
-            file_id: font_file_id,
-            kind: CertificateTemplateAssetKind::Font,
-            display_name: "ฟอนต์ทดสอบ".to_string(),
-            rights_confirmed: true,
-        },
-    )
-    .await
     .unwrap();
-    let asset = with_font.assets[0].clone();
-    let mut layout = text_layout(CertificateFontSource::Asset { asset_id: asset.id });
+
+    let font = attach_school_font_fixture(
+        &pool,
+        &actor,
+        template.id,
+        "layout-font.ttf",
+        "Test Thai Font",
+        400,
+        "normal",
+    )
+    .await;
+    let unused = attach_school_font_fixture(
+        &pool,
+        &actor,
+        template.id,
+        "unused-layout-font.ttf",
+        "Unused Thai Font",
+        700,
+        "normal",
+    )
+    .await;
+    let current = template_service::get_template(&pool, &actor, template.id)
+        .await
+        .unwrap();
+    let mut layout = text_layout(CertificateFontSource::SchoolFont { font_id: font.id });
     let CertificateElement::Text(text) = &mut layout.elements[0] else {
         panic!("expected text element")
     };
-    text.font_family = asset.font_family.clone().unwrap();
-    text.font_weight = asset.font_weight.unwrap();
+    text.font_family = font.font_family.clone();
+    text.font_weight = font.font_weight;
+    text.font_style = font.font_style;
+
     let mut mismatched_layout = layout.clone();
     let CertificateElement::Text(mismatched_text) = &mut mismatched_layout.elements[0] else {
         panic!("expected text element")
     };
-    mismatched_text.font_style = CertificateFontStyle::Italic;
+    mismatched_text.font_style = SchoolFontStyle::Italic;
     assert!(matches!(
         template_service::update_template(
             &pool,
             &actor,
             template.id,
             UpdateCertificateTemplateRequest {
-                expected_updated_at: with_font.updated_at,
+                expected_updated_at: current.updated_at,
                 name: None,
                 allowed_recipient_types: None,
                 safe_margin_points: None,
@@ -1950,12 +1955,40 @@ async fn font_rights_and_referenced_asset_deletion_are_enforced() {
         .await,
         Err(AppError::Conflict(_))
     ));
+
+    let mut missing_layout = layout.clone();
+    let CertificateElement::Text(missing_text) = &mut missing_layout.elements[0] else {
+        panic!("expected text element")
+    };
+    missing_text.font_source = CertificateFontSource::SchoolFont {
+        font_id: Uuid::new_v4(),
+    };
+    assert!(matches!(
+        template_service::update_template(
+            &pool,
+            &actor,
+            template.id,
+            UpdateCertificateTemplateRequest {
+                expected_updated_at: current.updated_at,
+                name: None,
+                allowed_recipient_types: None,
+                safe_margin_points: None,
+                show_safe_area: None,
+                layout: Some(missing_layout),
+                is_active: None,
+                confirm_missing_issued_values: false,
+            },
+        )
+        .await,
+        Err(AppError::Conflict(_))
+    ));
+
     let designed = template_service::update_template(
         &pool,
         &actor,
         template.id,
         UpdateCertificateTemplateRequest {
-            expected_updated_at: with_font.updated_at,
+            expected_updated_at: current.updated_at,
             name: None,
             allowed_recipient_types: None,
             safe_margin_points: None,
@@ -1968,12 +2001,31 @@ async fn font_rights_and_referenced_asset_deletion_are_enforced() {
     .await
     .unwrap()
     .template;
-    assert!(matches!(
-        template_service::delete_asset(&pool, &actor, template.id, asset.id).await,
-        Err(AppError::Conflict(_))
-    ));
+    let referenced_ids = sqlx::query_scalar::<_, Uuid>(
+        "SELECT font_id FROM certificate_template_font_references
+         WHERE template_id = $1 ORDER BY font_id",
+    )
+    .bind(template.id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(referenced_ids, vec![font.id]);
+    assert!(!referenced_ids.contains(&unused.id));
 
-    let without_reference = template_service::update_template(
+    let manager = ActorContext {
+        user_id: actor.user_id,
+        permissions: vec![codes::FONT_MANAGE_SCHOOL.to_string()],
+    };
+    assert_eq!(
+        crate::modules::school_fonts::services::delete(&pool, &manager, font.id)
+            .await
+            .unwrap(),
+        crate::modules::school_fonts::services::SchoolFontDeleteOutcome::Conflict(
+            crate::modules::school_fonts::models::SchoolFontDeleteConflict { reference_count: 1 }
+        )
+    );
+
+    template_service::update_template(
         &pool,
         &actor,
         template.id,
@@ -1989,15 +2041,115 @@ async fn font_rights_and_referenced_asset_deletion_are_enforced() {
         },
     )
     .await
-    .unwrap()
-    .template;
-    let deleted = template_service::delete_asset(&pool, &actor, template.id, asset.id)
+    .unwrap();
+    let reference_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM certificate_template_font_references WHERE template_id = $1",
+    )
+    .bind(template.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(reference_count, 0);
+    assert!(matches!(
+        crate::modules::school_fonts::services::delete(&pool, &manager, font.id)
+            .await
+            .unwrap(),
+        crate::modules::school_fonts::services::SchoolFontDeleteOutcome::Deleted { .. }
+    ));
+}
+
+#[tokio::test]
+async fn concurrent_layout_save_and_shared_font_delete_leave_one_consistent_winner() {
+    let (pool, actor, academic_year_id) =
+        concurrent_school_campaign_fixture("certificate_font_save_delete_race", 3162).await;
+    let template = create_template_fixture(&pool, &actor, academic_year_id).await;
+    let background_id = insert_ready_template_file(
+        &pool,
+        &actor,
+        template.id,
+        "certificate_template_background",
+        pdf_inspection(841.89, 595.28, 0),
+    )
+    .await;
+    template_service::attach_background(
+        &pool,
+        &actor,
+        template.id,
+        AttachCertificateBackgroundRequest {
+            file_id: background_id,
+            geometry_action: GeometryAction::Preserve,
+            preview_confirmed: true,
+        },
+    )
+    .await
+    .unwrap();
+    let font = attach_school_font_fixture(
+        &pool,
+        &actor,
+        template.id,
+        "race-font.ttf",
+        "Race Thai Font",
+        400,
+        "normal",
+    )
+    .await;
+    let current = template_service::get_template(&pool, &actor, template.id)
         .await
         .unwrap();
-    assert_eq!(deleted.detached_file_ids, vec![font_file_id]);
-    assert!(deleted.template.assets.is_empty());
-    assert!(deleted.template.updated_at > without_reference.updated_at);
-    assert!(with_background.background_file_id.is_some());
+    let mut layout = text_layout(CertificateFontSource::SchoolFont { font_id: font.id });
+    let CertificateElement::Text(text) = &mut layout.elements[0] else {
+        panic!("expected text element")
+    };
+    text.font_family = font.font_family.clone();
+    text.font_weight = font.font_weight;
+    text.font_style = font.font_style;
+    let manager = ActorContext {
+        user_id: actor.user_id,
+        permissions: vec![codes::FONT_MANAGE_SCHOOL.to_string()],
+    };
+
+    let save = template_service::update_template(
+        &pool,
+        &actor,
+        template.id,
+        UpdateCertificateTemplateRequest {
+            expected_updated_at: current.updated_at,
+            name: None,
+            allowed_recipient_types: None,
+            safe_margin_points: None,
+            show_safe_area: None,
+            layout: Some(layout),
+            is_active: None,
+            confirm_missing_issued_values: false,
+        },
+    );
+    let delete = crate::modules::school_fonts::services::delete(&pool, &manager, font.id);
+    let (save_result, delete_result) = tokio::join!(save, delete);
+
+    match (save_result, delete_result) {
+        (
+            Ok(_),
+            Ok(crate::modules::school_fonts::services::SchoolFontDeleteOutcome::Conflict(conflict)),
+        ) => assert_eq!(conflict.reference_count, 1),
+        (
+            Err(AppError::Conflict(_) | AppError::NotFound(_)),
+            Ok(crate::modules::school_fonts::services::SchoolFontDeleteOutcome::Deleted { .. }),
+        ) => {}
+        other => panic!("save/delete race must leave a consistent winner: {other:?}"),
+    }
+
+    let state: (i64, i64) = sqlx::query_as(
+        "SELECT
+            (SELECT COUNT(*) FROM school_fonts WHERE id = $1),
+            (SELECT COUNT(*) FROM certificate_template_font_references
+             WHERE template_id = $2 AND font_id = $1)",
+    )
+    .bind(font.id)
+    .bind(template.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(matches!(state, (1, 1) | (0, 0)));
 }
 
 async fn insert_issued_certificate_for_template(
@@ -3374,6 +3526,43 @@ async fn purge_counts_open_and_soft_deleted_rows_then_removes_file_metadata() {
     )
     .await
     .unwrap();
+    let font = attach_school_font_fixture(
+        &pool,
+        &actor,
+        template.id,
+        "purge-shared-font.ttf",
+        "Purge Shared Font",
+        400,
+        "normal",
+    )
+    .await;
+    let current = template_service::get_template(&pool, &actor, template.id)
+        .await
+        .unwrap();
+    let mut font_layout = text_layout(CertificateFontSource::SchoolFont { font_id: font.id });
+    let CertificateElement::Text(text) = &mut font_layout.elements[0] else {
+        panic!("expected text element")
+    };
+    text.font_family = font.font_family.clone();
+    text.font_weight = font.font_weight;
+    text.font_style = font.font_style;
+    template_service::update_template(
+        &pool,
+        &actor,
+        template.id,
+        UpdateCertificateTemplateRequest {
+            expected_updated_at: current.updated_at,
+            name: None,
+            allowed_recipient_types: None,
+            safe_margin_points: None,
+            show_safe_area: None,
+            layout: Some(font_layout),
+            is_active: None,
+            confirm_missing_issued_values: false,
+        },
+    )
+    .await
+    .unwrap();
 
     insert_issued_certificate_for_template(
         &pool,
@@ -3483,17 +3672,22 @@ async fn purge_counts_open_and_soft_deleted_rows_then_removes_file_metadata() {
     .unwrap();
     assert_eq!(status.phase, CertificateCampaignPurgePhase::Completed);
     assert_eq!((status.file_count, status.deleted_file_count), (1, 1));
-    let remaining: (i64, i64) = sqlx::query_as(
+    let remaining: (i64, i64, i64, i64, i64) = sqlx::query_as(
         "SELECT
             (SELECT COUNT(*) FROM certificate_campaigns WHERE id = $1),
-            (SELECT COUNT(*) FROM files WHERE id = $2)",
+            (SELECT COUNT(*) FROM files WHERE id = $2),
+            (SELECT COUNT(*) FROM school_fonts WHERE id = $3),
+            (SELECT COUNT(*) FROM files AS file JOIN school_fonts AS font ON font.file_id = file.id
+             WHERE font.id = $3),
+            (SELECT COUNT(*) FROM certificate_template_font_references WHERE font_id = $3)",
     )
     .bind(campaign.id)
     .bind(file_id)
+    .bind(font.id)
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(remaining, (0, 0));
+    assert_eq!(remaining, (0, 0, 1, 1, 0));
 }
 
 #[tokio::test]
@@ -8246,7 +8440,7 @@ async fn issue_revalidation_returns_without_numbers_when_background_is_no_longer
 }
 
 #[tokio::test]
-async fn issue_revalidation_returns_when_referenced_asset_metadata_changes() {
+async fn issue_revalidation_returns_when_referenced_shared_font_metadata_changes() {
     let _crypto_guard = crate::utils::field_encryption::test_env_lock();
     env::set_var(
         "ENCRYPTION_KEY",
@@ -8281,46 +8475,32 @@ async fn issue_revalidation_returns_when_referenced_asset_metadata_changes() {
         vec![RecipientType::External],
     )
     .await;
-    let font_file_id = insert_ready_template_file(
+    let font = attach_school_font_fixture(
         &pool,
         &preparer,
         template.id,
-        "certificate_template_font",
-        serde_json::json!({
-            "kind": "font",
-            "family_name": "Issuance Thai Font",
-            "units_per_em": 1000
-        }),
+        "issuance-recheck.ttf",
+        "Issuance Thai Font",
+        400,
+        "normal",
     )
     .await;
-    let with_font = template_service::attach_asset(
-        &pool,
-        &preparer,
-        template.id,
-        AttachCertificateAssetRequest {
-            file_id: font_file_id,
-            kind: CertificateTemplateAssetKind::Font,
-            display_name: "ฟอนต์สำหรับออกเกียรติบัตร".to_string(),
-            rights_confirmed: true,
-        },
-    )
-    .await
-    .unwrap();
-    let font_asset = with_font.assets[0].clone();
-    let mut layout = text_layout(CertificateFontSource::Asset {
-        asset_id: font_asset.id,
-    });
+    let current = template_service::get_template(&pool, &preparer, template.id)
+        .await
+        .unwrap();
+    let mut layout = text_layout(CertificateFontSource::SchoolFont { font_id: font.id });
     let CertificateElement::Text(text) = &mut layout.elements[0] else {
         panic!("expected text element")
     };
-    text.font_family = font_asset.font_family.clone().unwrap();
-    text.font_weight = font_asset.font_weight.unwrap();
+    text.font_family = font.font_family.clone();
+    text.font_weight = font.font_weight;
+    text.font_style = font.font_style;
     template_service::update_template(
         &pool,
         &preparer,
         template.id,
         UpdateCertificateTemplateRequest {
-            expected_updated_at: with_font.updated_at,
+            expected_updated_at: current.updated_at,
             name: None,
             allowed_recipient_types: None,
             safe_margin_points: None,
@@ -8358,8 +8538,8 @@ async fn issue_revalidation_returns_when_referenced_asset_metadata_changes() {
         .await
         .unwrap();
 
-    sqlx::query("UPDATE certificate_template_assets SET font_weight = 700 WHERE id = $1")
-        .bind(font_asset.id)
+    sqlx::query("UPDATE school_fonts SET font_weight = 700 WHERE id = $1")
+        .bind(font.id)
         .execute(&pool)
         .await
         .unwrap();
@@ -8381,7 +8561,7 @@ async fn issue_revalidation_returns_when_referenced_asset_metadata_changes() {
         ..
     } = outcome
     else {
-        panic!("changed referenced asset metadata must return the whole request")
+        panic!("changed referenced shared-font metadata must return the whole request")
     };
     assert!(issue_codes.contains(&CertificateIssueCode::AssetUnavailable));
     assert_eq!(candidate_problems.len(), 1);
@@ -8402,7 +8582,6 @@ async fn issue_revalidation_returns_when_referenced_asset_metadata_changes() {
     .unwrap();
     assert_eq!(numbering, (None, 1, 0));
 }
-
 #[tokio::test]
 async fn revoked_numbers_are_never_reused_and_replacement_links_only_after_issuance() {
     let _crypto_guard = crate::utils::field_encryption::test_env_lock();
@@ -8803,45 +8982,32 @@ async fn issued_manifest_uses_canonical_proof_url_and_refuses_revoked_certificat
         "กมลชนก",
     )
     .await;
-    let italic_file_id = insert_ready_template_file(
+    let font = attach_school_font_fixture(
         &pool,
         &preparer,
         template.id,
-        "certificate_template_font",
-        font_inspection(Some("Issued Thai Font"), 400, "italic", false),
+        "issued-italic.ttf",
+        "Issued Thai Font",
+        400,
+        "italic",
     )
     .await;
-    let with_font = template_service::attach_font_batch(
-        &pool,
-        &preparer,
-        template.id,
-        AttachCertificateFontBatchRequest {
-            file_ids: vec![italic_file_id],
-            rights_confirmed: true,
-        },
-    )
-    .await
-    .unwrap();
-    let font_asset = with_font
-        .assets
-        .iter()
-        .find(|asset| asset.file_id == italic_file_id)
+    let current = template_service::get_template(&pool, &preparer, template.id)
+        .await
         .unwrap();
-    let mut issued_layout = text_layout(CertificateFontSource::Asset {
-        asset_id: font_asset.id,
-    });
+    let mut issued_layout = text_layout(CertificateFontSource::SchoolFont { font_id: font.id });
     let CertificateElement::Text(text) = &mut issued_layout.elements[0] else {
         panic!("expected text element")
     };
-    text.font_family = font_asset.font_family.clone().unwrap();
-    text.font_weight = font_asset.font_weight.unwrap();
-    text.font_style = font_asset.font_style.unwrap();
+    text.font_family = font.font_family.clone();
+    text.font_weight = font.font_weight;
+    text.font_style = font.font_style;
     template_service::update_template(
         &pool,
         &preparer,
         template.id,
         UpdateCertificateTemplateRequest {
-            expected_updated_at: with_font.updated_at,
+            expected_updated_at: current.updated_at,
             name: None,
             allowed_recipient_types: None,
             safe_margin_points: None,
@@ -8905,8 +9071,8 @@ async fn issued_manifest_uses_canonical_proof_url_and_refuses_revoked_certificat
         issued.certificate_number
     )));
     assert_eq!(manifest.font_grants.len(), 1);
-    assert_eq!(manifest.font_grants[0].asset_id, font_asset.id);
-    assert_eq!(manifest.font_grants[0].style, CertificateFontStyle::Italic);
+    assert_eq!(manifest.font_grants[0].school_font_id, font.id);
+    assert_eq!(manifest.font_grants[0].style, SchoolFontStyle::Italic);
     assert_eq!(manifest.image_grants.len(), 0);
 
     candidate_service::create_manual_external(
