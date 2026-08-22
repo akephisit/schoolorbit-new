@@ -127,7 +127,6 @@ and run `superpowers:verification-before-completion` only after review passes.
 - Modify: `backend-school/src/modules/files/consumer_service.rs`
 - Modify: `backend-school/src/modules/files/handlers.rs`
 - Modify: `backend-school/src/policies/file_access_policy.rs`
-- Modify: `backend-school/src/policies/certificate_access_policy.rs`
 - Test: `backend-school/src/modules/files/schema_tests.rs`
 - Test: `backend-school/src/modules/certificates/schema_tests.rs`
 - Test: `backend-school/tests/static_architecture.rs`
@@ -288,8 +287,8 @@ default certificate-role grant.
 
 - [ ] **Step 5: Add the File Platform purpose and upload authority**
 
-Add `SchoolFont` to `FilePurpose::ALL`, wire code mapping, purpose registry, API schema tests, and
-file-purpose static counts. Remove `CertificateTemplateFont` from the runtime enum, registry,
+Add `SchoolFont` to `FilePurpose::ALL`, wire code mapping, purpose registry, and file-purpose static
+counts. Remove `CertificateTemplateFont` from the runtime enum, registry,
 template upload relation handling, and purpose counts after the migration preflight proves the
 legacy state empty. Define the replacement as:
 
@@ -349,7 +348,6 @@ git add backend-school/migrations/040_school_font_library.sql \
   backend-school/src/modules/files/handlers.rs \
   backend-school/src/modules/files/schema_tests.rs \
   backend-school/src/policies/file_access_policy.rs \
-  backend-school/src/policies/certificate_access_policy.rs \
   backend-school/src/modules/certificates/schema_tests.rs \
   backend-school/tests/static_architecture.rs
 git commit -m "feat(fonts): add school font library foundation"
