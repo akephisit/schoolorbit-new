@@ -1,6 +1,6 @@
-use std::path::Path;
+use std::{borrow::Cow, fs, path::Path};
 
-use sqlx::PgPool;
+use sqlx::{migrate::Migrator, PgPool};
 use uuid::Uuid;
 
 use crate::test_helpers::{create_named_test_pool, create_test_user, run_test_migrations};
@@ -95,6 +95,130 @@ fn certificate_font_variant_migration_is_forward_only() {
         !lower.contains("national_id"),
         "font metadata must never introduce plaintext national IDs"
     );
+}
+
+#[test]
+fn school_font_library_is_forward_only_private_and_reference_safe() {
+    let migration = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations/040_school_font_library.sql"),
+    )
+    .expect("migration 040 must exist");
+
+    assert!(
+        migration.trim_start().starts_with("DO $$"),
+        "the legacy-empty proof must run before migration 040 changes schema"
+    );
+    for required in [
+        "certificate_template_assets WHERE kind = 'font'",
+        "certificate_template_file_uploads",
+        "purpose_code = 'certificate_template_font'",
+        "jsonb_array_elements(template.layout -> 'elements')",
+        "element -> 'fontSource' ->> 'type' = 'asset'",
+        "legacy certificate template fonts must be empty before migration 040",
+        "CREATE TABLE school_font_file_uploads",
+        "CREATE TABLE certificate_school_font_file_uploads",
+        "CREATE TABLE school_fonts",
+        "CREATE TABLE certificate_template_font_references",
+        "font.manage.school",
+        "FOREIGN KEY (file_id, purpose_code)",
+        "REFERENCES school_fonts(id) ON DELETE RESTRICT",
+    ] {
+        assert!(migration.contains(required), "missing {required}");
+    }
+
+    let lower = migration.to_ascii_lowercase();
+    for forbidden in [
+        "national_id",
+        "delete from certificate_template_assets",
+        "delete from certificate_template_file_uploads",
+        "insert into school_fonts select",
+        "update certificate_template_assets set",
+    ] {
+        assert!(
+            !lower.contains(forbidden),
+            "migration 040 must not contain legacy backfill or cleanup fragment {forbidden:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn school_font_cutover_rejects_each_legacy_font_shape_before_schema_changes() {
+    for (test_name, legacy_shape) in [
+        ("font_cutover_asset", "asset"),
+        ("font_cutover_upload", "upload"),
+        ("font_cutover_layout", "layout"),
+    ] {
+        let pool = pre_school_font_cutover_pool(test_name).await;
+        let actor_id =
+            create_test_user(&pool, &format!("{test_name}@example.test"), "test-password")
+                .await
+                .expect("actor fixture should insert");
+        let academic_year_id = insert_academic_year(&pool).await;
+        let campaign_id = insert_campaign(&pool, academic_year_id, actor_id, test_name, 1).await;
+        let template_id = insert_template(&pool, campaign_id, legacy_shape).await;
+
+        match legacy_shape {
+            "asset" => {
+                let file_id = insert_legacy_font_file(&pool, actor_id).await;
+                sqlx::query(
+                    "INSERT INTO certificate_template_assets (
+                        template_id, file_id, kind, display_name, font_family,
+                        font_weight, font_style, rights_confirmed_by,
+                        rights_confirmed_at, created_by
+                     ) VALUES (
+                        $1, $2, 'font', 'Legacy font', 'Legacy Sans',
+                        400, 'normal', $3, NOW(), $3
+                     )",
+                )
+                .bind(template_id)
+                .bind(file_id)
+                .bind(actor_id)
+                .execute(&pool)
+                .await
+                .expect("legacy font asset fixture should insert");
+            }
+            "upload" => {
+                let file_id = insert_legacy_font_file(&pool, actor_id).await;
+                sqlx::query(
+                    "INSERT INTO certificate_template_file_uploads
+                        (file_id, template_id, purpose_code, uploaded_by)
+                     VALUES ($1, $2, 'certificate_template_font', $3)",
+                )
+                .bind(file_id)
+                .bind(template_id)
+                .bind(actor_id)
+                .execute(&pool)
+                .await
+                .expect("legacy font upload fixture should insert");
+            }
+            "layout" => {
+                sqlx::query(
+                    r#"UPDATE certificate_templates
+                       SET layout = '{"schemaVersion":1,"elements":[{"type":"text","fontSource":{"type":"asset"}}]}'::jsonb
+                       WHERE id = $1"#,
+                )
+                .bind(template_id)
+                .execute(&pool)
+                .await
+                .expect("legacy font layout fixture should update");
+            }
+            _ => unreachable!("test fixture enumerates every legacy shape"),
+        }
+
+        let error = apply_school_font_cutover(&pool)
+            .await
+            .expect_err("every legacy font shape must block migration 040");
+        assert!(
+            error
+                .to_string()
+                .contains("legacy certificate template fonts must be empty before migration 040"),
+            "unexpected migration error: {error}"
+        );
+        assert!(
+            !certificate_relation_exists(&pool, "school_fonts").await,
+            "migration 040 must execute no DDL after a failed preflight"
+        );
+    }
 }
 
 #[test]
@@ -214,6 +338,67 @@ fn assert_constraint_error<T>(result: Result<T, sqlx::Error>, expected_constrain
         Some(expected_constraint),
         "unexpected database error: {database_error}"
     );
+}
+
+async fn pre_school_font_cutover_pool(test_name: &str) -> PgPool {
+    let pool = create_named_test_pool(test_name).await;
+    let base = sqlx::migrate!("./migrations");
+    let migrator = Migrator {
+        migrations: Cow::Owned(
+            base.iter()
+                .filter(|migration| migration.version <= 39)
+                .cloned()
+                .collect(),
+        ),
+        locking: false,
+        ..base
+    };
+    migrator
+        .run(&pool)
+        .await
+        .expect("migrations through 039 should apply");
+    pool
+}
+
+async fn apply_school_font_cutover(pool: &PgPool) -> Result<(), sqlx::Error> {
+    let migration = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations/040_school_font_library.sql"),
+    )
+    .expect("migration 040 must exist before cutover tests can pass");
+    sqlx::raw_sql(&migration).execute(pool).await.map(|_| ())
+}
+
+async fn certificate_relation_exists(pool: &PgPool, relation: &str) -> bool {
+    sqlx::query_scalar(
+        "SELECT EXISTS (
+            SELECT 1
+            FROM pg_class AS relation
+            JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+            WHERE namespace.nspname = current_schema()
+              AND relation.relname = $1
+         )",
+    )
+    .bind(relation)
+    .fetch_one(pool)
+    .await
+    .expect("relation existence query should execute")
+}
+
+async fn insert_legacy_font_file(pool: &PgPool, actor_id: Uuid) -> Uuid {
+    sqlx::query_scalar(
+        "INSERT INTO files (
+            display_filename, purpose_code, visibility, lifecycle_status,
+            retention_class, inspection_metadata, created_by
+         ) VALUES (
+            'legacy-font.ttf', 'certificate_template_font', 'private', 'ready',
+            'temporary', '{\"kind\":\"font\"}'::jsonb, $1
+         )
+         RETURNING id",
+    )
+    .bind(actor_id)
+    .fetch_one(pool)
+    .await
+    .expect("legacy font file fixture should insert")
 }
 
 async fn insert_academic_year(pool: &PgPool) -> Uuid {
@@ -517,15 +702,9 @@ async fn purge_finalizer_removes_complete_campaign_file_and_audit_graph() {
         true,
     )
     .await;
-    let (font_file_id, _, _) = insert_purge_file_fixture(
-        &pool,
-        actor_id,
-        "certificate_template_font",
-        "font.ttf",
-        true,
-    )
-    .await;
-    let file_ids = vec![background_file_id, image_file_id, font_file_id];
+    let (font_file_id, _, _) =
+        insert_purge_file_fixture(&pool, actor_id, "school_font", "font.ttf", false).await;
+    let file_ids = vec![background_file_id, image_file_id];
 
     sqlx::query(
         "UPDATE certificate_templates
@@ -546,7 +725,6 @@ async fn purge_finalizer_removes_complete_campaign_file_and_audit_graph() {
     for (file_id, purpose_code) in [
         (background_file_id, "certificate_template_background"),
         (image_file_id, "certificate_template_image"),
-        (font_file_id, "certificate_template_font"),
     ] {
         sqlx::query(
             "INSERT INTO certificate_template_file_uploads
@@ -573,22 +751,31 @@ async fn purge_finalizer_removes_complete_campaign_file_and_audit_graph() {
     .execute(&pool)
     .await
     .expect("image asset fixture should insert");
-    sqlx::query(
-        "INSERT INTO certificate_template_assets (
-            template_id, file_id, kind, display_name, font_family,
+    let school_font_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO school_fonts (
+            file_id, display_name, font_family, normalized_family,
             font_weight, font_style, rights_confirmed_by,
             rights_confirmed_at, created_by
          ) VALUES (
-            $1, $2, 'font', 'School font', 'School Sans',
-            400, 'normal', $3, NOW(), $3
-         )",
+            $1, 'School font', 'School Sans', 'school sans',
+            400, 'normal', $2, NOW(), $2
+         )
+         RETURNING id",
     )
-    .bind(template_id)
     .bind(font_file_id)
     .bind(actor_id)
+    .fetch_one(&pool)
+    .await
+    .expect("shared school font fixture should insert");
+    sqlx::query(
+        "INSERT INTO certificate_template_font_references (template_id, font_id)
+         VALUES ($1, $2)",
+    )
+    .bind(template_id)
+    .bind(school_font_id)
     .execute(&pool)
     .await
-    .expect("font asset fixture should insert");
+    .expect("shared school font reference fixture should insert");
 
     let issued_candidate_id = insert_candidate(&pool, campaign_id, template_id).await;
     let issue_run_id =
@@ -717,7 +904,7 @@ async fn purge_finalizer_removes_complete_campaign_file_and_audit_graph() {
             candidate_count, request_count, open_request_count,
             issued_certificate_count, revoked_certificate_count,
             file_count, total_file_bytes
-         ) VALUES ($1, 'finalizing', $2, 1, 2, 2, 1, 1, 1, 3, 45)",
+         ) VALUES ($1, 'finalizing', $2, 1, 2, 2, 1, 1, 1, 2, 30)",
     )
     .bind(campaign_id)
     .bind(actor_id)
@@ -770,6 +957,22 @@ async fn purge_finalizer_removes_complete_campaign_file_and_audit_graph() {
         .await
         .expect("purged files should be countable");
     assert_eq!(file_count, 0);
+    let retained_school_font: (i64, i64, i64) = sqlx::query_as(
+        "SELECT
+            (SELECT COUNT(*) FROM files WHERE id = $1),
+            (SELECT COUNT(*) FROM school_fonts WHERE id = $2),
+            (SELECT COUNT(*) FROM certificate_template_font_references WHERE font_id = $2)",
+    )
+    .bind(font_file_id)
+    .bind(school_font_id)
+    .fetch_one(&pool)
+    .await
+    .expect("shared font retention should remain queryable");
+    assert_eq!(
+        retained_school_font,
+        (1, 1, 0),
+        "campaign purge must remove only the certificate reference"
+    );
     let audit_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM audit_logs
          WHERE entity_type LIKE 'certificate%'

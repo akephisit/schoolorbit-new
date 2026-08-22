@@ -1445,11 +1445,12 @@ const AFTER: &str = "certificate.issue.school";
     for required in [
         "CertificateTemplateBackground",
         "CertificateTemplateImage",
-        "CertificateTemplateFont",
+        "SchoolFont",
     ] {
         assert!(file_purposes.contains(required));
     }
     for forbidden in [
+        "CertificateTemplateFont",
         "CertificatePdf",
         "CertificateOutput",
         "certificate_pdf",
@@ -5563,6 +5564,14 @@ fn file_platform_domain_relationships_own_attachment_and_lifecycle_deletion() {
     ));
     assert!(migration.contains("profile_image_file_id UUID REFERENCES files(id)"));
     assert!(migration.contains("image_file_id UUID REFERENCES files(id)"));
+
+    let file_handlers = strip_comments(&read_source(
+        manifest_dir().join("src/modules/files/handlers.rs"),
+    ));
+    assert!(
+        file_handlers.contains("authorize_school_font_delete_guard"),
+        "school-font cleanup must hold its staging authorization through lifecycle deletion"
+    );
 
     for relative_path in [
         "src/modules/school/services.rs",

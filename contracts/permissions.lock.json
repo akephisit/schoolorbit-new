@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "contract_sha256": "8a61f57e23c9ffbbbfb7cbb543e55990a86bee536c8f2ccef9a1df7e5bf9b9a8",
+  "contract_sha256": "0bc7daf05f61433fc9ea9b551b897c37e69b2d686722305e72773612ed54b200",
   "permission_codes": [
     "*",
     "academic_assessment.manage.assigned",
@@ -78,6 +78,7 @@
     "facility.update.all",
     "features.read.all",
     "features.update.all",
+    "font.manage.school",
     "menu.create.all",
     "menu.delete.all",
     "menu.read.all",

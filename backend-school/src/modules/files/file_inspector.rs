@@ -880,10 +880,10 @@ mod tests {
     }
 
     #[test]
-    fn certificate_font_requires_a_valid_font_and_cannot_be_relabeled() {
+    fn school_font_requires_a_valid_font_and_cannot_be_relabeled() {
         let sarabun =
             include_bytes!("../../../../frontend-school/static/fonts/Sarabun-Regular.ttf");
-        let inspected = inspect_file(FilePurpose::CertificateTemplateFont, sarabun)
+        let inspected = inspect_file(FilePurpose::SchoolFont, sarabun)
             .expect("built-in Sarabun must be a valid uploadable font");
         assert_eq!(inspected.detected_content(), DetectedContent::Ttf);
         match inspected.metadata() {
@@ -904,7 +904,7 @@ mod tests {
         }
 
         let bold = inspect_file(
-            FilePurpose::CertificateTemplateFont,
+            FilePurpose::SchoolFont,
             include_bytes!("../../../../frontend-school/static/fonts/Sarabun-Bold.ttf"),
         )
         .expect("built-in Sarabun Bold must be a valid uploadable font");
@@ -921,22 +921,23 @@ mod tests {
             Err(FileInspectionError::ContentNotAllowed)
         );
         assert_eq!(
-            inspect_file(
-                FilePurpose::CertificateTemplateFont,
-                b"\x00\x01\x00\x00not-a-font",
-            ),
+            inspect_file(FilePurpose::SchoolFont, b"\x00\x01\x00\x00not-a-font",),
             Err(FileInspectionError::MalformedContent)
         );
         assert_eq!(
-            inspect_file(FilePurpose::CertificateTemplateFont, b"OTTOnot-a-font",),
+            inspect_file(FilePurpose::SchoolFont, b"OTTOnot-a-font",),
             Err(FileInspectionError::MalformedContent)
+        );
+        assert_eq!(
+            inspect_file(FilePurpose::SchoolFont, &vec![0_u8; 5 * 1024 * 1024 + 1]),
+            Err(FileInspectionError::ByteLimitExceeded)
         );
     }
 
     #[test]
-    fn certificate_font_detects_italic_and_variable_faces() {
+    fn school_font_detects_italic_and_variable_faces() {
         let italic_bytes = italic_font_fixture();
-        let italic = inspect_file(FilePurpose::CertificateTemplateFont, &italic_bytes)
+        let italic = inspect_file(FilePurpose::SchoolFont, &italic_bytes)
             .expect("synthetic italic font must remain structurally valid");
         let italic_style = match italic.metadata() {
             FileInspectionMetadata::Font { style, .. } => *style,
@@ -944,7 +945,7 @@ mod tests {
         };
 
         let variable_bytes = variable_font_fixture();
-        let variable = inspect_file(FilePurpose::CertificateTemplateFont, &variable_bytes)
+        let variable = inspect_file(FilePurpose::SchoolFont, &variable_bytes)
             .expect("synthetic variable font must remain structurally valid");
         let is_variable = match variable.metadata() {
             FileInspectionMetadata::Font { is_variable, .. } => *is_variable,

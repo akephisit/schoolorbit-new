@@ -17,7 +17,10 @@ use crate::{
 };
 
 use super::{
-    consumer_service::{map_platform_error, record_certificate_template_upload, request_deletions},
+    consumer_service::{
+        map_platform_error, record_certificate_school_font_upload,
+        record_certificate_template_upload, record_school_font_upload, request_deletions,
+    },
     models::{
         FileAccessQuery, FileDeleteResult, FileDownloadGrantResponse, FileMetadata,
         FileUploadMultipart, PublicFileDeliveryResponse,
@@ -116,43 +119,63 @@ pub async fn upload_file(
         .await
         .map_err(map_platform_error)?;
 
-    if matches!(
-        purpose,
-        super::platform_types::FilePurpose::CertificateTemplateBackground
-            | super::platform_types::FilePurpose::CertificateTemplateImage
-            | super::platform_types::FilePurpose::CertificateTemplateFont
-    ) {
-        let template_id = resource_id.ok_or_else(|| {
-            AppError::InternalServerError(
-                "certificate_template_upload_resource_missing".to_string(),
+    let relation_result = match purpose {
+        FilePurpose::CertificateTemplateBackground | FilePurpose::CertificateTemplateImage => {
+            let template_id = resource_id.ok_or_else(|| {
+                AppError::InternalServerError(
+                    "certificate_template_upload_resource_missing".to_string(),
+                )
+            })?;
+            Some(
+                record_certificate_template_upload(
+                    &context.tenant.pool,
+                    file.id,
+                    template_id,
+                    purpose,
+                    context.actor.user_id,
+                )
+                .await,
             )
-        })?;
-        if let Err(error) = record_certificate_template_upload(
+        }
+        FilePurpose::SchoolFont => Some(match resource_id {
+            Some(template_id) => {
+                record_certificate_school_font_upload(
+                    &context.tenant.pool,
+                    file.id,
+                    template_id,
+                    context.actor.user_id,
+                )
+                .await
+            }
+            None => {
+                record_school_font_upload(&context.tenant.pool, file.id, context.actor.user_id)
+                    .await
+            }
+        }),
+        _ => None,
+    };
+    if let Some(Err(error)) = relation_result {
+        if request_deletions(
+            state.file_platform.as_ref(),
             &context.tenant.pool,
-            file.id,
-            template_id,
-            purpose,
-            context.actor.user_id,
+            [file.id],
         )
         .await
+        .is_err()
         {
-            if request_deletions(
-                state.file_platform.as_ref(),
-                &context.tenant.pool,
-                [file.id],
-            )
-            .await
-            .is_err()
-            {
-                tracing::warn!(
-                    file_id = %file.id,
-                    action = "certificate_template_upload_compensation",
-                    result = "cleanup_request_failed",
-                    "File Platform compensation needs temporary-retention fallback"
-                );
-            }
-            return Err(error);
+            let compensation_action = match purpose {
+                FilePurpose::SchoolFont => "school_font_upload_compensation",
+                _ => "certificate_template_upload_compensation",
+            };
+            tracing::warn!(
+                file_id = %file.id,
+                purpose = purpose.code(),
+                action = compensation_action,
+                result = "cleanup_request_failed",
+                "File Platform compensation needs temporary-retention fallback"
+            );
         }
+        return Err(error);
     }
 
     tracing::info!(
@@ -292,13 +315,8 @@ pub async fn delete_file(
         .metadata(&repository, file_id)
         .await
         .map_err(map_platform_error)?;
-    let certificate_template_delete_guard = if matches!(
-        file.purpose,
-        FilePurpose::CertificateTemplateBackground
-            | FilePurpose::CertificateTemplateImage
-            | FilePurpose::CertificateTemplateFont
-    ) {
-        Some(
+    let domain_delete_guard = match file.purpose {
+        FilePurpose::CertificateTemplateBackground | FilePurpose::CertificateTemplateImage => Some(
             file_access_policy::authorize_certificate_template_delete_guard(
                 repository.pool(),
                 &context.actor,
@@ -306,19 +324,29 @@ pub async fn delete_file(
                 query.resource_id,
             )
             .await?,
-        )
-    } else {
-        file_access_policy::authorize_existing(
-            repository.pool(),
-            &context.actor,
-            &file,
-            FilePolicyAction::Delete,
-            query.resource_id,
-        )
-        .await?;
-        None
+        ),
+        FilePurpose::SchoolFont => Some(
+            file_access_policy::authorize_school_font_delete_guard(
+                repository.pool(),
+                &context.actor,
+                &file,
+                query.resource_id,
+            )
+            .await?,
+        ),
+        _ => {
+            file_access_policy::authorize_existing(
+                repository.pool(),
+                &context.actor,
+                &file,
+                FilePolicyAction::Delete,
+                query.resource_id,
+            )
+            .await?;
+            None
+        }
     };
-    let outcome = if let Some(mut guard) = certificate_template_delete_guard {
+    let outcome = if let Some(mut guard) = domain_delete_guard {
         let work = repository
             .request_delete_in_transaction(&mut guard, file_id)
             .await

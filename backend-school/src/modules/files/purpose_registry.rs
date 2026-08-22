@@ -18,6 +18,7 @@ pub enum PolicyKey {
     CourseworkAttachment,
     ExplicitOwningResource,
     CertificateTemplate,
+    SchoolFont,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -289,16 +290,16 @@ pub fn purpose_definition(purpose: FilePurpose) -> Result<PurposeDefinition, Pur
             retention_class: RetentionClass::Temporary,
             policy_key: PolicyKey::CertificateTemplate,
         },
-        FilePurpose::CertificateTemplateFont => PurposeDefinition {
-            domain_segment: "certificate",
-            purpose_segment: "template-font",
+        FilePurpose::SchoolFont => PurposeDefinition {
+            domain_segment: "school",
+            purpose_segment: "font",
             visibility: FileVisibility::Private,
             allowed_content: FONT_CONTENT,
             limits: document_limits(5 * 1024 * 1024),
             scan_requirement: ScanRequirement::RequiredClean,
             derivatives: &[],
             retention_class: RetentionClass::Temporary,
-            policy_key: PolicyKey::CertificateTemplate,
+            policy_key: PolicyKey::SchoolFont,
         },
     };
 
@@ -636,7 +637,7 @@ mod tests {
     }
 
     #[test]
-    fn certificate_template_purposes_are_private_temporary_and_exactly_bounded() {
+    fn certificate_template_image_purposes_are_private_temporary_and_exactly_bounded() {
         let cases = [
             (
                 FilePurpose::CertificateTemplateBackground,
@@ -659,15 +660,6 @@ mod tests {
                 Some(6000),
                 Some(6000),
                 Some(24_000_000),
-            ),
-            (
-                FilePurpose::CertificateTemplateFont,
-                "template-font",
-                &[DetectedContent::Ttf, DetectedContent::Otf][..],
-                5 * 1024 * 1024,
-                None,
-                None,
-                None,
             ),
         ];
 
@@ -697,6 +689,34 @@ mod tests {
         }
 
         assert_eq!(FilePurpose::ALL.len(), 15);
+    }
+
+    #[test]
+    fn school_font_is_private_scanned_temporary_and_exactly_bounded() {
+        let purpose = FilePurpose::SchoolFont;
+        let definition = purpose_definition(purpose).expect("school font purpose must resolve");
+
+        assert_eq!(purpose.code(), "school_font");
+        assert_eq!(definition.domain_segment, "school");
+        assert_eq!(definition.purpose_segment, "font");
+        assert_eq!(definition.visibility, FileVisibility::Private);
+        assert_eq!(
+            definition.allowed_content,
+            &[DetectedContent::Ttf, DetectedContent::Otf]
+        );
+        assert_eq!(definition.limits.max_bytes, 5 * 1024 * 1024);
+        assert_eq!(definition.limits.max_width, None);
+        assert_eq!(definition.limits.max_height, None);
+        assert_eq!(definition.limits.max_decoded_pixels, None);
+        assert_eq!(definition.scan_requirement, ScanRequirement::RequiredClean);
+        assert_eq!(definition.derivatives, &[]);
+        assert_eq!(definition.retention_class, RetentionClass::Temporary);
+        assert_eq!(definition.policy_key, PolicyKey::SchoolFont);
+        assert_eq!(purpose_from_code("school_font"), Ok(purpose));
+        assert_eq!(
+            purpose_from_code("certificate_template_font"),
+            Err(PurposeRegistryError::UnknownPurposeCode)
+        );
     }
 
     #[test]

@@ -21,7 +21,7 @@ pub enum FilePurpose {
     GenericPrivateDocument,
     CertificateTemplateBackground,
     CertificateTemplateImage,
-    CertificateTemplateFont,
+    SchoolFont,
 }
 
 impl FilePurpose {
@@ -40,7 +40,7 @@ impl FilePurpose {
         Self::GenericPrivateDocument,
         Self::CertificateTemplateBackground,
         Self::CertificateTemplateImage,
-        Self::CertificateTemplateFont,
+        Self::SchoolFont,
     ];
 
     pub const fn code(self) -> &'static str {
@@ -59,7 +59,7 @@ impl FilePurpose {
             Self::GenericPrivateDocument => "generic_private_document",
             Self::CertificateTemplateBackground => "certificate_template_background",
             Self::CertificateTemplateImage => "certificate_template_image",
-            Self::CertificateTemplateFont => "certificate_template_font",
+            Self::SchoolFont => "school_font",
         }
     }
 }
@@ -342,10 +342,16 @@ mod tests {
         for purpose in [
             FilePurpose::CertificateTemplateBackground,
             FilePurpose::CertificateTemplateImage,
-            FilePurpose::CertificateTemplateFont,
+            FilePurpose::SchoolFont,
         ] {
             assert!(FilePurpose::ALL.contains(&purpose));
         }
+        assert!(
+            !FilePurpose::ALL
+                .iter()
+                .any(|purpose| purpose.code() == "certificate_template_font"),
+            "the legacy template-owned font purpose must leave the runtime contract"
+        );
     }
 
     #[test]

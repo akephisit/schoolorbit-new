@@ -1,4 +1,6 @@
-use crate::test_helpers::{create_named_test_pool, create_test_pool, run_test_migrations};
+use crate::test_helpers::{
+    create_named_test_pool, create_test_pool, create_test_user, run_test_migrations,
+};
 use sha2::{Digest, Sha256};
 use sqlx::migrate::Migrator;
 use sqlx::PgPool;
@@ -187,6 +189,93 @@ fn file_platform_migration_declares_exact_domains_and_relationship_guards() {
             "migration 030 must include {required_fragment:?}"
         );
     }
+}
+
+#[tokio::test]
+async fn school_font_staging_accepts_only_private_exact_purpose_files() {
+    let pool = create_named_test_pool("school_font_file_staging").await;
+    run_test_migrations(&pool).await;
+    let actor_id = create_test_user(&pool, "school-font-file@example.test", "test-password")
+        .await
+        .expect("actor fixture should insert");
+
+    for table in [
+        "school_font_file_uploads",
+        "certificate_school_font_file_uploads",
+        "school_fonts",
+        "certificate_template_font_references",
+    ] {
+        assert!(
+            relation_exists(&pool, table).await,
+            "migration 040 must create {table}"
+        );
+    }
+
+    assert_sql_rejected(
+        sqlx::query(
+            "INSERT INTO files (
+                display_filename, purpose_code, visibility, lifecycle_status,
+                retention_class, inspection_metadata, created_by
+             ) VALUES (
+                'public-font.ttf', 'school_font', 'public', 'ready',
+                'temporary', '{\"kind\":\"font\"}'::jsonb, $1
+             )",
+        )
+        .bind(actor_id)
+        .execute(&pool)
+        .await,
+        "a public school font",
+    );
+
+    let wrong_purpose_file_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO files (
+            display_filename, purpose_code, visibility, lifecycle_status,
+            retention_class, inspection_metadata, created_by
+         ) VALUES (
+            'not-a-font.pdf', 'generic_private_document', 'private', 'ready',
+            'standard', '{\"kind\":\"unknown\"}'::jsonb, $1
+         )
+         RETURNING id",
+    )
+    .bind(actor_id)
+    .fetch_one(&pool)
+    .await
+    .expect("wrong-purpose file fixture should insert");
+    assert_sql_rejected(
+        sqlx::query(
+            "INSERT INTO school_font_file_uploads (file_id, uploaded_by)
+             VALUES ($1, $2)",
+        )
+        .bind(wrong_purpose_file_id)
+        .bind(actor_id)
+        .execute(&pool)
+        .await,
+        "a school-font staging row for another File Platform purpose",
+    );
+
+    let school_font_file_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO files (
+            display_filename, purpose_code, visibility, lifecycle_status,
+            retention_class, inspection_metadata, created_by
+         ) VALUES (
+            'school-font.ttf', 'school_font', 'private', 'ready',
+            'temporary', '{\"kind\":\"font\"}'::jsonb, $1
+         )
+         RETURNING id",
+    )
+    .bind(actor_id)
+    .fetch_one(&pool)
+    .await
+    .expect("school-font file fixture should insert");
+    sqlx::query(
+        "INSERT INTO school_font_file_uploads (file_id, uploaded_by)
+         VALUES ($1, $2)",
+    )
+    .bind(school_font_file_id)
+    .bind(actor_id)
+    .execute(&pool)
+    .await
+    .expect("exact-purpose private staging row should insert");
 }
 
 #[tokio::test]

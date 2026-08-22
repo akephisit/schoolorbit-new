@@ -81,6 +81,7 @@ pub fn simple_file_access(
             FilePolicyAction::Create | FilePolicyAction::Delete => actor
                 .has_any_permission(&[codes::ADMISSION_MANAGE_ALL, codes::ADMISSION_VERIFY_ALL]),
         }),
+        FilePurpose::SchoolFont => Some(actor.has_permission(codes::FONT_MANAGE_SCHOOL)),
         FilePurpose::QuestionBankImage
         | FilePurpose::Transcript
         | FilePurpose::Certificate
@@ -89,8 +90,7 @@ pub fn simple_file_access(
         | FilePurpose::AssignmentAttachment
         | FilePurpose::GenericPrivateDocument
         | FilePurpose::CertificateTemplateBackground
-        | FilePurpose::CertificateTemplateImage
-        | FilePurpose::CertificateTemplateFont => None,
+        | FilePurpose::CertificateTemplateImage => None,
     }
 }
 
@@ -150,9 +150,7 @@ pub async fn authorize_create(
             achievement_access_policy::can_create_achievement_for(actor, owner_user_id)?;
             Ok(owner_user_id)
         }
-        FilePurpose::CertificateTemplateBackground
-        | FilePurpose::CertificateTemplateImage
-        | FilePurpose::CertificateTemplateFont => {
+        FilePurpose::CertificateTemplateBackground | FilePurpose::CertificateTemplateImage => {
             let template_id = required_resource(resource_id)?;
             certificate_access_policy::require_template_action(
                 pool,
@@ -161,6 +159,20 @@ pub async fn authorize_create(
                 CertificateAction::Update,
             )
             .await?;
+            Ok(actor.user_id)
+        }
+        FilePurpose::SchoolFont => {
+            if let Some(template_id) = resource_id {
+                certificate_access_policy::require_template_action(
+                    pool,
+                    actor,
+                    template_id,
+                    CertificateAction::Update,
+                )
+                .await?;
+            } else {
+                require_simple_access(actor, purpose, FilePolicyAction::Create, None, None)?;
+            }
             Ok(actor.user_id)
         }
         FilePurpose::Transcript
@@ -298,10 +310,11 @@ pub async fn authorize_existing(
             }
             achievement_access_policy::can_create_achievement_for(actor, owner_user_id)
         }
-        FilePurpose::CertificateTemplateBackground
-        | FilePurpose::CertificateTemplateImage
-        | FilePurpose::CertificateTemplateFont => {
+        FilePurpose::CertificateTemplateBackground | FilePurpose::CertificateTemplateImage => {
             authorize_certificate_template_file(pool, actor, file, action, resource_id).await
+        }
+        FilePurpose::SchoolFont => {
+            authorize_school_font_file(pool, actor, file, action, resource_id).await
         }
         FilePurpose::Transcript
         | FilePurpose::Certificate
@@ -323,9 +336,7 @@ pub async fn authorize_certificate_template_delete_guard<'a>(
 ) -> Result<Transaction<'a, Postgres>, AppError> {
     if !matches!(
         file.purpose,
-        FilePurpose::CertificateTemplateBackground
-            | FilePurpose::CertificateTemplateImage
-            | FilePurpose::CertificateTemplateFont
+        FilePurpose::CertificateTemplateBackground | FilePurpose::CertificateTemplateImage
     ) {
         return Err(explicit_domain_policy_required());
     }
@@ -432,6 +443,189 @@ pub async fn authorize_certificate_template_delete_guard<'a>(
         ));
     }
     Ok(tx)
+}
+
+/// Keeps a temporary school-font staging relation locked until the caller has
+/// committed the File Platform lifecycle transition. Attach flows lock the same
+/// staging row before promotion, so cleanup cannot race into `school_fonts`.
+pub async fn authorize_school_font_delete_guard<'a>(
+    pool: &'a PgPool,
+    actor: &ActorContext,
+    file: &PlatformFile,
+    resource_id: Option<Uuid>,
+) -> Result<Transaction<'a, Postgres>, AppError> {
+    if file.purpose != FilePurpose::SchoolFont {
+        return Err(explicit_domain_policy_required());
+    }
+    if file.visibility != FileVisibility::Private {
+        return Err(forbidden());
+    }
+
+    let Some(requested_template_id) = resource_id else {
+        require_simple_access(actor, file.purpose, FilePolicyAction::Delete, None, None)?;
+        let mut tx = pool.begin().await?;
+        let staged = sqlx::query_scalar::<_, Uuid>(
+            "SELECT uploaded_by
+             FROM school_font_file_uploads
+             WHERE file_id = $1
+               AND purpose_code = 'school_font'
+             FOR UPDATE",
+        )
+        .bind(file.id)
+        .fetch_optional(&mut *tx)
+        .await?;
+        if staged.is_none() {
+            return Err(unrelated_resource());
+        }
+        require_school_font_is_temporary(&mut tx, file.id).await?;
+        return Ok(tx);
+    };
+
+    let authorization = sqlx::query_as::<_, (Uuid, Uuid, Option<Uuid>)>(
+        "SELECT upload.template_id,
+                template.campaign_id,
+                campaign.owner_organization_unit_id
+         FROM certificate_school_font_file_uploads AS upload
+         JOIN certificate_templates AS template ON template.id = upload.template_id
+         JOIN certificate_campaigns AS campaign ON campaign.id = template.campaign_id
+         WHERE upload.file_id = $1
+           AND upload.purpose_code = 'school_font'
+           AND campaign.status <> 'purging'",
+    )
+    .bind(file.id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(unrelated_resource)?;
+    if authorization.0 != requested_template_id {
+        return Err(unrelated_resource());
+    }
+    certificate_access_policy::require_owner_action(
+        pool,
+        actor,
+        authorization.2,
+        CertificateAction::Update,
+    )
+    .await?;
+
+    let mut tx = pool.begin().await?;
+    let (locked_owner_id, locked_status) = sqlx::query_as::<_, (Option<Uuid>, String)>(
+        "SELECT owner_organization_unit_id, status
+         FROM certificate_campaigns
+         WHERE id = $1
+         FOR UPDATE",
+    )
+    .bind(authorization.1)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(unrelated_resource)?;
+    if locked_status == "purging" {
+        return Err(AppError::Conflict(
+            "certificate_campaign_purging".to_string(),
+        ));
+    }
+    if locked_owner_id != authorization.2 {
+        return Err(AppError::Conflict(
+            "หน่วยงานเจ้าของกิจกรรมเปลี่ยนแล้ว กรุณาโหลดข้อมูลล่าสุด".to_string(),
+        ));
+    }
+
+    let locked = sqlx::query_as::<_, (Uuid, Uuid)>(
+        "SELECT upload.template_id, template.campaign_id
+         FROM certificate_school_font_file_uploads AS upload
+         JOIN certificate_templates AS template ON template.id = upload.template_id
+         WHERE upload.file_id = $1
+           AND upload.purpose_code = 'school_font'
+         FOR UPDATE OF template, upload",
+    )
+    .bind(file.id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(unrelated_resource)?;
+    if locked.0 != requested_template_id || locked.1 != authorization.1 {
+        return Err(unrelated_resource());
+    }
+    require_school_font_is_temporary(&mut tx, file.id).await?;
+    Ok(tx)
+}
+
+async fn require_school_font_is_temporary(
+    transaction: &mut Transaction<'_, Postgres>,
+    file_id: Uuid,
+) -> Result<(), AppError> {
+    let durable = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM school_fonts WHERE file_id = $1)",
+    )
+    .bind(file_id)
+    .fetch_one(&mut **transaction)
+    .await?;
+    if durable {
+        Err(unrelated_resource())
+    } else {
+        Ok(())
+    }
+}
+
+async fn authorize_school_font_file(
+    pool: &PgPool,
+    actor: &ActorContext,
+    file: &PlatformFile,
+    action: FilePolicyAction,
+    resource_id: Option<Uuid>,
+) -> Result<(), AppError> {
+    if file.visibility != FileVisibility::Private {
+        return Err(forbidden());
+    }
+    if matches!(action, FilePolicyAction::Create | FilePolicyAction::Delete) {
+        return Err(explicit_domain_policy_required());
+    }
+
+    if let Some(template_id) = resource_id {
+        let related = sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS(
+                SELECT 1
+                FROM certificate_school_font_file_uploads AS upload
+                JOIN certificate_templates AS template ON template.id = upload.template_id
+                JOIN certificate_campaigns AS campaign ON campaign.id = template.campaign_id
+                WHERE upload.file_id = $1
+                  AND upload.purpose_code = 'school_font'
+                  AND upload.template_id = $2
+                  AND campaign.status <> 'purging'
+            )",
+        )
+        .bind(file.id)
+        .bind(template_id)
+        .fetch_one(pool)
+        .await?;
+        if !related {
+            return Err(unrelated_resource());
+        }
+        certificate_access_policy::require_template_action(
+            pool,
+            actor,
+            template_id,
+            CertificateAction::Update,
+        )
+        .await?;
+        return Ok(());
+    }
+
+    require_simple_access(actor, file.purpose, action, None, None)?;
+    let staged = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(
+            SELECT 1
+            FROM school_font_file_uploads AS upload
+            WHERE upload.file_id = $1
+              AND upload.purpose_code = 'school_font'
+        )",
+    )
+    .bind(file.id)
+    .fetch_one(pool)
+    .await?;
+    if staged {
+        Ok(())
+    } else {
+        Err(unrelated_resource())
+    }
 }
 
 async fn authorize_certificate_template_file(
@@ -642,6 +836,10 @@ fn explicit_domain_policy_required() -> AppError {
 mod tests {
     use super::*;
     use crate::permissions::registry::codes;
+    use crate::test_helpers::{
+        create_named_test_pool, create_named_test_pool_with_max_connections, create_test_user,
+        run_test_migrations,
+    };
 
     fn actor(user_id: Uuid, permissions: &[&str]) -> ActorContext {
         ActorContext {
@@ -651,6 +849,14 @@ mod tests {
                 .map(|permission| permission.to_string())
                 .collect(),
         }
+    }
+
+    fn assert_lock_not_available(error: sqlx::Error) {
+        let lock_code = match error {
+            sqlx::Error::Database(error) => error.code().map(|code| code.into_owned()),
+            other => panic!("expected a database lock error, got {other}"),
+        };
+        assert_eq!(lock_code.as_deref(), Some("55P03"));
     }
 
     #[test]
@@ -753,6 +959,348 @@ mod tests {
     }
 
     #[test]
+    fn central_school_font_access_requires_only_the_font_manager_permission() {
+        let ordinary = actor(Uuid::new_v4(), &[]);
+        let font_manager = actor(Uuid::new_v4(), &[codes::FONT_MANAGE_SCHOOL]);
+        let certificate_manager = actor(Uuid::new_v4(), &[codes::CERTIFICATE_UPDATE_SCHOOL]);
+
+        for action in [
+            FilePolicyAction::Create,
+            FilePolicyAction::Read,
+            FilePolicyAction::Delete,
+        ] {
+            assert_eq!(
+                simple_file_access(&ordinary, FilePurpose::SchoolFont, action, None, None),
+                Some(false),
+            );
+            assert_eq!(
+                simple_file_access(
+                    &certificate_manager,
+                    FilePurpose::SchoolFont,
+                    action,
+                    None,
+                    None
+                ),
+                Some(false),
+            );
+            assert_eq!(
+                simple_file_access(&font_manager, FilePurpose::SchoolFont, action, None, None),
+                Some(true),
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn school_font_upload_uses_central_permission_or_exact_template_update_policy() {
+        let pool = create_named_test_pool("school_font_upload_policy").await;
+        run_test_migrations(&pool).await;
+        let academic_year_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO academic_years (year, name, start_date, end_date)
+             VALUES (2997, 'School font policy test', '2997-01-01', '2997-12-31')
+             RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("academic-year fixture should insert");
+        let campaign_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO certificate_campaigns (
+                academic_year_id, name, event_date, status
+             ) VALUES ($1, 'School font policy test', '2997-06-01', 'active')
+             RETURNING id",
+        )
+        .bind(academic_year_id)
+        .fetch_one(&pool)
+        .await
+        .expect("campaign fixture should insert");
+        let template_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO certificate_templates (campaign_id, name, normalized_name)
+             VALUES ($1, 'School font policy test', 'school-font-policy-test')
+             RETURNING id",
+        )
+        .bind(campaign_id)
+        .fetch_one(&pool)
+        .await
+        .expect("template fixture should insert");
+
+        let font_manager = actor(Uuid::new_v4(), &[codes::FONT_MANAGE_SCHOOL]);
+        let certificate_manager = actor(Uuid::new_v4(), &[codes::CERTIFICATE_UPDATE_SCHOOL]);
+        let ordinary = actor(Uuid::new_v4(), &[]);
+
+        assert_eq!(
+            authorize_create(&pool, &font_manager, FilePurpose::SchoolFont, None)
+                .await
+                .expect("central manager should authorize school-font upload"),
+            font_manager.user_id
+        );
+        assert!(
+            authorize_create(&pool, &ordinary, FilePurpose::SchoolFont, None)
+                .await
+                .is_err(),
+            "ordinary users must not upload into the central library"
+        );
+        assert_eq!(
+            authorize_create(
+                &pool,
+                &certificate_manager,
+                FilePurpose::SchoolFont,
+                Some(template_id),
+            )
+            .await
+            .expect("school-wide certificate updater should authorize the exact template"),
+            certificate_manager.user_id
+        );
+        assert!(
+            authorize_create(
+                &pool,
+                &font_manager,
+                FilePurpose::SchoolFont,
+                Some(template_id),
+            )
+            .await
+            .is_err(),
+            "central font management must not imply certificate template access"
+        );
+        assert!(
+            authorize_create(
+                &pool,
+                &certificate_manager,
+                FilePurpose::SchoolFont,
+                Some(Uuid::new_v4()),
+            )
+            .await
+            .is_err(),
+            "template-context upload must fail closed for an unknown template"
+        );
+    }
+
+    #[tokio::test]
+    async fn school_font_delete_guard_locks_staging_and_rejects_durable_fonts() {
+        let pool = create_named_test_pool_with_max_connections("school_font_delete_guard", 2).await;
+        run_test_migrations(&pool).await;
+        let actor_id = create_test_user(
+            &pool,
+            "school-font-delete-guard@example.test",
+            "test-password",
+        )
+        .await
+        .expect("actor fixture should insert");
+        let file_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO files (
+                display_filename, purpose_code, visibility, lifecycle_status,
+                retention_class, inspection_metadata, created_by
+             ) VALUES (
+                'school-font-delete-guard.ttf', 'school_font', 'private', 'ready',
+                'temporary', '{\"kind\":\"font\"}'::jsonb, $1
+             )
+             RETURNING id",
+        )
+        .bind(actor_id)
+        .fetch_one(&pool)
+        .await
+        .expect("school-font file fixture should insert");
+        sqlx::query(
+            "INSERT INTO school_font_file_uploads (file_id, uploaded_by)
+             VALUES ($1, $2)",
+        )
+        .bind(file_id)
+        .bind(actor_id)
+        .execute(&pool)
+        .await
+        .expect("central staging fixture should insert");
+        let file = PlatformFile {
+            id: file_id,
+            owner_user_id: Some(actor_id),
+            purpose: FilePurpose::SchoolFont,
+            visibility: FileVisibility::Private,
+            lifecycle_status: crate::modules::files::platform_types::FileLifecycleStatus::Ready,
+            current_version: None,
+            display_filename: "school-font-delete-guard.ttf".to_string(),
+            detected_mime_type: "font/ttf".to_string(),
+            byte_size: 1024,
+        };
+        let manager = actor(actor_id, &[codes::FONT_MANAGE_SCHOOL]);
+
+        assert!(
+            authorize_existing(&pool, &manager, &file, FilePolicyAction::Delete, None,)
+                .await
+                .is_err(),
+            "school-font deletion must be authorized only through the locking guard"
+        );
+        let guard = authorize_school_font_delete_guard(&pool, &manager, &file, None)
+            .await
+            .expect("temporary central school-font cleanup should authorize");
+        let lock_error = sqlx::query(
+            "SELECT file_id
+             FROM school_font_file_uploads
+             WHERE file_id = $1
+             FOR UPDATE NOWAIT",
+        )
+        .bind(file_id)
+        .fetch_one(&pool)
+        .await
+        .expect_err("cleanup authorization must retain the staging-row lock");
+        assert_lock_not_available(lock_error);
+        guard
+            .rollback()
+            .await
+            .expect("test cleanup guard should roll back");
+
+        sqlx::query(
+            "INSERT INTO school_fonts (
+                file_id, display_name, font_family, normalized_family,
+                font_weight, font_style, rights_confirmed_by,
+                rights_confirmed_at, created_by
+             ) VALUES (
+                $1, 'School font', 'School Font', 'school font',
+                400, 'normal', $2, NOW(), $2
+             )",
+        )
+        .bind(file_id)
+        .bind(actor_id)
+        .execute(&pool)
+        .await
+        .expect("durable school-font fixture should insert");
+        assert!(
+            authorize_school_font_delete_guard(&pool, &manager, &file, None)
+                .await
+                .is_err(),
+            "generic cleanup must fail closed once a durable school-font row exists"
+        );
+    }
+
+    #[tokio::test]
+    async fn certificate_school_font_delete_guard_requires_and_locks_the_exact_template() {
+        let pool =
+            create_named_test_pool_with_max_connections("certificate_school_font_delete_guard", 2)
+                .await;
+        run_test_migrations(&pool).await;
+        let actor_id = create_test_user(
+            &pool,
+            "certificate-school-font-delete-guard@example.test",
+            "test-password",
+        )
+        .await
+        .expect("actor fixture should insert");
+        let academic_year_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO academic_years (year, name, start_date, end_date)
+             VALUES (2996, 'Certificate school font guard', '2996-01-01', '2996-12-31')
+             RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("academic-year fixture should insert");
+        let campaign_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO certificate_campaigns (
+                academic_year_id, name, event_date, status, created_by
+             ) VALUES ($1, 'Certificate school font guard', '2996-06-01', 'active', $2)
+             RETURNING id",
+        )
+        .bind(academic_year_id)
+        .bind(actor_id)
+        .fetch_one(&pool)
+        .await
+        .expect("campaign fixture should insert");
+        let template_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO certificate_templates (campaign_id, name, normalized_name)
+             VALUES ($1, 'Guard template', 'guard-template')
+             RETURNING id",
+        )
+        .bind(campaign_id)
+        .fetch_one(&pool)
+        .await
+        .expect("template fixture should insert");
+        let other_template_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO certificate_templates (campaign_id, name, normalized_name)
+             VALUES ($1, 'Other guard template', 'other-guard-template')
+             RETURNING id",
+        )
+        .bind(campaign_id)
+        .fetch_one(&pool)
+        .await
+        .expect("other template fixture should insert");
+        let file_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO files (
+                display_filename, purpose_code, visibility, lifecycle_status,
+                retention_class, inspection_metadata, created_by
+             ) VALUES (
+                'certificate-school-font-delete-guard.ttf', 'school_font',
+                'private', 'ready', 'temporary', '{\"kind\":\"font\"}'::jsonb, $1
+             )
+             RETURNING id",
+        )
+        .bind(actor_id)
+        .fetch_one(&pool)
+        .await
+        .expect("school-font file fixture should insert");
+        sqlx::query(
+            "INSERT INTO certificate_school_font_file_uploads
+                (file_id, template_id, uploaded_by)
+             VALUES ($1, $2, $3)",
+        )
+        .bind(file_id)
+        .bind(template_id)
+        .bind(actor_id)
+        .execute(&pool)
+        .await
+        .expect("certificate staging fixture should insert");
+        let file = PlatformFile {
+            id: file_id,
+            owner_user_id: Some(actor_id),
+            purpose: FilePurpose::SchoolFont,
+            visibility: FileVisibility::Private,
+            lifecycle_status: crate::modules::files::platform_types::FileLifecycleStatus::Ready,
+            current_version: None,
+            display_filename: "certificate-school-font-delete-guard.ttf".to_string(),
+            detected_mime_type: "font/ttf".to_string(),
+            byte_size: 1024,
+        };
+        let updater = actor(actor_id, &[codes::CERTIFICATE_UPDATE_SCHOOL]);
+
+        assert!(
+            authorize_school_font_delete_guard(&pool, &updater, &file, Some(other_template_id),)
+                .await
+                .is_err(),
+            "another template must not authorize cleanup"
+        );
+        assert!(
+            authorize_school_font_delete_guard(&pool, &updater, &file, None)
+                .await
+                .is_err(),
+            "certificate authority must not fall back to central staging"
+        );
+
+        let guard = authorize_school_font_delete_guard(&pool, &updater, &file, Some(template_id))
+            .await
+            .expect("exact-template updater should authorize cleanup");
+        let lock_error = sqlx::query(
+            "SELECT file_id
+             FROM certificate_school_font_file_uploads
+             WHERE file_id = $1
+             FOR UPDATE NOWAIT",
+        )
+        .bind(file_id)
+        .fetch_one(&pool)
+        .await
+        .expect_err("cleanup authorization must retain the certificate staging-row lock");
+        assert_lock_not_available(lock_error);
+        let template_lock_error = sqlx::query(
+            "SELECT id
+             FROM certificate_templates
+             WHERE id = $1
+             FOR UPDATE NOWAIT",
+        )
+        .bind(template_id)
+        .fetch_one(&pool)
+        .await
+        .expect_err("cleanup authorization must retain the exact template lock");
+        assert_lock_not_available(template_lock_error);
+        guard
+            .rollback()
+            .await
+            .expect("test cleanup guard should roll back");
+    }
+
+    #[test]
     fn admission_staff_permissions_are_action_specific() {
         let reader = actor(Uuid::new_v4(), &[codes::ADMISSION_READ_ALL]);
         let manager = actor(Uuid::new_v4(), &[codes::ADMISSION_MANAGE_ALL]);
@@ -833,7 +1381,6 @@ mod tests {
         for purpose in [
             FilePurpose::CertificateTemplateBackground,
             FilePurpose::CertificateTemplateImage,
-            FilePurpose::CertificateTemplateFont,
         ] {
             assert_eq!(
                 simple_file_access(
