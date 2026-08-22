@@ -13,6 +13,7 @@ pub mod notification;
 pub mod parents;
 pub mod question_bank;
 pub mod school;
+pub mod school_fonts;
 pub mod staff;
 pub mod students;
 pub mod supervision;
