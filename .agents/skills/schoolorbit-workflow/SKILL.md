@@ -35,14 +35,31 @@ delegation, or mutation. Do not silently downgrade to an incomplete workflow.
 
 ## Workflow State Machine
 
-Follow only this order:
+After classification, follow only the applicable branch.
+
+### Standard and Full workflows
 
 `DISCOVER` → `DRAFT_PLAN` → `AWAIT_APPROVAL` → conditional `RECORD_PLAN` →
 `EXECUTE_WAVES` → `INTEGRATE` → `REVIEW_FIX` → `VERIFY` → `COMPLETE` or `BLOCKED`.
 
-For multi-file or high-risk work, transition from `RECORD_PLAN` back to `AWAIT_APPROVAL` for the
-second review before `EXECUTE_WAVES`. A material scope change from any later state invalidates the
-approval and returns to `DRAFT_PLAN`. Never infer, reorder, or skip a state.
+`NORMAL` work retains this Standard Workflow exactly. `HIGH_RISK` work retains this Full Workflow
+and every current safety requirement. For multi-file or high-risk work, transition from
+`RECORD_PLAN` back to `AWAIT_APPROVAL` for the second review before `EXECUTE_WAVES`.
+
+### Fast Path
+
+Only an approved `TRIVIAL` mutation may use this exact sequence:
+
+`DISCOVER` → `DRAFT_PLAN` → `AWAIT_APPROVAL` → `FAST_EXECUTE` → `FAST_VERIFY` →
+`COMPLETE` or `BLOCKED`.
+
+If scope expands, a protected resource appears, behavior exceeds the approved expectation,
+verification fails and requires logic changes, a security, API, database, authentication,
+authorization, or permission concern appears, multiple domains become necessary, or more than one
+writer is needed, stop immediately. Invalidate the Fast Path, return to `DRAFT_PLAN`, reclassify
+the work as `NORMAL` or `HIGH_RISK`, and require fresh approval before mutation resumes. A material
+scope change from any later state likewise invalidates approval. Never infer, reorder, or skip a
+state.
 
 ## Classify the Request
 
@@ -55,6 +72,25 @@ Classify the requested outcome, not merely its verbs.
 
 When ambiguous, continue read-only discovery and ask for the missing intent before proposing any
 write. Do not convert a diagnosis request into an implementation task.
+
+### Mutation risk classification
+
+Classify every mutation as `TRIVIAL`, `NORMAL`, or `HIGH_RISK`, fail closed, and apply
+`HIGH_RISK` precedence before considering any lower class.
+
+- `HIGH_RISK`: any authentication, authorization, permissions, migration, API contract, PDPA or
+  sensitive-data, realtime identity or session-security, deployment, security, or other protected
+  or load-bearing resource. These concerns can never enter the Fast Path.
+- `TRIVIAL`: allowed only when every eligibility condition is affirmatively satisfied. The scope
+  is small and single-area; there is no behavioral, API, database, or security impact; and there
+  is no protected resource, generated contract, migration, auth, authorization, permission, PDPA
+  or sensitive data, realtime identity or session security, deployment or infrastructure,
+  dependency or lockfile, multiple writer lanes, or material architectural decision. Eligible
+  examples are a typo, copy or text, a small comment or documentation correction,
+  CSS/presentation-only work, or a rename or local cleanup only when behavior preservation is
+  proven.
+- `NORMAL`: every mutation not classified `HIGH_RISK` or proven `TRIVIAL`. Any uncertainty about
+  scope, impact, eligibility, or behavior immediately becomes `NORMAL`.
 
 **REQUIRED SUB-SKILL:** Use superpowers:brainstorming for creative or behavior-changing design.
 
@@ -75,21 +111,32 @@ uncertain, do not run it.
 Bound each investigation by domain and requested evidence. Parallelize only independent read-only
 investigations; reconcile their evidence in the controller before drafting the plan.
 
-When Explorer work is used, the controller builds a reconciled evidence packet containing the
-requested outcome, direct facts with paths or symbols, impact and risk, ownership candidates,
-verification sources, and unresolved decisions. Spawn one bounded Planner using
-`fork_turns: none` and give it only that packet plus the required plan fields. The Planner must not
-repeat Explorer discovery. If the packet is incomplete, it returns `NEEDS_CONTEXT` naming the
-exact missing fact instead of reopening repository-wide investigation.
+### Bounded context contract
+
+An Explorer must not send the entire conversation or repository context. A Planner receives only
+the reconciled evidence packet, and an Implementer receives only its bounded task brief. A
+Reviewer receives the approved requirements, diff, work graph, and verification evidence. Agents
+must not repeat repository exploration or discovery without a concrete reason, such as a named
+missing fact or changed evidence. Prefer file paths, symbols, and evidence over copied file
+contents.
+
+For `TRIVIAL` work, the controller performs bounded read-only discovery and may draft the bounded
+in-chat plan directly. For `NORMAL` and `HIGH_RISK` work, when Explorer work is used, the
+controller builds a reconciled evidence packet containing the requested outcome, direct facts with
+paths or symbols, impact and risk, ownership candidates, verification sources, and unresolved
+decisions. Spawn one bounded Planner using `fork_turns: none` and give it only that packet plus the
+required plan fields. The Planner must not repeat Explorer discovery. If the packet is incomplete,
+it returns `NEEDS_CONTEXT` naming the exact missing fact instead of reopening repository-wide
+investigation.
 
 **REQUIRED SUB-SKILL:** Use superpowers:dispatching-parallel-agents for independent read-only investigations.
 
 ## Plan Contract
 
-Use one bounded Planner to turn the reconciled evidence packet into the plan. Defer
-implementation-only skills, including worktree setup, TDD, code review, and verification, until
-their corresponding state after implementation approval. During `DRAFT_PLAN`, name those future
-checkpoints without loading or executing their skills.
+For `NORMAL` and `HIGH_RISK`, use one bounded Planner to turn the reconciled evidence packet into
+the plan. Defer implementation-only skills, including worktree setup, TDD, code review, and
+verification, until their corresponding state after implementation approval. During `DRAFT_PLAN`,
+name those future checkpoints without loading or executing their skills.
 
 Present a concrete plan in chat before any mutation. Include:
 
@@ -107,6 +154,14 @@ Every writer must have disjoint ownership. Treat migrations, permission contract
 API contracts and generators, lockfiles, route registries, deployment owners, and security or
 identity surfaces as protected resources that require a single serialized owner. End by asking the
 user to approve the exact current plan.
+
+### TRIVIAL plan contract
+
+The controller may draft a `TRIVIAL` plan without a Planner. Keep it concrete and in chat: state
+the bounded outcome, affirmative Fast Path eligibility, exact owned paths, focused verification,
+and escalation conditions. Do not create design or implementation plan artifacts, a multi-agent
+work graph, or an implementation task graph. Explicit approval of this exact plan remains required
+before any mutation.
 
 **REQUIRED SUB-SKILL:** Use superpowers:writing-plans for multi-file or high-risk implementation plans.
 
@@ -127,14 +182,15 @@ as transferable between plans.
 
 ## Plan Artifacts
 
-Keep a small, low-risk, single-area plan in chat; one explicit approval may authorize its
-implementation. For multi-file or high-risk work, discuss and name exactly two dated Superpowers
-artifacts in chat: one design under `docs/superpowers/specs/` and one implementation plan under
-`docs/superpowers/plans/`. The first approval must name and authorize that exact pair. Record both
-or neither, then show both recorded artifacts for a second user review and wait for explicit
-implementation approval. If either exact path is missing from the approved plan or recorded pair,
-return to `DRAFT_PLAN`, repair the pair, and obtain fresh first approval; never advance to the
-second approval gate with only one artifact.
+Keep a `TRIVIAL` plan in chat and create no plan artifacts. For `NORMAL`, keep a small, low-risk,
+single-area plan in chat; one explicit approval may authorize its implementation. For multi-file or
+`HIGH_RISK` work, discuss and name exactly two dated Superpowers artifacts in chat: one design
+under `docs/superpowers/specs/` and one implementation plan under `docs/superpowers/plans/`. The
+first approval must name and authorize that exact pair. Record both or neither, then show both
+recorded artifacts for a second user review and wait for explicit implementation approval. If
+either exact path is missing from the approved plan or recorded pair, return to `DRAFT_PLAN`,
+repair the pair, and obtain fresh first approval; never advance to the second approval gate with
+only one artifact.
 
 The first approval never authorizes staging or committing; leave both artifacts untracked until
 explicit implementation approval. Do not include `git add`, a local commit, or any other Git-index
@@ -166,7 +222,7 @@ or effort cannot be selected, return `BLOCKED` rather than substituting a weaker
 
 ## Validate the Work Graph
 
-After implementation approval, record the bounded graph at
+For `NORMAL` and `HIGH_RISK`, after implementation approval, record the bounded graph at
 `.superpowers/schoolorbit-workflow/work-graph.json` with `{ "version": 1, "tasks": [...] }`.
 Each task must declare `id`, `wave`, `dependencies`, `ownedPaths`, `protectedResources`, `risk`,
 `agentProfile`, and `verification`.
@@ -182,14 +238,18 @@ Do not start writers unless the validator exits zero. Fix the plan or ownership 
 validator, when it rejects overlap, unsafe paths, excessive concurrency, dependencies, profile
 routing, or protected-resource ownership.
 
+The Fast Path creates no work graph.
+
 ## Execute Approved Work
 
-Create an isolated worktree and therefore a separate Git index for every writer lane. Start only
-dependency-ready tasks in the same validated wave, with at most three active agents total. Never
-put independent writers in a shared worktree, and serialize every protected resource. Give each
-worker a bounded brief containing the approved task, base commit, dependencies, owned paths,
-protected resources, exact profile, verification commands, stop conditions, and required status
-report.
+### NORMAL and HIGH_RISK execution
+
+For `NORMAL` and `HIGH_RISK`, create an isolated worktree and therefore a separate Git index for
+every writer lane. Start only dependency-ready tasks in the same validated wave, with at most three
+active agents total. Never put independent writers in a shared worktree, and serialize every
+protected resource. Give each worker a bounded brief containing the approved task, base commit,
+dependencies, owned paths, protected resources, exact profile, verification commands, stop
+conditions, and required status report.
 
 Implement with tests first, make the smallest coherent change, commit the lane, and prohibit edits
 outside ownership. When a bug or unexpected failure appears, establish its root cause before
@@ -210,12 +270,27 @@ Do not use `superpowers:subagent-driven-development` as the parallel execution e
 forbids concurrent implementers. This SchoolOrbit worktree-wave controller owns parallel writer
 execution; use the other required Superpowers at their named checkpoints.
 
+### TRIVIAL Fast Path execution
+
+At `FAST_EXECUTE`, the controller starts exactly one `schoolorbit_implementer` for the exact owned
+paths in the approved bounded brief. A separate worktree is not required when this sole writer has
+no other isolation requirement. Do not add a Planner, design or implementation plan artifacts,
+work graph, independent Reviewer, separate Verifier, or multi-round review by default. Never infer
+authority to stage or commit.
+
+The Implementer makes only the approved behavior-preserving edit and stops at the first escalation
+condition. If implementation needs another path, domain, writer, protected resource, material
+decision, or behavior beyond the approved expectation, it reports the condition without widening
+scope or continuing the Fast Path.
+
 ## Integrate and Review
 
-For every completed lane, compare its base-to-head diff with `ownedPaths`, inspect generated and
-sensitive-data boundaries, verify its commit and report, and reject unowned changes. Integrate
-eligible lanes serially into the controller worktree in dependency order. Resolve no semantic
-conflict by guesswork; return it to the responsible owner or revise the plan.
+### NORMAL and HIGH_RISK review
+
+For every completed `NORMAL` or `HIGH_RISK` lane, compare its base-to-head diff with `ownedPaths`,
+inspect generated and sensitive-data boundaries, verify its commit and report, and reject unowned
+changes. Integrate eligible lanes serially into the controller worktree in dependency order.
+Resolve no semantic conflict by guesswork; return it to the responsible owner or revise the plan.
 
 After all approved tasks are integrated, start an independent Reviewer using `gpt-5.6-sol` at
 `max`. Give it the approved requirements, base and head commits, full diff, work graph, and
@@ -226,15 +301,25 @@ Rounds one through three return findings to the original owner. Rounds four and 
 `gpt-5.6-sol` `max` implementer with explicit ownership. Unresolved load-bearing defects block
 after round five; never relabel them as concerns merely to complete.
 
-**REQUIRED SUB-SKILL:** Use superpowers:requesting-code-review for task and integrated review.
+For `NORMAL` and `HIGH_RISK`, **REQUIRED SUB-SKILL:** Use superpowers:requesting-code-review for
+task and integrated review.
+
+### TRIVIAL Fast Path review boundary
+
+Fast Path work has no integration lane, independent Reviewer, or review-fix rounds. The controller
+still audits the sole Implementer's ownership, evidence, final diff, and status directly. Any
+finding that requires logic changes or expands scope triggers Fast Path escalation and fresh
+approval.
 
 ## Verify and Finish
 
-Re-read the current `.rules` and run every applicable focused command and verification-matrix
-command fresh against the integrated worktree. Capture exit codes and relevant output. Inspect the
-base-to-head diff directly, confirm only approved files changed, verify generated artifacts came
-from their source, audit for secrets or plaintext national IDs, run `git diff --check`, and inspect
-`git status --short`.
+### NORMAL and HIGH_RISK verification
+
+For `NORMAL` and `HIGH_RISK`, re-read the current `.rules` and run every applicable focused command
+and verification-matrix command fresh against the integrated worktree. Capture exit codes and
+relevant output. Inspect the base-to-head diff directly, confirm only approved files changed,
+verify generated artifacts came from their source, audit for secrets or plaintext national IDs,
+run `git diff --check`, and inspect `git status --short`.
 
 Do not accept stale CI, a worker's summary, or a Reviewer opinion as verification. A Verifier may
 use workspace-write only for test-created build or cache artifacts; audit and reject source,
@@ -245,6 +330,16 @@ already named in the approved plan.
 **REQUIRED SUB-SKILL:** Use superpowers:verification-before-completion before success claims.
 
 **REQUIRED SUB-SKILL:** Use superpowers:finishing-a-development-branch after verified implementation when the user chooses integration.
+
+### TRIVIAL Fast Path verification
+
+At `FAST_VERIFY`, run the approved focused checks and any applicable deterministic repository
+validation fresh. Prefer deterministic validation over another LLM when repository rules fully
+establish the result; do not start a separate Verifier. Capture commands, exit statuses, and
+relevant output, then inspect `git diff --check`, the complete final diff against the base, and
+`git status --short`. Confirm that only exact owned paths changed and no exclusion or escalation
+condition appeared. A failed check that requires logic changes invalidates the Fast Path and
+requires reclassification, a revised plan, and fresh approval.
 
 ## Status Contract
 
@@ -268,13 +363,15 @@ claim.
 | State | Lead role | Required action |
 |---|---|---|
 | `DISCOVER` | Explorer / controller | Read rules and collect bounded direct evidence. |
-| `DRAFT_PLAN` | Planner `sol/max` | Define scope, ownership, risk, dependencies, and checks. |
+| `DRAFT_PLAN` | Controller or Planner `sol/max` | Controller drafts `TRIVIAL`; Planner handles `NORMAL` / `HIGH_RISK`. |
 | `AWAIT_APPROVAL` | Controller | Wait for explicit approval; permit no write. |
-| `RECORD_PLAN` | Controller | Record approved multi-file/high-risk artifacts, then re-ask. |
-| `EXECUTE_WAVES` | Implementer | Validate graph; use isolated worktrees, TDD, and max three. |
-| `INTEGRATE` | Controller | Audit ownership and integrate lanes serially. |
-| `REVIEW_FIX` | Reviewer `sol/max` | Review independently, fix by owner, and re-review. |
-| `VERIFY` | Verifier / controller | Run fresh checks and inspect the final diff. |
+| `FAST_EXECUTE` | One `schoolorbit_implementer` | Edit only exact owned paths; stop on escalation. |
+| `FAST_VERIFY` | Controller / Implementer | Run deterministic focused checks; inspect diff and status. |
+| `RECORD_PLAN` | Controller | For `NORMAL` / `HIGH_RISK`, record approved artifacts when required, then re-ask. |
+| `EXECUTE_WAVES` | Implementer | For `NORMAL` / `HIGH_RISK`, validate graph; use isolated worktrees, TDD, and max three. |
+| `INTEGRATE` | Controller | For `NORMAL` / `HIGH_RISK`, audit ownership and integrate lanes serially. |
+| `REVIEW_FIX` | Reviewer `sol/max` | For `NORMAL` / `HIGH_RISK`, independently review, fix, and re-review. |
+| `VERIFY` | Verifier / controller | For `NORMAL` / `HIGH_RISK`, run fresh checks and inspect the final diff. |
 | `COMPLETE` / `BLOCKED` | Controller | Report evidence or the exact stopping condition. |
 
 ## Example
@@ -305,6 +402,8 @@ contract task:
   safety.
 - “Recording the plan includes a local commit” expands the first gate; plan artifacts remain
   untracked until implementation approval.
+- “Small”, “single file”, or a familiar example does not prove `TRIVIAL`; every eligibility
+  condition must be affirmative, and uncertainty becomes `NORMAL`.
 - “List only”, “dry run”, or “just checking” does not make a build, test, linter, formatter,
   generator, package manager, installer, or auto-fixer read-only when it can create a cache or
   artifact.
@@ -320,6 +419,8 @@ Stop and return to the appropriate earlier state when any of these appears:
 - parallel writers sharing a worktree or Git index;
 - direct edits to generated permission or API artifacts;
 - edits to an applied or legacy migration;
+- Fast Path scope expansion, protected resources, unexpected behavior, verification requiring
+  logic changes, multiple domains, or another writer;
 - read-only roles that changed files;
 - integration outside dependency order or without an ownership audit; or
 - a completion claim without fresh verification and direct diff evidence.
