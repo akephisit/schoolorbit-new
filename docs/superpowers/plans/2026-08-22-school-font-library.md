@@ -1,10 +1,8 @@
 # School Font Library Implementation Plan
 
-> **For agentic workers:** REQUIRED WORKFLOW: execute through `schoolorbit-workflow` with isolated
-> worktrees, validated waves, test-driven development, independent review, and fresh integrated
-> verification. Do not use generic `superpowers:subagent-driven-development` as the parallel
-> execution engine; the SchoolOrbit worktree-wave controller owns delegation. Steps use checkbox
-> (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use
+> `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to
+> implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build one tenant-scoped school font library, integrate certificate templates as its first
 typed consumer, and let dedicated font librarians manage it without certificate permissions.
@@ -90,24 +88,27 @@ Playwright.
 - Certificate static and Playwright tests under `frontend-school/tests/`.
 - `docs/OPERATIONS.md` and `docs/TESTING.md`.
 
-## Work Graph and Ownership
+## Execution Order and Ownership
 
-All tasks are high risk. Protected-resource writers run serially. After the second approval, write
-`.superpowers/schoolorbit-workflow/work-graph.json` and validate it before starting a writer.
+Use `superpowers:using-git-worktrees` before implementation and
+`superpowers:test-driven-development` for every behavior change. Execute Tasks 1 through 7
+serially because their migration, permission, File Platform, generated-contract, certificate, and
+documentation boundaries depend on the preceding task. Each task gets a fresh implementation
+context and review checkpoint when using `superpowers:subagent-driven-development`.
 
-| Wave | Task | Dependency | Profile | Protected resources |
-|---|---|---|---|---|
-| 1 | Schema, permission, File Platform boundary | approved plan | `schoolorbit_high_risk_implementer` | migration timeline, permission contract, file purpose, authorization |
-| 2 | Shared backend module | Wave 1 integrated | `schoolorbit_high_risk_implementer` | private-file ownership, central service and handler boundary |
-| 3 | Certificate consumer | Wave 2 integrated | `schoolorbit_high_risk_implementer` | layout, issuance, rendering, campaign purge |
-| 4 | API contract generation | Wave 3 integrated | `schoolorbit_high_risk_implementer` | OpenAPI source and generated API artifacts |
-| 5 | Central frontend | Wave 4 integrated | `schoolorbit_high_risk_implementer` | guarded route/menu and generated DTO consumption |
-| 6 | Certificate frontend | Wave 5 integrated | `schoolorbit_high_risk_implementer` | certificate editor and browser renderer |
-| 7 | Canonical docs and focused browser coverage | Wave 6 integrated | `schoolorbit_high_risk_implementer` | operational rollout and destructive-test procedure |
+| Order | Task | Dependency | Protected boundaries |
+|---|---|---|---|
+| 1 | Schema, permission, File Platform boundary | approved plan | migration timeline, permission contract, file purpose, authorization |
+| 2 | Shared backend module | Task 1 integrated | private-file ownership, central service and handler boundary |
+| 3 | Certificate consumer | Task 2 integrated | layout, issuance, rendering, campaign purge |
+| 4 | API contract generation | Task 3 integrated | OpenAPI source and generated API artifacts |
+| 5 | Central frontend | Task 4 integrated | guarded route/menu and generated DTO consumption |
+| 6 | Certificate frontend | Task 5 integrated | certificate editor and browser renderer |
+| 7 | Canonical docs and focused browser coverage | Task 6 integrated | operational rollout and destructive-test procedure |
 
-The controller audits and integrates Wave 1 through Wave 7 in order. It then starts an independent
-`schoolorbit_reviewer` at `gpt-5.6-sol`/`max`, returns findings to the original owners, re-reviews
-fixes, and starts `schoolorbit_verifier` at `gpt-5.6-terra`/`high` only after review passes.
+After Task 7, use `superpowers:requesting-code-review` for an independent requirements and diff
+review. Apply accepted findings through `superpowers:receiving-code-review`, request review again,
+and run `superpowers:verification-before-completion` only after review passes.
 
 ---
 
@@ -963,8 +964,7 @@ lifecycle survival assertion. Do not add a new Markdown entry point or completio
 - [ ] **Step 3: Run documentation and browser discovery checks**
 
 ```bash
-node --test frontend-school/tests/static/documentation-policy.test.mjs \
-  frontend-school/tests/static/schoolorbit-agent-workflow.test.mjs
+node --test frontend-school/tests/static/documentation-policy.test.mjs
 cd frontend-school
 npx playwright test --list tests/e2e/school-font-library.spec.ts \
   tests/e2e/certificate-editor.spec.ts \
@@ -993,18 +993,13 @@ git commit -m "test(fonts): document shared font lifecycle"
 
 ## Integrated Review and Verification
 
-After serial integration, give the independent reviewer the approved spec/plan, base/head commits,
-validated work graph, complete diff, generated-source provenance, and all lane test evidence.
-Resolve Critical and Important findings through the original owner and re-review every fix round.
+After serial task execution, invoke `superpowers:requesting-code-review` with the approved
+spec/plan, base/head commits, complete diff, generated-source provenance, and all task test
+evidence. Resolve Critical and Important findings through `superpowers:receiving-code-review` and
+request review again after every fix round.
 
-Then re-read `.rules` and run these commands fresh against the integrated worktree.
-
-### Work graph
-
-```bash
-node .agents/skills/schoolorbit-workflow/scripts/validate-work-graph.mjs \
-  .superpowers/schoolorbit-workflow/work-graph.json
-```
+After review passes, invoke `superpowers:verification-before-completion`, re-read `.rules`, and run
+these commands fresh against the integrated worktree.
 
 ### Backend and File Platform
 
