@@ -12,6 +12,7 @@
 	import { downloadCertificatePdf } from '$lib/certificates/download';
 	import type { CertificatePreviewState } from '$lib/certificates/preview-fit';
 	import { loadCertificateRenderer } from '$lib/certificates/renderer';
+	import CertificatePreviewFullscreenDialog from '$lib/components/certificates/CertificatePreviewFullscreenDialog.svelte';
 	import CertificatePreviewSurface from '$lib/components/certificates/CertificatePreviewSurface.svelte';
 	import {
 		Award,
@@ -20,6 +21,7 @@
 		Download,
 		FileCheck2,
 		LoaderCircle,
+		Maximize2,
 		ScanLine,
 		Search,
 		ShieldCheck,
@@ -53,6 +55,7 @@
 	let previewManifestLoading = $state(false);
 	let previewManifestError = $state('');
 	let previewState = $state<CertificatePreviewState>('idle');
+	let previewFullscreenOpen = $state(false);
 	let requestSequence = 0;
 	let verificationController: AbortController | null = null;
 	let previewController: AbortController | null = null;
@@ -220,6 +223,22 @@
 		void loadPublicPreview(result, true);
 	}
 
+	function resetVerification(): void {
+		requestSequence += 1;
+		verificationController?.abort();
+		verificationController = null;
+		clearPreview();
+		clearDownload();
+		verificationContext = null;
+		result = null;
+		verificationError = '';
+		verifying = false;
+		previewFullscreenOpen = false;
+		certificateNumber = '';
+		firstName = '';
+		lastName = '';
+	}
+
 	async function submitManualVerification(event: SubmitEvent): Promise<void> {
 		event.preventDefault();
 		if (!certificateNumber.trim() || !firstName.trim() || !lastName.trim()) {
@@ -275,7 +294,11 @@
 
 <main class="verification-page">
 	<div class="ambient-grid" aria-hidden="true"></div>
-	<section class="verification-shell" aria-labelledby="verification-title">
+	<section
+		class:result-view={result !== null}
+		class="verification-shell"
+		aria-labelledby="verification-title"
+	>
 		<header class="page-heading">
 			<div class="brand-mark" aria-hidden="true"><ShieldCheck size={30} strokeWidth={1.7} /></div>
 			<div>
@@ -290,180 +313,219 @@
 			<strong>{certificateNumber.trim() || '2569-0000-000000-0'}</strong>
 		</div>
 
-		<div class="workspace">
-			<section class="manual-panel" aria-labelledby="manual-title">
-				<div class="section-heading">
-					<Search size={20} aria-hidden="true" />
-					<div>
-						<h2 id="manual-title">กรอกข้อมูลเพื่อตรวจสอบ</h2>
-						<p>กรอกชื่อและนามสกุลแยกช่องให้ตรงกับเกียรติบัตร</p>
-					</div>
+		{#if result}
+			<section
+				class:revoked-result={result.status === 'revoked'}
+				class="verified-registry"
+				data-testid="verification-result"
+				aria-live="polite"
+			>
+				<div
+					class:revoked={result.status === 'revoked'}
+					class="status-seal"
+					data-testid="public-certificate-status"
+				>
+					{#if result.status === 'issued'}
+						<ShieldCheck size={31} aria-hidden="true" />
+						<div><span>สถานะ</span><strong>ใช้ได้</strong></div>
+					{:else}
+						<ShieldX size={31} aria-hidden="true" />
+						<div><span>สถานะ</span><strong>เพิกถอนแล้ว</strong></div>
+					{/if}
 				</div>
 
-				<form data-testid="certificate-verification-form" onsubmit={submitManualVerification}>
-					<label for="certificate-number">เลขเกียรติบัตร</label>
-					<input
-						id="certificate-number"
-						name="certificateNumber"
-						autocomplete="off"
-						placeholder="เช่น 2569-0042-000123-4"
-						bind:value={certificateNumber}
-					/>
-
-					<div class="name-fields">
-						<div>
-							<label for="first-name">ชื่อ</label>
-							<input
-								id="first-name"
-								name="firstName"
-								autocomplete="given-name"
-								bind:value={firstName}
-							/>
-						</div>
-						<div>
-							<label for="last-name">นามสกุล</label>
-							<input
-								id="last-name"
-								name="lastName"
-								autocomplete="family-name"
-								bind:value={lastName}
-							/>
-						</div>
-					</div>
-
-					<button class="verify-button" type="submit" disabled={verifying}>
-						{#if verifying}
-							<LoaderCircle class="spin" size={18} aria-hidden="true" /> กำลังตรวจสอบ
-						{:else}
-							<Search size={18} aria-hidden="true" /> ตรวจสอบข้อมูล
-						{/if}
-					</button>
-				</form>
-
-				<div class="privacy-note">
-					<ScanLine size={18} aria-hidden="true" />
-					<span
-						>ข้อมูลใช้เพื่อตรวจสอบครั้งนี้เท่านั้น ระบบไม่แสดงเหตุผลภายในหรือข้อมูลบัญชีผู้รับ</span
+				{#if result.status === 'issued' && result.receipt}
+					<div
+						class="certificate-preview-region"
+						data-testid="public-certificate-preview-region"
 					>
-				</div>
-			</section>
-
-			<section class="result-panel" aria-live="polite" aria-busy={verifying}>
-				{#if verifying}
-					<div class="result-placeholder">
-						<LoaderCircle class="spin" size={34} aria-hidden="true" />
-						<h2>กำลังตรวจสอบทะเบียน</h2>
-						<p>โปรดรอสักครู่</p>
-					</div>
-				{:else if verificationError}
-					<div class="result-placeholder error-state" data-testid="verification-error">
-						<ShieldX size={38} aria-hidden="true" />
-						<h2>ตรวจสอบไม่สำเร็จ</h2>
-						<p>{verificationError}</p>
-						<small>ตรวจเลข ชื่อ และนามสกุลอีกครั้ง หรือสแกน QR Code ใหม่</small>
-					</div>
-				{:else if result}
-					<div class="certificate-result" data-testid="verification-result">
-						<div class:revoked={result.status === 'revoked'} class="status-seal">
-							{#if result.status === 'issued'}
-								<ShieldCheck size={31} aria-hidden="true" />
-								<div><span>สถานะ</span><strong>ใช้ได้</strong></div>
-							{:else}
-								<ShieldX size={31} aria-hidden="true" />
-								<div><span>สถานะ</span><strong>เพิกถอนแล้ว</strong></div>
-							{/if}
-						</div>
-
-						<div class="certificate-number">
-							<span>เลขเกียรติบัตร</span>
-							<strong>{result.certificateNumber}</strong>
-						</div>
-
-						<div class="recipient">
-							<span>มอบให้</span>
-							<h2>{recipientName}</h2>
-						</div>
-
-						<dl class="certificate-details">
-							<div>
-								<dt><Award size={17} aria-hidden="true" /> กิจกรรม</dt>
-								<dd>{result.campaignName}</dd>
-							</div>
-							<div>
-								<dt><FileCheck2 size={17} aria-hidden="true" /> แบบเกียรติบัตร</dt>
-								<dd>{result.templateName}</dd>
-							</div>
-							{#if result.activityItem}
-								<div>
-									<dt>รายการ</dt>
-									<dd>{result.activityItem}</dd>
-								</div>
-							{/if}
-							{#if result.awardOrRole}
-								<div>
-									<dt>รางวัลหรือบทบาท</dt>
-									<dd>{result.awardOrRole}</dd>
-								</div>
-							{/if}
-							<div>
-								<dt><CalendarDays size={17} aria-hidden="true" /> วันที่ออก</dt>
-								<dd>{formatThaiDate(result.issueDate)} · ปีการศึกษา {result.academicYear}</dd>
-							</div>
-							<div>
-								<dt><Building2 size={17} aria-hidden="true" /> ผู้ออก</dt>
-								<dd>{result.issuerSchoolName}</dd>
-							</div>
-						</dl>
-
-						{#if result.status === 'issued' && result.receipt}
-							<div class="public-certificate-preview">
-								<CertificatePreviewSurface
-									manifest={previewManifest}
-									manifestLoading={previewManifestLoading}
-									manifestError={previewManifestError}
-									ariaLabel="ภาพเกียรติบัตรที่ตรวจสอบแล้ว"
-									loadingLabel="กำลังสร้างภาพเกียรติบัตร…"
-									renderFailureMessage="สร้างภาพเกียรติบัตรไม่สำเร็จ"
-									retryLabel="ลองโหลดภาพอีกครั้ง"
-									onretry={retryPublicPreview}
-									onstatechange={(state) => (previewState = state)}
-								/>
-							</div>
-							<button
-								class="download-button"
-								type="button"
-								onclick={downloadCertificate}
-								disabled={downloading}
-								data-testid="public-certificate-download"
-							>
-								{#if downloading}
-									<LoaderCircle class="spin" size={18} aria-hidden="true" /> กำลังสร้าง PDF
-								{:else}
-									<Download size={18} aria-hidden="true" /> ดาวน์โหลดเกียรติบัตร
-								{/if}
-							</button>
-						{:else if result.status === 'revoked'}
-							<div class="revoked-note">
-								<p>เกียรติบัตรฉบับนี้ถูกเพิกถอนและไม่สามารถดาวน์โหลดได้</p>
-								{#if result.replacementCertificateNumber}
-									<span>เลขใบทดแทน: <strong>{result.replacementCertificateNumber}</strong></span>
-								{/if}
-							</div>
-						{/if}
-
-						{#if downloadError}<p class="download-error">{downloadError}</p>{/if}
-					</div>
-				{:else}
-					<div class="result-placeholder">
-						<div class="document-icon" aria-hidden="true"><FileCheck2 size={34} /></div>
-						<h2>ผลการตรวจสอบจะแสดงที่นี่</h2>
-						<p>ระบบแสดงเฉพาะข้อมูลสาธารณะที่จำเป็นบนเกียรติบัตร</p>
+						<CertificatePreviewSurface
+							manifest={previewManifest}
+							manifestLoading={previewManifestLoading}
+							manifestError={previewManifestError}
+							ariaLabel="ภาพเกียรติบัตรที่ตรวจสอบแล้ว"
+							loadingLabel="กำลังสร้างภาพเกียรติบัตร…"
+							renderFailureMessage="สร้างภาพเกียรติบัตรไม่สำเร็จ"
+							retryLabel="ลองโหลดภาพอีกครั้ง"
+							onretry={retryPublicPreview}
+							onstatechange={(state) => (previewState = state)}
+						/>
 					</div>
 				{/if}
+
+				<div class="certificate-details" data-testid="public-certificate-details">
+					<div class="certificate-number">
+						<span>เลขเกียรติบัตร</span>
+						<strong>{result.certificateNumber}</strong>
+					</div>
+
+					<div class="recipient">
+						<span>มอบให้</span>
+						<h2>{recipientName}</h2>
+					</div>
+
+					<dl class="registry-fields">
+						<div>
+							<dt><Award size={17} aria-hidden="true" /> กิจกรรม</dt>
+							<dd>{result.campaignName}</dd>
+						</div>
+						<div>
+							<dt><FileCheck2 size={17} aria-hidden="true" /> แบบเกียรติบัตร</dt>
+							<dd>{result.templateName}</dd>
+						</div>
+						{#if result.activityItem}
+							<div><dt>รายการ</dt><dd>{result.activityItem}</dd></div>
+						{/if}
+						{#if result.awardOrRole}
+							<div><dt>รางวัลหรือบทบาท</dt><dd>{result.awardOrRole}</dd></div>
+						{/if}
+						<div>
+							<dt><CalendarDays size={17} aria-hidden="true" /> วันที่ออก</dt>
+							<dd>{formatThaiDate(result.issueDate)} · ปีการศึกษา {result.academicYear}</dd>
+						</div>
+						<div>
+							<dt><Building2 size={17} aria-hidden="true" /> ผู้ออก</dt>
+							<dd>{result.issuerSchoolName}</dd>
+						</div>
+					</dl>
+				</div>
+
+				<div class="result-actions">
+					{#if result.status === 'issued' && result.receipt}
+						<button
+							class="download-button"
+							type="button"
+							onclick={downloadCertificate}
+							disabled={downloading}
+							data-testid="public-certificate-download"
+						>
+							{#if downloading}
+								<LoaderCircle class="spin" size={18} aria-hidden="true" /> กำลังสร้าง PDF
+							{:else}
+								<Download size={18} aria-hidden="true" /> ดาวน์โหลดเกียรติบัตร
+							{/if}
+						</button>
+						<button
+							class="secondary-action"
+							type="button"
+							disabled={previewState !== 'ready' || !previewManifest}
+							onclick={() => (previewFullscreenOpen = true)}
+						>
+							<Maximize2 size={18} aria-hidden="true" /> ขยายเต็มจอ
+						</button>
+					{:else if result.status === 'revoked'}
+						<div class="revoked-note">
+							<p>เกียรติบัตรฉบับนี้ถูกเพิกถอนและไม่สามารถดาวน์โหลดได้</p>
+							{#if result.replacementCertificateNumber}
+								<span>เลขใบทดแทน: <strong>{result.replacementCertificateNumber}</strong></span>
+							{/if}
+						</div>
+					{/if}
+					<button class="secondary-action" type="button" onclick={resetVerification}>
+						<Search size={18} aria-hidden="true" /> ตรวจสอบหมายเลขอื่น
+					</button>
+					{#if downloadError}<p class="download-error">{downloadError}</p>{/if}
+				</div>
 			</section>
-		</div>
+		{:else}
+			<div class="workspace">
+				<section class="manual-panel" aria-labelledby="manual-title">
+					<div class="section-heading">
+						<Search size={20} aria-hidden="true" />
+						<div>
+							<h2 id="manual-title">กรอกข้อมูลเพื่อตรวจสอบ</h2>
+							<p>กรอกชื่อและนามสกุลแยกช่องให้ตรงกับเกียรติบัตร</p>
+						</div>
+					</div>
+
+					<form data-testid="certificate-verification-form" onsubmit={submitManualVerification}>
+						<label for="certificate-number">เลขเกียรติบัตร</label>
+						<input
+							id="certificate-number"
+							name="certificateNumber"
+							autocomplete="off"
+							placeholder="เช่น 2569-0042-000123-4"
+							bind:value={certificateNumber}
+						/>
+
+						<div class="name-fields">
+							<div>
+								<label for="first-name">ชื่อ</label>
+								<input
+									id="first-name"
+									name="firstName"
+									autocomplete="given-name"
+									bind:value={firstName}
+								/>
+							</div>
+							<div>
+								<label for="last-name">นามสกุล</label>
+								<input
+									id="last-name"
+									name="lastName"
+									autocomplete="family-name"
+									bind:value={lastName}
+								/>
+							</div>
+						</div>
+
+						<button class="verify-button" type="submit" disabled={verifying}>
+							{#if verifying}
+								<LoaderCircle class="spin" size={18} aria-hidden="true" /> กำลังตรวจสอบ
+							{:else}
+								<Search size={18} aria-hidden="true" /> ตรวจสอบข้อมูล
+							{/if}
+						</button>
+					</form>
+
+					<div class="privacy-note">
+						<ScanLine size={18} aria-hidden="true" />
+						<span>
+							ข้อมูลใช้เพื่อตรวจสอบครั้งนี้เท่านั้น ระบบไม่แสดงเหตุผลภายในหรือข้อมูลบัญชีผู้รับ
+						</span>
+					</div>
+				</section>
+
+				<section class="result-panel" aria-live="polite" aria-busy={verifying}>
+					{#if verifying}
+						<div class="result-placeholder">
+							<LoaderCircle class="spin" size={34} aria-hidden="true" />
+							<h2>กำลังตรวจสอบทะเบียน</h2>
+							<p>โปรดรอสักครู่</p>
+						</div>
+					{:else if verificationError}
+						<div class="result-placeholder error-state" data-testid="verification-error">
+							<ShieldX size={38} aria-hidden="true" />
+							<h2>ตรวจสอบไม่สำเร็จ</h2>
+							<p>{verificationError}</p>
+							<small>ตรวจเลข ชื่อ และนามสกุลอีกครั้ง หรือสแกน QR Code ใหม่</small>
+						</div>
+					{:else}
+						<div class="result-placeholder">
+							<div class="document-icon" aria-hidden="true"><FileCheck2 size={34} /></div>
+							<h2>ผลการตรวจสอบจะแสดงที่นี่</h2>
+							<p>ระบบแสดงเฉพาะข้อมูลสาธารณะที่จำเป็นบนเกียรติบัตร</p>
+						</div>
+					{/if}
+				</section>
+			</div>
+		{/if}
 	</section>
 </main>
+
+<CertificatePreviewFullscreenDialog
+	open={previewFullscreenOpen}
+	title="เกียรติบัตรที่ตรวจสอบแล้ว"
+	manifest={previewManifest}
+	manifestLoading={previewManifestLoading}
+	manifestError={previewManifestError}
+	ariaLabel="ภาพเกียรติบัตรที่ตรวจสอบแล้วแบบเต็มจอ"
+	loadingLabel="กำลังสร้างภาพเกียรติบัตร…"
+	renderFailureMessage="สร้างภาพเกียรติบัตรไม่สำเร็จ"
+	retryLabel="ลองโหลดภาพอีกครั้ง"
+	onretry={retryPublicPreview}
+	onopenchange={(open) => (previewFullscreenOpen = open)}
+/>
 
 <style>
 	.verification-page {
@@ -500,6 +562,10 @@
 		background: rgb(255 255 255 / 0.97);
 		border: 1px solid var(--registry-line);
 		box-shadow: 0 24px 70px rgb(23 50 77 / 0.12);
+	}
+
+	.verification-shell.result-view {
+		width: min(1440px, 100%);
 	}
 
 	.page-heading {
@@ -663,13 +729,14 @@
 	}
 
 	.verify-button,
-	.download-button {
+	.download-button,
+	.secondary-action {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
 		gap: 0.5rem;
 		min-height: 2.85rem;
-		border: 0;
+		border: 1px solid transparent;
 		border-radius: 0.35rem;
 		font: inherit;
 		font-weight: 550;
@@ -679,12 +746,6 @@
 			background 150ms ease;
 	}
 
-	.public-certificate-preview {
-		height: min(56dvh, 32rem);
-		min-height: 18rem;
-		min-width: 0;
-	}
-
 	.verify-button {
 		margin-top: 0.45rem;
 		background: var(--registry-ink);
@@ -692,7 +753,8 @@
 	}
 
 	.verify-button:hover:not(:disabled),
-	.download-button:hover:not(:disabled) {
+	.download-button:hover:not(:disabled),
+	.secondary-action:hover:not(:disabled) {
 		transform: translateY(-1px);
 	}
 
@@ -756,17 +818,47 @@
 		color: #7a8995;
 	}
 
-	.certificate-result {
-		display: flex;
-		flex-direction: column;
-		gap: 1.1rem;
+	.verified-registry {
+		display: grid;
+		grid-template-columns: minmax(0, 1.65fr) minmax(20rem, 0.65fr);
+		grid-template-areas:
+			'preview status'
+			'preview details'
+			'preview actions';
+		grid-template-rows: auto auto 1fr;
+		align-items: start;
+		border-top: 1px solid var(--registry-line);
+		background: white;
+	}
+
+	.verified-registry.revoked-result {
+		grid-template-columns: minmax(0, 44rem);
+		grid-template-areas:
+			'status'
+			'details'
+			'actions';
+		justify-content: center;
+		padding-block: clamp(1rem, 3vw, 2rem);
+	}
+
+	.certificate-preview-region {
+		grid-area: preview;
+		min-width: 0;
+		height: min(72dvh, 54rem);
+		min-height: 28rem;
+		padding: clamp(0.8rem, 2vw, 1.5rem);
+		border-right: 1px solid var(--registry-line);
+		background: var(--registry-mist);
 	}
 
 	.status-seal {
 		display: inline-flex;
-		align-self: flex-start;
+		grid-area: status;
+		align-self: start;
+		justify-self: start;
 		align-items: center;
 		gap: 0.65rem;
+		margin: clamp(1.25rem, 2.4vw, 2rem) clamp(1.25rem, 2.4vw, 2rem) 0;
 		border: 1px solid currentColor;
 		padding: 0.55rem 0.8rem;
 		color: var(--verified);
@@ -780,6 +872,14 @@
 	.status-seal strong {
 		display: block;
 		line-height: 1.1;
+	}
+
+	.certificate-details {
+		grid-area: details;
+		display: grid;
+		gap: 1.1rem;
+		min-width: 0;
+		padding: clamp(1.25rem, 2.4vw, 2rem);
 	}
 
 	.status-seal span {
@@ -810,14 +910,14 @@
 		line-height: 1.25;
 	}
 
-	.certificate-details {
+	.registry-fields {
 		display: grid;
 		gap: 0;
 		margin: 0;
 		border-top: 1px solid var(--registry-line);
 	}
 
-	.certificate-details > div {
+	.registry-fields > div {
 		display: grid;
 		grid-template-columns: minmax(7.5rem, 0.42fr) 1fr;
 		gap: 1rem;
@@ -845,6 +945,22 @@
 		color: white;
 	}
 
+	.secondary-action {
+		width: 100%;
+		border-color: var(--registry-line);
+		background: white;
+		color: var(--registry-ink);
+	}
+
+	.result-actions {
+		grid-area: actions;
+		display: grid;
+		align-self: end;
+		gap: 0.65rem;
+		min-width: 0;
+		padding: 0 clamp(1.25rem, 2.4vw, 2rem) clamp(1.25rem, 2.4vw, 2rem);
+	}
+
 	.revoked-note {
 		border-left: 3px solid var(--revoked);
 		background: #fff5f5;
@@ -861,7 +977,7 @@
 	}
 
 	.download-error {
-		margin: -0.35rem 0 0;
+		margin: 0;
 		color: var(--revoked);
 		font-size: 0.82rem;
 		text-align: center;
@@ -874,6 +990,33 @@
 	@keyframes spin {
 		to {
 			transform: rotate(360deg);
+		}
+	}
+
+	@media (max-width: 800px) {
+		.verified-registry {
+			grid-template-columns: minmax(0, 1fr);
+			grid-template-areas:
+				'status'
+				'preview'
+				'details'
+				'actions';
+			grid-template-rows: auto;
+		}
+
+		.verified-registry.revoked-result {
+			grid-template-columns: minmax(0, 1fr);
+		}
+
+		.certificate-preview-region {
+			height: min(65dvh, 36rem);
+			min-height: 18rem;
+			border-right: 0;
+			border-block: 1px solid var(--registry-line);
+		}
+
+		.status-seal {
+			margin-bottom: clamp(1.25rem, 4vw, 1.75rem);
 		}
 	}
 
@@ -919,7 +1062,7 @@
 		}
 
 		.name-fields,
-		.certificate-details > div {
+		.registry-fields > div {
 			grid-template-columns: 1fr;
 			gap: 0.25rem;
 		}

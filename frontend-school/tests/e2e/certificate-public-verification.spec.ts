@@ -150,6 +150,14 @@ function harnessPlugin(): Plugin {
 					};
 				}
 
+				function manualResult(status, payload) {
+					return {
+						...result(status),
+						firstName: payload.firstName,
+						lastName: payload.lastName
+					};
+				}
+
 				function manifest() {
 					return {
 						templateId: '10000000-0000-4000-8000-000000000001', certificateNumber,
@@ -170,7 +178,10 @@ function harnessPlugin(): Plugin {
 						options.signal?.throwIfAborted();
 						verificationAttempt += 1;
 						verificationCalls.push({ kind: 'manual', payload: structuredClone(payload), hashAtCall: window.location.hash });
-						return result(mode === 'revoked-after-expiry' && verificationAttempt > 1 ? 'revoked' : 'issued');
+						return manualResult(
+							mode === 'revoked-after-expiry' && verificationAttempt > 1 ? 'revoked' : 'issued',
+							payload
+						);
 					},
 					async verifyQr(payload, options = {}) {
 						options.signal?.throwIfAborted();
@@ -380,6 +391,47 @@ test('receipt retry that discovers revocation removes preview and download', asy
 	await expect(page.getByTestId('verification-result')).toContainText('เพิกถอนแล้ว');
 	await expect(page.getByRole('button', { name: 'ดาวน์โหลดเกียรติบัตร' })).toHaveCount(0);
 	await expect(page.getByLabel('ภาพเกียรติบัตรที่ตรวจสอบแล้ว')).toHaveCount(0);
+});
+
+test('issued registry layout keeps preview primary on desktop and status first on mobile', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto(`${baseUrl}${harnessPath}?mode=manual`);
+	await completeManualVerification(page, 'กมลชนก', 'ใจดี');
+	const preview = page.getByTestId('public-certificate-preview-region');
+	const details = page.getByTestId('public-certificate-details');
+	await expect(preview).toBeVisible();
+	expect((await preview.boundingBox())?.x).toBeLessThan((await details.boundingBox())?.x ?? 0);
+
+	await page.setViewportSize({ width: 390, height: 844 });
+	const status = page.getByTestId('public-certificate-status');
+	expect((await status.boundingBox())?.y).toBeLessThan((await preview.boundingBox())?.y ?? 0);
+	expect((await preview.boundingBox())?.y).toBeLessThan((await details.boundingBox())?.y ?? 0);
+});
+
+test('public fullscreen exits with Escape and returns to the verified result', async ({ page }) => {
+	await page.goto(`${baseUrl}${harnessPath}?mode=manual`);
+	await completeManualVerification(page, 'กมลชนก', 'ใจดี');
+	await page.getByRole('button', { name: 'ขยายเต็มจอ' }).click();
+	const fullscreen = page.getByRole('dialog', {
+		name: 'เกียรติบัตรที่ตรวจสอบแล้วแบบเต็มจอ'
+	});
+	await expect(fullscreen).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(fullscreen).toBeHidden();
+	await expect(page.getByTestId('verification-result')).toBeVisible();
+});
+
+test('a new verification clears and aborts the previous certificate preview', async ({ page }) => {
+	await page.goto(`${baseUrl}${harnessPath}?mode=stale`);
+	await completeManualVerification(page, 'คนแรก', 'ทดสอบ');
+	await expect(page.getByText('กำลังสร้างภาพเกียรติบัตร…')).toBeVisible();
+	await page.getByRole('button', { name: 'ตรวจสอบหมายเลขอื่น' }).click();
+	await completeManualVerification(page, 'คนที่สอง', 'ทดสอบ');
+	await page.evaluate(() => window.certificatePublicHarness.releaseHeldPreview());
+	await expect(page.getByTestId('verification-result')).toContainText('คนที่สอง');
+	await expect(page.getByTestId('verification-result')).not.toContainText('คนแรก');
 });
 
 declare global {
