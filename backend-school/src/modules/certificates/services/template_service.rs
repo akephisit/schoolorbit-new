@@ -27,7 +27,9 @@ use crate::{
             services::{self as school_font_services, SchoolFontStagingRelation},
         },
     },
-    policies::certificate_access_policy::{require_owner_action, CertificateAction},
+    policies::certificate_access_policy::{
+        require_owner_action, require_template_action, CertificateAction,
+    },
 };
 
 use super::{
@@ -705,14 +707,7 @@ pub async fn list_fonts(
     actor: &ActorContext,
     template_id: Uuid,
 ) -> Result<SchoolFontListResponse, AppError> {
-    let authorization = fetch_template_row(pool, template_id).await?;
-    require_owner_action(
-        pool,
-        actor,
-        authorization.owner_organization_unit_id,
-        CertificateAction::Read,
-    )
-    .await?;
+    require_template_action(pool, actor, template_id, CertificateAction::Read).await?;
     school_font_services::list_authorized(pool).await
 }
 
@@ -722,14 +717,7 @@ pub async fn inspect_font_uploads(
     template_id: Uuid,
     payload: InspectSchoolFontUploadsRequest,
 ) -> Result<SchoolFontUploadInspection, AppError> {
-    let authorization = fetch_template_row(pool, template_id).await?;
-    require_owner_action(
-        pool,
-        actor,
-        authorization.owner_organization_unit_id,
-        CertificateAction::Update,
-    )
-    .await?;
+    require_template_action(pool, actor, template_id, CertificateAction::Update).await?;
     school_font_services::inspect_authorized(
         pool,
         SchoolFontStagingRelation::CertificateTemplate(template_id),
@@ -744,14 +732,7 @@ pub async fn attach_font_batch(
     template_id: Uuid,
     payload: AttachSchoolFontBatchRequest,
 ) -> Result<SchoolFontListResponse, AppError> {
-    let authorization = fetch_template_row(pool, template_id).await?;
-    require_owner_action(
-        pool,
-        actor,
-        authorization.owner_organization_unit_id,
-        CertificateAction::Update,
-    )
-    .await?;
+    require_template_action(pool, actor, template_id, CertificateAction::Update).await?;
     school_font_services::attach_authorized(
         pool,
         actor.user_id,

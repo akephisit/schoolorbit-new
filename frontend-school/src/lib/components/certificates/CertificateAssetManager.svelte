@@ -78,7 +78,8 @@
 
 	function handleSchoolFontsAttached(items: SchoolFontSummary[]) {
 		schoolFontsPatchGeneration += 1;
-		schoolFonts = items;
+		const attachedIds = new Set(items.map((font) => font.id));
+		schoolFonts = [...schoolFonts.filter((font) => !attachedIds.has(font.id)), ...items];
 		schoolFontsLoading = false;
 		schoolFontsError = '';
 	}

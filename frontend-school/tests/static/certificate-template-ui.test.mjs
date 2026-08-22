@@ -121,7 +121,12 @@ test('font batch review is sequential, atomic, metadata-driven, and cleanup dura
 	assert.match(sharedBatch, /removeLocalRow/);
 	assert.match(sharedBatch, /cleanupTemporary/);
 	assert.match(sharedBatch, /metadata\.id/);
-	assert.match(assets, /handleSchoolFontsAttached\(items:[^)]*\)[\s\S]*schoolFonts = items/);
+	assert.match(assets, /handleSchoolFontsAttached\(items:[^)]*\)[\s\S]*attachedIds/);
+	assert.match(
+		assets,
+		/schoolFonts = \[\.\.\.schoolFonts\.filter\([\s\S]*\.\.\.items\]/,
+		'newly attached fonts must patch the already loaded shared catalog'
+	);
 	assert.match(assets, /onattached=\{handleSchoolFontsAttached\}/);
 	assert.doesNotMatch(sharedBatch, /fontWeight\s*:/, 'the browser must not submit a manual weight');
 	assert.doesNotMatch(sharedBatch, /Select\.Root/);

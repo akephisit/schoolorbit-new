@@ -169,6 +169,9 @@ pub(crate) async fn attach_authorized(
     }
 
     let mut tx = pool.begin().await?;
+    if let SchoolFontStagingRelation::CertificateTemplate(template_id) = relation {
+        lock_active_certificate_campaign(&mut tx, template_id).await?;
+    }
     let uploads = lock_uploads(&mut tx, relation, &file_ids).await?;
     let existing = load_existing_variants_tx(&mut tx).await?;
     let inspection = classify_uploads(&uploads, &existing);
@@ -240,6 +243,29 @@ pub(crate) async fn attach_authorized(
     Ok(SchoolFontListResponse { items })
 }
 
+async fn lock_active_certificate_campaign(
+    tx: &mut Transaction<'_, Postgres>,
+    template_id: Uuid,
+) -> Result<(), AppError> {
+    let status = sqlx::query_scalar::<_, String>(
+        "SELECT campaign.status
+         FROM certificate_templates AS template
+         JOIN certificate_campaigns AS campaign ON campaign.id = template.campaign_id
+         WHERE template.id = $1
+         FOR UPDATE OF campaign",
+    )
+    .bind(template_id)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("ไม่พบแม่แบบเกียรติบัตร".to_string()))?;
+    if status == "purging" {
+        return Err(AppError::Conflict(
+            "certificate_campaign_purging".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 pub async fn delete(
     pool: &PgPool,
     actor: &ActorContext,
@@ -280,21 +306,6 @@ pub async fn delete(
     .await?;
     tx.commit().await?;
     Ok(SchoolFontDeleteOutcome::Deleted { file_id })
-}
-
-pub(crate) async fn lookup_authorized(
-    pool: &PgPool,
-    font_id: Uuid,
-) -> Result<SchoolFontRecord, AppError> {
-    let row = sqlx::query_as::<_, (Uuid, Uuid, String, i16, String)>(
-        "SELECT id, file_id, font_family, font_weight, font_style
-         FROM school_fonts WHERE id = $1",
-    )
-    .bind(font_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(|| AppError::NotFound("school_font_not_found".to_string()))?;
-    school_font_record(row)
 }
 
 pub(crate) async fn lock_authorized(

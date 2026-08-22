@@ -14,7 +14,7 @@ use crate::{
                 AttachSchoolFontBatchRequest, InspectSchoolFontUploadsRequest, SchoolFontStyle,
                 SchoolFontUploadStatus,
             },
-            services::{self, SchoolFontDeleteOutcome},
+            services::{self, SchoolFontDeleteOutcome, SchoolFontStagingRelation},
         },
     },
     permissions::registry::codes,
@@ -521,6 +521,58 @@ async fn ready_batch_attaches_atomically_and_rejects_existing_variants_or_missin
         .await,
         Err(AppError::Conflict(message)) if message == "school_font_variant_conflict"
     ));
+}
+
+#[tokio::test]
+async fn certificate_batch_attach_rejects_a_purging_campaign_before_promotion() {
+    let (pool, _, designer, _) = font_test_context("school_font_purging_campaign_attach").await;
+    let template_id = insert_template(&pool, designer.user_id, 2991).await;
+    let file_id = insert_staged_font(
+        &pool,
+        designer.user_id,
+        "purging-campaign.ttf",
+        Some("Purging Campaign"),
+        400,
+        "normal",
+        false,
+    )
+    .await;
+    move_to_template_staging(&pool, file_id, template_id, designer.user_id).await;
+    sqlx::query(
+        "UPDATE certificate_campaigns
+         SET status = 'purging'
+         WHERE id = (SELECT campaign_id FROM certificate_templates WHERE id = $1)",
+    )
+    .bind(template_id)
+    .execute(&pool)
+    .await
+    .expect("campaign fixture should enter purging state");
+
+    assert!(matches!(
+        services::attach_authorized(
+            &pool,
+            designer.user_id,
+            SchoolFontStagingRelation::CertificateTemplate(template_id),
+            AttachSchoolFontBatchRequest {
+                file_ids: vec![file_id],
+                rights_confirmed: true,
+            },
+        )
+        .await,
+        Err(AppError::Conflict(message)) if message == "certificate_campaign_purging"
+    ));
+
+    let state: (String, String, i64) = sqlx::query_as(
+        "SELECT file.retention_class, file.lifecycle_status,
+                (SELECT COUNT(*) FROM school_fonts WHERE file_id = file.id)
+         FROM files AS file
+         WHERE file.id = $1",
+    )
+    .bind(file_id)
+    .fetch_one(&pool)
+    .await
+    .expect("font fixture should remain queryable");
+    assert_eq!(state, ("temporary".to_string(), "ready".to_string(), 0));
 }
 
 #[tokio::test]
