@@ -37,11 +37,7 @@ test('shared school-font contract replaces template-owned font assets', async ()
 			'post',
 			'inspectCertificateFontUploads'
 		],
-		[
-			'/api/certificates/templates/{template_id}/fonts/batch',
-			'post',
-			'attachCertificateFontBatch'
-		]
+		['/api/certificates/templates/{template_id}/fonts/batch', 'post', 'attachCertificateFontBatch']
 	]) {
 		assert.equal(openapi.paths?.[route]?.[method]?.operationId, operationId);
 		assert.match(generated, new RegExp(`\\b${operationId}:\\s*\\{`));
@@ -73,10 +69,7 @@ test('shared school-font contract replaces template-owned font assets', async ()
 	assert.ok(
 		openapi.components.schemas.CertificateRenderFontGrant.required.includes('schoolFontId')
 	);
-	assert.equal(
-		openapi.components.schemas.CertificateRenderFontGrant.properties.assetId,
-		undefined
-	);
+	assert.equal(openapi.components.schemas.CertificateRenderFontGrant.properties.assetId, undefined);
 });
 
 test('certificate permission contract exposes the complete approved capability set', async () => {
@@ -145,21 +138,13 @@ test('certificate campaign API is generated and its wrapper consumes named DTOs'
 			'attachCertificateTemplateBackground'
 		],
 		['/api/certificates/templates/{template_id}/assets', 'post', 'attachCertificateTemplateAsset'],
-		[
-			'/api/certificates/templates/{template_id}/fonts',
-			'get',
-			'listCertificateSchoolFonts'
-		],
+		['/api/certificates/templates/{template_id}/fonts', 'get', 'listCertificateSchoolFonts'],
 		[
 			'/api/certificates/templates/{template_id}/fonts/inspect',
 			'post',
 			'inspectCertificateFontUploads'
 		],
-		[
-			'/api/certificates/templates/{template_id}/fonts/batch',
-			'post',
-			'attachCertificateFontBatch'
-		],
+		['/api/certificates/templates/{template_id}/fonts/batch', 'post', 'attachCertificateFontBatch'],
 		[
 			'/api/certificates/templates/{template_id}/assets/{asset_id}',
 			'delete',
