@@ -1477,7 +1477,7 @@ Timetable and exam endpoints retain their feature paths but require `academicTer
 must not expose `semesterId`, `classroomCourseId`, or legacy subject-version IDs as stable subject
 identity.
 
-- [ ] **Step 1: Add RED consumer contract tests**
+- [x] **Step 1: Add RED consumer contract tests**
 
 Update service tests first so fixtures contain a term, offering, group, homeroom, and roster. Assert:
 
@@ -1498,14 +1498,14 @@ Update service tests first so fixtures contain a term, offering, group, homeroom
 
 Expected: FAIL against the legacy consumers.
 
-- [ ] **Step 2: Port assessment planning without adding Gradebook**
+- [x] **Step 2: Port assessment planning without adding Gradebook**
 
 Replace subject/semester plan lookup with offering lookup. Preserve categories/items and current
 saved/submitted structure state. Use validated decimal strings and `BigDecimal`; remove float casts.
 Validate category/item totals against the offering's snapshotted grading policy. Do not add student
 score sheets, course results, GPA, term results, or year results.
 
-- [ ] **Step 3: Port timetable and bell schedules**
+- [x] **Step 3: Port timetable and bell schedules**
 
 Replace classroom-course references with learning groups and academic semesters with terms. Period
 queries resolve the term's bell schedule. Group coverage determines affected homerooms; the
@@ -1515,34 +1515,34 @@ ID order and enforce same-term operations.
 Timetable templates remain reusable drafts. Applying a template creates term/group draft entries and
 never copies attendance, teaching logs, or result data.
 
-- [ ] **Step 4: Port exam scheduling**
+- [x] **Step 4: Port exam scheduling**
 
 Exam rounds belong to one explicit term. Import candidates are offering/group combinations with a
 published assessment plan. Publishing validates all items, sessions, rooms, and rosters share the
 term and writes existing publish audit state. Published parent/student views filter by authoritative
 group roster and requested term.
 
-- [ ] **Step 5: Replace legacy activity and course-planning runtime paths**
+- [x] **Step 5: Replace legacy activity and course-planning runtime paths**
 
 Move surviving activity operations to delivery services/routes. Delete old handlers/models/services
 and module exports. Ensure there is no compiled endpoint under `/planning/courses`,
 `/planning/classrooms/*/activities`, `/subjects`, `/study-plans`, `/classrooms`, `/enrollments`, or
 `/semesters` using the old contract.
 
-- [ ] **Step 6: Port daily teaching and realtime payloads**
+- [x] **Step 6: Port daily teaching and realtime payloads**
 
 Daily teaching resolves schedule entry -> learning group -> offering snapshot. Realtime timetable
 signals contain term/group revision and force an authoritative HTTP reload; they contain no student
 roster or old entity IDs.
 
-- [ ] **Step 7: Add static legacy-query guard for converted academic services**
+- [x] **Step 7: Add static legacy-query guard for converted academic services**
 
 Extend `static_architecture.rs` to scan compiled academic runtime files and reject legacy relation/
 field tokens. Allow legacy tokens only in migrations 001-044, cutover preflight/test support,
 reconciliation, and migration tests. The Phase A allowlist does not include handlers or runtime
 services.
 
-- [ ] **Step 8: Run focused verification**
+- [x] **Step 8: Run focused verification**
 
 ```bash
 ./scripts/test_backend_school.sh modules::academic::services::assessment_service -- --nocapture
@@ -1555,7 +1555,17 @@ cargo fmt --all -- --check
 cargo check
 ```
 
-- [ ] **Step 9: Commit Task 8**
+Verification evidence for this checkpoint: all 6 assessment, 4 timetable, 4 database-backed exam,
+58 internal exam-scheduling, 7 Learning Delivery, and 20 realtime security tests passed with one
+test thread where applicable. All 145 static architecture tests, `cargo fmt --all -- --check`,
+`cargo check`, and `git diff --check` also passed. Assessment policy and timetable-template selector
+JSON are decoded through typed contracts. Migration 044 preserves legacy template selectors in
+migration provenance before dropping compatibility columns, and compiled runtime routes no longer
+expose the old activity, course-planning, study-plan, subject, classroom, enrollment, or semester
+contracts. Cross-module consumers and generated OpenAPI/TypeScript ownership remain Tasks 9-10, so
+this checkpoint is not yet a deployable Phase A release.
+
+- [x] **Step 9: Commit Task 8**
 
 ```bash
 git add -A backend-school/src/modules/academic backend-school/tests/static_architecture.rs
