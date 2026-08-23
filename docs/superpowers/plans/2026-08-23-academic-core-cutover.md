@@ -1328,7 +1328,7 @@ pub struct PublishRosterRequest {
 }
 ```
 
-- [ ] **Step 1: Add RED service tests**
+- [x] **Step 1: Add RED service tests**
 
 Test exactly-one-subtype, selected term/year consistency, version effective date, organization owner,
 duplicate group codes, teacher assignment, homeroom coverage, roster overrides, stale publish,
@@ -1341,7 +1341,7 @@ idempotent publish, curriculum preview/apply source-hash conflict, and closed-te
 
 Expected: FAIL because delivery services are not implemented.
 
-- [ ] **Step 2: Implement offering draft and publish services**
+- [x] **Step 2: Implement offering draft and publish services**
 
 Course creation snapshots the exact subject version, requirement, credit/hour, and grading policy.
 Activity creation snapshots the exact activity version, assignment mode, capacity, attendance rule,
@@ -1354,14 +1354,14 @@ create/retain/conflict items plus a source-version hash. Apply locks the curricu
 verifies the hash, and idempotently creates draft offerings/targets. It never copies a prior term's
 scores, results, attendance, teaching logs, exams, or supervision records.
 
-- [ ] **Step 3: Implement groups, teachers, and homeroom coverage**
+- [x] **Step 3: Implement groups, teachers, and homeroom coverage**
 
 All group operations verify the group and offering share a term. Teacher writes require explicit
 role and prevent duplicate active assignment. Homeroom coverage requires the homeroom's year to
 match the term's year. Preferred rooms remain planning hints and are validated against active room
 resources.
 
-- [ ] **Step 4: Implement draft and published rosters**
+- [x] **Step 4: Implement draft and published rosters**
 
 Draft generation previews students from current placements in covered homerooms and returns added,
 removed, retained, and conflict counts. Apply requires the preview source hash and writes a draft
@@ -1369,19 +1369,19 @@ roster. Manual elective overrides are explicit. Publish verifies no duplicate st
 the same academic year, capacity policy, and stale hash; it marks the roster authoritative without
 changing homeroom placements.
 
-- [ ] **Step 5: Implement activity-specific delivery semantics**
+- [x] **Step 5: Implement activity-specific delivery semantics**
 
 Support assigned and self-registration modes, synchronized and independent schedules, capacity, and
 membership state through common group/roster tables. Preserve activity pass/fail result reads from
 the minimum Release 1 result tables. Do not add course scoring or GPA calculation.
 
-- [ ] **Step 6: Implement handlers, policies, and realtime signal**
+- [x] **Step 6: Implement handlers, policies, and realtime signal**
 
 Handlers use `learning_offering_access_policy`, return typed envelopes, and emit one
 `learning_delivery_changed` signal carrying term/offering/group IDs and revision only. The signal
 contains no roster/student data.
 
-- [ ] **Step 7: Run focused verification**
+- [x] **Step 7: Run focused verification**
 
 ```bash
 ./scripts/test_backend_school.sh \
@@ -1392,7 +1392,15 @@ cargo fmt --all -- --check
 cargo check
 ```
 
-- [ ] **Step 8: Commit Task 7**
+Verification evidence for this checkpoint: all 7 Learning Delivery migration/database/service
+tests, the resource-policy union/assigned-list/allow-deny test, both bounded realtime signal tests,
+all 144 static architecture tests, `cargo fmt --all -- --check`, `cargo check --offline`, and
+`git diff --check` passed with one test thread where applicable. Migration 044 also normalizes legacy
+course/activity snapshot JSON into the strict runtime shape while preserving the source JSON in
+migration provenance and restoring published-snapshot immutability. Generated OpenAPI ownership
+remains Task 10, so this checkpoint is not yet a deployable Phase A release.
+
+- [x] **Step 8: Commit Task 7**
 
 ```bash
 git add backend-school/src/modules/academic/delivery.rs \
