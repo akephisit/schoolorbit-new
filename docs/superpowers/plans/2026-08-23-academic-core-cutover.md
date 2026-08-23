@@ -779,7 +779,7 @@ git commit -m "feat(academic): migrate core catalog and curriculum"
 **Interfaces:** Migration 042 creates student-year, placement, offering, group, teacher, coverage,
 roster, preferred-room, and minimum activity-result tables plus `academic_core_entity_map`.
 
-- [ ] **Step 1: Add RED cardinality and integrity tests**
+- [x] **Step 1: Add RED cardinality and integrity tests**
 
 After applying 041 to the passing fixture, assert migration 042 produces:
 
@@ -803,7 +803,7 @@ to a homeroom from another year, group/offering term mismatch, and a course/acti
 
 Expected: FAIL because migration 042 does not exist.
 
-- [ ] **Step 2: Transform homerooms and placement history**
+- [x] **Step 2: Transform homerooms and placement history**
 
 Rename `class_rooms` to `homerooms` and `classroom_advisors` to `homeroom_advisors`. Resolve each
 homeroom's program from its exact legacy curriculum version's deterministic default program.
@@ -822,7 +822,7 @@ dropped                    -> withdrawn student-year/ended placement when no lat
 Any other combination is a preflight/migration blocker. Do not end a current-year placement when a
 future-year placement exists.
 
-- [ ] **Step 3: Create and backfill course delivery**
+- [x] **Step 3: Create and backfill course delivery**
 
 Generate one course offering per exact term/subject-version pair. Snapshot version name/code,
 credits, hours, requirement source, and grading-policy metadata. Preserve each classroom-course ID
@@ -832,7 +832,7 @@ placements remain eligible for their historical term; an interval that cannot be
 preflight blocker. Record roster source `migration_homeroom_snapshot` and published timestamp
 derived from source timestamps.
 
-- [ ] **Step 4: Create and backfill activity delivery**
+- [x] **Step 4: Create and backfill activity delivery**
 
 Preserve slot and group IDs as specified. A synchronized slot becomes one offering with all source
 groups and shared schedule configuration. An independent slot creates a deterministic group per
@@ -840,21 +840,21 @@ assigned homeroom where no legacy group exists. Migrate instructors and members;
 appearing twice in the same group. Convert pass/fail membership results to `learning_results` plus
 `activity_result_details`, preserving source timestamps and marking provenance `legacy_activity`.
 
-- [ ] **Step 5: Add database-enforced subtype and context invariants**
+- [x] **Step 5: Add database-enforced subtype and context invariants**
 
 Use deferred constraint triggers for the exactly-one-subtype invariant and composite foreign keys
 for year/term consistency. Partial unique indexes enforce one current placement and one active roster
 membership per group/student. Published offering snapshots reject edits to version, term, kind,
 targets, and requirement source.
 
-- [ ] **Step 6: Populate entity mappings and reconcile inside migration**
+- [x] **Step 6: Populate entity mappings and reconcile inside migration**
 
 Insert one map row for every renamed, split, generated, or merged source row. For merged course
 offerings, multiple classroom-course map rows may target the same offering but every source group
 maps uniquely. End migration 042 with count assertions matching preflight expectations and write
 aggregate audit checksums.
 
-- [ ] **Step 7: Run focused tests**
+- [x] **Step 7: Run focused tests**
 
 ```bash
 ./scripts/test_backend_school.sh \

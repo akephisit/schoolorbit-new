@@ -1,0 +1,547 @@
+use crate::{
+    modules::academic::{
+        cutover_preflight::run_academic_core_preflight,
+        cutover_test_support::{
+            apply_migrations_through, seed_academic_cutover_fixture, CutoverFixture,
+        },
+    },
+    test_helpers::create_named_test_pool,
+};
+use chrono::NaiveDate;
+use sqlx::{PgPool, Row};
+use uuid::Uuid;
+
+const ACADEMIC_CORE_NAMESPACE: Uuid = Uuid::from_u128(0x5c33_b984_10df_58db_bf80_62db_c4a0_3d1b);
+
+fn stable_uuid(name: &str) -> Uuid {
+    Uuid::new_v5(&ACADEMIC_CORE_NAMESPACE, name.as_bytes())
+}
+
+async fn add_unmapped_independent_homeroom(pool: &PgPool) {
+    sqlx::raw_sql(
+        r#"
+        UPDATE activity_groups
+        SET allowed_classroom_ids = '["40000000-0000-0000-0000-000000000025"]'::jsonb
+        WHERE id = '73000000-0000-0000-0000-000000000002';
+
+        INSERT INTO users (
+            id, email, username, password_hash, first_name, last_name, user_type, status
+        )
+        VALUES (
+            '50000000-0000-0000-0000-000000000004',
+            'fixture-slot-teacher@example.invalid', 'fixture-slot-teacher',
+            'fixture-not-a-login', 'ครูกิจกรรม', 'ทดสอบ', 'staff', 'active'
+        );
+
+        INSERT INTO activity_slot_instructors (id, slot_id, user_id)
+        VALUES (
+            '72500000-0000-0000-0000-000000000004',
+            '70000000-0000-0000-0000-000000000001',
+            '50000000-0000-0000-0000-000000000004'
+        );
+
+        INSERT INTO class_rooms (
+            id, code, name, academic_year_id, grade_level_id, room_number,
+            study_plan_version_id, capacity
+        )
+        VALUES (
+            '40000000-0000-0000-0000-000000000125', 'M1-2-2025', 'ม.1/2 ปี 2025',
+            '10000000-0000-0000-0000-000000000025',
+            'e999190c-d3fc-4124-b787-3445dcb26ee8', '2',
+            '31000000-0000-0000-0000-000000000025', 40
+        );
+
+        INSERT INTO activity_slot_classrooms (id, slot_id, classroom_id)
+        VALUES (
+            '71000000-0000-0000-0000-000000000003',
+            '70000000-0000-0000-0000-000000000002',
+            '40000000-0000-0000-0000-000000000125'
+        );
+
+        INSERT INTO activity_slot_classroom_assignments (
+            id, slot_id, classroom_id, instructor_id
+        )
+        VALUES (
+            '72000000-0000-0000-0000-000000000003',
+            '70000000-0000-0000-0000-000000000002',
+            '40000000-0000-0000-0000-000000000125',
+            '50000000-0000-0000-0000-000000000002'
+        );
+        "#,
+    )
+    .execute(pool)
+    .await
+    .expect("independent activity fixture must extend the legacy schema");
+}
+
+async fn prepare_delivery_fixture(
+    name: &str,
+    include_unmapped_independent_homeroom: bool,
+) -> PgPool {
+    let pool = create_named_test_pool(name).await;
+    apply_migrations_through(&pool, 40)
+        .await
+        .expect("legacy migrations must apply");
+    seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
+        .await
+        .expect("passing cutover fixture must seed");
+
+    if include_unmapped_independent_homeroom {
+        add_unmapped_independent_homeroom(&pool).await;
+    }
+
+    apply_migrations_through(&pool, 41)
+        .await
+        .expect("migration 041 must prepare the core schema");
+
+    pool
+}
+
+#[tokio::test]
+async fn preflight_counts_generated_independent_activity_groups() {
+    let pool = create_named_test_pool("academic_delivery_preflight_generated_group").await;
+    apply_migrations_through(&pool, 40).await.unwrap();
+    seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
+        .await
+        .unwrap();
+    add_unmapped_independent_homeroom(&pool).await;
+
+    let report = run_academic_core_preflight(
+        &pool,
+        "schoolorbit_test_academic_delivery_preflight_generated_group",
+        NaiveDate::from_ymd_opt(2025, 8, 23).unwrap(),
+    )
+    .await
+    .expect("delivery preflight must run");
+
+    assert!(report.can_cut_over);
+    assert_eq!(report.expected_target_counts["learningGroups"], 5);
+}
+
+#[tokio::test]
+async fn migration_042_maps_delivery_fixture() {
+    let pool = prepare_delivery_fixture("academic_delivery_042", true).await;
+
+    apply_migrations_through(&pool, 42)
+        .await
+        .expect("migration 042 must map the passing delivery fixture");
+
+    let target_relations: Vec<String> = sqlx::query_scalar(
+        r#"SELECT relname::text
+           FROM pg_class
+           WHERE relnamespace = current_schema()::regnamespace
+             AND relname = ANY($1)
+           ORDER BY relname"#,
+    )
+    .bind(vec![
+        "activity_offering_details",
+        "activity_result_details",
+        "academic_core_entity_map",
+        "course_offering_details",
+        "homeroom_placements",
+        "homerooms",
+        "learning_group_homerooms",
+        "learning_group_students",
+        "learning_group_teachers",
+        "learning_groups",
+        "learning_offering_targets",
+        "learning_offerings",
+        "learning_results",
+        "student_academic_years",
+    ])
+    .fetch_all(&pool)
+    .await
+    .expect("delivery relations must be queryable");
+    assert_eq!(target_relations.len(), 14);
+
+    let homeroom_program: Uuid = sqlx::query_scalar(
+        r#"SELECT study_program_id
+           FROM homerooms
+           WHERE id = '40000000-0000-0000-0000-000000000025'"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("homeroom must resolve its exact default program");
+    assert_eq!(
+        homeroom_program,
+        stable_uuid("program:31000000-0000-0000-0000-000000000025")
+    );
+
+    let student_years: Vec<(Uuid, i32, String)> = sqlx::query_as(
+        r#"SELECT student_year.id, year.year, student_year.status
+           FROM student_academic_years student_year
+           JOIN academic_years year ON year.id = student_year.academic_year_id
+           ORDER BY year.year"#,
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("student-year rows must be queryable");
+    assert_eq!(
+        student_years,
+        vec![
+            (
+                stable_uuid(
+                    "student-year:50000000-0000-0000-0000-000000000001:10000000-0000-0000-0000-000000000024",
+                ),
+                2024,
+                "completed".to_string(),
+            ),
+            (
+                stable_uuid(
+                    "student-year:50000000-0000-0000-0000-000000000001:10000000-0000-0000-0000-000000000025",
+                ),
+                2025,
+                "active".to_string(),
+            ),
+            (
+                stable_uuid(
+                    "student-year:50000000-0000-0000-0000-000000000001:10000000-0000-0000-0000-000000000026",
+                ),
+                2026,
+                "planned".to_string(),
+            ),
+        ]
+    );
+
+    let placements: Vec<(Uuid, String, Option<chrono::NaiveDate>)> = sqlx::query_as(
+        r#"SELECT id, status, end_date
+           FROM homeroom_placements
+           ORDER BY id"#,
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("placement history must be queryable");
+    assert_eq!(placements.len(), 3);
+    assert_eq!(
+        placements.iter().map(|row| row.0).collect::<Vec<_>>(),
+        vec![
+            Uuid::parse_str("51000000-0000-0000-0000-000000000024").unwrap(),
+            Uuid::parse_str("51000000-0000-0000-0000-000000000025").unwrap(),
+            Uuid::parse_str("51000000-0000-0000-0000-000000000026").unwrap(),
+        ]
+    );
+    assert_eq!(placements[0].1, "ended");
+    assert!(placements[0].2.is_some());
+    assert_eq!(placements[1].1, "current");
+    assert_eq!(placements[1].2, None);
+    assert_eq!(placements[2].1, "current");
+    assert_eq!(placements[2].2, None);
+
+    let offering_counts: Vec<(String, i64)> = sqlx::query_as(
+        r#"SELECT kind, COUNT(*)::bigint
+           FROM learning_offerings
+           GROUP BY kind
+           ORDER BY kind"#,
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("offerings must be queryable");
+    assert_eq!(
+        offering_counts,
+        vec![("activity".to_string(), 2), ("course".to_string(), 2)]
+    );
+
+    let course_offering_ids: Vec<Uuid> =
+        sqlx::query_scalar("SELECT id FROM learning_offerings WHERE kind = 'course' ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .expect("course offerings must be queryable");
+    let mut expected_course_offering_ids = vec![
+        stable_uuid(
+            "course-offering:11000000-0000-0000-0000-000000000241:20000000-0000-0000-0000-000000000024",
+        ),
+        stable_uuid(
+            "course-offering:11000000-0000-0000-0000-000000000251:20000000-0000-0000-0000-000000000025",
+        ),
+    ];
+    expected_course_offering_ids.sort();
+    assert_eq!(course_offering_ids, expected_course_offering_ids);
+
+    let activity_offering_ids: Vec<Uuid> =
+        sqlx::query_scalar("SELECT id FROM learning_offerings WHERE kind = 'activity' ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .expect("activity offerings must preserve slot IDs");
+    assert_eq!(
+        activity_offering_ids,
+        vec![
+            Uuid::parse_str("70000000-0000-0000-0000-000000000001").unwrap(),
+            Uuid::parse_str("70000000-0000-0000-0000-000000000002").unwrap(),
+        ]
+    );
+
+    let generated_group_id = stable_uuid(
+        "activity-group:70000000-0000-0000-0000-000000000002:40000000-0000-0000-0000-000000000125",
+    );
+    let group_ids: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM learning_groups ORDER BY id")
+        .fetch_all(&pool)
+        .await
+        .expect("learning groups must be queryable");
+    assert_eq!(group_ids.len(), 5);
+    assert!(group_ids.contains(&generated_group_id));
+    assert!(group_ids.contains(&Uuid::parse_str("60000000-0000-0000-0000-000000000025").unwrap()));
+    assert!(group_ids.contains(&Uuid::parse_str("73000000-0000-0000-0000-000000000001").unwrap()));
+
+    let synchronized_slot_teacher: (Uuid, String) = sqlx::query_as(
+        r#"SELECT teacher_id, role
+           FROM learning_group_teachers
+           WHERE learning_group_id = '73000000-0000-0000-0000-000000000001'
+             AND teacher_id = '50000000-0000-0000-0000-000000000004'"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("a synchronized slot teacher must be assigned to every source group");
+    assert_eq!(
+        synchronized_slot_teacher,
+        (
+            Uuid::parse_str("50000000-0000-0000-0000-000000000004").unwrap(),
+            "assistant".to_string(),
+        )
+    );
+
+    let generated_group_homeroom: Uuid = sqlx::query_scalar(
+        r#"SELECT homeroom_id
+           FROM learning_group_homerooms
+           WHERE learning_group_id = $1"#,
+    )
+    .bind(generated_group_id)
+    .fetch_one(&pool)
+    .await
+    .expect("generated independent group must cover its source homeroom");
+    assert_eq!(
+        generated_group_homeroom,
+        Uuid::parse_str("40000000-0000-0000-0000-000000000125").unwrap()
+    );
+
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM learning_group_students")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        3
+    );
+    let activity_roster: (Uuid, String) = sqlx::query_as(
+        r#"SELECT id, roster_source
+           FROM learning_group_students
+           WHERE learning_group_id = '73000000-0000-0000-0000-000000000001'
+             AND student_id = '50000000-0000-0000-0000-000000000001'"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("legacy activity member must become an authoritative roster row");
+    assert_eq!(
+        activity_roster,
+        (
+            Uuid::parse_str("74000000-0000-0000-0000-000000000001").unwrap(),
+            "legacy_activity_member".to_string(),
+        )
+    );
+
+    let activity_result: (String, String) = sqlx::query_as(
+        r#"SELECT result.status, detail.outcome
+           FROM learning_results result
+           JOIN activity_result_details detail ON detail.learning_result_id = result.id"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("legacy activity outcome must be preserved");
+    assert_eq!(
+        activity_result,
+        ("recorded".to_string(), "pass".to_string())
+    );
+
+    let mapped_placements: i64 = sqlx::query_scalar(
+        r#"SELECT COUNT(*)
+           FROM academic_core_entity_map
+           WHERE source_table = 'student_class_enrollments'
+             AND target_table = 'homeroom_placements'"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("placement mappings must be queryable");
+    assert_eq!(mapped_placements, 3);
+
+    let mapped_slot_teacher: i64 = sqlx::query_scalar(
+        r#"SELECT COUNT(*)
+           FROM academic_core_entity_map
+           WHERE source_table = 'activity_slot_instructors'
+             AND source_id = '72500000-0000-0000-0000-000000000004'
+             AND target_table = 'learning_group_teachers'"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("slot teacher mappings must be queryable");
+    assert_eq!(mapped_slot_teacher, 1);
+
+    let audit = sqlx::query(
+        r#"SELECT source_counts, target_counts
+           FROM academic_core_cutover_audits
+           WHERE migration_version = 42"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("migration 042 must write aggregate reconciliation evidence");
+    let source_counts: serde_json::Value = audit.get("source_counts");
+    let target_counts: serde_json::Value = audit.get("target_counts");
+    assert_eq!(source_counts["enrollments"], 3);
+    assert_eq!(target_counts["studentAcademicYears"], 3);
+    assert_eq!(target_counts["learningGroups"], 5);
+    assert_eq!(target_counts["groupStudents"], 3);
+}
+
+#[tokio::test]
+async fn migration_042_enforces_delivery_context_and_subtype_invariants() {
+    let pool = prepare_delivery_fixture("academic_delivery_042_invariants", false).await;
+    apply_migrations_through(&pool, 42).await.unwrap();
+
+    let duplicate_placement = sqlx::query(
+        r#"INSERT INTO homeroom_placements (
+               id, student_academic_year_id, academic_year_id, homeroom_id,
+               start_date, status, enrollment_type, migration_provenance
+           )
+           SELECT '51000000-0000-0000-0000-000000000125', student_academic_year_id,
+                  academic_year_id, homeroom_id, start_date, 'current', enrollment_type,
+                  '{"fixture":"duplicate-current"}'::jsonb
+           FROM homeroom_placements
+           WHERE id = '51000000-0000-0000-0000-000000000025'"#,
+    )
+    .execute(&pool)
+    .await
+    .expect_err("a student-year cannot have two current placements");
+    assert!(duplicate_placement
+        .to_string()
+        .contains("homeroom_placements_one_current_key"));
+
+    let duplicate_student = sqlx::query(
+        r#"INSERT INTO learning_group_students (
+               id, learning_group_id, academic_term_id, academic_year_id,
+               student_academic_year_id, student_id, membership_status,
+               roster_source, joined_at, migration_provenance
+           )
+           SELECT '74000000-0000-0000-0000-000000000125', learning_group_id,
+                  academic_term_id, academic_year_id, student_academic_year_id,
+                  student_id, 'active', 'fixture_duplicate', joined_at,
+                  '{"fixture":"duplicate-student"}'::jsonb
+           FROM learning_group_students
+           WHERE id = '74000000-0000-0000-0000-000000000001'"#,
+    )
+    .execute(&pool)
+    .await
+    .expect_err("a student cannot be active twice in one group");
+    assert!(duplicate_student
+        .to_string()
+        .contains("learning_group_students_one_active_key"));
+
+    let cross_year_homeroom = sqlx::query(
+        r#"INSERT INTO learning_group_homerooms (
+               id, learning_group_id, academic_term_id, academic_year_id,
+               homeroom_id, coverage_source, migration_provenance
+           )
+           SELECT '75000000-0000-0000-0000-000000000125', learning_group_id,
+                  academic_term_id, academic_year_id,
+                  '40000000-0000-0000-0000-000000000024', 'fixture_cross_year',
+                  '{"fixture":"cross-year"}'::jsonb
+           FROM learning_group_homerooms
+           WHERE learning_group_id = '60000000-0000-0000-0000-000000000025'"#,
+    )
+    .execute(&pool)
+    .await
+    .expect_err("group coverage cannot use a homeroom from another year");
+    assert!(cross_year_homeroom
+        .to_string()
+        .contains("learning_group_homerooms_homeroom_context_fkey"));
+
+    let offering_id = stable_uuid(
+        "course-offering:11000000-0000-0000-0000-000000000251:20000000-0000-0000-0000-000000000025",
+    );
+    let mismatched_group = sqlx::query(
+        r#"INSERT INTO learning_groups (
+               id, learning_offering_id, academic_term_id, academic_year_id,
+               code, name, status, roster_status, migration_provenance
+           )
+           VALUES (
+               '76000000-0000-0000-0000-000000000125', $1,
+               '11000000-0000-0000-0000-000000000241',
+               '10000000-0000-0000-0000-000000000024',
+               'MISMATCH', 'กลุ่มต่างภาคเรียน', 'published', 'published',
+               '{"fixture":"term-mismatch"}'::jsonb
+           )"#,
+    )
+    .bind(offering_id)
+    .execute(&pool)
+    .await
+    .expect_err("a group cannot cross its offering term");
+    assert!(mismatched_group
+        .to_string()
+        .contains("learning_groups_offering_context_fkey"));
+
+    let mut transaction = pool.begin().await.unwrap();
+    sqlx::query("UPDATE learning_offerings SET status = 'draft' WHERE id = $1")
+        .bind(offering_id)
+        .execute(&mut *transaction)
+        .await
+        .expect("the subtype test must operate on a draft offering");
+    sqlx::query(
+        r#"INSERT INTO activity_offering_details (
+               learning_offering_id, academic_term_id, academic_year_id,
+               activity_version_id, activity_id, registration_type,
+               scheduling_mode, hours, migration_provenance
+           )
+           SELECT $1, academic_term_id, academic_year_id, activity_version_id,
+                  activity_id, registration_type, scheduling_mode, hours,
+                  '{"fixture":"wrong-subtype"}'::jsonb
+           FROM activity_offering_details
+           LIMIT 1"#,
+    )
+    .bind(offering_id)
+    .execute(&mut *transaction)
+    .await
+    .expect("deferred subtype constraint permits the statement until checked");
+    let subtype_error = sqlx::query("SET CONSTRAINTS ALL IMMEDIATE")
+        .execute(&mut *transaction)
+        .await
+        .expect_err("a course offering cannot carry activity details");
+    assert!(
+        subtype_error
+            .to_string()
+            .contains("ACADEMIC_CORE_OFFERING_SUBTYPE_MISMATCH"),
+        "unexpected subtype constraint error: {subtype_error}"
+    );
+    transaction.rollback().await.unwrap();
+
+    let mut transaction = pool.begin().await.unwrap();
+    sqlx::query("UPDATE learning_offerings SET status = 'draft' WHERE id = $1")
+        .bind(offering_id)
+        .execute(&mut *transaction)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM course_offering_details WHERE learning_offering_id = $1")
+        .bind(offering_id)
+        .execute(&mut *transaction)
+        .await
+        .expect("deferred subtype constraint permits the delete until checked");
+    let missing_subtype_error = sqlx::query("SET CONSTRAINTS ALL IMMEDIATE")
+        .execute(&mut *transaction)
+        .await
+        .expect_err("an offering cannot remain without its matching subtype");
+    assert!(
+        missing_subtype_error
+            .to_string()
+            .contains("ACADEMIC_CORE_OFFERING_SUBTYPE_MISMATCH"),
+        "unexpected missing subtype constraint error: {missing_subtype_error}"
+    );
+    transaction.rollback().await.unwrap();
+
+    let published_snapshot_error = sqlx::query(
+        r#"UPDATE learning_offerings
+           SET name_snapshot = 'ชื่อที่ไม่ควรแก้ได้'
+           WHERE id = $1"#,
+    )
+    .bind(offering_id)
+    .execute(&pool)
+    .await
+    .expect_err("published offering snapshots must be immutable");
+    assert!(published_snapshot_error
+        .to_string()
+        .contains("ACADEMIC_CORE_PUBLISHED_OFFERING_IMMUTABLE"));
+}

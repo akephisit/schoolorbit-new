@@ -259,9 +259,15 @@ const EXPECTED_TARGET_COUNT_QUERIES: &[(&str, &str)] = &[
         r#"SELECT COUNT(DISTINCT (lower(btrim(activity_type)), lower(regexp_replace(btrim(normalize(name, NFKC)), '\s+', ' ', 'g'))))::bigint
            FROM activity_catalog"#,
     ),
-    ("activityVersions", "SELECT COUNT(*)::bigint FROM activity_catalog"),
+    (
+        "activityVersions",
+        "SELECT COUNT(*)::bigint FROM activity_catalog",
+    ),
     ("curricula", "SELECT COUNT(*)::bigint FROM study_plans"),
-    ("curriculumVersions", "SELECT COUNT(*)::bigint FROM study_plan_versions"),
+    (
+        "curriculumVersions",
+        "SELECT COUNT(*)::bigint FROM study_plan_versions",
+    ),
     (
         "curriculumCourseRequirements",
         "SELECT COUNT(*)::bigint FROM study_plan_subjects",
@@ -288,11 +294,44 @@ const EXPECTED_TARGET_COUNT_QUERIES: &[(&str, &str)] = &[
         "courseOfferings",
         "SELECT COUNT(DISTINCT (academic_semester_id, subject_id))::bigint FROM classroom_courses",
     ),
-    ("courseGroups", "SELECT COUNT(*)::bigint FROM classroom_courses"),
-    ("activityOfferings", "SELECT COUNT(*)::bigint FROM activity_slots"),
+    (
+        "courseGroups",
+        "SELECT COUNT(*)::bigint FROM classroom_courses",
+    ),
+    (
+        "activityOfferings",
+        "SELECT COUNT(*)::bigint FROM activity_slots",
+    ),
     (
         "learningGroups",
-        "SELECT ((SELECT COUNT(*) FROM classroom_courses) + (SELECT COUNT(*) FROM activity_groups))::bigint",
+        r#"SELECT (
+               (SELECT COUNT(*) FROM classroom_courses)
+               + (SELECT COUNT(*) FROM activity_groups)
+               + (
+                   SELECT COUNT(*)
+                   FROM activity_slot_classroom_assignments assignment
+                   JOIN activity_slots slot ON slot.id = assignment.slot_id
+                   JOIN activity_catalog activity ON activity.id = slot.activity_catalog_id
+                   WHERE activity.scheduling_mode = 'independent'
+                     AND NOT EXISTS (
+                         SELECT 1
+                         FROM activity_groups activity_group
+                         WHERE activity_group.slot_id = assignment.slot_id
+                           AND (
+                               (activity_group.allowed_classroom_ids IS NOT NULL
+                                AND activity_group.allowed_classroom_ids ? assignment.classroom_id::text)
+                               OR (
+                                   activity_group.allowed_classroom_ids IS NULL
+                                   AND (SELECT COUNT(*) FROM activity_groups sibling
+                                        WHERE sibling.slot_id = assignment.slot_id) = 1
+                                   AND (SELECT COUNT(*)
+                                        FROM activity_slot_classroom_assignments sibling_assignment
+                                        WHERE sibling_assignment.slot_id = assignment.slot_id) = 1
+                               )
+                           )
+                     )
+               )
+           )::bigint"#,
     ),
     (
         "groupStudents",

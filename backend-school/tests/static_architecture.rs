@@ -5758,3 +5758,40 @@ fn academic_core_041_migration_uses_stable_identity_and_non_pii_audits() {
     assert!(!migration.contains("DROP TABLE"));
     assert!(!migration.contains("CREATE EXTENSION"));
 }
+
+#[test]
+fn academic_core_042_migration_enforces_delivery_context_without_pii_audits() {
+    let migration = strip_comments(&read_source(
+        manifest_dir().join("migrations/042_academic_delivery_backfill.sql"),
+    ));
+
+    for required in [
+        "CREATE TABLE student_academic_years",
+        "CREATE TABLE homeroom_placements",
+        "CREATE TABLE learning_offerings",
+        "CREATE TABLE course_offering_details",
+        "CREATE TABLE activity_offering_details",
+        "CREATE TABLE learning_groups",
+        "CREATE TABLE learning_group_students",
+        "CREATE TABLE learning_results",
+        "CREATE TABLE academic_core_entity_map",
+        "learning_groups_offering_context_fkey",
+        "learning_group_homerooms_homeroom_context_fkey",
+        "ACADEMIC_CORE_OFFERING_SUBTYPE_MISMATCH",
+        "ACADEMIC_CORE_PUBLISHED_OFFERING_IMMUTABLE",
+        "5c33b984-10df-58db-bf80-62dbc4a03d1b",
+        "'academic-core-v1'",
+        "sha256(",
+    ] {
+        assert!(
+            migration.contains(required),
+            "migration 042 must retain the delivery invariant: {required}"
+        );
+    }
+
+    assert!(!migration.contains("national_id"));
+    assert!(!migration.contains("DROP TABLE"));
+    assert!(!migration.contains("CREATE EXTENSION"));
+    assert!(!migration.contains("REAL"));
+    assert!(!migration.contains("DOUBLE PRECISION"));
+}
