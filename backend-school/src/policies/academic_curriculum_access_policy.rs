@@ -74,6 +74,38 @@ pub async fn academic_curriculum_access(
     ))
 }
 
+pub async fn require_academic_curriculum_list_access(
+    pool: &PgPool,
+    actor: &ActorContext,
+    action: CurriculumAction,
+) -> Result<AcademicResourceListFilter, AppError> {
+    let filter = academic_curriculum_list_access(pool, actor, action).await?;
+    if !filter.includes_school_owned
+        && filter.organization_unit_ids.is_empty()
+        && filter.organization_tree_unit_ids.is_empty()
+        && filter.assigned_actor_id.is_none()
+    {
+        Err(AppError::Forbidden("ไม่มีสิทธิ์เข้าถึงหลักสูตร".to_string()))
+    } else {
+        Ok(filter)
+    }
+}
+
+pub async fn require_academic_curriculum_access(
+    pool: &PgPool,
+    actor: &ActorContext,
+    curriculum_id: Uuid,
+    action: CurriculumAction,
+) -> Result<(), AppError> {
+    if academic_curriculum_access(pool, actor, curriculum_id, action).await?
+        == AcademicResourceAccess::None
+    {
+        Err(AppError::Forbidden("ไม่มีสิทธิ์เข้าถึงทรัพยากรนี้".to_string()))
+    } else {
+        Ok(())
+    }
+}
+
 fn curriculum_permissions(action: CurriculumAction) -> AcademicResourcePermissions {
     match action {
         CurriculumAction::Read => AcademicResourcePermissions {
@@ -247,5 +279,33 @@ mod tests {
             .unwrap(),
             AcademicResourceAccess::None
         );
+
+        let unrelated = actor(&[]);
+        assert!(matches!(
+            require_academic_curriculum_list_access(&pool, &unrelated, CurriculumAction::Read,)
+                .await,
+            Err(AppError::Forbidden(_))
+        ));
+        assert!(matches!(
+            require_academic_curriculum_access(
+                &pool,
+                &unrelated,
+                curriculum_id,
+                CurriculumAction::Read,
+            )
+            .await,
+            Err(AppError::Forbidden(_))
+        ));
+        require_academic_curriculum_list_access(&pool, &school_reader, CurriculumAction::Read)
+            .await
+            .unwrap();
+        require_academic_curriculum_access(
+            &pool,
+            &school_reader,
+            curriculum_id,
+            CurriculumAction::Read,
+        )
+        .await
+        .unwrap();
     }
 }

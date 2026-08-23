@@ -37,6 +37,7 @@ use uuid::Uuid;
 
 /// จำนวน event ที่เก็บใน buffer ต่อ room (สำหรับ replay เมื่อ client reconnect)
 const EVENT_BUFFER_SIZE: usize = 200;
+const ACADEMIC_CORE_BROADCAST_ROOM_LIMIT: usize = 64;
 
 /// ลบ room ที่ไม่มี subscriber นานเกินเวลานี้
 const ROOM_IDLE_TTL: Duration = Duration::from_secs(600); // 10 นาที
@@ -137,6 +138,13 @@ pub enum TimetableEvent {
     CourseTeamChanged {
         user_id: Uuid,
         course_id: Uuid,
+    },
+    AcademicCoreChanged {
+        user_id: Uuid,
+        entity_type: String,
+        entity_id: Option<Uuid>,
+        academic_year_id: Option<Uuid>,
+        academic_term_id: Option<Uuid>,
     },
 
     // Interactions
@@ -254,6 +262,7 @@ impl TimetableEvent {
                 | TimetableEvent::EntryInstructorAdded { .. }
                 | TimetableEvent::EntryInstructorRemoved { .. }
                 | TimetableEvent::CourseTeamChanged { .. }
+                | TimetableEvent::AcademicCoreChanged { .. }
         )
     }
 }
@@ -460,6 +469,49 @@ impl WebSocketManager {
 
         let _ = tx.send(seq_event);
         seq
+    }
+
+    pub fn broadcast_academic_core_changed(
+        &self,
+        school_key: String,
+        user_id: Uuid,
+        entity_type: &str,
+        entity_id: Option<Uuid>,
+        academic_year_id: Option<Uuid>,
+        academic_term_id: Option<Uuid>,
+    ) {
+        let term_ids = if let Some(term_id) = academic_term_id {
+            let room_key = Self::get_room_key(school_key.clone(), term_id);
+            self.rooms
+                .contains_key(&room_key)
+                .then_some(term_id)
+                .into_iter()
+                .collect::<Vec<_>>()
+        } else {
+            let prefix = format!("{school_key}:");
+            self.rooms
+                .iter()
+                .filter_map(|room| {
+                    room.key()
+                        .strip_prefix(&prefix)
+                        .and_then(|value| Uuid::parse_str(value).ok())
+                })
+                .take(ACADEMIC_CORE_BROADCAST_ROOM_LIMIT)
+                .collect::<Vec<_>>()
+        };
+        for term_id in term_ids {
+            self.broadcast_mutation(
+                school_key.clone(),
+                term_id,
+                TimetableEvent::AcademicCoreChanged {
+                    user_id,
+                    entity_type: entity_type.to_string(),
+                    entity_id,
+                    academic_year_id,
+                    academic_term_id,
+                },
+            );
+        }
     }
 
     pub fn current_seq(&self, school_key: String, semester_id: Uuid) -> u64 {
@@ -1543,6 +1595,46 @@ mod security_tests {
             WebSocketManager::get_room_key("tenant-a".to_string(), semester),
             format!("tenant-a:{semester}")
         );
+    }
+
+    #[test]
+    fn academic_core_signal_does_not_create_rooms_without_subscribers() {
+        let manager = WebSocketManager::new();
+        manager.broadcast_academic_core_changed(
+            "tenant-a".to_string(),
+            Uuid::new_v4(),
+            "academic_year",
+            Some(Uuid::new_v4()),
+            Some(Uuid::new_v4()),
+            None,
+        );
+        assert!(manager.rooms.is_empty());
+        assert!(manager.room_seq.is_empty());
+        assert!(manager.room_buffer.is_empty());
+    }
+
+    #[test]
+    fn term_scoped_academic_core_signal_only_invalidates_the_selected_term_room() {
+        let manager = WebSocketManager::new();
+        let tenant = "tenant-a".to_string();
+        let selected_term = Uuid::new_v4();
+        let unrelated_term = Uuid::new_v4();
+        let selected_sender = manager.get_or_create_room(tenant.clone(), selected_term);
+        let unrelated_sender = manager.get_or_create_room(tenant.clone(), unrelated_term);
+        let _selected_receivers = (selected_sender.subscribe(), selected_sender.subscribe());
+        let _unrelated_receivers = (unrelated_sender.subscribe(), unrelated_sender.subscribe());
+
+        manager.broadcast_academic_core_changed(
+            tenant.clone(),
+            Uuid::new_v4(),
+            "academic_term",
+            Some(selected_term),
+            Some(Uuid::new_v4()),
+            Some(selected_term),
+        );
+
+        assert_eq!(manager.current_seq(tenant.clone(), selected_term), 1);
+        assert_eq!(manager.current_seq(tenant, unrelated_term), 0);
     }
 
     #[test]

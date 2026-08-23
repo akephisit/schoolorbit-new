@@ -29,10 +29,10 @@ centralized all-tenant migration runner.
 - The new model is the only runtime model. Do not add old-route aliases, compatibility DTOs,
   dual-read, dual-write, per-tenant feature flags, database views that imitate legacy tables, or a
   fallback to `is_active` queries.
-- Phase A contains migrations `041` through `043`, all new backend/frontend code, generated
-  contracts, preflight, reconciliation, and operational gates. Phase B contains migration `044`
+- Phase A contains migrations `041` through `044`, all new backend/frontend code, generated
+  contracts, preflight, reconciliation, and operational gates. Phase B contains migration `045`
   and final legacy-schema guards. Production remains in maintenance mode between the phases.
-- Migration `044` must be a separate reviewed cleanup pull request or release artifact. It must not
+- Migration `045` must be a separate reviewed cleanup pull request or release artifact. It must not
   be present in the Phase A image because the centralized runner applies every pending migration.
 - Never run a production migration, snapshot, deployment, permission reassignment, smoke mutation,
   cleanup, push, pull request, or merge merely because this implementation plan was approved.
@@ -73,8 +73,8 @@ centralized all-tenant migration runner.
 
 | Artifact | Contents | Database state after artifact | Traffic |
 |---|---|---|---|
-| Phase A | migrations 041-043, new runtime, new frontend, contracts | new tables authoritative; inert legacy tables retained for reconciliation only | maintenance |
-| Phase B | migration 044, final schema/static guards | legacy academic tables/columns removed | maintenance |
+| Phase A | migrations 041-044, new runtime, new frontend, contracts | new tables authoritative and writable; inert legacy tables retained for reconciliation only | maintenance |
+| Phase B | migration 045, final schema/static guards | legacy academic tables/columns removed | maintenance |
 | Go-live | same Phase B backend/frontend image | only new schema exists | opened after smoke |
 
 Phase A and Phase B are not independently usable product releases. They are checkpoints inside one
@@ -298,7 +298,7 @@ and SQL mapping output on the same fixture before Phase A.
   default `study_programs` row per legacy version; rename/backfill course and activity requirement
   tables against the default program.
 - Create `grade_level_progressions`, backfill the legacy `next_grade_level_id` relationships, and
-  leave the old column inert until migration 044.
+  leave the old column inert until migration 045.
 - Create `bell_schedules`; rename `academic_periods` to `bell_schedule_periods`; backfill one
   deterministic default schedule per year and link each term to the owning-year schedule.
 - Create `academic_audit_events` and `academic_core_cutover_audits`. Audit JSON excludes row-level
@@ -343,7 +343,7 @@ and SQL mapping output on the same fixture before Phase A.
 - Convert question-bank ownership to stable `subject_id`; instructor access joins through course
   offering details and learning-group teachers.
 - Convert supervision cycles to year plus optional term and observations to learning-group plus
-  optional homeroom; remove the duplicate free-text semester authority in migration 044.
+  optional homeroom; remove the duplicate free-text semester authority in migration 045.
 - Convert admission tracks to `study_program_id`, room assignments to `homeroom_id`, and successful
   enrollment to student-year plus placement semantics.
 - Convert parent, student, lookup, calendar, dashboard, daily-teaching, and certificate joins to the
@@ -354,7 +354,18 @@ and SQL mapping output on the same fixture before Phase A.
 - Finish with SQL assertions that every source row has an entity-map row and every target foreign
   key resolves. Any mismatch raises and leaves migration 043 unapplied.
 
-### Migration 044 — final cleanup
+### Migration 044 — clean runtime contract
+
+- Make transitional legacy term/period columns nullable so the clean API never has to manufacture
+  compatibility values while Phase A is under maintenance.
+- Add optimistic revision ownership for subject groups and the grade-progression rule set.
+- Allow multiple study programs per curriculum version while enforcing at most one non-archived
+  default program.
+- Add stable catalog archival timestamps and let term audit references become null when an unused
+  planning term is deleted; the audit entity ID and payload remain durable.
+- Keep every legacy column/table in place until the separately gated destructive migration.
+
+### Migration 045 — final cleanup
 
 - Require a successful Phase A reconciliation marker for the tenant and the expected migration
   version before dropping anything.
@@ -362,7 +373,7 @@ and SQL mapping output on the same fixture before Phase A.
   legacy permission definitions/grants, and `academic_core_entity_map`.
 - Keep `academic_core_cutover_audits` as the non-PII durable record of counts/checksums and cutover
   version.
-- Assert no legacy relation or column from the cleanup manifest remains. Migration 044 is the only
+- Assert no legacy relation or column from the cleanup manifest remains. Migration 045 is the only
   destructive schema step and is never included in the Phase A image.
 
 ## File Structure
@@ -1513,7 +1524,7 @@ roster or old entity IDs.
 - [ ] **Step 7: Add static legacy-query guard for converted academic services**
 
 Extend `static_architecture.rs` to scan compiled academic runtime files and reject legacy relation/
-field tokens. Allow legacy tokens only in migrations 001-043, cutover preflight/test support,
+field tokens. Allow legacy tokens only in migrations 001-044, cutover preflight/test support,
 reconciliation, and migration tests. The Phase A allowlist does not include handlers or runtime
 services.
 
@@ -2216,18 +2227,18 @@ Add no copied table inventory; link to migrations, typed services, and canonical
 
 Add one durable Academic Core section to `docs/OPERATIONS.md` with these mandatory gates:
 
-1. confirm Phase A contains migrations 041-043 and does not contain 044;
+1. confirm Phase A contains migrations 041-044 and does not contain 045;
 2. confirm Release 3 timing is before the next operational term transition;
 3. enter global maintenance and stop academic writes/workers/realtime mutations;
 4. run `preflight_academic_core` separately against every tenant through the authorized secret-backed
    connection inventory while tenants remain on 040, aggregate only schema label/status/counts, and
    resolve every blocker;
 5. confirm stable source counts and take a recoverable snapshot under retention policy;
-6. apply 041-043 through `/internal/migrate-all` using the Phase A image;
+6. apply 041-044 through `/internal/migrate-all` using the Phase A image;
 7. deploy the Phase A backend/frontend while traffic remains closed;
 8. run `/internal/academic-core/reconcile-all` and require a success marker for every tenant;
 9. perform selected-tenant read-only/authenticated workflow checks in multiple year/term contexts;
-10. deploy the separately approved Phase B image and apply 044 through the same migration runner;
+10. deploy the separately approved Phase B image and apply 045 through the same migration runner;
 11. verify latest version, cleanup manifest, generated contracts, permissions, `/ready`, and selected
     authenticated workflows;
 12. explicitly record the go/no-go decision, then open traffic and mark the first accepted write as
@@ -2246,8 +2257,8 @@ Use three disposable datasets:
 - an authorized protected clone/snapshot of representative tenant data with output redacted.
 
 For the protected clone, record only duration, aggregate counts/checksums, finding codes, and pass/
-fail outside the repository. Apply 041-043, run the new backend/frontend smoke workflows, then apply a
-review copy of 044 on the clone and verify cleanup. Never commit clone data or output.
+fail outside the repository. Apply 041-044, run the new backend/frontend smoke workflows, then apply a
+review copy of 045 on the clone and verify cleanup. Never commit clone data or output.
 
 - [ ] **Step 6: Update unfinished backlog accurately**
 
@@ -2320,21 +2331,21 @@ git commit -m "docs(academic): define core cutover operations"
 ```
 
 Tag/build the exact reviewed Phase A commit only after explicit release approval. Confirm with
-`git ls-tree` that `backend-school/migrations/044_academic_core_legacy_cleanup.sql` is absent from
+`git ls-tree` that `backend-school/migrations/045_academic_core_legacy_cleanup.sql` is absent from
 that artifact.
 
 ---
 
 ### Task 15: Apply the Separately Gated Phase B Legacy Cleanup
 
-**Precondition:** Every production tenant has successfully applied 041-043, Phase A runtime is
+**Precondition:** Every production tenant has successfully applied 041-044, Phase A runtime is
 deployed under maintenance, `/internal/academic-core/reconcile-all` has recorded a current success
 marker, selected authenticated context workflows pass, and an operator has explicitly authorized
 the cleanup. Local Phase A completion alone does not satisfy this precondition.
 
 **Files:**
 
-- Create: `backend-school/migrations/044_academic_core_legacy_cleanup.sql`
+- Create: `backend-school/migrations/045_academic_core_legacy_cleanup.sql`
 - Modify: `backend-school/src/modules/academic/core/schema_tests.rs`
 - Modify: `backend-school/src/modules/academic/delivery/services_tests.rs`
 - Modify: `backend-school/src/modules/academic/reconciliation.rs`
@@ -2351,7 +2362,7 @@ the cleanup. Local Phase A completion alone does not satisfy this precondition.
   `docs/superpowers/plans/2026-08-23-academic-core-cutover.md`
 
 `cutover_test_support.rs` and migration fixture tests remain under `#[cfg(test)]` so clean-database
-CI continues to prove the full 040 -> 044 transformation. They are not compiled runtime code.
+CI continues to prove the full 040 -> 045 transformation. They are not compiled runtime code.
 
 - [ ] **Step 1: Start a separate Phase B branch/worktree from the exact Phase A release commit**
 
@@ -2361,9 +2372,9 @@ green or traffic is open for writes, stop.
 
 - [ ] **Step 2: Add RED cleanup-manifest tests**
 
-Apply 040, seed the complete fixture, run preflight, apply 041-043, record a successful reconciliation
-marker, then apply 044. Assert all final target rows remain and every legacy relation/column is absent.
-Also assert 044 fails when the marker is missing, stale, has a mismatched checksum, or reconciliation
+Apply 040, seed the complete fixture, run preflight, apply 041-044, record a successful reconciliation
+marker, then apply 045. Assert all final target rows remain and every legacy relation/column is absent.
+Also assert 045 fails when the marker is missing, stale, has a mismatched checksum, or reconciliation
 currently fails.
 
 The cleanup manifest includes:
@@ -2393,14 +2404,14 @@ Renamed authoritative relations such as `academic_terms`, `subject_versions`, `a
 
 ```bash
 ./scripts/test_backend_school.sh \
-  modules::academic::core::schema_tests::migration_044_removes_legacy_schema -- --exact --nocapture --test-threads=1
+  modules::academic::core::schema_tests::migration_045_removes_legacy_schema -- --exact --nocapture --test-threads=1
 ```
 
-Expected: FAIL because migration 044 does not exist.
+Expected: FAIL because migration 045 does not exist.
 
-- [ ] **Step 3: Write migration 044 with fail-closed prerequisites**
+- [ ] **Step 3: Write migration 045 with fail-closed prerequisites**
 
-At the beginning, lock the tenant audit marker and verify migration 043, mapping algorithm
+At the beginning, lock the tenant audit marker and verify migration 044, mapping algorithm
 `academic-core-v1`, successful check codes, expected checksum, and no writes since the recorded
 maintenance reconciliation. Raise a stable bounded error before any drop if a prerequisite differs.
 
@@ -2471,7 +2482,7 @@ git commit -m "refactor(academic): remove legacy academic schema"
 ```
 
 Do not merge or deploy this commit without the explicit production precondition at the top of Task
-15. The reviewed commit becomes the Phase B image; the centralized runner applies 044 while
+15. The reviewed commit becomes the Phase B image; the centralized runner applies 045 while
 maintenance remains active.
 
 ---
@@ -2491,7 +2502,7 @@ maintenance remains active.
 - [ ] Permission migration preserves equivalent access without read-to-manage or scope escalation.
 - [ ] Generated permission and API contracts match runtime and frontend consumers.
 - [ ] Phase A preflight/reconciliation pass every tenant before cleanup.
-- [ ] Migration 044 leaves no legacy runtime table/column/permission/path and preserves target counts.
+- [ ] Migration 045 leaves no legacy runtime table/column/permission/path and preserves target counts.
 - [ ] Snapshot rollback remains available until the explicitly recorded first new-system write.
 - [ ] Release 3 timing is approved before production Release 1 cutover so the next term can transition
   through the safe lifecycle rather than a manual status edit.

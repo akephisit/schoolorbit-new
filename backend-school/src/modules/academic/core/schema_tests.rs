@@ -1102,3 +1102,89 @@ async fn migration_runner_preserves_permission_cutover_evidence_and_active_contr
     .unwrap();
     assert_eq!(target_role_grant_count, 1);
 }
+
+#[tokio::test]
+async fn migration_044_exposes_the_clean_academic_core_runtime_contract() {
+    let pool = create_named_test_pool("academic_core_044_runtime_contract").await;
+    apply_migrations_through(&pool, 40).await.unwrap();
+    seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
+        .await
+        .unwrap();
+    apply_migrations_through(&pool, 44)
+        .await
+        .expect("migration 044 must make the clean core API writable before legacy cleanup");
+
+    let nullable_transition_columns: Vec<(String, String, String)> = sqlx::query_as(
+        r#"SELECT table_name::text, column_name::text, is_nullable::text
+           FROM information_schema.columns
+           WHERE table_schema = current_schema()
+             AND (table_name, column_name) IN (
+                 ('academic_terms', 'legacy_term'),
+                 ('bell_schedule_periods', 'academic_year_id')
+             )
+           ORDER BY table_name, column_name"#,
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        nullable_transition_columns,
+        vec![
+            (
+                "academic_terms".to_string(),
+                "legacy_term".to_string(),
+                "YES".to_string(),
+            ),
+            (
+                "bell_schedule_periods".to_string(),
+                "academic_year_id".to_string(),
+                "YES".to_string(),
+            ),
+        ]
+    );
+
+    let runtime_columns: Vec<(String, String)> = sqlx::query_as(
+        r#"SELECT table_name::text, column_name::text
+           FROM information_schema.columns
+           WHERE table_schema = current_schema()
+             AND (table_name, column_name) IN (
+                 ('activities', 'archived_at'),
+                 ('grade_level_progression_sets', 'row_version'),
+                 ('subject_groups', 'row_version'),
+                 ('subjects', 'archived_at')
+             )
+           ORDER BY table_name, column_name"#,
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(runtime_columns.len(), 4);
+
+    let unique_contract: (bool, bool, bool, bool) = sqlx::query_as(
+        r#"SELECT
+               to_regclass('study_programs_curriculum_version_id_key') IS NULL,
+               to_regclass('study_programs_one_default_per_version') IS NOT NULL,
+               EXISTS (
+                   SELECT 1 FROM pg_constraint
+                   WHERE conname = 'curriculum_course_requirements_program_resource_key'
+               ),
+               EXISTS (
+                   SELECT 1 FROM pg_constraint
+                   WHERE conname = 'curriculum_activity_requirements_program_resource_key'
+               )"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(unique_contract, (true, true, true, true));
+
+    let audit_delete_action: String = sqlx::query_scalar(
+        r#"SELECT confdeltype::text
+           FROM pg_constraint
+           WHERE conname = 'academic_audit_events_academic_term_id_fkey'"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(audit_delete_action, "n");
+}

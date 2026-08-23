@@ -97,11 +97,10 @@ fn people_and_platform_handlers_use_typed_session_identity() {
 #[test]
 fn academic_group_a_handlers_use_typed_session_identity() {
     assert_typed_session_handlers(&[
-        "src/modules/academic/handlers.rs",
+        "src/modules/academic/core/handlers.rs",
         "src/modules/academic/handlers/activity.rs",
         "src/modules/academic/handlers/assessment.rs",
         "src/modules/academic/handlers/course_planning.rs",
-        "src/modules/academic/handlers/subjects.rs",
     ]);
 }
 
@@ -109,7 +108,6 @@ fn academic_group_a_handlers_use_typed_session_identity() {
 fn academic_group_b_handlers_use_typed_session_identity() {
     assert_typed_session_handlers(&[
         "src/modules/academic/handlers/exam_schedule.rs",
-        "src/modules/academic/handlers/study_plans.rs",
         "src/modules/academic/handlers/timetable.rs",
         "src/modules/academic/handlers/timetable_templates.rs",
     ]);
@@ -1976,212 +1974,148 @@ fn daily_teaching_overview_endpoint_is_read_only_and_pii_safe() {
 }
 
 #[test]
-fn academic_structure_handlers_enforce_generated_permission_contract() {
+fn academic_core_handlers_are_thin_authorized_and_signal_only_after_mutation() {
     let handlers = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/handlers.rs"),
+        manifest_dir().join("src/modules/academic/core/handlers.rs"),
     ));
-    let cases = [
-        ("create_academic_year", "ACADEMIC_YEAR_MANAGE_SCHOOL"),
-        ("update_academic_year", "ACADEMIC_YEAR_MANAGE_SCHOOL"),
-        ("toggle_active_year", "ACADEMIC_YEAR_MANAGE_SCHOOL"),
-        ("create_semester", "ACADEMIC_TERM_MANAGE_SCHOOL"),
-        ("update_semester", "ACADEMIC_TERM_MANAGE_SCHOOL"),
-        ("delete_semester", "ACADEMIC_TERM_MANAGE_SCHOOL"),
-        ("list_classrooms", "HOMEROOM_READ_SCHOOL"),
-        ("create_classroom", "HOMEROOM_MANAGE_SCHOOL"),
-        ("update_classroom", "HOMEROOM_MANAGE_SCHOOL"),
-        ("create_grade_level", "ACADEMIC_YEAR_MANAGE_SCHOOL"),
-        ("delete_grade_level", "ACADEMIC_YEAR_MANAGE_SCHOOL"),
-        ("enroll_students", "STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL"),
-        ("get_class_enrollments", "STUDENT_ACADEMIC_YEAR_READ_SCHOOL"),
-        ("remove_enrollment", "STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL"),
-        (
-            "update_enrollment_number",
-            "STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL",
-        ),
-        (
-            "auto_assign_class_numbers",
-            "STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL",
-        ),
-        ("get_year_levels", "ACADEMIC_YEAR_READ_SCHOOL"),
-        ("update_year_levels", "ACADEMIC_YEAR_MANAGE_SCHOOL"),
-    ];
+    let context_service = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/core/services/context.rs"),
+    ));
 
-    for (handler_name, permission) in cases {
-        let marker = format!("pub async fn {handler_name}");
-        let handler_tail = handlers
-            .split_once(&marker)
-            .unwrap_or_else(|| panic!("missing academic handler `{handler_name}`"))
-            .1;
-        let handler = handler_tail
-            .split("pub async fn ")
-            .next()
-            .unwrap_or(handler_tail);
+    assert!(handlers.contains("actor_tenant_context_from_session(&state, &session).await?"));
+    assert!(!handlers.contains("sqlx::query"));
+    assert!(!handlers.contains(".fetch_"));
+    assert!(!handlers.contains(".execute("));
+    assert!(!handlers.contains(".begin("));
 
+    let context_handler =
+        extract_braced_block(&handlers, "pub async fn list_context_options", false);
+    assert!(context_handler.contains("ACADEMIC_CONTEXT_READ_SCHOOL"));
+    assert!(context_handler.contains("context::list_options(&pool).await?"));
+    assert!(!context_handler.contains("signal_core_changed"));
+    for forbidden in ["UPDATE ", "INSERT ", "DELETE "] {
         assert!(
-            handler.contains("actor_tenant_context_from_session(&state, &session).await?"),
-            "{handler_name} must load the authenticated actor and tenant together"
+            !context_service.contains(forbidden),
+            "context options must remain read-only: {forbidden}"
         );
+    }
+
+    for (handler_name, permission) in [
+        ("create_year", "ACADEMIC_YEAR_MANAGE_SCHOOL"),
+        ("update_year", "ACADEMIC_YEAR_MANAGE_SCHOOL"),
+        ("create_term", "ACADEMIC_TERM_MANAGE_SCHOOL"),
+        ("update_term", "ACADEMIC_TERM_MANAGE_SCHOOL"),
+        ("delete_term", "ACADEMIC_TERM_MANAGE_SCHOOL"),
+        ("create_bell_schedule", "ACADEMIC_TERM_MANAGE_SCHOOL"),
+        ("update_bell_schedule", "ACADEMIC_TERM_MANAGE_SCHOOL"),
+        (
+            "replace_bell_schedule_periods",
+            "ACADEMIC_TERM_MANAGE_SCHOOL",
+        ),
+        ("replace_grade_progressions", "ACADEMIC_YEAR_MANAGE_SCHOOL"),
+        ("create_homeroom", "HOMEROOM_MANAGE_SCHOOL"),
+        ("update_homeroom", "HOMEROOM_MANAGE_SCHOOL"),
+        ("replace_homeroom_advisors", "HOMEROOM_MANAGE_SCHOOL"),
+        ("create_student_year", "STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL"),
+        ("update_student_year", "STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL"),
+        ("create_placement", "STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL"),
+        ("transfer_placement", "STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL"),
+    ] {
+        let handler =
+            extract_braced_block(&handlers, &format!("pub async fn {handler_name}"), false);
+        assert!(handler.contains("actor_tenant_context_from_session(&state, &session).await?"));
         assert!(
             handler.contains(&format!("actor.require_permission(codes::{permission})?")),
             "{handler_name} must require {permission}"
         );
+        assert!(
+            handler.contains("signal_core_changed"),
+            "{handler_name} must emit a bounded invalidation after success"
+        );
     }
-
-    let list_handler = handlers
-        .split_once("pub async fn list_academic_structure")
-        .expect("missing academic handler `list_academic_structure`")
-        .1
-        .split("pub async fn ")
-        .next()
-        .expect("missing list_academic_structure handler body");
-    assert!(
-        list_handler.contains("actor_tenant_context_from_session(&state, &session).await?"),
-        "list_academic_structure must load the authenticated actor and tenant together"
-    );
-    assert!(
-        !list_handler.contains("actor.require_"),
-        "shared academic reference data must not require a feature permission"
-    );
-
-    assert!(handlers.contains("use crate::permissions::registry::codes;"));
-    assert!(!handlers.contains("use crate::utils::request_context::tenant_pool;"));
 }
 
 #[test]
-fn academic_core_study_plan_handlers_enforce_curriculum_permission_contract() {
+fn academic_core_curriculum_handlers_enforce_resource_policy_contract() {
     let handlers = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/handlers/study_plans.rs"),
+        manifest_dir().join("src/modules/academic/core/handlers.rs"),
     ));
     let cases = [
-        ("list_study_plans", "ensure_curriculum_read"),
-        ("get_study_plan", "ensure_curriculum_read"),
-        ("create_study_plan", "ensure_curriculum_create"),
-        ("update_study_plan", "ensure_curriculum_update"),
-        ("delete_study_plan", "ensure_curriculum_delete"),
-        ("list_study_plan_versions", "ensure_curriculum_read"),
-        ("get_study_plan_version", "ensure_curriculum_read"),
-        ("create_study_plan_version", "ensure_curriculum_create"),
-        ("update_study_plan_version", "ensure_curriculum_update"),
-        ("delete_study_plan_version", "ensure_curriculum_delete"),
-        ("list_study_plan_subjects", "ensure_curriculum_read"),
-        ("add_subjects_to_version", "ensure_curriculum_update"),
-        ("delete_study_plan_subject", "ensure_curriculum_delete"),
+        ("get_curriculum", "CurriculumAction::Read"),
+        ("update_curriculum", "CurriculumAction::Manage"),
+        ("list_curriculum_versions", "CurriculumAction::Read"),
+        ("create_curriculum_version", "CurriculumAction::Manage"),
+        ("get_curriculum_version", "CurriculumAction::Read"),
+        ("update_curriculum_version", "CurriculumAction::Manage"),
+        ("publish_curriculum_version", "CurriculumAction::Manage"),
+        ("list_study_programs", "CurriculumAction::Read"),
+        ("create_study_program", "CurriculumAction::Manage"),
+        ("get_study_program", "CurriculumAction::Read"),
+        ("update_study_program", "CurriculumAction::Manage"),
+        ("list_program_requirements", "CurriculumAction::Read"),
+        ("replace_program_requirements", "CurriculumAction::Manage"),
     ];
 
-    for (handler_name, policy_helper) in cases {
-        let marker = format!("pub async fn {handler_name}");
-        let handler_tail = handlers
-            .split_once(&marker)
-            .unwrap_or_else(|| panic!("missing study-plan handler `{handler_name}`"))
-            .1;
-        let handler = handler_tail
-            .split("pub async fn ")
-            .next()
-            .unwrap_or(handler_tail);
-
+    for (handler_name, action) in cases {
+        let handler =
+            extract_braced_block(&handlers, &format!("pub async fn {handler_name}"), false);
+        assert!(handler.contains("actor_tenant_context_from_session(&state, &session).await?"));
         assert!(
-            handler.contains("actor_tenant_context_from_session(&state, &session).await?"),
-            "{handler_name} must load the authenticated actor and tenant together"
+            handler.contains("require_academic_curriculum_access") && handler.contains(action),
+            "{handler_name} must use the curriculum resource policy with {action}"
         );
-        assert!(
-            handler.contains(&format!(
-                "curriculum_access_policy::{policy_helper}(&actor)?"
-            )),
-            "{handler_name} must use {policy_helper}"
-        );
-        assert!(!handler.contains("tenant_pool(&state, &headers)"));
-        assert!(!handler.contains("optional_user_id_from_headers"));
     }
 
-    let generate_handler = handlers
-        .split_once("pub async fn generate_courses_from_plan")
-        .expect("missing generate_courses_from_plan handler")
-        .1
-        .split("pub async fn ")
-        .next()
-        .unwrap_or("");
-    assert!(generate_handler.contains("actor_tenant_context_from_session(&state, &session).await?"));
-    assert!(generate_handler
-        .contains("actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?"));
-    assert!(generate_handler.contains("Some(actor.user_id)"));
-
-    let list_subjects_handler = handlers
-        .split_once("pub async fn list_study_plan_subjects")
-        .expect("missing list_study_plan_subjects handler")
-        .1
-        .split("pub async fn ")
-        .next()
-        .unwrap_or("");
-    assert!(list_subjects_handler.contains("Path(version_id): Path<Uuid>"));
-    assert!(list_subjects_handler.contains("query.study_plan_version_id = Some(version_id)"));
+    let list_handler = extract_braced_block(&handlers, "pub async fn list_curricula", false);
+    let create_handler = extract_braced_block(&handlers, "pub async fn create_curriculum", false);
+    assert!(list_handler.contains("require_academic_curriculum_list_access"));
+    assert!(list_handler.contains("CurriculumAction::Read"));
+    assert!(create_handler.contains("require_academic_curriculum_list_access"));
+    assert!(create_handler.contains("CurriculumAction::Manage"));
+    assert!(create_handler.contains("owner_allowed"));
 }
 
 #[test]
-fn academic_activity_template_handlers_enforce_permission_contract() {
+fn academic_core_catalog_handlers_enforce_resource_policy_contract() {
     let handlers = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/handlers/study_plans.rs"),
+        manifest_dir().join("src/modules/academic/core/handlers.rs"),
     ));
     let cases = [
-        ("list_plan_activities", "ensure_curriculum_read"),
-        ("add_plan_activity", "ensure_curriculum_update"),
-        ("update_plan_activity", "ensure_curriculum_update"),
-        ("delete_plan_activity", "ensure_curriculum_delete"),
-        ("list_activity_catalog", "ensure_curriculum_read"),
-        ("create_activity_catalog", "ensure_curriculum_create"),
-        ("update_activity_catalog", "ensure_curriculum_update"),
-        ("delete_activity_catalog", "ensure_curriculum_delete"),
-        ("list_catalog_default_instructors", "ensure_curriculum_read"),
-        ("add_catalog_default_instructor", "ensure_curriculum_update"),
-        (
-            "remove_catalog_default_instructor",
-            "ensure_curriculum_update",
-        ),
-        (
-            "update_catalog_default_instructor_role",
-            "ensure_curriculum_update",
-        ),
+        ("get_catalog_subject", "CatalogAction::Read"),
+        ("update_catalog_subject", "CatalogAction::Manage"),
+        ("list_subject_versions", "CatalogAction::Read"),
+        ("create_subject_version", "CatalogAction::Manage"),
+        ("get_subject_version", "CatalogAction::Read"),
+        ("update_subject_version", "CatalogAction::Manage"),
+        ("publish_subject_version", "CatalogAction::Manage"),
+        ("get_catalog_activity", "CatalogAction::Read"),
+        ("update_catalog_activity", "CatalogAction::Manage"),
+        ("list_activity_versions", "CatalogAction::Read"),
+        ("create_activity_version", "CatalogAction::Manage"),
+        ("get_activity_version", "CatalogAction::Read"),
+        ("update_activity_version", "CatalogAction::Manage"),
+        ("publish_activity_version", "CatalogAction::Manage"),
     ];
 
-    for (handler_name, policy_helper) in cases {
-        let marker = format!("pub async fn {handler_name}");
-        let handler_tail = handlers
-            .split_once(&marker)
-            .unwrap_or_else(|| panic!("missing activity-template handler `{handler_name}`"))
-            .1;
-        let handler = handler_tail
-            .split("pub async fn ")
-            .next()
-            .unwrap_or(handler_tail);
-
+    for (handler_name, action) in cases {
+        let handler =
+            extract_braced_block(&handlers, &format!("pub async fn {handler_name}"), false);
+        assert!(handler.contains("actor_tenant_context_from_session(&state, &session).await?"));
         assert!(
-            handler.contains("actor_tenant_context_from_session(&state, &session).await?"),
-            "{handler_name} must load the authenticated actor and tenant together"
+            handler.contains("require_academic_catalog_access") && handler.contains(action),
+            "{handler_name} must use the catalog resource policy with {action}"
         );
-        assert!(
-            handler.contains(&format!(
-                "curriculum_access_policy::{policy_helper}(&actor)?"
-            )),
-            "{handler_name} must use {policy_helper}"
-        );
-        assert!(!handler.contains("tenant_pool(&state, &headers)"));
-        assert!(!handler.contains("optional_user_id_from_headers"));
     }
 
-    let generate_handler = handlers
-        .split_once("pub async fn generate_activities_from_plan")
-        .expect("missing generate_activities_from_plan handler")
-        .1
-        .split("pub async fn ")
-        .next()
-        .unwrap_or("");
-    assert!(generate_handler.contains("actor_tenant_context_from_session(&state, &session).await?"));
-    assert!(generate_handler.contains("curriculum_access_policy::ensure_curriculum_read(&actor)?"));
-    assert!(generate_handler
-        .contains("actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?"));
-    assert!(generate_handler.contains("Some(actor.user_id)"));
-    assert!(!generate_handler.contains("tenant_pool(&state, &headers)"));
-    assert!(!generate_handler.contains("optional_user_id_from_headers"));
+    let list_subjects =
+        extract_braced_block(&handlers, "pub async fn list_catalog_subjects", false);
+    let create_activity =
+        extract_braced_block(&handlers, "pub async fn create_catalog_activity", false);
+    assert!(list_subjects.contains("require_academic_catalog_list_access"));
+    assert!(list_subjects.contains("CatalogAction::Read"));
+    assert!(create_activity.contains("require_academic_catalog_list_access"));
+    assert!(create_activity.contains("CatalogAction::Manage"));
+    assert!(create_activity.contains("owner_allowed"));
 }
 
 #[test]
@@ -2403,25 +2337,32 @@ fn academic_curriculum_access_uses_resource_policy_tree_resolution() {
 #[test]
 fn academic_curriculum_permission_decisions_live_in_policy_layer() {
     let policies_root = read_source(manifest_dir().join("src/policies.rs"));
+    let catalog_policy = strip_comments(&read_source(
+        manifest_dir().join("src/policies/academic_catalog_access_policy.rs"),
+    ));
     let curriculum_policy = strip_comments(&read_source(
-        manifest_dir().join("src/policies/curriculum_access_policy.rs"),
+        manifest_dir().join("src/policies/academic_curriculum_access_policy.rs"),
     ));
-    let subject_handler = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/handlers/subjects.rs"),
+    let core_handler = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/core/handlers.rs"),
     ));
-    let subject_service = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/services/subject_service.rs"),
+    let catalog_service = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/core/services/catalog.rs"),
     ));
 
-    assert!(policies_root.contains("pub mod curriculum_access_policy;"));
-    assert!(curriculum_policy.contains("resource_access_policy::accessible_organization_unit_ids"));
-    assert!(curriculum_policy.contains("resource_access_policy::resolve_user_resource_list_access"));
-    assert!(subject_handler.contains("curriculum_access_policy::resolve_subject_read_access"));
-    assert!(subject_handler.contains("curriculum_access_policy::resolve_subject_manage_access"));
-    assert!(subject_handler.contains("curriculum_access_policy::ensure_subject_manage"));
-    assert!(!subject_service.contains("actor.has_permission("));
-    assert!(!subject_service.contains("ResourceAccessPermissions"));
-    assert!(!subject_service.contains("resource_access_policy::"));
+    assert!(policies_root.contains("pub mod academic_catalog_access_policy;"));
+    assert!(policies_root.contains("pub mod academic_curriculum_access_policy;"));
+    assert!(catalog_policy.contains("academic_catalog_list_access"));
+    assert!(catalog_policy.contains("academic_catalog_access"));
+    assert!(curriculum_policy.contains("academic_curriculum_list_access"));
+    assert!(curriculum_policy.contains("academic_curriculum_access"));
+    assert!(
+        core_handler.contains("academic_catalog_access_policy::require_academic_catalog_access")
+    );
+    assert!(core_handler
+        .contains("academic_curriculum_access_policy::require_academic_curriculum_access"));
+    assert!(!catalog_service.contains("actor.has_permission("));
+    assert!(!catalog_service.contains("ResourceAccessPermissions"));
 }
 
 #[test]
@@ -5875,4 +5816,80 @@ fn academic_core_043_migration_cuts_over_consumers_and_permissions_without_pii()
     assert!(!migration.contains("CREATE EXTENSION"));
     assert!(!migration.contains("REAL"));
     assert!(!migration.contains("DOUBLE PRECISION"));
+}
+
+#[test]
+fn academic_core_044_exposes_the_clean_runtime_contract_without_destructive_cleanup() {
+    let migration = strip_comments(&read_source(
+        manifest_dir().join("migrations/044_academic_runtime_contract.sql"),
+    ));
+
+    for required in [
+        "ALTER COLUMN legacy_term DROP NOT NULL",
+        "ALTER COLUMN academic_year_id DROP NOT NULL",
+        "subject_groups_row_version_check",
+        "ADD COLUMN archived_at TIMESTAMPTZ",
+        "study_programs_one_default_per_version",
+        "curriculum_course_requirements_program_resource_key",
+        "curriculum_activity_requirements_program_resource_key",
+        "CREATE TABLE grade_level_progression_sets",
+        "ON DELETE SET NULL",
+    ] {
+        assert!(
+            migration.contains(required),
+            "migration 044 must retain the runtime invariant: {required}"
+        );
+    }
+
+    assert!(!migration.contains("national_id"));
+    assert!(!migration.contains("DROP TABLE"));
+    assert!(!migration.contains("DROP COLUMN"));
+    assert!(!migration.contains("REAL"));
+    assert!(!migration.contains("DOUBLE PRECISION"));
+}
+
+#[test]
+fn academic_core_registers_only_clean_replacement_routes() {
+    let core_routes = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/core.rs"),
+    ));
+    let aggregate_routes =
+        strip_comments(&read_source(manifest_dir().join("src/modules/academic.rs")));
+
+    for required in [
+        "/context/options",
+        "/years",
+        "/terms",
+        "/bell-schedules",
+        "/grade-progressions",
+        "/catalog/subjects",
+        "/catalog/activities",
+        "/curricula",
+        "/study-programs/{id}/requirements",
+        "/homerooms",
+        "/student-years",
+        "/placements/{id}/transfer",
+    ] {
+        assert!(
+            core_routes.contains(required),
+            "missing clean Academic Core route: {required}"
+        );
+    }
+
+    assert!(aggregate_routes.contains("core::routes().merge("));
+    for removed in [
+        "\"/structure\"",
+        "\"/levels\"",
+        "\"/semesters\"",
+        "\"/classrooms\"",
+        "\"/enrollments\"",
+        "\"/subjects\"",
+        "\"/study-plans\"",
+        "\"/periods\"",
+    ] {
+        assert!(
+            !aggregate_routes.contains(removed),
+            "removed legacy route is still registered: {removed}"
+        );
+    }
 }

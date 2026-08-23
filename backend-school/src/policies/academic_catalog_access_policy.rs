@@ -61,6 +61,39 @@ pub async fn academic_catalog_access(
     ))
 }
 
+pub async fn require_academic_catalog_list_access(
+    pool: &PgPool,
+    actor: &ActorContext,
+    action: CatalogAction,
+) -> Result<AcademicResourceListFilter, AppError> {
+    let filter = academic_catalog_list_access(pool, actor, action).await?;
+    if !filter.includes_school_owned
+        && filter.organization_unit_ids.is_empty()
+        && filter.organization_tree_unit_ids.is_empty()
+        && filter.assigned_actor_id.is_none()
+    {
+        Err(AppError::Forbidden(
+            "ไม่มีสิทธิ์เข้าถึงคลังวิชาและกิจกรรม".to_string(),
+        ))
+    } else {
+        Ok(filter)
+    }
+}
+
+pub async fn require_academic_catalog_access(
+    pool: &PgPool,
+    actor: &ActorContext,
+    resource: CatalogResourceRef,
+    action: CatalogAction,
+) -> Result<(), AppError> {
+    if academic_catalog_access(pool, actor, resource, action).await? == AcademicResourceAccess::None
+    {
+        Err(AppError::Forbidden("ไม่มีสิทธิ์เข้าถึงทรัพยากรนี้".to_string()))
+    } else {
+        Ok(())
+    }
+}
+
 fn catalog_permissions(action: CatalogAction) -> AcademicResourcePermissions {
     match action {
         CatalogAction::Read => AcademicResourcePermissions {
@@ -291,6 +324,31 @@ mod tests {
             .unwrap(),
             AcademicResourceAccess::None
         );
+        assert!(matches!(
+            require_academic_catalog_list_access(&pool, &unrelated, CatalogAction::Read).await,
+            Err(AppError::Forbidden(_))
+        ));
+        assert!(matches!(
+            require_academic_catalog_access(
+                &pool,
+                &unrelated,
+                CatalogResourceRef::Subject(root_subject_id),
+                CatalogAction::Read,
+            )
+            .await,
+            Err(AppError::Forbidden(_))
+        ));
+        require_academic_catalog_list_access(&pool, &school_reader, CatalogAction::Read)
+            .await
+            .unwrap();
+        require_academic_catalog_access(
+            &pool,
+            &school_reader,
+            CatalogResourceRef::Subject(root_subject_id),
+            CatalogAction::Read,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(
             unit_manager.user_id,
