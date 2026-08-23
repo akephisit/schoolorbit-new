@@ -641,7 +641,7 @@ cargo test --test static_architecture academic_core_preflight -- --nocapture
 cargo fmt --all -- --check
 ```
 
-- [ ] **Step 7: Commit Task 1**
+- [x] **Step 7: Commit Task 1**
 
 ```bash
 git add backend-school/src/bin/preflight_academic_core.rs \
