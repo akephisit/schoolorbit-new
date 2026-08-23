@@ -997,7 +997,7 @@ cargo test --test static_architecture migration_timeline -- --nocapture
 cargo fmt --all -- --check
 ```
 
-- [ ] **Step 8: Commit Task 4**
+- [x] **Step 8: Commit Task 4**
 
 ```bash
 git add backend-school/migrations/043_academic_consumer_cutover.sql \
@@ -1138,7 +1138,7 @@ legacy compatibility:
 - Task 8 must remove the transitional activity registration-open shortcut; assigned scope must
   require an explicit teacher/group assignment before any slot-assignment data is reachable.
 
-- [ ] **Step 7: Commit Task 5**
+- [x] **Step 7: Commit Task 5**
 
 ```bash
 git add contracts/permissions.json contracts/permissions.lock.json \
