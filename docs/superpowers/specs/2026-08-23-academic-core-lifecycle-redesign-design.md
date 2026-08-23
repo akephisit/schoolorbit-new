@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-23
 
-**Status:** Approved in design discussion; pending written-spec review
+**Status:** Approved
 
 **Scope:** `backend-school`, `frontend-school`, tenant database schema and data, permission/API contracts, realtime signals, and production cutover procedures that depend on academic-year or academic-term context
 
