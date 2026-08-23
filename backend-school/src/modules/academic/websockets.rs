@@ -146,6 +146,13 @@ pub enum TimetableEvent {
         academic_year_id: Option<Uuid>,
         academic_term_id: Option<Uuid>,
     },
+    LearningDeliveryChanged {
+        user_id: Uuid,
+        academic_term_id: Uuid,
+        learning_offering_id: Uuid,
+        learning_group_id: Option<Uuid>,
+        revision: i64,
+    },
 
     // Interactions
     CursorMove {
@@ -263,6 +270,7 @@ impl TimetableEvent {
                 | TimetableEvent::EntryInstructorRemoved { .. }
                 | TimetableEvent::CourseTeamChanged { .. }
                 | TimetableEvent::AcademicCoreChanged { .. }
+                | TimetableEvent::LearningDeliveryChanged { .. }
         )
     }
 }
@@ -512,6 +520,28 @@ impl WebSocketManager {
                 },
             );
         }
+    }
+
+    pub fn broadcast_learning_delivery_changed(
+        &self,
+        school_key: String,
+        user_id: Uuid,
+        academic_term_id: Uuid,
+        learning_offering_id: Uuid,
+        learning_group_id: Option<Uuid>,
+        revision: i64,
+    ) {
+        self.broadcast_mutation(
+            school_key,
+            academic_term_id,
+            TimetableEvent::LearningDeliveryChanged {
+                user_id,
+                academic_term_id,
+                learning_offering_id,
+                learning_group_id,
+                revision,
+            },
+        );
     }
 
     pub fn current_seq(&self, school_key: String, semester_id: Uuid) -> u64 {
@@ -1635,6 +1665,65 @@ mod security_tests {
 
         assert_eq!(manager.current_seq(tenant.clone(), selected_term), 1);
         assert_eq!(manager.current_seq(tenant, unrelated_term), 0);
+    }
+
+    #[test]
+    fn learning_delivery_signal_does_not_create_rooms_without_subscribers() {
+        let manager = WebSocketManager::new();
+        manager.broadcast_learning_delivery_changed(
+            "tenant-a".to_string(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Some(Uuid::new_v4()),
+            2,
+        );
+        assert!(manager.rooms.is_empty());
+        assert!(manager.room_seq.is_empty());
+        assert!(manager.room_buffer.is_empty());
+    }
+
+    #[test]
+    fn learning_delivery_signal_is_term_scoped_and_contains_identifiers_only() {
+        let manager = WebSocketManager::new();
+        let tenant = "tenant-a".to_string();
+        let selected_term = Uuid::new_v4();
+        let unrelated_term = Uuid::new_v4();
+        let offering_id = Uuid::new_v4();
+        let group_id = Uuid::new_v4();
+        let selected_sender = manager.get_or_create_room(tenant.clone(), selected_term);
+        let unrelated_sender = manager.get_or_create_room(tenant.clone(), unrelated_term);
+        let mut selected_receiver = selected_sender.subscribe();
+        let _selected_guard = selected_sender.subscribe();
+        let _unrelated_receivers = (unrelated_sender.subscribe(), unrelated_sender.subscribe());
+
+        manager.broadcast_learning_delivery_changed(
+            tenant.clone(),
+            Uuid::new_v4(),
+            selected_term,
+            offering_id,
+            Some(group_id),
+            7,
+        );
+
+        assert_eq!(manager.current_seq(tenant.clone(), selected_term), 1);
+        assert_eq!(manager.current_seq(tenant, unrelated_term), 0);
+        let event = selected_receiver.try_recv().unwrap();
+        assert!(matches!(
+            event.event,
+            TimetableEvent::LearningDeliveryChanged {
+                academic_term_id,
+                learning_offering_id,
+                learning_group_id: Some(received_group_id),
+                revision: 7,
+                ..
+            } if academic_term_id == selected_term
+                && learning_offering_id == offering_id
+                && received_group_id == group_id
+        ));
+        let payload = serde_json::to_string(&event).unwrap();
+        assert!(!payload.contains("student"));
+        assert!(!payload.contains("roster"));
     }
 
     #[test]

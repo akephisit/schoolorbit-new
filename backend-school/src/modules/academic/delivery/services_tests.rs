@@ -11,6 +11,21 @@ use chrono::NaiveDate;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
+use super::{
+    models::{
+        ActivityAttendanceRequirement, ActivityPassCriteria, ActivityRegistrationType,
+        ActivitySchedulingMode, ApplyCurriculumOfferingsRequest, ApplyRosterRequest,
+        CourseGradingPolicy, CreateActivityOfferingRequest, CreateCourseOfferingRequest,
+        CreateLearningGroupRequest, CreateLearningOfferingRequest, LearningOfferingKind,
+        LearningOfferingStatus, LearningTeacherRole, OfferingTargetInput, OfferingTargetKind,
+        PreviewCurriculumOfferingsRequest, PublishLearningOfferingRequest, PublishRosterRequest,
+        ReplaceLearningGroupHomeroomsRequest, ReplaceLearningGroupTeachersRequest,
+        RosterOverrideAction, RosterOverrideInput, TeacherAssignmentInput,
+    },
+    services::{activities, groups, offerings},
+};
+use crate::error::AppError;
+
 const ACADEMIC_CORE_NAMESPACE: Uuid = Uuid::from_u128(0x5c33_b984_10df_58db_bf80_62db_c4a0_3d1b);
 
 fn stable_uuid(name: &str) -> Uuid {
@@ -38,17 +53,6 @@ async fn add_unmapped_independent_homeroom(pool: &PgPool) {
             '72500000-0000-0000-0000-000000000004',
             '70000000-0000-0000-0000-000000000001',
             '50000000-0000-0000-0000-000000000004'
-        );
-
-        INSERT INTO class_rooms (
-            id, code, name, academic_year_id, grade_level_id, room_number,
-            study_plan_version_id, capacity
-        )
-        VALUES (
-            '40000000-0000-0000-0000-000000000125', 'M1-2-2025', 'ม.1/2 ปี 2025',
-            '10000000-0000-0000-0000-000000000025',
-            'e999190c-d3fc-4124-b787-3445dcb26ee8', '2',
-            '31000000-0000-0000-0000-000000000025', 40
         );
 
         INSERT INTO activity_slot_classrooms (id, slot_id, classroom_id)
@@ -115,7 +119,7 @@ async fn preflight_counts_generated_independent_activity_groups() {
     .expect("delivery preflight must run");
 
     assert!(report.can_cut_over);
-    assert_eq!(report.expected_target_counts["learningGroups"], 5);
+    assert_eq!(report.expected_target_counts["learningGroups"], 6);
 }
 
 #[tokio::test]
@@ -277,7 +281,7 @@ async fn migration_042_maps_delivery_fixture() {
         .fetch_all(&pool)
         .await
         .expect("learning groups must be queryable");
-    assert_eq!(group_ids.len(), 5);
+    assert_eq!(group_ids.len(), 6);
     assert!(group_ids.contains(&generated_group_id));
     assert!(group_ids.contains(&Uuid::parse_str("60000000-0000-0000-0000-000000000025").unwrap()));
     assert!(group_ids.contains(&Uuid::parse_str("73000000-0000-0000-0000-000000000001").unwrap()));
@@ -385,7 +389,7 @@ async fn migration_042_maps_delivery_fixture() {
     let target_counts: serde_json::Value = audit.get("target_counts");
     assert_eq!(source_counts["enrollments"], 3);
     assert_eq!(target_counts["studentAcademicYears"], 3);
-    assert_eq!(target_counts["learningGroups"], 5);
+    assert_eq!(target_counts["learningGroups"], 6);
     assert_eq!(target_counts["groupStudents"], 3);
 }
 
@@ -544,4 +548,693 @@ async fn migration_042_enforces_delivery_context_and_subtype_invariants() {
     assert!(published_snapshot_error
         .to_string()
         .contains("ACADEMIC_CORE_PUBLISHED_OFFERING_IMMUTABLE"));
+}
+
+async fn prepare_delivery_runtime_fixture(name: &str) -> PgPool {
+    let pool = create_named_test_pool(name).await;
+    apply_migrations_through(&pool, 40).await.unwrap();
+    seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
+        .await
+        .unwrap();
+    apply_migrations_through(&pool, 44).await.unwrap();
+    pool
+}
+
+#[derive(Debug)]
+struct RuntimeContext {
+    term_id: Uuid,
+    year_id: Uuid,
+    homeroom_id: Uuid,
+    grade_level_id: Uuid,
+    study_program_id: Uuid,
+    subject_version_id: Uuid,
+    owner_id: Uuid,
+    teacher_id: Uuid,
+}
+
+async fn planning_runtime_context(pool: &PgPool) -> RuntimeContext {
+    let (term_id, year_id): (Uuid, Uuid) = sqlx::query_as(
+        r#"SELECT term.id, term.academic_year_id
+           FROM academic_terms term
+           WHERE term.status = 'planning'
+             AND EXISTS (
+                 SELECT 1
+                 FROM homerooms homeroom
+                 JOIN curriculum_course_requirements requirement
+                   ON requirement.study_program_id = homeroom.study_program_id
+                  AND requirement.grade_level_id = homeroom.grade_level_id
+                 WHERE homeroom.academic_year_id = term.academic_year_id
+                   AND (requirement.recommended_term_code IS NULL
+                        OR lower(requirement.recommended_term_code) = lower(term.code))
+             )
+           ORDER BY term.start_date
+           LIMIT 1"#,
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let (homeroom_id, grade_level_id, study_program_id): (Uuid, Uuid, Uuid) = sqlx::query_as(
+        "SELECT id, grade_level_id, study_program_id FROM homerooms WHERE academic_year_id = $1 ORDER BY id LIMIT 1",
+    )
+    .bind(year_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let subject_version_id: Uuid = sqlx::query_scalar(
+        r#"SELECT version.id
+           FROM subject_versions version
+           JOIN academic_terms term ON term.id = $1
+           WHERE version.status = 'published'
+             AND version.effective_from <= term.start_date
+             AND (version.effective_until IS NULL OR version.effective_until > term.start_date)
+           ORDER BY version.id
+           LIMIT 1"#,
+    )
+    .bind(term_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let owner_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM organization_units WHERE is_active ORDER BY parent_unit_id NULLS FIRST, id LIMIT 1",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let teacher_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM users WHERE user_type = 'staff' AND status = 'active' ORDER BY id LIMIT 1",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+
+    RuntimeContext {
+        term_id,
+        year_id,
+        homeroom_id,
+        grade_level_id,
+        study_program_id,
+        subject_version_id,
+        owner_id,
+        teacher_id,
+    }
+}
+
+fn course_request(context: &RuntimeContext) -> CreateLearningOfferingRequest {
+    CreateLearningOfferingRequest::Course(CreateCourseOfferingRequest {
+        academic_term_id: context.term_id,
+        subject_version_id: context.subject_version_id,
+        curriculum_course_requirement_id: None,
+        owning_organization_unit_id: context.owner_id,
+        targets: vec![OfferingTargetInput {
+            target_kind: OfferingTargetKind::Homeroom,
+            homeroom_id: Some(context.homeroom_id),
+            grade_level_id: context.grade_level_id,
+            study_program_id: context.study_program_id,
+        }],
+        grading_policy: CourseGradingPolicy {
+            policy_code: "school_default".to_string(),
+            passing_score: Some("50.00".to_string()),
+        },
+    })
+}
+
+#[test]
+fn create_offering_wire_contract_is_strictly_tagged_by_kind() {
+    let parsed = serde_json::from_value::<CreateLearningOfferingRequest>(serde_json::json!({
+        "kind": "course",
+        "academicTermId": Uuid::nil(),
+        "subjectVersionId": Uuid::nil(),
+        "owningOrganizationUnitId": Uuid::nil(),
+        "targets": [],
+        "gradingPolicy": { "policyCode": "school_default", "passingScore": "50.00" }
+    }))
+    .unwrap();
+    assert!(matches!(parsed, CreateLearningOfferingRequest::Course(_)));
+
+    let wrong_subtype =
+        serde_json::from_value::<CreateLearningOfferingRequest>(serde_json::json!({
+            "kind": "course",
+            "academicTermId": Uuid::nil(),
+            "activityVersionId": Uuid::nil(),
+            "owningOrganizationUnitId": Uuid::nil(),
+            "targets": [],
+            "gradingPolicy": { "policyCode": "school_default" }
+        }));
+    assert!(wrong_subtype.is_err());
+}
+
+#[tokio::test]
+async fn offering_group_and_roster_publish_are_revisioned_and_idempotent() {
+    let pool = prepare_delivery_runtime_fixture("academic_delivery_runtime_publish").await;
+    let context = planning_runtime_context(&pool).await;
+
+    let migrated_published_course_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM learning_offerings WHERE kind = 'course' AND status = 'published' \
+         AND migration_provenance <> '{}'::jsonb ORDER BY id LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let immutable_after_normalization = sqlx::query(
+        "UPDATE course_offering_details SET credit = credit + 1 \
+         WHERE learning_offering_id = $1",
+    )
+    .bind(migrated_published_course_id)
+    .execute(&pool)
+    .await
+    .expect_err("migration 044 must restore published snapshot immutability");
+    assert!(immutable_after_normalization
+        .to_string()
+        .contains("ACADEMIC_CORE_PUBLISHED_OFFERING_IMMUTABLE"));
+
+    let mut invalid_owner_request = course_request(&context);
+    let CreateLearningOfferingRequest::Course(course) = &mut invalid_owner_request else {
+        unreachable!();
+    };
+    course.owning_organization_unit_id = Uuid::new_v4();
+    let invalid_owner = offerings::create(&pool, context.teacher_id, invalid_owner_request).await;
+    assert!(matches!(invalid_owner, Err(AppError::ValidationError(_))));
+
+    let ineffective_subject_version_id: Uuid = sqlx::query_scalar(
+        r#"SELECT version.id
+           FROM subject_versions version
+           JOIN academic_terms term ON term.id = $1
+           WHERE version.status = 'published'
+             AND (term.start_date < version.effective_from
+                  OR (version.effective_until IS NOT NULL
+                      AND term.start_date >= version.effective_until))
+           ORDER BY version.id
+           LIMIT 1"#,
+    )
+    .bind(context.term_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let mut ineffective_version_request = course_request(&context);
+    let CreateLearningOfferingRequest::Course(course) = &mut ineffective_version_request else {
+        unreachable!();
+    };
+    course.subject_version_id = ineffective_subject_version_id;
+    let ineffective_version =
+        offerings::create(&pool, context.teacher_id, ineffective_version_request).await;
+    assert!(matches!(
+        ineffective_version,
+        Err(AppError::ValidationError(_))
+    ));
+
+    let offering = offerings::create(&pool, context.teacher_id, course_request(&context))
+        .await
+        .unwrap();
+    assert_eq!(offering.kind, LearningOfferingKind::Course);
+    assert_eq!(offering.status, LearningOfferingStatus::Draft);
+    assert_eq!(offering.academic_year_id, context.year_id);
+
+    let group = groups::create(
+        &pool,
+        context.teacher_id,
+        offering.id,
+        CreateLearningGroupRequest {
+            code: "M1-A".to_string(),
+            name: "กลุ่มทดสอบ".to_string(),
+            description: None,
+            capacity: Some(40),
+            preferred_room_ids: Vec::new(),
+        },
+    )
+    .await
+    .unwrap();
+
+    let missing_primary_teacher = offerings::publish(
+        &pool,
+        context.teacher_id,
+        offering.id,
+        PublishLearningOfferingRequest {
+            row_version: offering.row_version,
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await;
+    assert!(matches!(
+        missing_primary_teacher,
+        Err(AppError::ValidationError(_))
+    ));
+
+    let duplicate = groups::create(
+        &pool,
+        context.teacher_id,
+        offering.id,
+        CreateLearningGroupRequest {
+            code: "m1-a".to_string(),
+            name: "กลุ่มซ้ำ".to_string(),
+            description: None,
+            capacity: None,
+            preferred_room_ids: Vec::new(),
+        },
+    )
+    .await;
+    assert!(matches!(duplicate, Err(AppError::Conflict(_))));
+
+    let duplicate_teacher = groups::replace_teachers(
+        &pool,
+        context.teacher_id,
+        group.id,
+        ReplaceLearningGroupTeachersRequest {
+            row_version: group.row_version,
+            teachers: vec![
+                TeacherAssignmentInput {
+                    teacher_id: context.teacher_id,
+                    role: LearningTeacherRole::Primary,
+                },
+                TeacherAssignmentInput {
+                    teacher_id: context.teacher_id,
+                    role: LearningTeacherRole::Secondary,
+                },
+            ],
+        },
+    )
+    .await;
+    assert!(matches!(
+        duplicate_teacher,
+        Err(AppError::ValidationError(_))
+    ));
+
+    let group = groups::replace_teachers(
+        &pool,
+        context.teacher_id,
+        group.id,
+        ReplaceLearningGroupTeachersRequest {
+            row_version: group.row_version,
+            teachers: vec![TeacherAssignmentInput {
+                teacher_id: context.teacher_id,
+                role: LearningTeacherRole::Primary,
+            }],
+        },
+    )
+    .await
+    .unwrap();
+
+    let wrong_year_homeroom_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM homerooms WHERE academic_year_id <> $1 ORDER BY id LIMIT 1",
+    )
+    .bind(context.year_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let wrong_year_homeroom = groups::replace_homerooms(
+        &pool,
+        context.teacher_id,
+        group.id,
+        ReplaceLearningGroupHomeroomsRequest {
+            row_version: group.row_version,
+            homeroom_ids: vec![wrong_year_homeroom_id],
+        },
+    )
+    .await;
+    assert!(matches!(
+        wrong_year_homeroom,
+        Err(AppError::ValidationError(_))
+    ));
+
+    let group = groups::replace_homerooms(
+        &pool,
+        context.teacher_id,
+        group.id,
+        ReplaceLearningGroupHomeroomsRequest {
+            row_version: group.row_version,
+            homeroom_ids: vec![context.homeroom_id],
+        },
+    )
+    .await
+    .unwrap();
+
+    let published = offerings::publish(
+        &pool,
+        context.teacher_id,
+        offering.id,
+        PublishLearningOfferingRequest {
+            row_version: offering.row_version,
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(published.status, LearningOfferingStatus::Published);
+
+    let group = groups::get(&pool, group.id).await.unwrap();
+    let preview = groups::preview_roster(&pool, group.id).await.unwrap();
+    assert!(!preview.source_hash.is_empty());
+    assert!(preview.added > 0);
+    let group = groups::apply_roster(
+        &pool,
+        context.teacher_id,
+        group.id,
+        ApplyRosterRequest {
+            row_version: group.row_version,
+            source_hash: preview.source_hash,
+            overrides: Vec::new(),
+        },
+    )
+    .await
+    .unwrap();
+
+    let stale_publish = groups::publish_roster(
+        &pool,
+        context.teacher_id,
+        group.id,
+        PublishRosterRequest {
+            row_version: group.row_version - 1,
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await;
+    assert!(matches!(stale_publish, Err(AppError::Conflict(_))));
+
+    let idempotency_key = Uuid::new_v4();
+    let published_group = groups::publish_roster(
+        &pool,
+        context.teacher_id,
+        group.id,
+        PublishRosterRequest {
+            row_version: group.row_version,
+            idempotency_key,
+        },
+    )
+    .await
+    .unwrap();
+    let retried = groups::publish_roster(
+        &pool,
+        context.teacher_id,
+        group.id,
+        PublishRosterRequest {
+            row_version: group.row_version,
+            idempotency_key,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(retried.id, published_group.id);
+    assert_eq!(retried.row_version, published_group.row_version);
+
+    let republished_with_new_key = groups::publish_roster(
+        &pool,
+        context.teacher_id,
+        group.id,
+        PublishRosterRequest {
+            row_version: published_group.row_version,
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await;
+    assert!(matches!(
+        republished_with_new_key,
+        Err(AppError::Conflict(_))
+    ));
+}
+
+#[tokio::test]
+async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes() {
+    let pool = prepare_delivery_runtime_fixture("academic_delivery_runtime_curriculum").await;
+    let context = planning_runtime_context(&pool).await;
+
+    let expired_program_id: Uuid = sqlx::query_scalar(
+        r#"SELECT program.id
+           FROM study_programs program
+           JOIN curriculum_versions version ON version.id = program.curriculum_version_id
+           JOIN academic_years ending_year ON ending_year.id = version.end_academic_year_id
+           JOIN academic_years selected_year ON selected_year.id = $1
+           WHERE ending_year.end_date < selected_year.start_date
+           ORDER BY program.id
+           LIMIT 1"#,
+    )
+    .bind(context.year_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let expired_program = offerings::preview_from_curriculum(
+        &pool,
+        PreviewCurriculumOfferingsRequest {
+            academic_term_id: context.term_id,
+            study_program_ids: vec![expired_program_id],
+        },
+    )
+    .await;
+    assert!(matches!(expired_program, Err(AppError::ValidationError(_))));
+
+    let preview = offerings::preview_from_curriculum(
+        &pool,
+        PreviewCurriculumOfferingsRequest {
+            academic_term_id: context.term_id,
+            study_program_ids: vec![context.study_program_id],
+        },
+    )
+    .await
+    .unwrap();
+    assert!(!preview.source_hash.is_empty());
+    assert!(!preview.items.is_empty());
+
+    let mismatched = offerings::apply_from_curriculum(
+        &pool,
+        context.teacher_id,
+        ApplyCurriculumOfferingsRequest {
+            academic_term_id: context.term_id,
+            study_program_ids: vec![context.study_program_id],
+            owning_organization_unit_id: context.owner_id,
+            source_hash: "stale-source-hash".to_string(),
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await;
+    assert!(matches!(mismatched, Err(AppError::Conflict(_))));
+
+    let idempotency_key = Uuid::new_v4();
+    let applied = offerings::apply_from_curriculum(
+        &pool,
+        context.teacher_id,
+        ApplyCurriculumOfferingsRequest {
+            academic_term_id: context.term_id,
+            study_program_ids: vec![context.study_program_id],
+            owning_organization_unit_id: context.owner_id,
+            source_hash: preview.source_hash.clone(),
+            idempotency_key,
+        },
+    )
+    .await
+    .unwrap();
+    let retried = offerings::apply_from_curriculum(
+        &pool,
+        context.teacher_id,
+        ApplyCurriculumOfferingsRequest {
+            academic_term_id: context.term_id,
+            study_program_ids: vec![context.study_program_id],
+            owning_organization_unit_id: context.owner_id,
+            source_hash: preview.source_hash,
+            idempotency_key,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(retried.offering_ids, applied.offering_ids);
+
+    let retained_preview = offerings::preview_from_curriculum(
+        &pool,
+        PreviewCurriculumOfferingsRequest {
+            academic_term_id: context.term_id,
+            study_program_ids: vec![context.study_program_id],
+        },
+    )
+    .await
+    .unwrap();
+    let retained = offerings::apply_from_curriculum(
+        &pool,
+        context.teacher_id,
+        ApplyCurriculumOfferingsRequest {
+            academic_term_id: context.term_id,
+            study_program_ids: vec![context.study_program_id],
+            owning_organization_unit_id: context.owner_id,
+            source_hash: retained_preview.source_hash,
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(retained.created_count, 0);
+    assert_eq!(retained.offering_ids, applied.offering_ids);
+
+    let closed_term_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM academic_terms WHERE status IN ('closed', 'cancelled') ORDER BY start_date LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let mut closed_request = course_request(&context);
+    let CreateLearningOfferingRequest::Course(request) = &mut closed_request else {
+        unreachable!();
+    };
+    request.academic_term_id = closed_term_id;
+    let closed = offerings::create(&pool, context.teacher_id, closed_request).await;
+    assert!(matches!(closed, Err(AppError::ValidationError(_))));
+}
+
+#[tokio::test]
+async fn self_registration_activity_uses_common_delivery_and_reads_migrated_pass_fail_result() {
+    let pool = prepare_delivery_runtime_fixture("academic_delivery_runtime_self_activity").await;
+    let context = planning_runtime_context(&pool).await;
+    let (activity_version_id, scheduling_mode): (Uuid, ActivitySchedulingMode) = sqlx::query_as(
+        r#"SELECT version.id, version.scheduling_mode
+           FROM activity_versions version
+           JOIN academic_terms term ON term.id = $1
+           WHERE version.status = 'published'
+             AND version.effective_from <= term.start_date
+             AND (version.effective_until IS NULL OR version.effective_until > term.start_date)
+           ORDER BY version.id
+           LIMIT 1"#,
+    )
+    .bind(context.term_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let offering = offerings::create(
+        &pool,
+        context.teacher_id,
+        CreateLearningOfferingRequest::Activity(CreateActivityOfferingRequest {
+            academic_term_id: context.term_id,
+            activity_version_id,
+            curriculum_activity_requirement_id: None,
+            owning_organization_unit_id: context.owner_id,
+            targets: vec![OfferingTargetInput {
+                target_kind: OfferingTargetKind::Homeroom,
+                homeroom_id: Some(context.homeroom_id),
+                grade_level_id: context.grade_level_id,
+                study_program_id: context.study_program_id,
+            }],
+            registration_type: ActivityRegistrationType::SelfRegistration,
+            scheduling_mode,
+            capacity: Some(1),
+            attendance_requirement: ActivityAttendanceRequirement {
+                minimum_percent: Some("80.00".to_string()),
+                required_sessions: None,
+            },
+            pass_criteria: ActivityPassCriteria {
+                require_attendance: true,
+                require_teacher_confirmation: true,
+                outcomes: vec!["pass".to_string(), "fail".to_string()],
+            },
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(offering.kind, LearningOfferingKind::Activity);
+
+    let group = groups::create(
+        &pool,
+        context.teacher_id,
+        offering.id,
+        CreateLearningGroupRequest {
+            code: "ACT-SELF".to_string(),
+            name: "กิจกรรมสมัครเอง".to_string(),
+            description: None,
+            capacity: Some(1),
+            preferred_room_ids: Vec::new(),
+        },
+    )
+    .await
+    .unwrap();
+    let group = groups::replace_teachers(
+        &pool,
+        context.teacher_id,
+        group.id,
+        ReplaceLearningGroupTeachersRequest {
+            row_version: group.row_version,
+            teachers: vec![TeacherAssignmentInput {
+                teacher_id: context.teacher_id,
+                role: LearningTeacherRole::Primary,
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    let group = groups::replace_homerooms(
+        &pool,
+        context.teacher_id,
+        group.id,
+        ReplaceLearningGroupHomeroomsRequest {
+            row_version: group.row_version,
+            homeroom_ids: vec![context.homeroom_id],
+        },
+    )
+    .await
+    .unwrap();
+    offerings::publish(
+        &pool,
+        context.teacher_id,
+        offering.id,
+        PublishLearningOfferingRequest {
+            row_version: offering.row_version,
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap();
+
+    let group = groups::get(&pool, group.id).await.unwrap();
+    let preview = groups::preview_roster(&pool, group.id).await.unwrap();
+    assert_eq!(preview.added, 0);
+    let student_academic_year_id: Uuid = sqlx::query_scalar(
+        r#"SELECT placement.student_academic_year_id
+           FROM homeroom_placements placement
+           WHERE placement.homeroom_id = $1
+             AND placement.status = 'current' AND placement.end_date IS NULL
+           ORDER BY placement.id
+           LIMIT 1"#,
+    )
+    .bind(context.homeroom_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let group = groups::apply_roster(
+        &pool,
+        context.teacher_id,
+        group.id,
+        ApplyRosterRequest {
+            row_version: group.row_version,
+            source_hash: preview.source_hash,
+            overrides: vec![RosterOverrideInput {
+                student_academic_year_id,
+                action: RosterOverrideAction::Add,
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    groups::publish_roster(
+        &pool,
+        context.teacher_id,
+        group.id,
+        PublishRosterRequest {
+            row_version: group.row_version,
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap();
+    let students = groups::list_students(&pool, group.id).await.unwrap();
+    assert_eq!(students.len(), 1);
+    assert_eq!(students[0].roster_source, "manual_add");
+
+    let (migrated_group_id, migrated_student_year_id): (Uuid, Uuid) = sqlx::query_as(
+        "SELECT learning_group_id, student_academic_year_id FROM learning_results \
+         WHERE kind = 'activity' ORDER BY id LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let migrated_result =
+        activities::get_result(&pool, migrated_group_id, migrated_student_year_id)
+            .await
+            .unwrap()
+            .unwrap();
+    assert!(matches!(
+        migrated_result.outcome.as_deref(),
+        Some("pass" | "fail")
+    ));
 }

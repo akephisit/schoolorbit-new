@@ -5893,3 +5893,174 @@ fn academic_core_registers_only_clean_replacement_routes() {
         );
     }
 }
+
+#[test]
+fn learning_delivery_handlers_are_thin_policy_owned_and_signal_after_mutation() {
+    let handlers = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/delivery/handlers.rs"),
+    ));
+
+    assert!(handlers.contains("actor_tenant_context_from_session(&state, &session).await?"));
+    assert!(!handlers.contains("sqlx::query"));
+    assert!(!handlers.contains(".fetch_"));
+    assert!(!handlers.contains(".execute("));
+    assert!(!handlers.contains(".begin("));
+
+    for (handler_name, action) in [
+        ("list_offerings", "OfferingAction::Read"),
+        ("create_offering", "OfferingAction::Manage"),
+        (
+            "preview_offerings_from_curriculum",
+            "OfferingAction::Manage",
+        ),
+        ("apply_offerings_from_curriculum", "OfferingAction::Manage"),
+    ] {
+        let handler =
+            extract_braced_block(&handlers, &format!("pub async fn {handler_name}"), false);
+        assert!(handler.contains("require_learning_offering_list_access"));
+        assert!(handler.contains(action));
+    }
+
+    for (handler_name, action) in [
+        ("get_offering", "OfferingAction::Read"),
+        ("update_offering", "OfferingAction::Manage"),
+        ("publish_offering", "OfferingAction::Manage"),
+        ("list_groups", "OfferingAction::Read"),
+        ("create_group", "OfferingAction::Manage"),
+    ] {
+        let handler =
+            extract_braced_block(&handlers, &format!("pub async fn {handler_name}"), false);
+        assert!(handler.contains("require_learning_offering_access"));
+        assert!(handler.contains(action));
+    }
+
+    for (handler_name, action) in [
+        ("get_group", "OfferingAction::Read"),
+        ("update_group", "OfferingAction::Manage"),
+        ("list_group_homerooms", "OfferingAction::Read"),
+        ("replace_group_homerooms", "OfferingAction::Manage"),
+        ("list_group_teachers", "OfferingAction::Read"),
+        ("replace_group_teachers", "OfferingAction::Manage"),
+        ("preview_group_roster", "OfferingAction::Manage"),
+        ("apply_group_roster", "OfferingAction::Manage"),
+        ("publish_group_roster", "OfferingAction::Manage"),
+    ] {
+        let handler =
+            extract_braced_block(&handlers, &format!("pub async fn {handler_name}"), false);
+        assert!(handler.contains("require_learning_group_access"));
+        assert!(handler.contains(action));
+    }
+
+    for handler_name in [
+        "create_offering",
+        "apply_offerings_from_curriculum",
+        "update_offering",
+        "publish_offering",
+        "create_group",
+        "update_group",
+        "replace_group_homerooms",
+        "replace_group_teachers",
+        "apply_group_roster",
+        "publish_group_roster",
+    ] {
+        let handler =
+            extract_braced_block(&handlers, &format!("pub async fn {handler_name}"), false);
+        assert!(
+            handler.contains("signal_delivery_changed") || handler.contains("signal_group_changed"),
+            "{handler_name} must emit a bounded delivery invalidation after success"
+        );
+    }
+}
+
+#[test]
+fn learning_delivery_registers_the_canonical_offering_group_and_roster_routes() {
+    let routes = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/delivery.rs"),
+    ));
+    let aggregate_routes =
+        strip_comments(&read_source(manifest_dir().join("src/modules/academic.rs")));
+
+    for required in [
+        "\"/offerings\"",
+        "\"/offerings/preview-from-curriculum\"",
+        "\"/offerings/apply-from-curriculum\"",
+        "\"/offerings/{id}\"",
+        "\"/offerings/{id}/publish\"",
+        "\"/offerings/{id}/groups\"",
+        "\"/learning-groups/{id}\"",
+        "\"/learning-groups/{id}/homerooms\"",
+        "\"/learning-groups/{id}/teachers\"",
+        "\"/learning-groups/{id}/roster\"",
+        "\"/learning-groups/{id}/roster/publish\"",
+    ] {
+        assert!(
+            routes.contains(required),
+            "missing delivery route: {required}"
+        );
+    }
+    assert!(aggregate_routes.contains("delivery::routes()"));
+}
+
+#[test]
+fn learning_delivery_contract_is_strictly_tagged_idempotent_and_pii_safe() {
+    let models = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/delivery/models.rs"),
+    ));
+    let websockets = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/websockets.rs"),
+    ));
+    let signal = extract_braced_block(&websockets, "LearningDeliveryChanged", false);
+
+    assert!(models.contains("#[serde(tag = \"kind\", rename_all = \"snake_case\")]"));
+    assert!(models.contains("Course(CreateCourseOfferingRequest)"));
+    assert!(models.contains("Activity(CreateActivityOfferingRequest)"));
+    assert!(models.contains("pub struct PublishRosterRequest"));
+    assert!(models.contains("pub idempotency_key: Uuid"));
+
+    for required in [
+        "academic_term_id: Uuid",
+        "learning_offering_id: Uuid",
+        "learning_group_id: Option<Uuid>",
+        "revision: i64",
+    ] {
+        assert!(
+            signal.contains(required),
+            "delivery signal missing {required}"
+        );
+    }
+    for forbidden in ["student", "roster", "national_id", "email", "phone"] {
+        assert!(
+            !signal.contains(forbidden),
+            "delivery signal must not contain {forbidden}"
+        );
+    }
+}
+
+#[test]
+fn academic_runtime_contract_supports_delivery_idempotency_without_plaintext_pii() {
+    let migration = strip_comments(&read_source(
+        manifest_dir().join("migrations/044_academic_runtime_contract.sql"),
+    ));
+
+    for required in [
+        "learning_offerings_publish_idempotency_key",
+        "learning_offering_targets_grade_program_key",
+        "roster_source_hash CHAR(64)",
+        "learning_groups_roster_publish_idempotency_key",
+        "CREATE TABLE learning_delivery_apply_runs",
+        "request_hash CHAR(64)",
+        "source_hash CHAR(64)",
+        "legacyGradingPolicy",
+        "legacyAttendanceRequirement",
+        "'policyCode', 'legacy_migrated'",
+        "'requireTeacherConfirmation', true",
+    ] {
+        assert!(
+            migration.contains(required),
+            "delivery invariant missing: {required}"
+        );
+    }
+    for forbidden in ["national_id", "student_name", "email", "phone"] {
+        assert!(!migration.contains(forbidden));
+    }
+}

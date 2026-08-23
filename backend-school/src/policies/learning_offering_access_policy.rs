@@ -95,6 +95,65 @@ pub async fn learning_offering_access(
     ))
 }
 
+pub async fn require_learning_offering_list_access(
+    pool: &PgPool,
+    actor: &ActorContext,
+    action: OfferingAction,
+) -> Result<AcademicResourceListFilter, AppError> {
+    let filter = learning_offering_list_access(pool, actor, action).await?;
+    if !filter.includes_school_owned
+        && filter.organization_unit_ids.is_empty()
+        && filter.organization_tree_unit_ids.is_empty()
+        && filter.assigned_actor_id.is_none()
+    {
+        Err(AppError::Forbidden("ไม่มีสิทธิ์เข้าถึงรายการเปิดสอน".to_string()))
+    } else {
+        Ok(filter)
+    }
+}
+
+pub async fn require_learning_offering_access(
+    pool: &PgPool,
+    actor: &ActorContext,
+    offering_id: Uuid,
+    action: OfferingAction,
+) -> Result<(), AppError> {
+    if learning_offering_access(pool, actor, offering_id, action).await?
+        == AcademicResourceAccess::None
+    {
+        Err(AppError::Forbidden("ไม่มีสิทธิ์เข้าถึงรายการเปิดสอนนี้".to_string()))
+    } else {
+        Ok(())
+    }
+}
+
+pub async fn require_learning_group_access(
+    pool: &PgPool,
+    actor: &ActorContext,
+    learning_group_id: Uuid,
+    action: OfferingAction,
+) -> Result<Uuid, AppError> {
+    let offering_id: Uuid =
+        sqlx::query_scalar("SELECT learning_offering_id FROM learning_groups WHERE id = $1")
+            .bind(learning_group_id)
+            .fetch_optional(pool)
+            .await?
+            .ok_or_else(|| AppError::NotFound("ไม่พบกลุ่มเรียน".to_string()))?;
+    require_learning_offering_access(pool, actor, offering_id, action).await?;
+    Ok(offering_id)
+}
+
+pub fn learning_offering_owner_allowed(
+    filter: &AcademicResourceListFilter,
+    owning_organization_unit_id: Uuid,
+) -> bool {
+    resource_access_policy::academic_resource_access_for(
+        filter,
+        Some(owning_organization_unit_id),
+        false,
+    ) != AcademicResourceAccess::None
+}
+
 fn offering_permissions(action: OfferingAction) -> AcademicResourcePermissions {
     match action {
         OfferingAction::Read => AcademicResourcePermissions {
@@ -118,6 +177,8 @@ mod tests {
     use crate::modules::academic::cutover_test_support::{
         apply_migrations_through, seed_academic_cutover_fixture, CutoverFixture,
     };
+    use crate::modules::academic::delivery::models::LearningOfferingQuery;
+    use crate::modules::academic::delivery::services::offerings;
     use crate::permissions::registry::codes;
     use crate::test_helpers::create_named_test_pool;
 
@@ -178,7 +239,7 @@ mod tests {
         .await
         .unwrap();
 
-        apply_migrations_through(&pool, 43).await.unwrap();
+        apply_migrations_through(&pool, 44).await.unwrap();
 
         sqlx::raw_sql(
             r#"
@@ -312,6 +373,55 @@ mod tests {
             .organization_tree_unit_ids
             .contains(&Uuid::parse_str(CHILD_UNIT_ID).unwrap()));
         assert!(!union_filter.includes_school_owned);
+        assert!(learning_offering_owner_allowed(
+            &union_filter,
+            Uuid::parse_str(ROOT_UNIT_ID).unwrap()
+        ));
+        assert!(learning_offering_owner_allowed(
+            &union_filter,
+            Uuid::parse_str(CHILD_UNIT_ID).unwrap()
+        ));
+        assert!(!learning_offering_owner_allowed(
+            &union_filter,
+            Uuid::new_v4()
+        ));
+
+        let assigned_filter =
+            require_learning_offering_list_access(&pool, &assigned_reader, OfferingAction::Read)
+                .await
+                .unwrap();
+        let assigned_term_id: Uuid =
+            sqlx::query_scalar("SELECT academic_term_id FROM learning_offerings WHERE id = $1")
+                .bind(assigned_offering_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let assigned_values = offerings::list(
+            &pool,
+            LearningOfferingQuery {
+                academic_term_id: assigned_term_id,
+            },
+            &assigned_filter,
+        )
+        .await
+        .unwrap();
+        assert!(assigned_values
+            .iter()
+            .any(|offering| offering.id == assigned_offering_id));
+
+        let denied = actor(&[]);
+        assert!(matches!(
+            require_learning_offering_list_access(&pool, &denied, OfferingAction::Read).await,
+            Err(AppError::Forbidden(_))
+        ));
+        assert!(require_learning_offering_access(
+            &pool,
+            &assigned_manager,
+            assigned_offering_id,
+            OfferingAction::Manage,
+        )
+        .await
+        .is_ok());
 
         let school_reader = actor(&[codes::LEARNING_OFFERING_READ_SCHOOL]);
         assert_eq!(

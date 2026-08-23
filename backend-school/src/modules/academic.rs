@@ -5,7 +5,6 @@ pub mod cutover_preflight;
 mod cutover_preflight_database_tests;
 #[cfg(test)]
 pub mod cutover_test_support;
-#[cfg(test)]
 pub mod delivery;
 pub mod handlers;
 pub mod models;
@@ -18,7 +17,7 @@ use axum::routing::{delete, get, patch, post, put};
 use axum::Router;
 
 pub fn academic_routes() -> Router<AppState> {
-    core::routes().merge(
+    core::routes().merge(delivery::routes()).merge(
         Router::new()
             // Course Planning
             .route(
