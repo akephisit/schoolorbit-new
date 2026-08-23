@@ -5,8 +5,9 @@ use crate::error::AppError;
 use crate::modules::facility::models::Room;
 
 use super::models::{
-    AcademicYearLookupItem, ClassroomLookupItem, GradeLevelLookupItem, LookupItem, LookupQuery,
-    OrganizationUnitLookupItem, RoleLookupItem, StaffLookupItem, StudentLookupItem,
+    AcademicLookupQuery, AcademicYearLookupItem, GradeLevelLookupItem, HomeroomLookupItem,
+    LookupItem, LookupQuery, OrganizationUnitLookupItem, RoleLookupItem, StaffLookupItem,
+    StudentLookupItem,
 };
 
 #[derive(Debug, FromRow)]
@@ -48,7 +49,7 @@ struct GradeLevelRow {
 }
 
 #[derive(Debug, FromRow)]
-struct ClassroomRow {
+struct HomeroomRow {
     id: Uuid,
     name: String,
     level_type: Option<String>,
@@ -61,7 +62,7 @@ struct AcademicYearRow {
     id: Uuid,
     name: String,
     year: i32,
-    is_active: bool,
+    status: crate::modules::academic::core::models::AcademicYearStatus,
 }
 
 #[derive(Debug, FromRow)]
@@ -71,7 +72,7 @@ struct StudentWithInfoRow {
     first_name: String,
     last_name: String,
     student_id: Option<String>,
-    class_room: Option<String>,
+    homeroom: Option<String>,
 }
 
 #[derive(Debug, FromRow)]
@@ -271,36 +272,18 @@ pub async fn lookup_organization_unit_by_id(
 
 pub async fn lookup_grade_levels(
     pool: &PgPool,
-    query: LookupQuery,
+    query: AcademicLookupQuery,
 ) -> Result<Vec<GradeLevelLookupItem>, AppError> {
     let limit = lookup_limit(query.limit);
     let search = query.search.clone();
-    let mut target_year_id = query.academic_year_id;
-
-    if target_year_id.is_none() && query.current_year.unwrap_or(true) {
-        target_year_id =
-            sqlx::query_scalar("SELECT id FROM academic_years WHERE is_active = true LIMIT 1")
-                .fetch_optional(pool)
-                .await
-                .map_err(|e| {
-                    tracing::error!("Database error: {}", e);
-                    AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-                })?;
-    }
-
-    let mut param_idx: i32 = 1;
-    let mut bind_year_id: Option<Uuid> = None;
+    let param_idx: i32 = 2;
     let mut bind_level_type: Option<String> = None;
-    let mut sql = String::from("SELECT gl.id, gl.level_type, gl.year FROM grade_levels gl");
-
-    if let Some(year_id) = target_year_id {
-        sql.push_str(" JOIN academic_year_grade_levels aygl ON gl.id = aygl.grade_level_id");
-        sql.push_str(&format!(" WHERE aygl.academic_year_id = ${}", param_idx));
-        bind_year_id = Some(year_id);
-        param_idx += 1;
-    } else {
-        sql.push_str(" WHERE 1=1");
-    }
+    let mut sql = String::from(
+        "SELECT gl.id, gl.level_type, gl.year
+         FROM grade_levels gl
+         JOIN academic_year_grade_levels aygl ON gl.id = aygl.grade_level_id
+         WHERE aygl.academic_year_id = $1",
+    );
 
     if query.active_only.unwrap_or(true) {
         sql.push_str(" AND gl.is_active = true");
@@ -320,10 +303,7 @@ pub async fn lookup_grade_levels(
          END, gl.year ASC LIMIT 500",
     );
 
-    let mut query_builder = sqlx::query_as::<_, GradeLevelRow>(&sql);
-    if let Some(year_id) = bind_year_id {
-        query_builder = query_builder.bind(year_id);
-    }
+    let mut query_builder = sqlx::query_as::<_, GradeLevelRow>(&sql).bind(query.academic_year_id);
     if let Some(ref level_type) = bind_level_type {
         query_builder = query_builder.bind(level_type);
     }
@@ -346,32 +326,31 @@ pub async fn lookup_grade_levels(
     }
 }
 
-pub async fn lookup_classrooms(
+pub async fn lookup_homerooms(
     pool: &PgPool,
-    query: LookupQuery,
-) -> Result<Vec<ClassroomLookupItem>, AppError> {
+    query: AcademicLookupQuery,
+) -> Result<Vec<HomeroomLookupItem>, AppError> {
     let limit = lookup_limit(query.limit);
 
     let mut sql = String::from(
-        "SELECT c.id, c.name, g.level_type, g.year, c.grade_level_id
-         FROM class_rooms c
-         LEFT JOIN grade_levels g ON c.grade_level_id = g.id
-         LEFT JOIN academic_years ay ON c.academic_year_id = ay.id
-         WHERE 1=1",
+        "SELECT h.id, h.name, g.level_type, g.year, h.grade_level_id
+         FROM homerooms h
+         LEFT JOIN grade_levels g ON h.grade_level_id = g.id
+         WHERE h.academic_year_id = $1",
     );
 
     if query.active_only.unwrap_or(true) {
-        sql.push_str(" AND ay.is_active = true");
+        sql.push_str(" AND h.is_active = true");
     }
 
     let search_pattern = search_pattern(query.search.clone());
     if search_pattern.is_some() {
-        sql.push_str(" AND c.name ILIKE $1");
+        sql.push_str(" AND h.name ILIKE $2");
     }
 
-    sql.push_str(&format!(" ORDER BY g.year, c.name LIMIT {}", limit));
+    sql.push_str(&format!(" ORDER BY g.year, h.name LIMIT {}", limit));
 
-    let mut query_builder = sqlx::query_as::<_, ClassroomRow>(&sql);
+    let mut query_builder = sqlx::query_as::<_, HomeroomRow>(&sql).bind(query.academic_year_id);
     if let Some(ref pattern) = search_pattern {
         query_builder = query_builder.bind(pattern);
     }
@@ -383,10 +362,10 @@ pub async fn lookup_classrooms(
 
     Ok(rows
         .into_iter()
-        .map(|row| ClassroomLookupItem {
+        .map(|row| HomeroomLookupItem {
             id: row.id,
             name: row.name,
-            grade_level: classroom_grade_level_label(row.level_type.as_deref(), row.year),
+            grade_level: homeroom_grade_level_label(row.level_type.as_deref(), row.year),
             grade_level_id: row.grade_level_id,
         })
         .collect())
@@ -399,10 +378,10 @@ pub async fn lookup_academic_years(
     let limit = lookup_limit(query.limit);
     let active_only = query.active_only.unwrap_or(true);
 
-    let mut sql = String::from("SELECT id, name, year, is_active FROM academic_years WHERE 1=1");
+    let mut sql = String::from("SELECT id, name, year, status FROM academic_years WHERE 1=1");
 
     if active_only {
-        sql.push_str(" AND is_active = true");
+        sql.push_str(" AND status <> 'archived'");
     }
 
     let search_pattern = search_pattern(query.search.clone());
@@ -411,7 +390,7 @@ pub async fn lookup_academic_years(
     }
 
     sql.push_str(&format!(
-        " ORDER BY is_active DESC, year DESC LIMIT {}",
+        " ORDER BY (status = 'active') DESC, year DESC LIMIT {}",
         limit
     ));
 
@@ -431,14 +410,14 @@ pub async fn lookup_academic_years(
             id: row.id,
             name: row.name,
             year: row.year,
-            is_current: row.is_active,
+            status: row.status,
         })
         .collect())
 }
 
 pub async fn lookup_students(
     pool: &PgPool,
-    query: LookupQuery,
+    query: AcademicLookupQuery,
 ) -> Result<Vec<StudentLookupItem>, AppError> {
     let limit = lookup_limit(query.limit);
     let active_only = query.active_only.unwrap_or(true);
@@ -446,11 +425,22 @@ pub async fn lookup_students(
     let mut sql = String::from(
         "SELECT u.id, u.title, u.first_name, u.last_name,
                 si.student_id,
-                c.name as class_room
+                h.name as homeroom
          FROM users u
+         JOIN student_academic_years sy
+           ON sy.student_id = u.id
+          AND sy.academic_year_id = $1
          LEFT JOIN student_info si ON u.id = si.user_id
-         LEFT JOIN student_class_enrollments e ON u.id = e.student_id AND e.status = 'active'
-         LEFT JOIN class_rooms c ON e.class_room_id = c.id
+         LEFT JOIN LATERAL (
+             SELECT placement.homeroom_id
+             FROM homeroom_placements placement
+             WHERE placement.student_academic_year_id = sy.id
+               AND placement.academic_year_id = sy.academic_year_id
+               AND placement.status IN ('current', 'planned')
+             ORDER BY (placement.status = 'current') DESC, placement.start_date DESC
+             LIMIT 1
+         ) placement ON true
+         LEFT JOIN homerooms h ON h.id = placement.homeroom_id
          WHERE u.user_type = 'student'",
     );
 
@@ -461,7 +451,7 @@ pub async fn lookup_students(
     let search_pattern = search_pattern(query.search.clone());
     if search_pattern.is_some() {
         sql.push_str(
-            " AND (u.first_name ILIKE $1 OR u.last_name ILIKE $1 OR u.username ILIKE $1 OR si.student_id ILIKE $1)",
+            " AND (u.first_name ILIKE $2 OR u.last_name ILIKE $2 OR u.username ILIKE $2 OR si.student_id ILIKE $2)",
         );
     }
 
@@ -470,7 +460,8 @@ pub async fn lookup_students(
         limit
     ));
 
-    let mut query_builder = sqlx::query_as::<_, StudentWithInfoRow>(&sql);
+    let mut query_builder =
+        sqlx::query_as::<_, StudentWithInfoRow>(&sql).bind(query.academic_year_id);
     if let Some(ref pattern) = search_pattern {
         query_builder = query_builder.bind(pattern);
     }
@@ -487,7 +478,7 @@ pub async fn lookup_students(
             name: format!("{} {}", row.first_name, row.last_name),
             title: row.title,
             student_id: row.student_id,
-            class_room: row.class_room,
+            homeroom: row.homeroom,
         })
         .collect())
 }
@@ -514,23 +505,37 @@ pub async fn lookup_rooms(pool: &PgPool) -> Result<Vec<Room>, AppError> {
 
 pub async fn lookup_subjects(
     pool: &PgPool,
-    query: LookupQuery,
+    query: AcademicLookupQuery,
 ) -> Result<Vec<LookupItem>, AppError> {
     let limit = lookup_limit(query.limit);
     let active_only = query.active_only.unwrap_or(true);
 
     let mut sql = String::from(
-        "SELECT id, code, name_th,
-                (SELECT array_agg(grade_level_id) FROM subject_grade_levels WHERE subject_id = subjects.id) as grade_level_ids
-         FROM subjects
-         WHERE 1=1",
+        "SELECT subject.id, subject.code, version.name_th,
+                (SELECT array_agg(mapping.grade_level_id)
+                 FROM subject_version_grade_levels mapping
+                 WHERE mapping.subject_id = version.id) AS grade_level_ids
+         FROM subjects subject
+         JOIN academic_years year ON year.id = $1
+         JOIN LATERAL (
+             SELECT candidate.*
+             FROM subject_versions candidate
+             WHERE candidate.subject_id = subject.id
+               AND candidate.effective_from <= year.end_date
+               AND (candidate.effective_until IS NULL OR candidate.effective_until > year.start_date)",
     );
 
     if active_only {
-        sql.push_str(" AND is_active = true");
+        sql.push_str(" AND candidate.status = 'published'");
     }
+    sql.push_str(
+        " ORDER BY candidate.effective_from DESC, candidate.version_no DESC
+          LIMIT 1
+         ) version ON true
+         WHERE 1=1",
+    );
 
-    let mut param_idx: i32 = 1;
+    let mut param_idx: i32 = 2;
     let mut bind_subject_type: Option<String> = None;
     let mut bind_search: Option<String> = None;
 
@@ -550,7 +555,7 @@ pub async fn lookup_subjects(
 
     sql.push_str(&format!(" ORDER BY code, name_th LIMIT {}", limit));
 
-    let mut query_builder = sqlx::query_as::<_, SubjectRow>(&sql);
+    let mut query_builder = sqlx::query_as::<_, SubjectRow>(&sql).bind(query.academic_year_id);
     if let Some(ref subject_type) = bind_subject_type {
         query_builder = query_builder.bind(subject_type);
     }
@@ -640,7 +645,7 @@ fn grade_level_lookup_item(row: GradeLevelRow) -> GradeLevelLookupItem {
     }
 }
 
-fn classroom_grade_level_label(level_type: Option<&str>, year: Option<i32>) -> Option<String> {
+fn homeroom_grade_level_label(level_type: Option<&str>, year: Option<i32>) -> Option<String> {
     match (level_type, year) {
         (Some("kindergarten"), Some(year)) => Some(format!("อ.{}", year)),
         (Some("primary"), Some(year)) => Some(format!("ป.{}", year)),
@@ -652,6 +657,23 @@ fn classroom_grade_level_label(level_type: Option<&str>, year: Option<i32>) -> O
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        modules::academic::cutover_test_support::{
+            apply_migrations_through, seed_academic_cutover_fixture, CutoverFixture,
+        },
+        test_helpers::create_named_test_pool,
+    };
+
+    fn academic_query(academic_year_id: Uuid) -> AcademicLookupQuery {
+        AcademicLookupQuery {
+            academic_year_id,
+            active_only: Some(true),
+            search: None,
+            limit: Some(100),
+            level_type: None,
+            subject_type: None,
+        }
+    }
 
     #[test]
     fn lookup_limit_defaults_to_one_hundred_and_caps_at_five_hundred() {
@@ -684,13 +706,57 @@ mod tests {
         assert_eq!(item.level_order, 304);
     }
 
+    #[tokio::test]
+    async fn academic_lookups_read_only_the_caller_selected_canonical_year() {
+        let pool = create_named_test_pool("canonical_academic_lookups").await;
+        apply_migrations_through(&pool, 40).await.unwrap();
+        seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
+            .await
+            .unwrap();
+        apply_migrations_through(&pool, 44).await.unwrap();
+        let academic_year_id: Uuid =
+            sqlx::query_scalar("SELECT id FROM academic_years WHERE status = 'active'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        sqlx::query(
+            "INSERT INTO academic_year_grade_levels (academic_year_id, grade_level_id)
+             SELECT DISTINCT academic_year_id, grade_level_id
+             FROM homerooms
+             WHERE academic_year_id = $1
+             ON CONFLICT DO NOTHING",
+        )
+        .bind(academic_year_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let grade_levels = lookup_grade_levels(&pool, academic_query(academic_year_id))
+            .await
+            .unwrap();
+        let homerooms = lookup_homerooms(&pool, academic_query(academic_year_id))
+            .await
+            .unwrap();
+        let students = lookup_students(&pool, academic_query(academic_year_id))
+            .await
+            .unwrap();
+        let subjects = lookup_subjects(&pool, academic_query(academic_year_id))
+            .await
+            .unwrap();
+
+        assert!(!grade_levels.is_empty());
+        assert!(!homerooms.is_empty());
+        assert!(students.iter().any(|student| student.homeroom.is_some()));
+        assert!(!subjects.is_empty());
+    }
+
     #[test]
     fn classroom_grade_level_label_returns_none_for_missing_level_data() {
         assert_eq!(
-            classroom_grade_level_label(Some("primary"), Some(6)),
+            homeroom_grade_level_label(Some("primary"), Some(6)),
             Some("ป.6".to_string())
         );
-        assert_eq!(classroom_grade_level_label(None, Some(6)), None);
-        assert_eq!(classroom_grade_level_label(Some("primary"), None), None);
+        assert_eq!(homeroom_grade_level_label(None, Some(6)), None);
+        assert_eq!(homeroom_grade_level_label(Some("primary"), None), None);
     }
 }

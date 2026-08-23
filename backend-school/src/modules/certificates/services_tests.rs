@@ -14,6 +14,9 @@ use uuid::Uuid;
 use crate::{
     error::AppError,
     middleware::permission::ActorContext,
+    modules::academic::cutover_test_support::{
+        apply_migrations_through, seed_academic_cutover_fixture, CutoverFixture,
+    },
     modules::certificates::{
         models::{
             AttachCertificateAssetRequest, AttachCertificateBackgroundRequest,
@@ -54,7 +57,6 @@ use crate::{
     },
     test_helpers::{
         create_named_test_pool, create_named_test_pool_with_max_connections, create_test_user,
-        run_test_migrations,
     },
 };
 
@@ -2418,7 +2420,7 @@ async fn used_template_updates_report_missing_values_and_delete_deactivates() {
 impl CertificatePolicyFixture {
     async fn new(test_name: &str) -> Self {
         let pool = create_named_test_pool(test_name).await;
-        run_test_migrations(&pool).await;
+        run_certificate_test_migrations(&pool).await;
         let actor_user_id = create_test_user(
             &pool,
             &format!("{test_name}-actor@example.invalid"),
@@ -3095,8 +3097,8 @@ async fn school_override_null_owner_and_list_scope_union_are_explicit() {
 async fn insert_academic_year(pool: &PgPool, year: i32) -> Uuid {
     sqlx::query_scalar(
         "INSERT INTO academic_years
-            (year, name, start_date, end_date, is_active)
-         VALUES ($1, $2, $3, $4, false)
+            (year, name, start_date, end_date, status)
+         VALUES ($1, $2, $3, $4, 'planning')
          RETURNING id",
     )
     .bind(year)
@@ -3106,6 +3108,21 @@ async fn insert_academic_year(pool: &PgPool, year: i32) -> Uuid {
     .fetch_one(pool)
     .await
     .expect("academic year fixture should insert")
+}
+
+async fn run_certificate_test_migrations(pool: &PgPool) {
+    apply_migrations_through(pool, 40)
+        .await
+        .expect("apply pre-cutover certificate migrations");
+    seed_academic_cutover_fixture(pool, CutoverFixture::Passing)
+        .await
+        .expect("seed certificate cutover fixture");
+    apply_migrations_through(pool, 44)
+        .await
+        .expect("apply certificate academic cutover migrations");
+    crate::utils::permission_sync::sync_permissions(pool)
+        .await
+        .expect("sync certificate fixture permissions");
 }
 
 async fn add_exact_grant(pool: &PgPool, unit_id: Uuid, permission_code: &str) {
@@ -3253,7 +3270,7 @@ async fn school_campaign_fixture_in_pool(
     test_name: &str,
     year: i32,
 ) -> (PgPool, ActorContext, Uuid) {
-    run_test_migrations(&pool).await;
+    run_certificate_test_migrations(&pool).await;
     let user_id = create_test_user(
         &pool,
         &format!("{test_name}-school@example.invalid"),
@@ -4185,10 +4202,11 @@ async fn purge_rejects_admission_logo_and_question_bank_file_consumers() {
             .fetch_one(&pool)
             .await
             .unwrap();
-    let study_plan_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO study_plans (code, name_th)
-         VALUES ('PURGE-CONSUMER', 'แผนทดสอบผู้ใช้ไฟล์')
-         RETURNING id",
+    let study_program_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM study_programs
+         WHERE status = 'published'
+         ORDER BY is_default DESC, id
+         LIMIT 1",
     )
     .fetch_one(&pool)
     .await
@@ -4205,12 +4223,15 @@ async fn purge_rejects_admission_logo_and_question_bank_file_consumers() {
     .await
     .unwrap();
     let admission_track_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO admission_tracks (admission_round_id, study_plan_id, name)
-         VALUES ($1, $2, 'แผนรับสมัครทดสอบ')
+        "INSERT INTO admission_tracks (
+             admission_round_id, academic_year_id, study_program_id, name
+         )
+         VALUES ($1, $2, $3, 'แผนรับสมัครทดสอบ')
          RETURNING id",
     )
     .bind(admission_round_id)
-    .bind(study_plan_id)
+    .bind(academic_year_id)
+    .bind(study_program_id)
     .fetch_one(&pool)
     .await
     .unwrap();
@@ -4260,15 +4281,10 @@ async fn purge_rejects_admission_logo_and_question_bank_file_consumers() {
         .await
         .unwrap();
 
-    let subject_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO subjects (code, name_th, type, start_academic_year_id)
-         VALUES ('PURGE-QB', 'รายวิชาทดสอบผู้ใช้ไฟล์', 'BASIC', $1)
-         RETURNING id",
-    )
-    .bind(academic_year_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let subject_id: Uuid = sqlx::query_scalar("SELECT id FROM subjects ORDER BY code, id LIMIT 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     let rich_content = serde_json::json!({
         "schemaVersion": 1,
         "document": {

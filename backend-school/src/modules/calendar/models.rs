@@ -4,7 +4,7 @@ use sqlx::FromRow;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CalendarAudienceType {
     All,
@@ -24,7 +24,7 @@ impl CalendarAudienceType {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CalendarVisibility {
     Public,
@@ -82,7 +82,7 @@ pub struct CalendarEventTarget {
     #[schema(required = true)]
     pub grade_level_id: Option<Uuid>,
     #[schema(required = true)]
-    pub class_room_id: Option<Uuid>,
+    pub homeroom_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -90,7 +90,7 @@ pub struct CalendarEventTarget {
 pub struct CalendarEventTargetInput {
     pub audience_type: CalendarAudienceType,
     pub grade_level_id: Option<Uuid>,
-    pub class_room_id: Option<Uuid>,
+    pub homeroom_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, FromRow, ToSchema)]
@@ -107,6 +107,9 @@ pub struct CalendarEventReminder {
 #[serde(rename_all = "camelCase")]
 pub struct CalendarEvent {
     pub id: Uuid,
+    pub academic_year_id: Uuid,
+    #[schema(required = true)]
+    pub academic_term_id: Option<Uuid>,
     #[schema(required = true)]
     pub category_id: Option<Uuid>,
     #[schema(required = true)]
@@ -141,6 +144,9 @@ pub struct CalendarEvent {
 #[serde(rename_all = "camelCase")]
 pub struct CalendarPublicEvent {
     pub id: Uuid,
+    pub academic_year_id: Uuid,
+    #[schema(required = true)]
+    pub academic_term_id: Option<Uuid>,
     #[schema(required = true)]
     pub category_id: Option<Uuid>,
     #[schema(required = true)]
@@ -169,6 +175,9 @@ pub struct CalendarPublicEvent {
 #[serde(rename_all = "camelCase")]
 pub struct CalendarViewerEvent {
     pub id: Uuid,
+    pub academic_year_id: Uuid,
+    #[schema(required = true)]
+    pub academic_term_id: Option<Uuid>,
     #[schema(required = true)]
     pub category_id: Option<Uuid>,
     #[schema(required = true)]
@@ -197,6 +206,8 @@ impl From<CalendarEvent> for CalendarViewerEvent {
     fn from(event: CalendarEvent) -> Self {
         Self {
             id: event.id,
+            academic_year_id: event.academic_year_id,
+            academic_term_id: event.academic_term_id,
             category_id: event.category_id,
             category_name: event.category_name,
             category_color: event.category_color,
@@ -220,6 +231,8 @@ impl From<CalendarEvent> for CalendarPublicEvent {
     fn from(event: CalendarEvent) -> Self {
         Self {
             id: event.id,
+            academic_year_id: event.academic_year_id,
+            academic_term_id: event.academic_term_id,
             category_id: event.category_id,
             category_name: event.category_name,
             category_color: event.category_color,
@@ -242,6 +255,8 @@ impl From<CalendarEvent> for CalendarPublicEvent {
 #[derive(Debug, Clone, FromRow)]
 pub struct CalendarEventRow {
     pub id: Uuid,
+    pub academic_year_id: Uuid,
+    pub academic_term_id: Option<Uuid>,
     pub category_id: Option<Uuid>,
     pub category_name: Option<String>,
     pub category_color: Option<String>,
@@ -260,14 +275,15 @@ pub struct CalendarEventRow {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CalendarEventQuery {
+    pub academic_year_id: Uuid,
+    pub academic_term_id: Option<Uuid>,
     pub from: Option<NaiveDate>,
     pub to: Option<NaiveDate>,
-    #[serde(alias = "category_id")]
     pub category_id: Option<Uuid>,
-    #[serde(alias = "tag_id")]
     pub tag_id: Option<Uuid>,
     pub audience: Option<CalendarAudienceType>,
     pub visibility: Option<CalendarVisibility>,
@@ -275,8 +291,10 @@ pub struct CalendarEventQuery {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpsertCalendarEventRequest {
+    pub academic_year_id: Uuid,
+    pub academic_term_id: Option<Uuid>,
     pub title: String,
     pub description: Option<String>,
     pub location: Option<String>,
@@ -300,31 +318,42 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn calendar_event_query_accepts_snake_case_category_id() {
+    fn calendar_event_query_accepts_camel_case_context_and_category() {
+        let academic_year_id = Uuid::new_v4();
         let category_id = Uuid::new_v4();
 
-        let query: CalendarEventQuery =
-            serde_json::from_value(json!({ "category_id": category_id.to_string() })).unwrap();
+        let query: CalendarEventQuery = serde_json::from_value(json!({
+            "academicYearId": academic_year_id.to_string(),
+            "categoryId": category_id.to_string()
+        }))
+        .unwrap();
 
+        assert_eq!(query.academic_year_id, academic_year_id);
         assert_eq!(query.category_id, Some(category_id));
     }
 
     #[test]
-    fn calendar_event_query_accepts_snake_case_tag_id() {
-        let tag_id = Uuid::new_v4();
+    fn calendar_event_query_rejects_legacy_snake_case_fields() {
+        let result = serde_json::from_value::<CalendarEventQuery>(json!({
+            "academicYearId": Uuid::new_v4().to_string(),
+            "tag_id": Uuid::new_v4().to_string()
+        }));
 
-        let query: CalendarEventQuery =
-            serde_json::from_value(json!({ "tag_id": tag_id.to_string() })).unwrap();
-
-        assert_eq!(query.tag_id, Some(tag_id));
+        assert!(result.is_err());
     }
 
     #[test]
     fn calendar_event_query_accepts_public_private_visibility_values() {
-        let public_query: CalendarEventQuery =
-            serde_json::from_value(json!({ "visibility": "public" })).unwrap();
-        let private_query: CalendarEventQuery =
-            serde_json::from_value(json!({ "visibility": "private" })).unwrap();
+        let public_query: CalendarEventQuery = serde_json::from_value(json!({
+            "academicYearId": Uuid::new_v4().to_string(),
+            "visibility": "public"
+        }))
+        .unwrap();
+        let private_query: CalendarEventQuery = serde_json::from_value(json!({
+            "academicYearId": Uuid::new_v4().to_string(),
+            "visibility": "private"
+        }))
+        .unwrap();
 
         assert_eq!(public_query.visibility, Some(CalendarVisibility::Public));
         assert_eq!(private_query.visibility, Some(CalendarVisibility::Private));
@@ -332,7 +361,10 @@ mod tests {
 
     #[test]
     fn calendar_event_query_rejects_unknown_visibility_value() {
-        let result = serde_json::from_value::<CalendarEventQuery>(json!({ "visibility": "all" }));
+        let result = serde_json::from_value::<CalendarEventQuery>(json!({
+            "academicYearId": Uuid::new_v4().to_string(),
+            "visibility": "all"
+        }));
 
         assert!(result.is_err());
     }
@@ -343,6 +375,8 @@ mod tests {
         let category_id_text = category_id.to_string();
         let event = CalendarPublicEvent {
             id: Uuid::new_v4(),
+            academic_year_id: Uuid::new_v4(),
+            academic_term_id: None,
             category_id: Some(category_id),
             category_name: Some("Activities".to_string()),
             category_color: Some("#2563eb".to_string()),
@@ -381,6 +415,8 @@ mod tests {
     fn viewer_event_serialization_excludes_management_fields() {
         let event = CalendarViewerEvent {
             id: Uuid::new_v4(),
+            academic_year_id: Uuid::new_v4(),
+            academic_term_id: None,
             category_id: None,
             category_name: Some("Exam".to_string()),
             category_color: Some("#2563eb".to_string()),

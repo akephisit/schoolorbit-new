@@ -112,7 +112,7 @@ fn validate_targets_accepts_student_grade_target() {
     let targets = vec![CalendarEventTargetInput {
         audience_type: CalendarAudienceType::Student,
         grade_level_id: Some(grade_level_id),
-        class_room_id: None,
+        homeroom_id: None,
     }];
 
     assert!(validate_targets(&targets).is_ok());
@@ -123,7 +123,7 @@ fn validate_targets_rejects_student_or_parent_with_grade_and_classroom_filter() 
     let targets = vec![CalendarEventTargetInput {
         audience_type: CalendarAudienceType::Parent,
         grade_level_id: Some(Uuid::new_v4()),
-        class_room_id: Some(Uuid::new_v4()),
+        homeroom_id: Some(Uuid::new_v4()),
     }];
 
     assert!(validate_targets(&targets).is_err());
@@ -134,12 +134,12 @@ fn validate_targets_rejects_all_with_grade_or_classroom_filter() {
     let grade_targets = vec![CalendarEventTargetInput {
         audience_type: CalendarAudienceType::All,
         grade_level_id: Some(Uuid::new_v4()),
-        class_room_id: None,
+        homeroom_id: None,
     }];
     let classroom_targets = vec![CalendarEventTargetInput {
         audience_type: CalendarAudienceType::All,
         grade_level_id: None,
-        class_room_id: Some(Uuid::new_v4()),
+        homeroom_id: Some(Uuid::new_v4()),
     }];
 
     assert!(validate_targets(&grade_targets).is_err());
@@ -181,12 +181,12 @@ fn validate_targets_rejects_duplicate_global_targets() {
         CalendarEventTargetInput {
             audience_type: CalendarAudienceType::Student,
             grade_level_id: None,
-            class_room_id: None,
+            homeroom_id: None,
         },
         CalendarEventTargetInput {
             audience_type: CalendarAudienceType::Student,
             grade_level_id: None,
-            class_room_id: None,
+            homeroom_id: None,
         },
     ];
 
@@ -200,12 +200,12 @@ fn validate_targets_rejects_duplicate_grade_targets() {
         CalendarEventTargetInput {
             audience_type: CalendarAudienceType::Parent,
             grade_level_id: Some(grade_level_id),
-            class_room_id: None,
+            homeroom_id: None,
         },
         CalendarEventTargetInput {
             audience_type: CalendarAudienceType::Parent,
             grade_level_id: Some(grade_level_id),
-            class_room_id: None,
+            homeroom_id: None,
         },
     ];
 
@@ -214,17 +214,17 @@ fn validate_targets_rejects_duplicate_grade_targets() {
 
 #[test]
 fn validate_targets_rejects_duplicate_classroom_targets() {
-    let class_room_id = Uuid::new_v4();
+    let homeroom_id = Uuid::new_v4();
     let targets = vec![
         CalendarEventTargetInput {
             audience_type: CalendarAudienceType::Student,
             grade_level_id: None,
-            class_room_id: Some(class_room_id),
+            homeroom_id: Some(homeroom_id),
         },
         CalendarEventTargetInput {
             audience_type: CalendarAudienceType::Student,
             grade_level_id: None,
-            class_room_id: Some(class_room_id),
+            homeroom_id: Some(homeroom_id),
         },
     ];
 
@@ -236,7 +236,7 @@ fn validate_targets_rejects_staff_with_classroom_filter() {
     let targets = vec![CalendarEventTargetInput {
         audience_type: CalendarAudienceType::Staff,
         grade_level_id: None,
-        class_room_id: Some(Uuid::new_v4()),
+        homeroom_id: Some(Uuid::new_v4()),
     }];
 
     assert!(validate_targets(&targets).is_err());
@@ -276,6 +276,8 @@ fn normalized_event_range_uses_complete_query_range() {
     let to = NaiveDate::from_ymd_opt(2026, 5, 6).unwrap();
     let today = NaiveDate::from_ymd_opt(2026, 7, 10).unwrap();
     let query = CalendarEventQuery {
+        academic_year_id: Uuid::new_v4(),
+        academic_term_id: None,
         from: Some(from),
         to: Some(to),
         category_id: None,
@@ -294,6 +296,8 @@ fn normalized_event_range_rejects_reversed_complete_query_range() {
     let to = NaiveDate::from_ymd_opt(2026, 5, 2).unwrap();
     let today = NaiveDate::from_ymd_opt(2026, 7, 10).unwrap();
     let query = CalendarEventQuery {
+        academic_year_id: Uuid::new_v4(),
+        academic_term_id: None,
         from: Some(from),
         to: Some(to),
         category_id: None,
@@ -313,6 +317,8 @@ fn normalized_event_range_rejects_reversed_complete_query_range() {
 fn normalized_event_range_defaults_to_current_month_when_bound_is_missing() {
     let today = NaiveDate::from_ymd_opt(2026, 2, 10).unwrap();
     let query = CalendarEventQuery {
+        academic_year_id: Uuid::new_v4(),
+        academic_term_id: None,
         from: Some(NaiveDate::from_ymd_opt(2026, 1, 5).unwrap()),
         to: None,
         category_id: None,
@@ -335,6 +341,8 @@ fn normalized_event_range_defaults_to_current_month_when_bound_is_missing() {
 fn normalized_event_range_handles_december_current_month() {
     let today = NaiveDate::from_ymd_opt(2026, 12, 15).unwrap();
     let query = CalendarEventQuery {
+        academic_year_id: Uuid::new_v4(),
+        academic_term_id: None,
         from: None,
         to: None,
         category_id: None,
@@ -480,6 +488,8 @@ fn calendar_event_for_notification(title: &str) -> CalendarEvent {
 
     CalendarEvent {
         id: Uuid::new_v4(),
+        academic_year_id: Uuid::new_v4(),
+        academic_term_id: None,
         category_id: None,
         category_name: None,
         category_color: None,

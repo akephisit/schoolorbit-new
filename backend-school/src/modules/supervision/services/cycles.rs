@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::error::AppError;
 use crate::modules::supervision::models::{
     CreateSupervisionCycleRequest, CreateSupervisionCycleTargetRequest, SupervisionCycle,
-    SupervisionCycleStatus, SupervisionCycleTarget, SupervisionTargetType,
+    SupervisionCycleQuery, SupervisionCycleStatus, SupervisionCycleTarget, SupervisionTargetType,
     UpdateSupervisionCycleRequest,
 };
 
@@ -16,9 +16,8 @@ use super::shared::{parse_cycle_status, parse_target_type};
 #[derive(Debug, sqlx::FromRow)]
 struct SupervisionCycleRow {
     id: Uuid,
-    academic_year: i32,
-    semester: String,
-    academic_semester_id: Option<Uuid>,
+    academic_year_id: Uuid,
+    academic_term_id: Option<Uuid>,
     title: String,
     description: Option<String>,
     template_id: Uuid,
@@ -44,16 +43,23 @@ pub(super) struct SupervisionCycleTargetRow {
     pub(super) updated_at: DateTime<Utc>,
 }
 
-pub async fn list_cycles(pool: &PgPool) -> Result<Vec<SupervisionCycle>, AppError> {
+pub async fn list_cycles(
+    pool: &PgPool,
+    query: SupervisionCycleQuery,
+) -> Result<Vec<SupervisionCycle>, AppError> {
     let rows = sqlx::query_as::<_, SupervisionCycleRow>(
         r#"
-        SELECT id, academic_year, semester, academic_semester_id, title, description,
+        SELECT id, academic_year_id, academic_term_id, title, description,
                template_id, booking_opens_at, booking_closes_at, starts_at, ends_at,
                status, created_by, created_at, updated_at
         FROM supervision_cycles
-        ORDER BY academic_year DESC, semester DESC, created_at DESC
+        WHERE academic_year_id = $1
+          AND ($2::uuid IS NULL OR academic_term_id = $2 OR academic_term_id IS NULL)
+        ORDER BY academic_term_id NULLS FIRST, created_at DESC
         "#,
     )
+    .bind(query.academic_year_id)
+    .bind(query.academic_term_id)
     .fetch_all(pool)
     .await
     .map_err(|error| {
@@ -70,7 +76,7 @@ pub async fn list_cycles(pool: &PgPool) -> Result<Vec<SupervisionCycle>, AppErro
 pub async fn get_cycle(pool: &PgPool, id: Uuid) -> Result<SupervisionCycle, AppError> {
     let row = sqlx::query_as::<_, SupervisionCycleRow>(
         r#"
-        SELECT id, academic_year, semester, academic_semester_id, title, description,
+        SELECT id, academic_year_id, academic_term_id, title, description,
                template_id, booking_opens_at, booking_closes_at, starts_at, ends_at,
                status, created_by, created_at, updated_at
         FROM supervision_cycles
@@ -102,6 +108,7 @@ pub async fn create_cycle(
         input.ends_at,
     )?;
     validate_cycle_targets(&input.targets)?;
+    validate_cycle_context(pool, input.academic_year_id, input.academic_term_id).await?;
 
     let mut tx = pool.begin().await.map_err(|error| {
         tracing::error!(
@@ -115,16 +122,15 @@ pub async fn create_cycle(
     let cycle_id: Uuid = sqlx::query_scalar(
         r#"
         INSERT INTO supervision_cycles (
-            academic_year, semester, academic_semester_id, title, description, template_id,
+            academic_year_id, academic_term_id, title, description, template_id,
             booking_opens_at, booking_closes_at, starts_at, ends_at, status, created_by
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         RETURNING id
         "#,
     )
-    .bind(input.academic_year)
-    .bind(&input.semester)
-    .bind(input.academic_semester_id)
+    .bind(input.academic_year_id)
+    .bind(input.academic_term_id)
     .bind(&input.title)
     .bind(&input.description)
     .bind(input.template_id)
@@ -160,9 +166,8 @@ pub async fn update_cycle(
     input: UpdateSupervisionCycleRequest,
 ) -> Result<SupervisionCycle, AppError> {
     let current = get_cycle(pool, id).await?;
-    let academic_year = input.academic_year.unwrap_or(current.academic_year);
-    let semester = input.semester.unwrap_or(current.semester);
-    let academic_semester_id = input.academic_semester_id.or(current.academic_semester_id);
+    let academic_year_id = input.academic_year_id.unwrap_or(current.academic_year_id);
+    let academic_term_id = input.academic_term_id.unwrap_or(current.academic_term_id);
     let title = input.title.unwrap_or(current.title);
     let description = input.description.or(current.description);
     let template_id = input.template_id.unwrap_or(current.template_id);
@@ -176,6 +181,7 @@ pub async fn update_cycle(
     if let Some(targets) = &input.targets {
         validate_cycle_targets(targets)?;
     }
+    validate_cycle_context(pool, academic_year_id, academic_term_id).await?;
 
     let mut tx = pool.begin().await.map_err(|error| {
         tracing::error!(
@@ -188,17 +194,16 @@ pub async fn update_cycle(
     sqlx::query(
         r#"
         UPDATE supervision_cycles
-        SET academic_year = $2, semester = $3, academic_semester_id = $4,
-            title = $5, description = $6, template_id = $7,
-            booking_opens_at = $8, booking_closes_at = $9,
-            starts_at = $10, ends_at = $11, status = $12
+        SET academic_year_id = $2, academic_term_id = $3,
+            title = $4, description = $5, template_id = $6,
+            booking_opens_at = $7, booking_closes_at = $8,
+            starts_at = $9, ends_at = $10, status = $11
         WHERE id = $1
         "#,
     )
     .bind(id)
-    .bind(academic_year)
-    .bind(&semester)
-    .bind(academic_semester_id)
+    .bind(academic_year_id)
+    .bind(academic_term_id)
     .bind(&title)
     .bind(&description)
     .bind(template_id)
@@ -258,6 +263,35 @@ fn validate_cycle_schedule(
     }
 
     Ok(())
+}
+
+async fn validate_cycle_context(
+    pool: &PgPool,
+    academic_year_id: Uuid,
+    academic_term_id: Option<Uuid>,
+) -> Result<(), AppError> {
+    let context_exists: bool = sqlx::query_scalar(
+        r#"SELECT CASE
+               WHEN $2::uuid IS NULL THEN EXISTS (
+                   SELECT 1 FROM academic_years WHERE id = $1
+               )
+               ELSE EXISTS (
+                   SELECT 1 FROM academic_terms
+                   WHERE id = $2 AND academic_year_id = $1
+               )
+           END"#,
+    )
+    .bind(academic_year_id)
+    .bind(academic_term_id)
+    .fetch_one(pool)
+    .await?;
+    if context_exists {
+        Ok(())
+    } else {
+        Err(AppError::ValidationError(
+            "ปีการศึกษาหรือภาคเรียนของรอบนิเทศไม่สัมพันธ์กัน".to_string(),
+        ))
+    }
 }
 
 fn validate_cycle_targets(targets: &[CreateSupervisionCycleTargetRequest]) -> Result<(), AppError> {
@@ -420,9 +454,8 @@ fn cycle_from_row_with_targets(
 ) -> Result<SupervisionCycle, AppError> {
     Ok(SupervisionCycle {
         id: row.id,
-        academic_year: row.academic_year,
-        semester: row.semester,
-        academic_semester_id: row.academic_semester_id,
+        academic_year_id: row.academic_year_id,
+        academic_term_id: row.academic_term_id,
         title: row.title,
         description: row.description,
         template_id: row.template_id,

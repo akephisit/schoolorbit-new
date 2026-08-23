@@ -44,7 +44,7 @@ pub async fn resolve_event_recipient_user_ids(
     let ids = sqlx::query_scalar::<_, Uuid>(
         r#"
         WITH targets AS (
-            SELECT audience_type, grade_level_id, class_room_id
+            SELECT audience_type, grade_level_id, homeroom_id, academic_year_id
             FROM calendar_event_targets
             WHERE event_id = $1
         )
@@ -72,46 +72,17 @@ pub async fn resolve_event_recipient_user_ids(
 
         SELECT users.id
         FROM users
-        WHERE users.status = 'active'
-          AND users.user_type = 'student'
-          AND EXISTS (
-              SELECT 1 FROM targets
-              WHERE targets.audience_type = 'student'
-                AND targets.grade_level_id IS NULL
-                AND targets.class_room_id IS NULL
-          )
-
-        UNION ALL
-
-        SELECT users.id
-        FROM users
-        JOIN student_class_enrollments enrollments
-          ON enrollments.student_id = users.id
-         AND enrollments.status = 'active'
-        JOIN class_rooms
-          ON class_rooms.id = enrollments.class_room_id
+        JOIN student_academic_years student_year ON student_year.student_id = users.id
+        LEFT JOIN homeroom_placements placement
+          ON placement.student_academic_year_id = student_year.id
+         AND placement.status IN ('planned', 'current')
         JOIN targets
           ON targets.audience_type = 'student'
+         AND targets.academic_year_id = student_year.academic_year_id
         WHERE users.status = 'active'
           AND users.user_type = 'student'
-          AND (targets.grade_level_id IS NOT NULL OR targets.class_room_id IS NOT NULL)
-          AND (targets.grade_level_id IS NULL OR class_rooms.grade_level_id = targets.grade_level_id)
-          AND (targets.class_room_id IS NULL OR enrollments.class_room_id = targets.class_room_id)
-
-        UNION ALL
-
-        SELECT parent_users.id
-        FROM users parent_users
-        JOIN student_parents
-          ON student_parents.parent_user_id = parent_users.id
-        WHERE parent_users.status = 'active'
-          AND parent_users.user_type = 'parent'
-          AND EXISTS (
-              SELECT 1 FROM targets
-              WHERE targets.audience_type = 'parent'
-                AND targets.grade_level_id IS NULL
-                AND targets.class_room_id IS NULL
-          )
+          AND (targets.grade_level_id IS NULL OR student_year.grade_level_id = targets.grade_level_id)
+          AND (targets.homeroom_id IS NULL OR placement.homeroom_id = targets.homeroom_id)
 
         UNION ALL
 
@@ -123,18 +94,18 @@ pub async fn resolve_event_recipient_user_ids(
           ON student_users.id = student_parents.student_user_id
          AND student_users.status = 'active'
          AND student_users.user_type = 'student'
-        JOIN student_class_enrollments enrollments
-          ON enrollments.student_id = student_users.id
-         AND enrollments.status = 'active'
-        JOIN class_rooms
-          ON class_rooms.id = enrollments.class_room_id
+        JOIN student_academic_years student_year
+          ON student_year.student_id = student_users.id
+        LEFT JOIN homeroom_placements placement
+          ON placement.student_academic_year_id = student_year.id
+         AND placement.status IN ('planned', 'current')
         JOIN targets
           ON targets.audience_type = 'parent'
+         AND targets.academic_year_id = student_year.academic_year_id
         WHERE parent_users.status = 'active'
           AND parent_users.user_type = 'parent'
-          AND (targets.grade_level_id IS NOT NULL OR targets.class_room_id IS NOT NULL)
-          AND (targets.grade_level_id IS NULL OR class_rooms.grade_level_id = targets.grade_level_id)
-          AND (targets.class_room_id IS NULL OR enrollments.class_room_id = targets.class_room_id)
+          AND (targets.grade_level_id IS NULL OR student_year.grade_level_id = targets.grade_level_id)
+          AND (targets.homeroom_id IS NULL OR placement.homeroom_id = targets.homeroom_id)
         "#,
     )
     .bind(event_id)

@@ -3,6 +3,7 @@ use crate::error::AppError;
 use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::modules::parents::models::ParentProfile;
 use crate::modules::parents::services as parent_service;
+use crate::modules::students::models::StudentAcademicYearQuery;
 use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 use axum::{
@@ -29,11 +30,14 @@ use uuid::Uuid;
 pub async fn get_own_parent_profile(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<StudentAcademicYearQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    let profile = parent_service::get_own_parent_profile(&pool, actor.user_id).await?;
+    let profile =
+        parent_service::get_own_parent_profile(&pool, actor.user_id, query.academic_year_id)
+            .await?;
 
     Ok((StatusCode::OK, Json(ApiResponse::ok(profile))))
 }
@@ -56,11 +60,14 @@ pub async fn get_child_profile(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(student_id): Path<Uuid>,
+    Query(query): Query<StudentAcademicYearQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    let student = parent_service::get_child_profile(&pool, actor.user_id, student_id).await?;
+    let student =
+        parent_service::get_child_profile(&pool, actor.user_id, student_id, query.academic_year_id)
+            .await?;
 
     Ok((StatusCode::OK, Json(ApiResponse::ok(student))))
 }

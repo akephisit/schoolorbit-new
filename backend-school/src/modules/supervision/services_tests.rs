@@ -1,8 +1,11 @@
 use super::models::*;
 use super::services;
 use crate::error::AppError;
-use crate::test_helpers::{create_test_pool, create_test_user, run_test_migrations};
-use chrono::{DateTime, Datelike, Duration, Utc};
+use crate::modules::academic::cutover_test_support::{
+    apply_migrations_through, seed_academic_cutover_fixture, CutoverFixture,
+};
+use crate::test_helpers::{create_named_test_pool, create_test_user};
+use chrono::{DateTime, Duration, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -13,12 +16,21 @@ struct SupervisionFixture {
     second_evaluator_id: Uuid,
     template: SupervisionTemplate,
     cycle: SupervisionCycle,
+    academic_term_id: Uuid,
     observed_at: DateTime<Utc>,
 }
 
-async fn migrated_pool() -> PgPool {
-    let pool = create_test_pool().await;
-    run_test_migrations(&pool).await;
+async fn migrated_pool(name: &str) -> PgPool {
+    let pool = create_named_test_pool(name).await;
+    apply_migrations_through(&pool, 40)
+        .await
+        .expect("legacy supervision fixture migrations should run");
+    seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
+        .await
+        .expect("academic cutover fixture should seed");
+    apply_migrations_through(&pool, 44)
+        .await
+        .expect("canonical supervision fixture migrations should run");
     pool
 }
 
@@ -110,12 +122,17 @@ async fn insert_fixture(pool: &PgPool) -> SupervisionFixture {
         .expect("supervision template should create");
     let now = Utc::now();
     let observed_at = now + Duration::hours(2);
+    let (academic_term_id, academic_year_id): (Uuid, Uuid) = sqlx::query_as(
+        "SELECT id, academic_year_id FROM academic_terms ORDER BY start_date, sequence_no LIMIT 1",
+    )
+    .fetch_one(pool)
+    .await
+    .expect("supervision fixture should have a canonical term");
     let cycle = services::create_cycle(
         pool,
         CreateSupervisionCycleRequest {
-            academic_year: now.year(),
-            semester: "1".to_string(),
-            academic_semester_id: None,
+            academic_year_id,
+            academic_term_id: None,
             title: "Characterization cycle".to_string(),
             description: Some("Preserves workflow and transaction behavior".to_string()),
             template_id: template.id,
@@ -151,6 +168,7 @@ async fn insert_fixture(pool: &PgPool) -> SupervisionFixture {
         second_evaluator_id,
         template,
         cycle,
+        academic_term_id,
         observed_at,
     }
 }
@@ -164,6 +182,7 @@ async fn request_observation(
         fixture.teacher_id,
         RequestSupervisionObservationRequest {
             cycle_id: fixture.cycle.id,
+            academic_term_id: fixture.academic_term_id,
             timetable_entry_id: None,
             observed_at: None,
             manual_lesson: Some(ManualLessonInput {
@@ -224,7 +243,7 @@ fn evaluation_responses(template: &SupervisionTemplate, score: f64) -> SaveEvalu
 
 #[tokio::test]
 async fn cycle_and_template_round_trip_preserves_targets_sections_items_and_steps() {
-    let pool = migrated_pool().await;
+    let pool = migrated_pool("supervision_round_trip").await;
     let fixture = insert_fixture(&pool).await;
 
     let cycle = services::get_cycle(&pool, fixture.cycle.id)
@@ -237,6 +256,30 @@ async fn cycle_and_template_round_trip_preserves_targets_sections_items_and_step
     assert_eq!(cycle.targets[0].priority, 10);
     assert_eq!(cycle.targets[1].target_type, SupervisionTargetType::School);
     assert_eq!(cycle.targets[1].required_observations, 1);
+
+    let year_cycles = services::list_cycles(
+        &pool,
+        SupervisionCycleQuery {
+            academic_year_id: cycle.academic_year_id,
+            academic_term_id: None,
+        },
+    )
+    .await
+    .expect("year view should list supervision cycles");
+    assert_eq!(year_cycles.len(), 1);
+    assert_eq!(year_cycles[0].id, cycle.id);
+
+    let term_cycles = services::list_cycles(
+        &pool,
+        SupervisionCycleQuery {
+            academic_year_id: cycle.academic_year_id,
+            academic_term_id: Some(fixture.academic_term_id),
+        },
+    )
+    .await
+    .expect("term view should include a whole-year supervision cycle");
+    assert_eq!(term_cycles.len(), 1);
+    assert_eq!(term_cycles[0].id, cycle.id);
 
     let template = services::get_template(&pool, fixture.template.id)
         .await
@@ -266,9 +309,27 @@ async fn cycle_and_template_round_trip_preserves_targets_sections_items_and_step
 
 #[tokio::test]
 async fn request_approval_and_evaluator_replacement_preserve_status_and_submitted_evaluators() {
-    let pool = migrated_pool().await;
+    let pool = migrated_pool("supervision_replacement").await;
     let fixture = insert_fixture(&pool).await;
     let requested = request_observation(&pool, &fixture).await;
+    assert_eq!(requested.academic_year_id, fixture.cycle.academic_year_id);
+    assert_eq!(requested.academic_term_id, fixture.academic_term_id);
+
+    let term_observations = services::list_observations(
+        &pool,
+        services::SupervisionObservationListAccess::school(),
+        SupervisionObservationFilter {
+            academic_year_id: fixture.cycle.academic_year_id,
+            academic_term_id: Some(fixture.academic_term_id),
+            cycle_id: Some(fixture.cycle.id),
+            status: Some(SupervisionObservationStatus::Requested),
+        },
+    )
+    .await
+    .expect("term view should list the requested observation");
+    assert_eq!(term_observations.len(), 1);
+    assert_eq!(term_observations[0].id, requested.id);
+
     let planned = approve_with(
         &pool,
         &fixture,
@@ -336,7 +397,7 @@ async fn request_approval_and_evaluator_replacement_preserve_status_and_submitte
 
 #[tokio::test]
 async fn failed_evaluator_replacement_rolls_back_assignments_and_action_rows() {
-    let pool = migrated_pool().await;
+    let pool = migrated_pool("supervision_replacement_rollback").await;
     let fixture = insert_fixture(&pool).await;
 
     let first = request_observation(&pool, &fixture).await;
@@ -404,7 +465,7 @@ async fn failed_evaluator_replacement_rolls_back_assignments_and_action_rows() {
 
 #[tokio::test]
 async fn completed_evaluations_flow_through_certification_approval_acknowledgement_and_reports() {
-    let pool = migrated_pool().await;
+    let pool = migrated_pool("supervision_completed_flow").await;
     let fixture = insert_fixture(&pool).await;
     let requested = request_observation(&pool, &fixture).await;
     approve_with(

@@ -211,7 +211,7 @@ pub struct UpdateExamSubjectRequest {
 pub struct AdmissionTrack {
     pub id: Uuid,
     pub admission_round_id: Uuid,
-    pub study_plan_id: Uuid,
+    pub study_program_id: Uuid,
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub capacity_override: Option<i32>,
@@ -222,9 +222,9 @@ pub struct AdmissionTrack {
 
     // Joined/computed fields
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub study_plan_name: Option<String>,
+    pub study_program_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub computed_capacity: Option<i64>, // ดึงจาก class_rooms ถ้า capacity_override = NULL
+    pub computed_capacity: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub room_count: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -232,9 +232,9 @@ pub struct AdmissionTrack {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateAdmissionTrackRequest {
-    pub study_plan_id: Uuid,
+    pub study_program_id: Uuid,
     pub name: String,
     pub capacity_override: Option<i32>,
     pub scoring_subject_ids: Option<Vec<Uuid>>,
@@ -243,7 +243,7 @@ pub struct CreateAdmissionTrackRequest {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateAdmissionTrackRequest {
     pub name: Option<String>,
     pub capacity_override: Option<i32>,

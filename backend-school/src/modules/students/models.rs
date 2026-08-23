@@ -64,7 +64,7 @@ pub struct StudentDbRow {
     #[schema(required = true)]
     pub grade_level: Option<String>,
     #[schema(required = true)]
-    pub class_room: Option<String>,
+    pub homeroom: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -83,7 +83,7 @@ pub struct StudentListItem {
     pub last_name: String,
     pub student_id: Option<String>,
     pub grade_level: Option<String>,
-    pub class_room: Option<String>,
+    pub homeroom: Option<String>,
     pub status: String,
 }
 
@@ -144,10 +144,20 @@ pub struct UpdateStudentRequest {
     pub student_number: Option<i32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ListStudentsQuery {
+    pub academic_year_id: Uuid,
     pub page: Option<i64>,
     pub page_size: Option<i64>,
     pub search: Option<String>,
     pub status: Option<String>,
+}
+
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct StudentAcademicYearQuery {
+    pub academic_year_id: Uuid,
 }

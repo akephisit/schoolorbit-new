@@ -231,10 +231,13 @@ async fn subject_is_assigned_to_actor(
         r#"
 SELECT EXISTS(
     SELECT 1
-    FROM classroom_courses cc
-    JOIN classroom_course_instructors cci ON cci.classroom_course_id = cc.id
-    WHERE cc.subject_id = $1
-      AND cci.instructor_id = $2
+    FROM course_offering_details detail
+    JOIN learning_groups learning_group
+      ON learning_group.learning_offering_id = detail.learning_offering_id
+    JOIN learning_group_teachers teacher
+      ON teacher.learning_group_id = learning_group.id
+    WHERE detail.subject_id = $1
+      AND teacher.teacher_id = $2
 )
 "#,
     )

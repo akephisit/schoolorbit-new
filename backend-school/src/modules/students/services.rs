@@ -16,6 +16,7 @@ use super::models::{
 pub async fn get_own_profile(
     pool: &PgPool,
     user_id: Uuid,
+    academic_year_id: Uuid,
     include_pii: bool,
 ) -> Result<StudentProfile, AppError> {
     ensure_student_user(pool, user_id).await?;
@@ -33,25 +34,30 @@ pub async fn get_own_profile(
                 WHEN 'secondary' THEN CONCAT('ม.', gl.year)
                 ELSE CONCAT('?.', gl.year)
             END as grade_level,
-            c.name as class_room,
-            sce.class_number as student_number,
+            h.name as homeroom,
+            placement.class_number as student_number,
             s.blood_type, s.allergies, s.medical_conditions as medical_conditions,
             u.status
         FROM users u
         LEFT JOIN student_info s ON u.id = s.user_id
+        INNER JOIN student_academic_years student_year
+          ON student_year.student_id = u.id
+         AND student_year.academic_year_id = $2
         LEFT JOIN LATERAL (
-            SELECT student_id, class_room_id, class_number
-            FROM student_class_enrollments
-            WHERE student_id = u.id
-            ORDER BY created_at DESC
+            SELECT homeroom_id, class_number
+            FROM homeroom_placements
+            WHERE student_academic_year_id = student_year.id
+            ORDER BY CASE status WHEN 'current' THEN 1 WHEN 'planned' THEN 2 ELSE 3 END,
+                     start_date DESC, created_at DESC
             LIMIT 1
-        ) sce ON true
-        LEFT JOIN class_rooms c ON sce.class_room_id = c.id
-        LEFT JOIN grade_levels gl ON c.grade_level_id = gl.id
+        ) placement ON true
+        LEFT JOIN homerooms h ON placement.homeroom_id = h.id
+        LEFT JOIN grade_levels gl ON student_year.grade_level_id = gl.id
         WHERE u.id = $1 AND u.user_type = 'student' AND u.status = 'active'
         "#,
     )
     .bind(user_id)
+    .bind(academic_year_id)
     .fetch_optional(pool)
     .await
     .map_err(|e| {
@@ -121,18 +127,28 @@ pub async fn list_students(
                 WHEN 'secondary' THEN CONCAT('ม.', gl.year)
                 ELSE CONCAT('?.', gl.year)
             END as grade_level,
-            c.name as class_room,
+            h.name as homeroom,
             u.status
         FROM users u
         INNER JOIN student_info s ON u.id = s.user_id
-        LEFT JOIN student_class_enrollments sce ON u.id = sce.student_id AND sce.status = 'active'
-        LEFT JOIN class_rooms c ON sce.class_room_id = c.id
-        LEFT JOIN grade_levels gl ON c.grade_level_id = gl.id
+        INNER JOIN student_academic_years student_year
+          ON student_year.student_id = u.id
+         AND student_year.academic_year_id = $1
+        LEFT JOIN LATERAL (
+            SELECT homeroom_id
+            FROM homeroom_placements
+            WHERE student_academic_year_id = student_year.id
+            ORDER BY CASE status WHEN 'current' THEN 1 WHEN 'planned' THEN 2 ELSE 3 END,
+                     start_date DESC, created_at DESC
+            LIMIT 1
+        ) placement ON true
+        LEFT JOIN homerooms h ON placement.homeroom_id = h.id
+        LEFT JOIN grade_levels gl ON student_year.grade_level_id = gl.id
         WHERE u.user_type = 'student'
         "#,
     );
 
-    let mut idx = 0u32;
+    let mut idx = 1u32;
 
     if filter.status.is_some() {
         idx += 1;
@@ -153,10 +169,11 @@ pub async fn list_students(
     let limit_idx = idx;
     idx += 1;
     let offset_idx = idx;
-    query.push_str(" ORDER BY CASE gl.level_type WHEN 'kindergarten' THEN 1 WHEN 'primary' THEN 2 WHEN 'secondary' THEN 3 ELSE 4 END, gl.year NULLS LAST, c.name NULLS LAST, s.student_number");
+    query.push_str(" ORDER BY CASE gl.level_type WHEN 'kindergarten' THEN 1 WHEN 'primary' THEN 2 WHEN 'secondary' THEN 3 ELSE 4 END, gl.year NULLS LAST, h.name NULLS LAST, s.student_number");
     query.push_str(&format!(" LIMIT ${limit_idx} OFFSET ${offset_idx}"));
 
     let mut q = sqlx::query_as::<_, StudentListItem>(&query);
+    q = q.bind(filter.academic_year_id);
     if let Some(status) = &filter.status {
         q = q.bind(status);
     }
@@ -200,12 +217,14 @@ fn push_student_list_access_filter(
                     query.push_str(&format!(
                         r#" AND EXISTS (
                             SELECT 1
-                            FROM student_class_enrollments scope_sce
-                            JOIN classroom_advisors scope_ca
-                              ON scope_ca.classroom_id = scope_sce.class_room_id
-                            WHERE scope_sce.student_id = u.id
-                              AND scope_sce.status = 'active'
-                              AND scope_ca.user_id = ${bind_index}
+                            FROM student_academic_years scope_student_year
+                            JOIN homeroom_placements scope_placement
+                              ON scope_placement.student_academic_year_id = scope_student_year.id
+                            JOIN homeroom_advisors scope_advisor
+                              ON scope_advisor.homeroom_id = scope_placement.homeroom_id
+                            WHERE scope_student_year.student_id = u.id
+                              AND scope_student_year.academic_year_id = $1
+                              AND scope_advisor.user_id = ${bind_index}
                         )"#
                     ));
                 }
@@ -303,6 +322,7 @@ pub async fn create_student(
 pub async fn get_student(
     pool: &PgPool,
     student_id: Uuid,
+    academic_year_id: Uuid,
     include_pii: bool,
 ) -> Result<StudentProfile, AppError> {
     let mut student_row = sqlx::query_as::<_, StudentDbRow>(
@@ -318,18 +338,29 @@ pub async fn get_student(
                 WHEN 'secondary' THEN CONCAT('ม.', gl.year)
                 ELSE CONCAT('?.', gl.year)
             END as grade_level,
-            c.name as class_room,
-            sce.class_number as student_number,
+            h.name as homeroom,
+            placement.class_number as student_number,
             s.blood_type, s.allergies, s.medical_conditions as medical_conditions
         FROM users u
         LEFT JOIN student_info s ON u.id = s.user_id
-        LEFT JOIN student_class_enrollments sce ON u.id = sce.student_id AND sce.status = 'active'
-        LEFT JOIN class_rooms c ON sce.class_room_id = c.id
-        LEFT JOIN grade_levels gl ON c.grade_level_id = gl.id
+        INNER JOIN student_academic_years student_year
+          ON student_year.student_id = u.id
+         AND student_year.academic_year_id = $2
+        LEFT JOIN LATERAL (
+            SELECT homeroom_id, class_number
+            FROM homeroom_placements
+            WHERE student_academic_year_id = student_year.id
+            ORDER BY CASE status WHEN 'current' THEN 1 WHEN 'planned' THEN 2 ELSE 3 END,
+                     start_date DESC, created_at DESC
+            LIMIT 1
+        ) placement ON true
+        LEFT JOIN homerooms h ON placement.homeroom_id = h.id
+        LEFT JOIN grade_levels gl ON student_year.grade_level_id = gl.id
         WHERE u.id = $1 AND u.user_type = 'student'
         "#,
     )
     .bind(student_id)
+    .bind(academic_year_id)
     .fetch_optional(pool)
     .await
     .map_err(|e| {
@@ -441,16 +472,36 @@ pub async fn delete_student(pool: &PgPool, student_id: Uuid) -> Result<(), AppEr
 
     sqlx::query(
         r#"
-        UPDATE student_class_enrollments
-        SET status = 'dropped', updated_at = NOW()
-        WHERE student_id = $1 AND status = 'active'
+        UPDATE homeroom_placements placement
+        SET status = 'ended',
+            end_date = COALESCE(end_date, CURRENT_DATE),
+            updated_at = NOW()
+        FROM student_academic_years student_year
+        WHERE placement.student_academic_year_id = student_year.id
+          AND student_year.student_id = $1
+          AND placement.status IN ('planned', 'current')
         "#,
     )
     .bind(student_id)
     .execute(&mut *tx)
     .await
     .map_err(|e| {
-        tracing::error!("Failed to drop student enrollments: {}", e);
+        tracing::error!("Failed to end student homeroom placements: {}", e);
+        AppError::InternalServerError("ไม่สามารถลบนักเรียนได้".to_string())
+    })?;
+
+    sqlx::query(
+        r#"
+        UPDATE student_academic_years
+        SET status = 'withdrawn', updated_at = NOW()
+        WHERE student_id = $1 AND status IN ('planned', 'active')
+        "#,
+    )
+    .bind(student_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to withdraw student academic-year records: {}", e);
         AppError::InternalServerError("ไม่สามารถลบนักเรียนได้".to_string())
     })?;
 
@@ -894,6 +945,44 @@ fn map_duplicate_student_error(error: sqlx::Error, fallback: &str) -> AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        modules::academic::cutover_test_support::{
+            apply_migrations_through, seed_academic_cutover_fixture, CutoverFixture,
+        },
+        test_helpers::create_named_test_pool,
+    };
+
+    #[tokio::test]
+    async fn own_profile_uses_the_caller_selected_student_academic_year() {
+        let pool = create_named_test_pool("student_profile_selected_year").await;
+        apply_migrations_through(&pool, 40).await.unwrap();
+        seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
+            .await
+            .unwrap();
+        apply_migrations_through(&pool, 44).await.unwrap();
+
+        let student_id = Uuid::parse_str("50000000-0000-0000-0000-000000000001").unwrap();
+        let year_2025_id: Uuid =
+            sqlx::query_scalar("SELECT id FROM academic_years WHERE year = 2025")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let year_2026_id: Uuid =
+            sqlx::query_scalar("SELECT id FROM academic_years WHERE year = 2026")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+
+        let current = get_own_profile(&pool, student_id, year_2025_id, false)
+            .await
+            .unwrap();
+        let planned = get_own_profile(&pool, student_id, year_2026_id, false)
+            .await
+            .unwrap();
+
+        assert_eq!(current.info.homeroom.as_deref(), Some("ม.1/1 ปี 2025"));
+        assert_eq!(planned.info.homeroom.as_deref(), Some("ม.1/1 ปี 2026"));
+    }
 
     #[test]
     fn student_username_or_default_uses_student_id_when_username_missing_or_blank() {
@@ -951,7 +1040,7 @@ mod tests {
             medical_conditions: Some("ciphertext-medical".to_string()),
             status: Some("active".to_string()),
             grade_level: Some("ม.1".to_string()),
-            class_room: Some("1/1".to_string()),
+            homeroom: Some("1/1".to_string()),
         };
 
         hide_student_pii_fields(&mut row);

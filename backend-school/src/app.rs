@@ -658,8 +658,8 @@ fn protected_routes() -> Router<AppState> {
             get(modules::lookup::handlers::lookup_grade_levels),
         )
         .route(
-            "/api/lookup/classrooms",
-            get(modules::lookup::handlers::lookup_classrooms),
+            "/api/lookup/homerooms",
+            get(modules::lookup::handlers::lookup_homerooms),
         )
         .route(
             "/api/lookup/academic-years",

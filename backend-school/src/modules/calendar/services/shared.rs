@@ -83,7 +83,7 @@ pub fn validate_targets(targets: &[CalendarEventTargetInput]) -> Result<(), AppE
     let mut seen_targets = HashSet::new();
 
     for target in targets {
-        if target.grade_level_id.is_some() && target.class_room_id.is_some() {
+        if target.grade_level_id.is_some() && target.homeroom_id.is_some() {
             return Err(AppError::BadRequest(
                 "เลือกได้เพียงระดับชั้นหรือห้องเรียนอย่างใดอย่างหนึ่ง".to_string(),
             ));
@@ -91,7 +91,7 @@ pub fn validate_targets(targets: &[CalendarEventTargetInput]) -> Result<(), AppE
 
         match &target.audience_type {
             CalendarAudienceType::All | CalendarAudienceType::Staff => {
-                if target.grade_level_id.is_some() || target.class_room_id.is_some() {
+                if target.grade_level_id.is_some() || target.homeroom_id.is_some() {
                     return Err(AppError::BadRequest(
                         "กลุ่มผู้เห็น all/staff ไม่รองรับการกรองระดับชั้นหรือห้องเรียน".to_string(),
                     ));
@@ -103,7 +103,7 @@ pub fn validate_targets(targets: &[CalendarEventTargetInput]) -> Result<(), AppE
         let target_key = (
             target.audience_type.as_str(),
             target.grade_level_id,
-            target.class_room_id,
+            target.homeroom_id,
         );
         if !seen_targets.insert(target_key) {
             return Err(AppError::BadRequest("กลุ่มผู้เห็นซ้ำ".to_string()));

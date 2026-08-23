@@ -964,7 +964,7 @@ fn push_read_expression(builder: &mut QueryBuilder<'_, Postgres>, access: &Quest
     if let Some(actor_id) = access.read_assigned_user_id {
         builder.push("(q.owner_user_id = ");
         builder.push_bind(actor_id);
-        builder.push(" OR EXISTS (SELECT 1 FROM classroom_courses cc JOIN classroom_course_instructors cci ON cci.classroom_course_id = cc.id WHERE cc.subject_id = q.subject_id AND cci.instructor_id = ");
+        builder.push(" OR EXISTS (SELECT 1 FROM course_offering_details detail JOIN learning_groups learning_group ON learning_group.learning_offering_id = detail.learning_offering_id JOIN learning_group_teachers teacher ON teacher.learning_group_id = learning_group.id WHERE detail.subject_id = q.subject_id AND teacher.teacher_id = ");
         builder.push_bind(actor_id);
         builder.push("))");
         has_predicate = true;
@@ -1024,7 +1024,7 @@ fn push_subject_read_expression(
     if let Some(actor_id) = access.read_assigned_user_id {
         builder.push("(EXISTS (SELECT 1 FROM academic_question_bank_questions q WHERE q.subject_id = s.id AND q.owner_user_id = ");
         builder.push_bind(actor_id);
-        builder.push(" AND q.deleted_at IS NULL) OR EXISTS (SELECT 1 FROM classroom_courses cc JOIN classroom_course_instructors cci ON cci.classroom_course_id = cc.id WHERE cc.subject_id = s.id AND cci.instructor_id = ");
+        builder.push(" AND q.deleted_at IS NULL) OR EXISTS (SELECT 1 FROM course_offering_details detail JOIN learning_groups learning_group ON learning_group.learning_offering_id = detail.learning_offering_id JOIN learning_group_teachers teacher ON teacher.learning_group_id = learning_group.id WHERE detail.subject_id = s.id AND teacher.teacher_id = ");
         builder.push_bind(actor_id);
         builder.push("))");
         has_predicate = true;
@@ -1055,7 +1055,7 @@ fn push_subject_manage_expression(
     let mut has_predicate = false;
     builder.push("(");
     if let Some(actor_id) = access.manage_assigned_user_id {
-        builder.push("EXISTS (SELECT 1 FROM classroom_courses cc JOIN classroom_course_instructors cci ON cci.classroom_course_id = cc.id WHERE cc.subject_id = s.id AND cci.instructor_id = ");
+        builder.push("EXISTS (SELECT 1 FROM course_offering_details detail JOIN learning_groups learning_group ON learning_group.learning_offering_id = detail.learning_offering_id JOIN learning_group_teachers teacher ON teacher.learning_group_id = learning_group.id WHERE detail.subject_id = s.id AND teacher.teacher_id = ");
         builder.push_bind(actor_id);
         builder.push(")");
         has_predicate = true;
@@ -1289,11 +1289,11 @@ mod tests {
     }
 
     #[test]
-    fn assigned_scope_uses_team_teaching_junction() {
+    fn assigned_scope_uses_learning_group_teachers() {
         let mut builder = QueryBuilder::<Postgres>::new("");
         push_read_expression(&mut builder, &assigned_access(Uuid::new_v4()));
-        assert!(builder.sql().contains("classroom_course_instructors"));
-        assert!(!builder.sql().contains("primary_instructor_id"));
+        assert!(builder.sql().contains("course_offering_details"));
+        assert!(builder.sql().contains("learning_group_teachers"));
     }
 
     #[test]

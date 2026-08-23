@@ -34,6 +34,10 @@ use super::shared::{
 struct SupervisionObservationRow {
     id: Uuid,
     cycle_id: Uuid,
+    academic_year_id: Uuid,
+    academic_term_id: Uuid,
+    learning_group_id: Option<Uuid>,
+    homeroom_id: Option<Uuid>,
     observed_user_id: Uuid,
     observed_display_name: Option<String>,
     requested_by: Option<Uuid>,
@@ -100,8 +104,9 @@ struct SupervisionActionRow {
 #[derive(Debug, sqlx::FromRow)]
 struct CycleForRequestRow {
     id: Uuid,
+    academic_year_id: Uuid,
+    academic_term_id: Option<Uuid>,
     template_id: Uuid,
-    academic_semester_id: Option<Uuid>,
     status: String,
     booking_opens_at: Option<DateTime<Utc>>,
     booking_closes_at: Option<DateTime<Utc>>,
@@ -193,16 +198,11 @@ pub async fn observation_timetable_options(
     observation_id: Uuid,
 ) -> Result<Vec<TimetableEntry>, AppError> {
     let observation = get_observation(pool, observation_id).await?;
-    let academic_term_id: Uuid =
-        sqlx::query_scalar("SELECT academic_term_id FROM supervision_cycles WHERE id = $1")
-            .bind(observation.cycle_id)
-            .fetch_one(pool)
-            .await?;
 
     timetable_service::list_entries(
         pool,
         &TimetableQuery {
-            academic_term_id,
+            academic_term_id: observation.academic_term_id,
             learning_group_id: None,
             homeroom_id: None,
             instructor_id: Some(observation.observed_user_id),
@@ -225,11 +225,13 @@ pub async fn request_observation(
 ) -> Result<SupervisionObservation, AppError> {
     let cycle = load_cycle_for_request(pool, input.cycle_id).await?;
     validate_cycle_accepts_requests(&cycle)?;
+    validate_observation_context(pool, &cycle, input.academic_term_id).await?;
     ensure_cycle_target_allows_teacher(pool, cycle.id, actor_user_id).await?;
 
     let lesson = resolve_lesson_input(
         pool,
         &cycle,
+        input.academic_term_id,
         actor_user_id,
         input.timetable_entry_id,
         input.observed_at,
@@ -240,15 +242,20 @@ pub async fn request_observation(
     let observation_id: Uuid = sqlx::query_scalar(
         r#"
         INSERT INTO supervision_observations (
-            cycle_id, observed_user_id, requested_by, template_id, timetable_entry_id,
+            cycle_id, academic_year_id, academic_term_id, learning_group_id, homeroom_id,
+            observed_user_id, requested_by, template_id, timetable_entry_id,
             manual_subject_name, manual_classroom_label, manual_room_label,
             observed_at, manual_period_label, manual_reason, lesson_snapshot
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
         RETURNING id
         "#,
     )
     .bind(cycle.id)
+    .bind(cycle.academic_year_id)
+    .bind(input.academic_term_id)
+    .bind(lesson.learning_group_id)
+    .bind(lesson.homeroom_id)
     .bind(actor_user_id)
     .bind(actor_user_id)
     .bind(cycle.template_id)
@@ -301,6 +308,7 @@ pub async fn update_requested_observation(
     let lesson = resolve_lesson_input(
         pool,
         &cycle,
+        current.academic_term_id,
         actor_user_id,
         input.timetable_entry_id,
         input.observed_at,
@@ -312,18 +320,22 @@ pub async fn update_requested_observation(
         r#"
         UPDATE supervision_observations
         SET timetable_entry_id = $2,
-            manual_subject_name = $3,
-            manual_classroom_label = $4,
-            manual_room_label = $5,
-            observed_at = $6,
-            manual_period_label = $7,
-            manual_reason = $8,
-            lesson_snapshot = $9
+            learning_group_id = $3,
+            homeroom_id = $4,
+            manual_subject_name = $5,
+            manual_classroom_label = $6,
+            manual_room_label = $7,
+            observed_at = $8,
+            manual_period_label = $9,
+            manual_reason = $10,
+            lesson_snapshot = $11
         WHERE id = $1
         "#,
     )
     .bind(observation_id)
     .bind(lesson.timetable_entry_id)
+    .bind(lesson.learning_group_id)
+    .bind(lesson.homeroom_id)
     .bind(&lesson.manual_subject_name)
     .bind(&lesson.manual_classroom_label)
     .bind(&lesson.manual_room_label)
@@ -407,6 +419,7 @@ pub async fn update_observation(
     let lesson = resolve_lesson_input(
         pool,
         &cycle,
+        current.academic_term_id,
         current.observed_user_id,
         timetable_entry_id,
         observed_at,
@@ -431,19 +444,23 @@ pub async fn update_observation(
         UPDATE supervision_observations
         SET template_id = $2,
             timetable_entry_id = $3,
-            manual_subject_name = $4,
-            manual_classroom_label = $5,
-            manual_room_label = $6,
-            observed_at = $7,
-            manual_period_label = $8,
-            manual_reason = $9,
-            lesson_snapshot = $10
+            learning_group_id = $4,
+            homeroom_id = $5,
+            manual_subject_name = $6,
+            manual_classroom_label = $7,
+            manual_room_label = $8,
+            observed_at = $9,
+            manual_period_label = $10,
+            manual_reason = $11,
+            lesson_snapshot = $12
         WHERE id = $1
         "#,
     )
     .bind(observation_id)
     .bind(template_id)
     .bind(lesson.timetable_entry_id)
+    .bind(lesson.learning_group_id)
+    .bind(lesson.homeroom_id)
     .bind(&lesson.manual_subject_name)
     .bind(&lesson.manual_classroom_label)
     .bind(&lesson.manual_room_label)
@@ -663,6 +680,14 @@ async fn list_observation_rows(
         builder.push_bind(cycle_id);
     }
 
+    builder.push(" AND o.academic_year_id = ");
+    builder.push_bind(filter.academic_year_id);
+
+    if let Some(academic_term_id) = filter.academic_term_id {
+        builder.push(" AND o.academic_term_id = ");
+        builder.push_bind(academic_term_id);
+    }
+
     if let Some(status) = filter.status {
         builder.push(" AND o.status = ");
         builder.push_bind(status.as_str());
@@ -701,7 +726,8 @@ async fn load_observation_row(
 
 fn observation_select_sql() -> &'static str {
     r#"
-    SELECT o.id, o.cycle_id, o.observed_user_id,
+    SELECT o.id, o.cycle_id, o.academic_year_id, o.academic_term_id,
+           o.learning_group_id, o.homeroom_id, o.observed_user_id,
            NULLIF(TRIM(CONCAT(COALESCE(u.title, ''), u.first_name, ' ', u.last_name)), '')
                AS observed_display_name,
            o.requested_by, o.approved_by, o.template_id, o.timetable_entry_id,
@@ -728,6 +754,10 @@ async fn observation_from_row(
     Ok(SupervisionObservation {
         id: row.id,
         cycle_id: row.cycle_id,
+        academic_year_id: row.academic_year_id,
+        academic_term_id: row.academic_term_id,
+        learning_group_id: row.learning_group_id,
+        homeroom_id: row.homeroom_id,
         observed_user_id: row.observed_user_id,
         observed_display_name: row.observed_display_name,
         requested_by: row.requested_by,
@@ -835,7 +865,7 @@ async fn load_cycle_for_request(
 ) -> Result<CycleForRequestRow, AppError> {
     sqlx::query_as::<_, CycleForRequestRow>(
         r#"
-        SELECT id, template_id, academic_semester_id, status,
+        SELECT id, academic_year_id, academic_term_id, template_id, status,
                booking_opens_at, booking_closes_at, starts_at, ends_at
         FROM supervision_cycles
         WHERE id = $1
@@ -976,8 +1006,44 @@ fn validate_cycle_accepts_requests(cycle: &CycleForRequestRow) -> Result<(), App
     Ok(())
 }
 
+async fn validate_observation_context(
+    pool: &PgPool,
+    cycle: &CycleForRequestRow,
+    academic_term_id: Uuid,
+) -> Result<(), AppError> {
+    if cycle
+        .academic_term_id
+        .is_some_and(|cycle_term_id| cycle_term_id != academic_term_id)
+    {
+        return Err(AppError::ValidationError(
+            "ภาคเรียนของรายการนิเทศไม่ตรงกับรอบนิเทศ".to_string(),
+        ));
+    }
+
+    let term_belongs_to_year: bool = sqlx::query_scalar(
+        "SELECT EXISTS (
+            SELECT 1 FROM academic_terms
+            WHERE id = $1 AND academic_year_id = $2
+        )",
+    )
+    .bind(academic_term_id)
+    .bind(cycle.academic_year_id)
+    .fetch_one(pool)
+    .await?;
+
+    if !term_belongs_to_year {
+        return Err(AppError::ValidationError(
+            "ภาคเรียนของรายการนิเทศไม่อยู่ในปีการศึกษาของรอบนิเทศ".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
 struct ResolvedLessonInput {
     timetable_entry_id: Option<Uuid>,
+    learning_group_id: Option<Uuid>,
+    homeroom_id: Option<Uuid>,
     observed_at: DateTime<Utc>,
     manual_subject_name: Option<String>,
     manual_classroom_label: Option<String>,
@@ -990,6 +1056,7 @@ struct ResolvedLessonInput {
 async fn resolve_lesson_input(
     pool: &PgPool,
     cycle: &CycleForRequestRow,
+    academic_term_id: Uuid,
     actor_user_id: Uuid,
     timetable_entry_id: Option<Uuid>,
     observed_at: Option<DateTime<Utc>>,
@@ -998,15 +1065,23 @@ async fn resolve_lesson_input(
     match (timetable_entry_id, observed_at, manual_lesson) {
         (Some(entry_id), Some(observed_at), None) => {
             validate_observed_at_in_cycle(cycle, observed_at)?;
-            let entry_day =
-                load_timetable_entry_day_for_teacher(pool, entry_id, actor_user_id).await?;
-            if !day_of_week_matches_observed_at(&entry_day, observed_at) {
+            let entry = load_timetable_entry_context_for_teacher(
+                pool,
+                entry_id,
+                actor_user_id,
+                cycle.academic_year_id,
+                academic_term_id,
+            )
+            .await?;
+            if !day_of_week_matches_observed_at(&entry.day_of_week, observed_at) {
                 return Err(AppError::ValidationError(
                     "วันที่นิเทศไม่ตรงกับวันของคาบสอน".to_string(),
                 ));
             }
             Ok(ResolvedLessonInput {
                 timetable_entry_id: Some(entry_id),
+                learning_group_id: entry.learning_group_id,
+                homeroom_id: entry.homeroom_id,
                 observed_at,
                 manual_subject_name: None,
                 manual_classroom_label: None,
@@ -1024,6 +1099,8 @@ async fn resolve_lesson_input(
             validate_observed_at_in_cycle(cycle, manual.observed_at)?;
             Ok(ResolvedLessonInput {
                 timetable_entry_id: None,
+                learning_group_id: None,
+                homeroom_id: None,
                 observed_at: manual.observed_at,
                 manual_subject_name: Some(manual.subject_name.clone()),
                 manual_classroom_label: Some(manual.classroom_label.clone()),
@@ -1082,21 +1159,45 @@ fn validate_manual_lesson(manual: &ManualLessonInput) -> Result<(), AppError> {
     Ok(())
 }
 
-async fn load_timetable_entry_day_for_teacher(
+#[derive(Debug, sqlx::FromRow)]
+struct TimetableEntryLessonContext {
+    day_of_week: String,
+    learning_group_id: Option<Uuid>,
+    homeroom_id: Option<Uuid>,
+}
+
+async fn load_timetable_entry_context_for_teacher(
     pool: &PgPool,
     entry_id: Uuid,
     teacher_user_id: Uuid,
-) -> Result<String, AppError> {
-    let day_of_week = sqlx::query_scalar::<_, String>(
+    academic_year_id: Uuid,
+    academic_term_id: Uuid,
+) -> Result<TimetableEntryLessonContext, AppError> {
+    let context = sqlx::query_as::<_, TimetableEntryLessonContext>(
         r#"
-        SELECT e.day_of_week
+        SELECT e.day_of_week, e.learning_group_id, e.homeroom_id
         FROM academic_timetable_entries e
-        JOIN timetable_entry_instructors tei ON tei.entry_id = e.id
-        WHERE e.id = $1 AND tei.instructor_id = $2
+        WHERE e.id = $1
+          AND e.academic_year_id = $3
+          AND e.academic_term_id = $4
+          AND (
+              EXISTS (
+                  SELECT 1 FROM learning_group_teachers teacher
+                  WHERE teacher.learning_group_id = e.learning_group_id
+                    AND teacher.teacher_id = $2
+              )
+              OR EXISTS (
+                  SELECT 1 FROM timetable_entry_instructors instructor
+                  WHERE instructor.entry_id = e.id
+                    AND instructor.instructor_id = $2
+              )
+          )
         "#,
     )
     .bind(entry_id)
     .bind(teacher_user_id)
+    .bind(academic_year_id)
+    .bind(academic_term_id)
     .fetch_optional(pool)
     .await
     .map_err(|error| {
@@ -1104,7 +1205,9 @@ async fn load_timetable_entry_day_for_teacher(
         AppError::InternalServerError("ไม่สามารถตรวจสอบคาบสอนได้".to_string())
     })?;
 
-    day_of_week.ok_or_else(|| AppError::Forbidden("เลือกจองได้เฉพาะคาบสอนของตนเอง".to_string()))
+    context.ok_or_else(|| {
+        AppError::Forbidden("เลือกจองได้เฉพาะคาบสอนของตนเองในภาคเรียนที่เลือก".to_string())
+    })
 }
 
 async fn load_timetable_lesson_snapshot(
@@ -1114,16 +1217,22 @@ async fn load_timetable_lesson_snapshot(
 ) -> Result<LessonSnapshot, AppError> {
     let row = sqlx::query(
         r#"
-        SELECT s.name_th AS subject_name,
-               cr.name AS classroom_label,
+        SELECT CASE WHEN subject_version.id IS NULL THEN NULL ELSE concat(
+                   coalesce(subject_version.name_th, subject_version.name_en, offering.name_snapshot),
+                   ' · v', subject_version.version_no
+               ) END AS subject_name,
+               coalesce(learning_group.name, homeroom.name) AS classroom_label,
                r.name_th AS room_label,
                p.name AS period_label
         FROM academic_timetable_entries e
-        LEFT JOIN classroom_courses cc ON e.classroom_course_id = cc.id
-        LEFT JOIN subjects s ON cc.subject_id = s.id
-        LEFT JOIN class_rooms cr ON COALESCE(e.classroom_id, cc.classroom_id) = cr.id
+        LEFT JOIN learning_groups learning_group ON learning_group.id = e.learning_group_id
+        LEFT JOIN learning_offerings offering ON offering.id = e.learning_offering_id
+        LEFT JOIN course_offering_details detail
+          ON detail.learning_offering_id = offering.id
+        LEFT JOIN subject_versions subject_version ON subject_version.id = detail.subject_version_id
+        LEFT JOIN homerooms homeroom ON homeroom.id = e.homeroom_id
         LEFT JOIN rooms r ON e.room_id = r.id
-        LEFT JOIN academic_periods p ON e.period_id = p.id
+        LEFT JOIN bell_schedule_periods p ON p.id = e.bell_schedule_period_id
         WHERE e.id = $1
         "#,
     )

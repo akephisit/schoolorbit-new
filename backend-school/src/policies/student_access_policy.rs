@@ -66,11 +66,14 @@ async fn student_resource_target(
 ) -> Result<ResourceAccessTarget, AppError> {
     let assigned_user_ids = sqlx::query_scalar(
         r#"
-        SELECT DISTINCT ca.user_id
-        FROM student_class_enrollments sce
-        JOIN classroom_advisors ca ON ca.classroom_id = sce.class_room_id
-        WHERE sce.student_id = $1
-          AND sce.status = 'active'
+        SELECT DISTINCT advisor.user_id
+        FROM student_academic_years student_year
+        JOIN homeroom_placements placement
+          ON placement.student_academic_year_id = student_year.id
+         AND placement.status = 'current'
+        JOIN homeroom_advisors advisor ON advisor.homeroom_id = placement.homeroom_id
+        WHERE student_year.student_id = $1
+          AND student_year.status = 'active'
         "#,
     )
     .bind(target_user_id)

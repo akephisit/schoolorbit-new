@@ -317,24 +317,29 @@ pub struct PublicStaffProfile {
 }
 
 #[derive(Debug, FromRow)]
-struct TeachingCourseRow {
-    classroom_course_id: Uuid,
+struct TeachingAssignmentRow {
+    learning_group_id: Uuid,
+    learning_group_code: String,
+    learning_group_name: String,
+    subject_id: Uuid,
     subject_code: String,
     subject_name: String,
-    hours_per_semester: Option<i32>,
-    classroom_name: String,
-    classroom_code: String,
+    hours: Option<String>,
+    academic_year_id: Uuid,
     academic_year: i32,
     academic_year_label: String,
-    term: String,
+    academic_term_id: Uuid,
+    term_code: String,
+    term_name: String,
     role: String,
 }
 
 #[derive(Debug, FromRow)]
-struct AdvisorClassroomRow {
-    classroom_id: Uuid,
-    classroom_name: String,
-    classroom_code: String,
+struct AdvisorHomeroomRow {
+    homeroom_id: Uuid,
+    homeroom_name: String,
+    homeroom_code: String,
+    academic_year_id: Uuid,
     academic_year: i32,
     academic_year_label: String,
     role: String,
@@ -562,53 +567,48 @@ pub async fn get_staff_profile(
     .bind(staff_id)
     .fetch_all(pool);
 
-    let teaching_fut = sqlx::query_as::<_, TeachingCourseRow>(
-        r#"WITH teacher_cc AS (
-            SELECT cc.id AS classroom_course_id,
-                   cc.subject_id, cc.classroom_id, cc.academic_semester_id,
-                   'primary'::text AS role
-            FROM classroom_courses cc
-            WHERE cc.primary_instructor_id = $1
-            UNION
-            SELECT cc.id AS classroom_course_id,
-                   cc.subject_id, cc.classroom_id, cc.academic_semester_id,
-                   cci.role
-            FROM classroom_course_instructors cci
-            JOIN classroom_courses cc ON cc.id = cci.classroom_course_id
-            WHERE cci.instructor_id = $1
-        )
-        SELECT tc.classroom_course_id,
-               s.code AS subject_code,
-               s.name_th AS subject_name,
-               s.hours_per_semester,
-               cr.name AS classroom_name,
-               cr.code AS classroom_code,
-               ay.year AS academic_year,
-               ay.name AS academic_year_label,
-               sem.term,
-               tc.role
-        FROM teacher_cc tc
-        JOIN subjects s ON s.id = tc.subject_id
-        JOIN class_rooms cr ON cr.id = tc.classroom_id
-        JOIN academic_semesters sem ON sem.id = tc.academic_semester_id
-        JOIN academic_years ay ON ay.id = sem.academic_year_id
-        ORDER BY ay.year DESC, sem.term ASC, s.code ASC"#,
+    let teaching_fut = sqlx::query_as::<_, TeachingAssignmentRow>(
+        r#"SELECT learning_group.id AS learning_group_id,
+                  learning_group.code AS learning_group_code,
+                  learning_group.name AS learning_group_name,
+                  subject.id AS subject_id,
+                  subject.code AS subject_code,
+                  subject_version.name_th AS subject_name,
+                  course.hours::text AS hours,
+                  year.id AS academic_year_id,
+                  year.year AS academic_year,
+                  year.name AS academic_year_label,
+                  term.id AS academic_term_id,
+                  term.code AS term_code,
+                  term.name AS term_name,
+                  teacher.role
+           FROM learning_group_teachers teacher
+           JOIN learning_groups learning_group ON learning_group.id = teacher.learning_group_id
+           JOIN course_offering_details course
+             ON course.learning_offering_id = learning_group.learning_offering_id
+           JOIN subjects subject ON subject.id = course.subject_id
+           JOIN subject_versions subject_version ON subject_version.id = course.subject_version_id
+           JOIN academic_terms term ON term.id = learning_group.academic_term_id
+           JOIN academic_years year ON year.id = learning_group.academic_year_id
+           WHERE teacher.teacher_id = $1
+           ORDER BY year.year DESC, term.sequence_no, subject.code, learning_group.code"#,
     )
     .bind(staff_id)
     .fetch_all(pool);
 
-    let advisor_fut = sqlx::query_as::<_, AdvisorClassroomRow>(
-        r#"SELECT cr.id AS classroom_id,
-                  cr.name AS classroom_name,
-                  cr.code AS classroom_code,
-                  ay.year AS academic_year,
-                  ay.name AS academic_year_label,
-                  ca.role
-           FROM classroom_advisors ca
-           JOIN class_rooms cr ON cr.id = ca.classroom_id
-           JOIN academic_years ay ON ay.id = cr.academic_year_id
-           WHERE ca.user_id = $1
-           ORDER BY ay.year DESC, cr.name ASC"#,
+    let advisor_fut = sqlx::query_as::<_, AdvisorHomeroomRow>(
+        r#"SELECT homeroom.id AS homeroom_id,
+                  homeroom.name AS homeroom_name,
+                  homeroom.code AS homeroom_code,
+                  year.id AS academic_year_id,
+                  year.year AS academic_year,
+                  year.name AS academic_year_label,
+                  advisor.role
+           FROM homeroom_advisors advisor
+           JOIN homerooms homeroom ON homeroom.id = advisor.homeroom_id
+           JOIN academic_years year ON year.id = homeroom.academic_year_id
+           WHERE advisor.user_id = $1
+           ORDER BY year.year DESC, homeroom.name"#,
     )
     .bind(staff_id)
     .fetch_all(pool);
@@ -654,30 +654,35 @@ pub async fn get_staff_profile(
         })
         .collect();
 
-    let teaching_courses: Vec<TeachingCourseItem> = teaching_res
+    let teaching_assignments: Vec<TeachingAssignmentItem> = teaching_res
         .unwrap_or_default()
         .into_iter()
-        .map(|r| TeachingCourseItem {
-            classroom_course_id: r.classroom_course_id,
+        .map(|r| TeachingAssignmentItem {
+            learning_group_id: r.learning_group_id,
+            learning_group_code: r.learning_group_code,
+            learning_group_name: r.learning_group_name,
+            subject_id: r.subject_id,
             subject_code: r.subject_code,
             subject_name: r.subject_name,
-            hours_per_semester: r.hours_per_semester,
-            classroom_name: r.classroom_name,
-            classroom_code: r.classroom_code,
+            hours: r.hours,
+            academic_year_id: r.academic_year_id,
             academic_year: r.academic_year,
             academic_year_label: r.academic_year_label,
-            term: r.term,
+            academic_term_id: r.academic_term_id,
+            term_code: r.term_code,
+            term_name: r.term_name,
             role: r.role,
         })
         .collect();
 
-    let advisor_classrooms: Vec<AdvisorClassroomItem> = advisor_res
+    let advisor_homerooms: Vec<AdvisorHomeroomItem> = advisor_res
         .unwrap_or_default()
         .into_iter()
-        .map(|r| AdvisorClassroomItem {
-            classroom_id: r.classroom_id,
-            classroom_name: r.classroom_name,
-            classroom_code: r.classroom_code,
+        .map(|r| AdvisorHomeroomItem {
+            homeroom_id: r.homeroom_id,
+            homeroom_name: r.homeroom_name,
+            homeroom_code: r.homeroom_code,
+            academic_year_id: r.academic_year_id,
             academic_year: r.academic_year,
             academic_year_label: r.academic_year_label,
             role: r.role,
@@ -710,8 +715,8 @@ pub async fn get_staff_profile(
         }),
         roles,
         organization_units,
-        teaching_courses,
-        advisor_classrooms,
+        teaching_assignments,
+        advisor_homerooms,
         permissions: vec![],
     })
 }
@@ -1217,6 +1222,12 @@ fn staff_title_or_default(title: Option<String>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        modules::academic::cutover_test_support::{
+            apply_migrations_through, seed_academic_cutover_fixture, CutoverFixture,
+        },
+        test_helpers::create_named_test_pool_with_max_connections,
+    };
 
     fn staff_filter(
         page: Option<i64>,
@@ -1232,6 +1243,45 @@ mod tests {
             search,
             status: None,
         }
+    }
+
+    #[tokio::test]
+    async fn staff_profile_reads_canonical_teaching_and_homeroom_assignments() {
+        let pool = create_named_test_pool_with_max_connections("staff_profile_canonical", 5).await;
+        apply_migrations_through(&pool, 40).await.unwrap();
+        seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
+            .await
+            .unwrap();
+        apply_migrations_through(&pool, 44).await.unwrap();
+
+        let staff_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
+        let homeroom_id: Uuid = sqlx::query_scalar(
+            "SELECT id FROM homerooms WHERE academic_year_id = (
+                 SELECT id FROM academic_years WHERE year = 2025
+             ) ORDER BY code LIMIT 1",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO homeroom_advisors (homeroom_id, user_id, role)
+             VALUES ($1, $2, 'primary')",
+        )
+        .bind(homeroom_id)
+        .bind(staff_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let profile = get_staff_profile(&pool, staff_id, false).await.unwrap();
+
+        assert!(profile
+            .teaching_assignments
+            .iter()
+            .any(|assignment| assignment.academic_year == 2025));
+        assert!(profile.advisor_homerooms.iter().any(|assignment| {
+            assignment.homeroom_id == homeroom_id && assignment.academic_year == 2025
+        }));
     }
 
     #[test]

@@ -71,7 +71,7 @@ use crate::modules::files::models::{
 };
 use crate::modules::files::platform_types::{FileLifecycleStatus, FilePurpose};
 use crate::modules::lookup::models::{
-    AcademicYearLookupItem, ClassroomLookupItem, GradeLevelLookupItem, LookupItem,
+    AcademicYearLookupItem, GradeLevelLookupItem, HomeroomLookupItem, LookupItem,
     OrganizationUnitLookupItem, RoleLookupItem, StaffLookupItem, StudentLookupItem,
 };
 use crate::modules::menu::handlers::admin::{
@@ -101,10 +101,10 @@ use crate::modules::staff::handlers::organization_members::{
 };
 use crate::modules::staff::handlers::staff::StaffListData;
 use crate::modules::staff::models::{
-    AdvisorClassroomItem, AssignRoleRequest, CreateOrganizationUnitRequest, CreateRoleRequest,
+    AdvisorHomeroomItem, AssignRoleRequest, CreateOrganizationUnitRequest, CreateRoleRequest,
     CreateStaffInfoRequest, CreateStaffRequest, OrganizationAssignment,
     OrganizationPermissionGrantInput, OrganizationUnit, OrganizationUnitResponse, Permission, Role,
-    RoleResponse, StaffInfoResponse, StaffListItem, StaffProfileResponse, TeachingCourseItem,
+    RoleResponse, StaffInfoResponse, StaffListItem, StaffProfileResponse, TeachingAssignmentItem,
     UpdateOrganizationPermissionsRequest, UpdateOrganizationUnitRequest, UpdateRoleRequest,
     UpdateStaffRequest, UserRoleAssignmentResponse,
 };
@@ -177,7 +177,7 @@ use utoipa::OpenApi;
         crate::modules::lookup::handlers::lookup_organization_units,
         crate::modules::lookup::handlers::lookup_organization_unit_by_id,
         crate::modules::lookup::handlers::lookup_grade_levels,
-        crate::modules::lookup::handlers::lookup_classrooms,
+        crate::modules::lookup::handlers::lookup_homerooms,
         crate::modules::lookup::handlers::lookup_academic_years,
         crate::modules::lookup::handlers::lookup_subjects,
         crate::modules::staff::handlers::staff::list_staff,
@@ -348,7 +348,7 @@ use utoipa::OpenApi;
         RoleLookupItem,
         OrganizationUnitLookupItem,
         GradeLevelLookupItem,
-        ClassroomLookupItem,
+        HomeroomLookupItem,
         AcademicYearLookupItem,
         StudentLookupItem,
         Room,
@@ -488,7 +488,7 @@ use utoipa::OpenApi;
         ApiErrorResponseWithData<CertificateResourceLocked>,
         ApiErrorResponseWithOptionalData<CertificateResourceLocked>,
         ApiResponse<Vec<GradeLevelLookupItem>>,
-        ApiResponse<Vec<ClassroomLookupItem>>,
+        ApiResponse<Vec<HomeroomLookupItem>>,
         ApiResponse<Vec<AcademicYearLookupItem>>,
         ApiResponse<Vec<StudentLookupItem>>,
         ApiResponse<Vec<Room>>,
@@ -524,8 +524,8 @@ use utoipa::OpenApi;
         StaffDashboardOverview,
         RoleResponse,
         OrganizationUnitResponse,
-        TeachingCourseItem,
-        AdvisorClassroomItem,
+        TeachingAssignmentItem,
+        AdvisorHomeroomItem,
         StaffInfoResponse,
         StaffProfileResponse,
         CreateStaffInfoRequest,

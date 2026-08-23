@@ -113,6 +113,111 @@ ALTER TABLE academic_exam_schedule_items
 ALTER TABLE course_assessment_plans
     DROP COLUMN legacy_classroom_course_id;
 
+-- Supervision cycles can cover a whole academic year or one term. Observations
+-- remain term-scoped and inherit only the cycle's year as their parent context.
+ALTER TABLE supervision_observations
+    DROP CONSTRAINT supervision_observations_cycle_context_fkey;
+
+ALTER TABLE supervision_cycles
+    ALTER COLUMN academic_term_id DROP NOT NULL,
+    ADD CONSTRAINT supervision_cycles_id_year_key UNIQUE (id, academic_year_id);
+
+ALTER TABLE supervision_observations
+    ADD CONSTRAINT supervision_observations_cycle_year_fkey
+        FOREIGN KEY (cycle_id, academic_year_id)
+        REFERENCES supervision_cycles(id, academic_year_id) ON DELETE CASCADE;
+
+DROP INDEX idx_supervision_cycles_semester;
+
+ALTER TABLE supervision_cycles
+    DROP COLUMN academic_year,
+    DROP COLUMN semester,
+    DROP COLUMN academic_semester_id;
+
+DROP INDEX academic_question_bank_questions_subject_idx;
+
+ALTER TABLE academic_question_bank_questions
+    DROP CONSTRAINT academic_question_bank_questions_version_subject_fkey,
+    DROP COLUMN legacy_subject_version_id;
+
+CREATE INDEX academic_question_bank_questions_subject_idx
+    ON academic_question_bank_questions(subject_id);
+
+-- Admission tracks now select a study program directly. The curriculum version
+-- and legacy curriculum identity are derivable from that program and must not be
+-- supplied independently by runtime callers.
+DROP TRIGGER admission_tracks_program_context_guard ON admission_tracks;
+DROP FUNCTION check_admission_track_program_context();
+DROP INDEX admission_tracks_study_program_idx;
+
+ALTER TABLE admission_tracks
+    DROP CONSTRAINT admission_tracks_curriculum_version_fkey,
+    DROP CONSTRAINT admission_tracks_program_version_fkey,
+    DROP CONSTRAINT admission_tracks_study_plan_id_fkey,
+    DROP COLUMN study_plan_id,
+    DROP COLUMN curriculum_version_id;
+
+CREATE INDEX admission_tracks_study_program_idx
+    ON admission_tracks(academic_year_id, study_program_id);
+
+CREATE OR REPLACE FUNCTION check_admission_track_program_context()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM admission_rounds round
+        JOIN academic_years round_year ON round_year.id = round.academic_year_id
+        JOIN study_programs program ON program.id = NEW.study_program_id
+        JOIN curriculum_versions version ON version.id = program.curriculum_version_id
+        JOIN academic_years starts ON starts.id = version.start_academic_year_id
+        LEFT JOIN academic_years ends ON ends.id = version.end_academic_year_id
+        WHERE round.id = NEW.admission_round_id
+          AND round.academic_year_id = NEW.academic_year_id
+          AND program.status <> 'archived'
+          AND version.status = 'published'
+          AND starts.start_date <= round_year.start_date
+          AND (ends.id IS NULL OR ends.end_date >= round_year.end_date)
+    ) THEN
+        RAISE EXCEPTION 'ACADEMIC_ADMISSION_TRACK_PROGRAM_CONTEXT_MISMATCH'
+            USING ERRCODE = 'check_violation';
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER admission_tracks_program_context_guard
+BEFORE INSERT OR UPDATE OF admission_round_id, study_program_id, academic_year_id
+ON admission_tracks
+FOR EACH ROW EXECUTE FUNCTION check_admission_track_program_context();
+
+-- Confirmation happens before final enrollment, so nullable linkage is valid at
+-- that stage. Once any student linkage is written, all linkage fields must agree.
+ALTER TABLE admission_room_assignments
+    DROP CONSTRAINT admission_room_assignments_successful_placement_check,
+    ADD CONSTRAINT admission_room_assignments_student_placement_shape_check CHECK (
+        (
+            student_id IS NULL
+            AND student_academic_year_id IS NULL
+            AND homeroom_placement_id IS NULL
+        )
+        OR (
+            student_id IS NOT NULL
+            AND student_academic_year_id IS NOT NULL
+            AND homeroom_placement_id IS NOT NULL
+        )
+    );
+
+-- Calendar events are annual records; a term remains optional for school-wide
+-- events that span more than one term. Targets inherit the event year.
+ALTER TABLE calendar_events
+    ALTER COLUMN academic_year_id SET NOT NULL;
+
+ALTER TABLE calendar_event_targets
+    ALTER COLUMN academic_year_id SET NOT NULL;
+
 ALTER TABLE academic_timetable_entries
     DROP COLUMN legacy_classroom_course_id,
     DROP COLUMN legacy_activity_slot_id;

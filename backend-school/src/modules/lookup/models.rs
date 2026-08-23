@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
+use crate::modules::academic::core::models::AcademicYearStatus;
+
 /// Generic lookup item - minimal data for dropdowns
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct LookupItem {
@@ -74,9 +76,10 @@ pub struct GradeLevelLookupItem {
     pub level_order: i32,
 }
 
-/// Classroom lookup item
+/// Homeroom lookup item for a caller-selected academic year.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct ClassroomLookupItem {
+#[serde(rename_all = "camelCase")]
+pub struct HomeroomLookupItem {
     pub id: Uuid,
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -93,11 +96,12 @@ pub struct AcademicYearLookupItem {
     pub id: Uuid,
     pub name: String,
     pub year: i32, // Numeric year for easy filtering/selection
-    pub is_current: bool,
+    pub status: AcademicYearStatus,
 }
 
-/// Student lookup item with student_id and class_room for enrollment
+/// Student lookup item with the placement in the caller-selected academic year.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct StudentLookupItem {
     pub id: Uuid,
     pub name: String,
@@ -109,11 +113,12 @@ pub struct StudentLookupItem {
     pub student_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(value_type = String)]
-    pub class_room: Option<String>,
+    pub homeroom: Option<String>,
 }
 
 /// Query parameters for lookup endpoints
 #[derive(Debug, Deserialize, IntoParams)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[into_params(parameter_in = Query)]
 pub struct LookupQuery {
     /// Filter for active items only (default: true)
@@ -122,13 +127,25 @@ pub struct LookupQuery {
     pub search: Option<String>,
     /// Maximum items to return (default: 100)
     pub limit: Option<i32>,
-    /// Filter by specific Academic Year ID (for grade_levels, classrooms)
-    pub academic_year_id: Option<Uuid>,
-    /// Filter by current active Academic Year (default: false unless specified)
-    pub current_year: Option<bool>,
-    /// Filter by level type (kindergarten, primary, secondary)
-    pub level_type: Option<String>,
-    pub subject_type: Option<String>,
     /// Filter to organization units where the current user is a member
     pub member_only: Option<bool>,
+}
+
+/// Query parameters for lookup data whose meaning changes by academic year.
+#[derive(Debug, Deserialize, IntoParams)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[into_params(parameter_in = Query)]
+pub struct AcademicLookupQuery {
+    /// Academic year selected by the caller. The server never infers the active year.
+    pub academic_year_id: Uuid,
+    /// Filter for active items only (default: true)
+    pub active_only: Option<bool>,
+    /// Search term
+    pub search: Option<String>,
+    /// Maximum items to return (default: 100)
+    pub limit: Option<i32>,
+    /// Filter by level type (kindergarten, primary, secondary)
+    pub level_type: Option<String>,
+    /// Filter by course or activity subject type
+    pub subject_type: Option<String>,
 }

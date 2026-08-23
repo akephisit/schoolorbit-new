@@ -245,7 +245,7 @@ pub async fn get_round_ranking(
             FROM admission_applications aa
             LEFT JOIN admission_exam_scores esc ON esc.application_id = aa.id
             WHERE aa.admission_track_id = $2
-              AND aa.status NOT IN ('rejected', 'withdrawn', 'absent')
+              AND aa.status NOT IN ('rejected', 'withdrawn', 'absent', 'enrolled')
             GROUP BY aa.id, aa.application_number, aa.national_id, aa.first_name, aa.last_name, aa.title, aa.previous_gpa, aa.created_at
             ORDER BY total_score DESC, {}
             "#,
@@ -322,19 +322,15 @@ pub async fn get_track_ranking(
 
     let rooms = sqlx::query_as::<_, RoomRow>(
         r#"
-        SELECT cr.id AS room_id, cr.name AS room_name, cr.capacity
+        SELECT homeroom.id AS room_id, homeroom.name AS room_name, homeroom.capacity
         FROM admission_tracks t
-        JOIN study_plans sp ON t.study_plan_id = sp.id
-        JOIN study_plan_versions spv ON spv.study_plan_id = sp.id AND spv.is_active = true
-        JOIN class_rooms cr ON cr.study_plan_version_id = spv.id
+        JOIN admission_rounds round ON round.id = t.admission_round_id
+        JOIN homerooms homeroom
+          ON homeroom.study_program_id = t.study_program_id
+         AND homeroom.academic_year_id = t.academic_year_id
+         AND homeroom.grade_level_id = round.grade_level_id
         WHERE t.id = $1
-          AND cr.academic_year_id = (
-              SELECT academic_year_id FROM admission_rounds WHERE id = t.admission_round_id
-          )
-          AND cr.grade_level_id = (
-              SELECT grade_level_id FROM admission_rounds WHERE id = t.admission_round_id
-          )
-        ORDER BY cr.name ASC
+        ORDER BY homeroom.name ASC
         "#,
     )
     .bind(track_id)
@@ -353,17 +349,17 @@ pub async fn get_track_ranking(
             COALESCE(SUM(esc.score), 0) AS total_score,
             at_orig.name AS original_track_name,
             aa.room_assignment_track_id IS NOT NULL AS is_track_overridden,
-            ara.class_room_id AS saved_room_id,
+            ara.homeroom_id AS saved_room_id,
             cr_saved.name AS saved_room_name,
             aa.gender
         FROM admission_applications aa
         LEFT JOIN admission_exam_scores esc ON esc.application_id = aa.id
         LEFT JOIN admission_tracks at_orig ON at_orig.id = aa.admission_track_id
         LEFT JOIN admission_room_assignments ara ON ara.application_id = aa.id
-        LEFT JOIN class_rooms cr_saved ON cr_saved.id = ara.class_room_id
+        LEFT JOIN homerooms cr_saved ON cr_saved.id = ara.homeroom_id
         WHERE COALESCE(aa.room_assignment_track_id, aa.admission_track_id) = $2
-          AND aa.status NOT IN ('rejected', 'withdrawn', 'absent')
-        GROUP BY aa.id, aa.application_number, aa.national_id, aa.first_name, aa.last_name, aa.title, aa.previous_gpa, aa.created_at, at_orig.name, aa.room_assignment_track_id, ara.class_room_id, cr_saved.name, aa.gender
+          AND aa.status NOT IN ('rejected', 'withdrawn', 'absent', 'enrolled')
+        GROUP BY aa.id, aa.application_number, aa.national_id, aa.first_name, aa.last_name, aa.title, aa.previous_gpa, aa.created_at, at_orig.name, aa.room_assignment_track_id, ara.homeroom_id, cr_saved.name, aa.gender
         ORDER BY selection_score DESC, total_score DESC, {}
         "#,
         tiebreak_order
@@ -556,19 +552,15 @@ pub async fn assign_rooms(
 
     let rooms = sqlx::query_as::<_, RoomRow>(
         r#"
-        SELECT cr.id AS room_id, cr.capacity
+        SELECT homeroom.id AS room_id, homeroom.capacity
         FROM admission_tracks t
-        JOIN study_plans sp ON t.study_plan_id = sp.id
-        JOIN study_plan_versions spv ON spv.study_plan_id = sp.id AND spv.is_active = true
-        JOIN class_rooms cr ON cr.study_plan_version_id = spv.id
+        JOIN admission_rounds round ON round.id = t.admission_round_id
+        JOIN homerooms homeroom
+          ON homeroom.study_program_id = t.study_program_id
+         AND homeroom.academic_year_id = t.academic_year_id
+         AND homeroom.grade_level_id = round.grade_level_id
         WHERE t.id = $1
-          AND cr.academic_year_id = (
-              SELECT academic_year_id FROM admission_rounds WHERE id = t.admission_round_id
-          )
-          AND cr.grade_level_id = (
-              SELECT grade_level_id FROM admission_rounds WHERE id = t.admission_round_id
-          )
-        ORDER BY cr.name ASC
+        ORDER BY homeroom.name ASC
         "#,
     )
     .bind(track_id)
@@ -594,7 +586,7 @@ pub async fn assign_rooms(
         FROM admission_applications aa
         LEFT JOIN admission_exam_scores esc ON esc.application_id = aa.id
         WHERE COALESCE(aa.room_assignment_track_id, aa.admission_track_id) = $2
-          AND aa.status NOT IN ('rejected', 'withdrawn', 'absent')
+          AND aa.status NOT IN ('rejected', 'withdrawn', 'absent', 'enrolled')
         GROUP BY aa.id, aa.application_number, aa.national_id, aa.first_name, aa.last_name, aa.title, aa.previous_gpa, aa.created_at
         ORDER BY selection_score DESC, total_score DESC, {}
         "#,
@@ -664,24 +656,34 @@ pub async fn assign_rooms(
         sqlx::query(
             r#"
             INSERT INTO admission_room_assignments (
-                application_id, class_room_id,
+                application_id, homeroom_id, academic_year_id,
                 rank_in_track, rank_in_room,
                 total_score, full_score,
                 assigned_by, assigned_at
             )
-            SELECT * FROM UNNEST(
+            SELECT selected.application_id, selected.homeroom_id, homeroom.academic_year_id,
+                   selected.rank_in_track, selected.rank_in_room,
+                   selected.total_score, selected.full_score,
+                   selected.assigned_by, selected.assigned_at
+            FROM UNNEST(
                 $1::uuid[], $2::uuid[], $3::int[], $4::int[],
                 $5::double precision[], $5::double precision[],
                 $6::uuid[], array_fill(NOW()::timestamptz, ARRAY[array_length($1::uuid[], 1)])
+            ) AS selected(
+                application_id, homeroom_id, rank_in_track, rank_in_room,
+                total_score, full_score, assigned_by, assigned_at
             )
+            JOIN homerooms homeroom ON homeroom.id = selected.homeroom_id
             ON CONFLICT (application_id) DO UPDATE SET
-                class_room_id = EXCLUDED.class_room_id,
+                homeroom_id = EXCLUDED.homeroom_id,
+                academic_year_id = EXCLUDED.academic_year_id,
                 rank_in_track = EXCLUDED.rank_in_track,
                 rank_in_room  = EXCLUDED.rank_in_room,
                 total_score   = EXCLUDED.total_score,
                 full_score    = EXCLUDED.full_score,
                 assigned_by   = EXCLUDED.assigned_by,
                 assigned_at   = EXCLUDED.assigned_at
+            WHERE admission_room_assignments.student_id IS NULL
             "#,
         )
         .bind(&app_ids)
@@ -698,7 +700,7 @@ pub async fn assign_rooms(
         })?;
 
         sqlx::query(
-            "UPDATE admission_applications SET status = 'accepted', updated_at = NOW() WHERE id = ANY($1::uuid[]) AND status NOT IN ('rejected', 'withdrawn')"
+            "UPDATE admission_applications SET status = 'accepted', updated_at = NOW() WHERE id = ANY($1::uuid[]) AND status NOT IN ('rejected', 'withdrawn', 'enrolled')"
         )
         .bind(&app_ids)
         .execute(&mut *tx)
@@ -774,15 +776,16 @@ pub async fn assign_rooms_global(
 
     let rooms_raw = sqlx::query_as::<_, RoomRow>(
         r#"
-        SELECT cr.id AS room_id, cr.name AS room_name, cr.capacity, t.id AS track_id
+        SELECT homeroom.id AS room_id, homeroom.name AS room_name,
+               homeroom.capacity, t.id AS track_id
         FROM admission_tracks t
-        JOIN study_plans sp ON t.study_plan_id = sp.id
-        JOIN study_plan_versions spv ON spv.study_plan_id = sp.id AND spv.is_active = true
-        JOIN class_rooms cr ON cr.study_plan_version_id = spv.id
+        JOIN admission_rounds round ON round.id = t.admission_round_id
+        JOIN homerooms homeroom
+          ON homeroom.study_program_id = t.study_program_id
+         AND homeroom.academic_year_id = t.academic_year_id
+         AND homeroom.grade_level_id = round.grade_level_id
         WHERE t.admission_round_id = $1
-          AND cr.academic_year_id = (SELECT academic_year_id FROM admission_rounds WHERE id = $1)
-          AND cr.grade_level_id   = (SELECT grade_level_id   FROM admission_rounds WHERE id = $1)
-        ORDER BY cr.name ASC
+        ORDER BY homeroom.name ASC
         "#,
     )
     .bind(round_id)
@@ -825,7 +828,7 @@ pub async fn assign_rooms_global(
         FROM admission_applications aa
         LEFT JOIN admission_exam_scores esc ON esc.application_id = aa.id
         WHERE aa.admission_round_id = $1
-          AND aa.status NOT IN ('rejected', 'withdrawn', 'absent')
+          AND aa.status NOT IN ('rejected', 'withdrawn', 'absent', 'enrolled')
         GROUP BY aa.id, aa.application_number, aa.national_id, aa.first_name, aa.last_name, aa.title, aa.created_at
         ORDER BY total_score DESC, aa.created_at ASC
         "#
@@ -886,24 +889,34 @@ pub async fn assign_rooms_global(
         sqlx::query(
             r#"
             INSERT INTO admission_room_assignments (
-                application_id, class_room_id,
+                application_id, homeroom_id, academic_year_id,
                 rank_in_track, rank_in_room,
                 total_score, full_score,
                 assigned_by, assigned_at
             )
-            SELECT * FROM UNNEST(
+            SELECT selected.application_id, selected.homeroom_id, homeroom.academic_year_id,
+                   selected.rank_in_track, selected.rank_in_room,
+                   selected.total_score, selected.full_score,
+                   selected.assigned_by, selected.assigned_at
+            FROM UNNEST(
                 $1::uuid[], $2::uuid[], $3::int[], $4::int[],
                 $5::double precision[], $5::double precision[],
                 $6::uuid[], array_fill(NOW()::timestamptz, ARRAY[array_length($1::uuid[], 1)])
+            ) AS selected(
+                application_id, homeroom_id, rank_in_track, rank_in_room,
+                total_score, full_score, assigned_by, assigned_at
             )
+            JOIN homerooms homeroom ON homeroom.id = selected.homeroom_id
             ON CONFLICT (application_id) DO UPDATE SET
-                class_room_id = EXCLUDED.class_room_id,
+                homeroom_id = EXCLUDED.homeroom_id,
+                academic_year_id = EXCLUDED.academic_year_id,
                 rank_in_track = EXCLUDED.rank_in_track,
                 rank_in_room  = EXCLUDED.rank_in_room,
                 total_score   = EXCLUDED.total_score,
                 full_score    = EXCLUDED.full_score,
                 assigned_by   = EXCLUDED.assigned_by,
                 assigned_at   = EXCLUDED.assigned_at
+            WHERE admission_room_assignments.student_id IS NULL
             "#,
         )
         .bind(&app_ids)
@@ -920,7 +933,7 @@ pub async fn assign_rooms_global(
         })?;
 
         sqlx::query(
-            "UPDATE admission_applications SET status = 'accepted', updated_at = NOW() WHERE id = ANY($1::uuid[]) AND status NOT IN ('rejected', 'withdrawn')"
+            "UPDATE admission_applications SET status = 'accepted', updated_at = NOW() WHERE id = ANY($1::uuid[]) AND status NOT IN ('rejected', 'withdrawn', 'enrolled')"
         )
         .bind(&app_ids)
         .execute(&mut *tx)
@@ -968,18 +981,18 @@ pub async fn get_global_ranking(
             COALESCE(SUM(esc.score), 0) AS total_score,
             at_orig.name AS original_track_name,
             aa.room_assignment_track_id IS NOT NULL AS is_track_overridden,
-            ara.class_room_id AS saved_room_id,
+            ara.homeroom_id AS saved_room_id,
             cr_saved.name AS saved_room_name,
             aa.gender
         FROM admission_applications aa
         LEFT JOIN admission_exam_scores esc ON esc.application_id = aa.id
         LEFT JOIN admission_tracks at_orig ON at_orig.id = aa.admission_track_id
         LEFT JOIN admission_room_assignments ara ON ara.application_id = aa.id
-        LEFT JOIN class_rooms cr_saved ON cr_saved.id = ara.class_room_id
+        LEFT JOIN homerooms cr_saved ON cr_saved.id = ara.homeroom_id
         WHERE aa.admission_round_id = $1
-          AND aa.status NOT IN ('rejected', 'withdrawn', 'absent')
+          AND aa.status NOT IN ('rejected', 'withdrawn', 'absent', 'enrolled')
         GROUP BY aa.id, aa.application_number, aa.national_id, aa.first_name, aa.last_name, aa.title, aa.created_at,
-                 at_orig.name, aa.room_assignment_track_id, ara.class_room_id, cr_saved.name, aa.gender
+                 at_orig.name, aa.room_assignment_track_id, ara.homeroom_id, cr_saved.name, aa.gender
         ORDER BY total_score DESC, aa.created_at ASC
         "#
     )
@@ -1000,9 +1013,9 @@ pub async fn get_global_ranking(
 
     let cap_rows = sqlx::query_as::<_, CapRow>(
         r#"
-        SELECT DISTINCT cr.id AS room_id, cr.capacity
+        SELECT DISTINCT homeroom.id AS room_id, homeroom.capacity
         FROM admission_room_assignments ara
-        JOIN class_rooms cr ON cr.id = ara.class_room_id
+        JOIN homerooms homeroom ON homeroom.id = ara.homeroom_id
         WHERE ara.application_id IN (
             SELECT id FROM admission_applications WHERE admission_round_id = $1
         )
@@ -1099,15 +1112,15 @@ pub struct RoomBasic {
 pub async fn get_round_rooms(pool: &PgPool, round_id: Uuid) -> Result<Vec<RoomBasic>, AppError> {
     sqlx::query_as::<_, RoomBasic>(
         r#"
-        SELECT DISTINCT cr.id AS room_id, cr.name AS room_name, cr.capacity
+        SELECT DISTINCT homeroom.id AS room_id, homeroom.name AS room_name, homeroom.capacity
         FROM admission_tracks t
-        JOIN study_plans sp ON t.study_plan_id = sp.id
-        JOIN study_plan_versions spv ON spv.study_plan_id = sp.id AND spv.is_active = true
-        JOIN class_rooms cr ON cr.study_plan_version_id = spv.id
+        JOIN admission_rounds round ON round.id = t.admission_round_id
+        JOIN homerooms homeroom
+          ON homeroom.study_program_id = t.study_program_id
+         AND homeroom.academic_year_id = t.academic_year_id
+         AND homeroom.grade_level_id = round.grade_level_id
         WHERE t.admission_round_id = $1
-          AND cr.academic_year_id = (SELECT academic_year_id FROM admission_rounds WHERE id = $1)
-          AND cr.grade_level_id   = (SELECT grade_level_id   FROM admission_rounds WHERE id = $1)
-        ORDER BY cr.name ASC
+        ORDER BY homeroom.name ASC
         "#,
     )
     .bind(round_id)

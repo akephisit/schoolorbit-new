@@ -37,6 +37,7 @@ pub struct StaffListData {
     path = "/api/staff/dashboard",
     operation_id = "getStaffDashboard",
     tag = "staff",
+    params(StaffDashboardQuery),
     responses(
         (status = 200, description = "Aggregate staff dashboard overview", body = ApiResponse<crate::modules::staff::services::dashboard_service::StaffDashboardOverview>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -46,13 +47,14 @@ pub struct StaffListData {
 pub async fn get_staff_dashboard(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<StaffDashboardQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
 
     dashboard_service::ensure_active_staff_user(&pool, actor.user_id).await?;
-    let data = dashboard_service::get_staff_dashboard(&pool).await?;
+    let data = dashboard_service::get_staff_dashboard(&pool, query.academic_year_id).await?;
 
     Ok((StatusCode::OK, Json(ApiResponse::ok(data))).into_response())
 }

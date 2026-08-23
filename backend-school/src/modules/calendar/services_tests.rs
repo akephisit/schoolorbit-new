@@ -6,12 +6,15 @@ use tokio::sync::broadcast;
 use uuid::Uuid;
 
 use crate::error::AppError;
+use crate::modules::academic::cutover_test_support::{
+    apply_migrations_through, seed_academic_cutover_fixture, CutoverFixture,
+};
 use crate::modules::calendar::models::{
     CalendarAudienceType, CalendarEventQuery, CalendarEventTargetInput,
     UpsertCalendarCategoryRequest, UpsertCalendarEventRequest, UpsertCalendarTagRequest,
 };
 use crate::modules::notification::events::TenantNotificationEvent;
-use crate::test_helpers::{create_test_pool, run_test_migrations};
+use crate::test_helpers::create_named_test_pool_with_max_connections;
 
 use super::services;
 
@@ -22,13 +25,22 @@ struct CalendarFixture {
     student_user_id: Uuid,
     second_student_user_id: Uuid,
     parent_user_id: Uuid,
+    academic_year_id: Uuid,
     grade_level_id: Uuid,
-    classroom_id: Uuid,
+    homeroom_id: Uuid,
 }
 
-async fn migrated_pool() -> PgPool {
-    let pool = create_test_pool().await;
-    run_test_migrations(&pool).await;
+async fn migrated_pool(name: &str) -> PgPool {
+    let pool = create_named_test_pool_with_max_connections(name, 5).await;
+    apply_migrations_through(&pool, 40)
+        .await
+        .expect("legacy calendar fixture migrations should run");
+    seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
+        .await
+        .expect("academic cutover fixture should seed");
+    apply_migrations_through(&pool, 44)
+        .await
+        .expect("canonical calendar fixture migrations should run");
     pool
 }
 
@@ -50,9 +62,7 @@ async fn insert_user(pool: &PgPool, user_type: &str, first_name: &str) -> Uuid {
 async fn insert_fixture(pool: &PgPool) -> CalendarFixture {
     let year = NEXT_YEAR.fetch_add(1, Ordering::Relaxed);
     let academic_year_id = Uuid::new_v4();
-    let study_plan_id = Uuid::new_v4();
-    let study_plan_version_id = Uuid::new_v4();
-    let classroom_id = Uuid::new_v4();
+    let homeroom_id = Uuid::new_v4();
     let staff_user_id = insert_user(pool, "staff", "Calendar Staff").await;
     let student_user_id = insert_user(pool, "student", "Calendar Student").await;
     let second_student_user_id = insert_user(pool, "student", "Second Calendar Student").await;
@@ -62,66 +72,74 @@ async fn insert_fixture(pool: &PgPool) -> CalendarFixture {
             .fetch_one(pool)
             .await
             .expect("baseline grade level should exist");
+    let (study_program_id, curriculum_version_id): (Uuid, Uuid) = sqlx::query_as(
+        "SELECT id, curriculum_version_id FROM study_programs ORDER BY created_at, id LIMIT 1",
+    )
+    .fetch_one(pool)
+    .await
+    .expect("cutover fixture study program should exist");
+    let today = calendar_today();
 
     sqlx::query(
-        "INSERT INTO academic_years (id, year, name, start_date, end_date)
-         VALUES ($1, $2, $3, '9600-01-01', '9600-12-31')",
+        "INSERT INTO academic_years (id, year, name, start_date, end_date, status)
+         VALUES ($1, $2, $3, $4, $5, 'planning')",
     )
     .bind(academic_year_id)
     .bind(year)
     .bind(format!("Calendar {year}"))
+    .bind(today - Duration::days(60))
+    .bind(today + Duration::days(365))
     .execute(pool)
     .await
     .expect("academic year should insert");
 
     sqlx::query(
-        "INSERT INTO study_plans (id, code, name_th)
-         VALUES ($1, $2, 'Calendar Characterization Plan')",
+        "INSERT INTO homerooms (
+            id, code, name, academic_year_id, grade_level_id,
+            legacy_curriculum_version_id, study_program_id
+         ) VALUES ($1, $2, 'Calendar Homeroom', $3, $4, $5, $6)",
     )
-    .bind(study_plan_id)
-    .bind(format!("CAL-{study_plan_id}"))
-    .execute(pool)
-    .await
-    .expect("study plan should insert");
-
-    sqlx::query(
-        "INSERT INTO study_plan_versions
-            (id, study_plan_id, version_name, start_academic_year_id)
-         VALUES ($1, $2, 'Calendar Version', $3)",
-    )
-    .bind(study_plan_version_id)
-    .bind(study_plan_id)
-    .bind(academic_year_id)
-    .execute(pool)
-    .await
-    .expect("study-plan version should insert");
-
-    sqlx::query(
-        "INSERT INTO class_rooms
-            (id, code, name, academic_year_id, grade_level_id, study_plan_version_id)
-         VALUES ($1, $2, 'Calendar Classroom', $3, $4, $5)",
-    )
-    .bind(classroom_id)
-    .bind(format!("CAL-{}", &classroom_id.to_string()[..8]))
+    .bind(homeroom_id)
+    .bind(format!("CAL-{}", &homeroom_id.to_string()[..8]))
     .bind(academic_year_id)
     .bind(grade_level_id)
-    .bind(study_plan_version_id)
+    .bind(curriculum_version_id)
+    .bind(study_program_id)
     .execute(pool)
     .await
-    .expect("classroom should insert");
+    .expect("homeroom should insert");
 
     for (student_id, class_number) in [(student_user_id, 1), (second_student_user_id, 2)] {
+        let student_academic_year_id = Uuid::new_v4();
         sqlx::query(
-            "INSERT INTO student_class_enrollments
-                (student_id, class_room_id, status, class_number)
-             VALUES ($1, $2, 'active', $3)",
+            "INSERT INTO student_academic_years (
+                id, student_id, academic_year_id, grade_level_id, study_program_id, status
+             ) VALUES ($1, $2, $3, $4, $5, 'active')",
         )
+        .bind(student_academic_year_id)
         .bind(student_id)
-        .bind(classroom_id)
+        .bind(academic_year_id)
+        .bind(grade_level_id)
+        .bind(study_program_id)
+        .execute(pool)
+        .await
+        .expect("student academic-year record should insert");
+
+        sqlx::query(
+            "INSERT INTO homeroom_placements (
+                id, student_academic_year_id, academic_year_id, homeroom_id,
+                start_date, status, enrollment_type, class_number
+             ) VALUES ($1, $2, $3, $4, $5, 'current', 'regular', $6)",
+        )
+        .bind(Uuid::new_v4())
+        .bind(student_academic_year_id)
+        .bind(academic_year_id)
+        .bind(homeroom_id)
+        .bind(today - Duration::days(30))
         .bind(class_number)
         .execute(pool)
         .await
-        .expect("student enrollment should insert");
+        .expect("homeroom placement should insert");
     }
 
     sqlx::query(
@@ -139,8 +157,9 @@ async fn insert_fixture(pool: &PgPool) -> CalendarFixture {
         student_user_id,
         second_student_user_id,
         parent_user_id,
+        academic_year_id,
         grade_level_id,
-        classroom_id,
+        homeroom_id,
     }
 }
 
@@ -148,8 +167,10 @@ fn calendar_today() -> NaiveDate {
     (Utc::now() + Duration::hours(7)).date_naive()
 }
 
-fn query_around(today: NaiveDate) -> CalendarEventQuery {
+fn query_around(today: NaiveDate, academic_year_id: Uuid) -> CalendarEventQuery {
     CalendarEventQuery {
+        academic_year_id,
+        academic_term_id: None,
         from: Some(today - Duration::days(30)),
         to: Some(today + Duration::days(60)),
         category_id: None,
@@ -163,16 +184,17 @@ fn query_around(today: NaiveDate) -> CalendarEventQuery {
 fn target(
     audience_type: CalendarAudienceType,
     grade_level_id: Option<Uuid>,
-    class_room_id: Option<Uuid>,
+    homeroom_id: Option<Uuid>,
 ) -> CalendarEventTargetInput {
     CalendarEventTargetInput {
         audience_type,
         grade_level_id,
-        class_room_id,
+        homeroom_id,
     }
 }
 
 fn event_request(
+    academic_year_id: Uuid,
     title: &str,
     start_date: NaiveDate,
     is_public: bool,
@@ -181,6 +203,8 @@ fn event_request(
     reminder_offsets_days: Vec<i32>,
 ) -> UpsertCalendarEventRequest {
     UpsertCalendarEventRequest {
+        academic_year_id,
+        academic_term_id: None,
         title: title.to_string(),
         description: Some(format!("{title} description")),
         location: Some("Calendar fixture hall".to_string()),
@@ -209,6 +233,7 @@ async fn create_named_event(
         pool,
         fixture.staff_user_id,
         event_request(
+            fixture.academic_year_id,
             title,
             calendar_today() + Duration::days(5),
             is_public,
@@ -225,7 +250,7 @@ async fn create_named_event(
 
 #[tokio::test]
 async fn event_lifecycle_preserves_targets_tags_reminders_and_soft_delete() {
-    let pool = migrated_pool().await;
+    let pool = migrated_pool("calendar_event_lifecycle").await;
     let fixture = insert_fixture(&pool).await;
     let today = calendar_today();
     let category = services::create_category(
@@ -249,6 +274,7 @@ async fn event_lifecycle_preserves_targets_tags_reminders_and_soft_delete() {
     .expect("tag should create");
 
     let mut payload = event_request(
+        fixture.academic_year_id,
         "Lifecycle event",
         today + Duration::days(8),
         false,
@@ -257,7 +283,7 @@ async fn event_lifecycle_preserves_targets_tags_reminders_and_soft_delete() {
             target(
                 CalendarAudienceType::Student,
                 None,
-                Some(fixture.classroom_id),
+                Some(fixture.homeroom_id),
             ),
             target(
                 CalendarAudienceType::Parent,
@@ -290,6 +316,7 @@ async fn event_lifecycle_preserves_targets_tags_reminders_and_soft_delete() {
         fixture.staff_user_id,
         created.event.id,
         event_request(
+            fixture.academic_year_id,
             "Lifecycle event updated",
             today + Duration::days(10),
             true,
@@ -308,17 +335,19 @@ async fn event_lifecycle_preserves_targets_tags_reminders_and_soft_delete() {
     assert_eq!(updated.event.reminders.len(), 1);
     assert_eq!(updated.event.reminders[0].days_before, 3);
 
-    let listed = services::list_management_events(&pool, query_around(today))
-        .await
-        .expect("management events should list");
+    let listed =
+        services::list_management_events(&pool, query_around(today, fixture.academic_year_id))
+            .await
+            .expect("management events should list");
     assert!(listed.iter().any(|event| event.id == created.event.id));
 
     services::soft_delete_event(&pool, created.event.id, fixture.staff_user_id)
         .await
         .expect("event should soft-delete");
-    let listed_after_delete = services::list_management_events(&pool, query_around(today))
-        .await
-        .expect("management events should list after deletion");
+    let listed_after_delete =
+        services::list_management_events(&pool, query_around(today, fixture.academic_year_id))
+            .await
+            .expect("management events should list after deletion");
     assert!(!listed_after_delete
         .iter()
         .any(|event| event.id == created.event.id));
@@ -335,7 +364,7 @@ async fn event_lifecycle_preserves_targets_tags_reminders_and_soft_delete() {
 
 #[tokio::test]
 async fn duplicate_category_and_tag_names_keep_existing_conflict_messages() {
-    let pool = migrated_pool().await;
+    let pool = migrated_pool("calendar_duplicate_names").await;
     insert_fixture(&pool).await;
     let suffix = Uuid::new_v4();
     let category_name = format!("Duplicate Category {suffix}");
@@ -391,7 +420,7 @@ async fn duplicate_category_and_tag_names_keep_existing_conflict_messages() {
 
 #[tokio::test]
 async fn management_self_child_and_public_views_enforce_current_audiences() {
-    let pool = migrated_pool().await;
+    let pool = migrated_pool("calendar_audience_views").await;
     let fixture = insert_fixture(&pool).await;
     let today = calendar_today();
     let all_id = create_named_event(
@@ -418,7 +447,7 @@ async fn management_self_child_and_public_views_enforce_current_audiences() {
         vec![target(
             CalendarAudienceType::Student,
             None,
-            Some(fixture.classroom_id),
+            Some(fixture.homeroom_id),
         )],
     )
     .await;
@@ -430,29 +459,38 @@ async fn management_self_child_and_public_views_enforce_current_audiences() {
         vec![target(
             CalendarAudienceType::Parent,
             None,
-            Some(fixture.classroom_id),
+            Some(fixture.homeroom_id),
         )],
     )
     .await;
 
-    let management = services::list_management_events(&pool, query_around(today))
-        .await
-        .expect("management events should list");
-    let staff = services::list_my_events(&pool, fixture.staff_user_id, query_around(today))
-        .await
-        .expect("staff events should list");
-    let student = services::list_my_events(&pool, fixture.student_user_id, query_around(today))
-        .await
-        .expect("student events should list");
+    let management =
+        services::list_management_events(&pool, query_around(today, fixture.academic_year_id))
+            .await
+            .expect("management events should list");
+    let staff = services::list_my_events(
+        &pool,
+        fixture.staff_user_id,
+        query_around(today, fixture.academic_year_id),
+    )
+    .await
+    .expect("staff events should list");
+    let student = services::list_my_events(
+        &pool,
+        fixture.student_user_id,
+        query_around(today, fixture.academic_year_id),
+    )
+    .await
+    .expect("student events should list");
     let child = services::list_child_events(
         &pool,
         fixture.parent_user_id,
         fixture.student_user_id,
-        query_around(today),
+        query_around(today, fixture.academic_year_id),
     )
     .await
     .expect("child events should list");
-    let public = services::list_public_events(&pool, query_around(today))
+    let public = services::list_public_events(&pool, query_around(today, fixture.academic_year_id))
         .await
         .expect("public events should list");
 
@@ -498,7 +536,7 @@ async fn management_self_child_and_public_views_enforce_current_audiences() {
 
 #[tokio::test]
 async fn recipient_resolution_deduplicates_overlapping_all_grade_class_targets() {
-    let pool = migrated_pool().await;
+    let pool = migrated_pool("calendar_recipient_resolution").await;
     let fixture = insert_fixture(&pool).await;
     let event_id = create_named_event(
         &pool,
@@ -517,7 +555,7 @@ async fn recipient_resolution_deduplicates_overlapping_all_grade_class_targets()
             target(
                 CalendarAudienceType::Student,
                 None,
-                Some(fixture.classroom_id),
+                Some(fixture.homeroom_id),
             ),
             target(CalendarAudienceType::Parent, None, None),
             target(
@@ -528,7 +566,7 @@ async fn recipient_resolution_deduplicates_overlapping_all_grade_class_targets()
             target(
                 CalendarAudienceType::Parent,
                 None,
-                Some(fixture.classroom_id),
+                Some(fixture.homeroom_id),
             ),
         ],
     )
@@ -553,13 +591,14 @@ async fn recipient_resolution_deduplicates_overlapping_all_grade_class_targets()
 
 #[tokio::test]
 async fn successful_reminder_marks_sent_once_and_second_run_is_idempotent() {
-    let pool = migrated_pool().await;
+    let pool = migrated_pool("calendar_reminder_idempotency").await;
     let fixture = insert_fixture(&pool).await;
     let today = calendar_today();
     let created = services::create_event(
         &pool,
         fixture.staff_user_id,
         event_request(
+            fixture.academic_year_id,
             "Reminder delivery",
             today + Duration::days(1),
             false,
@@ -567,7 +606,7 @@ async fn successful_reminder_marks_sent_once_and_second_run_is_idempotent() {
             vec![target(
                 CalendarAudienceType::Parent,
                 None,
-                Some(fixture.classroom_id),
+                Some(fixture.homeroom_id),
             )],
             vec![1],
         ),
@@ -608,13 +647,14 @@ async fn successful_reminder_marks_sent_once_and_second_run_is_idempotent() {
 
 #[tokio::test]
 async fn reminder_without_active_recipients_is_marked_complete_without_broadcast() {
-    let pool = migrated_pool().await;
+    let pool = migrated_pool("calendar_no_recipients").await;
     let fixture = insert_fixture(&pool).await;
     let today = calendar_today();
     let created = services::create_event(
         &pool,
         fixture.staff_user_id,
         event_request(
+            fixture.academic_year_id,
             "No active recipients",
             today + Duration::days(1),
             false,
@@ -622,7 +662,7 @@ async fn reminder_without_active_recipients_is_marked_complete_without_broadcast
             vec![target(
                 CalendarAudienceType::Parent,
                 None,
-                Some(fixture.classroom_id),
+                Some(fixture.homeroom_id),
             )],
             vec![1],
         ),

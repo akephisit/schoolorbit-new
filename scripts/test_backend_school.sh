@@ -87,7 +87,7 @@ cleanup_armed=true
 if ! docker run --detach \
     --name "$CONTAINER_NAME" \
     --publish '127.0.0.1::5432' \
-    --tmpfs '/var/lib/postgresql:rw,size=1g' \
+    --tmpfs '/var/lib/postgresql:rw,size=3g' \
     --env "POSTGRES_USER=$POSTGRES_USER" \
     --env "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" \
     --env "POSTGRES_DB=$POSTGRES_DATABASE" \

@@ -3,7 +3,12 @@ use std::{borrow::Cow, fs, path::Path};
 use sqlx::{migrate::Migrator, PgPool};
 use uuid::Uuid;
 
-use crate::test_helpers::{create_named_test_pool, create_test_user, run_test_migrations};
+use crate::{
+    modules::academic::cutover_test_support::{
+        apply_migrations_through, seed_academic_cutover_fixture, CutoverFixture,
+    },
+    test_helpers::{create_named_test_pool, create_test_user},
+};
 
 #[test]
 fn certificate_migration_is_forward_only_and_complete() {
@@ -153,7 +158,7 @@ async fn school_font_cutover_rejects_each_legacy_font_shape_before_schema_change
             create_test_user(&pool, &format!("{test_name}@example.test"), "test-password")
                 .await
                 .expect("actor fixture should insert");
-        let academic_year_id = insert_academic_year(&pool).await;
+        let academic_year_id = insert_pre_school_font_academic_year(&pool).await;
         let campaign_id = insert_campaign(&pool, academic_year_id, actor_id, test_name, 1).await;
         let template_id = insert_template(&pool, campaign_id, legacy_shape).await;
 
@@ -403,13 +408,39 @@ async fn insert_legacy_font_file(pool: &PgPool, actor_id: Uuid) -> Uuid {
 
 async fn insert_academic_year(pool: &PgPool) -> Uuid {
     sqlx::query_scalar(
-        "INSERT INTO academic_years (year, name, start_date, end_date)
-         VALUES (2999, 'Certificate schema test', '2999-01-01', '2999-12-31')
+        "INSERT INTO academic_years (year, name, start_date, end_date, status)
+         VALUES (2999, 'Certificate schema test', '2999-01-01', '2999-12-31', 'planning')
          RETURNING id",
     )
     .fetch_one(pool)
     .await
     .expect("academic year fixture should insert")
+}
+
+async fn insert_pre_school_font_academic_year(pool: &PgPool) -> Uuid {
+    sqlx::query_scalar(
+        "INSERT INTO academic_years (year, name, start_date, end_date, is_active)
+         VALUES (2999, 'Certificate schema test', '2999-01-01', '2999-12-31', false)
+         RETURNING id",
+    )
+    .fetch_one(pool)
+    .await
+    .expect("pre-academic-cutover year fixture should insert")
+}
+
+async fn run_certificate_test_migrations(pool: &PgPool) {
+    apply_migrations_through(pool, 40)
+        .await
+        .expect("apply pre-cutover certificate migrations");
+    seed_academic_cutover_fixture(pool, CutoverFixture::Passing)
+        .await
+        .expect("seed certificate cutover fixture");
+    apply_migrations_through(pool, 44)
+        .await
+        .expect("apply certificate academic cutover migrations");
+    crate::utils::permission_sync::sync_permissions(pool)
+        .await
+        .expect("sync certificate fixture permissions");
 }
 
 async fn insert_campaign(
@@ -667,7 +698,7 @@ async fn assert_purge_finalizer_rejects_shared_file(pool: &PgPool, campaign_id: 
 #[tokio::test]
 async fn purge_finalizer_removes_complete_campaign_file_and_audit_graph() {
     let pool = create_named_test_pool("certificate_campaign_purge_finalizer").await;
-    run_test_migrations(&pool).await;
+    run_certificate_test_migrations(&pool).await;
 
     let actor_id = create_test_user(&pool, "certificate-purge@example.test", "test-password")
         .await
@@ -932,7 +963,9 @@ async fn purge_finalizer_removes_complete_campaign_file_and_audit_graph() {
     assert!(finalized);
 
     for (table, expected_count) in [
-        ("certificate_campaigns", 0_i64),
+        // The academic cutover fixture owns one unrelated campaign. The campaign under
+        // purge must be gone while that migration fixture remains intact.
+        ("certificate_campaigns", 1_i64),
         ("certificate_campaign_purge_jobs", 0),
         ("certificate_campaign_purge_files", 0),
         ("certificate_templates", 0),
@@ -998,7 +1031,7 @@ async fn purge_finalizer_removes_complete_campaign_file_and_audit_graph() {
 #[tokio::test]
 async fn purge_finalizer_rolls_back_when_storage_is_not_deleted() {
     let pool = create_named_test_pool("certificate_campaign_purge_incomplete_storage").await;
-    run_test_migrations(&pool).await;
+    run_certificate_test_migrations(&pool).await;
 
     let actor_id = create_test_user(
         &pool,
@@ -1091,7 +1124,7 @@ async fn purge_finalizer_rolls_back_when_storage_is_not_deleted() {
 #[tokio::test]
 async fn purge_finalizer_rolls_back_when_inventory_file_has_external_domain_references() {
     let pool = create_named_test_pool("certificate_campaign_purge_external_references").await;
-    run_test_migrations(&pool).await;
+    run_certificate_test_migrations(&pool).await;
 
     let actor_id = create_test_user(
         &pool,
@@ -1205,7 +1238,7 @@ async fn purge_finalizer_rolls_back_when_inventory_file_has_external_domain_refe
 #[tokio::test]
 async fn purge_finalizer_rejects_admission_logo_and_question_bank_file_consumers() {
     let pool = create_named_test_pool("certificate_campaign_purge_all_file_consumers").await;
-    run_test_migrations(&pool).await;
+    run_certificate_test_migrations(&pool).await;
 
     let actor_id = create_test_user(
         &pool,
@@ -1277,14 +1310,15 @@ async fn purge_finalizer_rejects_admission_logo_and_question_bank_file_consumers
             .fetch_one(&pool)
             .await
             .expect("grade-level fixture should exist");
-    let study_plan_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO study_plans (code, name_th)
-         VALUES ('PURGE-FINALIZER', 'แผนทดสอบ finalizer')
-         RETURNING id",
+    let study_program_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM study_programs
+         WHERE status = 'published'
+         ORDER BY is_default DESC, id
+         LIMIT 1",
     )
     .fetch_one(&pool)
     .await
-    .expect("study-plan fixture should insert");
+    .expect("study-program fixture should exist");
     let admission_round_id: Uuid = sqlx::query_scalar(
         "INSERT INTO admission_rounds (
             academic_year_id, grade_level_id, name, apply_start_date, apply_end_date
@@ -1297,12 +1331,15 @@ async fn purge_finalizer_rejects_admission_logo_and_question_bank_file_consumers
     .await
     .expect("admission-round fixture should insert");
     let admission_track_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO admission_tracks (admission_round_id, study_plan_id, name)
-         VALUES ($1, $2, 'แผนรับสมัคร finalizer')
+        "INSERT INTO admission_tracks (
+             admission_round_id, academic_year_id, study_program_id, name
+         )
+         VALUES ($1, $2, $3, 'แผนรับสมัคร finalizer')
          RETURNING id",
     )
     .bind(admission_round_id)
-    .bind(study_plan_id)
+    .bind(academic_year_id)
+    .bind(study_program_id)
     .fetch_one(&pool)
     .await
     .expect("admission-track fixture should insert");
@@ -1348,15 +1385,10 @@ async fn purge_finalizer_rejects_admission_logo_and_question_bank_file_consumers
         .await
         .expect("school-logo fixture should clear");
 
-    let subject_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO subjects (code, name_th, type, start_academic_year_id)
-         VALUES ('PURGE-FINALIZER-QB', 'รายวิชาทดสอบ finalizer', 'BASIC', $1)
-         RETURNING id",
-    )
-    .bind(academic_year_id)
-    .fetch_one(&pool)
-    .await
-    .expect("question-bank subject fixture should insert");
+    let subject_id: Uuid = sqlx::query_scalar("SELECT id FROM subjects ORDER BY code, id LIMIT 1")
+        .fetch_one(&pool)
+        .await
+        .expect("question-bank stable subject fixture should exist");
     let rich_content = serde_json::json!({
         "schemaVersion": 1,
         "document": {
@@ -1410,7 +1442,7 @@ async fn purge_finalizer_rejects_admission_logo_and_question_bank_file_consumers
 #[tokio::test]
 async fn migrated_schema_enforces_certificate_invariants() {
     let pool = create_named_test_pool("certificate_schema_invariants").await;
-    run_test_migrations(&pool).await;
+    run_certificate_test_migrations(&pool).await;
 
     let actor_id = create_test_user(&pool, "certificate-schema@example.test", "test-password")
         .await

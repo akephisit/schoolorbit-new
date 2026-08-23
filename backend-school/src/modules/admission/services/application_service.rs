@@ -764,7 +764,7 @@ pub async fn list_enrollment_pending(
         FROM admission_applications aa
         LEFT JOIN admission_tracks at2 ON aa.admission_track_id = at2.id
         JOIN admission_room_assignments ara ON aa.id = ara.application_id
-        LEFT JOIN class_rooms cr ON ara.class_room_id = cr.id
+        LEFT JOIN homerooms cr ON ara.homeroom_id = cr.id
         LEFT JOIN admission_enrollment_forms aef ON aa.id = aef.application_id
         WHERE aa.admission_round_id = $1
           AND aa.status IN ('accepted', 'enrolled')
@@ -789,6 +789,17 @@ pub struct EnrollmentResult {
     pub student_code: String,
 }
 
+#[derive(sqlx::FromRow)]
+struct EnrollmentPlacementContext {
+    assignment_id: Uuid,
+    homeroom_id: Uuid,
+    academic_year_id: Uuid,
+    grade_level_id: Uuid,
+    study_program_id: Uuid,
+    academic_year_status: String,
+    placement_start_date: chrono::NaiveDate,
+}
+
 pub async fn complete_enrollment(
     pool: &PgPool,
     id: Uuid,
@@ -801,13 +812,45 @@ pub async fn complete_enrollment(
         .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
     let application = sqlx::query_as::<_, AdmissionApplication>(
-        "SELECT aa.*, at2.name AS track_name, NULL::text AS assigned_track_name, ar.name AS round_name FROM admission_applications aa LEFT JOIN admission_tracks at2 ON aa.admission_track_id = at2.id LEFT JOIN admission_rounds ar ON aa.admission_round_id = ar.id WHERE aa.id = $1"
+        "SELECT aa.*, at2.name AS track_name, NULL::text AS assigned_track_name,
+                ar.name AS round_name
+         FROM admission_applications aa
+         LEFT JOIN admission_tracks at2 ON aa.admission_track_id = at2.id
+         LEFT JOIN admission_rounds ar ON aa.admission_round_id = ar.id
+         WHERE aa.id = $1
+         FOR UPDATE OF aa",
     )
     .bind(id)
     .fetch_optional(&mut *tx)
     .await
     .map_err(|_| AppError::InternalServerError("Database error".to_string()))?
     .ok_or_else(|| AppError::NotFound("ไม่พบใบสมัคร".to_string()))?;
+
+    if application.status == "enrolled" {
+        let user_id = application
+            .created_user_id
+            .ok_or_else(|| AppError::InternalServerError("ข้อมูลการมอบตัวไม่สมบูรณ์".to_string()))?;
+        let replay = sqlx::query_as::<_, (String, String)>(
+            "SELECT users.username, student_info.student_id
+             FROM users
+             JOIN student_info ON student_info.user_id = users.id
+             WHERE users.id = $1",
+        )
+        .bind(user_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|_| AppError::InternalServerError("Database error".to_string()))?
+        .ok_or_else(|| AppError::InternalServerError("ข้อมูลนักเรียนไม่สมบูรณ์".to_string()))?;
+
+        tx.commit()
+            .await
+            .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
+        return Ok(EnrollmentResult {
+            user_id,
+            username: replay.0,
+            student_code: replay.1,
+        });
+    }
 
     if application.status != "accepted" {
         return Err(AppError::BadRequest(format!(
@@ -816,16 +859,50 @@ pub async fn complete_enrollment(
         )));
     }
 
-    let class_room_id: Option<Uuid> = sqlx::query_scalar(
-        "SELECT class_room_id FROM admission_room_assignments WHERE application_id = $1",
+    let placement_context = sqlx::query_as::<_, EnrollmentPlacementContext>(
+        r#"SELECT assignment.id AS assignment_id,
+                  homeroom.id AS homeroom_id,
+                  homeroom.academic_year_id,
+                  homeroom.grade_level_id,
+                  homeroom.study_program_id,
+                  year.status AS academic_year_status,
+                  CASE WHEN year.status = 'active'
+                       THEN GREATEST(CURRENT_DATE, year.start_date)
+                       ELSE year.start_date
+                  END AS placement_start_date
+           FROM admission_room_assignments assignment
+           JOIN admission_applications application ON application.id = assignment.application_id
+           JOIN admission_rounds round ON round.id = application.admission_round_id
+           JOIN admission_tracks track
+             ON track.id = COALESCE(
+                    application.room_assignment_track_id,
+                    application.admission_track_id
+                )
+           JOIN homerooms homeroom
+             ON homeroom.id = assignment.homeroom_id
+            AND homeroom.academic_year_id = round.academic_year_id
+            AND homeroom.grade_level_id = round.grade_level_id
+            AND homeroom.study_program_id = track.study_program_id
+           JOIN academic_years year ON year.id = homeroom.academic_year_id
+           WHERE assignment.application_id = $1
+           FOR UPDATE OF assignment"#,
     )
     .bind(id)
     .fetch_optional(&mut *tx)
     .await
-    .unwrap_or(None);
+    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?
+    .ok_or_else(|| AppError::BadRequest("ไม่พบข้อมูลห้องเรียน กรุณาตรวจสอบการจัดห้อง".to_string()))?;
 
-    let class_room_id = class_room_id
-        .ok_or_else(|| AppError::BadRequest("ไม่พบข้อมูลห้องเรียน กรุณาตรวจสอบการจัดห้อง".to_string()))?;
+    let (student_year_status, placement_status) =
+        match placement_context.academic_year_status.as_str() {
+            "active" => ("active", "current"),
+            "planning" | "ready" => ("planned", "planned"),
+            _ => {
+                return Err(AppError::BadRequest(
+                    "ปีการศึกษาของรอบรับสมัครไม่เปิดให้มอบตัว".to_string(),
+                ));
+            }
+        };
 
     let student_code = if let Some(code) = payload.student_code.filter(|c| !c.is_empty()) {
         code
@@ -906,21 +983,87 @@ pub async fn complete_enrollment(
         AppError::InternalServerError("ไม่สามารถสร้างข้อมูลนักเรียนได้".to_string())
     })?;
 
-    sqlx::query(
+    let student_academic_year_id: Uuid = sqlx::query_scalar(
         r#"
-        INSERT INTO student_class_enrollments (student_id, class_room_id, enrollment_date, status)
-        VALUES ($1, $2, CURRENT_DATE, 'active')
-        ON CONFLICT (student_id, class_room_id) DO UPDATE SET status = 'active', updated_at = NOW()
+        INSERT INTO student_academic_years (
+            id, student_id, academic_year_id, grade_level_id, study_program_id,
+            status, migration_provenance
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, jsonb_build_object(
+            'source', 'admission', 'applicationId', $7::uuid
+        ))
+        ON CONFLICT (student_id, academic_year_id) DO UPDATE SET
+            grade_level_id = EXCLUDED.grade_level_id,
+            study_program_id = EXCLUDED.study_program_id,
+            status = EXCLUDED.status,
+            row_version = student_academic_years.row_version + 1,
+            updated_at = NOW()
+        RETURNING id
         "#,
     )
+    .bind(Uuid::new_v4())
     .bind(new_user_id)
-    .bind(class_room_id)
-    .execute(&mut *tx)
+    .bind(placement_context.academic_year_id)
+    .bind(placement_context.grade_level_id)
+    .bind(placement_context.study_program_id)
+    .bind(student_year_status)
+    .bind(id)
+    .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
-        tracing::error!("Failed to enroll student: {}", e);
-        AppError::InternalServerError("ไม่สามารถลงทะเบียนเข้าห้องเรียนได้".to_string())
+        tracing::error!("Failed to create student academic year: {}", e);
+        AppError::InternalServerError("ไม่สามารถสร้างข้อมูลปีการศึกษาของนักเรียนได้".to_string())
     })?;
+
+    let homeroom_placement_id: Uuid = sqlx::query_scalar(
+        r#"INSERT INTO homeroom_placements (
+               id, student_academic_year_id, academic_year_id, homeroom_id,
+               start_date, status, enrollment_type, metadata, migration_provenance
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, 'admission',
+                   jsonb_build_object('admissionApplicationId', $7::uuid),
+                   jsonb_build_object('source', 'admission'))
+           RETURNING id"#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(student_academic_year_id)
+    .bind(placement_context.academic_year_id)
+    .bind(placement_context.homeroom_id)
+    .bind(placement_context.placement_start_date)
+    .bind(placement_status)
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to create admission homeroom placement: {}", e);
+        AppError::InternalServerError("ไม่สามารถจัดห้องประจำชั้นได้".to_string())
+    })?;
+
+    sqlx::query(
+        "UPDATE admission_applications
+         SET created_user_id = $1, updated_at = NOW()
+         WHERE id = $2",
+    )
+    .bind(new_user_id)
+    .bind(id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมบัญชีนักเรียนได้".to_string()))?;
+
+    sqlx::query(
+        "UPDATE admission_room_assignments
+         SET student_id = $1,
+             student_academic_year_id = $2,
+             homeroom_placement_id = $3
+         WHERE id = $4",
+    )
+    .bind(new_user_id)
+    .bind(student_academic_year_id)
+    .bind(homeroom_placement_id)
+    .bind(placement_context.assignment_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมผลการจัดห้องได้".to_string()))?;
 
     if let Some(fd) = payload.form_data {
         sqlx::query(
@@ -1135,12 +1278,16 @@ pub async fn complete_enrollment(
     sqlx::query(
         r#"
         UPDATE admission_applications
-        SET status = 'enrolled', enrolled_by = $1, enrolled_at = NOW(), created_user_id = $2, updated_at = NOW()
-        WHERE id = $3
+        SET status = 'enrolled', enrolled_by = $1, enrolled_at = NOW(),
+            created_user_id = $2, student_academic_year_id = $3,
+            homeroom_placement_id = $4, updated_at = NOW()
+        WHERE id = $5
         "#,
     )
     .bind(enroller_id)
     .bind(new_user_id)
+    .bind(student_academic_year_id)
+    .bind(homeroom_placement_id)
     .bind(id)
     .execute(&mut *tx)
     .await
@@ -1369,7 +1516,7 @@ pub async fn sort_room_students(pool: &PgPool, round_id: Uuid) -> Result<i64, Ap
         WITH ranked AS (
             SELECT ara.application_id,
                    ROW_NUMBER() OVER (
-                       PARTITION BY ara.class_room_id
+                       PARTITION BY ara.homeroom_id
                        ORDER BY
                            CASE aa.title
                                WHEN 'เด็กชาย' THEN 0
@@ -1422,7 +1569,7 @@ pub async fn auto_assign_student_ids(
         SELECT ara.application_id
         FROM admission_room_assignments ara
         JOIN admission_applications aa ON aa.id = ara.application_id
-        LEFT JOIN class_rooms cr ON cr.id = ara.class_room_id
+        LEFT JOIN homerooms cr ON cr.id = ara.homeroom_id
         WHERE aa.admission_round_id = $1
           AND (aa.assigned_student_id IS NULL OR aa.assigned_student_id = '')
           AND aa.status IN ('accepted', 'enrolled', 'scored')
@@ -1472,7 +1619,7 @@ pub async fn list_student_ids(
             esa.exam_id
         FROM admission_applications a
         JOIN admission_room_assignments ra ON ra.application_id = a.id
-        LEFT JOIN class_rooms cr ON ra.class_room_id = cr.id
+        LEFT JOIN homerooms cr ON ra.homeroom_id = cr.id
         LEFT JOIN admission_tracks at_orig ON at_orig.id = a.admission_track_id
         LEFT JOIN admission_tracks at_assigned ON at_assigned.id = a.room_assignment_track_id
         LEFT JOIN admission_exam_seat_assignments esa ON esa.application_id = a.id
@@ -1498,7 +1645,7 @@ pub async fn list_student_ids(
 
 pub async fn move_application_room(pool: &PgPool, id: Uuid, room_id: Uuid) -> Result<(), AppError> {
     let old_room_id: Option<Uuid> = sqlx::query_scalar(
-        "SELECT class_room_id FROM admission_room_assignments WHERE application_id = $1",
+        "SELECT homeroom_id FROM admission_room_assignments WHERE application_id = $1",
     )
     .bind(id)
     .fetch_optional(pool)
@@ -1517,7 +1664,7 @@ pub async fn move_application_room(pool: &PgPool, id: Uuid, room_id: Uuid) -> Re
         .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
     sqlx::query(
-        "UPDATE admission_room_assignments SET class_room_id = $1, assigned_at = NOW() WHERE application_id = $2",
+        "UPDATE admission_room_assignments SET homeroom_id = $1, assigned_at = NOW() WHERE application_id = $2",
     )
     .bind(room_id)
     .bind(id)
@@ -1536,10 +1683,10 @@ pub async fn move_application_room(pool: &PgPool, id: Uuid, room_id: Uuid) -> Re
             SELECT application_id,
                    ROW_NUMBER() OVER (ORDER BY total_score DESC, rank_in_track ASC) AS new_rank
             FROM admission_room_assignments
-            WHERE class_room_id = $1
+            WHERE homeroom_id = $1
         ) ranked
         WHERE ara.application_id = ranked.application_id
-          AND ara.class_room_id = $1
+          AND ara.homeroom_id = $1
         "#,
     )
     .bind(room_id)
@@ -1557,10 +1704,10 @@ pub async fn move_application_room(pool: &PgPool, id: Uuid, room_id: Uuid) -> Re
                     SELECT application_id,
                            ROW_NUMBER() OVER (ORDER BY total_score DESC, rank_in_track ASC) AS new_rank
                     FROM admission_room_assignments
-                    WHERE class_room_id = $1
+                    WHERE homeroom_id = $1
                 ) ranked
                 WHERE ara.application_id = ranked.application_id
-                  AND ara.class_room_id = $1
+                  AND ara.homeroom_id = $1
                 "#,
             )
             .bind(old_id)
@@ -1578,12 +1725,10 @@ pub async fn move_application_room(pool: &PgPool, id: Uuid, room_id: Uuid) -> Re
         UPDATE admission_applications aa
         SET room_assignment_track_id = (
             SELECT CASE WHEN t.id = aa.admission_track_id THEN NULL ELSE t.id END
-            FROM class_rooms cr
-            JOIN study_plan_versions spv ON spv.id = cr.study_plan_version_id
-            JOIN study_plans sp ON sp.id = spv.study_plan_id
-            JOIN admission_tracks t ON t.study_plan_id = sp.id
+            FROM homerooms homeroom
+            JOIN admission_tracks t ON t.study_program_id = homeroom.study_program_id
                 AND t.admission_round_id = aa.admission_round_id
-            WHERE cr.id = $2
+            WHERE homeroom.id = $2
             LIMIT 1
         ),
         updated_at = NOW()
@@ -1634,6 +1779,12 @@ pub async fn batch_update_student_ids(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        modules::academic::cutover_test_support::{
+            apply_migrations_through, seed_academic_cutover_fixture, CutoverFixture,
+        },
+        test_helpers::{create_named_test_pool, create_test_user},
+    };
     use chrono::TimeZone;
 
     #[test]
@@ -1716,6 +1867,160 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn future_year_enrollment_is_idempotent_and_creates_only_planned_placement() {
+        let pool = create_named_test_pool("admission_future_year_enrollment").await;
+        apply_migrations_through(&pool, 40).await.unwrap();
+        seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
+            .await
+            .unwrap();
+        apply_migrations_through(&pool, 44).await.unwrap();
+
+        let enroller_id = create_test_user(
+            &pool,
+            "admission-future-enroller@example.invalid",
+            "test-password",
+        )
+        .await
+        .unwrap();
+        let (grade_level_id, study_program_id, curriculum_version_id): (Uuid, Uuid, Uuid) =
+            sqlx::query_as(
+                "SELECT grade.id, program.id, program.curriculum_version_id
+                 FROM grade_levels grade
+                 CROSS JOIN LATERAL (
+                     SELECT id, curriculum_version_id
+                     FROM study_programs
+                     WHERE status = 'published'
+                     ORDER BY is_default DESC, id
+                     LIMIT 1
+                 ) program
+                 ORDER BY grade.id
+                 LIMIT 1",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let academic_year_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO academic_years (
+                 year, name, start_date, end_date, school_days, status
+             ) VALUES (
+                 2570, 'ปีการศึกษาอนาคต', '2027-05-01', '2028-03-31',
+                 'MON,TUE,WED,THU,FRI', 'planning'
+             ) RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO academic_year_grade_levels (academic_year_id, grade_level_id)
+             VALUES ($1, $2)",
+        )
+        .bind(academic_year_id)
+        .bind(grade_level_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let homeroom_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO homerooms (
+                 code, name, academic_year_id, grade_level_id, room_number,
+                 legacy_curriculum_version_id, study_program_id, capacity
+             ) VALUES ('ADM-FUTURE-1', 'ห้องอนาคต 1', $1, $2, '1', $3, $4, 40)
+             RETURNING id",
+        )
+        .bind(academic_year_id)
+        .bind(grade_level_id)
+        .bind(curriculum_version_id)
+        .bind(study_program_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let round_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO admission_rounds (
+                 academic_year_id, grade_level_id, name, apply_start_date, apply_end_date
+             ) VALUES ($1, $2, 'รอบอนาคต', '2026-08-01', '2027-03-31')
+             RETURNING id",
+        )
+        .bind(academic_year_id)
+        .bind(grade_level_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let track_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO admission_tracks (
+                 admission_round_id, academic_year_id, study_program_id, name
+             ) VALUES ($1, $2, $3, 'แผนอนาคต')
+             RETURNING id",
+        )
+        .bind(round_id)
+        .bind(academic_year_id)
+        .bind(study_program_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let application_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO admission_applications (
+                 admission_round_id, admission_track_id, national_id, national_id_hash,
+                 first_name, last_name, status
+             ) VALUES ($1, $2, 'encrypted-admission-fixture', repeat('f', 64),
+                       'นักเรียน', 'อนาคต', 'accepted')
+             RETURNING id",
+        )
+        .bind(round_id)
+        .bind(track_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO admission_room_assignments (
+                 application_id, homeroom_id, academic_year_id, rank_in_track, rank_in_room
+             ) VALUES ($1, $2, $3, 1, 1)",
+        )
+        .bind(application_id)
+        .bind(homeroom_id)
+        .bind(academic_year_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let payload = || CompleteEnrollmentRequest {
+            student_code: Some("970001".to_string()),
+            form_data: None,
+        };
+        let first = complete_enrollment(&pool, application_id, payload(), enroller_id)
+            .await
+            .unwrap();
+        let replay = complete_enrollment(&pool, application_id, payload(), enroller_id)
+            .await
+            .unwrap();
+
+        assert_eq!(first.user_id, replay.user_id);
+        assert_eq!(first.student_code, replay.student_code);
+        let state: (i64, i64, String, String) = sqlx::query_as(
+            "SELECT
+                 (SELECT COUNT(*) FROM student_academic_years
+                  WHERE student_id = $1 AND academic_year_id = $2),
+                 (SELECT COUNT(*) FROM homeroom_placements placement
+                  JOIN student_academic_years student_year
+                    ON student_year.id = placement.student_academic_year_id
+                  WHERE student_year.student_id = $1
+                    AND student_year.academic_year_id = $2),
+                 student_year.status,
+                 placement.status
+             FROM student_academic_years student_year
+             JOIN homeroom_placements placement
+               ON placement.student_academic_year_id = student_year.id
+             WHERE student_year.student_id = $1
+               AND student_year.academic_year_id = $2",
+        )
+        .bind(first.user_id)
+        .bind(academic_year_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(state, (1, 1, "planned".to_string(), "planned".to_string()));
     }
 }
 

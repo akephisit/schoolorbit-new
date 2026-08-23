@@ -16,6 +16,8 @@ use super::shared::{normalized_event_range, tenant_today, EVENT_NOT_FOUND_MESSAG
 const EVENT_SELECT_WITH_CATEGORY: &str = r#"
 SELECT
     e.id,
+    e.academic_year_id,
+    e.academic_term_id,
     e.category_id,
     c.name AS category_name,
     c.color AS category_color,
@@ -42,7 +44,7 @@ struct CalendarEventTargetRow {
     id: Uuid,
     audience_type: String,
     grade_level_id: Option<Uuid>,
-    class_room_id: Option<Uuid>,
+    homeroom_id: Option<Uuid>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -71,10 +73,10 @@ async fn list_targets_for_events(
 
     let rows = sqlx::query_as::<_, CalendarEventTargetRow>(
         r#"
-        SELECT event_id, id, audience_type, grade_level_id, class_room_id
+        SELECT event_id, id, audience_type, grade_level_id, homeroom_id
         FROM calendar_event_targets
         WHERE event_id = ANY($1)
-        ORDER BY event_id, audience_type, grade_level_id NULLS FIRST, class_room_id NULLS FIRST
+        ORDER BY event_id, audience_type, grade_level_id NULLS FIRST, homeroom_id NULLS FIRST
         "#,
     )
     .bind(event_ids)
@@ -90,7 +92,7 @@ async fn list_targets_for_events(
                 id: row.id,
                 audience_type: row.audience_type,
                 grade_level_id: row.grade_level_id,
-                class_room_id: row.class_room_id,
+                homeroom_id: row.homeroom_id,
             });
     }
 
@@ -180,6 +182,8 @@ async fn hydrate_events(
         .into_iter()
         .map(|row| CalendarEvent {
             id: row.id,
+            academic_year_id: row.academic_year_id,
+            academic_term_id: row.academic_term_id,
             category_id: row.category_id,
             category_name: row.category_name,
             category_color: row.category_color,
@@ -227,9 +231,10 @@ pub async fn list_management_events(
     pool: &PgPool,
     query: CalendarEventQuery,
 ) -> Result<Vec<CalendarEvent>, AppError> {
+    validate_calendar_query_context(pool, &query).await?;
     let (from, to) = normalized_event_range(&query, tenant_today())?;
     let mut builder = QueryBuilder::<Postgres>::new(EVENT_SELECT_WITH_CATEGORY);
-    push_base_event_filters(&mut builder, from, to);
+    push_base_event_filters(&mut builder, &query, from, to);
     push_event_query_filters(&mut builder, &query);
 
     if let Some(audience) = &query.audience {
@@ -257,11 +262,12 @@ pub async fn list_my_events(
     user_id: Uuid,
     query: CalendarEventQuery,
 ) -> Result<Vec<CalendarViewerEvent>, AppError> {
+    validate_calendar_query_context(pool, &query).await?;
     let user_type = active_user_type(pool, user_id).await?;
     self_calendar_user_type_access(&user_type)?;
     let (from, to) = normalized_event_range(&query, tenant_today())?;
     let mut builder = QueryBuilder::<Postgres>::new(EVENT_SELECT_WITH_CATEGORY);
-    push_base_event_filters(&mut builder, from, to);
+    push_base_event_filters(&mut builder, &query, from, to);
     push_event_query_filters(&mut builder, &query);
     push_my_event_target_filter(&mut builder, user_id, &user_type, query.audience.as_ref());
     push_search_filter(&mut builder, query.q.as_deref());
@@ -282,9 +288,10 @@ pub async fn list_child_events(
     student_id: Uuid,
     query: CalendarEventQuery,
 ) -> Result<Vec<CalendarViewerEvent>, AppError> {
+    validate_calendar_query_context(pool, &query).await?;
     let (from, to) = normalized_event_range(&query, tenant_today())?;
     let mut builder = QueryBuilder::<Postgres>::new(EVENT_SELECT_WITH_CATEGORY);
-    push_base_event_filters(&mut builder, from, to);
+    push_base_event_filters(&mut builder, &query, from, to);
     push_event_query_filters(&mut builder, &query);
     push_child_event_target_filter(&mut builder, parent_id, student_id, query.audience.as_ref());
     push_search_filter(&mut builder, query.q.as_deref());
@@ -303,9 +310,10 @@ pub async fn list_public_events(
     pool: &PgPool,
     query: CalendarEventQuery,
 ) -> Result<Vec<CalendarPublicEvent>, AppError> {
+    validate_calendar_query_context(pool, &query).await?;
     let (from, to) = normalized_event_range(&query, tenant_today())?;
     let mut builder = QueryBuilder::<Postgres>::new(EVENT_SELECT_WITH_CATEGORY);
-    push_base_event_filters(&mut builder, from, to);
+    push_base_event_filters(&mut builder, &query, from, to);
     builder.push(" AND e.is_public = true");
     push_category_and_tag_query_filters(&mut builder, &query);
 
@@ -321,12 +329,54 @@ pub async fn list_public_events(
     Ok(events.into_iter().map(CalendarPublicEvent::from).collect())
 }
 
+async fn validate_calendar_query_context(
+    pool: &PgPool,
+    query: &CalendarEventQuery,
+) -> Result<(), AppError> {
+    let context_exists: bool = match query.academic_term_id {
+        Some(academic_term_id) => {
+            sqlx::query_scalar(
+                "SELECT EXISTS (
+                    SELECT 1 FROM academic_terms
+                    WHERE id = $1 AND academic_year_id = $2
+                )",
+            )
+            .bind(academic_term_id)
+            .bind(query.academic_year_id)
+            .fetch_one(pool)
+            .await?
+        }
+        None => {
+            sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM academic_years WHERE id = $1)")
+                .bind(query.academic_year_id)
+                .fetch_one(pool)
+                .await?
+        }
+    };
+
+    if !context_exists {
+        return Err(AppError::BadRequest(
+            "ปีการศึกษาหรือภาคเรียนของปฏิทินไม่ถูกต้อง".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
 fn push_base_event_filters(
     builder: &mut QueryBuilder<'_, Postgres>,
+    query: &CalendarEventQuery,
     from: NaiveDate,
     to: NaiveDate,
 ) {
-    builder.push(" WHERE e.deleted_at IS NULL AND e.start_date <= ");
+    builder.push(" WHERE e.deleted_at IS NULL AND e.academic_year_id = ");
+    builder.push_bind(query.academic_year_id);
+    if let Some(academic_term_id) = query.academic_term_id {
+        builder.push(" AND (e.academic_term_id = ");
+        builder.push_bind(academic_term_id);
+        builder.push(" OR e.academic_term_id IS NULL)");
+    }
+    builder.push(" AND e.start_date <= ");
     builder.push_bind(to);
     builder.push(" AND e.end_date >= ");
     builder.push_bind(from);
@@ -460,24 +510,24 @@ fn push_my_event_target_filter(
                 " OR (
                     target.audience_type = 'student'
                     AND (
-                        (target.grade_level_id IS NULL AND target.class_room_id IS NULL)
+                        (target.grade_level_id IS NULL AND target.homeroom_id IS NULL)
                         OR EXISTS (
                             SELECT 1
-                            FROM student_class_enrollments enrollments
-                            JOIN class_rooms
-                              ON class_rooms.id = enrollments.class_room_id
-                            WHERE enrollments.student_id = ",
+                            FROM student_academic_years student_year
+                            LEFT JOIN homeroom_placements placement
+                              ON placement.student_academic_year_id = student_year.id
+                            WHERE student_year.student_id = ",
             );
             builder.push_bind(user_id);
             builder.push(
-                "             AND enrollments.status = 'active'
+                "             AND student_year.academic_year_id = e.academic_year_id
                               AND (
                                   target.grade_level_id IS NULL
-                                  OR class_rooms.grade_level_id = target.grade_level_id
+                                  OR student_year.grade_level_id = target.grade_level_id
                               )
                               AND (
-                                  target.class_room_id IS NULL
-                                  OR enrollments.class_room_id = target.class_room_id
+                                  target.homeroom_id IS NULL
+                                  OR placement.homeroom_id = target.homeroom_id
                               )
                         )
                     )
@@ -534,24 +584,24 @@ fn push_child_event_target_filter(
     builder.push(
         "       )
                     AND (
-                        (target.grade_level_id IS NULL AND target.class_room_id IS NULL)
+                        (target.grade_level_id IS NULL AND target.homeroom_id IS NULL)
                         OR EXISTS (
                             SELECT 1
-                            FROM student_class_enrollments enrollments
-                            JOIN class_rooms
-                              ON class_rooms.id = enrollments.class_room_id
-                            WHERE enrollments.student_id = ",
+                            FROM student_academic_years student_year
+                            LEFT JOIN homeroom_placements placement
+                              ON placement.student_academic_year_id = student_year.id
+                            WHERE student_year.student_id = ",
     );
     builder.push_bind(student_id);
     builder.push(
-        "                 AND enrollments.status = 'active'
+        "                 AND student_year.academic_year_id = e.academic_year_id
                               AND (
                                   target.grade_level_id IS NULL
-                                  OR class_rooms.grade_level_id = target.grade_level_id
+                                  OR student_year.grade_level_id = target.grade_level_id
                               )
                               AND (
-                                  target.class_room_id IS NULL
-                                  OR enrollments.class_room_id = target.class_room_id
+                                  target.homeroom_id IS NULL
+                                  OR placement.homeroom_id = target.homeroom_id
                               )
                         )
                     )

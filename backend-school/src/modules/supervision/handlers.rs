@@ -16,7 +16,7 @@ use crate::modules::supervision::models::{
     AcknowledgeObservationRequest, ApproveObservationRequest, CancelObservationRequest,
     CreateSupervisionCycleRequest, CreateSupervisionTemplateRequest,
     ReplaceObservationEvaluatorsRequest, RequestSupervisionObservationRequest,
-    ReturnObservationRequest, SaveEvaluationRequest, SupervisionCycle,
+    ReturnObservationRequest, SaveEvaluationRequest, SupervisionCycle, SupervisionCycleQuery,
     SupervisionEvaluatorAvailability, SupervisionObservation, SupervisionObservationFilter,
     SupervisionObservationStatus, SupervisionTeacherStatusRow, SupervisionTemplate,
     UpdateRequestedObservationRequest, UpdateSupervisionCycleRequest,
@@ -30,6 +30,8 @@ use crate::AppState;
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListObservationsQuery {
+    pub academic_year_id: Uuid,
+    pub academic_term_id: Option<Uuid>,
     pub cycle_id: Option<Uuid>,
     pub status: Option<SupervisionObservationStatus>,
 }
@@ -93,11 +95,12 @@ fn redact_teacher_status_results_for_actor(
 pub async fn list_cycles(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<SupervisionCycleQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     supervision_access_policy::require_supervision_access(&context.actor)?;
 
-    let items = services::list_cycles(&context.tenant.pool).await?;
+    let items = services::list_cycles(&context.tenant.pool, query).await?;
 
     Ok(Json(ApiResponse::ok(ItemsData::<SupervisionCycle> { items })).into_response())
 }
@@ -198,6 +201,8 @@ pub async fn list_observations(
         &context.tenant.pool,
         access,
         SupervisionObservationFilter {
+            academic_year_id: query.academic_year_id,
+            academic_term_id: query.academic_term_id,
             cycle_id: query.cycle_id,
             status: query.status,
         },

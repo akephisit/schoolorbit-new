@@ -41,16 +41,27 @@ pub async fn create_event(
     let notify_audience = payload.notify_audience;
 
     let mut transaction = pool.begin().await?;
+    validate_event_context(
+        &mut transaction,
+        payload.academic_year_id,
+        payload.academic_term_id,
+        payload.start_date,
+        payload.end_date,
+    )
+    .await?;
     let event_id = sqlx::query_scalar::<_, Uuid>(
         r#"
         INSERT INTO calendar_events (
+            academic_year_id, academic_term_id,
             category_id, title, description, location, start_date, end_date,
             all_day, start_time, end_time, is_public, created_by, updated_by
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13)
         RETURNING id
         "#,
     )
+    .bind(payload.academic_year_id)
+    .bind(payload.academic_term_id)
     .bind(payload.category_id)
     .bind(&payload.title)
     .bind(&payload.description)
@@ -65,7 +76,13 @@ pub async fn create_event(
     .fetch_one(&mut *transaction)
     .await?;
 
-    replace_event_targets(&mut transaction, event_id, &payload.targets).await?;
+    replace_event_targets(
+        &mut transaction,
+        event_id,
+        payload.academic_year_id,
+        &payload.targets,
+    )
+    .await?;
     replace_event_tags(&mut transaction, event_id, &tag_ids).await?;
     replace_pending_event_reminders(&mut transaction, event_id, reminder_pairs).await?;
     transaction.commit().await?;
@@ -97,25 +114,37 @@ pub async fn update_event(
     let notify_audience = payload.notify_audience;
 
     let mut transaction = pool.begin().await?;
+    validate_event_context(
+        &mut transaction,
+        payload.academic_year_id,
+        payload.academic_term_id,
+        payload.start_date,
+        payload.end_date,
+    )
+    .await?;
     let event_id = sqlx::query_scalar::<_, Uuid>(
         r#"
         UPDATE calendar_events
         SET
-            category_id = $1,
-            title = $2,
-            description = $3,
-            location = $4,
-            start_date = $5,
-            end_date = $6,
-            all_day = $7,
-            start_time = $8,
-            end_time = $9,
-            is_public = $10,
-            updated_by = $11
-        WHERE id = $12 AND deleted_at IS NULL
+            academic_year_id = $1,
+            academic_term_id = $2,
+            category_id = $3,
+            title = $4,
+            description = $5,
+            location = $6,
+            start_date = $7,
+            end_date = $8,
+            all_day = $9,
+            start_time = $10,
+            end_time = $11,
+            is_public = $12,
+            updated_by = $13
+        WHERE id = $14 AND deleted_at IS NULL
         RETURNING id
         "#,
     )
+    .bind(payload.academic_year_id)
+    .bind(payload.academic_term_id)
     .bind(payload.category_id)
     .bind(&payload.title)
     .bind(&payload.description)
@@ -133,7 +162,13 @@ pub async fn update_event(
 
     let event_id =
         event_id.ok_or_else(|| AppError::NotFound(EVENT_NOT_FOUND_MESSAGE.to_string()))?;
-    replace_event_targets(&mut transaction, event_id, &payload.targets).await?;
+    replace_event_targets(
+        &mut transaction,
+        event_id,
+        payload.academic_year_id,
+        &payload.targets,
+    )
+    .await?;
     replace_event_tags(&mut transaction, event_id, &tag_ids).await?;
     replace_pending_event_reminders(&mut transaction, event_id, reminder_pairs).await?;
     transaction.commit().await?;
@@ -186,6 +221,7 @@ pub async fn soft_delete_event(
 async fn replace_event_targets(
     transaction: &mut Transaction<'_, Postgres>,
     event_id: Uuid,
+    academic_year_id: Uuid,
     targets: &[CalendarEventTargetInput],
 ) -> Result<(), AppError> {
     sqlx::query("DELETE FROM calendar_event_targets WHERE event_id = $1")
@@ -198,15 +234,68 @@ async fn replace_event_targets(
     }
 
     let mut builder = QueryBuilder::<Postgres>::new(
-        "INSERT INTO calendar_event_targets (event_id, audience_type, grade_level_id, class_room_id) ",
+        "INSERT INTO calendar_event_targets (
+            event_id, academic_year_id, audience_type, grade_level_id, homeroom_id
+        ) ",
     );
     builder.push_values(targets, |mut row, target| {
         row.push_bind(event_id)
+            .push_bind(academic_year_id)
             .push_bind(target.audience_type.as_str())
             .push_bind(target.grade_level_id)
-            .push_bind(target.class_room_id);
+            .push_bind(target.homeroom_id);
     });
     builder.build().execute(&mut **transaction).await?;
+
+    Ok(())
+}
+
+async fn validate_event_context(
+    transaction: &mut Transaction<'_, Postgres>,
+    academic_year_id: Uuid,
+    academic_term_id: Option<Uuid>,
+    start_date: NaiveDate,
+    end_date: NaiveDate,
+) -> Result<(), AppError> {
+    let year_contains_dates: bool = sqlx::query_scalar(
+        "SELECT EXISTS (
+            SELECT 1 FROM academic_years
+            WHERE id = $1 AND start_date <= $2 AND end_date >= $3
+        )",
+    )
+    .bind(academic_year_id)
+    .bind(start_date)
+    .bind(end_date)
+    .fetch_one(&mut **transaction)
+    .await?;
+    if !year_contains_dates {
+        return Err(AppError::BadRequest(
+            "ช่วงวันที่กำหนดการไม่อยู่ในปีการศึกษาที่เลือก".to_string(),
+        ));
+    }
+
+    if let Some(academic_term_id) = academic_term_id {
+        let term_contains_dates: bool = sqlx::query_scalar(
+            "SELECT EXISTS (
+                SELECT 1 FROM academic_terms
+                WHERE id = $1
+                  AND academic_year_id = $2
+                  AND start_date <= $3
+                  AND end_date >= $4
+            )",
+        )
+        .bind(academic_term_id)
+        .bind(academic_year_id)
+        .bind(start_date)
+        .bind(end_date)
+        .fetch_one(&mut **transaction)
+        .await?;
+        if !term_contains_dates {
+            return Err(AppError::BadRequest(
+                "ช่วงวันที่กำหนดการไม่อยู่ในภาคเรียนที่เลือก".to_string(),
+            ));
+        }
+    }
 
     Ok(())
 }

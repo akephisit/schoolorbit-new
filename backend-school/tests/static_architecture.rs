@@ -1825,14 +1825,18 @@ fn staff_dashboard_endpoint_is_staff_scoped_and_aggregate_only() {
     );
 
     assert!(staff_handler.contains("dashboard_service::ensure_active_staff_user"));
-    assert!(staff_handler.contains("dashboard_service::get_staff_dashboard"));
+    assert!(staff_handler.contains("Query(query): Query<StaffDashboardQuery>"));
+    assert!(staff_handler
+        .contains("dashboard_service::get_staff_dashboard(&pool, query.academic_year_id)"));
     assert!(staff_handler.contains("ApiResponse::ok(data)"));
     assert!(!staff_handler.contains("actor.require_permission(codes::STAFF_READ_ALL)"));
 
     assert!(dashboard_service.contains("COUNT(*)"));
     assert!(dashboard_service.contains("user_type = 'staff'"));
     assert!(dashboard_service.contains("user_type = 'student'"));
-    assert!(dashboard_service.contains("class_rooms"));
+    assert!(dashboard_service.contains("FROM homerooms"));
+    assert!(dashboard_service.contains("academic_year_id = $1"));
+    assert!(!dashboard_service.contains("class_rooms"));
 
     for forbidden in [
         "national_id",
@@ -4961,7 +4965,12 @@ fn question_bank_authorization_lives_in_policy_and_supports_team_teaching() {
     assert!(services.contains("question_bank_access_policy::require_question_read_access"));
     assert!(services.contains("question_bank_access_policy::require_question_manage_access"));
     assert!(services.contains("question_bank_access_policy::require_subject_create_access"));
-    assert!(policy.contains("JOIN classroom_course_instructors"));
+    assert!(policy.contains("FROM course_offering_details"));
+    assert!(policy.contains("JOIN learning_groups"));
+    assert!(policy.contains("JOIN learning_group_teachers"));
+    assert!(policy.contains("detail.subject_id = $1"));
+    assert!(policy.contains("teacher.teacher_id = $2"));
+    assert!(!policy.contains("classroom_course_instructors"));
     assert!(!handlers.contains("actor.has_permission("));
     assert!(!handlers.contains("actor.require_permission("));
     assert!(!services.contains("actor.has_permission("));
@@ -5806,4 +5815,82 @@ fn converted_academic_consumers_cannot_reintroduce_legacy_runtime_identity() {
             "converted academic runtime {path} inferred an active year or term inside SQL"
         );
     }
+}
+
+#[test]
+fn cross_module_academic_consumers_use_only_canonical_runtime_identity() {
+    let mut runtime_files = vec![
+        manifest_dir().join("src/bin/seed_sandbox.rs"),
+        manifest_dir().join("src/modules/admission/models/rounds.rs"),
+        manifest_dir().join("src/modules/admission/services/application_service.rs"),
+        manifest_dir().join("src/modules/admission/services/portal_service.rs"),
+        manifest_dir().join("src/modules/admission/services/round_service.rs"),
+        manifest_dir().join("src/modules/admission/services/selection_service.rs"),
+        manifest_dir().join("src/modules/academic/reconciliation.rs"),
+        manifest_dir().join("src/modules/calendar/models.rs"),
+        manifest_dir().join("src/modules/calendar/services/events.rs"),
+        manifest_dir().join("src/modules/calendar/services/notifications.rs"),
+        manifest_dir().join("src/modules/calendar/services/shared.rs"),
+        manifest_dir().join("src/modules/calendar/services/visibility.rs"),
+        manifest_dir().join("src/modules/lookup/handlers.rs"),
+        manifest_dir().join("src/modules/lookup/models.rs"),
+        manifest_dir().join("src/modules/lookup/services.rs"),
+        manifest_dir().join("src/modules/parents/handlers.rs"),
+        manifest_dir().join("src/modules/parents/models.rs"),
+        manifest_dir().join("src/modules/parents/services.rs"),
+        manifest_dir().join("src/modules/question_bank/models.rs"),
+        manifest_dir().join("src/modules/question_bank/services.rs"),
+        manifest_dir().join("src/modules/staff/handlers/staff.rs"),
+        manifest_dir().join("src/modules/staff/models.rs"),
+        manifest_dir().join("src/modules/staff/services/dashboard_service.rs"),
+        manifest_dir().join("src/modules/staff/services/staff_service.rs"),
+        manifest_dir().join("src/modules/students/handlers.rs"),
+        manifest_dir().join("src/modules/students/models.rs"),
+        manifest_dir().join("src/modules/students/services.rs"),
+        manifest_dir().join("src/modules/supervision/handlers.rs"),
+        manifest_dir().join("src/modules/supervision/models.rs"),
+        manifest_dir().join("src/policies/question_bank_access_policy.rs"),
+        manifest_dir().join("src/policies/student_access_policy.rs"),
+    ];
+    runtime_files.extend(list_files(
+        manifest_dir().join("src/modules/supervision/services"),
+        |path| path.extension().and_then(|extension| extension.to_str()) == Some("rs"),
+    ));
+
+    let forbidden = [
+        "academic_semesters",
+        "class_rooms",
+        "classroom_courses",
+        "student_class_enrollments",
+        "activity_catalog",
+        "study_plans",
+        "study_plan_versions",
+        "academic_assessment_plans",
+        "academic_semester_id",
+        "classroom_course_id",
+        "class_room_id",
+        "study_plan_id",
+    ];
+    let inferred_context = Regex::new(
+        r"(?is)(academic_(?:years|terms)[^;]{0,400}is_active\s*=\s*true|is_active\s*=\s*true[^;]{0,400}academic_(?:years|terms))",
+    )
+    .unwrap();
+
+    let mut violations = Vec::new();
+    for path in runtime_files {
+        let source = strip_comments(&read_source(&path));
+        let path = relative(&path);
+        for token in forbidden {
+            if source.contains(token) {
+                violations.push(format!("{path}: legacy runtime token `{token}`"));
+            }
+        }
+        if inferred_context.is_match(&source) {
+            violations.push(format!(
+                "{path}: active academic context must be selected by the caller"
+            ));
+        }
+    }
+
+    assert_eq!(violations, Vec::<String>::new());
 }

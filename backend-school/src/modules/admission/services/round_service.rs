@@ -15,14 +15,14 @@ END"#;
 struct AdmissionTrackRow {
     id: Uuid,
     admission_round_id: Uuid,
-    study_plan_id: Uuid,
+    study_program_id: Uuid,
     name: String,
     capacity_override: Option<i32>,
     scoring_subject_ids: Json<Vec<Uuid>>,
     tiebreak_method: String,
     display_order: i32,
     created_at: DateTime<Utc>,
-    study_plan_name: Option<String>,
+    study_program_name: Option<String>,
     computed_capacity: Option<i64>,
     room_count: Option<i64>,
     application_count: Option<i64>,
@@ -33,14 +33,14 @@ impl From<AdmissionTrackRow> for AdmissionTrack {
         Self {
             id: row.id,
             admission_round_id: row.admission_round_id,
-            study_plan_id: row.study_plan_id,
+            study_program_id: row.study_program_id,
             name: row.name,
             capacity_override: row.capacity_override,
             scoring_subject_ids: row.scoring_subject_ids.0,
             tiebreak_method: row.tiebreak_method,
             display_order: row.display_order,
             created_at: row.created_at,
-            study_plan_name: row.study_plan_name,
+            study_program_name: row.study_program_name,
             computed_capacity: row.computed_capacity,
             room_count: row.room_count,
             application_count: row.application_count,
@@ -92,10 +92,13 @@ pub async fn get_public_round_info(
     .ok_or_else(|| AppError::NotFound("ไม่พบรอบรับสมัคร หรือไม่ได้เปิดรับสมัครในขณะนี้".to_string()))?;
 
     let track_rows = sqlx::query_as::<_, AdmissionTrackRow>(
-        r#"SELECT at2.*, sp.name_th AS study_plan_name,
+        r#"SELECT at2.id, at2.admission_round_id, at2.study_program_id, at2.name,
+                  at2.capacity_override, at2.scoring_subject_ids, at2.tiebreak_method,
+                  at2.display_order, at2.created_at,
+                  program.name_th AS study_program_name,
                   0::bigint AS computed_capacity, 0::bigint AS room_count, 0::bigint AS application_count
            FROM admission_tracks at2
-           JOIN study_plans sp ON at2.study_plan_id = sp.id
+           JOIN study_programs program ON program.id = at2.study_program_id
            WHERE at2.admission_round_id = $1
            ORDER BY at2.display_order ASC"#
     )
@@ -383,27 +386,29 @@ pub async fn delete_exam_subject(pool: &PgPool, id: Uuid) -> Result<(), AppError
 
 pub async fn list_tracks(pool: &PgPool, round_id: Uuid) -> Result<Vec<AdmissionTrack>, AppError> {
     let rows = sqlx::query_as::<_, AdmissionTrackRow>(
-        r#"SELECT t.*, sp.name_th AS study_plan_name,
-               (SELECT COUNT(DISTINCT cr.id)
-                FROM study_plan_versions spv
-                JOIN class_rooms cr ON cr.study_plan_version_id = spv.id
-                WHERE spv.study_plan_id = t.study_plan_id
-                  AND cr.academic_year_id = (SELECT academic_year_id FROM admission_rounds WHERE id = t.admission_round_id)
-                  AND cr.grade_level_id   = (SELECT grade_level_id   FROM admission_rounds WHERE id = t.admission_round_id)
+        r#"SELECT t.id, t.admission_round_id, t.study_program_id, t.name,
+                  t.capacity_override, t.scoring_subject_ids, t.tiebreak_method,
+                  t.display_order, t.created_at,
+                  program.name_th AS study_program_name,
+               (SELECT COUNT(DISTINCT homeroom.id)
+                FROM homerooms homeroom
+                WHERE homeroom.study_program_id = t.study_program_id
+                  AND homeroom.academic_year_id = t.academic_year_id
+                  AND homeroom.grade_level_id = round.grade_level_id
                ) AS room_count,
                COALESCE(
                    t.capacity_override::bigint,
-                   (SELECT SUM(cr.capacity)
-                    FROM study_plan_versions spv
-                    JOIN class_rooms cr ON cr.study_plan_version_id = spv.id
-                    WHERE spv.study_plan_id = t.study_plan_id
-                      AND cr.academic_year_id = (SELECT academic_year_id FROM admission_rounds WHERE id = t.admission_round_id)
-                      AND cr.grade_level_id   = (SELECT grade_level_id   FROM admission_rounds WHERE id = t.admission_round_id)
+                   (SELECT SUM(homeroom.capacity)
+                    FROM homerooms homeroom
+                    WHERE homeroom.study_program_id = t.study_program_id
+                      AND homeroom.academic_year_id = t.academic_year_id
+                      AND homeroom.grade_level_id = round.grade_level_id
                    )
                ) AS computed_capacity,
                (SELECT COUNT(*) FROM admission_applications aa WHERE aa.admission_track_id = t.id) AS application_count
            FROM admission_tracks t
-           JOIN study_plans sp ON t.study_plan_id = sp.id
+           JOIN admission_rounds round ON round.id = t.admission_round_id
+           JOIN study_programs program ON program.id = t.study_program_id
            WHERE t.admission_round_id = $1
            ORDER BY t.display_order ASC, t.created_at ASC"#
     )
@@ -425,18 +430,21 @@ pub async fn create_track(
 
     sqlx::query_as::<_, AdmissionTrackRow>(
         r#"INSERT INTO admission_tracks (
-               admission_round_id, study_plan_id, name, capacity_override,
-               scoring_subject_ids, tiebreak_method, display_order
+               admission_round_id, academic_year_id, study_program_id, name,
+               capacity_override, scoring_subject_ids, tiebreak_method, display_order
            )
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
-           RETURNING *,
-               (SELECT name_th FROM study_plans WHERE id = $2) AS study_plan_name,
+           SELECT round.id, round.academic_year_id, $2, $3, $4, $5, $6, $7
+           FROM admission_rounds round
+           WHERE round.id = $1
+           RETURNING id, admission_round_id, study_program_id, name,
+               capacity_override, scoring_subject_ids, tiebreak_method, display_order, created_at,
+               (SELECT name_th FROM study_programs WHERE id = $2) AS study_program_name,
                0::bigint AS room_count,
                NULL::bigint AS computed_capacity,
                0::bigint AS application_count"#,
     )
     .bind(round_id)
-    .bind(payload.study_plan_id)
+    .bind(payload.study_program_id)
     .bind(&payload.name)
     .bind(payload.capacity_override)
     .bind(scoring_ids)
@@ -468,8 +476,9 @@ pub async fn update_track(
                tiebreak_method = COALESCE($4, tiebreak_method),
                display_order = COALESCE($5, display_order)
            WHERE id = $6
-           RETURNING *,
-               (SELECT name_th FROM study_plans WHERE id = study_plan_id) AS study_plan_name,
+           RETURNING id, admission_round_id, study_program_id, name,
+               capacity_override, scoring_subject_ids, tiebreak_method, display_order, created_at,
+               (SELECT name_th FROM study_programs WHERE id = study_program_id) AS study_program_name,
                NULL::bigint AS room_count,
                NULL::bigint AS computed_capacity,
                (SELECT COUNT(*) FROM admission_applications WHERE admission_track_id = $6) AS application_count"#
@@ -517,16 +526,15 @@ pub struct RoomCapacityRow {
 
 pub async fn get_track_capacity(pool: &PgPool, id: Uuid) -> Result<Vec<RoomCapacityRow>, AppError> {
     sqlx::query_as::<_, RoomCapacityRow>(
-        r#"SELECT cr.id AS room_id, cr.name AS room_name, cr.code AS room_code
+        r#"SELECT homeroom.id AS room_id, homeroom.name AS room_name, homeroom.code AS room_code
            FROM admission_tracks t
-           JOIN study_plans sp ON t.study_plan_id = sp.id
-           JOIN study_plan_versions spv ON spv.study_plan_id = sp.id AND spv.is_active = true
-           JOIN class_rooms cr ON cr.study_plan_version_id = spv.id
-               AND cr.academic_year_id = (
-                   SELECT academic_year_id FROM admission_rounds WHERE id = t.admission_round_id
-               )
+           JOIN admission_rounds round ON round.id = t.admission_round_id
+           JOIN homerooms homeroom
+             ON homeroom.study_program_id = t.study_program_id
+            AND homeroom.academic_year_id = t.academic_year_id
+            AND homeroom.grade_level_id = round.grade_level_id
            WHERE t.id = $1
-           ORDER BY cr.name ASC"#,
+           ORDER BY homeroom.name ASC"#,
     )
     .bind(id)
     .fetch_all(pool)

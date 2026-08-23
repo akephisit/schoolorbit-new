@@ -15,6 +15,7 @@ use super::models::{ChildDto, ParentDbRow, ParentProfile};
 pub async fn get_own_parent_profile(
     pool: &PgPool,
     parent_id: Uuid,
+    academic_year_id: Uuid,
 ) -> Result<ParentProfile, AppError> {
     ensure_parent_user(pool, parent_id).await?;
 
@@ -36,7 +37,7 @@ pub async fn get_own_parent_profile(
     .ok_or(AppError::NotFound("Parent not found".to_string()))?;
 
     decrypt_parent_fields(&mut parent);
-    let children = list_children(pool, parent_id).await?;
+    let children = list_children(pool, parent_id, academic_year_id).await?;
 
     Ok(ParentProfile {
         id: parent.id,
@@ -55,6 +56,7 @@ pub async fn get_child_profile(
     pool: &PgPool,
     parent_id: Uuid,
     student_id: Uuid,
+    academic_year_id: Uuid,
 ) -> Result<StudentProfile, AppError> {
     ensure_parent_user(pool, parent_id).await?;
     ensure_parent_student_link(pool, parent_id, student_id).await?;
@@ -71,18 +73,29 @@ pub async fn get_child_profile(
                 WHEN 'secondary' THEN CONCAT('ม.', gl.year)
                 ELSE CONCAT('?.', gl.year)
             END as grade_level,
-            c.name as class_room,
-            sce.class_number as student_number,
+            h.name as homeroom,
+            placement.class_number as student_number,
             si.blood_type, si.allergies, si.medical_conditions
         FROM users u
         INNER JOIN student_info si ON u.id = si.user_id
-        LEFT JOIN student_class_enrollments sce ON u.id = sce.student_id AND sce.status = 'active'
-        LEFT JOIN class_rooms c ON sce.class_room_id = c.id
-        LEFT JOIN grade_levels gl ON c.grade_level_id = gl.id
+        INNER JOIN student_academic_years student_year
+          ON student_year.student_id = u.id
+         AND student_year.academic_year_id = $2
+        LEFT JOIN LATERAL (
+            SELECT homeroom_id, class_number
+            FROM homeroom_placements
+            WHERE student_academic_year_id = student_year.id
+            ORDER BY CASE status WHEN 'current' THEN 1 WHEN 'planned' THEN 2 ELSE 3 END,
+                     start_date DESC, created_at DESC
+            LIMIT 1
+        ) placement ON true
+        LEFT JOIN homerooms h ON placement.homeroom_id = h.id
+        LEFT JOIN grade_levels gl ON student_year.grade_level_id = gl.id
         WHERE u.id = $1 AND u.status = 'active'
         "#,
     )
     .bind(student_id)
+    .bind(academic_year_id)
     .fetch_optional(pool)
     .await
     .map_err(|e| {
@@ -188,7 +201,11 @@ async fn ensure_parent_student_link(
     Ok(())
 }
 
-async fn list_children(pool: &PgPool, parent_id: Uuid) -> Result<Vec<ChildDto>, AppError> {
+async fn list_children(
+    pool: &PgPool,
+    parent_id: Uuid,
+    academic_year_id: Uuid,
+) -> Result<Vec<ChildDto>, AppError> {
     sqlx::query_as::<_, ChildDto>(
         r#"
         SELECT
@@ -200,19 +217,30 @@ async fn list_children(pool: &PgPool, parent_id: Uuid) -> Result<Vec<ChildDto>, 
                 WHEN 'secondary' THEN CONCAT('ม.', gl.year)
                 ELSE CONCAT('?.', gl.year)
             END as grade_level,
-            c.name as class_room,
+            h.name as homeroom,
             sp.relationship
         FROM student_parents sp
         INNER JOIN users u ON sp.student_user_id = u.id
         LEFT JOIN student_info si ON u.id = si.user_id
-        LEFT JOIN student_class_enrollments sce ON u.id = sce.student_id AND sce.status = 'active'
-        LEFT JOIN class_rooms c ON sce.class_room_id = c.id
-        LEFT JOIN grade_levels gl ON c.grade_level_id = gl.id
+        INNER JOIN student_academic_years student_year
+          ON student_year.student_id = u.id
+         AND student_year.academic_year_id = $2
+        LEFT JOIN LATERAL (
+            SELECT homeroom_id
+            FROM homeroom_placements
+            WHERE student_academic_year_id = student_year.id
+            ORDER BY CASE status WHEN 'current' THEN 1 WHEN 'planned' THEN 2 ELSE 3 END,
+                     start_date DESC, created_at DESC
+            LIMIT 1
+        ) placement ON true
+        LEFT JOIN homerooms h ON placement.homeroom_id = h.id
+        LEFT JOIN grade_levels gl ON student_year.grade_level_id = gl.id
         WHERE sp.parent_user_id = $1 AND u.status = 'active'
         ORDER BY u.first_name ASC
         "#,
     )
     .bind(parent_id)
+    .bind(academic_year_id)
     .fetch_all(pool)
     .await
     .map_err(|e| {
@@ -270,6 +298,68 @@ fn parent_user_access(user_type: Option<&str>) -> Result<(), AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        modules::academic::cutover_test_support::{
+            apply_migrations_through, seed_academic_cutover_fixture, CutoverFixture,
+        },
+        test_helpers::{create_named_test_pool, create_test_user},
+    };
+
+    #[tokio::test]
+    async fn parent_profile_lists_child_in_the_caller_selected_academic_year() {
+        let pool = create_named_test_pool("parent_profile_selected_year").await;
+        apply_migrations_through(&pool, 40).await.unwrap();
+        seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
+            .await
+            .unwrap();
+        apply_migrations_through(&pool, 44).await.unwrap();
+
+        let parent_id = create_test_user(&pool, "parent-year@example.test", "test-password")
+            .await
+            .unwrap();
+        sqlx::query("UPDATE users SET user_type = 'parent' WHERE id = $1")
+            .bind(parent_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let student_id = Uuid::parse_str("50000000-0000-0000-0000-000000000001").unwrap();
+        sqlx::query(
+            "INSERT INTO student_parents (
+                 student_user_id, parent_user_id, relationship, is_primary
+             ) VALUES ($1, $2, 'parent', true)",
+        )
+        .bind(student_id)
+        .bind(parent_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let year_2025_id: Uuid =
+            sqlx::query_scalar("SELECT id FROM academic_years WHERE year = 2025")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let year_2026_id: Uuid =
+            sqlx::query_scalar("SELECT id FROM academic_years WHERE year = 2026")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+
+        let current = get_own_parent_profile(&pool, parent_id, year_2025_id)
+            .await
+            .unwrap();
+        let planned = get_own_parent_profile(&pool, parent_id, year_2026_id)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            current.children[0].homeroom.as_deref(),
+            Some("ม.1/1 ปี 2025")
+        );
+        assert_eq!(
+            planned.children[0].homeroom.as_deref(),
+            Some("ม.1/1 ปี 2026")
+        );
+    }
 
     #[test]
     fn parent_user_access_allows_parent_users() {

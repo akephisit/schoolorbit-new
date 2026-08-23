@@ -338,28 +338,23 @@ pub async fn reconcile_academic_core_cutover(
             UNION ALL
             SELECT question.id
             FROM academic_question_bank_questions question
-            LEFT JOIN subject_versions version
-              ON version.id = question.legacy_subject_version_id
-            WHERE version.id IS NULL OR version.subject_id IS DISTINCT FROM question.subject_id
+            LEFT JOIN subjects subject ON subject.id = question.subject_id
+            WHERE subject.id IS NULL
             UNION ALL
             SELECT track.id
             FROM admission_tracks track
             LEFT JOIN admission_rounds round ON round.id = track.admission_round_id
             LEFT JOIN academic_years round_year ON round_year.id = round.academic_year_id
-            LEFT JOIN curriculum_versions version
-              ON version.id = track.curriculum_version_id
-             AND version.curriculum_id = track.study_plan_id
+            LEFT JOIN study_programs program ON program.id = track.study_program_id
+            LEFT JOIN curriculum_versions version ON version.id = program.curriculum_version_id
             LEFT JOIN academic_years starts ON starts.id = version.start_academic_year_id
             LEFT JOIN academic_years ends ON ends.id = version.end_academic_year_id
-            LEFT JOIN study_programs program
-              ON program.id = track.study_program_id
-             AND program.curriculum_version_id = version.id
             WHERE round.id IS NULL
                OR round_year.id IS NULL
                OR version.id IS NULL
                OR starts.id IS NULL
                OR program.id IS NULL
-               OR NOT program.is_default
+               OR program.status = 'archived'
                OR track.academic_year_id <> round.academic_year_id
                OR starts.start_date > round_year.start_date
                OR (ends.id IS NOT NULL AND ends.end_date < round_year.end_date)

@@ -11,8 +11,9 @@ use crate::error::AppError;
 use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::modules::facility::models::Room;
 use crate::modules::lookup::models::{
-    AcademicYearLookupItem, ClassroomLookupItem, GradeLevelLookupItem, LookupItem, LookupQuery,
-    OrganizationUnitLookupItem, RoleLookupItem, StaffLookupItem, StudentLookupItem,
+    AcademicLookupQuery, AcademicYearLookupItem, GradeLevelLookupItem, HomeroomLookupItem,
+    LookupItem, LookupQuery, OrganizationUnitLookupItem, RoleLookupItem, StaffLookupItem,
+    StudentLookupItem,
 };
 use crate::modules::lookup::services as lookup_service;
 use crate::permissions::registry::codes;
@@ -139,7 +140,7 @@ pub async fn lookup_organization_unit_by_id(
     path = "/api/lookup/grade-levels",
     operation_id = "lookupGradeLevels",
     tag = "lookup",
-    params(LookupQuery),
+    params(AcademicLookupQuery),
     responses(
         (status = 200, description = "Grade level lookup items", body = ApiResponse<Vec<GradeLevelLookupItem>>),
         (status = 401, description = "Authentication required or account inactive", body = ApiErrorResponse)
@@ -147,7 +148,7 @@ pub async fn lookup_organization_unit_by_id(
 )]
 pub async fn lookup_grade_levels(
     Extension(session): Extension<AuthenticatedSession>,
-    Query(query): Query<LookupQuery>,
+    Query(query): Query<AcademicLookupQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = active_lookup_context(&session).await?;
     let data = lookup_service::lookup_grade_levels(&context.tenant.pool, query).await?;
@@ -155,25 +156,25 @@ pub async fn lookup_grade_levels(
     Ok((StatusCode::OK, Json(ApiResponse::ok(data))))
 }
 
-/// GET /api/lookup/classrooms
-/// Returns minimal classroom data for dropdowns
+/// GET /api/lookup/homerooms
+/// Returns homerooms for the caller-selected academic year.
 #[utoipa::path(
     get,
-    path = "/api/lookup/classrooms",
-    operation_id = "lookupClassrooms",
+    path = "/api/lookup/homerooms",
+    operation_id = "lookupHomerooms",
     tag = "lookup",
-    params(LookupQuery),
+    params(AcademicLookupQuery),
     responses(
-        (status = 200, description = "Classroom lookup items", body = ApiResponse<Vec<ClassroomLookupItem>>),
+        (status = 200, description = "Homeroom lookup items", body = ApiResponse<Vec<HomeroomLookupItem>>),
         (status = 401, description = "Authentication required or account inactive", body = ApiErrorResponse)
     )
 )]
-pub async fn lookup_classrooms(
+pub async fn lookup_homerooms(
     Extension(session): Extension<AuthenticatedSession>,
-    Query(query): Query<LookupQuery>,
+    Query(query): Query<AcademicLookupQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = active_lookup_context(&session).await?;
-    let data = lookup_service::lookup_classrooms(&context.tenant.pool, query).await?;
+    let data = lookup_service::lookup_homerooms(&context.tenant.pool, query).await?;
 
     Ok((StatusCode::OK, Json(ApiResponse::ok(data))))
 }
@@ -202,13 +203,13 @@ pub async fn lookup_academic_years(
 }
 
 /// GET /api/lookup/students
-/// Returns minimal student data for dropdowns (with student_id and class_room)
+/// Returns students and placements for the caller-selected academic year.
 #[utoipa::path(
     get,
     path = "/api/lookup/students",
     operation_id = "lookupStudents",
     tag = "lookup",
-    params(LookupQuery),
+    params(AcademicLookupQuery),
     responses(
         (status = 200, description = "Student lookup items", body = ApiResponse<Vec<StudentLookupItem>>),
         (status = 401, description = "Authentication required or account inactive", body = ApiErrorResponse)
@@ -216,7 +217,7 @@ pub async fn lookup_academic_years(
 )]
 pub async fn lookup_students(
     Extension(session): Extension<AuthenticatedSession>,
-    Query(query): Query<LookupQuery>,
+    Query(query): Query<AcademicLookupQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = active_lookup_context(&session).await?;
     let data = lookup_service::lookup_students(&context.tenant.pool, query).await?;
@@ -252,7 +253,7 @@ pub async fn lookup_rooms(
     path = "/api/lookup/subjects",
     operation_id = "lookupSubjects",
     tag = "lookup",
-    params(LookupQuery),
+    params(AcademicLookupQuery),
     responses(
         (status = 200, description = "Subject lookup items", body = ApiResponse<Vec<LookupItem>>),
         (status = 401, description = "Authentication required or account inactive", body = ApiErrorResponse)
@@ -260,7 +261,7 @@ pub async fn lookup_rooms(
 )]
 pub async fn lookup_subjects(
     Extension(session): Extension<AuthenticatedSession>,
-    Query(query): Query<LookupQuery>,
+    Query(query): Query<AcademicLookupQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = active_lookup_context(&session).await?;
     let data = lookup_service::lookup_subjects(&context.tenant.pool, query).await?;

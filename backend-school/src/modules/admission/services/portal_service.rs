@@ -165,7 +165,7 @@ pub async fn get_status(
         r#"SELECT ara.rank_in_track, ara.rank_in_room, ara.total_score,
                   cr.name AS room_name, ara.student_confirmed
            FROM admission_room_assignments ara
-           LEFT JOIN class_rooms cr ON ara.class_room_id = cr.id
+           LEFT JOIN homerooms cr ON ara.homeroom_id = cr.id
            WHERE ara.application_id = $1"#,
     )
     .bind(application_id)

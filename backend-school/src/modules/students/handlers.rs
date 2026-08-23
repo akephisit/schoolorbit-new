@@ -7,8 +7,8 @@ use axum::{
 use uuid::Uuid;
 
 use super::models::{
-    CreateStudentRequest, ListStudentsQuery, StudentProfile, UpdateOwnProfileRequest,
-    UpdateStudentRequest,
+    CreateStudentRequest, ListStudentsQuery, StudentAcademicYearQuery, StudentProfile,
+    UpdateOwnProfileRequest, UpdateStudentRequest,
 };
 use super::services as student_service;
 use crate::api_response::{ApiErrorResponse, ApiResponse};
@@ -35,6 +35,7 @@ use crate::AppState;
 pub async fn get_own_profile(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<StudentAcademicYearQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
@@ -42,7 +43,9 @@ pub async fn get_own_profile(
     student_access_policy::can_read_student_profile(&pool, &actor, actor.user_id).await?;
     let include_pii =
         student_access_policy::can_read_student_pii(&pool, &actor, actor.user_id).await?;
-    let student = student_service::get_own_profile(&pool, actor.user_id, include_pii).await?;
+    let student =
+        student_service::get_own_profile(&pool, actor.user_id, query.academic_year_id, include_pii)
+            .await?;
 
     Ok((StatusCode::OK, Json(ApiResponse::ok(student))))
 }
@@ -129,6 +132,7 @@ pub async fn get_student(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(student_id): Path<Uuid>,
+    Query(query): Query<StudentAcademicYearQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
@@ -137,7 +141,9 @@ pub async fn get_student(
     let include_pii =
         student_access_policy::can_read_student_pii(&pool, &actor, student_id).await?;
 
-    let student = student_service::get_student(&pool, student_id, include_pii).await?;
+    let student =
+        student_service::get_student(&pool, student_id, query.academic_year_id, include_pii)
+            .await?;
 
     Ok((StatusCode::OK, Json(ApiResponse::ok(student))))
 }

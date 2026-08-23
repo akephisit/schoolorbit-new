@@ -278,9 +278,8 @@ pub struct SupervisionCycleTarget {
 #[serde(rename_all = "camelCase")]
 pub struct SupervisionCycle {
     pub id: Uuid,
-    pub academic_year: i32,
-    pub semester: String,
-    pub academic_semester_id: Option<Uuid>,
+    pub academic_year_id: Uuid,
+    pub academic_term_id: Option<Uuid>,
     pub title: String,
     pub description: Option<String>,
     pub template_id: Uuid,
@@ -409,6 +408,10 @@ pub struct SupervisionAction {
 pub struct SupervisionObservation {
     pub id: Uuid,
     pub cycle_id: Uuid,
+    pub academic_year_id: Uuid,
+    pub academic_term_id: Uuid,
+    pub learning_group_id: Option<Uuid>,
+    pub homeroom_id: Option<Uuid>,
     pub observed_user_id: Uuid,
     pub observed_display_name: Option<String>,
     pub requested_by: Option<Uuid>,
@@ -493,9 +496,8 @@ pub struct CreateSupervisionCycleTargetRequest {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateSupervisionCycleRequest {
-    pub academic_year: i32,
-    pub semester: String,
-    pub academic_semester_id: Option<Uuid>,
+    pub academic_year_id: Uuid,
+    pub academic_term_id: Option<Uuid>,
     pub title: String,
     pub description: Option<String>,
     pub template_id: Uuid,
@@ -511,9 +513,8 @@ pub struct CreateSupervisionCycleRequest {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateSupervisionCycleRequest {
-    pub academic_year: Option<i32>,
-    pub semester: Option<String>,
-    pub academic_semester_id: Option<Uuid>,
+    pub academic_year_id: Option<Uuid>,
+    pub academic_term_id: Option<Option<Uuid>>,
     pub title: Option<String>,
     pub description: Option<String>,
     pub template_id: Option<Uuid>,
@@ -523,6 +524,13 @@ pub struct UpdateSupervisionCycleRequest {
     pub ends_at: Option<DateTime<Utc>>,
     pub status: Option<SupervisionCycleStatus>,
     pub targets: Option<Vec<CreateSupervisionCycleTargetRequest>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SupervisionCycleQuery {
+    pub academic_year_id: Uuid,
+    pub academic_term_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -619,6 +627,7 @@ impl ManualLessonInput {
 #[serde(rename_all = "camelCase")]
 pub struct RequestSupervisionObservationRequest {
     pub cycle_id: Uuid,
+    pub academic_term_id: Uuid,
     pub timetable_entry_id: Option<Uuid>,
     pub observed_at: Option<DateTime<Utc>>,
     pub manual_lesson: Option<ManualLessonInput>,
@@ -696,8 +705,10 @@ pub struct AcknowledgeObservationRequest {
     pub comment: Option<String>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct SupervisionObservationFilter {
+    pub academic_year_id: Uuid,
+    pub academic_term_id: Option<Uuid>,
     pub cycle_id: Option<Uuid>,
     pub status: Option<SupervisionObservationStatus>,
 }

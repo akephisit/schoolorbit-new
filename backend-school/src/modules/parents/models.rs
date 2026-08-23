@@ -45,7 +45,7 @@ pub struct ChildDto {
     #[schema(required = true)]
     pub grade_level: Option<String>,
     #[schema(required = true)]
-    pub class_room: Option<String>,
+    pub homeroom: Option<String>,
     #[schema(required = true)]
     pub profile_image_file_id: Option<Uuid>,
     pub relationship: String,

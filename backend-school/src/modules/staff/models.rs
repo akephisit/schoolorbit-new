@@ -179,32 +179,45 @@ pub struct OrganizationUnitResponse {
     pub responsibilities: Option<String>,
 }
 
-/// วิชาที่ครูสอน — ดึงจาก classroom_courses (+ classroom_course_instructors)
-/// Source of truth: ระบบ Course Planning ที่ assign วิชาให้ห้อง
+#[derive(Debug, Clone, Deserialize, IntoParams)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[into_params(parameter_in = Query)]
+pub struct StaffDashboardQuery {
+    pub academic_year_id: Uuid,
+}
+
+/// กลุ่มการเรียนที่ครูสอนใน Academic Delivery
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct TeachingCourseItem {
-    pub classroom_course_id: Uuid,
+#[serde(rename_all = "camelCase")]
+pub struct TeachingAssignmentItem {
+    pub learning_group_id: Uuid,
+    pub learning_group_code: String,
+    pub learning_group_name: String,
+    pub subject_id: Uuid,
     pub subject_code: String,
     pub subject_name: String,
     #[schema(required = true)]
-    pub hours_per_semester: Option<i32>,
-    pub classroom_name: String,
-    pub classroom_code: String,
+    pub hours: Option<String>,
+    pub academic_year_id: Uuid,
     pub academic_year: i32,
     pub academic_year_label: String,
-    pub term: String,
-    pub role: String, // 'primary' | 'secondary'
+    pub academic_term_id: Uuid,
+    pub term_code: String,
+    pub term_name: String,
+    pub role: String,
 }
 
-/// ห้องที่ครูเป็นครูที่ปรึกษา — ดึงจาก classroom_advisors
+/// ห้องประจำชั้นที่ครูเป็นที่ปรึกษา
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct AdvisorClassroomItem {
-    pub classroom_id: Uuid,
-    pub classroom_name: String,
-    pub classroom_code: String,
+#[serde(rename_all = "camelCase")]
+pub struct AdvisorHomeroomItem {
+    pub homeroom_id: Uuid,
+    pub homeroom_name: String,
+    pub homeroom_code: String,
+    pub academic_year_id: Uuid,
     pub academic_year: i32,
     pub academic_year_label: String,
-    pub role: String, // 'primary' | 'secondary'
+    pub role: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -250,11 +263,11 @@ pub struct StaffProfileResponse {
     // Organization units
     pub organization_units: Vec<OrganizationUnitResponse>,
 
-    // วิชาที่สอน (จาก classroom_courses)
-    pub teaching_courses: Vec<TeachingCourseItem>,
+    // กลุ่มการเรียนที่สอน
+    pub teaching_assignments: Vec<TeachingAssignmentItem>,
 
-    // ห้องที่เป็นครูที่ปรึกษา (จาก classroom_advisors)
-    pub advisor_classrooms: Vec<AdvisorClassroomItem>,
+    // ห้องประจำชั้นที่เป็นครูที่ปรึกษา
+    pub advisor_homerooms: Vec<AdvisorHomeroomItem>,
 
     // Permissions
     pub permissions: Vec<String>,
