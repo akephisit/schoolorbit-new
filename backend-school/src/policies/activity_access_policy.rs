@@ -9,33 +9,33 @@ use crate::policies::resource_access_policy::{
 };
 
 const ACTIVITY_MANAGE_ACCESS: ResourceAccessPermissions = ResourceAccessPermissions {
-    own: Some(codes::ACTIVITY_MANAGE_OWN),
-    assigned: Some(codes::ACTIVITY_MANAGE_OWN),
+    own: Some(codes::LEARNING_OFFERING_MANAGE_ASSIGNED),
+    assigned: Some(codes::LEARNING_OFFERING_MANAGE_ASSIGNED),
     organization_unit: None,
     organization_tree: None,
-    school: Some(codes::ACTIVITY_MANAGE_ALL),
+    school: Some(codes::LEARNING_OFFERING_MANAGE_SCHOOL),
 };
 
 const ACTIVITY_READ_ACCESS: ResourceAccessPermissions = ResourceAccessPermissions {
-    own: Some(codes::ACTIVITY_MANAGE_OWN),
-    assigned: Some(codes::ACTIVITY_MANAGE_OWN),
+    own: Some(codes::LEARNING_OFFERING_MANAGE_ASSIGNED),
+    assigned: Some(codes::LEARNING_OFFERING_MANAGE_ASSIGNED),
     organization_unit: None,
     organization_tree: None,
-    school: Some(codes::ACTIVITY_READ_ALL),
+    school: Some(codes::LEARNING_OFFERING_READ_SCHOOL),
 };
 
 pub fn resolve_activity_list_access(
     actor: &ActorContext,
 ) -> Result<UserResourceListAccess, AppError> {
-    if actor.has_permission(codes::ACTIVITY_MANAGE_ALL) {
+    if actor.has_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL) {
         return Ok(UserResourceListAccess::School);
     }
 
-    if actor.has_permission(codes::ACTIVITY_READ_ALL) {
+    if actor.has_permission(codes::LEARNING_OFFERING_READ_SCHOOL) {
         return Ok(UserResourceListAccess::School);
     }
 
-    if actor.has_permission(codes::ACTIVITY_MANAGE_OWN) {
+    if actor.has_permission(codes::LEARNING_OFFERING_MANAGE_ASSIGNED) {
         return Ok(UserResourceListAccess::Own(actor.user_id));
     }
 
@@ -43,7 +43,7 @@ pub fn resolve_activity_list_access(
 }
 
 pub fn can_manage_all_activity(actor: &ActorContext) -> bool {
-    actor.has_permission(codes::ACTIVITY_MANAGE_ALL)
+    actor.has_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)
 }
 
 pub fn can_create_activity_group_for(
@@ -124,9 +124,9 @@ pub async fn can_read_activity_slot(
         return Err(AppError::NotFound("ไม่พบช่องกิจกรรม".to_string()));
     };
 
-    if actor.has_permission(codes::ACTIVITY_MANAGE_ALL)
-        || actor.has_permission(codes::ACTIVITY_READ_ALL)
-        || (actor.has_permission(codes::ACTIVITY_MANAGE_OWN)
+    if actor.has_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)
+        || actor.has_permission(codes::LEARNING_OFFERING_READ_SCHOOL)
+        || (actor.has_permission(codes::LEARNING_OFFERING_MANAGE_ASSIGNED)
             && (teacher_reg_open || actor_is_assigned))
     {
         return Ok(());
@@ -216,7 +216,10 @@ mod tests {
     fn activity_list_access_prefers_manage_all_as_school_scope() {
         let actor = actor(
             Uuid::new_v4(),
-            &[codes::ACTIVITY_MANAGE_OWN, codes::ACTIVITY_MANAGE_ALL],
+            &[
+                codes::LEARNING_OFFERING_MANAGE_ASSIGNED,
+                codes::LEARNING_OFFERING_MANAGE_SCHOOL,
+            ],
         );
 
         let access = resolve_activity_list_access(&actor).expect("school access should resolve");
@@ -227,7 +230,7 @@ mod tests {
     #[test]
     fn activity_list_access_supports_manage_own_scope() {
         let actor_user_id = Uuid::new_v4();
-        let actor = actor(actor_user_id, &[codes::ACTIVITY_MANAGE_OWN]);
+        let actor = actor(actor_user_id, &[codes::LEARNING_OFFERING_MANAGE_ASSIGNED]);
 
         let access = resolve_activity_list_access(&actor).expect("own access should resolve");
 
@@ -237,7 +240,7 @@ mod tests {
     #[test]
     fn create_group_own_scope_requires_actor_as_instructor() {
         let actor_user_id = Uuid::new_v4();
-        let actor = actor(actor_user_id, &[codes::ACTIVITY_MANAGE_OWN]);
+        let actor = actor(actor_user_id, &[codes::LEARNING_OFFERING_MANAGE_ASSIGNED]);
 
         assert!(can_create_activity_group_for(&actor, actor_user_id).is_ok());
         assert!(can_create_activity_group_for(&actor, Uuid::new_v4()).is_err());
@@ -245,7 +248,7 @@ mod tests {
 
     #[test]
     fn create_group_manage_all_allows_other_instructor() {
-        let actor = actor(Uuid::new_v4(), &[codes::ACTIVITY_MANAGE_ALL]);
+        let actor = actor(Uuid::new_v4(), &[codes::LEARNING_OFFERING_MANAGE_SCHOOL]);
 
         assert!(can_create_activity_group_for(&actor, Uuid::new_v4()).is_ok());
     }

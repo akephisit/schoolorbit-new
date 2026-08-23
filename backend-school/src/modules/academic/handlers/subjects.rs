@@ -46,7 +46,7 @@ pub async fn list_subject_groups(
             StatusCode::FORBIDDEN,
             Json(ApiErrorResponse::new(format!(
                 "ไม่มีสิทธิ์ {}",
-                codes::ACADEMIC_CURRICULUM_READ_ALL
+                codes::ACADEMIC_CURRICULUM_READ_SCHOOL
             ))),
         )
             .into_response());
@@ -91,7 +91,7 @@ pub async fn list_subjects(
             StatusCode::FORBIDDEN,
             Json(ApiErrorResponse::new(format!(
                 "ไม่มีสิทธิ์ {}",
-                codes::ACADEMIC_CURRICULUM_READ_ALL
+                codes::ACADEMIC_CURRICULUM_READ_SCHOOL
             ))),
         )
             .into_response());
@@ -126,7 +126,7 @@ pub async fn create_subject(
     let Some(access) = curriculum_access_policy::resolve_subject_manage_access(
         &actor,
         &pool,
-        codes::ACADEMIC_CURRICULUM_CREATE_ALL,
+        codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL,
     )
     .await?
     else {
@@ -134,7 +134,7 @@ pub async fn create_subject(
             StatusCode::FORBIDDEN,
             Json(ApiErrorResponse::new(format!(
                 "ไม่มีสิทธิ์ {}",
-                codes::ACADEMIC_CURRICULUM_CREATE_ALL
+                codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL
             ))),
         )
             .into_response());
@@ -178,7 +178,7 @@ pub async fn update_subject(
     let Some(access) = curriculum_access_policy::resolve_subject_manage_access(
         &actor,
         &pool,
-        codes::ACADEMIC_CURRICULUM_UPDATE_ALL,
+        codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL,
     )
     .await?
     else {
@@ -186,7 +186,7 @@ pub async fn update_subject(
             StatusCode::FORBIDDEN,
             Json(ApiErrorResponse::new(format!(
                 "ไม่มีสิทธิ์ {}",
-                codes::ACADEMIC_CURRICULUM_UPDATE_ALL
+                codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL
             ))),
         )
             .into_response());
@@ -233,7 +233,7 @@ pub async fn delete_subject(
     let Some(access) = curriculum_access_policy::resolve_subject_manage_access(
         &actor,
         &pool,
-        codes::ACADEMIC_CURRICULUM_DELETE_ALL,
+        codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL,
     )
     .await?
     else {
@@ -241,7 +241,7 @@ pub async fn delete_subject(
             StatusCode::FORBIDDEN,
             Json(ApiErrorResponse::new(format!(
                 "ไม่มีสิทธิ์ {}",
-                codes::ACADEMIC_CURRICULUM_DELETE_ALL
+                codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL
             ))),
         )
             .into_response());
@@ -284,7 +284,7 @@ pub async fn list_subject_default_instructors(
         &actor,
         &pool,
         subject_id,
-        codes::ACADEMIC_CURRICULUM_UPDATE_ALL,
+        codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL,
         true,
     )
     .await?;
@@ -321,7 +321,7 @@ pub async fn add_subject_default_instructor(
         &actor,
         &pool,
         subject_id,
-        codes::ACADEMIC_CURRICULUM_UPDATE_ALL,
+        codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL,
         false,
     )
     .await?;
@@ -358,7 +358,7 @@ pub async fn remove_subject_default_instructor(
         &actor,
         &pool,
         subject_id,
-        codes::ACADEMIC_CURRICULUM_UPDATE_ALL,
+        codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL,
         false,
     )
     .await?;
@@ -398,7 +398,7 @@ pub async fn update_subject_default_instructor_role(
         &actor,
         &pool,
         subject_id,
-        codes::ACADEMIC_CURRICULUM_UPDATE_ALL,
+        codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL,
         false,
     )
     .await?;
@@ -444,7 +444,7 @@ pub async fn batch_list_subject_default_instructors(
             StatusCode::FORBIDDEN,
             Json(ApiErrorResponse::new(format!(
                 "ไม่มีสิทธิ์ {}",
-                codes::ACADEMIC_CURRICULUM_READ_ALL
+                codes::ACADEMIC_CURRICULUM_READ_SCHOOL
             ))),
         )
             .into_response());

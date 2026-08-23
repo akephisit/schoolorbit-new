@@ -62,7 +62,7 @@ pub async fn get_user_roles(
          FROM user_roles ur
          JOIN roles r ON ur.role_id = r.id
          LEFT JOIN role_permissions rp ON r.id = rp.role_id
-         LEFT JOIN permissions p ON rp.permission_id = p.id
+         LEFT JOIN permissions p ON rp.permission_id = p.id AND p.is_active = true
          WHERE ur.user_id = $1 AND ur.ended_at IS NULL AND r.is_active = true
          GROUP BY ur.id, r.id
          ORDER BY ur.is_primary DESC, r.level DESC, r.name"#,
@@ -211,7 +211,7 @@ pub async fn get_user_permissions(pool: &PgPool, user_id: Uuid) -> Result<Vec<St
          FROM user_roles ur
          JOIN roles r ON ur.role_id = r.id AND r.is_active = true
          JOIN role_permissions rp ON r.id = rp.role_id
-         JOIN permissions p ON rp.permission_id = p.id
+         JOIN permissions p ON rp.permission_id = p.id AND p.is_active = true
          WHERE ur.user_id = $1 AND ur.ended_at IS NULL
            AND EXISTS (
                SELECT 1

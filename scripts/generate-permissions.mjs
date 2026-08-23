@@ -339,10 +339,14 @@ export async function generatePermissions({
 	rustOutputPath,
 	typeScriptOutputPath,
 	check = false,
-	initializeLock = false
+	initializeLock = false,
+	allowRemovals = false
 }) {
 	if (check && initializeLock) {
 		throw new Error('--check and --initialize-lock cannot be combined');
+	}
+	if (check && allowRemovals) {
+		throw new Error('--check and --allow-removals cannot be combined');
 	}
 
 	let source;
@@ -365,7 +369,7 @@ export async function generatePermissions({
 		const existingLock = parseLock(existingLockContent, lockPath);
 		const currentCodes = new Set(normalized.permissions.map(({ code }) => code));
 		const removedCodes = existingLock.permission_codes.filter((code) => !currentCodes.has(code));
-		if (removedCodes.length > 0) {
+		if (removedCodes.length > 0 && !allowRemovals) {
 			throw new Error(`refusing to remove permission codes: ${removedCodes.sort().join(', ')}`);
 		}
 	}
@@ -400,7 +404,7 @@ export async function generatePermissions({
 }
 
 function cliOptions(arguments_) {
-	const supported = new Set(['--check', '--initialize-lock']);
+	const supported = new Set(['--check', '--initialize-lock', '--allow-removals']);
 	for (const argument of arguments_) {
 		if (!supported.has(argument)) throw new Error(`unknown argument: ${argument}`);
 	}
@@ -409,7 +413,8 @@ function cliOptions(arguments_) {
 	}
 	return {
 		check: arguments_.includes('--check'),
-		initializeLock: arguments_.includes('--initialize-lock')
+		initializeLock: arguments_.includes('--initialize-lock'),
+		allowRemovals: arguments_.includes('--allow-removals')
 	};
 }
 

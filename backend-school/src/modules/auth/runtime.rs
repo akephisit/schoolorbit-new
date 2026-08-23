@@ -5,6 +5,7 @@ use tokio::sync::broadcast;
 
 use crate::{
     db::{admin_client::AdminClient, permission_cache::PermissionCache, pool_manager::PoolManager},
+    modules::notification::events::PermissionChangeEvent,
     utils::tenant::TenantContext,
     AppState,
 };
@@ -20,6 +21,7 @@ pub struct AuthRuntime {
     pub permission_cache: Arc<PermissionCache>,
     pub config: Arc<SessionConfig>,
     pub session_events: broadcast::Sender<SessionRevocationEvent>,
+    pub permission_events: broadcast::Sender<PermissionChangeEvent>,
 }
 
 impl AuthRuntime {
@@ -30,6 +32,12 @@ impl AuthRuntime {
             Arc::clone(&self.config),
             self.session_events.clone(),
         )
+    }
+
+    pub fn notify_all_permissions_changed(&self, tenant: &str) {
+        let _ = self
+            .permission_events
+            .send(PermissionChangeEvent::for_all_users(tenant));
     }
 }
 

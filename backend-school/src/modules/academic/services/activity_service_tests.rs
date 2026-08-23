@@ -33,7 +33,7 @@ async fn migrated_pool() -> sqlx::PgPool {
 fn manage_all_actor(user_id: Uuid) -> ActorContext {
     ActorContext {
         user_id,
-        permissions: vec![codes::ACTIVITY_MANAGE_ALL.to_string()],
+        permissions: vec![codes::LEARNING_OFFERING_MANAGE_SCHOOL.to_string()],
     }
 }
 

@@ -12,7 +12,7 @@ export const _meta = {
 		workspace: 'academic',
 		order: 30, // ถัดจาก ห้องเรียน (20)
 		user_type: 'staff',
-		permission: PERMISSION_MODULES.ACADEMIC_COURSE_PLAN
+		permission: PERMISSION_MODULES.LEARNING_OFFERING
 	}
 };
 

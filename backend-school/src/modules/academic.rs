@@ -10,6 +10,7 @@ pub mod cutover_test_support;
 pub mod delivery;
 pub mod handlers;
 pub mod models;
+pub mod reconciliation;
 pub mod services;
 pub mod websockets;
 

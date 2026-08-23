@@ -117,6 +117,46 @@ impl PoolManager {
     /// Get or create a connection pool for a specific school
     /// Also runs migrations lazily on first connection
     pub async fn get_pool(&self, database_url: &str, subdomain: &str) -> Result<PgPool, String> {
+        Ok(self
+            .get_pool_with_permission_change(database_url, subdomain)
+            .await?
+            .0)
+    }
+
+    /// Get a tenant pool and report whether migrations or permission sync changed
+    /// the effective permission contract during this call.
+    pub async fn get_pool_with_permission_change(
+        &self,
+        database_url: &str,
+        subdomain: &str,
+    ) -> Result<(PgPool, bool), String> {
+        let pool = self
+            .get_pool_for_read_only_status(database_url, subdomain)
+            .await?;
+
+        // Run migrations (lazy - only once per school per session)
+        let migrated = self
+            .migration_tracker
+            .run_migrations_once(subdomain, &pool)
+            .await?;
+
+        // Sync permissions (lazy - only once per school per session)
+        // This ensures existing schools get updated permissions after backend deploy
+        let permissions_synced = self
+            .migration_tracker
+            .sync_permissions_once(subdomain, &pool)
+            .await?;
+
+        Ok((pool, migrated || permissions_synced))
+    }
+
+    /// Get or create a tenant pool without running migrations or permission synchronization.
+    /// This is reserved for read-only operational status checks.
+    pub async fn get_pool_for_read_only_status(
+        &self,
+        database_url: &str,
+        subdomain: &str,
+    ) -> Result<PgPool, String> {
         let pool = self
             .get_or_create_pool_with(database_url, subdomain, || async {
                 tracing::info!(subdomain, "Creating tenant database pool");
@@ -138,17 +178,6 @@ impl PoolManager {
                         format!("Failed to connect to database for {subdomain}: {error}")
                     })
             })
-            .await?;
-
-        // Run migrations (lazy - only once per school per session)
-        self.migration_tracker
-            .run_migrations_once(subdomain, &pool)
-            .await?;
-
-        // Sync permissions (lazy - only once per school per session)
-        // This ensures existing schools get updated permissions after backend deploy
-        self.migration_tracker
-            .sync_permissions_once(subdomain, &pool)
             .await?;
 
         Ok(pool)

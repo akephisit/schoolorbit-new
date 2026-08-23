@@ -1939,8 +1939,8 @@ fn daily_teaching_overview_endpoint_is_read_only_and_pii_safe() {
 
     assert!(daily_handler.contains("actor_tenant_context_from_session(&state, &session).await?"));
     assert!(daily_handler.contains("ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL"));
-    assert!(daily_handler.contains("ACADEMIC_COURSE_PLAN_READ_ALL"));
-    assert!(!daily_handler.contains("ACADEMIC_COURSE_PLAN_MANAGE_ALL"));
+    assert!(daily_handler.contains("LEARNING_OFFERING_READ_SCHOOL"));
+    assert!(!daily_handler.contains("LEARNING_OFFERING_MANAGE_SCHOOL"));
     assert!(daily_handler.contains("daily_teaching_service::get_daily_teaching_overview"));
     assert!(daily_handler.contains("ApiResponse::ok(data)"));
 
@@ -1981,27 +1981,30 @@ fn academic_structure_handlers_enforce_generated_permission_contract() {
         manifest_dir().join("src/modules/academic/handlers.rs"),
     ));
     let cases = [
-        ("create_academic_year", "ACADEMIC_STRUCTURE_MANAGE_ALL"),
-        ("update_academic_year", "ACADEMIC_STRUCTURE_MANAGE_ALL"),
-        ("toggle_active_year", "ACADEMIC_STRUCTURE_MANAGE_ALL"),
-        ("create_semester", "ACADEMIC_STRUCTURE_MANAGE_ALL"),
-        ("update_semester", "ACADEMIC_STRUCTURE_MANAGE_ALL"),
-        ("delete_semester", "ACADEMIC_STRUCTURE_MANAGE_ALL"),
-        ("list_classrooms", "ACADEMIC_CLASSROOM_READ_ALL"),
-        ("create_classroom", "ACADEMIC_CLASSROOM_CREATE_ALL"),
-        ("update_classroom", "ACADEMIC_CLASSROOM_UPDATE_ALL"),
-        ("create_grade_level", "ACADEMIC_STRUCTURE_MANAGE_ALL"),
-        ("delete_grade_level", "ACADEMIC_STRUCTURE_MANAGE_ALL"),
-        ("enroll_students", "ACADEMIC_ENROLLMENT_UPDATE_ALL"),
-        ("get_class_enrollments", "ACADEMIC_ENROLLMENT_READ_ALL"),
-        ("remove_enrollment", "ACADEMIC_ENROLLMENT_UPDATE_ALL"),
-        ("update_enrollment_number", "ACADEMIC_ENROLLMENT_UPDATE_ALL"),
+        ("create_academic_year", "ACADEMIC_YEAR_MANAGE_SCHOOL"),
+        ("update_academic_year", "ACADEMIC_YEAR_MANAGE_SCHOOL"),
+        ("toggle_active_year", "ACADEMIC_YEAR_MANAGE_SCHOOL"),
+        ("create_semester", "ACADEMIC_TERM_MANAGE_SCHOOL"),
+        ("update_semester", "ACADEMIC_TERM_MANAGE_SCHOOL"),
+        ("delete_semester", "ACADEMIC_TERM_MANAGE_SCHOOL"),
+        ("list_classrooms", "HOMEROOM_READ_SCHOOL"),
+        ("create_classroom", "HOMEROOM_MANAGE_SCHOOL"),
+        ("update_classroom", "HOMEROOM_MANAGE_SCHOOL"),
+        ("create_grade_level", "ACADEMIC_YEAR_MANAGE_SCHOOL"),
+        ("delete_grade_level", "ACADEMIC_YEAR_MANAGE_SCHOOL"),
+        ("enroll_students", "STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL"),
+        ("get_class_enrollments", "STUDENT_ACADEMIC_YEAR_READ_SCHOOL"),
+        ("remove_enrollment", "STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL"),
+        (
+            "update_enrollment_number",
+            "STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL",
+        ),
         (
             "auto_assign_class_numbers",
-            "ACADEMIC_ENROLLMENT_UPDATE_ALL",
+            "STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL",
         ),
-        ("get_year_levels", "ACADEMIC_STRUCTURE_READ_ALL"),
-        ("update_year_levels", "ACADEMIC_STRUCTURE_MANAGE_ALL"),
+        ("get_year_levels", "ACADEMIC_YEAR_READ_SCHOOL"),
+        ("update_year_levels", "ACADEMIC_YEAR_MANAGE_SCHOOL"),
     ];
 
     for (handler_name, permission) in cases {
@@ -2100,7 +2103,7 @@ fn academic_core_study_plan_handlers_enforce_curriculum_permission_contract() {
         .unwrap_or("");
     assert!(generate_handler.contains("actor_tenant_context_from_session(&state, &session).await?"));
     assert!(generate_handler
-        .contains("actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?"));
+        .contains("actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?"));
     assert!(generate_handler.contains("Some(actor.user_id)"));
 
     let list_subjects_handler = handlers
@@ -2174,7 +2177,8 @@ fn academic_activity_template_handlers_enforce_permission_contract() {
         .unwrap_or("");
     assert!(generate_handler.contains("actor_tenant_context_from_session(&state, &session).await?"));
     assert!(generate_handler.contains("curriculum_access_policy::ensure_curriculum_read(&actor)?"));
-    assert!(generate_handler.contains("actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?"));
+    assert!(generate_handler
+        .contains("actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?"));
     assert!(generate_handler.contains("Some(actor.user_id)"));
     assert!(!generate_handler.contains("tenant_pool(&state, &headers)"));
     assert!(!generate_handler.contains("optional_user_id_from_headers"));
@@ -2421,6 +2425,45 @@ fn academic_curriculum_permission_decisions_live_in_policy_layer() {
 }
 
 #[test]
+fn academic_core_resource_policies_preserve_independent_scopes() {
+    let policies_root = read_source(manifest_dir().join("src/policies.rs"));
+    let shared_policy = strip_comments(&read_source(
+        manifest_dir().join("src/policies/resource_access_policy.rs"),
+    ));
+    let catalog_policy = strip_comments(&read_source(
+        manifest_dir().join("src/policies/academic_catalog_access_policy.rs"),
+    ));
+    let curriculum_policy = strip_comments(&read_source(
+        manifest_dir().join("src/policies/academic_curriculum_access_policy.rs"),
+    ));
+    let offering_policy = strip_comments(&read_source(
+        manifest_dir().join("src/policies/learning_offering_access_policy.rs"),
+    ));
+
+    for module in [
+        "pub mod academic_catalog_access_policy;",
+        "pub mod academic_curriculum_access_policy;",
+        "pub mod learning_offering_access_policy;",
+    ] {
+        assert!(
+            policies_root.contains(module),
+            "missing policy module: {module}"
+        );
+    }
+
+    for policy in [&catalog_policy, &curriculum_policy, &offering_policy] {
+        assert!(policy.contains("resolve_academic_resource_list_filter"));
+        assert!(policy.contains("academic_resource_access_for"));
+    }
+
+    assert!(shared_policy.contains("accessible_exact_units_for_permission"));
+    assert!(shared_policy.contains("accessible_tree_units_for_permission"));
+    assert!(shared_policy.contains("p.is_active = true"));
+    assert!(offering_policy.contains("JOIN learning_group_teachers teacher"));
+    assert!(offering_policy.contains("teacher.teacher_id = $2"));
+}
+
+#[test]
 fn academic_subject_list_and_mutations_return_hydrated_display_fields() {
     let subject_service = strip_comments(&read_source(
         manifest_dir().join("src/modules/academic/services/subject_service.rs"),
@@ -2615,7 +2658,7 @@ fn activity_timetable_context_route_contract_is_registered() {
     assert!(routes.contains("\"/activity-slots/timetable-context\""));
     assert!(routes.contains("get(handlers::activity::get_timetable_context)"));
     assert!(handlers.contains("operation_id = \"getActivitySlotTimetableContext\""));
-    assert!(handlers.contains("codes::ACADEMIC_COURSE_PLAN_READ_ALL"));
+    assert!(handlers.contains("codes::LEARNING_OFFERING_READ_SCHOOL"));
     assert!(handlers.contains("activity_access_policy::resolve_activity_list_access"));
     assert!(contract.contains("handlers::activity::get_timetable_context"));
 }
@@ -5071,32 +5114,32 @@ fn course_planning_handlers_enforce_permission_and_service_boundaries() {
         manifest_dir().join("src/modules/academic/handlers/course_planning.rs"),
     ));
     let cases = [
-        ("list_classroom_courses", "ACADEMIC_COURSE_PLAN_READ_ALL"),
-        ("assign_courses", "ACADEMIC_COURSE_PLAN_MANAGE_ALL"),
-        ("remove_course", "ACADEMIC_COURSE_PLAN_MANAGE_ALL"),
-        ("update_course", "ACADEMIC_COURSE_PLAN_MANAGE_ALL"),
+        ("list_classroom_courses", "LEARNING_OFFERING_READ_SCHOOL"),
+        ("assign_courses", "LEARNING_OFFERING_MANAGE_SCHOOL"),
+        ("remove_course", "LEARNING_OFFERING_MANAGE_SCHOOL"),
+        ("update_course", "LEARNING_OFFERING_MANAGE_SCHOOL"),
         (
             "batch_list_course_instructors",
-            "ACADEMIC_COURSE_PLAN_READ_ALL",
+            "LEARNING_OFFERING_READ_SCHOOL",
         ),
         (
             "batch_list_course_instructors_from_query",
-            "ACADEMIC_COURSE_PLAN_READ_ALL",
+            "LEARNING_OFFERING_READ_SCHOOL",
         ),
-        ("list_course_instructors", "ACADEMIC_COURSE_PLAN_READ_ALL"),
-        ("add_course_instructor", "ACADEMIC_COURSE_PLAN_MANAGE_ALL"),
+        ("list_course_instructors", "LEARNING_OFFERING_READ_SCHOOL"),
+        ("add_course_instructor", "LEARNING_OFFERING_MANAGE_SCHOOL"),
         (
             "remove_course_instructor",
-            "ACADEMIC_COURSE_PLAN_MANAGE_ALL",
+            "LEARNING_OFFERING_MANAGE_SCHOOL",
         ),
         (
             "update_course_instructor_role",
-            "ACADEMIC_COURSE_PLAN_MANAGE_ALL",
+            "LEARNING_OFFERING_MANAGE_SCHOOL",
         ),
-        ("list_classroom_activities", "ACADEMIC_COURSE_PLAN_READ_ALL"),
+        ("list_classroom_activities", "LEARNING_OFFERING_READ_SCHOOL"),
         (
             "remove_classroom_from_slot",
-            "ACADEMIC_COURSE_PLAN_MANAGE_ALL",
+            "LEARNING_OFFERING_MANAGE_SCHOOL",
         ),
     ];
 
@@ -5786,6 +5829,44 @@ fn academic_core_042_migration_enforces_delivery_context_without_pii_audits() {
         assert!(
             migration.contains(required),
             "migration 042 must retain the delivery invariant: {required}"
+        );
+    }
+
+    assert!(!migration.contains("national_id"));
+    assert!(!migration.contains("DROP TABLE"));
+    assert!(!migration.contains("CREATE EXTENSION"));
+    assert!(!migration.contains("REAL"));
+    assert!(!migration.contains("DOUBLE PRECISION"));
+}
+
+#[test]
+fn academic_core_043_migration_cuts_over_consumers_and_permissions_without_pii() {
+    let migration = strip_comments(&read_source(
+        manifest_dir().join("migrations/043_academic_consumer_cutover.sql"),
+    ));
+
+    for required in [
+        "ALTER TABLE academic_assessment_plans RENAME TO course_assessment_plans",
+        "course_assessment_plans_offering_context_fkey",
+        "academic_timetable_entries_group_context_fkey",
+        "CREATE OR REPLACE FUNCTION check_entry_move_no_instructor_conflict",
+        "CREATE OR REPLACE FUNCTION check_instructor_no_double_book",
+        "ACADEMIC_TIMETABLE_INSTRUCTOR_DOUBLE_BOOKED",
+        "academic_exam_schedule_items_plan_offering_context_fkey",
+        "supervision_cycles_term_context_fkey",
+        "ALTER TABLE permissions ADD COLUMN is_active",
+        "academic_context.read.school",
+        "learning_offering.manage.assigned",
+        "academic_permission_cutover_map",
+        "permission-context-delegation:",
+        "ACADEMIC_CORE_043_PERMISSION_MAPPING_UNRESOLVED",
+        "ACADEMIC_CORE_043_PERMISSION_PRINCIPAL_MISMATCH",
+        "'academic-core-v1'",
+        "sha256(",
+    ] {
+        assert!(
+            migration.contains(required),
+            "migration 043 must retain the consumer cutover invariant: {required}"
         );
     }
 

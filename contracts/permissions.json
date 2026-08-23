@@ -311,137 +311,193 @@
       "description": "ลบผลงานของบุคคลากรอื่น"
     },
     {
-      "module": "academic_structure",
+      "module": "academic_context",
       "action": "read",
-      "scope": "all",
-      "name": "ดูโครงสร้างวิชาการ",
-      "description": "ดูโครงสร้างวิชาการ (ปีการศึกษา, ห้องเรียน, ระดับชั้น)"
+      "scope": "school",
+      "name": "ดูตัวเลือกปีและภาคเรียน",
+      "description": "ดูชื่อและสถานะของปีการศึกษาและภาคเรียนที่ใช้เลือกบริบทการทำงาน"
     },
     {
-      "module": "academic_structure",
+      "module": "academic_year",
+      "action": "read",
+      "scope": "school",
+      "name": "ดูปีการศึกษา",
+      "description": "ดูข้อมูลปีการศึกษาของโรงเรียน"
+    },
+    {
+      "module": "academic_year",
       "action": "manage",
-      "scope": "all",
-      "name": "จัดการโครงสร้างวิชาการ",
-      "description": "สร้าง/แก้ไข/ลบ โครงสร้างวิชาการ"
+      "scope": "school",
+      "name": "จัดการปีการศึกษา",
+      "description": "สร้างและแก้ไขปีการศึกษาที่ยังอยู่ระหว่างวางแผน"
     },
     {
-      "module": "academic_classroom",
+      "module": "academic_term",
       "action": "read",
-      "scope": "all",
-      "name": "ดูข้อมูลห้องเรียน",
-      "description": "ดูรายชื่อห้องเรียนและนักเรียนในห้อง"
+      "scope": "school",
+      "name": "ดูภาคเรียน",
+      "description": "ดูข้อมูลภาคเรียนของโรงเรียน"
     },
     {
-      "module": "academic_classroom",
-      "action": "create",
-      "scope": "all",
-      "name": "สร้างห้องเรียน",
-      "description": "สร้างห้องเรียนใหม่"
+      "module": "academic_term",
+      "action": "manage",
+      "scope": "school",
+      "name": "จัดการภาคเรียน",
+      "description": "สร้างและแก้ไขภาคเรียนที่ยังอยู่ระหว่างวางแผน"
     },
     {
-      "module": "academic_classroom",
-      "action": "update",
-      "scope": "all",
-      "name": "แก้ไขห้องเรียน",
-      "description": "แก้ไขข้อมูลห้อง/ครูประจำชั้น"
-    },
-    {
-      "module": "academic_classroom",
-      "action": "delete",
-      "scope": "all",
-      "name": "ลบห้องเรียน",
-      "description": "ลบห้องเรียน"
-    },
-    {
-      "module": "academic_enrollment",
+      "module": "academic_catalog",
       "action": "read",
-      "scope": "all",
-      "name": "ดูข้อมูลการเข้าห้องเรียน",
-      "description": "ดูรายชื่อนักเรียนในห้องเรียน"
+      "scope": "school",
+      "name": "ดูคลังวิชาและกิจกรรม",
+      "description": "ดูรายวิชาและกิจกรรมพัฒนาผู้เรียนในคลังกลางของโรงเรียน"
     },
     {
-      "module": "academic_enrollment",
-      "action": "update",
-      "scope": "all",
-      "name": "จัดการนักเรียนในห้อง",
-      "description": "ย้ายนักเรียนเข้า/ออก ห้องเรียน"
+      "module": "academic_catalog",
+      "action": "manage",
+      "scope": "organization_unit",
+      "name": "จัดการคลังวิชาของหน่วยงาน",
+      "description": "จัดการรายการในคลังที่หน่วยงานของตนเป็นเจ้าของ"
     },
     {
-      "module": "academic_promotion",
-      "action": "read",
-      "scope": "all",
-      "name": "ดูการเลื่อนชั้น",
-      "description": "ดูสถานะการเลื่อนชั้นเรียนประจำปี"
+      "module": "academic_catalog",
+      "action": "manage",
+      "scope": "organization_tree",
+      "name": "จัดการคลังวิชาในสายงาน",
+      "description": "จัดการรายการในคลังที่หน่วยงานของตนหรือหน่วยงานย่อยเป็นเจ้าของ"
     },
     {
-      "module": "academic_promotion",
-      "action": "execute",
-      "scope": "all",
-      "name": "ดำเนินการเลื่อนชั้น",
-      "description": "ประมวลผลการเลื่อนชั้นเรียน (End of Year)"
+      "module": "academic_catalog",
+      "action": "manage",
+      "scope": "school",
+      "name": "จัดการคลังวิชาทั้งโรงเรียน",
+      "description": "จัดการรายวิชาและกิจกรรมในคลังกลางทั้งโรงเรียน"
     },
     {
       "module": "academic_curriculum",
       "action": "read",
-      "scope": "all",
-      "name": "ดูหลักสูตร/รายวิชา",
-      "description": "ดูข้อมูลรายวิชาและหลักสูตรทั้งหมด"
+      "scope": "organization_unit",
+      "name": "ดูหลักสูตรของหน่วยงาน",
+      "description": "ดูหลักสูตรที่หน่วยงานของตนเป็นเจ้าของ"
     },
     {
       "module": "academic_curriculum",
       "action": "read",
       "scope": "organization_tree",
-      "name": "ดูหลักสูตร/รายวิชาในสายงาน",
-      "description": "ดูข้อมูลรายวิชาในหน่วยงานของตนเองและหน่วยงานย่อย"
+      "name": "ดูหลักสูตรในสายงาน",
+      "description": "ดูหลักสูตรที่หน่วยงานของตนหรือหน่วยงานย่อยเป็นเจ้าของ"
+    },
+    {
+      "module": "academic_curriculum",
+      "action": "read",
+      "scope": "school",
+      "name": "ดูหลักสูตรทั้งโรงเรียน",
+      "description": "ดูหลักสูตรทั้งหมดของโรงเรียน"
     },
     {
       "module": "academic_curriculum",
       "action": "manage",
       "scope": "organization_unit",
-      "name": "จัดการรายวิชากลุ่มสาระตัวเอง",
-      "description": "เพิ่ม/แก้ไข/ลบ รายวิชาเฉพาะกลุ่มสาระที่ตัวเองสังกัด"
+      "name": "จัดการหลักสูตรของหน่วยงาน",
+      "description": "จัดการหลักสูตรที่หน่วยงานของตนเป็นเจ้าของ"
     },
     {
       "module": "academic_curriculum",
       "action": "manage",
       "scope": "organization_tree",
-      "name": "จัดการรายวิชาในสายงาน",
-      "description": "เพิ่ม/แก้ไข/ลบ รายวิชาในหน่วยงานของตนเองและหน่วยงานย่อย"
+      "name": "จัดการหลักสูตรในสายงาน",
+      "description": "จัดการหลักสูตรที่หน่วยงานของตนหรือหน่วยงานย่อยเป็นเจ้าของ"
     },
     {
       "module": "academic_curriculum",
-      "action": "create",
-      "scope": "all",
-      "name": "สร้างรายวิชา",
-      "description": "สร้างรายวิชาใหม่ในระบบ"
-    },
-    {
-      "module": "academic_curriculum",
-      "action": "update",
-      "scope": "all",
-      "name": "แก้ไขรายวิชา",
-      "description": "แก้ไขรายละเอียดรายวิชา"
-    },
-    {
-      "module": "academic_curriculum",
-      "action": "delete",
-      "scope": "all",
-      "name": "ลบรายวิชา",
-      "description": "ลบรายวิชาออกจากระบบ"
-    },
-    {
-      "module": "academic_course_plan",
-      "action": "read",
-      "scope": "all",
-      "name": "ดูแผนการเรียนรายห้อง",
-      "description": "ดูวิชาที่เปิดสอนในแต่ละห้องเรียน"
-    },
-    {
-      "module": "academic_course_plan",
       "action": "manage",
-      "scope": "all",
-      "name": "จัดแผนการเรียน",
-      "description": "เพิ่ม/ลบ/แก้ไข วิชาที่เปิดสอนในห้องเรียน"
+      "scope": "school",
+      "name": "จัดการหลักสูตรทั้งโรงเรียน",
+      "description": "จัดการหลักสูตรทั้งหมดของโรงเรียน"
+    },
+    {
+      "module": "homeroom",
+      "action": "read",
+      "scope": "school",
+      "name": "ดูห้องประจำชั้น",
+      "description": "ดูข้อมูลห้องประจำชั้นของโรงเรียน"
+    },
+    {
+      "module": "homeroom",
+      "action": "manage",
+      "scope": "school",
+      "name": "จัดการห้องประจำชั้น",
+      "description": "สร้างและแก้ไขห้องประจำชั้นของโรงเรียน"
+    },
+    {
+      "module": "student_academic_year",
+      "action": "read",
+      "scope": "school",
+      "name": "ดูข้อมูลนักเรียนรายปี",
+      "description": "ดูข้อมูลสถานะและห้องประจำชั้นของนักเรียนในแต่ละปีการศึกษา"
+    },
+    {
+      "module": "student_academic_year",
+      "action": "manage",
+      "scope": "school",
+      "name": "จัดการข้อมูลนักเรียนรายปี",
+      "description": "จัดการสถานะและการจัดห้องของนักเรียนในแต่ละปีการศึกษา"
+    },
+    {
+      "module": "learning_offering",
+      "action": "read",
+      "scope": "assigned",
+      "name": "ดูการเปิดสอนที่รับผิดชอบ",
+      "description": "ดูการเปิดสอนและกลุ่มเรียนที่ได้รับมอบหมายเป็นผู้สอน"
+    },
+    {
+      "module": "learning_offering",
+      "action": "read",
+      "scope": "organization_unit",
+      "name": "ดูการเปิดสอนของหน่วยงาน",
+      "description": "ดูการเปิดสอนที่หน่วยงานของตนเป็นเจ้าของ"
+    },
+    {
+      "module": "learning_offering",
+      "action": "read",
+      "scope": "organization_tree",
+      "name": "ดูการเปิดสอนในสายงาน",
+      "description": "ดูการเปิดสอนที่หน่วยงานของตนหรือหน่วยงานย่อยเป็นเจ้าของ"
+    },
+    {
+      "module": "learning_offering",
+      "action": "read",
+      "scope": "school",
+      "name": "ดูการเปิดสอนทั้งโรงเรียน",
+      "description": "ดูการเปิดสอนและกลุ่มเรียนทั้งหมดของโรงเรียน"
+    },
+    {
+      "module": "learning_offering",
+      "action": "manage",
+      "scope": "assigned",
+      "name": "จัดการการเปิดสอนที่รับผิดชอบ",
+      "description": "จัดการการเปิดสอนและกลุ่มเรียนที่ได้รับมอบหมาย"
+    },
+    {
+      "module": "learning_offering",
+      "action": "manage",
+      "scope": "organization_unit",
+      "name": "จัดการการเปิดสอนของหน่วยงาน",
+      "description": "จัดการการเปิดสอนที่หน่วยงานของตนเป็นเจ้าของ"
+    },
+    {
+      "module": "learning_offering",
+      "action": "manage",
+      "scope": "organization_tree",
+      "name": "จัดการการเปิดสอนในสายงาน",
+      "description": "จัดการการเปิดสอนที่หน่วยงานของตนหรือหน่วยงานย่อยเป็นเจ้าของ"
+    },
+    {
+      "module": "learning_offering",
+      "action": "manage",
+      "scope": "school",
+      "name": "จัดการการเปิดสอนทั้งโรงเรียน",
+      "description": "จัดการการเปิดสอนและกลุ่มเรียนทั้งหมดของโรงเรียน"
     },
     {
       "module": "academic_timetable_today",
@@ -624,34 +680,6 @@
       "scope": "organization_unit",
       "name": "อนุมัติงานในหน่วยงาน",
       "description": "อนุมัติหรือตรวจสอบงานของสมาชิกในหน่วยงาน"
-    },
-    {
-      "module": "activity",
-      "action": "read",
-      "scope": "all",
-      "name": "ดูกิจกรรมพัฒนาผู้เรียน",
-      "description": "ดูข้อมูลกิจกรรมพัฒนาผู้เรียนทั้งหมด"
-    },
-    {
-      "module": "activity",
-      "action": "manage",
-      "scope": "all",
-      "name": "จัดการกิจกรรมพัฒนาผู้เรียน",
-      "description": "สร้าง/แก้ไข/ลบ และจัดการกิจกรรมพัฒนาผู้เรียนทั้งหมด"
-    },
-    {
-      "module": "activity",
-      "action": "manage",
-      "scope": "own",
-      "name": "จัดการกิจกรรมของตนเอง",
-      "description": "ครูจัดการกิจกรรมพัฒนาผู้เรียนที่ตนเองรับผิดชอบ"
-    },
-    {
-      "module": "activity",
-      "action": "manage_members",
-      "scope": "all",
-      "name": "จัดการสมาชิกกิจกรรม",
-      "description": "จัดการสมาชิกในกิจกรรมพัฒนาผู้เรียน"
     },
     {
       "module": "admission",

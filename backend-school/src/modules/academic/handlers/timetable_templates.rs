@@ -80,7 +80,7 @@ pub async fn list_templates(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_READ_SCHOOL)?;
     let rows = timetable_template_service::list_templates(&pool).await?;
     Ok(Json(ApiResponse::ok(rows)).into_response())
 }
@@ -93,7 +93,7 @@ pub async fn get_template(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_READ_SCHOOL)?;
     let (template, entries) = timetable_template_service::get_template(&pool, id).await?;
     Ok(Json(ApiResponse::ok(TemplateWithEntriesData {
         template,
@@ -110,7 +110,7 @@ pub async fn create_template(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     let user_id = actor.user_id;
     let id = timetable_template_service::create_template(
         &pool,
@@ -131,7 +131,7 @@ pub async fn update_template(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     timetable_template_service::update_template(
         &pool,
         id,
@@ -150,7 +150,7 @@ pub async fn delete_template(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     timetable_template_service::delete_template(&pool, id).await?;
     Ok(Json(ApiResponse::empty()).into_response())
 }
@@ -163,7 +163,7 @@ pub async fn from_current(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     let user_id = actor.user_id;
     let entry_types = payload.entry_types.unwrap_or_else(default_non_course_types);
 
@@ -190,7 +190,7 @@ pub async fn apply_template(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     let user_id = actor.user_id;
     let total_inserted = timetable_template_service::apply_template(
         &pool,
@@ -223,7 +223,7 @@ pub async fn clear_timetable(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     let user_id = actor.user_id;
     let entry_types = payload.entry_types.unwrap_or_else(default_non_course_types);
     let deleted =

@@ -1,8 +1,109 @@
+use std::collections::BTreeSet;
+
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::middleware::permission::ActorContext;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AcademicResourceAccess {
+    None,
+    Assigned,
+    OrganizationUnit,
+    OrganizationTree,
+    School,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct AcademicResourceListFilter {
+    pub assigned_actor_id: Option<Uuid>,
+    pub organization_unit_ids: Vec<Uuid>,
+    pub organization_tree_unit_ids: Vec<Uuid>,
+    pub includes_school_owned: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct AcademicResourcePermissions {
+    pub assigned: &'static [&'static str],
+    pub organization_unit: &'static [&'static str],
+    pub organization_tree: &'static [&'static str],
+    pub school: &'static [&'static str],
+}
+
+impl AcademicResourceListFilter {
+    pub fn allowed_organization_unit_ids(&self) -> Vec<Uuid> {
+        let mut ids = self.organization_unit_ids.clone();
+        ids.extend(self.organization_tree_unit_ids.iter().copied());
+        ids.sort_unstable();
+        ids.dedup();
+        ids
+    }
+}
+
+pub fn academic_resource_access_for(
+    filter: &AcademicResourceListFilter,
+    owning_organization_unit_id: Option<Uuid>,
+    actor_is_assigned: bool,
+) -> AcademicResourceAccess {
+    if filter.includes_school_owned {
+        return AcademicResourceAccess::School;
+    }
+
+    if let Some(owner_id) = owning_organization_unit_id {
+        if filter.organization_unit_ids.contains(&owner_id) {
+            return AcademicResourceAccess::OrganizationUnit;
+        }
+        if filter.organization_tree_unit_ids.contains(&owner_id) {
+            return AcademicResourceAccess::OrganizationTree;
+        }
+    }
+
+    if actor_is_assigned && filter.assigned_actor_id.is_some() {
+        return AcademicResourceAccess::Assigned;
+    }
+
+    AcademicResourceAccess::None
+}
+
+pub async fn resolve_academic_resource_list_filter(
+    pool: &PgPool,
+    actor: &ActorContext,
+    permissions: AcademicResourcePermissions,
+) -> Result<AcademicResourceListFilter, AppError> {
+    if actor_has_any_permission(actor, permissions.school) {
+        return Ok(AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..AcademicResourceListFilter::default()
+        });
+    }
+
+    let mut exact_units = BTreeSet::new();
+    for permission in permissions.organization_unit {
+        if actor.has_permission(permission) {
+            exact_units.extend(
+                accessible_exact_units_for_permission(pool, actor.user_id, permission).await?,
+            );
+        }
+    }
+
+    let mut tree_units = BTreeSet::new();
+    for permission in permissions.organization_tree {
+        if actor.has_permission(permission) {
+            tree_units.extend(
+                accessible_tree_units_for_permission(pool, actor.user_id, permission).await?,
+            );
+        }
+    }
+
+    Ok(AcademicResourceListFilter {
+        assigned_actor_id: actor_has_any_permission(actor, permissions.assigned)
+            .then_some(actor.user_id),
+        organization_unit_ids: exact_units.into_iter().collect(),
+        organization_tree_unit_ids: tree_units.into_iter().collect(),
+        includes_school_owned: false,
+    })
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ResourceAccessScope {
@@ -159,6 +260,47 @@ pub async fn accessible_exact_units_for_permission(
     query_exact_units_for_permission(pool, actor_user_id, permission_code, None).await
 }
 
+pub async fn accessible_tree_units_for_permission(
+    pool: &PgPool,
+    actor_user_id: Uuid,
+    permission_code: &str,
+) -> Result<Vec<Uuid>, AppError> {
+    let root_ids =
+        accessible_exact_units_for_permission(pool, actor_user_id, permission_code).await?;
+    if root_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    sqlx::query_scalar(
+        r#"
+        WITH RECURSIVE organization_tree AS (
+            SELECT unit.id
+            FROM organization_units unit
+            WHERE unit.id = ANY($1)
+              AND unit.is_active = true
+            UNION
+            SELECT child.id
+            FROM organization_units child
+            JOIN organization_tree parent_tree ON parent_tree.id = child.parent_unit_id
+            WHERE child.is_active = true
+        )
+        SELECT id
+        FROM organization_tree
+        ORDER BY id
+        "#,
+    )
+    .bind(&root_ids)
+    .fetch_all(pool)
+    .await
+    .map_err(|error| {
+        tracing::error!(
+            reason = "organization_tree_permission_query_failed",
+            database_error = %error
+        );
+        AppError::InternalServerError("ไม่สามารถตรวจสอบสิทธิ์สายงานได้".to_string())
+    })
+}
+
 pub async fn has_exact_unit_permission(
     pool: &PgPool,
     actor_user_id: Uuid,
@@ -194,7 +336,7 @@ async fn query_exact_units_for_permission(
                   JOIN user_roles ur ON ur.user_id = om.user_id
                   JOIN roles r ON r.id = ur.role_id AND r.is_active = true
                   JOIN role_permissions rp ON rp.role_id = r.id
-                  JOIN permissions p ON p.id = rp.permission_id
+                  JOIN permissions p ON p.id = rp.permission_id AND p.is_active = true
                   WHERE om.user_id = $1
                     AND om.organization_unit_id = target_unit.id
                     AND om.started_at <= CURRENT_DATE
@@ -212,7 +354,7 @@ async fn query_exact_units_for_permission(
                   FROM organization_members om
                   JOIN organization_permission_grants opg
                     ON opg.organization_unit_id = om.organization_unit_id
-                  JOIN permissions p ON p.id = opg.permission_id
+                  JOIN permissions p ON p.id = opg.permission_id AND p.is_active = true
                   WHERE om.user_id = $1
                     AND om.organization_unit_id = target_unit.id
                     AND om.started_at <= CURRENT_DATE
@@ -226,7 +368,7 @@ async fn query_exact_units_for_permission(
               OR EXISTS (
                   SELECT 1
                   FROM organization_permission_delegations opd
-                  JOIN permissions p ON p.id = opd.permission_id
+                  JOIN permissions p ON p.id = opd.permission_id AND p.is_active = true
                   WHERE opd.to_user_id = $1
                     AND opd.organization_unit_id = target_unit.id
                     AND p.code = $2
@@ -464,6 +606,12 @@ fn has_optional_permission(actor: &ActorContext, permission: Option<&str>) -> bo
     permission.is_some_and(|permission| actor.has_permission(permission))
 }
 
+fn actor_has_any_permission(actor: &ActorContext, permissions: &[&str]) -> bool {
+    permissions
+        .iter()
+        .any(|permission| actor.has_permission(permission))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -571,5 +719,65 @@ mod tests {
         let access = resolve_user_resource_list_access(&actor, profile_permissions());
 
         assert!(access.is_none());
+    }
+
+    #[test]
+    fn academic_school_scope_covers_school_and_organization_owned_resources() {
+        let filter = AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..AcademicResourceListFilter::default()
+        };
+
+        assert_eq!(
+            academic_resource_access_for(&filter, None, false),
+            AcademicResourceAccess::School
+        );
+        assert_eq!(
+            academic_resource_access_for(&filter, Some(Uuid::new_v4()), false),
+            AcademicResourceAccess::School
+        );
+    }
+
+    #[test]
+    fn academic_organization_scope_never_exposes_school_owned_resources() {
+        let filter = AcademicResourceListFilter {
+            organization_unit_ids: vec![Uuid::new_v4()],
+            ..AcademicResourceListFilter::default()
+        };
+
+        assert_eq!(
+            academic_resource_access_for(&filter, None, false),
+            AcademicResourceAccess::None
+        );
+    }
+
+    #[test]
+    fn academic_list_filter_preserves_the_union_of_independent_scopes() {
+        let exact_unit = Uuid::new_v4();
+        let shared_unit = Uuid::new_v4();
+        let tree_unit = Uuid::new_v4();
+        let filter = AcademicResourceListFilter {
+            assigned_actor_id: Some(Uuid::new_v4()),
+            organization_unit_ids: vec![exact_unit, shared_unit],
+            organization_tree_unit_ids: vec![shared_unit, tree_unit],
+            includes_school_owned: false,
+        };
+
+        let mut expected = vec![exact_unit, shared_unit, tree_unit];
+        expected.sort_unstable();
+
+        assert_eq!(filter.allowed_organization_unit_ids(), expected);
+        assert_eq!(
+            academic_resource_access_for(&filter, Some(exact_unit), true),
+            AcademicResourceAccess::OrganizationUnit
+        );
+        assert_eq!(
+            academic_resource_access_for(&filter, Some(tree_unit), false),
+            AcademicResourceAccess::OrganizationTree
+        );
+        assert_eq!(
+            academic_resource_access_for(&filter, None, true),
+            AcademicResourceAccess::Assigned
+        );
     }
 }

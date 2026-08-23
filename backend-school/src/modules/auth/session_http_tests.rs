@@ -60,6 +60,7 @@ impl HandlerFixture {
             pool: pool.clone(),
         };
         let (session_events, _) = broadcast::channel(32);
+        let (permission_events, _) = broadcast::channel(32);
         let runtime = AuthRuntime {
             admin_client: Arc::new(AdminClient::new(
                 "http://127.0.0.1:9".to_string(),
@@ -70,6 +71,7 @@ impl HandlerFixture {
             permission_cache: Arc::new(PermissionCache::new()),
             config,
             session_events,
+            permission_events,
         };
 
         Self {
@@ -991,6 +993,7 @@ mod protected_router {
                 ["http://localhost:5173"],
             ));
             let (events, _) = broadcast::channel(32);
+            let (permission_events, _) = broadcast::channel(32);
             let runtime = AuthRuntime {
                 admin_client: Arc::new(AdminClient::new(
                     format!("http://{address}"),
@@ -1005,6 +1008,7 @@ mod protected_router {
                 permission_cache: Arc::new(PermissionCache::new()),
                 config,
                 session_events: events,
+                permission_events,
             };
 
             Self {

@@ -51,8 +51,25 @@
 	let structure = $state<AcademicStructureData>({ years: [], semesters: [], levels: [] });
 	let activeYearLevelIds = $state<string[]>([]);
 
-	const canReadAcademicStructure = $derived($can.has(PERMISSIONS.ACADEMIC_STRUCTURE_READ_ALL));
-	const canManageAcademicStructure = $derived($can.has(PERMISSIONS.ACADEMIC_STRUCTURE_MANAGE_ALL));
+	const canReadAcademicStructure = $derived(
+		$can.hasAll(
+			PERMISSIONS.ACADEMIC_YEAR_READ_SCHOOL,
+			PERMISSIONS.ACADEMIC_TERM_READ_SCHOOL,
+			PERMISSIONS.ACADEMIC_CATALOG_READ_SCHOOL
+		) ||
+			$can.hasAll(
+				PERMISSIONS.ACADEMIC_YEAR_MANAGE_SCHOOL,
+				PERMISSIONS.ACADEMIC_TERM_MANAGE_SCHOOL,
+				PERMISSIONS.ACADEMIC_CATALOG_MANAGE_SCHOOL
+			)
+	);
+	const canManageAcademicStructure = $derived(
+		$can.hasAll(
+			PERMISSIONS.ACADEMIC_YEAR_MANAGE_SCHOOL,
+			PERMISSIONS.ACADEMIC_TERM_MANAGE_SCHOOL,
+			PERMISSIONS.ACADEMIC_CATALOG_MANAGE_SCHOOL
+		)
+	);
 
 	function replaceAcademicYear(year: AcademicYear) {
 		const nextYears = structure.years.some((existing) => existing.id === year.id)

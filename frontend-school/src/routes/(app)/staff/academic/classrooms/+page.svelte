@@ -55,9 +55,11 @@
 	let showEditDialog = $state(false);
 	let isSubmitting = $state(false);
 
-	const canReadClassrooms = $derived($can.has(PERMISSIONS.ACADEMIC_CLASSROOM_READ_ALL));
-	const canCreateClassrooms = $derived($can.has(PERMISSIONS.ACADEMIC_CLASSROOM_CREATE_ALL));
-	const canUpdateClassrooms = $derived($can.has(PERMISSIONS.ACADEMIC_CLASSROOM_UPDATE_ALL));
+	const canReadClassrooms = $derived(
+		$can.hasAny(PERMISSIONS.HOMEROOM_READ_SCHOOL, PERMISSIONS.HOMEROOM_MANAGE_SCHOOL)
+	);
+	const canCreateClassrooms = $derived($can.has(PERMISSIONS.HOMEROOM_MANAGE_SCHOOL));
+	const canUpdateClassrooms = $derived($can.has(PERMISSIONS.HOMEROOM_MANAGE_SCHOOL));
 
 	// Create form
 	let newClassroom = $state({

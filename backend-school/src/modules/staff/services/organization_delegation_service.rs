@@ -26,7 +26,7 @@ pub async fn list_delegatable_permissions(
     sqlx::query_as::<_, DelegatablePermission>(
         "SELECT p.id, p.code, p.name
          FROM organization_permission_grants opg
-         JOIN permissions p ON p.id = opg.permission_id
+         JOIN permissions p ON p.id = opg.permission_id AND p.is_active = true
          WHERE opg.organization_unit_id = $1
          GROUP BY p.id, p.code, p.name, p.module
          ORDER BY p.module, p.code",
@@ -54,7 +54,7 @@ pub async fn list_delegations(
                   opd.permission_id, p.code AS permission_code, p.name AS permission_name,
                   opd.reason, opd.started_at, opd.expires_at
            FROM organization_permission_delegations opd
-           JOIN permissions p ON p.id = opd.permission_id
+           JOIN permissions p ON p.id = opd.permission_id AND p.is_active = true
            WHERE opd.organization_unit_id = $1
              AND opd.revoked_at IS NULL
              AND (opd.expires_at IS NULL OR opd.expires_at > NOW())
@@ -129,8 +129,13 @@ pub async fn organization_permission_grant_exists(
 ) -> Result<bool, AppError> {
     let r: bool = sqlx::query_scalar(
         "SELECT EXISTS(
-             SELECT 1 FROM organization_permission_grants
-             WHERE organization_unit_id = $1 AND permission_id = $2
+             SELECT 1
+             FROM organization_permission_grants grant_row
+             JOIN permissions permission
+               ON permission.id = grant_row.permission_id
+              AND permission.is_active = true
+             WHERE grant_row.organization_unit_id = $1
+               AND grant_row.permission_id = $2
          )",
     )
     .bind(organization_unit_id)

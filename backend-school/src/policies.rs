@@ -1,8 +1,11 @@
+pub mod academic_catalog_access_policy;
+pub mod academic_curriculum_access_policy;
 pub mod achievement_access_policy;
 pub mod activity_access_policy;
 pub mod certificate_access_policy;
 pub mod curriculum_access_policy;
 pub mod file_access_policy;
+pub mod learning_offering_access_policy;
 pub mod organization_access_policy;
 pub mod question_bank_access_policy;
 pub mod resource_access_policy;

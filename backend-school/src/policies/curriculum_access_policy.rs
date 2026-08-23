@@ -46,31 +46,31 @@ pub fn ensure_curriculum_read(actor: &ActorContext) -> Result<(), AppError> {
     ensure_curriculum_access(
         actor,
         curriculum_read_permissions(actor),
-        codes::ACADEMIC_CURRICULUM_READ_ALL,
+        codes::ACADEMIC_CURRICULUM_READ_SCHOOL,
     )
 }
 
 pub fn ensure_curriculum_create(actor: &ActorContext) -> Result<(), AppError> {
     ensure_curriculum_access(
         actor,
-        curriculum_manage_permissions(codes::ACADEMIC_CURRICULUM_CREATE_ALL),
-        codes::ACADEMIC_CURRICULUM_CREATE_ALL,
+        curriculum_manage_permissions(codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL),
+        codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL,
     )
 }
 
 pub fn ensure_curriculum_update(actor: &ActorContext) -> Result<(), AppError> {
     ensure_curriculum_access(
         actor,
-        curriculum_manage_permissions(codes::ACADEMIC_CURRICULUM_UPDATE_ALL),
-        codes::ACADEMIC_CURRICULUM_UPDATE_ALL,
+        curriculum_manage_permissions(codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL),
+        codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL,
     )
 }
 
 pub fn ensure_curriculum_delete(actor: &ActorContext) -> Result<(), AppError> {
     ensure_curriculum_access(
         actor,
-        curriculum_manage_permissions(codes::ACADEMIC_CURRICULUM_DELETE_ALL),
-        codes::ACADEMIC_CURRICULUM_DELETE_ALL,
+        curriculum_manage_permissions(codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL),
+        codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL,
     )
 }
 
@@ -125,7 +125,7 @@ fn curriculum_read_permissions(actor: &ActorContext) -> ResourceAccessPermission
         assigned: None,
         organization_unit: Some(codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT),
         organization_tree: Some(tree_permission),
-        school: Some(codes::ACADEMIC_CURRICULUM_READ_ALL),
+        school: Some(codes::ACADEMIC_CURRICULUM_READ_SCHOOL),
     }
 }
 
@@ -228,11 +228,11 @@ mod tests {
 
     #[test]
     fn curriculum_manage_uses_requested_school_permission() {
-        let permissions = curriculum_manage_permissions(codes::ACADEMIC_CURRICULUM_UPDATE_ALL);
+        let permissions = curriculum_manage_permissions(codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL);
 
         assert_eq!(
             permissions.school,
-            Some(codes::ACADEMIC_CURRICULUM_UPDATE_ALL)
+            Some(codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL)
         );
     }
 
@@ -255,7 +255,7 @@ mod tests {
 
     #[test]
     fn curriculum_plan_helpers_reject_unrelated_permissions() {
-        let unrelated = actor(Uuid::new_v4(), &[codes::ACADEMIC_COURSE_PLAN_READ_ALL]);
+        let unrelated = actor(Uuid::new_v4(), &[codes::LEARNING_OFFERING_READ_SCHOOL]);
 
         assert!(matches!(
             ensure_curriculum_read(&unrelated),

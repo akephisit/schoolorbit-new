@@ -100,7 +100,7 @@ pub async fn list_periods(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_STRUCTURE_READ_ALL)?;
+    actor.require_permission(codes::ACADEMIC_YEAR_READ_SCHOOL)?;
 
     let periods = period_service::list_periods(&pool, query).await?;
     Ok(Json(ApiResponse::ok(periods)).into_response())
@@ -115,7 +115,7 @@ pub async fn create_period(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
+    actor.require_permission(codes::ACADEMIC_YEAR_MANAGE_SCHOOL)?;
 
     let period = period_service::create_period(&pool, payload).await?;
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(period))).into_response())
@@ -131,7 +131,7 @@ pub async fn update_period(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
+    actor.require_permission(codes::ACADEMIC_YEAR_MANAGE_SCHOOL)?;
 
     let period = period_service::update_period(&pool, id, payload).await?;
     Ok(Json(ApiResponse::ok(period)).into_response())
@@ -146,7 +146,7 @@ pub async fn delete_period(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
+    actor.require_permission(codes::ACADEMIC_YEAR_MANAGE_SCHOOL)?;
 
     period_service::delete_period(&pool, id).await?;
     Ok(Json(ApiResponse::empty()).into_response())
@@ -161,7 +161,7 @@ pub async fn reorder_periods(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
+    actor.require_permission(codes::ACADEMIC_YEAR_MANAGE_SCHOOL)?;
 
     let updated = period_service::reorder_periods(&pool, payload).await?;
     Ok(Json(ApiResponse::ok(UpdatedData { updated })).into_response())
@@ -181,7 +181,7 @@ pub async fn list_timetable_entries(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_READ_SCHOOL)?;
 
     let semester_id = query.academic_semester_id;
     let entries = timetable_service::list_entries(&pool, query.into()).await?;
@@ -226,10 +226,10 @@ pub async fn daily_teaching_overview(
 
     actor.require_any_permission(&[
         codes::ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL,
-        codes::ACADEMIC_COURSE_PLAN_READ_ALL,
+        codes::LEARNING_OFFERING_READ_SCHOOL,
     ])?;
 
-    let include_empty_teachers_allowed = actor.has_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL);
+    let include_empty_teachers_allowed = actor.has_permission(codes::LEARNING_OFFERING_READ_SCHOOL);
     let data = daily_teaching_service::get_daily_teaching_overview(
         &pool,
         query,
@@ -257,7 +257,7 @@ pub async fn replay_events(
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_READ_SCHOOL)?;
 
     let subdomain =
         extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
@@ -372,7 +372,7 @@ pub async fn create_timetable_entry(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
 
     let user_id = actor.user_id;
     let client_temp_id = payload.client_temp_id.clone();
@@ -468,7 +468,7 @@ pub async fn delete_batch_timetable_entries(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
 
     let deleted_count = timetable_service::delete_entries_by_slot(
         &pool,
@@ -500,7 +500,7 @@ pub async fn delete_timetable_entry(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
 
     let semester_id = timetable_service::delete_entry(&pool, id).await?;
 
@@ -531,7 +531,7 @@ pub async fn delete_batch_group(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
 
     let (deleted_count, semester_id) =
         timetable_service::delete_batch_group(&pool, batch_id).await?;
@@ -563,7 +563,7 @@ pub async fn update_timetable_entry(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
 
     let user_id = actor.user_id;
     let outcome = timetable_service::update_entry(&pool, Some(user_id), id, payload).await?;
@@ -647,7 +647,7 @@ pub async fn create_batch_timetable_entries(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
 
     let user_id = actor.user_id;
     let outcome = timetable_service::create_batch_entries(&pool, Some(user_id), payload).await?;
@@ -703,7 +703,7 @@ pub async fn add_entry_instructor(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     let user_id = actor.user_id;
     let role = body.role.clone().unwrap_or_else(|| "primary".to_string());
 
@@ -744,7 +744,7 @@ pub async fn remove_entry_instructor(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     let user_id = actor.user_id;
 
     let result = timetable_service::remove_entry_instructor(&pool, entry_id, instructor_id).await?;
@@ -776,7 +776,7 @@ pub async fn restore_instructor_to_slot_entries(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     let inserted =
         timetable_service::restore_instructor_to_slot(&pool, slot_id, instructor_id).await?;
     Ok(Json(ApiResponse::ok(InsertedData { inserted })).into_response())
@@ -792,7 +792,7 @@ pub async fn hide_instructor_from_slot_entries(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     let (deleted, semester_id) =
         timetable_service::hide_instructor_from_slot(&pool, slot_id, instructor_id).await?;
 
@@ -827,7 +827,7 @@ pub async fn hide_instructor_from_slot_period_entries(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     let (deleted, semester_id) = timetable_service::hide_instructor_from_slot_period(
         &pool,
         slot_id,
@@ -867,7 +867,7 @@ pub async fn swap_timetable_entries(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
 
     let user_id = actor.user_id;
     let subdomain =
@@ -916,7 +916,7 @@ pub async fn validate_timetable_moves(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_READ_SCHOOL)?;
 
     let cells = timetable_service::validate_moves(&pool, body).await?;
     Ok(Json(ApiResponse::ok(cells)).into_response())
@@ -936,7 +936,7 @@ pub async fn get_timetable_occupancy(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_READ_SCHOOL)?;
 
     let rows = timetable_service::get_occupancy(&pool, q.semester_id).await?;
     Ok(Json(ApiResponse::ok(rows)).into_response())

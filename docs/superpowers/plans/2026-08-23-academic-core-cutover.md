@@ -908,7 +908,7 @@ pub async fn reconcile_academic_core_cutover(
 The internal migration-status response adds only aggregate `academicCoreCutover` state: migration
 version, pass/fail, check codes, and counts. It never returns entity-map rows.
 
-- [ ] **Step 1: Add RED consumer-mapping tests**
+- [x] **Step 1: Add RED consumer-mapping tests**
 
 Seed every affected consumer in the legacy fixture, apply 041-042, then require 043 to preserve IDs
 and counts for assessment plans/categories/items, timetable entries/instructors, exam rounds/days/
@@ -926,7 +926,7 @@ and an old permission grant with no declared mapping.
 
 Expected: FAIL because migration 043 does not exist.
 
-- [ ] **Step 2: Transform assessment, timetable, and exam ownership**
+- [x] **Step 2: Transform assessment, timetable, and exam ownership**
 
 Rename assessment tables and bind each plan to the deterministic course offering for its legacy
 term/subject-version. Preserve category/item IDs and ordering. Convert numeric columns with explicit
@@ -936,7 +936,7 @@ Replace timetable and exam foreign keys using entity-map joins, validate every r
 term, and then make the new key columns non-null where the row kind requires them. Generic break or
 homeroom timetable entries may have no group but must have a homeroom or explicit entry kind.
 
-- [ ] **Step 3: Transform supervision, question bank, admission, and portals**
+- [x] **Step 3: Transform supervision, question bank, admission, and portals**
 
 Map question-bank version IDs to stable subject IDs. Map supervision free-text semester only when it
 agrees with its academic-semester relation; otherwise block. Map admission tracks through the
@@ -946,13 +946,13 @@ Introduce new admission columns before retiring old ones in 044.
 Add new context columns/indexes needed by parent, student, calendar, lookup, dashboard, and teaching
 queries. Do not materialize names or PII into academic audit rows.
 
-- [ ] **Step 4: Insert and map permissions transactionally**
+- [x] **Step 4: Insert and map permissions transactionally**
 
 Insert the exact permission contract from this plan. Map grants by capability:
 
 ```text
-academic_structure.read.all              -> context/year/term read.school
-academic_structure.manage.all            -> year/term manage.school
+academic_structure.read.all              -> context/year/term/catalog read.school
+academic_structure.manage.all            -> year/term/catalog manage.school
 academic_classroom.*.all                  -> homeroom read/manage.school by action
 academic_enrollment.read/update.all       -> student_academic_year read/manage.school
 academic_course_plan.read/manage.all      -> learning_offering read/manage.school
@@ -972,20 +972,20 @@ otherwise authorized workspace; this grants context labels only, not academic re
 grants with `ON CONFLICT DO NOTHING`, compare source/target distinct principal counts, and raise on
 an unmapped active grant.
 
-- [ ] **Step 5: Implement reconciliation checks**
+- [x] **Step 5: Implement reconciliation checks**
 
 The Rust reconciliation service independently recomputes migration SQL assertions and returns stable
 codes for source-to-target counts, orphan counts, cross-context counts, permission principal counts,
 active-state uniqueness, and sorted-ID checksums. Add tests that deliberately tamper with one target
 row after migration and assert reconciliation fails with the matching code.
 
-- [ ] **Step 6: Wire aggregate reconciliation into internal migration status**
+- [x] **Step 6: Wire aggregate reconciliation into internal migration status**
 
 Modify the existing internal migration-status handler/service so an operator can verify every tenant
 after 043 without querying entity rows. Keep this read-only and protected by the existing internal
 service identity. A tenant not yet on 043 reports `notApplicable`, not success.
 
-- [ ] **Step 7: Run focused tests and permission-data assertions**
+- [x] **Step 7: Run focused tests and permission-data assertions**
 
 ```bash
 ./scripts/test_backend_school.sh \
@@ -1026,6 +1026,7 @@ git commit -m "feat(academic): migrate consumers and permission data"
 - Create: `backend-school/src/policies/academic_catalog_access_policy.rs`
 - Create: `backend-school/src/policies/academic_curriculum_access_policy.rs`
 - Create: `backend-school/src/policies/learning_offering_access_policy.rs`
+- Modify: `backend-school/src/policies/resource_access_policy.rs`
 - Modify: `backend-school/src/policies.rs`
 - Modify: `backend-school/src/modules/academic/core/schema_tests.rs`
 - Test: `backend-school/src/policies/academic_catalog_access_policy.rs`
@@ -1058,7 +1059,7 @@ means school-owned and requires school scope. New organization-scoped records re
 selected authorized owner; ownership is never inferred from `is_primary`. Assigned delivery access
 comes only from `learning_group_teachers` or another explicit assignment table.
 
-- [ ] **Step 1: Add RED contract and policy tests**
+- [x] **Step 1: Add RED contract and policy tests**
 
 Write tests requiring every exact permission in Canonical Release 1 Contracts and rejecting the old
 permission constants after generation. Add policy tests for:
@@ -1082,13 +1083,13 @@ cargo test policies::learning_offering_access_policy --bin backend-school -- --n
 
 Expected: FAIL because the source contract and policies are still legacy.
 
-- [ ] **Step 2: Edit the handwritten permission source**
+- [x] **Step 2: Edit the handwritten permission source**
 
 Add exactly the 27 permission definitions from this plan with Thai names/descriptions. Remove the
 legacy definitions from `contracts/permissions.json` only after migration 043 contains their DB/grant
 mapping. Keep specialized assessment/exam/question-bank/timetable entries unchanged.
 
-- [ ] **Step 3: Generate registries and lock**
+- [x] **Step 3: Generate registries and lock**
 
 ```bash
 cd frontend-school
@@ -1099,20 +1100,20 @@ npm run test:permissions
 
 Do not hand-edit any generated output.
 
-- [ ] **Step 4: Implement reusable resource policies**
+- [x] **Step 4: Implement reusable resource policies**
 
 Use `ActorContext` and shared organization-tree decisions. Policies return a typed decision/filter,
 not SQL fragments from handlers. List services apply the union of independent scopes; only school
 scope may short-circuit. Mutation policies verify the resource owner and action-specific manage
 permission.
 
-- [ ] **Step 5: Test migration-to-contract equivalence**
+- [x] **Step 5: Test migration-to-contract equivalence**
 
 Extend schema tests to parse the generated lock and compare active academic permission codes after
 043. Assert each migrated principal gains only the target capabilities declared in Task 4. Assert
 old promotion grants produce no new capability.
 
-- [ ] **Step 6: Run permission verification**
+- [x] **Step 6: Run permission verification**
 
 ```bash
 cd frontend-school
@@ -1125,6 +1126,17 @@ cargo test policies::learning_offering_access_policy --bin backend-school -- --n
 cargo test --test static_architecture -- --nocapture
 cargo fmt --all -- --check
 ```
+
+**Maintenance-only checkpoint review (2026-08-23):** no blocking Task 4-5 finding. Keep
+academic traffic closed until all three pre-go-live integration gaps below are removed without
+legacy compatibility:
+
+- Task 6/8 must make scoped learning-offering endpoints consume
+  `learning_offering_access_policy`; transitional handlers still require school scope.
+- Task 6 must replace the transitional curriculum read path with
+  `academic_curriculum_access_policy`, including unit-read and school-manage-as-read semantics.
+- Task 8 must remove the transitional activity registration-open shortcut; assigned scope must
+  require an explicit teacher/group assignment before any slot-assignment data is reachable.
 
 - [ ] **Step 7: Commit Task 5**
 

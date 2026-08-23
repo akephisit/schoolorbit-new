@@ -1,4 +1,7 @@
 use crate::error::AppError;
+use crate::modules::academic::reconciliation::{
+    reconcile_academic_core_cutover, ReconciliationCheck,
+};
 use crate::AppState;
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use serde::Serialize;
@@ -42,6 +45,108 @@ struct SchoolMigrationStatus {
     last_migrated_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     migration_error: Option<String>,
+    #[serde(rename = "academicCoreCutover")]
+    academic_core_cutover: AcademicCoreCutoverStatus,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AcademicCoreCutoverStatus {
+    status: String,
+    migration_version: i64,
+    passed: Option<bool>,
+    checks: Vec<ReconciliationCheck>,
+}
+
+fn academic_core_cutover_unavailable(current_version: i32) -> AcademicCoreCutoverStatus {
+    AcademicCoreCutoverStatus {
+        status: "failed".to_string(),
+        migration_version: 43,
+        passed: Some(false),
+        checks: vec![ReconciliationCheck {
+            code: "ACADEMIC_CORE_RECON_UNAVAILABLE".to_string(),
+            passed: false,
+            source_count: 43,
+            target_count: i64::from(current_version),
+        }],
+    }
+}
+
+async fn academic_core_cutover_status(
+    pool: Option<&PgPool>,
+    current_version: i32,
+) -> AcademicCoreCutoverStatus {
+    if current_version < 43 {
+        return AcademicCoreCutoverStatus {
+            status: "notApplicable".to_string(),
+            migration_version: 43,
+            passed: None,
+            checks: Vec::new(),
+        };
+    }
+
+    let Some(pool) = pool else {
+        return academic_core_cutover_unavailable(current_version);
+    };
+
+    match reconcile_academic_core_cutover(pool).await {
+        Ok(reconciliation) => AcademicCoreCutoverStatus {
+            status: if reconciliation.passed {
+                "passed".to_string()
+            } else {
+                "failed".to_string()
+            },
+            migration_version: reconciliation.migration_version,
+            passed: Some(reconciliation.passed),
+            checks: reconciliation.checks,
+        },
+        Err(error) => {
+            tracing::warn!(
+                reason = "academic_core_reconciliation_query_failed",
+                database_code = ?match &error {
+                    AppError::DbError(sqlx::Error::Database(database_error)) => database_error.code(),
+                    _ => None,
+                }
+            );
+            AcademicCoreCutoverStatus {
+                status: "failed".to_string(),
+                migration_version: 43,
+                passed: Some(false),
+                checks: vec![ReconciliationCheck {
+                    code: "ACADEMIC_CORE_RECON_UNAVAILABLE".to_string(),
+                    passed: false,
+                    source_count: 43,
+                    target_count: i64::from(current_version),
+                }],
+            }
+        }
+    }
+}
+
+async fn academic_core_cutover_status_from_database(
+    pool: &PgPool,
+    reported_version: i32,
+) -> (i32, AcademicCoreCutoverStatus) {
+    match get_current_version(pool).await {
+        Ok(actual_version) => {
+            let actual_version = i32::try_from(actual_version).unwrap_or(i32::MAX);
+            (
+                actual_version,
+                academic_core_cutover_status(Some(pool), actual_version).await,
+            )
+        }
+        Err(error) => {
+            tracing::warn!(
+                reason = "academic_core_actual_version_unavailable",
+                reported_version,
+                error = %error
+            );
+            (
+                reported_version,
+                academic_core_cutover_unavailable(reported_version),
+            )
+        }
+    }
 }
 
 /// Migrate all active schools
@@ -146,37 +251,63 @@ pub async fn migration_status(
     let mut failed = 0;
     let mut outdated = 0;
 
-    let school_statuses: Vec<SchoolMigrationStatus> = schools
-        .into_iter()
-        .map(|s| {
-            let version = s.migration_version.unwrap_or(0);
-            let status = s.migration_status.unwrap_or_else(|| "pending".to_string());
+    let mut school_statuses = Vec::with_capacity(total);
+    for school in schools {
+        let reported_version = school.migration_version.unwrap_or(0);
+        let status = school
+            .migration_status
+            .unwrap_or_else(|| "pending".to_string());
 
-            match status.as_str() {
-                "migrated" => {
-                    if version < latest_version as i32 {
-                        outdated += 1;
-                    } else {
-                        migrated += 1;
-                    }
+        let (version, academic_core_cutover) = if let Some(database_url) = school
+            .db_connection_string
+            .as_deref()
+            .filter(|value| !value.is_empty())
+        {
+            match state
+                .pool_manager
+                .get_pool_for_read_only_status(database_url, &school.subdomain)
+                .await
+            {
+                Ok(pool) => {
+                    academic_core_cutover_status_from_database(&pool, reported_version).await
                 }
-                "failed" => failed += 1,
-                _ => pending += 1,
+                Err(_) => (
+                    reported_version,
+                    academic_core_cutover_unavailable(reported_version),
+                ),
             }
+        } else {
+            (
+                reported_version,
+                academic_core_cutover_status(None, reported_version).await,
+            )
+        };
 
-            SchoolMigrationStatus {
-                subdomain: s.subdomain,
-                migration_version: version,
-                migration_status: if version < latest_version as i32 && status == "migrated" {
-                    "outdated".to_string()
+        match status.as_str() {
+            "migrated" => {
+                if version < latest_version as i32 {
+                    outdated += 1;
                 } else {
-                    status
-                },
-                last_migrated_at: s.last_migrated_at,
-                migration_error: s.migration_error,
+                    migrated += 1;
+                }
             }
-        })
-        .collect();
+            "failed" => failed += 1,
+            _ => pending += 1,
+        }
+
+        school_statuses.push(SchoolMigrationStatus {
+            subdomain: school.subdomain,
+            migration_version: version,
+            migration_status: if version < latest_version as i32 && status == "migrated" {
+                "outdated".to_string()
+            } else {
+                status
+            },
+            last_migrated_at: school.last_migrated_at,
+            migration_error: school.migration_error,
+            academic_core_cutover,
+        });
+    }
 
     let active_pools = state.pool_manager.pool_count().await;
 
@@ -204,8 +335,18 @@ async fn migrate_single_school(
 ) -> MigrationResult {
     tracing::info!("🔄 Migrating school: {}", subdomain);
 
-    let pool = match state.pool_manager.get_pool(db_url, subdomain).await {
-        Ok(p) => p,
+    let pool = match state
+        .pool_manager
+        .get_pool_with_permission_change(db_url, subdomain)
+        .await
+    {
+        Ok((pool, permissions_changed)) => {
+            if permissions_changed {
+                state.permission_cache.invalidate_tenant(subdomain);
+                state.notify_all_permissions_changed(subdomain);
+            }
+            pool
+        }
         Err(e) => {
             tracing::error!("❌ Failed to get pool for {}: {}", subdomain, e);
             let _ = state
@@ -307,4 +448,84 @@ async fn get_current_version(pool: &PgPool) -> Result<i64, String> {
             .map_err(|e| format!("Failed to get current version: {}", e))?;
 
     Ok(version)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        modules::academic::cutover_test_support::{
+            apply_migrations_through, seed_academic_cutover_fixture, CutoverFixture,
+        },
+        test_helpers::create_named_test_pool,
+    };
+
+    #[tokio::test]
+    async fn academic_core_status_is_not_applicable_before_migration_043() {
+        let status = academic_core_cutover_status(None, 42).await;
+        let value = serde_json::to_value(status).unwrap();
+
+        assert_eq!(value["status"], "notApplicable");
+        assert_eq!(value["migrationVersion"], 43);
+        assert!(value["passed"].is_null());
+        assert_eq!(value["checks"], serde_json::json!([]));
+    }
+
+    #[tokio::test]
+    async fn academic_core_status_exposes_aggregate_reconciliation_only() {
+        let pool = create_named_test_pool("migration_status_academic_core").await;
+        apply_migrations_through(&pool, 40).await.unwrap();
+        seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
+            .await
+            .unwrap();
+        apply_migrations_through(&pool, 43).await.unwrap();
+
+        let status = academic_core_cutover_status(Some(&pool), 43).await;
+        let value = serde_json::to_value(status).unwrap();
+        let encoded = serde_json::to_string(&value).unwrap();
+
+        assert_eq!(value["status"], "passed");
+        assert_eq!(value["passed"], true);
+        assert_eq!(value["checks"].as_array().unwrap().len(), 6);
+        assert!(!encoded.contains("sourceId"));
+        assert!(!encoded.contains("targetId"));
+        assert!(!encoded.contains("entityMap"));
+    }
+
+    #[tokio::test]
+    async fn academic_core_status_uses_the_database_version_over_stale_admin_metadata() {
+        let pool = create_named_test_pool("migration_status_actual_version").await;
+        apply_migrations_through(&pool, 40).await.unwrap();
+        seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
+            .await
+            .unwrap();
+        apply_migrations_through(&pool, 43).await.unwrap();
+
+        let (actual_version, status) = academic_core_cutover_status_from_database(&pool, 42).await;
+
+        assert_eq!(actual_version, 43);
+        assert_eq!(status.status, "passed");
+        assert_eq!(status.passed, Some(true));
+    }
+
+    #[test]
+    fn school_status_serializes_academic_core_cutover_in_camel_case() {
+        let value = serde_json::to_value(SchoolMigrationStatus {
+            subdomain: "fixture".to_string(),
+            migration_version: 43,
+            migration_status: "migrated".to_string(),
+            last_migrated_at: None,
+            migration_error: None,
+            academic_core_cutover: AcademicCoreCutoverStatus {
+                status: "passed".to_string(),
+                migration_version: 43,
+                passed: Some(true),
+                checks: Vec::new(),
+            },
+        })
+        .unwrap();
+
+        assert!(value.get("academicCoreCutover").is_some());
+        assert!(value.get("academic_core_cutover").is_none());
+    }
 }

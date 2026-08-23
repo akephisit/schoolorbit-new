@@ -196,6 +196,7 @@ async fn main() {
         permission_cache: Arc::clone(&permission_cache),
         config: session_config,
         session_events: session_event_tx,
+        permission_events: permission_event_tx.clone(),
     };
 
     let state = AppState {

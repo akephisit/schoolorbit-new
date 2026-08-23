@@ -6,7 +6,7 @@ export const _meta = {
 		icon: 'Clock',
 		group: 'academic',
 		workspace: 'academic',
-		permission: PERMISSION_MODULES.ACADEMIC_STRUCTURE,
+		permission: PERMISSION_MODULES.ACADEMIC_TERM,
 		order: 50,
 		user_type: 'staff'
 	}

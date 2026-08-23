@@ -65,8 +65,13 @@
 	let selectedSortMethod = $state<'student_code' | 'name' | 'gender_name'>('student_code');
 	let isAutoNumbering = $state(false);
 
-	const canReadEnrollments = $derived($can.has(PERMISSIONS.ACADEMIC_ENROLLMENT_READ_ALL));
-	const canUpdateEnrollments = $derived($can.has(PERMISSIONS.ACADEMIC_ENROLLMENT_UPDATE_ALL));
+	const canReadEnrollments = $derived(
+		$can.hasAny(
+			PERMISSIONS.STUDENT_ACADEMIC_YEAR_READ_SCHOOL,
+			PERMISSIONS.STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL
+		)
+	);
+	const canUpdateEnrollments = $derived($can.has(PERMISSIONS.STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL));
 
 	async function loadInitData() {
 		if (!canReadEnrollments) {

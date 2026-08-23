@@ -123,7 +123,7 @@ async fn fetch_user_permissions(
             FROM user_roles ur
             JOIN roles r ON ur.role_id = r.id AND r.is_active = true
             JOIN role_permissions rp ON r.id = rp.role_id
-            JOIN permissions p ON rp.permission_id = p.id
+            JOIN permissions p ON rp.permission_id = p.id AND p.is_active = true
             WHERE ur.user_id = $1 AND ur.ended_at IS NULL
 
             UNION
@@ -137,7 +137,7 @@ async fn fetch_user_permissions(
               ON om.organization_unit_id = ou.id AND ou.is_active = true
             JOIN organization_permission_grants opg
               ON ou.id = opg.organization_unit_id
-            JOIN permissions p ON opg.permission_id = p.id
+            JOIN permissions p ON opg.permission_id = p.id AND p.is_active = true
             WHERE om.user_id = $1
               AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
               AND (opg.position_code IS NULL OR opg.position_code = om.position_code)
@@ -149,7 +149,7 @@ async fn fetch_user_permissions(
             FROM organization_permission_delegations opd
             LEFT JOIN organization_units delegated_ou
               ON delegated_ou.id = opd.organization_unit_id
-            JOIN permissions p ON opd.permission_id = p.id
+            JOIN permissions p ON opd.permission_id = p.id AND p.is_active = true
             WHERE opd.to_user_id = $1
               AND opd.revoked_at IS NULL
               AND (opd.expires_at IS NULL OR opd.expires_at > NOW())
@@ -197,6 +197,12 @@ pub async fn load_actor_context_for_session(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        modules::academic::cutover_test_support::{
+            apply_migrations_through, seed_academic_cutover_fixture, CutoverFixture,
+        },
+        test_helpers::create_named_test_pool,
+    };
 
     fn actor(permissions: &[&str]) -> ActorContext {
         ActorContext {
@@ -236,11 +242,11 @@ mod tests {
             "academic"
         ));
         assert!(module_permission_matches(
-            &[codes::ACADEMIC_COURSE_PLAN_READ_ALL.to_string()],
+            &[codes::LEARNING_OFFERING_READ_SCHOOL.to_string()],
             "academic_course_plan"
         ));
         assert!(!module_permission_matches(
-            &[codes::ACADEMIC_COURSE_PLAN_READ_ALL.to_string()],
+            &[codes::LEARNING_OFFERING_READ_SCHOOL.to_string()],
             "academic"
         ));
     }
@@ -272,5 +278,47 @@ mod tests {
                 if message.contains(codes::ROLES_ASSIGN_ALL)
                     && message.contains(codes::ROLES_UPDATE_ALL)
         ));
+    }
+
+    #[tokio::test]
+    async fn effective_permissions_exclude_inactive_cutover_evidence() {
+        let pool = create_named_test_pool("permission_cutover_effective").await;
+        apply_migrations_through(&pool, 40).await.unwrap();
+        seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
+            .await
+            .unwrap();
+        crate::db::migration::run_tenant_migrations(&pool)
+            .await
+            .unwrap();
+
+        sqlx::query(
+            r#"INSERT INTO user_roles (user_id, role_id, is_primary, started_at)
+               VALUES (
+                   '50000000-0000-0000-0000-000000000002',
+                   'a1b2c957-bf35-47f8-bbf4-8a67ce6b777f',
+                   true,
+                   '2025-05-01'
+               )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let permissions = fetch_user_permissions(
+            Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap(),
+            &pool,
+        )
+        .await
+        .unwrap();
+
+        assert!(permissions
+            .iter()
+            .any(|code| code == "academic_context.read.school"));
+        assert!(permissions
+            .iter()
+            .any(|code| code == "academic_year.read.school"));
+        assert!(!permissions
+            .iter()
+            .any(|code| code == "academic_structure.read.all"));
     }
 }

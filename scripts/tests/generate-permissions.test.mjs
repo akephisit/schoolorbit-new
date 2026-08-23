@@ -209,6 +209,21 @@ test('allows additions and metadata changes without allowing removals', async (t
 	await assert.rejects(generatePermissions(paths), /refusing to remove.*staff\.read\.all/s);
 });
 
+test('allows an explicitly authorized contract cutover to remove permissions', async (t) => {
+	const paths = await temporaryPaths(t);
+	await generatePermissions({ ...paths, initializeLock: true });
+
+	const reduced = structuredClone(validContract);
+	reduced.permissions.splice(1, 1);
+	await writeFile(paths.contractPath, `${JSON.stringify(reduced, null, 2)}\n`, 'utf8');
+
+	const result = await generatePermissions({ ...paths, allowRemovals: true });
+	const lock = JSON.parse(await readFile(paths.lockPath, 'utf8'));
+
+	assert.equal(result.permissionCount, 2);
+	assert.ok(!lock.permission_codes.includes('staff.read.all'));
+});
+
 test('check mode reports but never rewrites stale output', async (t) => {
 	const paths = await temporaryPaths(t);
 	await generatePermissions({ ...paths, initializeLock: true });
@@ -238,6 +253,15 @@ test('rejects incompatible generation modes before writing', async (t) => {
 	await assert.rejects(
 		generatePermissions({ ...paths, check: true, initializeLock: true }),
 		/cannot be combined/
+	);
+	await assert.rejects(readFile(paths.lockPath), /ENOENT/);
+});
+
+test('rejects removal authorization in check mode', async (t) => {
+	const paths = await temporaryPaths(t);
+	await assert.rejects(
+		generatePermissions({ ...paths, check: true, allowRemovals: true }),
+		/--check and --allow-removals cannot be combined/
 	);
 	await assert.rejects(readFile(paths.lockPath), /ENOENT/);
 });

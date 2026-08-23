@@ -45,8 +45,10 @@
 	let draggedPeriod = $state<AcademicPeriod | null>(null);
 	let isDirty = $state(false);
 
-	const canReadAcademicPeriods = $derived($can.has(PERMISSIONS.ACADEMIC_STRUCTURE_READ_ALL));
-	const canManageAcademicPeriods = $derived($can.has(PERMISSIONS.ACADEMIC_STRUCTURE_MANAGE_ALL));
+	const canReadAcademicPeriods = $derived(
+		$can.hasAny(PERMISSIONS.ACADEMIC_TERM_READ_SCHOOL, PERMISSIONS.ACADEMIC_TERM_MANAGE_SCHOOL)
+	);
+	const canManageAcademicPeriods = $derived($can.has(PERMISSIONS.ACADEMIC_TERM_MANAGE_SCHOOL));
 
 	async function loadData() {
 		if (!canReadAcademicPeriods) {

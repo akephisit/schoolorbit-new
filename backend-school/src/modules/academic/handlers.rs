@@ -70,7 +70,7 @@ pub async fn create_academic_year(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
+    actor.require_permission(codes::ACADEMIC_YEAR_MANAGE_SCHOOL)?;
     let year = academic_structure_service::create_academic_year(&pool, payload).await?;
 
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(year))))
@@ -102,7 +102,7 @@ pub async fn update_academic_year(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
+    actor.require_permission(codes::ACADEMIC_YEAR_MANAGE_SCHOOL)?;
     let year = academic_structure_service::update_academic_year(&pool, id, payload).await?;
 
     Ok(Json(ApiResponse::ok(year)).into_response())
@@ -130,7 +130,7 @@ pub async fn toggle_active_year(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
+    actor.require_permission(codes::ACADEMIC_YEAR_MANAGE_SCHOOL)?;
     academic_structure_service::toggle_active_year(&pool, id).await?;
 
     Ok(Json(ApiResponse::empty_with_message("Updated active year")))
@@ -159,7 +159,7 @@ pub async fn create_semester(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
+    actor.require_permission(codes::ACADEMIC_TERM_MANAGE_SCHOOL)?;
     let semester = academic_structure_service::create_semester(&pool, payload).await?;
 
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(semester))))
@@ -191,7 +191,7 @@ pub async fn update_semester(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
+    actor.require_permission(codes::ACADEMIC_TERM_MANAGE_SCHOOL)?;
     let semester = academic_structure_service::update_semester(&pool, id, payload).await?;
 
     Ok(Json(ApiResponse::ok(semester)))
@@ -220,7 +220,7 @@ pub async fn delete_semester(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
+    actor.require_permission(codes::ACADEMIC_TERM_MANAGE_SCHOOL)?;
     academic_structure_service::delete_semester(&pool, id).await?;
 
     Ok(Json(ApiResponse::empty_with_message("Semester deleted")))
@@ -247,7 +247,7 @@ pub async fn list_classrooms(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_CLASSROOM_READ_ALL)?;
+    actor.require_permission(codes::HOMEROOM_READ_SCHOOL)?;
     let classrooms = academic_structure_service::list_classrooms(&pool, filter).await?;
 
     Ok(Json(ApiResponse::ok(classrooms)))
@@ -276,7 +276,7 @@ pub async fn create_classroom(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_CLASSROOM_CREATE_ALL)?;
+    actor.require_permission(codes::HOMEROOM_MANAGE_SCHOOL)?;
     let classroom = academic_structure_service::create_classroom(&pool, payload).await?;
 
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(classroom))))
@@ -308,7 +308,7 @@ pub async fn update_classroom(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_CLASSROOM_UPDATE_ALL)?;
+    actor.require_permission(codes::HOMEROOM_MANAGE_SCHOOL)?;
     let classroom = academic_structure_service::update_classroom(&pool, id, payload).await?;
 
     Ok(Json(ApiResponse::ok(classroom)))
@@ -336,7 +336,7 @@ pub async fn create_grade_level(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
+    actor.require_permission(codes::ACADEMIC_YEAR_MANAGE_SCHOOL)?;
     let level = academic_structure_service::create_grade_level(&pool, payload).await?;
 
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(level))))
@@ -365,7 +365,7 @@ pub async fn delete_grade_level(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
+    actor.require_permission(codes::ACADEMIC_YEAR_MANAGE_SCHOOL)?;
     academic_structure_service::delete_grade_level(&pool, id).await?;
 
     Ok(Json(ApiResponse::empty_with_message("Grade level deleted")))
@@ -395,7 +395,7 @@ pub async fn enroll_students(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_ENROLLMENT_UPDATE_ALL)?;
+    actor.require_permission(codes::STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL)?;
     let enrolled_count = academic_structure_service::enroll_students(&pool, payload).await?;
 
     Ok(Json(ApiResponse::empty_with_message(format!(
@@ -426,7 +426,7 @@ pub async fn get_class_enrollments(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_ENROLLMENT_READ_ALL)?;
+    actor.require_permission(codes::STUDENT_ACADEMIC_YEAR_READ_SCHOOL)?;
     let enrollments = academic_structure_service::get_class_enrollments(&pool, class_id).await?;
 
     Ok(Json(ApiResponse::ok(enrollments)))
@@ -454,7 +454,7 @@ pub async fn remove_enrollment(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_ENROLLMENT_UPDATE_ALL)?;
+    actor.require_permission(codes::STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL)?;
     academic_structure_service::remove_enrollment(&pool, id).await?;
 
     Ok(Json(ApiResponse::empty_with_message("Enrollment removed")))
@@ -490,7 +490,7 @@ pub async fn update_enrollment_number(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_ENROLLMENT_UPDATE_ALL)?;
+    actor.require_permission(codes::STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL)?;
     academic_structure_service::update_enrollment_number(&pool, id, payload.class_number).await?;
 
     Ok(Json(ApiResponse::empty_with_message(
@@ -528,7 +528,7 @@ pub async fn auto_assign_class_numbers(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_ENROLLMENT_UPDATE_ALL)?;
+    actor.require_permission(codes::STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL)?;
     let updated_count =
         academic_structure_service::auto_assign_class_numbers(&pool, class_id, &payload.sort_by)
             .await?;
@@ -561,7 +561,7 @@ pub async fn get_year_levels(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_STRUCTURE_READ_ALL)?;
+    actor.require_permission(codes::ACADEMIC_YEAR_READ_SCHOOL)?;
     let level_ids = academic_structure_service::get_year_levels(&pool, year_id).await?;
     let level_ids = level_ids
         .into_iter()
@@ -596,7 +596,7 @@ pub async fn update_year_levels(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
+    actor.require_permission(codes::ACADEMIC_YEAR_MANAGE_SCHOOL)?;
     academic_structure_service::update_year_levels(&pool, year_id, payload.grade_level_ids).await?;
 
     Ok(Json(ApiResponse::empty_with_message("Year levels updated")))

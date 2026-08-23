@@ -87,6 +87,7 @@ pub enum CutoverFixtureFault {
     ExamReference,
     SupervisionReference,
     AdmissionProgram,
+    AdmissionPlacement,
     PermissionMapping,
 }
 
@@ -200,6 +201,12 @@ VALUES
         'Foundation Mathematics Revised', 1.5, 60, 'BASIC',
         '783a4a9d-9ff1-4eac-b370-06b58daa1eb7',
         '10000000-0000-0000-0000-000000000025', '1', 3
+    ),
+    (
+        '20000000-0000-0000-0000-000000000026', 'SCI-CORE', 'วิทยาศาสตร์พื้นฐาน',
+        'Foundation Science', 1.5, 60, 'BASIC',
+        '783a4a9d-9ff1-4eac-b370-06b58daa1eb7',
+        '10000000-0000-0000-0000-000000000025', '1', 3
     );
 
 INSERT INTO activity_catalog (
@@ -303,6 +310,12 @@ VALUES
         '31000000-0000-0000-0000-000000000025', 40
     ),
     (
+        '40000000-0000-0000-0000-000000000125', 'M1-2-2025', 'ม.1/2 ปี 2025',
+        '10000000-0000-0000-0000-000000000025',
+        'e999190c-d3fc-4124-b787-3445dcb26ee8', '2',
+        '31000000-0000-0000-0000-000000000025', 40
+    ),
+    (
         '40000000-0000-0000-0000-000000000026', 'M1-1-2026', 'ม.1/1 ปี 2026',
         '10000000-0000-0000-0000-000000000026',
         'e999190c-d3fc-4124-b787-3445dcb26ee8', '1',
@@ -320,6 +333,10 @@ VALUES
     (
         '50000000-0000-0000-0000-000000000002', 'fixture-teacher@example.invalid',
         'fixture-teacher', 'fixture-not-a-login', 'ครู', 'ทดสอบ', 'staff', 'active'
+    ),
+    (
+        '50000000-0000-0000-0000-000000000003', 'fixture-delegate@example.invalid',
+        'fixture-delegate', 'fixture-not-a-login', 'ครูผู้รับมอบ', 'ทดสอบ', 'staff', 'active'
     );
 
 INSERT INTO student_class_enrollments (
@@ -359,6 +376,13 @@ VALUES
         '20000000-0000-0000-0000-000000000025',
         '11000000-0000-0000-0000-000000000251',
         '50000000-0000-0000-0000-000000000002'
+    ),
+    (
+        '60000000-0000-0000-0000-000000000125',
+        '40000000-0000-0000-0000-000000000125',
+        '20000000-0000-0000-0000-000000000025',
+        '11000000-0000-0000-0000-000000000251',
+        '50000000-0000-0000-0000-000000000003'
     );
 
 INSERT INTO activity_slots (
@@ -444,16 +468,21 @@ INSERT INTO academic_assessment_categories (
 VALUES (
     '81000000-0000-0000-0000-000000000001',
     '80000000-0000-0000-0000-000000000001',
-    'midterm', 'กลางภาค', 20, 'in_timetable', 1, 60
+    'midterm', 'กลางภาค', 12.50, 'in_timetable', 1, 60
 );
 
 INSERT INTO academic_assessment_items (
     id, category_id, name, max_score, display_order
 )
-VALUES (
-    '82000000-0000-0000-0000-000000000001',
-    '81000000-0000-0000-0000-000000000001', 'สอบกลางภาค', 20, 1
-);
+VALUES
+    (
+        '82000000-0000-0000-0000-000000000001',
+        '81000000-0000-0000-0000-000000000001', 'ข้อเขียน', 7.25, 1
+    ),
+    (
+        '82000000-0000-0000-0000-000000000002',
+        '81000000-0000-0000-0000-000000000001', 'ตรวจความพร้อม', 0.10, 2
+    );
 
 INSERT INTO academic_timetable_entries (
     id, classroom_course_id, day_of_week, period_id, entry_type, classroom_id,
@@ -555,6 +584,178 @@ VALUES (
     '90000000-0000-0000-0000-000000000001',
     '30000000-0000-0000-0000-000000000001', 'แผนทั่วไป', 40, 1
 );
+
+INSERT INTO timetable_entry_instructors (id, entry_id, instructor_id, role)
+VALUES (
+    '83500000-0000-0000-0000-000000000001',
+    '83000000-0000-0000-0000-000000000001',
+    '50000000-0000-0000-0000-000000000002', 'primary'
+);
+
+INSERT INTO rooms (id, name_th, code, room_type, capacity, status)
+VALUES (
+    '92000000-0000-0000-0000-000000000001',
+    'ห้องสอบทดสอบ', 'EXAM-FIXTURE', 'GENERAL', 40, 'ACTIVE'
+);
+
+INSERT INTO academic_exam_day_room_assignments (
+    id, exam_day_id, classroom_id, room_id, created_by
+)
+VALUES (
+    '92100000-0000-0000-0000-000000000001',
+    '85000000-0000-0000-0000-000000000001',
+    '40000000-0000-0000-0000-000000000025',
+    '92000000-0000-0000-0000-000000000001',
+    '50000000-0000-0000-0000-000000000002'
+);
+
+INSERT INTO academic_exam_sessions (
+    id, exam_schedule_item_id, exam_round_id, exam_day_id,
+    starts_at, ends_at, created_by
+)
+VALUES (
+    '92200000-0000-0000-0000-000000000001',
+    '86000000-0000-0000-0000-000000000001',
+    '84000000-0000-0000-0000-000000000001',
+    '85000000-0000-0000-0000-000000000001',
+    '09:00', '10:00', '50000000-0000-0000-0000-000000000002'
+);
+
+INSERT INTO academic_exam_seat_assignments (
+    id, day_room_assignment_id, student_id, seat_number
+)
+VALUES (
+    '92400000-0000-0000-0000-000000000001',
+    '92100000-0000-0000-0000-000000000001',
+    '50000000-0000-0000-0000-000000000001', 'A01'
+);
+
+INSERT INTO academic_question_bank_questions (
+    id, subject_id, grade_level_id, owner_user_id, question_type,
+    difficulty, points, stem_content, status, created_by
+)
+VALUES (
+    '93000000-0000-0000-0000-000000000001',
+    '20000000-0000-0000-0000-000000000025',
+    'e999190c-d3fc-4124-b787-3445dcb26ee8',
+    '50000000-0000-0000-0000-000000000002', 'single_choice',
+    'medium', 0.10, '{"blocks":[]}'::jsonb, 'ready',
+    '50000000-0000-0000-0000-000000000002'
+);
+
+INSERT INTO academic_question_bank_choices (
+    id, question_id, label, content, is_correct, sort_order
+)
+VALUES (
+    '93100000-0000-0000-0000-000000000001',
+    '93000000-0000-0000-0000-000000000001', 'A',
+    '{"blocks":[]}'::jsonb, true, 1
+);
+
+INSERT INTO admission_applications (
+    id, admission_round_id, admission_track_id, application_number,
+    national_id, first_name, last_name, status, enrolled_by, enrolled_at,
+    created_user_id, national_id_hash
+)
+VALUES (
+    '94000000-0000-0000-0000-000000000001',
+    '90000000-0000-0000-0000-000000000001',
+    '91000000-0000-0000-0000-000000000001', 'FIXTURE-APP-001',
+    'encrypted-fixture-ciphertext', 'ผู้สมัคร', 'ทดสอบ', 'enrolled',
+    '50000000-0000-0000-0000-000000000002', '2025-05-01 00:00:00+00',
+    '50000000-0000-0000-0000-000000000001',
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+);
+
+INSERT INTO admission_room_assignments (
+    id, application_id, class_room_id, rank_in_track, rank_in_room,
+    total_score, full_score, assigned_by, student_confirmed
+)
+VALUES (
+    '94100000-0000-0000-0000-000000000001',
+    '94000000-0000-0000-0000-000000000001',
+    '40000000-0000-0000-0000-000000000025', 1, 1,
+    12.50, 12.50, '50000000-0000-0000-0000-000000000002', true
+);
+
+INSERT INTO calendar_categories (id, name, color, order_index)
+VALUES (
+    '95000000-0000-0000-0000-000000000001',
+    'กิจกรรมทดสอบ', '#336699', 1
+);
+
+INSERT INTO calendar_events (
+    id, category_id, title, start_date, end_date, is_public, source_type, source_id,
+    created_by
+)
+VALUES (
+    '95100000-0000-0000-0000-000000000001',
+    '95000000-0000-0000-0000-000000000001', 'กิจกรรมภาคเรียนทดสอบ',
+    '2025-08-01', '2025-08-01', true, 'academic_fixture',
+    '83000000-0000-0000-0000-000000000001',
+    '50000000-0000-0000-0000-000000000002'
+);
+
+INSERT INTO calendar_event_targets (
+    id, event_id, audience_type, class_room_id
+)
+VALUES (
+    '95200000-0000-0000-0000-000000000001',
+    '95100000-0000-0000-0000-000000000001', 'student',
+    '40000000-0000-0000-0000-000000000025'
+);
+
+INSERT INTO certificate_campaigns (
+    id, academic_year_id, name, event_date, status, created_by
+)
+VALUES (
+    '96000000-0000-0000-0000-000000000001',
+    '10000000-0000-0000-0000-000000000025',
+    'เกียรติบัตรทดสอบ', '2025-08-01', 'draft',
+    '50000000-0000-0000-0000-000000000002'
+);
+
+INSERT INTO role_permissions (role_id, permission_id)
+SELECT 'a1b2c957-bf35-47f8-bbf4-8a67ce6b777f', id
+FROM permissions
+WHERE code = 'academic_structure.read.all';
+
+INSERT INTO organization_permission_grants (
+    organization_unit_id, permission_id, created_by, position_code
+)
+SELECT 'c5e06a47-ebf6-40f6-bbf9-59c509e842f2', id,
+       '50000000-0000-0000-0000-000000000002', 'head'
+FROM permissions
+WHERE code = 'academic_curriculum.manage.organization_unit';
+
+INSERT INTO organization_permission_grants (
+    organization_unit_id, permission_id, created_by, position_code
+)
+SELECT 'c5e06a47-ebf6-40f6-bbf9-59c509e842f2', id,
+	       '50000000-0000-0000-0000-000000000002', 'coordinator'
+FROM permissions
+WHERE code = 'academic_timetable_today.read.school';
+
+INSERT INTO organization_permission_grants (
+    organization_unit_id, permission_id, created_by, position_code
+)
+SELECT 'c5e06a47-ebf6-40f6-bbf9-59c509e842f2', id,
+       '50000000-0000-0000-0000-000000000002', 'member'
+FROM permissions
+WHERE code = 'academic_promotion.execute.all';
+
+INSERT INTO organization_permission_delegations (
+    id, from_user_id, to_user_id, permission_id, organization_unit_id,
+    reason, started_at, expires_at
+)
+SELECT '97000000-0000-0000-0000-000000000001',
+       '50000000-0000-0000-0000-000000000002',
+       '50000000-0000-0000-0000-000000000003',
+       id, 'c5e06a47-ebf6-40f6-bbf9-59c509e842f2',
+       'Synthetic academic cutover fixture',
+       '2025-05-01 00:00:00+00', '2025-10-31 23:59:59+00'
+FROM permissions
+WHERE code = 'academic_course_plan.read.all';
 "#;
 
 pub async fn seed_academic_cutover_fixture(
@@ -822,6 +1023,13 @@ fn fault_sql(fault: CutoverFixtureFault) -> &'static str {
             WHERE id = '90000000-0000-0000-0000-000000000001';
         "#
         }
+        Fault::AdmissionPlacement => {
+            r#"
+            UPDATE admission_applications
+            SET created_user_id = '50000000-0000-0000-0000-000000000003'
+            WHERE id = '94000000-0000-0000-0000-000000000001';
+        "#
+        }
         Fault::PermissionMapping => {
             r#"
             INSERT INTO permissions (
@@ -1020,6 +1228,13 @@ fn repair_sql(fault: CutoverFixtureFault) -> &'static str {
             UPDATE admission_rounds
             SET academic_year_id = '10000000-0000-0000-0000-000000000025'
             WHERE id = '90000000-0000-0000-0000-000000000001';
+        "#
+        }
+        Fault::AdmissionPlacement => {
+            r#"
+            UPDATE admission_applications
+            SET created_user_id = '50000000-0000-0000-0000-000000000001'
+            WHERE id = '94000000-0000-0000-0000-000000000001';
         "#
         }
         Fault::PermissionMapping => {

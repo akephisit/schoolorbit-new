@@ -94,7 +94,7 @@ pub async fn list_classroom_courses(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_READ_SCHOOL)?;
     let courses = course_planning_service::list_classroom_courses(&pool, &query).await?;
     Ok(Json(ApiResponse::ok(courses)).into_response())
 }
@@ -123,7 +123,7 @@ pub async fn assign_courses(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     let added = course_planning_service::assign_courses(&pool, payload).await?;
     Ok(Json(ApiResponse::with_message(
         CourseAssignedCountData { assigned: added },
@@ -154,7 +154,7 @@ pub async fn remove_course(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     course_planning_service::remove_course(&pool, id).await?;
     Ok(Json(ApiResponse::empty()).into_response())
 }
@@ -186,7 +186,7 @@ pub async fn update_course(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     course_planning_service::update_course(&pool, id, payload).await?;
     Ok(Json(ApiResponse::empty()).into_response())
 }
@@ -214,7 +214,7 @@ pub async fn batch_list_course_instructors(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_READ_SCHOOL)?;
     let grouped =
         course_planning_service::batch_list_course_instructors(&pool, &payload.course_ids).await?;
     Ok(Json(ApiResponse::ok(grouped)).into_response())
@@ -242,7 +242,7 @@ pub async fn batch_list_course_instructors_from_query(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_READ_SCHOOL)?;
     let ids = parse_course_ids(&query.course_ids)?;
     let grouped = course_planning_service::batch_list_course_instructors(&pool, &ids).await?;
     Ok(Json(ApiResponse::ok(grouped)).into_response())
@@ -270,7 +270,7 @@ pub async fn list_course_instructors(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_READ_SCHOOL)?;
     let rows = course_planning_service::list_course_instructors(&pool, course_id).await?;
     Ok(Json(ApiResponse::ok(rows)).into_response())
 }
@@ -303,7 +303,7 @@ pub async fn add_course_instructor(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
-        .require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
+        .require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     let role = body.role.unwrap_or_else(|| "secondary".to_string());
     course_planning_service::add_course_instructor(
         &context.tenant.pool,
@@ -343,7 +343,7 @@ pub async fn remove_course_instructor(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
-        .require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
+        .require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     course_planning_service::remove_course_instructor(
         &context.tenant.pool,
         course_id,
@@ -385,7 +385,7 @@ pub async fn update_course_instructor_role(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
-        .require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
+        .require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     course_planning_service::update_course_instructor_role(
         &context.tenant.pool,
         course_id,
@@ -423,7 +423,7 @@ pub async fn list_classroom_activities(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_READ_SCHOOL)?;
     let rows =
         course_planning_service::list_classroom_activities(&pool, classroom_id, query.semester_id)
             .await?;
@@ -455,7 +455,7 @@ pub async fn remove_classroom_from_slot(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     course_planning_service::remove_classroom_from_slot(&pool, classroom_id, slot_id).await?;
     Ok(Json(ApiResponse::empty()).into_response())
 }

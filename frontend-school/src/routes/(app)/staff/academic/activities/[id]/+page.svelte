@@ -37,10 +37,30 @@
 	import { can } from '$lib/stores/permissions';
 	let groupId = $derived($page.params.id as string);
 
-	const canReadActivity = $derived($can.has(PERMISSIONS.ACTIVITY_READ_ALL));
-	const canManageActivity = $derived($can.has(PERMISSIONS.ACTIVITY_MANAGE_ALL));
-	const canManageOwnActivity = $derived($can.has(PERMISSIONS.ACTIVITY_MANAGE_OWN));
-	const canManageActivityMembers = $derived($can.has(PERMISSIONS.ACTIVITY_MANAGE_MEMBERS_ALL));
+	const canReadActivity = $derived(
+		$can.hasAny(
+			PERMISSIONS.LEARNING_OFFERING_READ_SCHOOL,
+			PERMISSIONS.LEARNING_OFFERING_READ_ORGANIZATION_TREE,
+			PERMISSIONS.LEARNING_OFFERING_READ_ORGANIZATION_UNIT,
+			PERMISSIONS.LEARNING_OFFERING_READ_ASSIGNED
+		)
+	);
+	const canManageActivity = $derived(
+		$can.hasAny(
+			PERMISSIONS.LEARNING_OFFERING_MANAGE_SCHOOL,
+			PERMISSIONS.LEARNING_OFFERING_MANAGE_ORGANIZATION_TREE,
+			PERMISSIONS.LEARNING_OFFERING_MANAGE_ORGANIZATION_UNIT
+		)
+	);
+	const canManageOwnActivity = $derived($can.has(PERMISSIONS.LEARNING_OFFERING_MANAGE_ASSIGNED));
+	const canManageActivityMembers = $derived(
+		$can.hasAny(
+			PERMISSIONS.LEARNING_OFFERING_MANAGE_SCHOOL,
+			PERMISSIONS.LEARNING_OFFERING_MANAGE_ORGANIZATION_TREE,
+			PERMISSIONS.LEARNING_OFFERING_MANAGE_ORGANIZATION_UNIT,
+			PERMISSIONS.LEARNING_OFFERING_MANAGE_ASSIGNED
+		)
+	);
 	const canViewActivityGroup = $derived(
 		canReadActivity || canManageActivity || canManageOwnActivity
 	);

@@ -54,11 +54,11 @@ mod tests {
 
     #[test]
     fn manage_permission_requires_matching_permission() {
-        let actor = actor(&[codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL]);
+        let actor = actor(&[codes::LEARNING_OFFERING_MANAGE_SCHOOL]);
 
         assert!(require_workflow_window_manage_permission(
             &actor,
-            codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL
+            codes::LEARNING_OFFERING_MANAGE_SCHOOL
         )
         .is_ok());
         assert!(

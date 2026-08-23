@@ -12,7 +12,7 @@ export const _meta = {
 		workspace: 'academic',
 		order: 20,
 		user_type: 'staff',
-		permission: PERMISSION_MODULES.ACADEMIC_CLASSROOM
+		permission: PERMISSION_MODULES.HOMEROOM
 	}
 };
 

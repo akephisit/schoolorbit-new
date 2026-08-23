@@ -676,15 +676,15 @@ pub fn require_assessment_settings_read_access(actor: &ActorContext) -> Result<(
         codes::ACADEMIC_ASSESSMENT_MANAGE_ASSIGNED,
         codes::ACADEMIC_ASSESSMENT_READ_SCHOOL,
         codes::ACADEMIC_ASSESSMENT_MANAGE_SCHOOL,
-        codes::ACADEMIC_COURSE_PLAN_READ_ALL,
-        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
+        codes::LEARNING_OFFERING_READ_SCHOOL,
+        codes::LEARNING_OFFERING_MANAGE_SCHOOL,
     ])
 }
 
 pub fn require_assessment_settings_manage_access(actor: &ActorContext) -> Result<(), AppError> {
     actor.require_any_permission(&[
         codes::ACADEMIC_ASSESSMENT_MANAGE_SCHOOL,
-        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
+        codes::LEARNING_OFFERING_MANAGE_SCHOOL,
     ])
 }
 
@@ -811,15 +811,15 @@ fn can_read_school(actor: &ActorContext) -> bool {
     actor.has_any_permission(&[
         codes::ACADEMIC_ASSESSMENT_READ_SCHOOL,
         codes::ACADEMIC_ASSESSMENT_MANAGE_SCHOOL,
-        codes::ACADEMIC_COURSE_PLAN_READ_ALL,
-        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
+        codes::LEARNING_OFFERING_READ_SCHOOL,
+        codes::LEARNING_OFFERING_MANAGE_SCHOOL,
     ])
 }
 
 fn can_manage_school(actor: &ActorContext) -> bool {
     actor.has_any_permission(&[
         codes::ACADEMIC_ASSESSMENT_MANAGE_SCHOOL,
-        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
+        codes::LEARNING_OFFERING_MANAGE_SCHOOL,
     ])
 }
 

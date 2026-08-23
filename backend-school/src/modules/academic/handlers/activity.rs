@@ -100,7 +100,7 @@ pub async fn get_timetable_context(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
-        .require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
+        .require_permission(codes::LEARNING_OFFERING_READ_SCHOOL)?;
     let access = activity_access_policy::resolve_activity_list_access(&context.actor)?;
     let data =
         activity_service::get_timetable_context(&context.tenant.pool, query.semester_id, access)
@@ -133,7 +133,7 @@ pub async fn update_activity_slot(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     let row = activity_service::update_slot(&pool, id, body).await?;
     Ok(Json(ApiResponse::ok(row)).into_response())
 }
@@ -160,7 +160,7 @@ pub async fn delete_activity_slot(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     activity_service::delete_slot(&pool, id).await?;
     Ok(Json(ApiResponse::empty_with_message("ลบช่องกิจกรรมแล้ว")).into_response())
 }
@@ -342,7 +342,7 @@ pub async fn add_members(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACTIVITY_MANAGE_MEMBERS_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     match activity_service::add_members(&pool, group_id, body.student_ids).await? {
         activity_service::AddMembersOutcome::Inserted(n) => {
             Ok(Json(ApiResponse::ok(ActivityInsertedCountData { inserted: n })).into_response())
@@ -468,7 +468,7 @@ pub async fn remove_member(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACTIVITY_MANAGE_MEMBERS_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     activity_service::remove_member(&pool, group_id, student_id).await?;
     Ok(Json(ApiResponse::empty_with_message("ลบสมาชิกแล้ว")).into_response())
 }
@@ -498,7 +498,7 @@ pub async fn update_member_result(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACTIVITY_MANAGE_MEMBERS_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     activity_service::update_member_result(&pool, member_id, &body.result).await?;
     Ok(Json(ApiResponse::empty_with_message("บันทึกผลแล้ว")).into_response())
 }
@@ -656,7 +656,7 @@ pub async fn add_slot_instructor(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     activity_service::add_slot_instructor(&pool, slot_id, body.user_id).await?;
     Ok(Json(ApiResponse::empty_with_message("เพิ่มครูแล้ว")).into_response())
 }
@@ -685,7 +685,7 @@ pub async fn add_slot_instructors_batch(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     let is_empty = body.user_ids.is_empty();
     let added = activity_service::add_slot_instructors_batch(&pool, slot_id, body.user_ids).await?;
     let message = if is_empty {
@@ -725,7 +725,7 @@ pub async fn remove_slot_instructor(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     activity_service::remove_slot_instructor(&pool, slot_id, user_id).await?;
     Ok(Json(ApiResponse::empty_with_message("ลบครูแล้ว")).into_response())
 }
@@ -752,7 +752,7 @@ pub async fn delete_slot_timetable_entries(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     let n = activity_service::delete_slot_timetable_entries(&pool, slot_id).await?;
     Ok(Json(ApiResponse::with_message(
         ActivityDeletedCountData { deleted_count: n },
@@ -783,7 +783,7 @@ pub async fn delete_all_slot_groups(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     let n = activity_service::delete_all_slot_groups(&pool, slot_id).await?;
     Ok(Json(ApiResponse::with_message(
         ActivityDeletedCountData { deleted_count: n },
@@ -814,7 +814,7 @@ pub async fn remove_all_slot_instructors(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     let n = activity_service::remove_all_slot_instructors(&pool, slot_id).await?;
     Ok(Json(ApiResponse::with_message(
         ActivityDeletedCountData { deleted_count: n },
@@ -878,7 +878,7 @@ pub async fn batch_upsert_slot_classroom_assignments(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     let n = activity_service::batch_upsert_slot_classroom_assignments(&pool, slot_id, body).await?;
     Ok(Json(ApiResponse::with_message(
         ActivityProcessedCountData { count: n },
@@ -909,7 +909,7 @@ pub async fn delete_all_slot_classroom_assignments(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     let n = activity_service::delete_all_slot_classroom_assignments(&pool, slot_id).await?;
     Ok(Json(ApiResponse::with_message(
         ActivityDeletedCountData { deleted_count: n },
@@ -943,7 +943,7 @@ pub async fn delete_slot_classroom_assignment(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     activity_service::delete_slot_classroom_assignment(&pool, slot_id, assignment_id).await?;
     Ok(Json(ApiResponse::empty_with_message("ลบสำเร็จ")).into_response())
 }

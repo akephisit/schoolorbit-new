@@ -449,7 +449,7 @@ pub async fn generate_courses_from_plan(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
 
     let result =
         study_plan_service::generate_courses_from_plan(&pool, req, Some(actor.user_id)).await?;
@@ -613,7 +613,7 @@ pub async fn generate_activities_from_plan(
     let pool = context.tenant.pool;
     let actor = context.actor;
     curriculum_access_policy::ensure_curriculum_read(&actor)?;
-    actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
+    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     let result =
         study_plan_service::generate_activities_from_plan(&pool, req, Some(actor.user_id)).await?;
     Ok(Json(ApiResponse::ok(result)))

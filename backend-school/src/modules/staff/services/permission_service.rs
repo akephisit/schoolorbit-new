@@ -4,13 +4,15 @@ use sqlx::PgPool;
 use std::collections::HashMap;
 
 pub async fn list_permissions(pool: &PgPool) -> Result<Vec<Permission>, AppError> {
-    sqlx::query_as::<_, Permission>("SELECT * FROM permissions ORDER BY module, action, code")
-        .fetch_all(pool)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to list permissions: {}", e);
-            AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".to_string())
-        })
+    sqlx::query_as::<_, Permission>(
+        "SELECT * FROM permissions WHERE is_active = true ORDER BY module, action, code",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to list permissions: {}", e);
+        AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".to_string())
+    })
 }
 
 pub async fn list_permissions_by_module(

@@ -41,9 +41,9 @@ pub async fn resolve_tenant_context_by_subdomain(
             AppError::NotFound("ไม่พบโรงเรียน".to_string())
         })?;
 
-    let pool = state
+    let (pool, permissions_changed) = state
         .pool_manager
-        .get_pool(&school.database_url, subdomain)
+        .get_pool_with_permission_change(&school.database_url, subdomain)
         .await
         .map_err(|error| {
             tracing::error!(
@@ -53,6 +53,11 @@ pub async fn resolve_tenant_context_by_subdomain(
             );
             AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string())
         })?;
+
+    if permissions_changed {
+        state.permission_cache.invalidate_tenant(subdomain);
+        state.notify_all_permissions_changed(subdomain);
+    }
 
     Ok(TenantContext {
         tenant_id: school.tenant_id,
@@ -103,11 +108,16 @@ pub async fn resolve_auth_tenant_context(
                 AppError::ServiceUnavailable("tenant_directory".to_string())
             }
         })?;
-    let pool = runtime
+    let (pool, permissions_changed) = runtime
         .pool_manager
-        .get_pool(&school.database_url, &subdomain)
+        .get_pool_with_permission_change(&school.database_url, &subdomain)
         .await
         .map_err(|_| AppError::ServiceUnavailable("tenant_pool".to_string()))?;
+
+    if permissions_changed {
+        runtime.permission_cache.invalidate_tenant(&subdomain);
+        runtime.notify_all_permissions_changed(&subdomain);
+    }
 
     Ok(TenantContext {
         tenant_id: school.tenant_id,
@@ -167,6 +177,7 @@ mod tests {
                 .expect("test directory server must run");
         });
         let (events, _) = broadcast::channel(4);
+        let (permission_events, _) = broadcast::channel(4);
         let runtime = AuthRuntime {
             admin_client: Arc::new(AdminClient::new(
                 format!("http://{address}"),
@@ -179,6 +190,7 @@ mod tests {
                 [17; 32],
             ))),
             session_events: events,
+            permission_events,
         };
         (runtime, server)
     }

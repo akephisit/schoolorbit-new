@@ -226,7 +226,7 @@ mod tests {
 
         let groups = group_and_filter_menu(
             rows,
-            &actor(&[crate::permissions::registry::codes::ACADEMIC_CURRICULUM_READ_ALL]),
+            &actor(&[crate::permissions::registry::codes::ACADEMIC_CURRICULUM_READ_SCHOOL]),
         );
 
         assert_eq!(groups.len(), 1);
