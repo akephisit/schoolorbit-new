@@ -864,7 +864,7 @@ cargo test --test static_architecture migration_timeline -- --nocapture
 cargo fmt --all -- --check
 ```
 
-- [ ] **Step 8: Commit Task 3**
+- [x] **Step 8: Commit Task 3**
 
 ```bash
 git add backend-school/migrations/042_academic_delivery_backfill.sql \
