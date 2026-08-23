@@ -5715,3 +5715,29 @@ fn file_platform_derivatives_require_the_validated_payload_boundary() {
         );
     }
 }
+
+#[test]
+fn academic_core_preflight_is_read_only_and_keeps_sensitive_values_out_of_output() {
+    let library_path = manifest_dir().join("src/modules/academic/cutover_preflight.rs");
+    let library = strip_comments(&read_source(&library_path));
+    let cli = strip_comments(&read_source(
+        manifest_dir().join("src/bin/preflight_academic_core.rs"),
+    ));
+
+    assert!(library.contains("SET TRANSACTION READ ONLY"));
+    assert!(library.contains("resource_ids.truncate(20)"));
+    assert!(!library.contains("println!"));
+    assert!(!library.contains("eprintln!"));
+    assert!(!library.contains("national_id"));
+    assert!(!library.contains("PgConnectOptions"));
+    assert!(!library.contains("database_url"));
+
+    assert!(cli.contains("PREFLIGHT_SCHEMA_DATABASE_URL"));
+    assert!(cli.contains("PREFLIGHT_SCHEMA_NAME"));
+    assert!(cli.contains("std::io::stdout().lock()"));
+    assert!(cli.contains("std::io::stderr().lock()"));
+    assert!(!cli.contains("println!"));
+    assert!(!cli.contains("eprintln!"));
+    assert!(!cli.contains("PgConnectOptions"));
+    assert!(!cli.contains("{error:?}"));
+}

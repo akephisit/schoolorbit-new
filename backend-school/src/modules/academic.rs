@@ -1,3 +1,9 @@
+#[cfg(test)]
+pub mod cutover_preflight;
+#[cfg(test)]
+mod cutover_preflight_database_tests;
+#[cfg(test)]
+pub mod cutover_test_support;
 pub mod handlers;
 pub mod models;
 pub mod services;

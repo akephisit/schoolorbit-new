@@ -476,7 +476,9 @@ Do not begin production Task 15 merely because local Phase A tests pass.
 **Files:**
 
 - Create: `backend-school/src/bin/preflight_academic_core.rs`
+- Create: `backend-school/src/lib.rs`
 - Create: `backend-school/src/modules/academic/cutover_preflight.rs`
+- Create: `backend-school/src/modules/academic/cutover_preflight_database_tests.rs`
 - Create: `backend-school/src/modules/academic/cutover_test_support.rs`
 - Modify: `backend-school/src/modules/academic.rs`
 - Modify: `backend-school/src/main.rs`
@@ -510,13 +512,15 @@ pub async fn run_academic_core_preflight(
 ) -> Result<AcademicCorePreflightReport, PreflightError>;
 ```
 
-The CLI accepts only `PREFLIGHT_SCHEMA_DATABASE_URL`, `PREFLIGHT_SCHEMA_NAME`, and optional
-`PREFLIGHT_CUTOVER_DATE=YYYY-MM-DD`. It uses a read-only transaction, validates the schema name with
+The CLI accepts `PREFLIGHT_SCHEMA_DATABASE_URL`, `PREFLIGHT_SCHEMA_NAME`, optional
+`PREFLIGHT_CUTOVER_DATE=YYYY-MM-DD`, and the explicit public-schema safety opt-in
+`PREFLIGHT_SCHEMA_ALLOW_PUBLIC=1`. It uses a read-only transaction, validates the schema name with
 the same ASCII identifier/public-schema guard as `migrate_tenant_schema`, writes one JSON document
 to stdout, and exits `0` only when `canCutOver` is true. Connection strings and query rows never
-appear in output or errors.
+appear in output or errors. A small library target exposes the shared runtime to the CLI without
+pulling the backend binary's database-test modules into the command.
 
-- [ ] **Step 1: Add RED normalization and status-classification tests**
+- [x] **Step 1: Add RED normalization and status-classification tests**
 
 Add table-driven pure tests for NFKC/case/whitespace normalization and the exact legacy state rules:
 
@@ -534,7 +538,7 @@ fn classifies_legacy_status_only_when_dates_and_active_flags_are_unambiguous() {
 }
 ```
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 ```bash
 cd backend-school
@@ -543,7 +547,7 @@ cargo test modules::academic::cutover_preflight::tests --bin backend-school -- -
 
 Expected: FAIL because the preflight module and classifiers do not exist.
 
-- [ ] **Step 3: Implement pure mapping rules and the legacy fixture helper**
+- [x] **Step 3: Implement pure mapping rules and the legacy fixture helper**
 
 `cutover_test_support.rs` is test-only and applies active migrations through an explicit inclusive
 version using `sqlx::migrate::Migrator` plus `sqlx::migrate::Migrate`; it must assert that versions
@@ -568,13 +572,15 @@ Fixtures use synthetic UUIDs/names and contain no national IDs. Add fixtures for
 - assessment, timetable, exam, supervision, and admission references;
 - one intentionally ambiguous variant per blocking finding family.
 
-- [ ] **Step 4: Implement all blocking and warning findings**
+- [x] **Step 4: Implement all blocking and warning findings**
 
 The preflight query set must emit these stable codes and no ad-hoc messages:
 
 ```text
 ACTIVE_YEAR_COUNT_INVALID
 ACTIVE_TERM_COUNT_INVALID
+ACTIVE_YEAR_DATE_MISMATCH
+ACTIVE_TERM_DATE_MISMATCH
 INACTIVE_CURRENT_YEAR_AMBIGUOUS
 INACTIVE_CURRENT_TERM_AMBIGUOUS
 YEAR_DATE_RANGE_INVALID
@@ -607,7 +613,7 @@ above is blocking. Preflight also calculates exact expected counts for stable id
 programs, student-years, placements, offerings, groups, rosters, assessment plans/items, timetable
 entries, and exam items.
 
-- [ ] **Step 5: Add database-backed preflight tests**
+- [x] **Step 5: Add database-backed preflight tests**
 
 Test one passing legacy fixture and one fixture for each finding family. Assert the passing report's
 expected counts and deterministic IDs, and assert that a failed run performs no writes by comparing
@@ -615,12 +621,12 @@ table counts and checksums before/after.
 
 ```bash
 ./scripts/test_backend_school.sh \
-  modules::academic::cutover_preflight::database_tests -- --nocapture --test-threads=1
+  modules::academic::cutover_preflight_database_tests -- --nocapture --test-threads=1
 ```
 
 Expected after implementation: PASS.
 
-- [ ] **Step 6: Add CLI and static privacy guards**
+- [x] **Step 6: Add CLI and static privacy guards**
 
 The CLI starts its transaction with `SET TRANSACTION READ ONLY`, caps non-sensitive sample IDs,
 serializes camel-case JSON, and maps connection/query failures to bounded codes. Extend
@@ -639,7 +645,9 @@ cargo fmt --all -- --check
 
 ```bash
 git add backend-school/src/bin/preflight_academic_core.rs \
+  backend-school/src/lib.rs \
   backend-school/src/modules/academic/cutover_preflight.rs \
+  backend-school/src/modules/academic/cutover_preflight_database_tests.rs \
   backend-school/src/modules/academic/cutover_test_support.rs \
   backend-school/src/modules/academic.rs backend-school/src/main.rs \
   backend-school/tests/static_architecture.rs
