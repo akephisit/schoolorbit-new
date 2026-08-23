@@ -5741,3 +5741,20 @@ fn academic_core_preflight_is_read_only_and_keeps_sensitive_values_out_of_output
     assert!(!cli.contains("PgConnectOptions"));
     assert!(!cli.contains("{error:?}"));
 }
+
+#[test]
+fn academic_core_041_migration_uses_stable_identity_and_non_pii_audits() {
+    let migration = strip_comments(&read_source(
+        manifest_dir().join("migrations/041_academic_core_catalog.sql"),
+    ));
+
+    assert!(migration.contains("5c33b984-10df-58db-bf80-62dbc4a03d1b"));
+    assert!(migration.contains("CREATE OR REPLACE FUNCTION academic_normalize_identity"));
+    assert!(migration.contains("CREATE OR REPLACE FUNCTION academic_assert_version_range"));
+    assert!(migration.contains("CREATE TABLE academic_core_cutover_audits"));
+    assert!(migration.contains("'academic-core-v1'"));
+    assert!(migration.contains("sha256("));
+    assert!(!migration.contains("national_id"));
+    assert!(!migration.contains("DROP TABLE"));
+    assert!(!migration.contains("CREATE EXTENSION"));
+}

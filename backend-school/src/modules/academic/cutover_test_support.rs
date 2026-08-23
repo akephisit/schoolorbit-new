@@ -667,7 +667,28 @@ fn fault_sql(fault: CutoverFixtureFault) -> &'static str {
             );
         "#
         }
-        Fault::SubjectVersionOverlap | Fault::ActivityVersionOverlap => {
+        Fault::SubjectVersionOverlap => {
+            r#"
+            INSERT INTO academic_years (
+                id, year, name, start_date, end_date, is_active
+            )
+            VALUES (
+                '10000000-0000-0000-0000-000000000124', 20245,
+                'ช่วง version สังเคราะห์', '2025-04-15', '2025-04-30', false
+            );
+            INSERT INTO subjects (
+                id, code, name_th, name_en, credit, hours_per_semester, type,
+                group_id, start_academic_year_id, term, periods_per_week
+            )
+            VALUES (
+                '20000000-0000-0000-0000-000000000224', ' math-core ',
+                'คณิตศาสตร์ช่วงทับซ้อน', 'Overlapping Mathematics', 1.5, 60, 'BASIC',
+                '783a4a9d-9ff1-4eac-b370-06b58daa1eb7',
+                '10000000-0000-0000-0000-000000000124', '1', 3
+            );
+        "#
+        }
+        Fault::ActivityVersionOverlap => {
             r#"
             UPDATE academic_years
             SET end_date = '2025-05-15'
@@ -897,7 +918,15 @@ fn repair_sql(fault: CutoverFixtureFault) -> &'static str {
             WHERE id = '20000000-0000-0000-0000-000000000125';
         "#
         }
-        Fault::SubjectVersionOverlap | Fault::ActivityVersionOverlap => {
+        Fault::SubjectVersionOverlap => {
+            r#"
+            DELETE FROM subjects
+            WHERE id = '20000000-0000-0000-0000-000000000224';
+            DELETE FROM academic_years
+            WHERE id = '10000000-0000-0000-0000-000000000124';
+        "#
+        }
+        Fault::ActivityVersionOverlap => {
             r#"
             UPDATE academic_years SET end_date = '2025-04-30'
             WHERE id = '10000000-0000-0000-0000-000000000024';

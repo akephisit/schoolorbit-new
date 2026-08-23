@@ -663,6 +663,8 @@ git commit -m "feat(academic): add cutover preflight"
 - Create: `backend-school/migrations/041_academic_core_catalog.sql`
 - Create: `backend-school/src/modules/academic/core.rs`
 - Create: `backend-school/src/modules/academic/core/schema_tests.rs`
+- Modify: `backend-school/Cargo.toml`
+- Modify: `backend-school/Cargo.lock`
 - Modify: `backend-school/src/modules/academic.rs`
 - Modify: `backend-school/src/modules/academic/cutover_test_support.rs`
 - Test: `backend-school/tests/static_architecture.rs`
@@ -671,7 +673,7 @@ git commit -m "feat(academic): add cutover preflight"
 Database Shape, plus reusable SQL functions `academic_normalize_identity(text)` and
 `academic_assert_version_range()` used only by new-schema constraints.
 
-- [ ] **Step 1: Add RED schema and migration tests**
+- [x] **Step 1: Add RED schema and migration tests**
 
 Add tests that apply through migration 040, seed the passing fixture, apply 041, and assert:
 
@@ -694,14 +696,14 @@ foreign key that crosses an academic year.
 
 Expected: FAIL because migration 041 does not exist.
 
-- [ ] **Step 2: Write migration 041 preconditions**
+- [x] **Step 2: Write migration 041 preconditions**
 
 Start migration 041 with SQL equivalents of every core preflight blocker. Each `RAISE EXCEPTION`
 uses a stable code such as `ACADEMIC_CORE_041_SUBJECT_IDENTITY_CONFLICT`; do not include row names or
 PII. Assert migration 040 is the current applied predecessor through SQLx ordering rather than
 editing `_sqlx_migrations`.
 
-- [ ] **Step 3: Transform years and terms in place**
+- [x] **Step 3: Transform years and terms in place**
 
 Add enum-like `CHECK` constraints with text columns, set migrated statuses, add partial unique
 indexes for at most one active year and one active term, and add composite uniqueness
@@ -710,7 +712,7 @@ unambiguous, otherwise chronological `(start_date, end_date, id)` ordering verif
 Generate a stable uppercase code `TERM-<sequence>` only when the legacy value is not a usable unique
 code.
 
-- [ ] **Step 4: Split stable catalog identities from versions**
+- [x] **Step 4: Split stable catalog identities from versions**
 
 Rename source tables before creating stable tables so PostgreSQL preserves existing foreign-key
 targets until migration 043. Populate stable subjects by normalized code and stable activities by
@@ -721,7 +723,7 @@ next version's start date and leave the newest open.
 Add deferred constraint triggers that lock the owning stable identity and reject overlap at commit.
 Trigger errors contain stable codes and IDs, not names.
 
-- [ ] **Step 5: Transform curriculum and bell-schedule ownership**
+- [x] **Step 5: Transform curriculum and bell-schedule ownership**
 
 Rename curricula/version/requirement tables, preserve source IDs, create deterministic default
 programs, and retain legacy curriculum publication dates. Requirements point to exact subject or
@@ -729,14 +731,14 @@ activity versions and carry grade, recommended term, exact credit/hour, and requ
 fields. Create bell schedules and attach all legacy periods and terms to the owning-year default
 schedule.
 
-- [ ] **Step 6: Backfill progression and audit records**
+- [x] **Step 6: Backfill progression and audit records**
 
 Backfill permitted `promote` transitions from every non-null legacy next-grade value. Do not infer
 repeat/graduate rules in Release 1. Write one aggregate `academic_core_cutover_audits` row containing
 migration version, mapping algorithm version `academic-core-v1`, source/target counts, and SHA-256
 checksums over sorted non-PII identifiers.
 
-- [ ] **Step 7: Run focused migration/schema verification**
+- [x] **Step 7: Run focused migration/schema verification**
 
 ```bash
 ./scripts/test_backend_school.sh \
