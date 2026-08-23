@@ -5,7 +5,7 @@ use crate::error::AppError;
 use crate::modules::academic::models::exam_schedule::PersonalExamScheduleRound;
 use crate::modules::academic::models::timetable::TimetableEntry;
 use crate::modules::academic::services::exam_schedule_service;
-use crate::modules::academic::services::timetable_service::{self, TimetableFilter};
+use crate::modules::academic::services::timetable_service;
 use crate::modules::calendar::models::{CalendarEventQuery, CalendarViewerEvent};
 use crate::modules::students::models::{ParentDto, StudentDbRow, StudentProfile};
 use crate::utils::field_encryption;
@@ -104,33 +104,25 @@ pub async fn get_child_timetable(
     pool: &PgPool,
     parent_id: Uuid,
     student_id: Uuid,
-    academic_semester_id: Option<Uuid>,
+    academic_term_id: Uuid,
 ) -> Result<Vec<TimetableEntry>, AppError> {
     ensure_parent_user(pool, parent_id).await?;
     ensure_parent_student_link(pool, parent_id, student_id).await?;
 
-    timetable_service::list_entries(
-        pool,
-        TimetableFilter {
-            student_id: Some(student_id),
-            academic_semester_id,
-            ..Default::default()
-        },
-    )
-    .await
+    timetable_service::list_student_entries(pool, academic_term_id, student_id).await
 }
 
 pub async fn get_child_exam_schedule(
     pool: &PgPool,
     parent_id: Uuid,
     student_id: Uuid,
-    academic_semester_id: Option<Uuid>,
+    academic_term_id: Uuid,
 ) -> Result<Vec<PersonalExamScheduleRound>, AppError> {
     exam_schedule_service::list_child_published_exam_schedule(
         pool,
         parent_id,
         student_id,
-        academic_semester_id,
+        academic_term_id,
     )
     .await
 }

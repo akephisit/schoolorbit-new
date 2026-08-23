@@ -68,76 +68,16 @@ pub struct UserPresence {
     pub context: Option<UserContext>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct DragInfo {
-    pub code: String,
-    pub title: String,
-    pub color: Option<String>,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum TimetableEvent {
-    // System
     StateSync {
         users: Vec<UserPresence>,
-        drags: std::collections::HashMap<Uuid, DragState>, // user_id -> drag info
-        activities: std::collections::HashMap<Uuid, ActivityState>, // user_id -> dialog activity
-        /// current_seq ณ ตอน snapshot — client ใช้เป็นจุดเริ่มต้น tracking seq
         current_seq: u64,
     },
-
-    // Presence
     UserJoined(UserPresence),
     UserLeft {
         user_id: Uuid,
-    },
-
-    // Sync Data — legacy fallback (client full-fetch เมื่อได้รับ)
-    TableRefresh {
-        user_id: Uuid,
-    },
-
-    // Patch events (client patch state ตรง ไม่ต้อง fetch DB)
-    EntryCreated {
-        user_id: Uuid,
-        entry: serde_json::Value, // TimetableEntry with joined fields
-        /// Phase 2: echo back ของ client_temp_id ที่ส่งมาตอน POST → client correlate temp → real entry
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        client_temp_id: Option<String>,
-    },
-    EntryUpdated {
-        user_id: Uuid,
-        entry: serde_json::Value, // Full updated entry with joined fields
-    },
-    EntryDeleted {
-        user_id: Uuid,
-        entry_id: Uuid,
-    },
-    EntriesSwapped {
-        user_id: Uuid,
-        entry_a: serde_json::Value,
-        entry_b: serde_json::Value,
-    },
-    EntryInstructorAdded {
-        user_id: Uuid,
-        entry_id: Uuid,
-        instructor_id: Uuid,
-        instructor_name: String,
-        role: String,
-    },
-    EntryInstructorRemoved {
-        user_id: Uuid,
-        entry_id: Uuid,
-        instructor_id: Uuid,
-        /// true = entry ถูกลบตามไปด้วย (ครูคนสุดท้าย + regular course)
-        entry_deleted: bool,
-    },
-    /// ทีมครูของ course เปลี่ยน (add/remove/update role) — client re-fetch entries
-    /// ของ course นั้นเฉพาะที่เกี่ยวข้อง
-    CourseTeamChanged {
-        user_id: Uuid,
-        course_id: Uuid,
     },
     AcademicCoreChanged {
         user_id: Uuid,
@@ -153,107 +93,19 @@ pub enum TimetableEvent {
         learning_group_id: Option<Uuid>,
         revision: i64,
     },
+    TimetableChanged {
+        user_id: Uuid,
+        academic_term_id: Uuid,
+        learning_group_id: Option<Uuid>,
+        revision: i64,
+    },
 
-    // Interactions
     CursorMove {
         user_id: Uuid,
         x: f64,
         y: f64,
         context: Option<UserContext>,
     },
-
-    DragStart {
-        user_id: Uuid,
-        course_id: Option<String>,
-        entry_id: Option<String>,
-        info: Option<DragInfo>,
-    },
-
-    DragEnd {
-        user_id: Uuid,
-    },
-
-    DragMove {
-        user_id: Uuid,
-        x: f64,
-        y: f64,
-        target_day: Option<String>,
-        target_period_id: Option<String>,
-    },
-
-    // Dialog / activity presence (ephemeral — ไม่ seq)
-    UserActivity {
-        user_id: Uuid,
-        activity_type: String, // "room_picker" | "instructor_edit" | ...
-        target: Option<serde_json::Value>, // { entry_id?, day?, period_id? }
-    },
-    UserActivityEnd {
-        user_id: Uuid,
-    },
-
-    // === Phase 2: optimistic drop intent + rejection ===
-    /// Client → Server: ผู้ใช้ drop เสร็จแล้ว (UI ขยับแล้ว) — relay ให้คนอื่นเห็นทันที
-    /// ก่อน DB confirm. Server ไม่ validate, ไม่เขียน DB — แค่ relay
-    /// (ephemeral — ไม่ seq เพราะ EntryUpdated/Created/Swapped จะมาตามทีหลังพร้อม seq จริง)
-    DropIntent {
-        user_id: Uuid,
-        kind: String, // "move" | "swap" | "replace"
-        entry_id: Uuid,
-        day_of_week: String,
-        period_id: Uuid,
-        room_id: Option<Uuid>,
-        /// สำหรับ swap: id ของ entry ที่ถูกสลับด้วย, day/period ของมันก่อน swap
-        /// (ตำแหน่งใหม่หลัง swap = ตำแหน่งเดิมของ entry_id)
-        swap_partner_id: Option<Uuid>,
-        swap_partner_day: Option<String>,
-        swap_partner_period_id: Option<Uuid>,
-        /// สำหรับ replace: ids ของ course/activity ใหม่ + classroom (ถ้าเปลี่ยนข้ามห้อง)
-        /// client receivers lookup local courses[]/activitySlots[] เพื่อ render joined fields
-        new_classroom_course_id: Option<Uuid>,
-        new_activity_slot_id: Option<Uuid>,
-        new_classroom_id: Option<Uuid>,
-    },
-    /// Server → Clients: DB reject drop ที่ broadcast intent ไปแล้ว → ทุกคน rollback
-    /// ตำแหน่งเดิม. Toast แสดงเฉพาะคนที่ drop (`user_id` ตรงกับตัวเอง)
-    DropRejected {
-        user_id: Uuid, // คนที่ drop (ใช้ filter toast)
-        entry_id: Uuid,
-        original_day: String,
-        original_period_id: Uuid,
-        original_room_id: Option<Uuid>,
-        /// optional: ถ้า swap → entry คู่สลับที่ต้อง rollback เช่นกัน
-        partner_id: Option<Uuid>,
-        partner_original_day: Option<String>,
-        partner_original_period_id: Option<Uuid>,
-        reason: String,
-    },
-
-    /// Client → Server: ผู้ใช้ drop NEW (สร้าง entry) — relay ให้คนอื่นเห็น tempEntry ทันที
-    /// (ก่อน DB confirm). Lookup joined fields จาก local state ของ client เอง
-    EntryIntent {
-        user_id: Uuid,
-        temp_id: String, // UUID ที่ client gen ขึ้นเอง
-        classroom_id: Uuid,
-        classroom_course_id: Option<Uuid>,
-        activity_slot_id: Option<Uuid>,
-        day_of_week: String,
-        period_id: Uuid,
-        room_id: Option<Uuid>,
-        title: Option<String>, // สำหรับ ACTIVITY
-        entry_type: String,    // "COURSE" | "ACTIVITY"
-    },
-    /// Server → Clients: CREATE ถูก reject → ทุก client ลบ tempEntry ที่มี temp_id นี้
-    EntryRejected {
-        user_id: Uuid, // คนที่สร้าง (ใช้ filter toast)
-        temp_id: String,
-        reason: String,
-    },
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ActivityState {
-    pub activity_type: String,
-    pub target: Option<serde_json::Value>,
 }
 
 impl TimetableEvent {
@@ -261,16 +113,9 @@ impl TimetableEvent {
     pub fn is_mutation(&self) -> bool {
         matches!(
             self,
-            TimetableEvent::TableRefresh { .. }
-                | TimetableEvent::EntryCreated { .. }
-                | TimetableEvent::EntryUpdated { .. }
-                | TimetableEvent::EntryDeleted { .. }
-                | TimetableEvent::EntriesSwapped { .. }
-                | TimetableEvent::EntryInstructorAdded { .. }
-                | TimetableEvent::EntryInstructorRemoved { .. }
-                | TimetableEvent::CourseTeamChanged { .. }
-                | TimetableEvent::AcademicCoreChanged { .. }
+            TimetableEvent::AcademicCoreChanged { .. }
                 | TimetableEvent::LearningDeliveryChanged { .. }
+                | TimetableEvent::TimetableChanged { .. }
         )
     }
 }
@@ -284,16 +129,10 @@ pub struct SeqEvent {
     pub event: TimetableEvent,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DragState {
-    pub course_id: Option<String>,
-    pub entry_id: Option<String>,
-    pub info: Option<DragInfo>,
-}
-
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WsParams {
-    pub semester_id: Uuid,
+    pub academic_term_id: Uuid,
     #[serde(default)]
     pub school_subdomain: Option<String>,
 }
@@ -305,14 +144,14 @@ fn parse_ws_params(
     let raw_query =
         raw_query.ok_or_else(|| AppError::BadRequest("Invalid WebSocket query".to_string()))?;
     let mut seen = HashSet::new();
-    let mut semester_id = None;
+    let mut academic_term_id = None;
 
     for (key, value) in url::form_urlencoded::parse(raw_query.as_bytes()) {
         if !seen.insert(key.to_string()) {
             return Err(AppError::BadRequest("Invalid WebSocket query".to_string()));
         }
-        if key == "semester_id" {
-            semester_id = Some(
+        if key == "academicTermId" {
+            academic_term_id = Some(
                 value
                     .parse::<Uuid>()
                     .map_err(|_| AppError::BadRequest("Invalid WebSocket query".to_string()))?,
@@ -321,7 +160,7 @@ fn parse_ws_params(
     }
 
     Ok(WsParams {
-        semester_id: semester_id
+        academic_term_id: academic_term_id
             .ok_or_else(|| AppError::BadRequest("Invalid WebSocket query".to_string()))?,
         school_subdomain,
     })
@@ -337,10 +176,6 @@ pub struct WebSocketManager {
     // Room Key -> (User ID -> (Presence, tab/connection count))
     // count > 0 = user มีอย่างน้อย 1 tab เปิดอยู่
     room_users: DashMap<String, DashMap<Uuid, (UserPresence, usize)>>,
-    // Room Key -> (User ID -> Drag State)
-    room_drags: DashMap<String, DashMap<Uuid, DragState>>,
-    // Room Key -> (User ID -> Activity State) — ผู้ใช้เปิด dialog อยู่ที่ไหน
-    room_activities: DashMap<String, DashMap<Uuid, ActivityState>>,
     // Room Key -> next seq counter (monotonic)
     room_seq: DashMap<String, Arc<AtomicU64>>,
     // Room Key -> ring buffer ของ mutation events (ล่าสุด EVENT_BUFFER_SIZE อัน)
@@ -354,8 +189,6 @@ impl WebSocketManager {
         Self {
             rooms: DashMap::new(),
             room_users: DashMap::new(),
-            room_drags: DashMap::new(),
-            room_activities: DashMap::new(),
             room_seq: DashMap::new(),
             room_buffer: DashMap::new(),
             room_empty_since: DashMap::new(),
@@ -381,8 +214,6 @@ impl WebSocketManager {
                     let removed = self.rooms.remove_if(&key, |_, tx| tx.receiver_count() == 0);
                     if removed.is_some() {
                         self.room_users.remove(&key);
-                        self.room_drags.remove(&key);
-                        self.room_activities.remove(&key);
                         self.room_seq.remove(&key);
                         self.room_buffer.remove(&key);
                         self.room_empty_since.remove(&key);
@@ -396,16 +227,16 @@ impl WebSocketManager {
         });
     }
 
-    fn get_room_key(school_key: String, semester_id: Uuid) -> String {
-        format!("{}:{}", school_key, semester_id)
+    fn get_room_key(school_key: String, academic_term_id: Uuid) -> String {
+        format!("{}:{}", school_key, academic_term_id)
     }
 
     pub fn get_or_create_room(
         &self,
         school_key: String,
-        semester_id: Uuid,
+        academic_term_id: Uuid,
     ) -> broadcast::Sender<SeqEvent> {
-        let key = Self::get_room_key(school_key, semester_id);
+        let key = Self::get_room_key(school_key, academic_term_id);
 
         if let Some(sender) = self.rooms.get(&key) {
             return sender.clone();
@@ -414,8 +245,6 @@ impl WebSocketManager {
         let (tx, _rx) = broadcast::channel(100);
         self.rooms.insert(key.clone(), tx.clone());
         self.room_users.entry(key.clone()).or_default();
-        self.room_drags.entry(key.clone()).or_default();
-        self.room_activities.entry(key.clone()).or_default();
         self.room_seq
             .entry(key.clone())
             .or_insert_with(|| Arc::new(AtomicU64::new(0)));
@@ -430,10 +259,10 @@ impl WebSocketManager {
     pub fn broadcast_ephemeral(
         &self,
         school_key: String,
-        semester_id: Uuid,
+        academic_term_id: Uuid,
         event: TimetableEvent,
     ) {
-        let tx = self.get_or_create_room(school_key, semester_id);
+        let tx = self.get_or_create_room(school_key, academic_term_id);
         let _ = tx.send(SeqEvent { seq: None, event });
     }
 
@@ -443,16 +272,16 @@ impl WebSocketManager {
     pub fn broadcast_mutation(
         &self,
         school_key: String,
-        semester_id: Uuid,
+        academic_term_id: Uuid,
         event: TimetableEvent,
     ) -> u64 {
         // Gate: ไม่มี "คนอื่น" ฟัง → skip ทั้ง pipeline
-        if !self.has_other_subscribers(school_key.clone(), semester_id) {
+        if !self.has_other_subscribers(school_key.clone(), academic_term_id) {
             return 0;
         }
-        let key = Self::get_room_key(school_key.clone(), semester_id);
+        let key = Self::get_room_key(school_key.clone(), academic_term_id);
         // ensure room exists
-        let tx = self.get_or_create_room(school_key, semester_id);
+        let tx = self.get_or_create_room(school_key, academic_term_id);
 
         let seq_counter = self.room_seq.get(&key).map(|v| v.clone());
         let buffer = self.room_buffer.get(&key).map(|v| v.clone());
@@ -544,8 +373,8 @@ impl WebSocketManager {
         );
     }
 
-    pub fn current_seq(&self, school_key: String, semester_id: Uuid) -> u64 {
-        let key = Self::get_room_key(school_key, semester_id);
+    pub fn current_seq(&self, school_key: String, academic_term_id: Uuid) -> u64 {
+        let key = Self::get_room_key(school_key, academic_term_id);
         self.room_seq
             .get(&key)
             .map(|c| c.load(Ordering::SeqCst))
@@ -553,8 +382,8 @@ impl WebSocketManager {
     }
 
     /// True ถ้ามี subscriber อย่างน้อย 1 คนใน room (ใครก็ได้)
-    pub fn has_subscribers(&self, school_key: String, semester_id: Uuid) -> bool {
-        let key = Self::get_room_key(school_key, semester_id);
+    pub fn has_subscribers(&self, school_key: String, academic_term_id: Uuid) -> bool {
+        let key = Self::get_room_key(school_key, academic_term_id);
         self.rooms
             .get(&key)
             .map(|tx| tx.receiver_count() > 0)
@@ -564,8 +393,8 @@ impl WebSocketManager {
     /// True ถ้ามี subscriber **นอกจากตัว caller** (อย่างน้อย 2 คน)
     /// ใช้ skip joined re-fetch เมื่อ mutation มาจากคนเดียวที่อยู่ใน room
     /// (echo กลับให้ตัวเองไม่คุ้ม — client จะ loadTimetable ต่ออยู่แล้ว)
-    pub fn has_other_subscribers(&self, school_key: String, semester_id: Uuid) -> bool {
-        let key = Self::get_room_key(school_key, semester_id);
+    pub fn has_other_subscribers(&self, school_key: String, academic_term_id: Uuid) -> bool {
+        let key = Self::get_room_key(school_key, academic_term_id);
         self.rooms
             .get(&key)
             .map(|tx| tx.receiver_count() > 1)
@@ -577,10 +406,10 @@ impl WebSocketManager {
     pub fn replay(
         &self,
         school_key: String,
-        semester_id: Uuid,
+        academic_term_id: Uuid,
         after_seq: u64,
     ) -> Option<Vec<SeqEvent>> {
-        let key = Self::get_room_key(school_key, semester_id);
+        let key = Self::get_room_key(school_key, academic_term_id);
         let buffer = self.room_buffer.get(&key)?.clone();
         let guard = buffer.lock().ok()?;
 
@@ -603,8 +432,13 @@ impl WebSocketManager {
 
     /// Join room — เพิ่ม count ของ user_id นั้น. Return true ถ้าเป็น "first tab" ของ user
     /// (caller ใช้ตัดสินใจว่าจะ broadcast UserJoined หรือไม่)
-    pub fn join_room(&self, school_key: String, semester_id: Uuid, user: UserPresence) -> bool {
-        let key = Self::get_room_key(school_key, semester_id);
+    pub fn join_room(
+        &self,
+        school_key: String,
+        academic_term_id: Uuid,
+        user: UserPresence,
+    ) -> bool {
+        let key = Self::get_room_key(school_key, academic_term_id);
         let mut is_first = false;
         if let Some(users) = self.room_users.get(&key) {
             users
@@ -625,8 +459,8 @@ impl WebSocketManager {
 
     /// Leave room — ลด count. Return true ถ้าเป็น "last tab" ของ user
     /// (caller ใช้ตัดสินใจว่าจะ broadcast UserLeft หรือไม่)
-    pub fn leave_room(&self, school_key: String, semester_id: Uuid, user_id: Uuid) -> bool {
-        let key = Self::get_room_key(school_key, semester_id);
+    pub fn leave_room(&self, school_key: String, academic_term_id: Uuid, user_id: Uuid) -> bool {
+        let key = Self::get_room_key(school_key, academic_term_id);
         let mut is_last = false;
         if let Some(users) = self.room_users.get(&key) {
             let mut should_remove = false;
@@ -643,15 +477,6 @@ impl WebSocketManager {
                 users.remove(&user_id);
             }
         }
-        // Drag + Activity state ล้างเมื่อ tab สุดท้ายออกเท่านั้น
-        if is_last {
-            if let Some(drags) = self.room_drags.get(&key) {
-                drags.remove(&user_id);
-            }
-            if let Some(activities) = self.room_activities.get(&key) {
-                activities.remove(&user_id);
-            }
-        }
         // ถ้าไม่มี subscriber เหลือ → mark เวลาเริ่มว่าง (cleanup task จะลบในภายหลัง)
         if let Some(tx) = self.rooms.get(&key) {
             if tx.receiver_count() == 0 {
@@ -661,51 +486,14 @@ impl WebSocketManager {
         is_last
     }
 
-    pub fn update_drag(
-        &self,
-        school_key: String,
-        semester_id: Uuid,
-        user_id: Uuid,
-        drag: Option<DragState>,
-    ) {
-        let key = Self::get_room_key(school_key, semester_id);
-        if let Some(drags) = self.room_drags.get(&key) {
-            if let Some(d) = drag {
-                drags.insert(user_id, d);
-            } else {
-                drags.remove(&user_id);
-            }
-        }
-    }
-
-    pub fn update_activity(
-        &self,
-        school_key: String,
-        semester_id: Uuid,
-        user_id: Uuid,
-        activity: Option<ActivityState>,
-    ) {
-        let key = Self::get_room_key(school_key, semester_id);
-        if let Some(activities) = self.room_activities.get(&key) {
-            match activity {
-                Some(a) => {
-                    activities.insert(user_id, a);
-                }
-                None => {
-                    activities.remove(&user_id);
-                }
-            }
-        }
-    }
-
     pub fn update_context(
         &self,
         school_key: String,
-        semester_id: Uuid,
+        academic_term_id: Uuid,
         user_id: Uuid,
         context: Option<UserContext>,
     ) {
-        let key = Self::get_room_key(school_key, semester_id);
+        let key = Self::get_room_key(school_key, academic_term_id);
         if let Some(users) = self.room_users.get(&key) {
             if let Some(mut entry) = users.get_mut(&user_id) {
                 entry.value_mut().0.context = context;
@@ -716,33 +504,14 @@ impl WebSocketManager {
     pub fn get_state_snapshot(
         &self,
         school_key: String,
-        semester_id: Uuid,
-    ) -> (
-        Vec<UserPresence>,
-        std::collections::HashMap<Uuid, DragState>,
-        std::collections::HashMap<Uuid, ActivityState>,
-    ) {
-        let key = Self::get_room_key(school_key, semester_id);
+        academic_term_id: Uuid,
+    ) -> Vec<UserPresence> {
+        let key = Self::get_room_key(school_key, academic_term_id);
 
-        let users = self
-            .room_users
+        self.room_users
             .get(&key)
             .map(|m| m.iter().map(|kv| kv.value().0.clone()).collect())
-            .unwrap_or_default();
-
-        let drags = self
-            .room_drags
-            .get(&key)
-            .map(|m| m.iter().map(|kv| (*kv.key(), kv.value().clone())).collect())
-            .unwrap_or_default();
-
-        let activities = self
-            .room_activities
-            .get(&key)
-            .map(|m| m.iter().map(|kv| (*kv.key(), kv.value().clone())).collect())
-            .unwrap_or_default();
-
-        (users, drags, activities)
+            .unwrap_or_default()
     }
 }
 
@@ -907,7 +676,7 @@ fn initialize_socket_if_permissions_current<T>(
 fn sanitize_client_event(
     event: TimetableEvent,
     authenticated_user_id: Uuid,
-    can_manage: bool,
+    _can_manage: bool,
 ) -> Option<TimetableEvent> {
     match event {
         TimetableEvent::CursorMove { x, y, context, .. } => Some(TimetableEvent::CursorMove {
@@ -915,100 +684,6 @@ fn sanitize_client_event(
             x,
             y,
             context,
-        }),
-        TimetableEvent::DragStart {
-            course_id,
-            entry_id,
-            info,
-            ..
-        } if can_manage => Some(TimetableEvent::DragStart {
-            user_id: authenticated_user_id,
-            course_id,
-            entry_id,
-            info,
-        }),
-        TimetableEvent::DragEnd { .. } if can_manage => Some(TimetableEvent::DragEnd {
-            user_id: authenticated_user_id,
-        }),
-        TimetableEvent::DragMove {
-            x,
-            y,
-            target_day,
-            target_period_id,
-            ..
-        } if can_manage => Some(TimetableEvent::DragMove {
-            user_id: authenticated_user_id,
-            x,
-            y,
-            target_day,
-            target_period_id,
-        }),
-        TimetableEvent::UserActivity {
-            activity_type,
-            target,
-            ..
-        } if can_manage => Some(TimetableEvent::UserActivity {
-            user_id: authenticated_user_id,
-            activity_type,
-            target,
-        }),
-        TimetableEvent::UserActivityEnd { .. } if can_manage => {
-            Some(TimetableEvent::UserActivityEnd {
-                user_id: authenticated_user_id,
-            })
-        }
-        TimetableEvent::TableRefresh { .. } if can_manage => Some(TimetableEvent::TableRefresh {
-            user_id: authenticated_user_id,
-        }),
-        TimetableEvent::DropIntent {
-            kind,
-            entry_id,
-            day_of_week,
-            period_id,
-            room_id,
-            swap_partner_id,
-            swap_partner_day,
-            swap_partner_period_id,
-            new_classroom_course_id,
-            new_activity_slot_id,
-            new_classroom_id,
-            ..
-        } if can_manage => Some(TimetableEvent::DropIntent {
-            user_id: authenticated_user_id,
-            kind,
-            entry_id,
-            day_of_week,
-            period_id,
-            room_id,
-            swap_partner_id,
-            swap_partner_day,
-            swap_partner_period_id,
-            new_classroom_course_id,
-            new_activity_slot_id,
-            new_classroom_id,
-        }),
-        TimetableEvent::EntryIntent {
-            temp_id,
-            classroom_id,
-            classroom_course_id,
-            activity_slot_id,
-            day_of_week,
-            period_id,
-            room_id,
-            title,
-            entry_type,
-            ..
-        } if can_manage => Some(TimetableEvent::EntryIntent {
-            user_id: authenticated_user_id,
-            temp_id,
-            classroom_id,
-            classroom_course_id,
-            activity_slot_id,
-            day_of_week,
-            period_id,
-            room_id,
-            title,
-            entry_type,
         }),
         _ => None,
     }
@@ -1018,57 +693,25 @@ fn relay_client_event(
     manager: &WebSocketManager,
     tx: &broadcast::Sender<SeqEvent>,
     tenant: &str,
-    semester_id: Uuid,
+    academic_term_id: Uuid,
     user_presence: &mut UserPresence,
     event: TimetableEvent,
 ) {
     let user_id = user_presence.user_id;
-    match &event {
-        TimetableEvent::CursorMove { context, .. } => {
-            if user_presence.context != *context {
-                manager.update_context(tenant.to_string(), semester_id, user_id, context.clone());
-                user_presence.context = context.clone();
-            }
+    if let TimetableEvent::CursorMove { context, .. } = &event {
+        if user_presence.context != *context {
+            manager.update_context(
+                tenant.to_string(),
+                academic_term_id,
+                user_id,
+                context.clone(),
+            );
+            user_presence.context = context.clone();
         }
-        TimetableEvent::DragStart {
-            course_id,
-            entry_id,
-            info,
-            ..
-        } => manager.update_drag(
-            tenant.to_string(),
-            semester_id,
-            user_id,
-            Some(DragState {
-                course_id: course_id.clone(),
-                entry_id: entry_id.clone(),
-                info: info.clone(),
-            }),
-        ),
-        TimetableEvent::DragEnd { .. } => {
-            manager.update_drag(tenant.to_string(), semester_id, user_id, None);
-        }
-        TimetableEvent::UserActivity {
-            activity_type,
-            target,
-            ..
-        } => manager.update_activity(
-            tenant.to_string(),
-            semester_id,
-            user_id,
-            Some(ActivityState {
-                activity_type: activity_type.clone(),
-                target: target.clone(),
-            }),
-        ),
-        TimetableEvent::UserActivityEnd { .. } => {
-            manager.update_activity(tenant.to_string(), semester_id, user_id, None);
-        }
-        _ => {}
     }
 
     if event.is_mutation() {
-        manager.broadcast_mutation(tenant.to_string(), semester_id, event);
+        manager.broadcast_mutation(tenant.to_string(), academic_term_id, event);
     } else if tx.send(SeqEvent { seq: None, event }).is_err() {
         tracing::debug!("Timetable WebSocket room has no event receivers");
     }
@@ -1083,14 +726,9 @@ async fn send_broadcast_event(
         Err(broadcast::error::RecvError::Lagged(missed_events)) => {
             tracing::warn!(
                 missed_events,
-                "Timetable WebSocket client lagged; forcing full refresh"
+                "Timetable WebSocket client lagged; reconnect required for authoritative reload"
             );
-            SeqEvent {
-                seq: None,
-                event: TimetableEvent::TableRefresh {
-                    user_id: Uuid::nil(),
-                },
-            }
+            return Err(());
         }
         Err(broadcast::error::RecvError::Closed) => return Err(()),
     };
@@ -1188,7 +826,12 @@ pub async fn timetable_websocket_handler(
     .map(|authentication| authentication.authenticated)
     .ok_or_else(|| AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string()))?;
     let context = actor_tenant_context_from_session(&state, &authenticated).await?;
-    let access = authorize_socket(&context.tenant.pool, &context.actor, params.semester_id).await?;
+    let access = authorize_socket(
+        &context.tenant.pool,
+        &context.actor,
+        params.academic_term_id,
+    )
+    .await?;
     if !session_service::revalidate(&authenticated, Utc::now()).await? {
         return Err(AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string()));
     }
@@ -1197,7 +840,7 @@ pub async fn timetable_websocket_handler(
         handle_socket(
             socket,
             state,
-            params.semester_id,
+            params.academic_term_id,
             authenticated,
             access,
             session_event_receiver,
@@ -1209,7 +852,7 @@ pub async fn timetable_websocket_handler(
 async fn handle_socket(
     mut socket: WebSocket,
     state: AppState,
-    semester_id: Uuid,
+    academic_term_id: Uuid,
     authenticated: AuthenticatedSession,
     access: TimetableSocketAccess,
     mut session_event_receiver: broadcast::Receiver<SessionRevocationEvent>,
@@ -1257,28 +900,23 @@ async fn handle_socket(
         || {
             let tx = state
                 .websocket_manager
-                .get_or_create_room(tenant.clone(), semester_id);
+                .get_or_create_room(tenant.clone(), academic_term_id);
             let rx = tx.subscribe();
             let is_first_tab = state.websocket_manager.join_room(
                 tenant.clone(),
-                semester_id,
+                academic_term_id,
                 user_presence.clone(),
             );
 
-            let (users, drags, activities) = state
+            let users = state
                 .websocket_manager
-                .get_state_snapshot(tenant.clone(), semester_id);
+                .get_state_snapshot(tenant.clone(), academic_term_id);
             let current_seq = state
                 .websocket_manager
-                .current_seq(tenant.clone(), semester_id);
+                .current_seq(tenant.clone(), academic_term_id);
             let sync_event = SeqEvent {
                 seq: None,
-                event: TimetableEvent::StateSync {
-                    users,
-                    drags,
-                    activities,
-                    current_seq,
-                },
+                event: TimetableEvent::StateSync { users, current_seq },
             };
 
             (tx, rx, is_first_tab, sync_event)
@@ -1412,7 +1050,7 @@ async fn handle_socket(
                                     &state.websocket_manager,
                                     &tx,
                                     &tenant,
-                                    semester_id,
+                                    academic_term_id,
                                     &mut user_presence,
                                     event,
                                 );
@@ -1445,7 +1083,7 @@ async fn handle_socket(
     drop(rx);
     let is_last_tab = state
         .websocket_manager
-        .leave_room(tenant.clone(), semester_id, user_id);
+        .leave_room(tenant.clone(), academic_term_id, user_id);
     if is_last_tab
         && tx
             .send(SeqEvent {
@@ -1545,14 +1183,14 @@ mod security_tests {
     #[test]
     fn legacy_query_identity_is_ignored() {
         let params: WsParams = serde_json::from_value(serde_json::json!({
-            "semester_id": "8b391685-4a1c-4f25-a544-b1c5bd0d457e",
+            "academicTermId": "8b391685-4a1c-4f25-a544-b1c5bd0d457e",
             "user_id": "eb22ab8e-4382-4ddb-bcbb-8833b788e362",
             "name": "attacker",
             "school_key": "other"
         }))
         .unwrap();
         assert_eq!(
-            params.semester_id.to_string(),
+            params.academic_term_id.to_string(),
             "8b391685-4a1c-4f25-a544-b1c5bd0d457e"
         );
         assert_eq!(params.school_subdomain, None);
@@ -1560,12 +1198,12 @@ mod security_tests {
 
     #[test]
     fn websocket_query_uses_shared_tenant_hint_and_rejects_duplicate_keys() {
-        let semester_id = Uuid::new_v4();
-        let raw_query = format!("semester_id={semester_id}&school_subdomain=Demo");
+        let academic_term_id = Uuid::new_v4();
+        let raw_query = format!("academicTermId={academic_term_id}&school_subdomain=Demo");
         let hint = parse_realtime_tenant_hint(Some(&raw_query)).unwrap();
         let params = parse_ws_params(Some(&raw_query), hint).unwrap();
 
-        assert_eq!(params.semester_id, semester_id);
+        assert_eq!(params.academic_term_id, academic_term_id);
         assert_eq!(params.school_subdomain.as_deref(), Some("demo"));
         assert!(
             parse_realtime_tenant_hint(Some("school_subdomain=demo&school_subdomain=other"))
@@ -1573,7 +1211,7 @@ mod security_tests {
         );
         assert!(parse_ws_params(
             Some(&format!(
-                "semester_id={semester_id}&semester_id={semester_id}"
+                "academicTermId={academic_term_id}&academicTermId={academic_term_id}"
             )),
             None,
         )
@@ -1594,20 +1232,13 @@ mod security_tests {
             sanitize_client_event(cursor, actor, false),
             Some(TimetableEvent::CursorMove { user_id, .. }) if user_id == actor
         ));
-        let refresh = TimetableEvent::TableRefresh { user_id: forged };
-        assert!(sanitize_client_event(refresh, actor, false).is_none());
-    }
-
-    #[test]
-    fn manager_identity_replaces_forged_payload_identity() {
-        let actor = Uuid::new_v4();
-        let drag = TimetableEvent::DragEnd {
-            user_id: Uuid::new_v4(),
+        let signal = TimetableEvent::TimetableChanged {
+            user_id: forged,
+            academic_term_id: Uuid::new_v4(),
+            learning_group_id: None,
+            revision: 1,
         };
-        assert!(matches!(
-            sanitize_client_event(drag, actor, true),
-            Some(TimetableEvent::DragEnd { user_id }) if user_id == actor
-        ));
+        assert!(sanitize_client_event(signal, actor, true).is_none());
     }
 
     #[test]
@@ -1873,7 +1504,7 @@ mod security_tests {
     fn queued_matching_permission_event_prevents_room_initialization() {
         let (sender, mut receiver) = permission_channel(4);
         let manager = WebSocketManager::new();
-        let semester_id = Uuid::new_v4();
+        let academic_term_id = Uuid::new_v4();
         let user_id = Uuid::new_v4();
         sender
             .send(PermissionChangeEvent::for_user("tenant-b", user_id))
@@ -1886,20 +1517,20 @@ mod security_tests {
         let initialized =
             initialize_socket_if_permissions_current(&mut receiver, "tenant-a", user_id, || {
                 initialization_invoked = true;
-                let tx = manager.get_or_create_room("tenant-a".into(), semester_id);
+                let tx = manager.get_or_create_room("tenant-a".into(), academic_term_id);
                 let mut presence = UserPresence {
                     user_id,
                     name: "Teacher".into(),
                     color: "#112233".into(),
                     context: None,
                 };
-                manager.join_room("tenant-a".into(), semester_id, presence.clone());
-                manager.get_state_snapshot("tenant-a".into(), semester_id);
+                manager.join_room("tenant-a".into(), academic_term_id, presence.clone());
+                manager.get_state_snapshot("tenant-a".into(), academic_term_id);
                 relay_client_event(
                     &manager,
                     &tx,
                     "tenant-a",
-                    semester_id,
+                    academic_term_id,
                     &mut presence,
                     TimetableEvent::CursorMove {
                         user_id,

@@ -117,7 +117,7 @@ pub async fn import_exam_items(
     let skipped_existing_count: i64 = sqlx::query_scalar(
         r#"
         WITH round_context AS (
-          SELECT id AS exam_round_id, academic_semester_id, exam_kind
+          SELECT id AS exam_round_id, academic_term_id, academic_year_id, exam_kind
           FROM academic_exam_rounds
           WHERE id = $1
         ),
@@ -125,22 +125,24 @@ pub async fn import_exam_items(
           SELECT
             rc.exam_round_id,
             c.id AS assessment_category_id,
-            cr.id AS classroom_id
+            learning_group.id AS learning_group_id,
+            homeroom.id AS homeroom_id
           FROM round_context rc
-          JOIN academic_assessment_plans ap
-            ON ap.academic_semester_id = rc.academic_semester_id
-          JOIN academic_assessment_categories c
-            ON c.plan_id = ap.id
-          JOIN classroom_courses cc
-            ON cc.academic_semester_id = rc.academic_semester_id
-           AND cc.subject_id = ap.subject_id
-          JOIN class_rooms cr
-            ON cr.id = cc.classroom_id
+          JOIN course_assessment_plans plan
+            ON plan.academic_term_id = rc.academic_term_id
+           AND plan.status = 'submitted'
+          JOIN course_assessment_categories c ON c.plan_id = plan.id
+          JOIN learning_groups learning_group
+            ON learning_group.learning_offering_id = plan.learning_offering_id
+           AND learning_group.academic_term_id = rc.academic_term_id
+          JOIN learning_group_homerooms coverage
+            ON coverage.learning_group_id = learning_group.id
+          JOIN homerooms homeroom ON homeroom.id = coverage.homeroom_id
           WHERE c.exam_mode = 'in_timetable'
             AND c.code = rc.exam_kind
             AND c.exam_duration_minutes IS NOT NULL
-            AND cr.is_active = true
-            AND ($2::uuid[] IS NULL OR cr.grade_level_id = ANY($2))
+            AND homeroom.is_active = true
+            AND ($2::uuid[] IS NULL OR homeroom.grade_level_id = ANY($2))
         )
         SELECT COUNT(*)::BIGINT
         FROM source_items source
@@ -149,7 +151,8 @@ pub async fn import_exam_items(
             FROM academic_exam_schedule_items item
             WHERE item.exam_round_id = source.exam_round_id
               AND item.assessment_category_id = source.assessment_category_id
-              AND item.classroom_id = source.classroom_id
+              AND item.learning_group_id = source.learning_group_id
+              AND item.homeroom_id = source.homeroom_id
         )
         "#,
     )
@@ -161,26 +164,26 @@ pub async fn import_exam_items(
     let skipped_missing_duration_count: i64 = sqlx::query_scalar(
         r#"
         WITH round_context AS (
-          SELECT id AS exam_round_id, academic_semester_id, exam_kind
+          SELECT id AS exam_round_id, academic_term_id, academic_year_id, exam_kind
           FROM academic_exam_rounds
           WHERE id = $1
         )
         SELECT COUNT(*)::BIGINT
         FROM round_context rc
-        JOIN academic_assessment_plans ap
-          ON ap.academic_semester_id = rc.academic_semester_id
-        JOIN academic_assessment_categories c
-          ON c.plan_id = ap.id
-        JOIN classroom_courses cc
-          ON cc.academic_semester_id = rc.academic_semester_id
-         AND cc.subject_id = ap.subject_id
-        JOIN class_rooms cr
-          ON cr.id = cc.classroom_id
+        JOIN course_assessment_plans plan
+          ON plan.academic_term_id = rc.academic_term_id
+         AND plan.status = 'submitted'
+        JOIN course_assessment_categories c ON c.plan_id = plan.id
+        JOIN learning_groups learning_group
+          ON learning_group.learning_offering_id = plan.learning_offering_id
+         AND learning_group.academic_term_id = rc.academic_term_id
+        JOIN learning_group_homerooms coverage ON coverage.learning_group_id = learning_group.id
+        JOIN homerooms homeroom ON homeroom.id = coverage.homeroom_id
         WHERE c.exam_mode = 'in_timetable'
           AND c.code = rc.exam_kind
           AND c.exam_duration_minutes IS NULL
-          AND cr.is_active = true
-          AND ($2::uuid[] IS NULL OR cr.grade_level_id = ANY($2))
+          AND homeroom.is_active = true
+          AND ($2::uuid[] IS NULL OR homeroom.grade_level_id = ANY($2))
         "#,
     )
     .bind(round_id)
@@ -191,60 +194,68 @@ pub async fn import_exam_items(
     let insert_result = sqlx::query(
         r#"
         WITH round_context AS (
-          SELECT id AS exam_round_id, academic_semester_id, exam_kind
+          SELECT id AS exam_round_id, academic_term_id, academic_year_id, exam_kind
           FROM academic_exam_rounds
           WHERE id = $1
         ),
         source_items AS (
           SELECT
             rc.exam_round_id,
-            rc.academic_semester_id,
+            rc.academic_term_id,
+            rc.academic_year_id,
             c.id AS assessment_category_id,
-            ap.id AS assessment_plan_id,
-            cc.id AS classroom_course_id,
-            cr.id AS classroom_id,
-            ap.subject_id,
-            cr.grade_level_id,
+            plan.id AS course_assessment_plan_id,
+            plan.learning_offering_id,
+            learning_group.id AS learning_group_id,
+            homeroom.id AS homeroom_id,
+            version.subject_id,
+            homeroom.grade_level_id,
             c.exam_duration_minutes AS duration_minutes
           FROM round_context rc
-          JOIN academic_assessment_plans ap
-            ON ap.academic_semester_id = rc.academic_semester_id
-          JOIN academic_assessment_categories c
-            ON c.plan_id = ap.id
-          JOIN classroom_courses cc
-            ON cc.academic_semester_id = rc.academic_semester_id
-           AND cc.subject_id = ap.subject_id
-          JOIN class_rooms cr
-            ON cr.id = cc.classroom_id
+          JOIN course_assessment_plans plan
+            ON plan.academic_term_id = rc.academic_term_id
+           AND plan.status = 'submitted'
+          JOIN subject_versions version ON version.id = plan.subject_version_id
+          JOIN course_assessment_categories c ON c.plan_id = plan.id
+          JOIN learning_groups learning_group
+            ON learning_group.learning_offering_id = plan.learning_offering_id
+           AND learning_group.academic_term_id = rc.academic_term_id
+          JOIN learning_group_homerooms coverage ON coverage.learning_group_id = learning_group.id
+          JOIN homerooms homeroom ON homeroom.id = coverage.homeroom_id
           WHERE c.exam_mode = 'in_timetable'
             AND c.code = rc.exam_kind
             AND c.exam_duration_minutes IS NOT NULL
-            AND cr.is_active = true
-            AND ($2::uuid[] IS NULL OR cr.grade_level_id = ANY($2))
+            AND homeroom.is_active = true
+            AND ($2::uuid[] IS NULL OR homeroom.grade_level_id = ANY($2))
         )
         INSERT INTO academic_exam_schedule_items (
           exam_round_id,
-          academic_semester_id,
+          academic_term_id,
+          academic_year_id,
           assessment_category_id,
-          assessment_plan_id,
-          classroom_course_id,
-          classroom_id,
+          course_assessment_plan_id,
+          learning_offering_id,
+          learning_group_id,
+          homeroom_id,
           subject_id,
           grade_level_id,
           duration_minutes
         )
         SELECT
           exam_round_id,
-          academic_semester_id,
+          academic_term_id,
+          academic_year_id,
           assessment_category_id,
-          assessment_plan_id,
-          classroom_course_id,
-          classroom_id,
+          course_assessment_plan_id,
+          learning_offering_id,
+          learning_group_id,
+          homeroom_id,
           subject_id,
           grade_level_id,
           duration_minutes
         FROM source_items
-        ON CONFLICT (exam_round_id, assessment_category_id, classroom_id) DO NOTHING
+        ON CONFLICT (exam_round_id, assessment_category_id, learning_group_id, homeroom_id)
+        DO NOTHING
         "#,
     )
     .bind(round_id)
@@ -290,7 +301,7 @@ pub async fn clear_mismatched_exam_items(
           WHERE id = $1
         )
         DELETE FROM academic_exam_schedule_items item
-        USING academic_assessment_categories c, round_context rc
+        USING course_assessment_categories c, round_context rc
         WHERE item.exam_round_id = rc.exam_round_id
           AND item.assessment_category_id = c.id
           AND c.code IS DISTINCT FROM rc.exam_kind
@@ -367,14 +378,14 @@ pub(super) const WORKSPACE_COUNTS_SQL: &str = r#"
                    SELECT COUNT(*)::BIGINT
                    FROM (
                        SELECT DISTINCT session.exam_day_id,
-                                       item.classroom_id
+                                       item.homeroom_id
                        FROM academic_exam_sessions session
                        JOIN academic_exam_schedule_items item
                          ON item.id = session.exam_schedule_item_id
                         AND item.exam_round_id = session.exam_round_id
                        LEFT JOIN academic_exam_day_room_assignments assignment
                          ON assignment.exam_day_id = session.exam_day_id
-                        AND assignment.classroom_id = item.classroom_id
+                        AND assignment.homeroom_id = item.homeroom_id
                        WHERE session.exam_round_id = $1
                          AND assignment.id IS NULL
                    ) missing_room_assignments
@@ -429,10 +440,11 @@ pub(super) const WORKSPACE_COUNTS_SQL: &str = r#"
                         AND item.exam_round_id = session.exam_round_id
                        JOIN academic_exam_day_room_assignments assignment
                          ON assignment.exam_day_id = session.exam_day_id
-                        AND assignment.classroom_id = item.classroom_id
-                       JOIN student_class_enrollments enrollment
-                         ON enrollment.class_room_id = item.classroom_id
-                        AND enrollment.status = 'active'
+                        AND assignment.homeroom_id = item.homeroom_id
+                       JOIN learning_group_students enrollment
+                         ON enrollment.learning_group_id = item.learning_group_id
+                        AND enrollment.academic_term_id = item.academic_term_id
+                        AND enrollment.membership_status = 'active'
                        JOIN users user_account
                          ON user_account.id = enrollment.student_id
                         AND user_account.user_type = 'student'
@@ -465,13 +477,13 @@ pub(super) const WORKSPACE_COUNTS_SQL: &str = r#"
                     AND left_session.exam_round_id = day.exam_round_id
                    JOIN academic_exam_schedule_items left_item
                      ON left_item.id = left_session.exam_schedule_item_id
-                    AND left_item.classroom_id = left_assignment.classroom_id
+                    AND left_item.homeroom_id = left_assignment.homeroom_id
                    JOIN academic_exam_sessions right_session
                      ON right_session.exam_day_id = right_assignment.exam_day_id
                     AND right_session.exam_round_id = day.exam_round_id
                    JOIN academic_exam_schedule_items right_item
                      ON right_item.id = right_session.exam_schedule_item_id
-                    AND right_item.classroom_id = right_assignment.classroom_id
+                    AND right_item.homeroom_id = right_assignment.homeroom_id
                    WHERE day.exam_round_id = $1
                      AND left_session.starts_at < right_session.ends_at
                      AND right_session.starts_at < left_session.ends_at
@@ -486,24 +498,27 @@ pub(super) async fn fetch_unscheduled_items(
         r#"
         SELECT item.id,
                item.exam_round_id,
-               item.academic_semester_id,
+               item.academic_term_id,
+               item.academic_year_id,
                item.assessment_category_id,
-               item.assessment_plan_id,
-               item.classroom_course_id,
-               item.classroom_id,
+               item.course_assessment_plan_id,
+               item.learning_offering_id,
+               item.learning_group_id,
+               item.homeroom_id,
                item.subject_id,
                item.grade_level_id,
                item.duration_minutes,
                item.imported_at,
                category.name AS assessment_category_name,
                subject.code AS subject_code,
-               subject.name_th AS subject_name_th,
-               subject.name_en AS subject_name_en,
-               subject.group_id AS subject_group_id,
+               subject_version.name_th AS subject_name_th,
+               subject_version.name_en AS subject_name_en,
+               offering.name_snapshot AS subject_version_display_label,
+               subject_version.group_id AS subject_group_id,
                subject_group.name_th AS subject_group_name,
                subject_group.display_order AS subject_group_display_order,
-               subject.type AS subject_type,
-               classroom.name AS classroom_name,
+               subject_version.type AS subject_type,
+               classroom.name AS homeroom_name,
                CASE grade_level.level_type
                    WHEN 'kindergarten' THEN CONCAT('อ.', grade_level.year)
                    WHEN 'primary' THEN CONCAT('ป.', grade_level.year)
@@ -513,11 +528,15 @@ pub(super) async fn fetch_unscheduled_items(
                grade_level.level_type AS grade_level_type,
                grade_level.year AS grade_level_year
         FROM academic_exam_schedule_items item
-        JOIN academic_assessment_categories category
+        JOIN course_assessment_categories category
           ON category.id = item.assessment_category_id
+        JOIN learning_offerings offering ON offering.id = item.learning_offering_id
+        JOIN course_offering_details course_detail
+          ON course_detail.learning_offering_id = item.learning_offering_id
+        JOIN subject_versions subject_version ON subject_version.id = course_detail.subject_version_id
         JOIN subjects subject ON subject.id = item.subject_id
-        LEFT JOIN subject_groups subject_group ON subject_group.id = subject.group_id
-        JOIN class_rooms classroom ON classroom.id = item.classroom_id
+        LEFT JOIN subject_groups subject_group ON subject_group.id = subject_version.group_id
+        JOIN homerooms classroom ON classroom.id = item.homeroom_id
         JOIN grade_levels grade_level ON grade_level.id = item.grade_level_id
         WHERE item.exam_round_id = $1
           AND NOT EXISTS (
@@ -534,7 +553,7 @@ pub(super) async fn fetch_unscheduled_items(
                      ELSE 4
                  END,
                  grade_level.year,
-                 CASE subject.type
+                 CASE subject_version.type
                      WHEN 'BASIC' THEN 1
                      WHEN 'ADDITIONAL' THEN 2
                      WHEN 'ACTIVITY' THEN 3
@@ -566,11 +585,13 @@ pub(super) async fn fetch_scheduled_sessions(
                session.exam_day_id,
                session.starts_at,
                session.ends_at,
-               item.academic_semester_id,
+               item.academic_term_id,
+               item.academic_year_id,
                item.assessment_category_id,
-               item.assessment_plan_id,
-               item.classroom_course_id,
-               item.classroom_id,
+               item.course_assessment_plan_id,
+               item.learning_offering_id,
+               item.learning_group_id,
+               item.homeroom_id,
                item.subject_id,
                item.grade_level_id,
                item.duration_minutes,
@@ -578,13 +599,14 @@ pub(super) async fn fetch_scheduled_sessions(
                day.exam_date AS exam_date,
                category.name AS assessment_category_name,
                subject.code AS subject_code,
-               subject.name_th AS subject_name_th,
-               subject.name_en AS subject_name_en,
-               subject.group_id AS subject_group_id,
+               subject_version.name_th AS subject_name_th,
+               subject_version.name_en AS subject_name_en,
+               offering.name_snapshot AS subject_version_display_label,
+               subject_version.group_id AS subject_group_id,
                subject_group.name_th AS subject_group_name,
                subject_group.display_order AS subject_group_display_order,
-               subject.type AS subject_type,
-               classroom.name AS classroom_name,
+               subject_version.type AS subject_type,
+               classroom.name AS homeroom_name,
                CASE grade_level.level_type
                    WHEN 'kindergarten' THEN CONCAT('อ.', grade_level.year)
                    WHEN 'primary' THEN CONCAT('ป.', grade_level.year)
@@ -604,15 +626,19 @@ pub(super) async fn fetch_scheduled_sessions(
         JOIN academic_exam_days day
           ON day.id = session.exam_day_id
          AND day.exam_round_id = session.exam_round_id
-        JOIN academic_assessment_categories category
+        JOIN course_assessment_categories category
           ON category.id = item.assessment_category_id
+        JOIN learning_offerings offering ON offering.id = item.learning_offering_id
+        JOIN course_offering_details course_detail
+          ON course_detail.learning_offering_id = item.learning_offering_id
+        JOIN subject_versions subject_version ON subject_version.id = course_detail.subject_version_id
         JOIN subjects subject ON subject.id = item.subject_id
-        LEFT JOIN subject_groups subject_group ON subject_group.id = subject.group_id
-        JOIN class_rooms classroom ON classroom.id = item.classroom_id
+        LEFT JOIN subject_groups subject_group ON subject_group.id = subject_version.group_id
+        JOIN homerooms classroom ON classroom.id = item.homeroom_id
         JOIN grade_levels grade_level ON grade_level.id = item.grade_level_id
         LEFT JOIN academic_exam_day_room_assignments assignment
           ON assignment.exam_day_id = session.exam_day_id
-         AND assignment.classroom_id = item.classroom_id
+         AND assignment.homeroom_id = item.homeroom_id
         LEFT JOIN rooms room ON room.id = assignment.room_id
         LEFT JOIN buildings building ON building.id = room.building_id
         WHERE session.exam_round_id = $1

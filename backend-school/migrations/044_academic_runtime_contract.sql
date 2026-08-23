@@ -25,10 +25,12 @@ SET migration_provenance = migration_provenance || jsonb_build_object(
         'legacyGradingPolicy', grading_policy
     ),
     grading_policy = jsonb_build_object(
-        'policyCode', 'legacy_migrated',
-        'passingScore', NULL
+        'policyCode', COALESCE(grading_policy ->> 'policyCode', 'legacy_migrated'),
+        'totalScore', COALESCE(grading_policy ->> 'totalScore', '100.00'),
+        'passingScore', grading_policy -> 'passingScore'
     )
-WHERE NOT grading_policy ? 'policyCode';
+WHERE NOT grading_policy ? 'policyCode'
+   OR NOT grading_policy ? 'totalScore';
 
 UPDATE activity_offering_details
 SET migration_provenance = migration_provenance || jsonb_build_object(
@@ -68,6 +70,111 @@ $$;
 
 ALTER TABLE bell_schedule_periods
     ALTER COLUMN academic_year_id DROP NOT NULL;
+
+ALTER TABLE academic_timetable_entries
+    ADD COLUMN row_version BIGINT NOT NULL DEFAULT 1,
+    ADD CONSTRAINT academic_timetable_entries_row_version_check CHECK (row_version > 0);
+
+-- Exam scheduling now owns only canonical delivery identities. The compatibility
+-- foreign keys retained by migration 043 are replaced before the runtime opens.
+ALTER TABLE academic_exam_schedule_items
+    DROP CONSTRAINT academic_exam_schedule_items_plan_semester_subject_fkey,
+    DROP CONSTRAINT academic_exam_schedule_items_course_classroom_subject_semester_fkey;
+
+DO $$
+DECLARE
+    legacy_unique_name TEXT;
+BEGIN
+    SELECT constraint_row.conname
+    INTO legacy_unique_name
+    FROM pg_constraint constraint_row
+    WHERE constraint_row.conrelid = 'academic_exam_schedule_items'::regclass
+      AND constraint_row.contype = 'u'
+      AND pg_get_constraintdef(constraint_row.oid)
+          LIKE '%(exam_round_id, assessment_category_id, homeroom_id)%';
+
+    IF legacy_unique_name IS NOT NULL THEN
+        EXECUTE format(
+            'ALTER TABLE academic_exam_schedule_items DROP CONSTRAINT %I',
+            legacy_unique_name
+        );
+    END IF;
+END;
+$$;
+
+ALTER TABLE academic_exam_schedule_items
+    DROP COLUMN legacy_classroom_course_id,
+    DROP COLUMN subject_version_id,
+    ADD COLUMN row_version BIGINT NOT NULL DEFAULT 1,
+    ADD CONSTRAINT academic_exam_schedule_items_row_version_check CHECK (row_version > 0),
+    ADD CONSTRAINT academic_exam_schedule_items_round_category_group_homeroom_key
+        UNIQUE (exam_round_id, assessment_category_id, learning_group_id, homeroom_id);
+
+ALTER TABLE course_assessment_plans
+    DROP COLUMN legacy_classroom_course_id;
+
+ALTER TABLE academic_timetable_entries
+    DROP COLUMN legacy_classroom_course_id,
+    DROP COLUMN legacy_activity_slot_id;
+
+-- Timetable templates are reusable across years. Store semantic resource selectors
+-- and a bell-period order instead of year-bound legacy IDs. Preserve source IDs
+-- only inside migration provenance before dropping the compatibility columns.
+ALTER TABLE timetable_template_entries RENAME COLUMN period_id TO legacy_period_id;
+ALTER TABLE timetable_template_entries RENAME COLUMN activity_slot_id TO legacy_activity_slot_id;
+ALTER TABLE timetable_template_entries
+    ALTER COLUMN legacy_period_id DROP NOT NULL,
+    ADD COLUMN bell_period_order_index INTEGER,
+    ADD COLUMN resource_kind TEXT,
+    ADD COLUMN stable_resource_id UUID,
+    ADD COLUMN learning_group_code TEXT,
+    ADD COLUMN target_selector JSONB NOT NULL DEFAULT '{}'::jsonb,
+    ADD COLUMN migration_provenance JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+UPDATE timetable_template_entries template_entry
+SET bell_period_order_index = period.order_index,
+    resource_kind = CASE
+        WHEN template_entry.entry_type = 'ACTIVITY'
+         AND template_entry.legacy_activity_slot_id IS NOT NULL THEN 'activity'
+        ELSE 'structural'
+    END,
+    stable_resource_id = CASE
+        WHEN template_entry.entry_type = 'ACTIVITY'
+         AND template_entry.legacy_activity_slot_id IS NOT NULL THEN (
+            SELECT version.activity_id
+            FROM activity_slots slot
+            JOIN activity_versions version ON version.id = slot.activity_catalog_id
+            WHERE slot.id = template_entry.legacy_activity_slot_id
+        )
+        ELSE NULL
+    END,
+    migration_provenance = jsonb_build_object(
+        'migration', 44,
+        'legacyPeriodId', template_entry.legacy_period_id,
+        'legacyActivitySlotId', template_entry.legacy_activity_slot_id,
+        'legacyGradeLevelIds', template_entry.grade_level_ids,
+        'legacyClassroomIds', template_entry.classroom_ids
+    )
+FROM bell_schedule_periods period
+WHERE period.id = template_entry.legacy_period_id;
+
+ALTER TABLE timetable_template_entries
+    ALTER COLUMN bell_period_order_index SET NOT NULL,
+    ALTER COLUMN resource_kind SET NOT NULL,
+    ADD CONSTRAINT timetable_template_entries_period_order_check
+        CHECK (bell_period_order_index >= 0),
+    ADD CONSTRAINT timetable_template_entries_resource_kind_check
+        CHECK (resource_kind IN ('course', 'activity', 'structural')),
+    ADD CONSTRAINT timetable_template_entries_resource_shape_check CHECK (
+        (resource_kind = 'structural' AND stable_resource_id IS NULL)
+        OR (resource_kind IN ('course', 'activity') AND stable_resource_id IS NOT NULL)
+    );
+
+ALTER TABLE timetable_template_entries
+    DROP COLUMN legacy_period_id,
+    DROP COLUMN legacy_activity_slot_id,
+    DROP COLUMN grade_level_ids,
+    DROP COLUMN classroom_ids;
 
 ALTER TABLE subject_groups
     ADD COLUMN row_version BIGINT NOT NULL DEFAULT 1,

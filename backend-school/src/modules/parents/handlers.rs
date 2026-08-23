@@ -67,14 +67,16 @@ pub async fn get_child_profile(
 
 #[derive(Debug, serde::Deserialize, utoipa::IntoParams)]
 #[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ChildTimetableQuery {
-    pub academic_semester_id: Option<Uuid>,
+    pub academic_term_id: Uuid,
 }
 
 #[derive(Debug, serde::Deserialize, utoipa::IntoParams)]
 #[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ChildExamScheduleQuery {
-    pub academic_semester_id: Option<Uuid>,
+    pub academic_term_id: Uuid,
 }
 
 /// GET /api/parent/students/:student_id/timetable
@@ -107,7 +109,7 @@ pub async fn get_child_timetable(
         &pool,
         actor.user_id,
         student_id,
-        query.academic_semester_id,
+        query.academic_term_id,
     )
     .await?;
 
@@ -144,7 +146,7 @@ pub async fn get_child_exam_schedule(
         &pool,
         actor.user_id,
         student_id,
-        query.academic_semester_id,
+        query.academic_term_id,
     )
     .await?;
 

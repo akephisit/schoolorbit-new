@@ -23,14 +23,16 @@ use utoipa::IntoParams;
 use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExamRoundQuery {
-    pub academic_semester_id: Option<Uuid>,
+    pub academic_term_id: Uuid,
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PersonalExamScheduleQuery {
-    pub academic_semester_id: Option<Uuid>,
+    pub academic_term_id: Uuid,
 }
 
 #[derive(Debug, Deserialize)]
@@ -50,7 +52,7 @@ pub async fn list_rounds(
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_EXAM_SCHEDULE_READ_SCHOOL)?;
 
-    let rounds = exam_schedule_service::list_rounds(&pool, query.academic_semester_id).await?;
+    let rounds = exam_schedule_service::list_rounds(&pool, query.academic_term_id).await?;
     Ok(Json(ApiResponse::ok(rounds)).into_response())
 }
 
@@ -407,7 +409,7 @@ pub async fn list_my_exam_schedule(
     let schedule = exam_schedule_service::list_my_published_exam_schedule(
         &context.tenant.pool,
         context.user_id,
-        query.academic_semester_id,
+        query.academic_term_id,
     )
     .await?;
 
@@ -435,7 +437,7 @@ pub async fn list_staff_exam_schedule(
     let schedule = exam_schedule_service::list_staff_published_exam_schedule(
         &context.tenant.pool,
         context.user_id,
-        query.academic_semester_id,
+        query.academic_term_id,
     )
     .await?;
 

@@ -35,8 +35,8 @@ struct InvigilatorViewRow {
 struct InvigilatorAssignmentSummaryRow {
     assignment_id: Uuid,
     exam_day_id: Uuid,
-    classroom_id: Uuid,
-    classroom_name: String,
+    homeroom_id: Uuid,
+    homeroom_name: String,
     room_id: Uuid,
     room_name: String,
     session_minutes: i32,
@@ -100,8 +100,8 @@ pub async fn get_invigilator_workspace(
             .map(|row| ExamInvigilatorAssignmentSummary {
                 assignment_id: row.assignment_id,
                 exam_day_id: row.exam_day_id,
-                classroom_id: row.classroom_id,
-                classroom_name: row.classroom_name,
+                homeroom_id: row.homeroom_id,
+                homeroom_name: row.homeroom_name,
                 room_id: row.room_id,
                 room_name: row.room_name,
                 session_minutes: row.session_minutes,
@@ -445,7 +445,7 @@ async fn fetch_assignment_session_windows(
          AND session.exam_round_id = day.exam_round_id
         JOIN academic_exam_schedule_items item
           ON item.id = session.exam_schedule_item_id
-         AND item.classroom_id = assignment.classroom_id
+         AND item.homeroom_id = assignment.homeroom_id
         WHERE assignment.id = $1
         ORDER BY session.starts_at, staff.staff_id
         "#,
@@ -492,7 +492,7 @@ async fn fetch_existing_invigilator_session_windows(
          AND session.exam_round_id = day.exam_round_id
         JOIN academic_exam_schedule_items item
           ON item.id = session.exam_schedule_item_id
-         AND item.classroom_id = assignment.classroom_id
+         AND item.homeroom_id = assignment.homeroom_id
         WHERE day.exam_round_id = $1
           AND invigilator.staff_id = ANY($2)
         ORDER BY assignment.exam_day_id, session.starts_at, invigilator.staff_id
@@ -612,25 +612,25 @@ async fn fetch_invigilator_assignment_summaries(
         r#"
         SELECT assignment.id AS assignment_id,
                day.id AS exam_day_id,
-               assignment.classroom_id,
-               classroom.name AS classroom_name,
+               assignment.homeroom_id,
+               classroom.name AS homeroom_name,
                assignment.room_id,
                room.name_th AS room_name,
                COALESCE(SUM(EXTRACT(EPOCH FROM (session.ends_at - session.starts_at)) / 60), 0)::INT
                    AS session_minutes
         FROM academic_exam_day_room_assignments assignment
         JOIN academic_exam_days day ON day.id = assignment.exam_day_id
-        JOIN class_rooms classroom ON classroom.id = assignment.classroom_id
+        JOIN homerooms classroom ON classroom.id = assignment.homeroom_id
         JOIN rooms room ON room.id = assignment.room_id
         LEFT JOIN academic_exam_schedule_items item
           ON item.exam_round_id = day.exam_round_id
-         AND item.classroom_id = assignment.classroom_id
+         AND item.homeroom_id = assignment.homeroom_id
         LEFT JOIN academic_exam_sessions session
           ON session.exam_schedule_item_id = item.id
          AND session.exam_day_id = assignment.exam_day_id
          AND session.exam_round_id = day.exam_round_id
         WHERE day.exam_round_id = $1
-        GROUP BY assignment.id, day.id, assignment.classroom_id, classroom.name, assignment.room_id, room.name_th
+        GROUP BY assignment.id, day.id, assignment.homeroom_id, classroom.name, assignment.room_id, room.name_th
         ORDER BY day.exam_date, day.start_time, day.id, classroom.name, room.name_th, assignment.id
         "#,
     )
@@ -669,7 +669,7 @@ async fn fetch_invigilator_staff_workloads(
          AND session.exam_round_id = day.exam_round_id
         JOIN academic_exam_schedule_items item
           ON item.id = session.exam_schedule_item_id
-         AND item.classroom_id = assignment.classroom_id
+         AND item.homeroom_id = assignment.homeroom_id
         WHERE day.exam_round_id = $1
         ORDER BY staff_name, day.exam_date, day.start_time, day.id, session.starts_at, assignment.id
         "#,

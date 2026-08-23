@@ -98,9 +98,7 @@ fn people_and_platform_handlers_use_typed_session_identity() {
 fn academic_group_a_handlers_use_typed_session_identity() {
     assert_typed_session_handlers(&[
         "src/modules/academic/core/handlers.rs",
-        "src/modules/academic/handlers/activity.rs",
         "src/modules/academic/handlers/assessment.rs",
-        "src/modules/academic/handlers/course_planning.rs",
     ]);
 }
 
@@ -304,82 +302,37 @@ fn supervision_service_facade_is_thin_and_preserves_public_surface() {
 }
 
 #[test]
-fn timetable_service_uses_private_child_modules() {
-    let facade =
-        read_source(manifest_dir().join("src/modules/academic/services/timetable_service.rs"));
-    let service_dir = manifest_dir().join("src/modules/academic/services/timetable_service");
+fn timetable_service_uses_only_canonical_delivery_identity() {
+    let service = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/services/timetable_service.rs"),
+    ));
 
-    for module in [
-        "batch_mutations",
-        "entries",
-        "instructors",
-        "moves_and_swaps",
-        "occupancy",
-        "shared",
-        "validation",
+    for required in [
+        "academic_term_id",
+        "learning_group_id",
+        "learning_offering_id",
+        "bell_schedule_period_id",
+        "row_version",
+        "learning_group_teachers",
     ] {
         assert!(
-            facade.contains(&format!("mod {module};")),
-            "timetable facade must declare private module `{module}`"
+            service.contains(required),
+            "canonical timetable service must contain `{required}`"
         );
-        assert!(
-            !facade.contains(&format!("pub mod {module};")),
-            "timetable child module `{module}` must remain private"
-        );
-        assert!(
-            service_dir.join(format!("{module}.rs")).is_file(),
-            "timetable child module `{module}` must have its own source file"
-        );
-        if module != "shared" {
-            assert!(
-                facade.contains(&format!("pub use {module}")),
-                "timetable facade must re-export child module `{module}`"
-            );
-        }
     }
 
-    for public_item in [
-        "add_entry_instructor",
-        "create_batch_entries",
-        "create_entry",
-        "delete_batch_group",
-        "delete_entries_by_slot",
-        "delete_entry",
-        "fetch_entry_by_id",
-        "get_my_activity_for_entry",
-        "get_occupancy",
-        "hide_instructor_from_slot",
-        "hide_instructor_from_slot_period",
-        "list_entries",
-        "remove_entry_instructor",
-        "resolve_classroom_course_semester_id",
-        "restore_instructor_to_slot",
-        "swap_entries",
-        "update_entry",
-        "validate_entry",
-        "validate_moves",
+    for forbidden in [
+        "academic_semesters",
+        "classroom_courses",
+        "activity_slots",
+        "legacy_classroom_course_id",
+        "legacy_activity_slot_id",
     ] {
         assert!(
-            facade.contains(public_item),
-            "timetable facade must preserve public item `{public_item}`"
+            !service.contains(forbidden),
+            "canonical timetable service must not contain `{forbidden}`"
         );
     }
-
-    for forbidden in ["sqlx::", ".fetch_", ".execute(", ".begin(", "SELECT "] {
-        assert!(
-            !facade.contains(forbidden),
-            "timetable facade must not contain persistence fragment `{forbidden}`"
-        );
-    }
-
-    let nonblank_line_count = facade
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .count();
-    assert!(
-        nonblank_line_count <= 85,
-        "timetable facade must stay thin; found {nonblank_line_count} nonblank lines"
-    );
 }
 
 #[test]
@@ -1656,10 +1609,10 @@ fn academic_curriculum_tree_scope_is_explicitly_registered() {
 }
 
 #[test]
-fn academic_assessment_plans_are_subject_semester_scoped() {
+fn academic_assessment_plans_are_offering_and_term_scoped() {
     let migration_path = manifest_dir()
         .join("migrations")
-        .join("014_academic_assessment_subject_plans.sql");
+        .join("043_academic_consumer_cutover.sql");
     let migration = read_source(&migration_path);
     let service = strip_comments(&read_source(
         manifest_dir().join("src/modules/academic/services/assessment_service.rs"),
@@ -1669,11 +1622,10 @@ fn academic_assessment_plans_are_subject_semester_scoped() {
     ));
 
     for required_fragment in [
-        "academic_semester_id UUID",
-        "subject_id UUID",
-        "exam_duration_minutes INTEGER",
-        "UNIQUE (academic_semester_id, subject_id)",
-        "DROP CONSTRAINT IF EXISTS academic_assessment_plans_classroom_course_id_key",
+        "ADD COLUMN learning_offering_id UUID",
+        "ADD COLUMN academic_year_id UUID",
+        "FOREIGN KEY (learning_offering_id, academic_term_id, academic_year_id)",
+        "UNIQUE (learning_offering_id)",
     ] {
         assert!(
             migration.contains(required_fragment),
@@ -1683,23 +1635,24 @@ fn academic_assessment_plans_are_subject_semester_scoped() {
     }
 
     assert!(
-        service.contains("ap.academic_semester_id = rc.academic_semester_id")
-            && service.contains("ap.subject_id = rc.subject_id"),
-        "assessment list must join plans by semester+subject, not classroom course"
+        service.contains("FROM learning_offerings offering")
+            && service.contains(
+                "LEFT JOIN course_assessment_plans plan ON plan.learning_offering_id = offering.id"
+            )
+            && service.contains("offering.academic_term_id = $1"),
+        "assessment list must use offering identity within an explicit academic term"
     );
     assert!(
-        !service.contains("ap.classroom_course_id = cc.id"),
-        "assessment service must not use classroom_course_id as the plan join key"
+        !service.contains("classroom_course_id") && !service.contains("academic_semester_id"),
+        "assessment service must not use legacy course or semester identity"
     );
-    assert!(models.contains("exam_duration_minutes"));
+    assert!(models.contains("pub offering_id: Uuid"));
+    assert!(models.contains("pub academic_term_id: Uuid"));
+    assert!(models.contains("pub academic_year_id: Uuid"));
 }
 
 #[test]
-fn academic_assessment_supports_subject_group_read_scope() {
-    let migration_path = manifest_dir()
-        .join("migrations")
-        .join("015_academic_assessment_subject_group_read.sql");
-    let migration = read_source(&migration_path);
+fn academic_assessment_supports_resource_and_assigned_group_scope() {
     let service = strip_comments(&read_source(
         manifest_dir().join("src/modules/academic/services/assessment_service.rs"),
     ));
@@ -1710,44 +1663,38 @@ fn academic_assessment_supports_subject_group_read_scope() {
         manifest_dir().join("src/permissions/registry_generated.rs"),
     ));
 
-    for source in [&backend_registry, &migration] {
-        assert!(
-            source.contains("academic_assessment.read.organization_unit"),
-            "assessment subject-group read permission must be registered in backend and migration"
-        );
-    }
-
     assert!(
-        migration.contains("unit_type = 'subject_group'")
-            && migration.contains("organization_permission_grants"),
-        "{} must grant subject-group read access through organization units",
-        repo_relative(&migration_path)
+        backend_registry.contains("academic_assessment.read.organization_unit"),
+        "assessment organization-unit read permission must remain registered"
     );
     assert!(
-        service.contains("AssessmentPlanListAccess")
-            && service.contains("subject_group_ids")
-            && service.contains("s.group_id = ANY"),
-        "assessment list service must support subject-group scoped reads"
+        service.contains("AcademicResourceListFilter")
+            && service.contains("allowed_organization_unit_ids")
+            && service.contains("offering.owning_organization_unit_id = ANY")
+            && service.contains("learning_group_teachers"),
+        "assessment list must combine resource ownership and assigned learning-group scope"
     );
     assert!(
-        service.contains("can_manage") && models.contains("pub can_manage: bool"),
-        "assessment summaries must expose row-level editability"
+        models.contains("pub learning_group_ids: Vec<Uuid>"),
+        "assessment summaries must expose their canonical learning groups"
     );
 }
 
 #[test]
-fn academic_assessment_teacher_scope_uses_primary_instructors_only() {
+fn academic_assessment_teacher_scope_uses_learning_group_teachers() {
     let service = strip_comments(&read_source(
         manifest_dir().join("src/modules/academic/services/assessment_service.rs"),
     ));
 
     assert!(
-        service.contains("primary_instructor_id"),
-        "assessment teacher scope should use the primary instructor on classroom_courses"
+        service.contains("JOIN learning_group_teachers teacher")
+            && service.contains("teacher.teacher_id = $3"),
+        "assessment teacher filtering must use canonical learning-group teachers"
     );
     assert!(
-        !service.contains("classroom_course_instructors"),
-        "assessment teacher scope must not count co-teachers as primary assessment owners"
+        !service.contains("primary_instructor_id")
+            && !service.contains("classroom_course_instructors"),
+        "assessment teacher filtering must not retain legacy primary-instructor identity"
     );
 }
 
@@ -1777,25 +1724,18 @@ fn academic_assessment_save_persists_saved_status() {
 }
 
 #[test]
-fn academic_assessment_list_sorts_self_first_then_teacher_and_grade() {
+fn academic_assessment_list_has_stable_offering_order() {
     let service = strip_comments(&read_source(
         manifest_dir().join("src/modules/academic/services/assessment_service.rs"),
     ));
 
     assert!(
-        service.contains("sort_actor_id"),
-        "assessment list access should carry the current actor for self-first sorting"
+        service.contains("ORDER BY offering.code_snapshot, offering.id"),
+        "assessment list must have deterministic canonical offering order"
     );
     assert!(
-        service.contains("sort_cc.primary_instructor_id"),
-        "assessment list ordering should detect whether the actor is a primary instructor"
-    );
-    assert!(
-        service.contains("LOWER(COALESCE(rollup.instructor_name")
-            && service.contains("grade_level_sort")
-            && service.contains("grade_year")
-            && service.contains("classroom_room_number"),
-        "assessment list should sort remaining rows by teacher, grade level, room, then subject"
+        !service.contains("sort_actor_id") && !service.contains("classroom_room_number"),
+        "assessment ordering must not infer legacy classroom context"
     );
 }
 
@@ -1920,13 +1860,8 @@ fn daily_teaching_overview_endpoint_is_read_only_and_pii_safe() {
         manifest_dir().join("src/modules/academic/services/daily_teaching_service.rs"),
     ));
     let registry = read_source(manifest_dir().join("src/permissions/registry_generated.rs"));
-    let daily_handler = handler
-        .split("pub async fn daily_teaching_overview")
-        .nth(1)
-        .unwrap_or("")
-        .split("pub async fn replay_events")
-        .next()
-        .unwrap_or("");
+    let daily_handler =
+        extract_braced_block(&handler, "pub async fn daily_teaching_overview", false);
 
     assert!(routes.contains("\"/timetable/daily-teaching\""));
     assert!(routes.contains("get(handlers::timetable::daily_teaching_overview)"));
@@ -1936,27 +1871,29 @@ fn daily_teaching_overview_endpoint_is_read_only_and_pii_safe() {
     );
 
     assert!(daily_handler.contains("actor_tenant_context_from_session(&state, &session).await?"));
-    assert!(daily_handler.contains("ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL"));
     assert!(daily_handler.contains("LEARNING_OFFERING_READ_SCHOOL"));
     assert!(!daily_handler.contains("LEARNING_OFFERING_MANAGE_SCHOOL"));
     assert!(daily_handler.contains("daily_teaching_service::get_daily_teaching_overview"));
-    assert!(daily_handler.contains("ApiResponse::ok(data)"));
+    assert!(daily_handler.contains("ApiResponse::ok(overview)"));
 
     assert!(service.contains("#[serde(rename_all = \"camelCase\")]"));
     assert!(service.contains("DailyTeachingOverview"));
     assert!(service.contains("timetable_entry_instructors"));
-    assert!(service.contains("subject_group_name"));
-    assert!(service.contains("subject_group_names"));
-    assert!(service.contains("teacher_sg.name_th"));
-    assert!(service.contains("ou.unit_type = 'subject_group'"));
-    assert!(!service.contains("organization_unit_names"));
-    assert!(service.contains("LEFT JOIN subject_groups sg ON sg.id = s.group_id"));
-    assert!(service.contains("sg.name_th AS subject_group_name"));
-    assert!(!service.contains("s.subject_group_id"));
-    assert!(!service.contains("sg.name AS subject_group_name"));
-    assert!(service.contains("user_roles"));
-    assert!(service.contains("role_def.code IN ('TEACHER', 'HEAD')"));
-    assert!(registry.contains("academic_timetable_today.read.school"));
+    assert!(service.contains("academic_terms"));
+    assert!(service.contains("bell_schedule_periods"));
+    assert!(service.contains("learning_group_teachers"));
+    assert!(service.contains("course_offering_details"));
+    assert!(service.contains("activity_offering_details"));
+    assert!(service.contains("subject_versions"));
+    assert!(service.contains("activity_versions"));
+    assert!(registry.contains("learning_offering.read.school"));
+
+    for legacy in ["academic_semesters", "classroom_courses", "activity_slots"] {
+        assert!(
+            !service.contains(legacy),
+            "daily teaching service must not use legacy `{legacy}` identity"
+        );
+    }
 
     for forbidden in [
         "national_id",
@@ -2325,11 +2262,11 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
 #[test]
 fn academic_curriculum_access_uses_resource_policy_tree_resolution() {
     let curriculum_policy = strip_comments(&read_source(
-        manifest_dir().join("src/policies/curriculum_access_policy.rs"),
+        manifest_dir().join("src/policies/academic_curriculum_access_policy.rs"),
     ));
 
-    assert!(curriculum_policy.contains("resource_access_policy::accessible_organization_unit_ids"));
-    assert!(curriculum_policy.contains("resource_access_policy::resolve_user_resource_list_access"));
+    assert!(curriculum_policy.contains("resolve_academic_resource_list_filter"));
+    assert!(curriculum_policy.contains("academic_resource_access_for"));
     assert!(!curriculum_policy.contains("WITH RECURSIVE"));
     assert!(!curriculum_policy.contains("JOIN organization_tree parent_tree"));
 }
@@ -2405,68 +2342,32 @@ fn academic_core_resource_policies_preserve_independent_scopes() {
 }
 
 #[test]
-fn academic_subject_list_and_mutations_return_hydrated_display_fields() {
-    let subject_service = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/services/subject_service.rs"),
+fn academic_subject_catalog_uses_versioned_stable_identity() {
+    let catalog = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/core/services/catalog.rs"),
     ));
 
-    let list_subjects = subject_service
-        .split("pub async fn list_subjects")
-        .nth(1)
-        .unwrap_or("")
-        .split("pub async fn create_subject")
-        .next()
-        .unwrap_or("");
-    let create_subject = subject_service
-        .split("pub async fn create_subject")
-        .nth(1)
-        .unwrap_or("")
-        .split("pub async fn update_subject")
-        .next()
-        .unwrap_or("");
-    let update_subject = subject_service
-        .split("pub async fn update_subject")
-        .nth(1)
-        .unwrap_or("")
-        .split("pub async fn delete_subject")
-        .next()
-        .unwrap_or("");
-
-    assert!(subject_service.contains("LEFT JOIN subject_groups sg ON s.group_id = sg.id"));
-    assert!(subject_service.contains("subject_default_instructors"));
-    assert!(subject_service.contains("default_instructor_name"));
-    assert!(list_subjects.contains("subject_response_base_query()"));
-    assert!(
-        !subject_service.contains("LEFT JOIN users u ON s.default_instructor_id = u.id"),
-        "subject list should resolve the primary teacher from subject_default_instructors"
-    );
-    assert!(create_subject.contains("get_subject_for_response(pool, subject.id)"));
-    assert!(update_subject.contains("get_subject_for_response(pool, subject.id)"));
+    for required in [
+        "pub async fn list_subjects",
+        "pub async fn create_subject",
+        "pub async fn update_subject",
+        "pub async fn list_subject_versions",
+        "pub async fn create_subject_version",
+        "pub async fn publish_subject_version",
+        "subject_default_instructors",
+    ] {
+        assert!(
+            catalog.contains(required),
+            "canonical subject catalog must contain `{required}`"
+        );
+    }
+    assert!(!catalog.contains("subjects.default_instructor_id"));
 }
 
 #[test]
-fn academic_subject_default_instructor_uses_junction_only() {
-    let subject_model = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/models/curriculum.rs"),
-    ));
-    let subject_service = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/services/subject_service.rs"),
-    ));
-    let course_planning_service = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/services/course_planning_service.rs"),
-    ));
-    let study_plan_service = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/services/study_plan_service.rs"),
-    ));
-    let frontend_api = strip_comments(&read_source(
-        repo_root()
-            .join("frontend-school")
-            .join("src/lib/api/academic.ts"),
-    ));
-    let subjects_page = strip_comments(&read_source(
-        repo_root()
-            .join("frontend-school")
-            .join("src/routes/(app)/staff/academic/subjects/+page.svelte"),
+fn academic_subject_default_instructors_live_in_catalog_junction() {
+    let catalog = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/core/services/catalog.rs"),
     ));
     let drop_migration = read_source(
         manifest_dir()
@@ -2474,19 +2375,9 @@ fn academic_subject_default_instructor_uses_junction_only() {
             .join("017_drop_subject_default_instructor_id.sql"),
     );
 
-    for (label, source) in [
-        ("subject model", subject_model),
-        ("subject service", subject_service),
-        ("course planning service", course_planning_service),
-        ("study plan service", study_plan_service),
-        ("frontend academic api", frontend_api),
-        ("subjects page", subjects_page),
-    ] {
-        assert!(
-            !source.contains("default_instructor_id"),
-            "{label} should use subject_default_instructors instead of subjects.default_instructor_id"
-        );
-    }
+    assert!(catalog.contains("list_subject_default_teachers"));
+    assert!(catalog.contains("subject_default_instructors"));
+    assert!(!catalog.contains("subjects.default_instructor_id"));
 
     assert!(drop_migration.contains("DROP TRIGGER IF EXISTS subject_sync_junction ON subjects"));
     assert!(drop_migration.contains("DROP FUNCTION IF EXISTS refresh_subject_default_instructor"));
@@ -2555,120 +2446,58 @@ fn achievement_access_uses_resource_policy_and_no_plain_stderr_logging() {
 }
 
 #[test]
-fn activity_manage_own_uses_resource_policy_for_group_access() {
+fn activity_offerings_use_the_shared_delivery_resource_policy() {
     let policies_root = read_source(manifest_dir().join("src/policies.rs"));
-    let activity_handler = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/handlers/activity.rs"),
-    ));
-    let activity_service = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/services/activity_service.rs"),
-    ));
-
-    assert!(policies_root.contains("pub mod activity_access_policy;"));
-    assert!(activity_handler.contains("activity_access_policy::resolve_activity_list_access"));
-    assert!(activity_handler.contains("activity_service::list_slots(&pool, filter, access)"));
-    assert!(activity_handler.contains("activity_service::list_groups(&pool, filter, access)"));
-    assert!(activity_handler.contains("activity_service::create_group(&pool, &actor, body)"));
-    assert!(activity_handler.contains("activity_service::update_group(&pool, &actor, id, body)"));
-    assert!(activity_handler.contains("activity_service::delete_group(&pool, &actor, id)"));
-    assert!(activity_handler.contains("activity_service::add_group_instructor"));
-    assert!(activity_handler.contains("activity_service::remove_group_instructor"));
-    assert_eq!(
-        activity_handler
-            .matches("activity_access_policy::can_read_activity_slot")
-            .count(),
-        2,
-        "slot instructor and classroom-assignment reads must support the same manage-own scope as slot listing"
-    );
-    assert!(!activity_handler.contains("actor.has_permission(codes::ACTIVITY_MANAGE"));
-
-    assert!(activity_service.contains("activity_access_policy::can_manage_activity_group"));
-    assert!(activity_service.contains("activity_access_policy::can_create_activity_group_for"));
-    assert!(activity_service.contains("UserResourceListAccess"));
-    assert!(!activity_service.contains("actor.has_permission(codes::ACTIVITY_MANAGE"));
-}
-
-#[test]
-fn activity_timetable_context_route_contract_is_registered() {
-    let routes = strip_comments(&read_source(manifest_dir().join("src/modules/academic.rs")));
     let handlers = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/handlers/activity.rs"),
+        manifest_dir().join("src/modules/academic/delivery/handlers.rs"),
     ));
-    let contract = strip_comments(&read_source(manifest_dir().join("src/api_contract.rs")));
+    let offerings = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/delivery/services/offerings.rs"),
+    ));
 
-    assert!(routes.contains("\"/activity-slots/timetable-context\""));
-    assert!(routes.contains("get(handlers::activity::get_timetable_context)"));
-    assert!(handlers.contains("operation_id = \"getActivitySlotTimetableContext\""));
-    assert!(handlers.contains("codes::LEARNING_OFFERING_READ_SCHOOL"));
-    assert!(handlers.contains("activity_access_policy::resolve_activity_list_access"));
-    assert!(contract.contains("handlers::activity::get_timetable_context"));
+    assert!(policies_root.contains("pub mod learning_offering_access_policy;"));
+    assert!(
+        handlers.contains("learning_offering_access_policy::require_learning_offering_list_access")
+    );
+    assert!(handlers.contains("require_learning_offering_access"));
+    assert!(offerings.contains("activity_offering_details"));
+    assert!(offerings.contains("activity_versions"));
+    assert!(!handlers.contains("activity_access_policy"));
+    assert!(!offerings.contains("activity_slots"));
 }
 
 #[test]
-fn activity_workspace_error_outcomes_use_non_success_http_statuses() {
-    let activity_handler = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/handlers/activity.rs"),
+fn activity_delivery_routes_use_offerings_and_learning_groups() {
+    let routes = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/delivery.rs"),
     ));
 
-    let create_group = activity_handler
-        .split_once("pub async fn create_activity_group")
-        .expect("missing create_activity_group")
-        .1
-        .split("pub async fn ")
-        .next()
-        .unwrap_or("");
-    assert!(create_group.contains("CreateGroupOutcome::SlotClosed => Err(AppError::BadRequest"));
-    assert!(create_group
-        .contains("CreateGroupOutcome::InstructorNotInSlot => Err(AppError::BadRequest"));
-    assert!(!create_group.contains("ApiErrorResponse::new"));
+    assert!(routes.contains("\"/offerings\""));
+    assert!(routes.contains("\"/offerings/{id}/groups\""));
+    assert!(routes.contains("\"/learning-groups/{id}\""));
+    assert!(routes.contains("\"/learning-groups/{id}/roster\""));
+    assert!(!routes.contains("activity-slots"));
+    assert!(!routes.contains("/activities"));
+}
 
-    let add_members = activity_handler
-        .split_once("pub async fn add_members")
-        .expect("missing add_members")
-        .1
-        .split("pub async fn ")
-        .next()
-        .unwrap_or("");
-    assert!(add_members.contains("AddMembersOutcome::OverCapacity(cap)"));
-    assert!(add_members.contains("Err(AppError::BadRequest"));
-    assert!(!add_members.contains("ApiErrorResponse::new"));
+#[test]
+fn activity_delivery_requests_use_strict_typed_snapshots() {
+    let models = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/delivery/models.rs"),
+    ));
 
-    let self_enroll = activity_handler
-        .split_once("pub async fn self_enroll")
-        .expect("missing self_enroll")
-        .1
-        .split("pub async fn ")
-        .next()
-        .unwrap_or("");
-    assert!(self_enroll.contains("SelfEnrollOutcome::AlreadyEnrolled"));
-    assert!(self_enroll.contains("Err(AppError::Conflict"));
-    for outcome in [
-        "NotSelfRegistrationType",
-        "NotOpen",
-        "Full",
-        "ClassroomNotAllowed",
+    for required in [
+        "pub struct CreateActivityOfferingRequest",
+        "pub struct ActivityAttendanceRequirement",
+        "pub struct ActivityPassCriteria",
+        "pub struct ActivityOfferingSnapshot",
+        "ActivityRegistrationType",
+        "ActivitySchedulingMode",
     ] {
-        assert!(self_enroll.contains(&format!("SelfEnrollOutcome::{outcome}")));
+        assert!(models.contains(required));
     }
-    assert_eq!(
-        self_enroll.matches("Err(AppError::BadRequest").count(),
-        4,
-        "every non-conflict self-enrollment rejection must use a 400 response"
-    );
-    assert!(!self_enroll.contains("ApiErrorResponse::new"));
-
-    let add_slot_instructors_batch = activity_handler
-        .split_once("pub async fn add_slot_instructors_batch")
-        .expect("missing add_slot_instructors_batch")
-        .1
-        .split("pub async fn ")
-        .next()
-        .unwrap_or("");
-    assert!(add_slot_instructors_batch.contains("activity_service::add_slot_instructors_batch"));
-    assert!(
-        !add_slot_instructors_batch.contains("if body.user_ids.is_empty()"),
-        "empty batches must still reach the service so a missing slot returns not-found"
-    );
+    assert!(models.contains("deny_unknown_fields"));
+    assert!(!models.contains("activity_slot_id"));
 }
 
 #[test]
@@ -3040,28 +2869,12 @@ fn module_handlers_use_typed_api_dtos_instead_of_raw_json_values() {
 fn known_shape_jsonb_api_arrays_use_typed_boundaries() {
     let forbidden_fields = [
         (
-            "src/modules/academic/models/activity.rs",
-            "allowed_grade_level_ids: Option<serde_json::Value",
-        ),
-        (
-            "src/modules/academic/models/activity.rs",
-            "allowed_classroom_ids: Option<serde_json::Value",
-        ),
-        (
             "src/modules/admission/models/rounds.rs",
             "scoring_subject_ids: serde_json::Value",
         ),
         (
             "src/modules/consent/models.rs",
             "data_categories: serde_json::Value",
-        ),
-        (
-            "src/modules/academic/services/study_plan_service.rs",
-            "grade_level_ids: Option<serde_json::Value",
-        ),
-        (
-            "src/modules/academic/services/study_plan_service.rs",
-            "catalog_grade_level_ids: Option<serde_json::Value",
         ),
         (
             "src/modules/academic/services/timetable_template_service.rs",
@@ -3131,34 +2944,6 @@ fn known_shape_jsonb_api_arrays_use_typed_boundaries() {
 #[test]
 fn remaining_raw_json_values_are_explicit_dynamic_payloads() {
     let allowed_dynamic_value_patterns = [
-        (
-            "src/modules/academic/models.rs",
-            "pub metadata: Option<serde_json::Value>",
-        ),
-        (
-            "src/modules/academic/models/course_planning.rs",
-            "pub struct ClassroomCourseSettings(pub BTreeMap<String, serde_json::Value>);",
-        ),
-        (
-            "src/modules/academic/models/study_plans.rs",
-            "pub metadata: serde_json::Value",
-        ),
-        (
-            "src/modules/academic/websockets.rs",
-            "entry: serde_json::Value",
-        ),
-        (
-            "src/modules/academic/websockets.rs",
-            "entry_a: serde_json::Value",
-        ),
-        (
-            "src/modules/academic/websockets.rs",
-            "entry_b: serde_json::Value",
-        ),
-        (
-            "src/modules/academic/websockets.rs",
-            "target: Option<serde_json::Value>",
-        ),
         (
             "src/modules/admission/models/applications.rs",
             "pub metadata: serde_json::Value",
@@ -3933,7 +3718,7 @@ fn timetable_websocket_handler_orders_session_auth_before_room_state() {
     let source = read_source(manifest_dir().join("src/modules/academic/websockets.rs"));
     let params = extract_braced_block(&source, "pub struct WsParams", false);
 
-    assert!(params.contains("pub semester_id: Uuid"));
+    assert!(params.contains("pub academic_term_id: Uuid"));
     assert!(params.contains("pub school_subdomain: Option<String>"));
     assert!(!params.contains("user_id"));
     assert!(!params.contains("name:"));
@@ -4059,22 +3844,22 @@ fn timetable_websocket_authorization_authenticates_active_user_before_permission
     let permission_check = authorize
         .find("socket_permission(actor)")
         .expect("socket authorization must evaluate timetable permissions");
-    let semester_lookup = authorize
+    let term_lookup = authorize
         .find("sqlx::query_scalar::<_, bool>")
-        .expect("socket authorization must verify the selected semester");
+        .expect("socket authorization must verify the selected academic term");
     assert!(service.contains("FROM users WHERE id = $1 AND status = 'active'"));
-    assert!(service.contains("FROM academic_semesters WHERE id = $1"));
+    assert!(service.contains("FROM academic_terms WHERE id = $1"));
 
     assert!(
-        active_user_lookup < permission_check && permission_check < semester_lookup,
-        "active-user authentication must precede permission and semester authorization"
+        active_user_lookup < permission_check && permission_check < term_lookup,
+        "active-user authentication must precede permission and term authorization"
     );
 
     let app = read_source(manifest_dir().join("src/app.rs"));
     assert!(!app.contains("WebSocket Route (No standard middleware auth, uses Query Params)"));
-    assert!(
-        app.contains("WebSocket authentication runs in the handler; query selects semester only")
-    );
+    assert!(app.contains(
+        "WebSocket authentication runs in the handler; query selects academic term only"
+    ));
 }
 
 #[test]
@@ -4676,62 +4461,6 @@ fn mutation_performance_foundation_services_use_bulk_helpers() {
             .as_slice(),
         ),
         (
-            "src/modules/academic/services/period_service.rs",
-            ["bulk_update_period_order"].as_slice(),
-            ["for item in &payload.items"].as_slice(),
-        ),
-        (
-            "src/modules/academic/services/study_plan_service.rs",
-            [
-                "bulk_insert_study_plan_subjects",
-                "bulk_upsert_catalog_default_instructors",
-            ]
-            .as_slice(),
-            ["for subject in &req.subjects", "for t in team"].as_slice(),
-        ),
-        (
-            "src/modules/academic/services/academic_structure_service.rs",
-            [
-                "bulk_mark_existing_enrollments_moved_out",
-                "bulk_upsert_class_enrollments",
-                "bulk_insert_year_levels",
-                "insert_advisors",
-                "bulk_update_class_numbers_by_student_ids",
-                "bulk_update_class_numbers_by_enrollment_ids",
-            ]
-            .as_slice(),
-            [
-                "for student_id in &payload.student_ids",
-                "for level_id in grade_level_ids",
-                "for advisor in advisors",
-                "for (index, student_id)",
-                "for (index, student)",
-            ]
-            .as_slice(),
-        ),
-        (
-            "src/modules/academic/services/subject_service.rs",
-            [
-                "bulk_insert_subject_grade_levels",
-                "bulk_upsert_subject_default_instructors",
-            ]
-            .as_slice(),
-            ["for lid in level_ids", "for t in team"].as_slice(),
-        ),
-        (
-            "src/modules/academic/services/activity_service.rs",
-            [
-                "bulk_insert_activity_group_members",
-                "slot_classroom_assignment_bulk_rows",
-            ]
-            .as_slice(),
-            [
-                "for student_id in &student_ids",
-                "for a in &body.assignments",
-            ]
-            .as_slice(),
-        ),
-        (
             "src/modules/admission/services/application_service.rs",
             [
                 "student_id_assignment_rows",
@@ -5013,86 +4742,44 @@ fn scheduled_jobs_use_explicit_bangkok_timezone() {
 }
 
 #[test]
-fn course_instructor_batch_endpoint_accepts_post_body() {
-    let routes = read_source(manifest_dir().join("src/modules/academic.rs"));
-    let handler =
-        read_source(manifest_dir().join("src/modules/academic/handlers/course_planning.rs"));
-    let models = read_source(manifest_dir().join("src/modules/academic/models/course_planning.rs"));
+fn learning_group_teacher_endpoint_accepts_a_typed_put_body() {
+    let routes = read_source(manifest_dir().join("src/modules/academic/delivery.rs"));
+    let handlers = read_source(manifest_dir().join("src/modules/academic/delivery/handlers.rs"));
+    let models = read_source(manifest_dir().join("src/modules/academic/delivery/models.rs"));
 
-    assert!(
-        routes.contains("\"/planning/courses/instructors/batch\""),
-        "course instructor batch endpoint should have a body-safe POST route"
-    );
-    assert!(
-        routes.contains("post(handlers::course_planning::batch_list_course_instructors)"),
-        "course instructor batch endpoint should route POST requests to the batch handler"
-    );
-    assert!(
-        handler.contains(
-            "payload_result: Result<Json<BatchListCourseInstructorsRequest>, JsonRejection>"
-        ),
-        "batch handler should map JSON rejection into the standard API error envelope"
-    );
-    assert!(
-        models.contains("pub struct BatchListCourseInstructorsRequest")
-            && models.contains("pub course_ids: Vec<Uuid>"),
-        "batch request DTO should carry course_ids as a typed UUID array"
-    );
+    assert!(routes.contains("\"/learning-groups/{id}/teachers\""));
+    assert!(routes.contains("put(handlers::replace_group_teachers)"));
+    assert!(handlers.contains("Json(request): Json<ReplaceLearningGroupTeachersRequest>"));
+    assert!(models.contains("pub struct ReplaceLearningGroupTeachersRequest"));
+    assert!(models.contains("pub teachers: Vec<TeacherAssignmentInput>"));
 }
 
 #[test]
-fn course_planning_handlers_enforce_permission_and_service_boundaries() {
-    fn handler_body<'a>(source: &'a str, handler_name: &str) -> &'a str {
-        let marker = format!("pub async fn {handler_name}");
-        let tail = source
-            .split_once(&marker)
-            .unwrap_or_else(|| panic!("missing course-planning handler `{handler_name}`"))
-            .1;
-        tail.split("pub async fn ").next().unwrap_or(tail)
-    }
-
-    let source = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/handlers/course_planning.rs"),
+fn learning_delivery_handlers_enforce_policy_and_service_boundaries() {
+    let handlers = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/delivery/handlers.rs"),
     ));
-    let cases = [
-        ("list_classroom_courses", "LEARNING_OFFERING_READ_SCHOOL"),
-        ("assign_courses", "LEARNING_OFFERING_MANAGE_SCHOOL"),
-        ("remove_course", "LEARNING_OFFERING_MANAGE_SCHOOL"),
-        ("update_course", "LEARNING_OFFERING_MANAGE_SCHOOL"),
-        (
-            "batch_list_course_instructors",
-            "LEARNING_OFFERING_READ_SCHOOL",
-        ),
-        (
-            "batch_list_course_instructors_from_query",
-            "LEARNING_OFFERING_READ_SCHOOL",
-        ),
-        ("list_course_instructors", "LEARNING_OFFERING_READ_SCHOOL"),
-        ("add_course_instructor", "LEARNING_OFFERING_MANAGE_SCHOOL"),
-        (
-            "remove_course_instructor",
-            "LEARNING_OFFERING_MANAGE_SCHOOL",
-        ),
-        (
-            "update_course_instructor_role",
-            "LEARNING_OFFERING_MANAGE_SCHOOL",
-        ),
-        ("list_classroom_activities", "LEARNING_OFFERING_READ_SCHOOL"),
-        (
-            "remove_classroom_from_slot",
-            "LEARNING_OFFERING_MANAGE_SCHOOL",
-        ),
-    ];
 
-    for (handler_name, permission) in cases {
-        let body = handler_body(&source, handler_name);
+    for handler_name in [
+        "list_offerings",
+        "create_offering",
+        "update_offering",
+        "publish_offering",
+        "list_groups",
+        "create_group",
+        "replace_group_teachers",
+        "apply_group_roster",
+        "publish_group_roster",
+    ] {
+        let body = extract_braced_block(&handlers, &format!("pub async fn {handler_name}"), false);
         assert!(
             body.contains("actor_tenant_context_from_session(&state, &session).await?"),
             "{handler_name} must load actor and tenant through the shared request context"
         );
         assert!(
-            body.contains(&format!("require_permission(codes::{permission})")),
-            "{handler_name} must require {permission}"
+            body.contains("learning_offering_access_policy")
+                || body.contains("require_group_access"),
+            "{handler_name} must authorize through the learning-offering policy"
         );
         for forbidden_db_call in ["sqlx::query", ".execute(", ".fetch_"] {
             assert!(
@@ -5104,30 +4791,20 @@ fn course_planning_handlers_enforce_permission_and_service_boundaries() {
 }
 
 #[test]
-fn course_planning_mutations_map_json_rejections_and_serialize_team_changes() {
-    let handlers = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/handlers/course_planning.rs"),
-    ));
-    for request_type in [
-        "AssignCoursesRequest",
-        "UpdateCourseRequest",
-        "BatchListCourseInstructorsRequest",
-        "AddCourseInstructorRequest",
-        "UpdateCourseInstructorRoleRequest",
-    ] {
-        assert!(
-            handlers.contains(&format!("Result<Json<{request_type}>, JsonRejection>")),
-            "{request_type} must map malformed JSON into AppError"
-        );
-    }
-
+fn learning_group_team_changes_are_versioned_and_serialized() {
     let service = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/services/course_planning_service.rs"),
+        manifest_dir().join("src/modules/academic/delivery/services/groups.rs"),
     ));
+
     assert!(
-        service.contains("SELECT id FROM classroom_courses WHERE id = $1 FOR UPDATE"),
-        "teaching-team mutations must serialize on the classroom course row"
+        service.contains("pub async fn replace_teachers")
+            && service.contains("let group = lock_group(&mut transaction, id).await?")
+            && service.contains("require_mutable_group(&group, request.row_version, false)?")
+            && service.contains("DELETE FROM learning_group_teachers")
+            && service.contains("INSERT INTO learning_group_teachers"),
+        "teaching-team replacement must lock and version the canonical learning group"
     );
+    assert!(!service.contains("classroom_courses"));
 }
 
 #[test]
@@ -5819,7 +5496,7 @@ fn academic_core_043_migration_cuts_over_consumers_and_permissions_without_pii()
 }
 
 #[test]
-fn academic_core_044_exposes_the_clean_runtime_contract_without_destructive_cleanup() {
+fn academic_core_044_exposes_the_clean_runtime_contract_and_removes_compatibility_columns() {
     let migration = strip_comments(&read_source(
         manifest_dir().join("migrations/044_academic_runtime_contract.sql"),
     ));
@@ -5834,6 +5511,9 @@ fn academic_core_044_exposes_the_clean_runtime_contract_without_destructive_clea
         "curriculum_activity_requirements_program_resource_key",
         "CREATE TABLE grade_level_progression_sets",
         "ON DELETE SET NULL",
+        "DROP COLUMN legacy_classroom_course_id",
+        "DROP COLUMN legacy_activity_slot_id",
+        "DROP COLUMN legacy_period_id",
     ] {
         assert!(
             migration.contains(required),
@@ -5843,7 +5523,6 @@ fn academic_core_044_exposes_the_clean_runtime_contract_without_destructive_clea
 
     assert!(!migration.contains("national_id"));
     assert!(!migration.contains("DROP TABLE"));
-    assert!(!migration.contains("DROP COLUMN"));
     assert!(!migration.contains("REAL"));
     assert!(!migration.contains("DOUBLE PRECISION"));
 }
@@ -5886,6 +5565,10 @@ fn academic_core_registers_only_clean_replacement_routes() {
         "\"/subjects\"",
         "\"/study-plans\"",
         "\"/periods\"",
+        "\"/planning/courses\"",
+        "\"/planning/classrooms/",
+        "\"/activity-slots\"",
+        "\"/activities\"",
     ] {
         assert!(
             !aggregate_routes.contains(removed),
@@ -6062,5 +5745,65 @@ fn academic_runtime_contract_supports_delivery_idempotency_without_plaintext_pii
     }
     for forbidden in ["national_id", "student_name", "email", "phone"] {
         assert!(!migration.contains(forbidden));
+    }
+}
+
+#[test]
+fn converted_academic_consumers_cannot_reintroduce_legacy_runtime_identity() {
+    let mut runtime_files = vec![
+        manifest_dir().join("src/modules/academic.rs"),
+        manifest_dir().join("src/modules/academic/handlers/assessment.rs"),
+        manifest_dir().join("src/modules/academic/handlers/exam_schedule.rs"),
+        manifest_dir().join("src/modules/academic/handlers/timetable.rs"),
+        manifest_dir().join("src/modules/academic/handlers/timetable_templates.rs"),
+        manifest_dir().join("src/modules/academic/models/assessment.rs"),
+        manifest_dir().join("src/modules/academic/models/exam_schedule.rs"),
+        manifest_dir().join("src/modules/academic/models/timetable.rs"),
+        manifest_dir().join("src/modules/academic/services/assessment_service.rs"),
+        manifest_dir().join("src/modules/academic/services/daily_teaching_service.rs"),
+        manifest_dir().join("src/modules/academic/services/timetable_realtime_service.rs"),
+        manifest_dir().join("src/modules/academic/services/timetable_service.rs"),
+        manifest_dir().join("src/modules/academic/services/timetable_template_service.rs"),
+        manifest_dir().join("src/modules/academic/websockets.rs"),
+    ];
+    runtime_files.extend(list_files(
+        manifest_dir().join("src/modules/academic/services/exam_schedule_service"),
+        |path| {
+            path.extension().and_then(|extension| extension.to_str()) == Some("rs")
+                && path.file_name().and_then(|name| name.to_str()) != Some("tests.rs")
+        },
+    ));
+
+    let forbidden = [
+        "academic_semesters",
+        "class_rooms",
+        "classroom_courses",
+        "student_class_enrollments",
+        "activity_catalog",
+        "study_plans",
+        "study_plan_versions",
+        "academic_assessment_plans",
+        "academic_semester_id",
+        "classroom_course_id",
+        "class_room_id",
+    ];
+    let inferred_context = Regex::new(
+        r"(?is)(academic_(?:years|terms)[^;]{0,400}is_active\s*=\s*true|is_active\s*=\s*true[^;]{0,400}academic_(?:years|terms))",
+    )
+    .unwrap();
+
+    for path in runtime_files {
+        let source = strip_comments(&read_source(&path));
+        let path = relative(&path);
+        for token in forbidden {
+            assert!(
+                !source.contains(token),
+                "converted academic runtime {path} reintroduced `{token}`"
+            );
+        }
+        assert!(
+            !inferred_context.is_match(&source),
+            "converted academic runtime {path} inferred an active year or term inside SQL"
+        );
     }
 }

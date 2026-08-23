@@ -4,11 +4,14 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::api_response::{ApiResponse, IdData};
+use crate::api_response::ApiResponse;
 use crate::error::AppError;
+use crate::modules::academic::models::timetable::{
+    ApplyTemplateRequest, ClearTimetableRequest, CreateTemplateRequest, FromCurrentRequest,
+    UpdateTemplateRequest,
+};
 use crate::modules::academic::services::timetable_template_service;
 use crate::modules::academic::websockets::TimetableEvent;
 use crate::modules::auth::session_service::AuthenticatedSession;
@@ -17,72 +20,18 @@ use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
 
-#[derive(Debug, Deserialize)]
-pub struct CreateTemplateRequest {
-    pub name: String,
-    pub description: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct FromCurrentRequest {
-    pub semester_id: Uuid,
-    pub name: String,
-    pub description: Option<String>,
-    pub entry_types: Option<Vec<String>>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ApplyTemplateRequest {
-    pub semester_id: Uuid,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ClearTimetableRequest {
-    pub semester_id: Uuid,
-    pub entry_types: Option<Vec<String>>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct UpdateTemplateRequest {
-    pub name: Option<String>,
-    pub description: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-struct TemplateWithEntriesData<T, U> {
-    template: T,
-    entries: U,
-}
-
-#[derive(Debug, Serialize)]
-struct AppliedData<T> {
-    applied: T,
-}
-
-#[derive(Debug, Serialize)]
-struct DeletedData<T> {
-    deleted: T,
-}
-
-fn default_non_course_types() -> Vec<String> {
-    vec![
-        "BREAK".into(),
-        "HOMEROOM".into(),
-        "ACTIVITY".into(),
-        "ACADEMIC".into(),
-    ]
-}
-
 pub async fn list_templates(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::LEARNING_OFFERING_READ_SCHOOL)?;
-    let rows = timetable_template_service::list_templates(&pool).await?;
-    Ok(Json(ApiResponse::ok(rows)).into_response())
+    context
+        .actor
+        .require_permission(codes::LEARNING_OFFERING_READ_SCHOOL)?;
+    Ok(Json(ApiResponse::ok(
+        timetable_template_service::list_templates(&context.tenant.pool).await?,
+    ))
+    .into_response())
 }
 
 pub async fn get_template(
@@ -91,14 +40,12 @@ pub async fn get_template(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::LEARNING_OFFERING_READ_SCHOOL)?;
-    let (template, entries) = timetable_template_service::get_template(&pool, id).await?;
-    Ok(Json(ApiResponse::ok(TemplateWithEntriesData {
-        template,
-        entries,
-    }))
+    context
+        .actor
+        .require_permission(codes::LEARNING_OFFERING_READ_SCHOOL)?;
+    Ok(Json(ApiResponse::ok(
+        timetable_template_service::get_template(&context.tenant.pool, id).await?,
+    ))
     .into_response())
 }
 
@@ -108,18 +55,16 @@ pub async fn create_template(
     Json(payload): Json<CreateTemplateRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
-    let user_id = actor.user_id;
-    let id = timetable_template_service::create_template(
-        &pool,
-        &payload.name,
-        payload.description.as_deref(),
-        Some(user_id),
+    context
+        .actor
+        .require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
+    let template = timetable_template_service::create_template(
+        &context.tenant.pool,
+        context.actor.user_id,
+        payload,
     )
     .await?;
-    Ok(Json(ApiResponse::ok(IdData::new(id))).into_response())
+    Ok(Json(ApiResponse::ok(template)).into_response())
 }
 
 pub async fn update_template(
@@ -129,17 +74,12 @@ pub async fn update_template(
     Json(payload): Json<UpdateTemplateRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
-    timetable_template_service::update_template(
-        &pool,
-        id,
-        payload.name.as_deref(),
-        payload.description.as_deref(),
-    )
-    .await?;
-    Ok(Json(ApiResponse::empty()).into_response())
+    context
+        .actor
+        .require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
+    let template =
+        timetable_template_service::update_template(&context.tenant.pool, id, payload).await?;
+    Ok(Json(ApiResponse::ok(template)).into_response())
 }
 
 pub async fn delete_template(
@@ -148,10 +88,10 @@ pub async fn delete_template(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
-    timetable_template_service::delete_template(&pool, id).await?;
+    context
+        .actor
+        .require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
+    timetable_template_service::delete_template(&context.tenant.pool, id).await?;
     Ok(Json(ApiResponse::empty()).into_response())
 }
 
@@ -161,22 +101,15 @@ pub async fn from_current(
     Json(payload): Json<FromCurrentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
-    let user_id = actor.user_id;
-    let entry_types = payload.entry_types.unwrap_or_else(default_non_course_types);
-
+    context
+        .actor
+        .require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
     let template = timetable_template_service::from_current(
-        &pool,
-        payload.semester_id,
-        &payload.name,
-        payload.description.as_deref(),
-        entry_types,
-        Some(user_id),
+        &context.tenant.pool,
+        context.actor.user_id,
+        payload,
     )
     .await?;
-
     Ok(Json(ApiResponse::ok(template)).into_response())
 }
 
@@ -188,30 +121,25 @@ pub async fn apply_template(
     Json(payload): Json<ApplyTemplateRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
-    let user_id = actor.user_id;
-    let total_inserted = timetable_template_service::apply_template(
-        &pool,
+    context
+        .actor
+        .require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
+    let academic_term_id = payload.academic_term_id;
+    let result = timetable_template_service::apply_template(
+        &context.tenant.pool,
+        context.actor.user_id,
         template_id,
-        payload.semester_id,
-        Some(user_id),
+        payload,
     )
     .await?;
-
-    let subdomain =
-        extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
-    state.websocket_manager.broadcast_mutation(
-        subdomain,
-        payload.semester_id,
-        TimetableEvent::TableRefresh { user_id },
+    broadcast_reload(
+        &state,
+        &headers,
+        context.actor.user_id,
+        academic_term_id,
+        result.applied as i64,
     );
-
-    Ok(Json(ApiResponse::ok(AppliedData {
-        applied: total_inserted,
-    }))
-    .into_response())
+    Ok(Json(ApiResponse::ok(result)).into_response())
 }
 
 pub async fn clear_timetable(
@@ -221,22 +149,48 @@ pub async fn clear_timetable(
     Json(payload): Json<ClearTimetableRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
-    let user_id = actor.user_id;
-    let entry_types = payload.entry_types.unwrap_or_else(default_non_course_types);
-    let deleted =
-        timetable_template_service::clear_timetable(&pool, payload.semester_id, entry_types)
-            .await?;
+    context
+        .actor
+        .require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
+    let academic_term_id = payload.academic_term_id;
+    let entries = timetable_template_service::clear_timetable(
+        &context.tenant.pool,
+        context.actor.user_id,
+        payload,
+    )
+    .await?;
+    let revision = entries
+        .iter()
+        .map(|entry| entry.row_version)
+        .max()
+        .unwrap_or(0);
+    broadcast_reload(
+        &state,
+        &headers,
+        context.actor.user_id,
+        academic_term_id,
+        revision,
+    );
+    Ok(Json(ApiResponse::ok(entries)).into_response())
+}
 
+fn broadcast_reload(
+    state: &AppState,
+    headers: &HeaderMap,
+    user_id: Uuid,
+    academic_term_id: Uuid,
+    revision: i64,
+) {
     let subdomain =
-        extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
+        extract_subdomain_from_request(headers).unwrap_or_else(|_| "default".to_string());
     state.websocket_manager.broadcast_mutation(
         subdomain,
-        payload.semester_id,
-        TimetableEvent::TableRefresh { user_id },
+        academic_term_id,
+        TimetableEvent::TimetableChanged {
+            user_id,
+            academic_term_id,
+            learning_group_id: None,
+            revision,
+        },
     );
-
-    Ok(Json(ApiResponse::ok(DeletedData { deleted })).into_response())
 }

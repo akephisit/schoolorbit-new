@@ -44,7 +44,8 @@ pub async fn publish_round(
             updated_at = now()
         WHERE id = $1
         RETURNING id,
-                  academic_semester_id,
+                  academic_year_id,
+                  academic_term_id,
                   name,
                   description,
                   exam_kind,

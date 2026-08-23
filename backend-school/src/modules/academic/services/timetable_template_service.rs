@@ -1,441 +1,516 @@
-use crate::error::AppError;
-use serde::Serialize;
-use sqlx::{types::Json, PgPool};
+use sqlx::{types::Json, FromRow, PgPool};
 use uuid::Uuid;
 
-fn merge_unique_classroom_ids(mut resolved: Vec<Uuid>, specific: Vec<Uuid>) -> Vec<Uuid> {
-    for classroom_id in specific {
-        if !resolved.contains(&classroom_id) {
-            resolved.push(classroom_id);
-        }
-    }
-    resolved
+use crate::error::AppError;
+use crate::modules::academic::models::timetable::{
+    ApplyTemplateRequest, ClearTimetableRequest, CreateTemplateRequest, FromCurrentRequest,
+    TemplateApplyResult, TemplateWithEntries, TimetableTemplate, TimetableTemplateEntry,
+    TimetableTemplateTargetSelector, UpdateTemplateRequest,
+};
+use crate::modules::academic::services::timetable_service;
+
+#[derive(Debug, FromRow)]
+struct TemplateRow {
+    id: Uuid,
+    name: String,
+    description: Option<String>,
+    created_by: Option<Uuid>,
+    created_at: chrono::DateTime<chrono::Utc>,
+    updated_at: chrono::DateTime<chrono::Utc>,
 }
 
-fn template_group_key(
-    title: &Option<String>,
-    activity_slot_id: Option<Uuid>,
-) -> (Option<String>, Option<Uuid>) {
-    (title.clone(), activity_slot_id)
-}
-
-#[derive(Debug, Serialize, sqlx::FromRow)]
-pub struct TimetableTemplateView {
-    pub id: Uuid,
-    pub name: String,
-    pub description: Option<String>,
-    pub created_by: Option<Uuid>,
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    pub updated_at: chrono::DateTime<chrono::Utc>,
-    pub entry_count: i64,
-}
-
-#[derive(Debug, sqlx::FromRow)]
-struct TimetableTemplateEntryRow {
+#[derive(Debug, FromRow)]
+struct TemplateEntryRow {
     id: Uuid,
     template_id: Uuid,
     day_of_week: String,
-    period_id: Uuid,
+    bell_period_order_index: i32,
     entry_type: String,
     title: Option<String>,
-    activity_slot_id: Option<Uuid>,
-    grade_level_ids: Json<Vec<Uuid>>,
-    classroom_ids: Json<Vec<Uuid>>,
+    resource_kind: String,
+    stable_resource_id: Option<Uuid>,
+    learning_group_code: Option<String>,
+    target_selector: Json<TimetableTemplateTargetSelector>,
     instructor_ids: Json<Vec<Uuid>>,
     room_id: Option<Uuid>,
 }
 
-#[derive(Debug, Serialize)]
-pub struct TimetableTemplateEntry {
-    pub id: Uuid,
-    pub template_id: Uuid,
-    pub day_of_week: String,
-    pub period_id: Uuid,
-    pub entry_type: String,
-    pub title: Option<String>,
-    pub activity_slot_id: Option<Uuid>,
-    pub grade_level_ids: Vec<Uuid>,
-    pub classroom_ids: Vec<Uuid>,
-    pub instructor_ids: Vec<Uuid>,
-    pub room_id: Option<Uuid>,
+impl From<TemplateRow> for TimetableTemplate {
+    fn from(row: TemplateRow) -> Self {
+        Self {
+            id: row.id,
+            name: row.name,
+            description: row.description,
+            created_by: row.created_by,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        }
+    }
 }
 
-fn template_entry_from_row(
-    row: TimetableTemplateEntryRow,
-) -> Result<TimetableTemplateEntry, AppError> {
-    Ok(TimetableTemplateEntry {
-        id: row.id,
-        template_id: row.template_id,
-        day_of_week: row.day_of_week,
-        period_id: row.period_id,
-        entry_type: row.entry_type,
-        title: row.title,
-        activity_slot_id: row.activity_slot_id,
-        grade_level_ids: row.grade_level_ids.0,
-        classroom_ids: row.classroom_ids.0,
-        instructor_ids: row.instructor_ids.0,
-        room_id: row.room_id,
-    })
+impl From<TemplateEntryRow> for TimetableTemplateEntry {
+    fn from(row: TemplateEntryRow) -> Self {
+        Self {
+            id: row.id,
+            template_id: row.template_id,
+            day_of_week: row.day_of_week,
+            bell_period_order_index: row.bell_period_order_index,
+            entry_type: row.entry_type.to_ascii_lowercase(),
+            title: row.title,
+            resource_kind: row.resource_kind,
+            stable_resource_id: row.stable_resource_id,
+            learning_group_code: row.learning_group_code,
+            target_selector: row.target_selector.0,
+            instructor_ids: row.instructor_ids.0,
+            room_id: row.room_id,
+        }
+    }
 }
 
-pub async fn list_templates(pool: &PgPool) -> Result<Vec<TimetableTemplateView>, AppError> {
-    sqlx::query_as::<_, TimetableTemplateView>(
-        r#"SELECT t.id, t.name, t.description, t.created_by, t.created_at, t.updated_at,
-                  COUNT(e.id) AS entry_count
-           FROM timetable_templates t
-           LEFT JOIN timetable_template_entries e ON e.template_id = t.id
-           GROUP BY t.id
-           ORDER BY t.created_at DESC"#,
+pub async fn list_templates(pool: &PgPool) -> Result<Vec<TimetableTemplate>, AppError> {
+    let rows: Vec<TemplateRow> = sqlx::query_as(
+        r#"SELECT id, name, description, created_by, created_at, updated_at
+           FROM timetable_templates
+           ORDER BY updated_at DESC, id"#,
     )
     .fetch_all(pool)
-    .await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))
+    .await?;
+    Ok(rows.into_iter().map(Into::into).collect())
 }
 
-pub async fn get_template(
-    pool: &PgPool,
-    id: Uuid,
-) -> Result<(TimetableTemplateView, Vec<TimetableTemplateEntry>), AppError> {
-    let template = sqlx::query_as::<_, TimetableTemplateView>(
-        r#"SELECT t.id, t.name, t.description, t.created_by, t.created_at, t.updated_at,
-                  (SELECT COUNT(*) FROM timetable_template_entries WHERE template_id = t.id) AS entry_count
-           FROM timetable_templates t WHERE t.id = $1"#
+pub async fn get_template(pool: &PgPool, id: Uuid) -> Result<TemplateWithEntries, AppError> {
+    let template: TemplateRow = sqlx::query_as(
+        r#"SELECT id, name, description, created_by, created_at, updated_at
+           FROM timetable_templates WHERE id = $1"#,
     )
-    .bind(id).fetch_optional(pool).await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))?
-    .ok_or_else(|| AppError::NotFound("Template not found".to_string()))?;
-
-    let entry_rows = sqlx::query_as::<_, TimetableTemplateEntryRow>(
-        "SELECT * FROM timetable_template_entries WHERE template_id = $1 ORDER BY day_of_week, period_id"
+    .bind(id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound("ไม่พบแม่แบบตารางสอน".to_string()))?;
+    let rows: Vec<TemplateEntryRow> = sqlx::query_as(
+        r#"SELECT id, template_id, day_of_week, bell_period_order_index,
+                  entry_type, title, resource_kind, stable_resource_id,
+                  learning_group_code, target_selector, instructor_ids, room_id
+           FROM timetable_template_entries
+           WHERE template_id = $1
+           ORDER BY day_of_week, bell_period_order_index, id"#,
     )
-    .bind(id).fetch_all(pool).await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    let entries = entry_rows
-        .into_iter()
-        .map(template_entry_from_row)
-        .collect::<Result<Vec<_>, _>>()?;
-
-    Ok((template, entries))
+    .bind(id)
+    .fetch_all(pool)
+    .await?;
+    let entries = rows.into_iter().map(Into::into).collect();
+    Ok(TemplateWithEntries {
+        template: template.into(),
+        entries,
+    })
 }
 
 pub async fn create_template(
     pool: &PgPool,
-    name: &str,
-    description: Option<&str>,
-    user_id: Option<Uuid>,
-) -> Result<Uuid, AppError> {
-    let row: (Uuid,) = sqlx::query_as(
-        "INSERT INTO timetable_templates (name, description, created_by) VALUES ($1, $2, $3) RETURNING id"
+    actor_user_id: Uuid,
+    request: CreateTemplateRequest,
+) -> Result<TimetableTemplate, AppError> {
+    let name = require_name(&request.name)?;
+    let row: TemplateRow = sqlx::query_as(
+        r#"INSERT INTO timetable_templates (id, name, description, created_by)
+           VALUES ($1, $2, $3, $4)
+           RETURNING id, name, description, created_by, created_at, updated_at"#,
     )
-    .bind(name).bind(description).bind(user_id)
-    .fetch_one(pool).await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    Ok(row.0)
+    .bind(Uuid::new_v4())
+    .bind(name)
+    .bind(request.description.as_deref())
+    .bind(actor_user_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.into())
 }
 
 pub async fn update_template(
     pool: &PgPool,
     id: Uuid,
-    name: Option<&str>,
-    description: Option<&str>,
-) -> Result<(), AppError> {
-    sqlx::query(
-        "UPDATE timetable_templates SET name = COALESCE($2, name), description = COALESCE($3, description), updated_at = NOW() WHERE id = $1"
+    request: UpdateTemplateRequest,
+) -> Result<TimetableTemplate, AppError> {
+    let name = request.name.as_deref().map(require_name).transpose()?;
+    let row: TemplateRow = sqlx::query_as(
+        r#"UPDATE timetable_templates
+           SET name = coalesce($2, name),
+               description = coalesce($3, description),
+               updated_at = now()
+           WHERE id = $1
+           RETURNING id, name, description, created_by, created_at, updated_at"#,
     )
-    .bind(id).bind(name).bind(description)
-    .execute(pool).await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    Ok(())
+    .bind(id)
+    .bind(name)
+    .bind(request.description.as_deref())
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound("ไม่พบแม่แบบตารางสอน".to_string()))?;
+    Ok(row.into())
 }
 
 pub async fn delete_template(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
-    sqlx::query("DELETE FROM timetable_templates WHERE id = $1")
+    let result = sqlx::query("DELETE FROM timetable_templates WHERE id = $1")
         .bind(id)
         .execute(pool)
-        .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    Ok(())
+        .await?;
+    if result.rows_affected() == 0 {
+        Err(AppError::NotFound("ไม่พบแม่แบบตารางสอน".to_string()))
+    } else {
+        Ok(())
+    }
 }
 
 pub async fn from_current(
     pool: &PgPool,
-    semester_id: Uuid,
-    name: &str,
-    description: Option<&str>,
-    entry_types: Vec<String>,
-    user_id: Option<Uuid>,
-) -> Result<TimetableTemplateView, AppError> {
-    let mut tx = pool
-        .begin()
-        .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-
-    let template_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO timetable_templates (name, description, created_by) VALUES ($1, $2, $3) RETURNING id"
-    )
-    .bind(name).bind(description).bind(user_id)
-    .fetch_one(&mut *tx).await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-
+    actor_user_id: Uuid,
+    request: FromCurrentRequest,
+) -> Result<TemplateWithEntries, AppError> {
+    let name = require_name(&request.name)?;
+    let entry_types = canonical_entry_types(request.entry_types)?;
+    let mut transaction = pool.begin().await?;
+    let term_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM academic_terms WHERE id = $1)")
+            .bind(request.academic_term_id)
+            .fetch_one(&mut *transaction)
+            .await?;
+    if !term_exists {
+        return Err(AppError::NotFound("ไม่พบภาคเรียน".to_string()));
+    }
+    let template_id = Uuid::new_v4();
     sqlx::query(
-        r#"WITH grouped AS (
-            SELECT te.day_of_week, te.period_id, te.entry_type, te.title, te.room_id,
-                   (te.classroom_id IS NULL) AS is_instructor_only,
-                   ARRAY_AGG(DISTINCT te.classroom_id) FILTER (WHERE te.classroom_id IS NOT NULL) AS classroom_ids,
-                   ARRAY_AGG(DISTINCT tei.instructor_id) FILTER (WHERE tei.instructor_id IS NOT NULL) AS instructor_ids
-            FROM academic_timetable_entries te
-            LEFT JOIN timetable_entry_instructors tei ON tei.entry_id = te.id
-            WHERE te.academic_semester_id = $1 AND te.is_active = true
-              AND te.entry_type = ANY($2) AND te.activity_slot_id IS NULL
-            GROUP BY te.day_of_week, te.period_id, te.entry_type, te.title, te.room_id, (te.classroom_id IS NULL)
-        )
-        INSERT INTO timetable_template_entries
-            (template_id, day_of_week, period_id, entry_type, title,
-             activity_slot_id, classroom_ids, instructor_ids, room_id)
-        SELECT $3, g.day_of_week, g.period_id, g.entry_type, g.title, NULL,
-               COALESCE(to_jsonb(g.classroom_ids), '[]'::jsonb),
-               COALESCE(to_jsonb(g.instructor_ids), '[]'::jsonb),
-               g.room_id
-        FROM grouped g
-        WHERE COALESCE(array_length(g.classroom_ids, 1), 0) > 0
-           OR COALESCE(array_length(g.instructor_ids, 1), 0) > 0"#
+        r#"INSERT INTO timetable_templates (id, name, description, created_by)
+           VALUES ($1, $2, $3, $4)"#,
     )
-    .bind(semester_id).bind(&entry_types).bind(template_id)
-    .execute(&mut *tx).await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-
-    tx.commit()
-        .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    let (template, _) = get_template(pool, template_id).await?;
-    Ok(template)
+    .bind(template_id)
+    .bind(name)
+    .bind(request.description.as_deref())
+    .bind(actor_user_id)
+    .execute(&mut *transaction)
+    .await?;
+    sqlx::query(
+        r#"INSERT INTO timetable_template_entries (
+               id, template_id, day_of_week, entry_type, title, instructor_ids,
+               room_id, bell_period_order_index, resource_kind, stable_resource_id,
+               learning_group_code, target_selector, migration_provenance
+           )
+           SELECT gen_random_uuid(), $2, entry.day_of_week, entry.entry_type, entry.title,
+                  CASE WHEN entry.learning_group_id IS NULL THEN coalesce((
+                      SELECT jsonb_agg(instructor.instructor_id ORDER BY instructor.instructor_id)
+                      FROM timetable_entry_instructors instructor
+                      WHERE instructor.entry_id = entry.id
+                  ), '[]'::jsonb) ELSE '[]'::jsonb END,
+                  entry.room_id, period.order_index,
+                  CASE
+                      WHEN entry.learning_group_id IS NULL THEN 'structural'
+                      ELSE offering.kind::text
+                  END,
+                  coalesce(course_detail.subject_id, activity_detail.activity_id),
+                  learning_group.code,
+                  CASE
+                      WHEN entry.learning_group_id IS NOT NULL THEN '{}'::jsonb
+                      WHEN homeroom.id IS NOT NULL THEN jsonb_build_object(
+                          'gradeLevelId', homeroom.grade_level_id,
+                          'studyProgramId', homeroom.study_program_id,
+                          'roomNumber', homeroom.room_number
+                      )
+                      ELSE jsonb_build_object('instructorOnly', true)
+                  END,
+                  jsonb_build_object('sourceAcademicTermId', entry.academic_term_id,
+                                     'sourceEntryId', entry.id)
+           FROM academic_timetable_entries entry
+           JOIN bell_schedule_periods period ON period.id = entry.bell_schedule_period_id
+           LEFT JOIN learning_groups learning_group ON learning_group.id = entry.learning_group_id
+           LEFT JOIN learning_offerings offering ON offering.id = entry.learning_offering_id
+           LEFT JOIN course_offering_details course_detail
+             ON course_detail.learning_offering_id = offering.id
+           LEFT JOIN activity_offering_details activity_detail
+             ON activity_detail.learning_offering_id = offering.id
+           LEFT JOIN homerooms homeroom ON homeroom.id = entry.homeroom_id
+           WHERE entry.academic_term_id = $1
+             AND entry.is_active
+             AND entry.entry_type = ANY($3)"#,
+    )
+    .bind(request.academic_term_id)
+    .bind(template_id)
+    .bind(&entry_types)
+    .execute(&mut *transaction)
+    .await?;
+    transaction.commit().await?;
+    get_template(pool, template_id).await
 }
 
 pub async fn apply_template(
     pool: &PgPool,
+    actor_user_id: Uuid,
     template_id: Uuid,
-    semester_id: Uuid,
-    user_id: Option<Uuid>,
-) -> Result<u64, AppError> {
-    let entry_rows = sqlx::query_as::<_, TimetableTemplateEntryRow>(
-        "SELECT * FROM timetable_template_entries WHERE template_id = $1",
-    )
-    .bind(template_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    let entries = entry_rows
-        .into_iter()
-        .map(template_entry_from_row)
-        .collect::<Result<Vec<_>, _>>()?;
-
-    if entries.is_empty() {
-        return Ok(0);
-    }
-
-    let mut tx = pool
-        .begin()
-        .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    let mut total_inserted: u64 = 0;
-
-    use std::collections::HashMap;
-    let mut group_batch_ids: HashMap<(Option<String>, Option<Uuid>), Uuid> = HashMap::new();
-
-    for entry in &entries {
-        let specific_classrooms = entry.classroom_ids.clone();
-        let grade_level_ids = entry.grade_level_ids.clone();
-        let instructor_ids = entry.instructor_ids.clone();
-
-        let resolved_by_grade: Vec<Uuid> = if !grade_level_ids.is_empty() {
-            sqlx::query_scalar(
-                r#"SELECT cr.id FROM class_rooms cr
-                   JOIN academic_semesters s ON s.academic_year_id = cr.academic_year_id
-                   WHERE s.id = $1 AND cr.grade_level_id = ANY($2)"#,
+    request: ApplyTemplateRequest,
+) -> Result<TemplateApplyResult, AppError> {
+    let template = get_template(pool, template_id).await?;
+    let batch_id = Uuid::new_v4();
+    let mut transaction = pool.begin().await?;
+    let mut entry_ids = Vec::with_capacity(template.entries.len());
+    for entry in template.entries {
+        let period_id: Uuid = sqlx::query_scalar(
+            r#"SELECT period.id
+               FROM academic_terms term
+               JOIN bell_schedule_periods period
+                 ON period.bell_schedule_id = term.bell_schedule_id
+               WHERE term.id = $1
+                 AND period.order_index = $2
+                 AND period.is_active
+               ORDER BY period.id
+               LIMIT 1"#,
+        )
+        .bind(request.academic_term_id)
+        .bind(entry.bell_period_order_index)
+        .fetch_optional(&mut *transaction)
+        .await?
+        .ok_or_else(|| {
+            AppError::ValidationError(format!(
+                "ไม่พบคาบลำดับ {} ใน bell schedule เป้าหมาย",
+                entry.bell_period_order_index
+            ))
+        })?;
+        let learning_group_id = resolve_target_group(
+            &mut transaction,
+            request.academic_term_id,
+            &entry.resource_kind,
+            entry.stable_resource_id,
+            entry.learning_group_code.as_deref(),
+        )
+        .await?;
+        let homeroom_id = if learning_group_id.is_none() {
+            resolve_target_homeroom(
+                &mut transaction,
+                request.academic_term_id,
+                &entry.target_selector,
             )
-            .bind(semester_id)
-            .bind(&grade_level_ids)
-            .fetch_all(&mut *tx)
-            .await
-            .unwrap_or_default()
+            .await?
         } else {
-            Vec::new()
+            None
         };
-
-        let resolved_classrooms =
-            merge_unique_classroom_ids(resolved_by_grade, specific_classrooms);
-
-        let group_key = template_group_key(&entry.title, entry.activity_slot_id);
-        let batch_uuid = *group_batch_ids
-            .entry(group_key)
-            .or_insert_with(Uuid::new_v4);
-
-        if !resolved_classrooms.is_empty() {
-            let inserted_count: u64 = sqlx::query(
-                r#"INSERT INTO academic_timetable_entries
-                       (id, classroom_id, academic_semester_id, day_of_week, period_id, room_id,
-                        entry_type, title, is_active, created_by, updated_by,
-                        classroom_course_id, note, activity_slot_id, batch_id)
-                   SELECT gen_random_uuid(), c, $1, $2, $3, $4, $5, $6, true, $7, $7,
-                          NULL, NULL, $8, $9
-                   FROM UNNEST($10::uuid[]) AS c
-                   ON CONFLICT DO NOTHING"#,
+        let create_request =
+            crate::modules::academic::models::timetable::CreateTimetableEntryRequest {
+                academic_term_id: request.academic_term_id,
+                learning_group_id,
+                homeroom_id,
+                day_of_week: entry.day_of_week,
+                bell_schedule_period_id: period_id,
+                room_id: entry.room_id,
+                note: None,
+                entry_type: entry.entry_type,
+                title: entry.title,
+                instructor_ids: entry.instructor_ids,
+            };
+        entry_ids.push(
+            timetable_service::create_entry_in_tx(
+                &mut transaction,
+                actor_user_id,
+                Some(batch_id),
+                &create_request,
             )
-            .bind(semester_id)
-            .bind(&entry.day_of_week)
-            .bind(entry.period_id)
-            .bind(entry.room_id)
-            .bind(&entry.entry_type)
-            .bind(&entry.title)
-            .bind(user_id)
-            .bind(entry.activity_slot_id)
-            .bind(batch_uuid)
-            .bind(&resolved_classrooms)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| AppError::InternalServerError(e.to_string()))?
-            .rows_affected();
-
-            total_inserted += inserted_count;
-
-            if !instructor_ids.is_empty() {
-                sqlx::query(
-                    r#"INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
-                       SELECT te.id, instr.v, 'primary'
-                       FROM academic_timetable_entries te
-                       CROSS JOIN UNNEST($1::uuid[]) AS instr(v)
-                       WHERE te.batch_id = $2 AND te.day_of_week = $3
-                         AND te.period_id = $4 AND te.classroom_id IS NOT NULL
-                       ON CONFLICT DO NOTHING"#,
-                )
-                .bind(&instructor_ids)
-                .bind(batch_uuid)
-                .bind(&entry.day_of_week)
-                .bind(entry.period_id)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-            }
-        } else if !instructor_ids.is_empty() {
-            let entry_ids: Vec<Uuid> = (0..instructor_ids.len()).map(|_| Uuid::new_v4()).collect();
-
-            let inserted_count: u64 = sqlx::query(
-                r#"INSERT INTO academic_timetable_entries
-                       (id, classroom_id, academic_semester_id, day_of_week, period_id, room_id,
-                        entry_type, title, is_active, created_by, updated_by,
-                        classroom_course_id, note, activity_slot_id, batch_id)
-                   SELECT id, NULL, $1, $2, $3, $4, $5, $6, true, $7, $7,
-                          NULL, NULL, NULL, $8
-                   FROM UNNEST($9::uuid[]) AS t(id)"#,
-            )
-            .bind(semester_id)
-            .bind(&entry.day_of_week)
-            .bind(entry.period_id)
-            .bind(entry.room_id)
-            .bind(&entry.entry_type)
-            .bind(&entry.title)
-            .bind(user_id)
-            .bind(batch_uuid)
-            .bind(&entry_ids)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| AppError::InternalServerError(e.to_string()))?
-            .rows_affected();
-
-            total_inserted += inserted_count;
-
-            sqlx::query(
-                r#"INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
-                   SELECT eid, iid, 'primary'
-                   FROM UNNEST($1::uuid[], $2::uuid[]) AS t(eid, iid)
-                   ON CONFLICT DO NOTHING"#,
-            )
-            .bind(&entry_ids)
-            .bind(&instructor_ids)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-        }
+            .await?,
+        );
     }
-
-    tx.commit()
-        .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    Ok(total_inserted)
+    transaction.commit().await?;
+    Ok(TemplateApplyResult {
+        applied: entry_ids.len(),
+        entry_ids,
+    })
 }
 
 pub async fn clear_timetable(
     pool: &PgPool,
-    semester_id: Uuid,
-    entry_types: Vec<String>,
-) -> Result<u64, AppError> {
-    let result = sqlx::query(
-        "DELETE FROM academic_timetable_entries WHERE academic_semester_id = $1 AND entry_type = ANY($2)"
+    actor_user_id: Uuid,
+    request: ClearTimetableRequest,
+) -> Result<Vec<crate::modules::academic::models::timetable::TimetableEntry>, AppError> {
+    let entry_types = canonical_entry_types(request.entry_types)?;
+    let mut transaction = pool.begin().await?;
+    let term_status: String =
+        sqlx::query_scalar("SELECT status FROM academic_terms WHERE id = $1 FOR SHARE")
+            .bind(request.academic_term_id)
+            .fetch_optional(&mut *transaction)
+            .await?
+            .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียน".to_string()))?;
+    if matches!(term_status.as_str(), "closed" | "archived") {
+        return Err(AppError::Conflict(
+            "ภาคเรียนนี้ปิดแล้ว ไม่สามารถล้างตารางสอนได้".to_string(),
+        ));
+    }
+    let ids: Vec<Uuid> = sqlx::query_scalar(
+        r#"SELECT id FROM academic_timetable_entries
+           WHERE academic_term_id = $1 AND entry_type = ANY($2) AND is_active
+           ORDER BY id FOR UPDATE"#,
     )
-    .bind(semester_id).bind(&entry_types)
-    .execute(pool).await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    Ok(result.rows_affected())
+    .bind(request.academic_term_id)
+    .bind(&entry_types)
+    .fetch_all(&mut *transaction)
+    .await?;
+    sqlx::query(
+        r#"UPDATE academic_timetable_entries
+           SET is_active = false, updated_by = $3,
+               row_version = row_version + 1, updated_at = now()
+           WHERE academic_term_id = $1 AND entry_type = ANY($2) AND is_active"#,
+    )
+    .bind(request.academic_term_id)
+    .bind(&entry_types)
+    .bind(actor_user_id)
+    .execute(&mut *transaction)
+    .await?;
+    transaction.commit().await?;
+    let mut entries = Vec::with_capacity(ids.len());
+    for id in ids {
+        entries.push(timetable_service::get_entry(pool, id).await?);
+    }
+    Ok(entries)
+}
+
+async fn resolve_target_group(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    academic_term_id: Uuid,
+    resource_kind: &str,
+    stable_resource_id: Option<Uuid>,
+    group_code: Option<&str>,
+) -> Result<Option<Uuid>, AppError> {
+    if resource_kind == "structural" {
+        return Ok(None);
+    }
+    let stable_resource_id = stable_resource_id.ok_or_else(|| {
+        AppError::ValidationError("แม่แบบขาด stable resource identity".to_string())
+    })?;
+    let group_code =
+        group_code.ok_or_else(|| AppError::ValidationError("แม่แบบขาดรหัสกลุ่มเรียน".to_string()))?;
+    let group_id: Option<Uuid> = match resource_kind {
+        "course" => {
+            sqlx::query_scalar(
+                r#"SELECT learning_group.id
+                   FROM learning_groups learning_group
+                   JOIN course_offering_details detail
+                     ON detail.learning_offering_id = learning_group.learning_offering_id
+                   WHERE learning_group.academic_term_id = $1
+                     AND detail.subject_id = $2
+                     AND learning_group.code = $3
+                   ORDER BY learning_group.id LIMIT 1"#,
+            )
+            .bind(academic_term_id)
+            .bind(stable_resource_id)
+            .bind(group_code)
+            .fetch_optional(&mut **transaction)
+            .await?
+        }
+        "activity" => {
+            sqlx::query_scalar(
+                r#"SELECT learning_group.id
+                   FROM learning_groups learning_group
+                   JOIN activity_offering_details detail
+                     ON detail.learning_offering_id = learning_group.learning_offering_id
+                   WHERE learning_group.academic_term_id = $1
+                     AND detail.activity_id = $2
+                     AND learning_group.code = $3
+                   ORDER BY learning_group.id LIMIT 1"#,
+            )
+            .bind(academic_term_id)
+            .bind(stable_resource_id)
+            .bind(group_code)
+            .fetch_optional(&mut **transaction)
+            .await?
+        }
+        _ => {
+            return Err(AppError::ValidationError(
+                "ชนิด resource ในแม่แบบไม่ถูกต้อง".to_string(),
+            ));
+        }
+    };
+    group_id.map(Some).ok_or_else(|| {
+        AppError::ValidationError(format!(
+            "ไม่พบกลุ่มเรียนรหัส {group_code} ที่ตรงกับแม่แบบในภาคเรียนเป้าหมาย"
+        ))
+    })
+}
+
+async fn resolve_target_homeroom(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    academic_term_id: Uuid,
+    selector: &TimetableTemplateTargetSelector,
+) -> Result<Option<Uuid>, AppError> {
+    if selector.instructor_only {
+        return Ok(None);
+    }
+    let grade_level_id = selector
+        .grade_level_id
+        .ok_or_else(|| AppError::ValidationError("แม่แบบขาด gradeLevelId".to_string()))?;
+    let study_program_id = selector
+        .study_program_id
+        .ok_or_else(|| AppError::ValidationError("แม่แบบขาด studyProgramId".to_string()))?;
+    let room_number = selector
+        .room_number
+        .as_deref()
+        .ok_or_else(|| AppError::ValidationError("แม่แบบขาด roomNumber".to_string()))?;
+    sqlx::query_scalar(
+        r#"SELECT homeroom.id
+           FROM homerooms homeroom
+           JOIN academic_terms term ON term.academic_year_id = homeroom.academic_year_id
+           WHERE term.id = $1
+             AND homeroom.grade_level_id = $2
+             AND homeroom.study_program_id = $3
+             AND homeroom.room_number = $4
+           ORDER BY homeroom.id LIMIT 1"#,
+    )
+    .bind(academic_term_id)
+    .bind(grade_level_id)
+    .bind(study_program_id)
+    .bind(room_number)
+    .fetch_optional(&mut **transaction)
+    .await?
+    .map(Some)
+    .ok_or_else(|| {
+        AppError::ValidationError("ไม่พบห้องประจำชั้นที่ตรงกับแม่แบบในปีการศึกษาเป้าหมาย".to_string())
+    })
+}
+
+fn canonical_entry_types(entry_types: Option<Vec<String>>) -> Result<Vec<String>, AppError> {
+    let values = entry_types.unwrap_or_else(|| {
+        vec![
+            "course".to_string(),
+            "activity".to_string(),
+            "break".to_string(),
+            "homeroom".to_string(),
+            "academic".to_string(),
+        ]
+    });
+    let mut normalized = Vec::new();
+    for value in values {
+        let value = value.trim().to_ascii_uppercase();
+        if !["COURSE", "ACTIVITY", "BREAK", "HOMEROOM", "ACADEMIC"].contains(&value.as_str()) {
+            return Err(AppError::ValidationError(
+                "ชนิดรายการในแม่แบบไม่ถูกต้อง".to_string(),
+            ));
+        }
+        if !normalized.contains(&value) {
+            normalized.push(value);
+        }
+    }
+    Ok(normalized)
+}
+
+fn require_name(name: &str) -> Result<&str, AppError> {
+    let name = name.trim();
+    if name.is_empty() {
+        Err(AppError::ValidationError("ต้องระบุชื่อแม่แบบ".to_string()))
+    } else {
+        Ok(name)
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::canonical_entry_types;
 
     #[test]
-    fn merge_unique_classroom_ids_appends_specific_ids_without_duplicates() {
-        let classroom_a = Uuid::new_v4();
-        let classroom_b = Uuid::new_v4();
-        let classroom_c = Uuid::new_v4();
-
+    fn template_entry_types_use_canonical_values() {
         assert_eq!(
-            merge_unique_classroom_ids(
-                vec![classroom_a, classroom_b],
-                vec![classroom_b, classroom_c]
-            ),
-            vec![classroom_a, classroom_b, classroom_c]
+            canonical_entry_types(Some(vec!["course".to_string(), "COURSE".to_string()])).unwrap(),
+            vec!["COURSE"]
         );
-    }
-
-    #[test]
-    fn template_group_key_uses_title_and_activity_slot() {
-        let slot_id = Uuid::new_v4();
-        assert_eq!(
-            template_group_key(&Some("Assembly".to_string()), Some(slot_id)),
-            (Some("Assembly".to_string()), Some(slot_id))
-        );
-    }
-
-    #[test]
-    fn template_group_key_allows_empty_title_and_activity_slot() {
-        assert_eq!(template_group_key(&None, None), (None, None));
-    }
-
-    #[test]
-    fn template_entry_from_row_maps_typed_json_arrays() {
-        let grade_level_id = Uuid::new_v4();
-        let classroom_id = Uuid::new_v4();
-        let instructor_id = Uuid::new_v4();
-        let room_id = Uuid::new_v4();
-        let row = TimetableTemplateEntryRow {
-            id: Uuid::new_v4(),
-            template_id: Uuid::new_v4(),
-            day_of_week: "MON".to_string(),
-            period_id: Uuid::new_v4(),
-            entry_type: "activity".to_string(),
-            title: Some("ชุมนุม".to_string()),
-            activity_slot_id: Some(Uuid::new_v4()),
-            grade_level_ids: Json(vec![grade_level_id]),
-            classroom_ids: Json(vec![classroom_id]),
-            instructor_ids: Json(vec![instructor_id]),
-            room_id: Some(room_id),
-        };
-
-        let entry = template_entry_from_row(row).expect("template entry row should map");
-
-        assert_eq!(entry.grade_level_ids, vec![grade_level_id]);
-        assert_eq!(entry.classroom_ids, vec![classroom_id]);
-        assert_eq!(entry.instructor_ids, vec![instructor_id]);
-        assert_eq!(entry.room_id, Some(room_id));
     }
 }

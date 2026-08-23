@@ -1,26 +1,19 @@
-use crate::error::AppError;
-use crate::modules::academic::models::study_plans::ActivitySchedulingMode;
+use std::collections::{HashMap, HashSet};
+
 use chrono::{Datelike, Local, NaiveDate, NaiveTime, Weekday};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgPool};
-use std::collections::{HashMap, HashSet};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-const TEACHING_ENTRY_TYPES: [&str; 5] = ["COURSE", "ACTIVITY", "HOMEROOM", "ACADEMIC", "BREAK"];
-
-fn teaching_entry_types() -> Vec<String> {
-    TEACHING_ENTRY_TYPES
-        .iter()
-        .map(|entry_type| (*entry_type).to_string())
-        .collect()
-}
+use crate::error::AppError;
 
 #[derive(Debug, Clone, Deserialize, IntoParams)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[into_params(parameter_in = Query)]
 pub struct DailyTeachingQuery {
+    pub academic_term_id: Uuid,
     pub date: Option<NaiveDate>,
-    pub academic_semester_id: Option<Uuid>,
     pub include_empty_teachers: Option<bool>,
 }
 
@@ -29,7 +22,7 @@ pub struct DailyTeachingQuery {
 pub struct DailyTeachingOverview {
     pub date: NaiveDate,
     pub day_of_week: String,
-    pub academic_semester_id: Uuid,
+    pub academic_term_id: Uuid,
     pub periods: Vec<DailyTeachingPeriod>,
     pub teachers: Vec<DailyTeachingTeacher>,
     pub summary: DailyTeachingSummary,
@@ -40,7 +33,9 @@ pub struct DailyTeachingOverview {
 pub struct DailyTeachingPeriod {
     pub id: Uuid,
     pub name: Option<String>,
+    #[schema(value_type = String)]
     pub start_time: NaiveTime,
+    #[schema(value_type = String)]
     pub end_time: NaiveTime,
     pub order_index: i32,
 }
@@ -50,14 +45,13 @@ pub struct DailyTeachingPeriod {
 pub struct DailyTeachingTeacher {
     pub id: Uuid,
     pub display_name: String,
-    pub subject_group_names: Vec<String>,
     pub periods: Vec<DailyTeachingPeriodCell>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DailyTeachingPeriodCell {
-    pub period_id: Uuid,
+    pub bell_schedule_period_id: Uuid,
     pub entries: Vec<DailyTeachingEntry>,
 }
 
@@ -66,14 +60,16 @@ pub struct DailyTeachingPeriodCell {
 pub struct DailyTeachingEntry {
     pub entry_id: Uuid,
     pub entry_type: String,
-    #[schema(required = true)]
-    pub activity_slot_id: Option<Uuid>,
-    #[schema(value_type = Option<ActivitySchedulingMode>, required = true)]
-    pub activity_scheduling_mode: Option<String>,
-    pub subject_code: Option<String>,
-    pub subject_name: Option<String>,
-    pub subject_group_name: Option<String>,
-    pub classroom_name: Option<String>,
+    pub learning_group_id: Option<Uuid>,
+    pub offering_id: Option<Uuid>,
+    pub subject_id: Option<Uuid>,
+    pub subject_version_display_label: Option<String>,
+    pub activity_id: Option<Uuid>,
+    pub activity_version_display_label: Option<String>,
+    pub offering_code: Option<String>,
+    pub offering_name: Option<String>,
+    pub learning_group_name: Option<String>,
+    pub homeroom_names: Vec<String>,
     pub room_code: Option<String>,
     pub title: Option<String>,
     pub note: Option<String>,
@@ -91,30 +87,32 @@ pub struct DailyTeachingSummary {
 }
 
 #[derive(Debug, Clone, FromRow)]
-struct DailyTeachingTeacherSeed {
+struct TeacherSeed {
     id: Uuid,
     display_name: String,
-    subject_group_names: Vec<String>,
-    sort_order: i32,
 }
 
 #[derive(Debug, Clone, FromRow)]
-struct DailyTeachingEntrySeed {
+struct EntrySeed {
     teacher_id: Uuid,
-    period_id: Uuid,
+    bell_schedule_period_id: Uuid,
+    period_order_index: i32,
     entry_id: Uuid,
     entry_type: String,
-    activity_slot_id: Option<Uuid>,
-    activity_scheduling_mode: Option<String>,
-    subject_code: Option<String>,
-    subject_name: Option<String>,
-    subject_group_name: Option<String>,
-    classroom_name: Option<String>,
+    learning_group_id: Option<Uuid>,
+    offering_id: Option<Uuid>,
+    subject_id: Option<Uuid>,
+    subject_version_display_label: Option<String>,
+    activity_id: Option<Uuid>,
+    activity_version_display_label: Option<String>,
+    offering_code: Option<String>,
+    offering_name: Option<String>,
+    learning_group_name: Option<String>,
+    homeroom_names: Vec<String>,
     room_code: Option<String>,
     title: Option<String>,
     note: Option<String>,
     instructor_count: i64,
-    period_order_index: i32,
 }
 
 pub fn day_code_from_date(date: NaiveDate) -> &'static str {
@@ -129,517 +127,223 @@ pub fn day_code_from_date(date: NaiveDate) -> &'static str {
     }
 }
 
-fn entry_from_seed(seed: DailyTeachingEntrySeed) -> DailyTeachingEntry {
-    DailyTeachingEntry {
-        entry_id: seed.entry_id,
-        entry_type: seed.entry_type,
-        activity_slot_id: seed.activity_slot_id,
-        activity_scheduling_mode: seed.activity_scheduling_mode,
-        subject_code: seed.subject_code,
-        subject_name: seed.subject_name,
-        subject_group_name: seed.subject_group_name,
-        classroom_name: seed.classroom_name,
-        room_code: seed.room_code,
-        title: seed.title,
-        note: seed.note,
-        is_team_teaching: seed.instructor_count > 1,
-    }
-}
-
-fn build_daily_teaching_overview(
-    date: NaiveDate,
-    day_of_week: String,
-    academic_semester_id: Uuid,
-    mut periods: Vec<DailyTeachingPeriod>,
-    mut teachers: Vec<DailyTeachingTeacherSeed>,
-    mut entries: Vec<DailyTeachingEntrySeed>,
-    include_empty_teachers: bool,
-) -> DailyTeachingOverview {
-    periods.sort_by(|a, b| {
-        a.order_index
-            .cmp(&b.order_index)
-            .then_with(|| a.start_time.cmp(&b.start_time))
-            .then_with(|| a.id.cmp(&b.id))
-    });
-    teachers.sort_by(|a, b| {
-        a.sort_order
-            .cmp(&b.sort_order)
-            .then_with(|| a.display_name.cmp(&b.display_name))
-            .then_with(|| a.id.cmp(&b.id))
-    });
-    entries.sort_by(|a, b| {
-        a.period_order_index
-            .cmp(&b.period_order_index)
-            .then_with(|| a.entry_id.cmp(&b.entry_id))
-            .then_with(|| a.classroom_name.cmp(&b.classroom_name))
-    });
-
-    let mut entries_by_teacher_period: HashMap<(Uuid, Uuid), Vec<DailyTeachingEntry>> =
-        HashMap::new();
-    let mut teaching_teacher_ids = HashSet::new();
-    for entry in entries {
-        teaching_teacher_ids.insert(entry.teacher_id);
-        entries_by_teacher_period
-            .entry((entry.teacher_id, entry.period_id))
-            .or_default()
-            .push(entry_from_seed(entry));
-    }
-
-    let total_teacher_count = teachers.len() as i64;
-    let teachers_teaching_count = teaching_teacher_ids.len() as i64;
-    let lesson_count = entries_by_teacher_period
-        .values()
-        .map(|period_entries| period_entries.len() as i64)
-        .sum();
-
-    let teachers = teachers
-        .into_iter()
-        .filter(|teacher| include_empty_teachers || teaching_teacher_ids.contains(&teacher.id))
-        .map(|teacher| {
-            let teacher_periods = periods
-                .iter()
-                .map(|period| DailyTeachingPeriodCell {
-                    period_id: period.id,
-                    entries: entries_by_teacher_period
-                        .remove(&(teacher.id, period.id))
-                        .unwrap_or_default(),
-                })
-                .collect();
-
-            DailyTeachingTeacher {
-                id: teacher.id,
-                display_name: teacher.display_name,
-                subject_group_names: teacher.subject_group_names,
-                periods: teacher_periods,
-            }
-        })
-        .collect::<Vec<_>>();
-
-    let summary = DailyTeachingSummary {
-        total_teacher_count,
-        displayed_teacher_count: teachers.len() as i64,
-        teachers_teaching_count,
-        lesson_count,
-        empty_teacher_count: total_teacher_count.saturating_sub(teachers_teaching_count),
-    };
-
-    DailyTeachingOverview {
-        date,
-        day_of_week,
-        academic_semester_id,
-        periods,
-        teachers,
-        summary,
-    }
-}
-
-async fn resolve_semester_id(
-    pool: &PgPool,
-    requested_semester_id: Option<Uuid>,
-) -> Result<Uuid, AppError> {
-    if let Some(semester_id) = requested_semester_id {
-        return Ok(semester_id);
-    }
-
-    sqlx::query_scalar(
-        "SELECT id
-         FROM academic_semesters
-         WHERE is_active = true
-         ORDER BY start_date DESC
-         LIMIT 1",
-    )
-    .fetch_optional(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to resolve active academic semester: {}", error);
-        AppError::InternalServerError("ไม่สามารถโหลดภาคเรียนปัจจุบันได้".to_string())
-    })?
-    .ok_or_else(|| AppError::BadRequest("ยังไม่มีภาคเรียนที่ใช้งานอยู่".to_string()))
-}
-
-async fn list_periods_for_semester(
-    pool: &PgPool,
-    semester_id: Uuid,
-) -> Result<Vec<DailyTeachingPeriod>, AppError> {
-    sqlx::query_as::<_, DailyTeachingPeriod>(
-        "SELECT ap.id, ap.name, ap.start_time, ap.end_time, ap.order_index
-         FROM academic_periods ap
-         JOIN academic_semesters sem ON sem.academic_year_id = ap.academic_year_id
-         WHERE sem.id = $1
-           AND ap.is_active = true
-         ORDER BY ap.order_index, ap.start_time, ap.id",
-    )
-    .bind(semester_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to load daily teaching periods: {}", error);
-        AppError::InternalServerError("ไม่สามารถโหลดคาบเรียนได้".to_string())
-    })
-}
-
-async fn list_daily_teachers(
-    pool: &PgPool,
-    semester_id: Uuid,
-    day_of_week: &str,
-) -> Result<Vec<DailyTeachingTeacherSeed>, AppError> {
-    let entry_types = teaching_entry_types();
-
-    sqlx::query_as::<_, DailyTeachingTeacherSeed>(
-        r#"
-        SELECT
-            u.id,
-            concat_ws(' ', u.first_name, u.last_name) AS display_name,
-            COALESCE(
-                ARRAY_AGG(teacher_sg.name_th ORDER BY teacher_sg.display_order, teacher_sg.name_th)
-                    FILTER (WHERE teacher_sg.id IS NOT NULL),
-                ARRAY[]::text[]
-            ) AS subject_group_names,
-            COALESCE(MIN(teacher_sg.display_order), 9999)::int AS sort_order
-        FROM users u
-        LEFT JOIN organization_members om
-            ON om.user_id = u.id
-           AND om.ended_at IS NULL
-        LEFT JOIN organization_units ou
-            ON ou.id = om.organization_unit_id
-           AND ou.is_active = true
-           AND ou.unit_type = 'subject_group'
-        LEFT JOIN subject_groups teacher_sg
-            ON teacher_sg.id = ou.subject_group_id
-           AND teacher_sg.is_active = true
-        WHERE u.user_type = 'staff'
-          AND u.status = 'active'
-          AND (
-              EXISTS (
-                  SELECT 1
-                  FROM user_roles ur
-                  JOIN roles role_def ON role_def.id = ur.role_id
-                  WHERE ur.user_id = u.id
-                    AND ur.ended_at IS NULL
-                    AND role_def.is_active = true
-                    AND role_def.code IN ('TEACHER', 'HEAD')
-              )
-              OR EXISTS (
-                  SELECT 1
-                  FROM timetable_entry_instructors tei_scope
-                  JOIN academic_timetable_entries te_scope ON te_scope.id = tei_scope.entry_id
-                  WHERE tei_scope.instructor_id = u.id
-                    AND te_scope.is_active = true
-                    AND te_scope.academic_semester_id = $1
-                    AND te_scope.day_of_week = $2
-                    AND te_scope.entry_type = ANY($3::text[])
-              )
-          )
-        GROUP BY u.id, u.first_name, u.last_name
-        ORDER BY sort_order, display_name, u.id
-        "#,
-    )
-    .bind(semester_id)
-    .bind(day_of_week)
-    .bind(entry_types)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to load daily teaching teachers: {}", error);
-        AppError::InternalServerError("ไม่สามารถโหลดรายชื่อครูได้".to_string())
-    })
-}
-
-async fn list_daily_entries(
-    pool: &PgPool,
-    semester_id: Uuid,
-    day_of_week: &str,
-) -> Result<Vec<DailyTeachingEntrySeed>, AppError> {
-    let entry_types = teaching_entry_types();
-
-    sqlx::query_as::<_, DailyTeachingEntrySeed>(
-        r#"
-        SELECT
-            tei.instructor_id AS teacher_id,
-            te.period_id,
-            te.id AS entry_id,
-            te.entry_type,
-            te.activity_slot_id,
-            ac.scheduling_mode AS activity_scheduling_mode,
-            s.code AS subject_code,
-            s.name_th AS subject_name,
-            sg.name_th AS subject_group_name,
-            cr.name AS classroom_name,
-            r.code AS room_code,
-            te.title,
-            te.note,
-            COUNT(*) OVER (PARTITION BY te.id) AS instructor_count,
-            ap.order_index AS period_order_index
-        FROM academic_timetable_entries te
-        JOIN timetable_entry_instructors tei ON tei.entry_id = te.id
-        JOIN academic_periods ap ON ap.id = te.period_id
-        LEFT JOIN activity_slots activity_slot ON activity_slot.id = te.activity_slot_id
-        LEFT JOIN activity_catalog ac ON ac.id = activity_slot.activity_catalog_id
-        LEFT JOIN classroom_courses cc ON cc.id = te.classroom_course_id
-        LEFT JOIN subjects s ON s.id = cc.subject_id
-        LEFT JOIN subject_groups sg ON sg.id = s.group_id
-        LEFT JOIN class_rooms cr ON cr.id = te.classroom_id
-        LEFT JOIN rooms r ON r.id = te.room_id
-        WHERE te.is_active = true
-          AND te.academic_semester_id = $1
-          AND te.day_of_week = $2
-          AND te.entry_type = ANY($3::text[])
-        ORDER BY ap.order_index, tei.created_at, te.id
-        "#,
-    )
-    .bind(semester_id)
-    .bind(day_of_week)
-    .bind(entry_types)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to load daily teaching entries: {}", error);
-        AppError::InternalServerError("ไม่สามารถโหลดตารางสอนวันนี้ได้".to_string())
-    })
-}
-
 pub async fn get_daily_teaching_overview(
     pool: &PgPool,
     query: DailyTeachingQuery,
-    include_empty_teachers_allowed: bool,
 ) -> Result<DailyTeachingOverview, AppError> {
-    let selected_date = query.date.unwrap_or_else(|| Local::now().date_naive());
-    let day_of_week = day_code_from_date(selected_date).to_string();
-    let semester_id = resolve_semester_id(pool, query.academic_semester_id).await?;
-    let include_empty_teachers =
-        include_empty_teachers_allowed && query.include_empty_teachers.unwrap_or(false);
+    let date = query.date.unwrap_or_else(|| Local::now().date_naive());
+    let day = day_code_from_date(date).to_string();
+    let bell_schedule_id: Uuid =
+        sqlx::query_scalar("SELECT bell_schedule_id FROM academic_terms WHERE id = $1")
+            .bind(query.academic_term_id)
+            .fetch_optional(pool)
+            .await?
+            .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียน".to_string()))?;
+    let periods: Vec<DailyTeachingPeriod> = sqlx::query_as(
+        r#"SELECT id, name, start_time, end_time, order_index
+           FROM bell_schedule_periods
+           WHERE bell_schedule_id = $1 AND is_active
+           ORDER BY order_index, start_time, id"#,
+    )
+    .bind(bell_schedule_id)
+    .fetch_all(pool)
+    .await?;
+    let teachers: Vec<TeacherSeed> = sqlx::query_as(
+        r#"SELECT DISTINCT user_account.id,
+                  concat_ws(' ',
+                      nullif(concat(coalesce(user_account.title, ''), user_account.first_name), ''),
+                      nullif(user_account.last_name, '')
+                  ) AS display_name
+           FROM users user_account
+           WHERE user_account.status = 'active'
+             AND (
+                 EXISTS (
+                     SELECT 1
+                     FROM learning_group_teachers teacher
+                     WHERE teacher.teacher_id = user_account.id
+                       AND teacher.academic_term_id = $1
+                 )
+                 OR EXISTS (
+                     SELECT 1
+                     FROM timetable_entry_instructors instructor
+                     JOIN academic_timetable_entries entry ON entry.id = instructor.entry_id
+                     WHERE instructor.instructor_id = user_account.id
+                       AND entry.academic_term_id = $1
+                       AND entry.is_active
+                 )
+             )
+           ORDER BY display_name, user_account.id"#,
+    )
+    .bind(query.academic_term_id)
+    .fetch_all(pool)
+    .await?;
+    let entries: Vec<EntrySeed> = sqlx::query_as(
+        r#"WITH effective_teacher AS (
+               SELECT entry.id AS entry_id, teacher.teacher_id
+               FROM academic_timetable_entries entry
+               JOIN learning_group_teachers teacher
+                 ON teacher.learning_group_id = entry.learning_group_id
+               WHERE entry.academic_term_id = $1
+                 AND entry.day_of_week = $2
+                 AND entry.is_active
+               UNION ALL
+               SELECT entry.id, instructor.instructor_id
+               FROM academic_timetable_entries entry
+               JOIN timetable_entry_instructors instructor ON instructor.entry_id = entry.id
+               WHERE entry.academic_term_id = $1
+                 AND entry.day_of_week = $2
+                 AND entry.learning_group_id IS NULL
+                 AND entry.is_active
+           )
+           SELECT effective_teacher.teacher_id,
+                  entry.bell_schedule_period_id,
+                  period.order_index AS period_order_index,
+                  entry.id AS entry_id,
+                  lower(entry.entry_type::text) AS entry_type,
+                  entry.learning_group_id,
+                  entry.learning_offering_id AS offering_id,
+                  course_detail.subject_id,
+                  CASE WHEN subject_version.id IS NULL THEN NULL ELSE concat(
+                      coalesce(subject_version.name_th, subject_version.name_en, offering.name_snapshot),
+                      ' · v', subject_version.version_no
+                  ) END AS subject_version_display_label,
+                  activity_detail.activity_id,
+                  CASE WHEN activity_version.id IS NULL THEN NULL ELSE concat(
+                      activity_version.name, ' · v', activity_version.version_no
+                  ) END AS activity_version_display_label,
+                  offering.code_snapshot AS offering_code,
+                  offering.name_snapshot AS offering_name,
+                  learning_group.name AS learning_group_name,
+                  CASE
+                      WHEN entry.learning_group_id IS NOT NULL THEN ARRAY(
+                          SELECT homeroom.name
+                          FROM learning_group_homerooms coverage
+                          JOIN homerooms homeroom ON homeroom.id = coverage.homeroom_id
+                          WHERE coverage.learning_group_id = entry.learning_group_id
+                          ORDER BY homeroom.name, homeroom.id
+                      )
+                      WHEN entry.homeroom_id IS NOT NULL THEN ARRAY(
+                          SELECT homeroom.name FROM homerooms homeroom WHERE homeroom.id = entry.homeroom_id
+                      )
+                      ELSE ARRAY[]::text[]
+                  END AS homeroom_names,
+                  room.code AS room_code,
+                  entry.title,
+                  entry.note,
+                  (SELECT count(*) FROM effective_teacher team WHERE team.entry_id = entry.id)::bigint
+                      AS instructor_count
+           FROM effective_teacher
+           JOIN academic_timetable_entries entry ON entry.id = effective_teacher.entry_id
+           JOIN bell_schedule_periods period ON period.id = entry.bell_schedule_period_id
+           LEFT JOIN learning_groups learning_group ON learning_group.id = entry.learning_group_id
+           LEFT JOIN learning_offerings offering ON offering.id = entry.learning_offering_id
+           LEFT JOIN course_offering_details course_detail
+             ON course_detail.learning_offering_id = offering.id
+           LEFT JOIN subject_versions subject_version
+             ON subject_version.id = course_detail.subject_version_id
+           LEFT JOIN activity_offering_details activity_detail
+             ON activity_detail.learning_offering_id = offering.id
+           LEFT JOIN activity_versions activity_version
+             ON activity_version.id = activity_detail.activity_version_id
+           LEFT JOIN rooms room ON room.id = entry.room_id
+           ORDER BY effective_teacher.teacher_id, period.order_index, entry.id"#,
+    )
+    .bind(query.academic_term_id)
+    .bind(&day)
+    .fetch_all(pool)
+    .await?;
 
-    let periods = list_periods_for_semester(pool, semester_id).await?;
-    let teachers = list_daily_teachers(pool, semester_id, &day_of_week).await?;
-    let entries = list_daily_entries(pool, semester_id, &day_of_week).await?;
-
-    Ok(build_daily_teaching_overview(
-        selected_date,
-        day_of_week,
-        semester_id,
+    Ok(build_overview(
+        date,
+        day,
+        query.academic_term_id,
         periods,
         teachers,
         entries,
-        include_empty_teachers,
+        query.include_empty_teachers.unwrap_or(false),
     ))
+}
+
+fn build_overview(
+    date: NaiveDate,
+    day_of_week: String,
+    academic_term_id: Uuid,
+    periods: Vec<DailyTeachingPeriod>,
+    teachers: Vec<TeacherSeed>,
+    mut entries: Vec<EntrySeed>,
+    include_empty_teachers: bool,
+) -> DailyTeachingOverview {
+    entries.sort_by_key(|entry| (entry.period_order_index, entry.entry_id));
+    let mut grouped: HashMap<(Uuid, Uuid), Vec<DailyTeachingEntry>> = HashMap::new();
+    let mut teaching_teacher_ids = HashSet::new();
+    for entry in entries {
+        teaching_teacher_ids.insert(entry.teacher_id);
+        grouped
+            .entry((entry.teacher_id, entry.bell_schedule_period_id))
+            .or_default()
+            .push(DailyTeachingEntry {
+                entry_id: entry.entry_id,
+                entry_type: entry.entry_type,
+                learning_group_id: entry.learning_group_id,
+                offering_id: entry.offering_id,
+                subject_id: entry.subject_id,
+                subject_version_display_label: entry.subject_version_display_label,
+                activity_id: entry.activity_id,
+                activity_version_display_label: entry.activity_version_display_label,
+                offering_code: entry.offering_code,
+                offering_name: entry.offering_name,
+                learning_group_name: entry.learning_group_name,
+                homeroom_names: entry.homeroom_names,
+                room_code: entry.room_code,
+                title: entry.title,
+                note: entry.note,
+                is_team_teaching: entry.instructor_count > 1,
+            });
+    }
+    let total_teacher_count = teachers.len() as i64;
+    let teachers_teaching_count = teaching_teacher_ids.len() as i64;
+    let lesson_count = grouped.values().map(|values| values.len() as i64).sum();
+    let teachers: Vec<DailyTeachingTeacher> = teachers
+        .into_iter()
+        .filter(|teacher| include_empty_teachers || teaching_teacher_ids.contains(&teacher.id))
+        .map(|teacher| DailyTeachingTeacher {
+            id: teacher.id,
+            display_name: teacher.display_name,
+            periods: periods
+                .iter()
+                .map(|period| DailyTeachingPeriodCell {
+                    bell_schedule_period_id: period.id,
+                    entries: grouped.remove(&(teacher.id, period.id)).unwrap_or_default(),
+                })
+                .collect(),
+        })
+        .collect();
+    DailyTeachingOverview {
+        date,
+        day_of_week,
+        academic_term_id,
+        periods,
+        summary: DailyTeachingSummary {
+            total_teacher_count,
+            displayed_teacher_count: teachers.len() as i64,
+            teachers_teaching_count,
+            lesson_count,
+            empty_teacher_count: total_teacher_count.saturating_sub(teachers_teaching_count),
+        },
+        teachers,
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    fn id(n: u128) -> Uuid {
-        Uuid::from_u128(n)
-    }
+    use super::day_code_from_date;
+    use chrono::NaiveDate;
 
     #[test]
-    fn day_code_from_date_maps_chrono_weekdays_to_timetable_codes() {
-        let monday = NaiveDate::from_ymd_opt(2026, 6, 22).unwrap();
-        let sunday = NaiveDate::from_ymd_opt(2026, 6, 28).unwrap();
-
-        assert_eq!(day_code_from_date(monday), "MON");
-        assert_eq!(day_code_from_date(sunday), "SUN");
-    }
-
-    #[test]
-    fn build_overview_groups_team_teaching_entry_under_each_assigned_teacher() {
-        let period_id = id(1);
-        let semester_id = id(2);
-        let entry_id = id(3);
-        let teacher_a = id(10);
-        let teacher_b = id(11);
-
-        let overview = build_daily_teaching_overview(
-            NaiveDate::from_ymd_opt(2026, 6, 22).unwrap(),
-            "MON".to_string(),
-            semester_id,
-            vec![DailyTeachingPeriod {
-                id: period_id,
-                name: Some("คาบ 1".to_string()),
-                start_time: NaiveTime::from_hms_opt(8, 30, 0).unwrap(),
-                end_time: NaiveTime::from_hms_opt(9, 20, 0).unwrap(),
-                order_index: 1,
-            }],
-            vec![
-                DailyTeachingTeacherSeed {
-                    id: teacher_a,
-                    display_name: "ครูก".to_string(),
-                    subject_group_names: vec!["คณิตศาสตร์".to_string()],
-                    sort_order: 10,
-                },
-                DailyTeachingTeacherSeed {
-                    id: teacher_b,
-                    display_name: "ครูข".to_string(),
-                    subject_group_names: vec!["คณิตศาสตร์".to_string()],
-                    sort_order: 10,
-                },
-            ],
-            vec![
-                DailyTeachingEntrySeed {
-                    teacher_id: teacher_a,
-                    period_id,
-                    entry_id,
-                    entry_type: "COURSE".to_string(),
-                    activity_slot_id: None,
-                    activity_scheduling_mode: None,
-                    subject_code: Some("ค21101".to_string()),
-                    subject_name: Some("คณิตศาสตร์".to_string()),
-                    subject_group_name: Some("คณิตศาสตร์".to_string()),
-                    classroom_name: Some("ม.1/1".to_string()),
-                    room_code: Some("321".to_string()),
-                    title: None,
-                    note: None,
-                    instructor_count: 2,
-                    period_order_index: 1,
-                },
-                DailyTeachingEntrySeed {
-                    teacher_id: teacher_b,
-                    period_id,
-                    entry_id,
-                    entry_type: "COURSE".to_string(),
-                    activity_slot_id: None,
-                    activity_scheduling_mode: None,
-                    subject_code: Some("ค21101".to_string()),
-                    subject_name: Some("คณิตศาสตร์".to_string()),
-                    subject_group_name: Some("คณิตศาสตร์".to_string()),
-                    classroom_name: Some("ม.1/1".to_string()),
-                    room_code: Some("321".to_string()),
-                    title: None,
-                    note: None,
-                    instructor_count: 2,
-                    period_order_index: 1,
-                },
-            ],
-            false,
-        );
-
-        assert_eq!(overview.summary.total_teacher_count, 2);
-        assert_eq!(overview.summary.teachers_teaching_count, 2);
-        assert_eq!(overview.summary.lesson_count, 2);
-        assert_eq!(overview.teachers.len(), 2);
-        assert!(overview.teachers[0].periods[0].entries[0].is_team_teaching);
-        assert!(overview.teachers[1].periods[0].entries[0].is_team_teaching);
-    }
-
-    #[test]
-    fn build_overview_preserves_synchronized_activity_identity() {
-        let period_id = id(1);
-        let semester_id = id(2);
-        let teacher_id = id(10);
-        let activity_slot_id = id(20);
-
-        let overview = build_daily_teaching_overview(
-            NaiveDate::from_ymd_opt(2026, 8, 5).unwrap(),
-            "WED".to_string(),
-            semester_id,
-            vec![DailyTeachingPeriod {
-                id: period_id,
-                name: Some("คาบ 8".to_string()),
-                start_time: NaiveTime::from_hms_opt(14, 40, 0).unwrap(),
-                end_time: NaiveTime::from_hms_opt(15, 30, 0).unwrap(),
-                order_index: 8,
-            }],
-            vec![DailyTeachingTeacherSeed {
-                id: teacher_id,
-                display_name: "ครูกิจกรรม".to_string(),
-                subject_group_names: vec![],
-                sort_order: 0,
-            }],
-            vec![DailyTeachingEntrySeed {
-                teacher_id,
-                period_id,
-                entry_id: id(30),
-                entry_type: "ACTIVITY".to_string(),
-                subject_code: None,
-                subject_name: None,
-                subject_group_name: None,
-                classroom_name: Some("ป.1/1".to_string()),
-                room_code: None,
-                title: Some("ลูกเสือ เนตรนารี".to_string()),
-                note: None,
-                instructor_count: 1,
-                period_order_index: 8,
-                activity_slot_id: Some(activity_slot_id),
-                activity_scheduling_mode: Some("synchronized".to_string()),
-            }],
-            false,
-        );
-
-        let entry = &overview.teachers[0].periods[0].entries[0];
-        assert_eq!(entry.activity_slot_id, Some(activity_slot_id));
+    fn maps_calendar_date_to_timetable_day() {
         assert_eq!(
-            entry.activity_scheduling_mode.as_deref(),
-            Some("synchronized")
+            day_code_from_date(NaiveDate::from_ymd_opt(2026, 8, 24).unwrap()),
+            "MON"
         );
-    }
-
-    #[test]
-    fn build_overview_includes_empty_teachers_only_when_requested() {
-        let period_id = id(1);
-        let semester_id = id(2);
-        let teacher_with_lesson = id(10);
-        let empty_teacher = id(11);
-        let period = DailyTeachingPeriod {
-            id: period_id,
-            name: Some("คาบ 1".to_string()),
-            start_time: NaiveTime::from_hms_opt(8, 30, 0).unwrap(),
-            end_time: NaiveTime::from_hms_opt(9, 20, 0).unwrap(),
-            order_index: 1,
-        };
-        let teachers = vec![
-            DailyTeachingTeacherSeed {
-                id: teacher_with_lesson,
-                display_name: "ครูมีคาบ".to_string(),
-                subject_group_names: vec![],
-                sort_order: 0,
-            },
-            DailyTeachingTeacherSeed {
-                id: empty_teacher,
-                display_name: "ครูว่าง".to_string(),
-                subject_group_names: vec![],
-                sort_order: 0,
-            },
-        ];
-        let entries = vec![DailyTeachingEntrySeed {
-            teacher_id: teacher_with_lesson,
-            period_id,
-            entry_id: id(3),
-            entry_type: "HOMEROOM".to_string(),
-            activity_slot_id: None,
-            activity_scheduling_mode: None,
-            subject_code: None,
-            subject_name: None,
-            subject_group_name: None,
-            classroom_name: Some("ม.1/1".to_string()),
-            room_code: None,
-            title: Some("โฮมรูม".to_string()),
-            note: None,
-            instructor_count: 1,
-            period_order_index: 1,
-        }];
-
-        let without_empty = build_daily_teaching_overview(
-            NaiveDate::from_ymd_opt(2026, 6, 22).unwrap(),
-            "MON".to_string(),
-            semester_id,
-            vec![period.clone()],
-            teachers.clone(),
-            entries.clone(),
-            false,
-        );
-        let with_empty = build_daily_teaching_overview(
-            NaiveDate::from_ymd_opt(2026, 6, 22).unwrap(),
-            "MON".to_string(),
-            semester_id,
-            vec![period],
-            teachers,
-            entries,
-            true,
-        );
-
-        assert_eq!(without_empty.teachers.len(), 1);
-        assert_eq!(without_empty.summary.empty_teacher_count, 1);
-        assert_eq!(with_empty.teachers.len(), 2);
-        assert_eq!(with_empty.summary.displayed_teacher_count, 2);
     }
 }

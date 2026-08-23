@@ -1,368 +1,69 @@
-use crate::api_response::{ApiErrorResponse, ApiErrorResponseWithData, ApiResponse};
-use crate::error::AppError;
-use crate::modules::academic::models::timetable::*;
-use crate::modules::academic::services::{
-    daily_teaching_service, period_service, timetable_service,
-};
-use crate::modules::academic::websockets::TimetableEvent;
-use crate::modules::auth::session_service::AuthenticatedSession;
-use crate::permissions::registry::codes;
-use crate::utils::request_context::{
-    actor_tenant_context_from_session, current_user_tenant_context_from_session,
-};
-use crate::utils::subdomain::extract_subdomain_from_request;
-use crate::AppState;
 use axum::{
     extract::{Extension, Path, Query, State},
-    http::{HeaderMap, StatusCode},
+    http::HeaderMap,
     response::IntoResponse,
     Json,
 };
-use serde::Serialize;
-use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-#[derive(Serialize)]
-struct UpdatedData<T> {
-    updated: T,
-}
+use crate::api_response::ApiResponse;
+use crate::error::AppError;
+use crate::modules::academic::models::timetable::{
+    CreateBatchTimetableEntriesRequest, CreateTimetableEntryRequest, DeleteTimetableEntryQuery,
+    SwapTimetableEntriesRequest, TimetableOccupancyQuery, TimetableQuery,
+    UpdateTimetableEntryRequest, ValidateMovesRequest,
+};
+use crate::modules::academic::services::{daily_teaching_service, timetable_service};
+use crate::modules::academic::websockets::TimetableEvent;
+use crate::modules::auth::session_service::AuthenticatedSession;
+use crate::permissions::registry::codes;
+use crate::policies::learning_offering_access_policy::{
+    require_learning_group_access, require_learning_offering_list_access, OfferingAction,
+};
+use crate::utils::request_context::actor_tenant_context_from_session;
+use crate::utils::subdomain::extract_subdomain_from_request;
+use crate::AppState;
 
-#[derive(Serialize)]
-struct DeletedData<T> {
-    deleted: T,
-}
-
-#[derive(Serialize)]
-struct DeletedCountData<T> {
-    deleted_count: T,
-}
-
-#[derive(Serialize)]
-struct InsertedData<T> {
-    inserted: T,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct TimetableItemsData {
-    pub items: Vec<TimetableEntry>,
-    pub current_seq: u64,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct MyTimetableData {
-    pub items: Vec<TimetableEntry>,
-    pub periods: Vec<TimetablePeriod>,
-    pub current_seq: u64,
-}
-
-#[derive(Serialize)]
-struct ReplayEventsData<T> {
-    events: T,
-    current_seq: u64,
-    needs_refetch: bool,
-}
-
-#[derive(Serialize)]
-struct ReplayNeedsRefetchData {
-    needs_refetch: bool,
-    current_seq: u64,
-}
-
-#[derive(Serialize)]
-struct ConflictData<T> {
-    conflicts: T,
-}
-
-#[derive(Serialize)]
-struct BatchCreateSummaryData {
-    summary: BatchCreateSummary,
-}
-
-#[derive(Serialize)]
-struct BatchCreateSummary {
-    inserted_count: i64,
-    skipped: Vec<timetable_service::BatchSkippedCell>,
-    blocked: Vec<timetable_service::BatchBlockedCell>,
-    deleted: Vec<timetable_service::BatchDeletedEntry>,
-    excluded_instructors: Vec<timetable_service::BatchExcludedInstructor>,
-}
-
-// ============================================
-// Academic Periods API
-// ============================================
-
-/// GET /api/academic/periods
-pub async fn list_periods(
-    State(state): State<AppState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Query(query): Query<PeriodQuery>,
-) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context_from_session(&state, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_YEAR_READ_SCHOOL)?;
-
-    let periods = period_service::list_periods(&pool, query).await?;
-    Ok(Json(ApiResponse::ok(periods)).into_response())
-}
-
-/// POST /api/academic/periods
-pub async fn create_period(
-    State(state): State<AppState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Json(payload): Json<CreatePeriodRequest>,
-) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context_from_session(&state, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_YEAR_MANAGE_SCHOOL)?;
-
-    let period = period_service::create_period(&pool, payload).await?;
-    Ok((StatusCode::CREATED, Json(ApiResponse::ok(period))).into_response())
-}
-
-/// PUT /api/academic/periods/{id}
-pub async fn update_period(
-    State(state): State<AppState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Path(id): Path<Uuid>,
-    Json(payload): Json<UpdatePeriodRequest>,
-) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context_from_session(&state, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_YEAR_MANAGE_SCHOOL)?;
-
-    let period = period_service::update_period(&pool, id, payload).await?;
-    Ok(Json(ApiResponse::ok(period)).into_response())
-}
-
-/// DELETE /api/academic/periods/{id}
-pub async fn delete_period(
-    State(state): State<AppState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Path(id): Path<Uuid>,
-) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context_from_session(&state, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_YEAR_MANAGE_SCHOOL)?;
-
-    period_service::delete_period(&pool, id).await?;
-    Ok(Json(ApiResponse::empty()).into_response())
-}
-
-/// POST /api/academic/periods/reorder
-pub async fn reorder_periods(
-    State(state): State<AppState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Json(payload): Json<ReorderPeriodsRequest>,
-) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context_from_session(&state, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_YEAR_MANAGE_SCHOOL)?;
-
-    let updated = period_service::reorder_periods(&pool, payload).await?;
-    Ok(Json(ApiResponse::ok(UpdatedData { updated })).into_response())
-}
-
-// ============================================
-// Timetable Entries API
-// ============================================
-
-/// GET /api/academic/timetable
 pub async fn list_timetable_entries(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
-    headers: HeaderMap,
     Query(query): Query<TimetableQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::LEARNING_OFFERING_READ_SCHOOL)?;
-
-    let semester_id = query.academic_semester_id;
-    let entries = timetable_service::list_entries(&pool, query.into()).await?;
-
-    // current_seq ของ semester — client ใช้เป็นจุดเริ่มต้น tracking patch events
-    let current_seq = if let Some(sem_id) = semester_id {
-        let subdomain =
-            extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
-        state.websocket_manager.current_seq(subdomain, sem_id)
-    } else {
-        0
-    };
-
-    Ok(Json(ApiResponse::ok(TimetableItemsData {
-        items: entries,
-        current_seq,
-    }))
-    .into_response())
-}
-
-/// GET /api/academic/timetable/daily-teaching
-#[utoipa::path(
-    get,
-    path = "/api/academic/timetable/daily-teaching",
-    operation_id = "getDailyTeachingOverview",
-    tag = "academic",
-    params(daily_teaching_service::DailyTeachingQuery),
-    responses(
-        (status = 200, description = "Daily teaching overview", body = ApiResponse<daily_teaching_service::DailyTeachingOverview>),
-        (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Daily teaching permission required", body = ApiErrorResponse)
-    )
-)]
-pub async fn daily_teaching_overview(
-    State(state): State<AppState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Query(query): Query<daily_teaching_service::DailyTeachingQuery>,
-) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context_from_session(&state, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-
-    actor.require_any_permission(&[
-        codes::ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL,
-        codes::LEARNING_OFFERING_READ_SCHOOL,
-    ])?;
-
-    let include_empty_teachers_allowed = actor.has_permission(codes::LEARNING_OFFERING_READ_SCHOOL);
-    let data = daily_teaching_service::get_daily_teaching_overview(
-        &pool,
-        query,
-        include_empty_teachers_allowed,
+    let access = require_learning_offering_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        OfferingAction::Read,
     )
     .await?;
-
-    Ok(Json(ApiResponse::ok(data)).into_response())
+    let entries = timetable_service::list_entries(&context.tenant.pool, &query, &access).await?;
+    Ok(Json(ApiResponse::ok(entries)).into_response())
 }
 
-/// GET /api/academic/timetable/replay
-/// Query: semester_id, after_seq
-/// Return: { events: [...], current_seq } หรือ { needs_refetch: true, current_seq }
-#[derive(Debug, serde::Deserialize)]
-pub struct ReplayQuery {
-    pub semester_id: Uuid,
-    pub after_seq: u64,
-}
-
-pub async fn replay_events(
-    State(state): State<AppState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    headers: HeaderMap,
-    Query(query): Query<ReplayQuery>,
-) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context_from_session(&state, &session).await?;
-    let actor = context.actor;
-    actor.require_permission(codes::LEARNING_OFFERING_READ_SCHOOL)?;
-
-    let subdomain =
-        extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
-    let current_seq = state
-        .websocket_manager
-        .current_seq(subdomain.clone(), query.semester_id);
-
-    match state
-        .websocket_manager
-        .replay(subdomain, query.semester_id, query.after_seq)
-    {
-        Some(events) => Ok(Json(ApiResponse::ok(ReplayEventsData {
-            events,
-            current_seq,
-            needs_refetch: false,
-        }))
-        .into_response()),
-        None => Ok(Json(ApiResponse::ok(ReplayNeedsRefetchData {
-            needs_refetch: true,
-            current_seq,
-        }))
-        .into_response()),
-    }
-}
-
-#[derive(Debug, serde::Deserialize, IntoParams)]
-#[into_params(parameter_in = Query)]
-pub struct MyTimetableQuery {
-    pub academic_semester_id: Option<Uuid>,
-    pub day_of_week: Option<String>,
-    pub include_team_ghosts: Option<bool>,
-}
-
-/// GET /api/me/timetable — ผู้ใช้ดูตารางของตัวเอง (student/staff)
-/// - student: filter ตาม student_class_enrollments
-/// - staff: filter ตาม timetable_entry_instructors (+ team ghosts ถ้าเลือก)
-/// - parent: ใช้ /api/parent/students/{id}/timetable แทน
 #[utoipa::path(
     get,
-    path = "/api/me/timetable",
-    operation_id = "getMyTimetable",
-    tag = "academic",
-    params(MyTimetableQuery),
-    responses(
-        (status = 200, description = "Current student's or staff member's timetable with configured periods", body = ApiResponse<MyTimetableData>),
-        (status = 400, description = "Parent accounts must use the parent timetable route", body = ApiErrorResponse),
-        (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Unsupported user type", body = ApiErrorResponse)
-    )
+    path = "/api/staff/me/timetable",
+    params(TimetableQuery),
+    responses((status = 200, body = ApiResponse<Vec<crate::modules::academic::models::timetable::TimetableEntry>>)),
+    tag = "staff"
 )]
 pub async fn get_my_timetable(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
-    Query(query): Query<MyTimetableQuery>,
+    Query(mut query): Query<TimetableQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = current_user_tenant_context_from_session(&session);
-    let subdomain = context.tenant.subdomain.clone();
-    let pool = context.tenant.pool;
-    let semester_id = query.academic_semester_id;
-
-    let filter = match session.user_type.as_str() {
-        "student" => crate::modules::academic::services::timetable_service::TimetableFilter {
-            student_id: Some(context.user_id),
-            academic_semester_id: semester_id,
-            day_of_week: query.day_of_week,
-            ..Default::default()
-        },
-        "staff" => crate::modules::academic::services::timetable_service::TimetableFilter {
-            instructor_id: Some(context.user_id),
-            academic_semester_id: semester_id,
-            day_of_week: query.day_of_week,
-            include_team_ghosts: query.include_team_ghosts.unwrap_or(false),
-            ..Default::default()
-        },
-        "parent" => {
-            return Err(AppError::BadRequest(
-                "ผู้ปกครองต้องใช้ /api/parent/students/{id}/timetable".to_string(),
-            ))
-        }
-        _ => return Err(AppError::Forbidden("ไม่รองรับ user_type นี้".to_string())),
-    };
-
-    let entries = timetable_service::list_entries(&pool, filter).await?;
-    let periods = match semester_id {
-        Some(semester_id) => {
-            period_service::list_active_periods_for_semester(&pool, semester_id).await?
-        }
-        None => Vec::new(),
-    };
-
-    let current_seq = if let Some(sem_id) = semester_id {
-        state.websocket_manager.current_seq(subdomain, sem_id)
-    } else {
-        0
-    };
-
-    Ok(Json(ApiResponse::ok(MyTimetableData {
-        items: entries,
-        periods,
-        current_seq,
-    }))
-    .into_response())
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let access = require_learning_offering_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        OfferingAction::Read,
+    )
+    .await?;
+    query.instructor_id = Some(context.actor.user_id);
+    let entries = timetable_service::list_entries(&context.tenant.pool, &query, &access).await?;
+    Ok(Json(ApiResponse::ok(entries)).into_response())
 }
 
-/// POST /api/academic/timetable
 pub async fn create_timetable_entry(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -370,274 +71,14 @@ pub async fn create_timetable_entry(
     Json(payload): Json<CreateTimetableEntryRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
-
-    let user_id = actor.user_id;
-    let client_temp_id = payload.client_temp_id.clone();
-    let payload_semester_id = payload.academic_semester_id;
-    let payload_course_id = payload.classroom_course_id;
-
-    let outcome = timetable_service::create_entry(&pool, Some(user_id), payload).await?;
-
-    match outcome {
-        timetable_service::CreateEntryOutcome::Conflict(conflicts) => {
-            // Broadcast EntryRejected → ทุก client ลบ tempEntry
-            if let Some(temp_id) = client_temp_id {
-                let subdomain_for_reject = extract_subdomain_from_request(&headers)
-                    .unwrap_or_else(|_| "default".to_string());
-                let sem_for_reject: Option<Uuid> = if let Some(sem) = payload_semester_id {
-                    Some(sem)
-                } else if let Some(cc_id) = payload_course_id {
-                    timetable_service::resolve_classroom_course_semester_id(&pool, cc_id)
-                        .await
-                        .unwrap_or(None)
-                } else {
-                    None
-                };
-                if let Some(sem) = sem_for_reject {
-                    let reason = conflicts
-                        .iter()
-                        .map(|c| c.message.as_str())
-                        .collect::<Vec<_>>()
-                        .join(" · ");
-                    state.websocket_manager.broadcast_ephemeral(
-                        subdomain_for_reject,
-                        sem,
-                        TimetableEvent::EntryRejected {
-                            user_id,
-                            temp_id,
-                            reason: if reason.is_empty() {
-                                "พบข้อขัดแย้ง".to_string()
-                            } else {
-                                reason
-                            },
-                        },
-                    );
-                }
-            }
-            Ok((
-                StatusCode::CONFLICT,
-                Json(ApiErrorResponseWithData::with_message(
-                    "Timetable conflict detected",
-                    "Timetable conflict detected",
-                    ConflictData { conflicts },
-                )),
-            )
-                .into_response())
-        }
-        timetable_service::CreateEntryOutcome::Created(entry) => {
-            let subdomain =
-                extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
-            let has_subs = state
-                .websocket_manager
-                .has_other_subscribers(subdomain.clone(), entry.academic_semester_id);
-
-            // Re-fetch joined เฉพาะเมื่อต้อง broadcast
-            if has_subs {
-                if let Some(full_entry) =
-                    timetable_service::fetch_entry_by_id(&pool, entry.id).await
-                {
-                    let entry_json = serde_json::to_value(&full_entry).unwrap_or_default();
-                    state.websocket_manager.broadcast_mutation(
-                        subdomain,
-                        full_entry.academic_semester_id,
-                        TimetableEvent::EntryCreated {
-                            user_id,
-                            entry: entry_json,
-                            client_temp_id,
-                        },
-                    );
-                }
-            }
-
-            Ok((StatusCode::CREATED, Json(ApiResponse::ok(entry))).into_response())
-        }
-    }
+    require_create_access(&context, payload.learning_group_id).await?;
+    let entry =
+        timetable_service::create_entry(&context.tenant.pool, context.actor.user_id, payload)
+            .await?;
+    broadcast_entry_changed(&state, &headers, context.actor.user_id, &entry);
+    Ok(Json(ApiResponse::ok(entry)).into_response())
 }
 
-/// DELETE /api/academic/timetable/batch
-/// Deletes all entries matching activity_slot_id + day_of_week + semester
-pub async fn delete_batch_timetable_entries(
-    State(state): State<AppState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    headers: HeaderMap,
-    Json(payload): Json<DeleteBatchTimetableEntriesRequest>,
-) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context_from_session(&state, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
-
-    let deleted_count = timetable_service::delete_entries_by_slot(
-        &pool,
-        payload.activity_slot_id,
-        &payload.day_of_week,
-        payload.academic_semester_id,
-    )
-    .await?;
-
-    let user_id = actor.user_id;
-    let subdomain =
-        extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
-    state.websocket_manager.broadcast_mutation(
-        subdomain,
-        payload.academic_semester_id,
-        TimetableEvent::TableRefresh { user_id },
-    );
-
-    Ok(Json(ApiResponse::ok(DeletedCountData { deleted_count })).into_response())
-}
-
-/// DELETE /api/academic/timetable/{id}
-pub async fn delete_timetable_entry(
-    State(state): State<AppState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    headers: HeaderMap,
-    Path(id): Path<Uuid>,
-) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context_from_session(&state, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
-
-    let semester_id = timetable_service::delete_entry(&pool, id).await?;
-
-    if let Some(semester_id) = semester_id {
-        let subdomain =
-            extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
-        let user_id = actor.user_id;
-        state.websocket_manager.broadcast_mutation(
-            subdomain,
-            semester_id,
-            TimetableEvent::EntryDeleted {
-                user_id,
-                entry_id: id,
-            },
-        );
-    }
-
-    Ok(Json(ApiResponse::empty()).into_response())
-}
-
-/// DELETE /api/academic/timetable/batch-group/{batch_id}
-pub async fn delete_batch_group(
-    State(state): State<AppState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    headers: HeaderMap,
-    Path(batch_id): Path<Uuid>,
-) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context_from_session(&state, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
-
-    let (deleted_count, semester_id) =
-        timetable_service::delete_batch_group(&pool, batch_id).await?;
-
-    if let Some(sid) = semester_id {
-        let subdomain =
-            extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
-        let user_id = actor.user_id;
-        state.websocket_manager.broadcast_mutation(
-            subdomain,
-            sid,
-            TimetableEvent::TableRefresh { user_id },
-        );
-    }
-
-    Ok(Json(ApiResponse::ok(DeletedCountData { deleted_count })).into_response())
-}
-
-// Conflict detection ย้ายไป timetable_service::validate_entry
-
-/// PUT /api/academic/timetable/{id}
-pub async fn update_timetable_entry(
-    State(state): State<AppState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    headers: HeaderMap,
-    Path(id): Path<Uuid>,
-    Json(payload): Json<UpdateTimetableEntryRequest>,
-) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context_from_session(&state, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
-
-    let user_id = actor.user_id;
-    let outcome = timetable_service::update_entry(&pool, Some(user_id), id, payload).await?;
-
-    match outcome {
-        timetable_service::UpdateEntryOutcome::Conflict {
-            conflicts,
-            existing,
-        } => {
-            // Broadcast DropRejected → ทุก client rollback optimistic state
-            let subdomain_for_reject =
-                extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
-            let reason = conflicts
-                .iter()
-                .map(|c| c.message.as_str())
-                .collect::<Vec<_>>()
-                .join(" · ");
-            state.websocket_manager.broadcast_ephemeral(
-                subdomain_for_reject,
-                existing.academic_semester_id,
-                TimetableEvent::DropRejected {
-                    user_id,
-                    entry_id: id,
-                    original_day: existing.day_of_week.clone(),
-                    original_period_id: existing.period_id,
-                    original_room_id: existing.room_id,
-                    partner_id: None,
-                    partner_original_day: None,
-                    partner_original_period_id: None,
-                    reason: if reason.is_empty() {
-                        "พบข้อขัดแย้ง".to_string()
-                    } else {
-                        reason
-                    },
-                },
-            );
-            Ok((
-                StatusCode::CONFLICT,
-                Json(ApiErrorResponseWithData::with_message(
-                    "Conflict detected",
-                    "Conflict detected",
-                    ConflictData { conflicts },
-                )),
-            )
-                .into_response())
-        }
-        timetable_service::UpdateEntryOutcome::Updated { updated, existing } => {
-            // Broadcast patch event — re-fetch joined เฉพาะถ้ามี subscriber
-            let subdomain =
-                extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
-            let has_subs = state
-                .websocket_manager
-                .has_other_subscribers(subdomain.clone(), existing.academic_semester_id);
-            if has_subs {
-                if let Some(full_entry) =
-                    timetable_service::fetch_entry_by_id(&pool, updated.id).await
-                {
-                    let entry_json = serde_json::to_value(&full_entry).unwrap_or_default();
-                    state.websocket_manager.broadcast_mutation(
-                        subdomain,
-                        existing.academic_semester_id,
-                        TimetableEvent::EntryUpdated {
-                            user_id,
-                            entry: entry_json,
-                        },
-                    );
-                }
-            }
-            Ok(Json(ApiResponse::ok(updated)).into_response())
-        }
-    }
-}
-
-/// POST /api/academic/timetable/batch
 pub async fn create_batch_timetable_entries(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -645,299 +86,201 @@ pub async fn create_batch_timetable_entries(
     Json(payload): Json<CreateBatchTimetableEntriesRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
-
-    let user_id = actor.user_id;
-    let outcome = timetable_service::create_batch_entries(&pool, Some(user_id), payload).await?;
-
-    let subdomain =
-        extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
-    state.websocket_manager.broadcast_mutation(
-        subdomain,
-        outcome.semester_id,
-        TimetableEvent::TableRefresh { user_id },
-    );
-
-    Ok(Json(ApiResponse::ok(BatchCreateSummaryData {
-        summary: BatchCreateSummary {
-            inserted_count: outcome.inserted_count,
-            skipped: outcome.skipped,
-            blocked: outcome.blocked,
-            deleted: outcome.deleted,
-            excluded_instructors: outcome.excluded_instructors,
-        },
-    }))
-    .into_response())
-}
-
-/// GET /api/academic/timetable/{id}/my-activity
-/// Returns the activity group the current user is enrolled in for a given timetable entry's slot
-pub async fn get_my_activity_for_entry(
-    Extension(session): Extension<AuthenticatedSession>,
-    Path(entry_id): Path<Uuid>,
-) -> Result<impl IntoResponse, AppError> {
-    let context = current_user_tenant_context_from_session(&session);
-    let pool = context.tenant.pool;
-    let user_id = context.user_id;
-
-    let data = timetable_service::get_my_activity_for_entry(&pool, user_id, entry_id).await?;
-    Ok(Json(ApiResponse::ok(data)).into_response())
-}
-
-/// POST /api/academic/timetable/:id/instructors
-#[derive(Debug, serde::Deserialize)]
-pub struct AddEntryInstructorRequest {
-    pub instructor_id: Uuid,
-    pub role: Option<String>,
-}
-
-pub async fn add_entry_instructor(
-    State(state): State<AppState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    headers: HeaderMap,
-    Path(entry_id): Path<Uuid>,
-    Json(body): Json<AddEntryInstructorRequest>,
-) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context_from_session(&state, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
-    let user_id = actor.user_id;
-    let role = body.role.clone().unwrap_or_else(|| "primary".to_string());
-
-    let result =
-        timetable_service::add_entry_instructor(&pool, entry_id, body.instructor_id, &role).await?;
-
-    if let Some(sem_id) = result.semester_id {
-        let subdomain =
-            extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
-        if state
-            .websocket_manager
-            .has_other_subscribers(subdomain.clone(), sem_id)
-        {
-            state.websocket_manager.broadcast_mutation(
-                subdomain,
-                sem_id,
-                TimetableEvent::EntryInstructorAdded {
-                    user_id,
-                    entry_id,
-                    instructor_id: body.instructor_id,
-                    instructor_name: result.instructor_name,
-                    role,
-                },
-            );
+    if payload.learning_group_ids.is_empty() {
+        context
+            .actor
+            .require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
+    } else {
+        for group_id in &payload.learning_group_ids {
+            require_learning_group_access(
+                &context.tenant.pool,
+                &context.actor,
+                *group_id,
+                OfferingAction::Manage,
+            )
+            .await?;
         }
     }
-
-    Ok(Json(ApiResponse::empty()).into_response())
-}
-
-/// DELETE /api/academic/timetable/:id/instructors/:uid
-pub async fn remove_entry_instructor(
-    State(state): State<AppState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    headers: HeaderMap,
-    Path((entry_id, instructor_id)): Path<(Uuid, Uuid)>,
-) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context_from_session(&state, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
-    let user_id = actor.user_id;
-
-    let result = timetable_service::remove_entry_instructor(&pool, entry_id, instructor_id).await?;
-
-    if let Some(sem_id) = result.semester_id {
-        let subdomain =
-            extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
-        state.websocket_manager.broadcast_mutation(
-            subdomain,
-            sem_id,
-            TimetableEvent::EntryInstructorRemoved {
-                user_id,
-                entry_id,
-                instructor_id,
-                entry_deleted: result.entry_deleted,
-            },
-        );
+    let result =
+        timetable_service::create_batch(&context.tenant.pool, context.actor.user_id, payload)
+            .await?;
+    for entry in &result.entries {
+        broadcast_entry_changed(&state, &headers, context.actor.user_id, entry);
     }
-
-    Ok(Json(ApiResponse::empty()).into_response())
+    Ok(Json(ApiResponse::ok(result)).into_response())
 }
 
-/// POST /api/academic/timetable/slots/:slot_id/instructors/:uid/restore
-pub async fn restore_instructor_to_slot_entries(
-    State(state): State<AppState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Path((slot_id, instructor_id)): Path<(Uuid, Uuid)>,
-) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context_from_session(&state, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
-    let inserted =
-        timetable_service::restore_instructor_to_slot(&pool, slot_id, instructor_id).await?;
-    Ok(Json(ApiResponse::ok(InsertedData { inserted })).into_response())
-}
-
-/// DELETE /api/academic/timetable/slots/:slot_id/instructors/:uid
-pub async fn hide_instructor_from_slot_entries(
+pub async fn update_timetable_entry(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
     headers: HeaderMap,
-    Path((slot_id, instructor_id)): Path<(Uuid, Uuid)>,
+    Path(entry_id): Path<Uuid>,
+    Json(payload): Json<UpdateTimetableEntryRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
-    let (deleted, semester_id) =
-        timetable_service::hide_instructor_from_slot(&pool, slot_id, instructor_id).await?;
-
-    if let Some(sid) = semester_id {
-        let subdomain =
-            extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
-        let user_id = actor.user_id;
-        state.websocket_manager.broadcast_mutation(
-            subdomain,
-            sid,
-            TimetableEvent::TableRefresh { user_id },
-        );
-    }
-
-    Ok(Json(ApiResponse::ok(DeletedData { deleted })).into_response())
-}
-
-/// DELETE /api/academic/timetable/slots/:slot_id/instructors/:uid/period
-#[derive(Debug, serde::Deserialize)]
-pub struct HideSlotPeriodQuery {
-    pub day_of_week: String,
-    pub period_id: Uuid,
-}
-
-pub async fn hide_instructor_from_slot_period_entries(
-    State(state): State<AppState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    headers: HeaderMap,
-    Path((slot_id, instructor_id)): Path<(Uuid, Uuid)>,
-    Query(q): Query<HideSlotPeriodQuery>,
-) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context_from_session(&state, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
-    let (deleted, semester_id) = timetable_service::hide_instructor_from_slot_period(
-        &pool,
-        slot_id,
-        instructor_id,
-        &q.day_of_week,
-        q.period_id,
+    require_existing_entry_manage_access(&context, entry_id).await?;
+    let entry = timetable_service::update_entry(
+        &context.tenant.pool,
+        entry_id,
+        context.actor.user_id,
+        payload,
     )
     .await?;
-
-    if let Some(sid) = semester_id {
-        let subdomain =
-            extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
-        let user_id = actor.user_id;
-        state.websocket_manager.broadcast_mutation(
-            subdomain,
-            sid,
-            TimetableEvent::TableRefresh { user_id },
-        );
-    }
-
-    Ok(Json(ApiResponse::ok(DeletedData { deleted })).into_response())
+    broadcast_entry_changed(&state, &headers, context.actor.user_id, &entry);
+    Ok(Json(ApiResponse::ok(entry)).into_response())
 }
 
-// ============================================
-// Swap + Validate-Moves (drag-drop UX enhancements)
-// ============================================
+pub async fn delete_timetable_entry(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    headers: HeaderMap,
+    Path(entry_id): Path<Uuid>,
+    Query(query): Query<DeleteTimetableEntryQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    require_existing_entry_manage_access(&context, entry_id).await?;
+    let entry = timetable_service::deactivate_entry(
+        &context.tenant.pool,
+        entry_id,
+        query.row_version,
+        context.actor.user_id,
+    )
+    .await?;
+    broadcast_entry_changed(&state, &headers, context.actor.user_id, &entry);
+    Ok(Json(ApiResponse::ok(entry)).into_response())
+}
 
-/// POST /api/academic/timetable/swap
-/// Atomically swap day+period of two timetable entries. classroom_id and room_id stay put.
-/// Validates both entries don't conflict at their new positions.
+pub async fn delete_batch_group(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    headers: HeaderMap,
+    Path(batch_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    context
+        .actor
+        .require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
+    let entries =
+        timetable_service::deactivate_batch(&context.tenant.pool, batch_id, context.actor.user_id)
+            .await?;
+    for entry in &entries {
+        broadcast_entry_changed(&state, &headers, context.actor.user_id, entry);
+    }
+    Ok(Json(ApiResponse::ok(entries)).into_response())
+}
+
 pub async fn swap_timetable_entries(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
     headers: HeaderMap,
-    Json(body): Json<SwapTimetableEntriesRequest>,
+    Json(payload): Json<SwapTimetableEntriesRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
-
-    let user_id = actor.user_id;
-    let subdomain =
-        extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
-
-    let outcome = timetable_service::swap_entries(&pool, body).await?;
-
-    match outcome {
-        timetable_service::SwapOutcome::Conflict(info) => {
-            state.websocket_manager.broadcast_ephemeral(
-                subdomain,
-                info.semester_id,
-                TimetableEvent::DropRejected {
-                    user_id,
-                    entry_id: info.a_id,
-                    original_day: info.a_day,
-                    original_period_id: info.a_period,
-                    original_room_id: info.a_room,
-                    partner_id: Some(info.b_id),
-                    partner_original_day: Some(info.b_day),
-                    partner_original_period_id: Some(info.b_period),
-                    reason: info.reason.clone(),
-                },
-            );
-            Err(AppError::BadRequest(info.reason))
-        }
-        timetable_service::SwapOutcome::Swapped { semester_id } => {
-            state.websocket_manager.broadcast_mutation(
-                subdomain,
-                semester_id,
-                TimetableEvent::TableRefresh { user_id },
-            );
-            Ok(Json(ApiResponse::empty_with_message("Swapped")).into_response())
-        }
-    }
+    require_existing_entry_manage_access(&context, payload.entry_a_id).await?;
+    require_existing_entry_manage_access(&context, payload.entry_b_id).await?;
+    let result =
+        timetable_service::swap_entries(&context.tenant.pool, context.actor.user_id, payload)
+            .await?;
+    broadcast_entry_changed(&state, &headers, context.actor.user_id, &result.entry_a);
+    broadcast_entry_changed(&state, &headers, context.actor.user_id, &result.entry_b);
+    Ok(Json(ApiResponse::ok(result)).into_response())
 }
 
-/// POST /api/academic/timetable/validate-moves
-/// For given entry_id, compute validity of moving to every (day, period) cell in that entry's semester.
-/// Returns map so frontend can colorize drop targets before release.
 pub async fn validate_timetable_moves(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
-    Json(body): Json<ValidateMovesRequest>,
+    Json(payload): Json<ValidateMovesRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::LEARNING_OFFERING_READ_SCHOOL)?;
-
-    let cells = timetable_service::validate_moves(&pool, body).await?;
+    require_existing_entry_manage_access(&context, payload.entry_id).await?;
+    let cells = timetable_service::validate_moves(
+        &context.tenant.pool,
+        payload.academic_term_id,
+        payload.entry_id,
+    )
+    .await?;
     Ok(Json(ApiResponse::ok(cells)).into_response())
 }
 
-#[derive(serde::Deserialize)]
-pub struct OccupancyQuery {
-    pub semester_id: Uuid,
-}
-
-/// GET /api/academic/timetable/occupancy?semester_id=X
 pub async fn get_timetable_occupancy(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
-    Query(q): Query<OccupancyQuery>,
+    Query(query): Query<TimetableOccupancyQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::LEARNING_OFFERING_READ_SCHOOL)?;
+    context
+        .actor
+        .require_permission(codes::LEARNING_OFFERING_READ_SCHOOL)?;
+    let occupancy =
+        timetable_service::occupancy(&context.tenant.pool, query.academic_term_id).await?;
+    Ok(Json(ApiResponse::ok(occupancy)).into_response())
+}
 
-    let rows = timetable_service::get_occupancy(&pool, q.semester_id).await?;
-    Ok(Json(ApiResponse::ok(rows)).into_response())
+#[utoipa::path(
+    get,
+    path = "/api/academic/timetable/daily-teaching",
+    params(daily_teaching_service::DailyTeachingQuery),
+    responses((status = 200, body = ApiResponse<daily_teaching_service::DailyTeachingOverview>)),
+    tag = "academic"
+)]
+pub async fn daily_teaching_overview(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<daily_teaching_service::DailyTeachingQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    context
+        .actor
+        .require_permission(codes::LEARNING_OFFERING_READ_SCHOOL)?;
+    let overview =
+        daily_teaching_service::get_daily_teaching_overview(&context.tenant.pool, query).await?;
+    Ok(Json(ApiResponse::ok(overview)).into_response())
+}
+
+async fn require_create_access(
+    context: &crate::utils::request_context::ActorTenantContext,
+    learning_group_id: Option<Uuid>,
+) -> Result<(), AppError> {
+    if let Some(group_id) = learning_group_id {
+        require_learning_group_access(
+            &context.tenant.pool,
+            &context.actor,
+            group_id,
+            OfferingAction::Manage,
+        )
+        .await?;
+    } else {
+        context
+            .actor
+            .require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
+    }
+    Ok(())
+}
+
+async fn require_existing_entry_manage_access(
+    context: &crate::utils::request_context::ActorTenantContext,
+    entry_id: Uuid,
+) -> Result<(), AppError> {
+    let entry = timetable_service::get_entry(&context.tenant.pool, entry_id).await?;
+    require_create_access(context, entry.learning_group_id).await
+}
+
+fn broadcast_entry_changed(
+    state: &AppState,
+    headers: &HeaderMap,
+    user_id: Uuid,
+    entry: &crate::modules::academic::models::timetable::TimetableEntry,
+) {
+    let subdomain =
+        extract_subdomain_from_request(headers).unwrap_or_else(|_| "default".to_string());
+    state.websocket_manager.broadcast_mutation(
+        subdomain,
+        entry.academic_term_id,
+        TimetableEvent::TimetableChanged {
+            user_id,
+            academic_term_id: entry.academic_term_id,
+            learning_group_id: entry.learning_group_id,
+            revision: entry.row_version,
+        },
+    );
 }

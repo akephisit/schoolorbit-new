@@ -26,11 +26,13 @@ pub(super) struct ExamSessionRow {
     exam_day_id: Uuid,
     starts_at: NaiveTime,
     ends_at: NaiveTime,
-    academic_semester_id: Uuid,
+    academic_term_id: Uuid,
+    academic_year_id: Uuid,
     assessment_category_id: Uuid,
-    assessment_plan_id: Uuid,
-    classroom_course_id: Uuid,
-    classroom_id: Uuid,
+    course_assessment_plan_id: Uuid,
+    learning_offering_id: Uuid,
+    learning_group_id: Uuid,
+    homeroom_id: Uuid,
     subject_id: Uuid,
     grade_level_id: Uuid,
     duration_minutes: i32,
@@ -40,11 +42,12 @@ pub(super) struct ExamSessionRow {
     subject_code: Option<String>,
     subject_name_th: Option<String>,
     subject_name_en: Option<String>,
+    subject_version_display_label: Option<String>,
     subject_group_id: Option<Uuid>,
     subject_group_name: Option<String>,
     subject_group_display_order: Option<i32>,
     subject_type: Option<String>,
-    classroom_name: Option<String>,
+    homeroom_name: Option<String>,
     grade_level_name: Option<String>,
     grade_level_type: Option<String>,
     grade_level_year: Option<i32>,
@@ -62,11 +65,13 @@ impl ExamSessionRow {
             exam_day_id: self.exam_day_id,
             starts_at: self.starts_at,
             ends_at: self.ends_at,
-            academic_semester_id: self.academic_semester_id,
+            academic_term_id: self.academic_term_id,
+            academic_year_id: self.academic_year_id,
             assessment_category_id: self.assessment_category_id,
-            assessment_plan_id: self.assessment_plan_id,
-            classroom_course_id: self.classroom_course_id,
-            classroom_id: self.classroom_id,
+            course_assessment_plan_id: self.course_assessment_plan_id,
+            learning_offering_id: self.learning_offering_id,
+            learning_group_id: self.learning_group_id,
+            homeroom_id: self.homeroom_id,
             subject_id: self.subject_id,
             grade_level_id: self.grade_level_id,
             duration_minutes: self.duration_minutes,
@@ -76,11 +81,12 @@ impl ExamSessionRow {
             subject_code: self.subject_code,
             subject_name_th: self.subject_name_th,
             subject_name_en: self.subject_name_en,
+            subject_version_display_label: self.subject_version_display_label,
             subject_group_id: self.subject_group_id,
             subject_group_name: self.subject_group_name,
             subject_group_display_order: self.subject_group_display_order,
             subject_type: self.subject_type,
-            classroom_name: self.classroom_name,
+            homeroom_name: self.homeroom_name,
             grade_level_name: self.grade_level_name,
             grade_level_type: self.grade_level_type,
             grade_level_year: self.grade_level_year,
@@ -96,11 +102,11 @@ impl ExamSessionRow {
 struct ExamScheduleItemPlacementContext {
     id: Uuid,
     exam_round_id: Uuid,
-    academic_semester_id: Uuid,
+    academic_term_id: Uuid,
     assessment_category_id: Uuid,
-    assessment_plan_id: Uuid,
-    classroom_course_id: Uuid,
-    classroom_id: Uuid,
+    course_assessment_plan_id: Uuid,
+    learning_group_id: Uuid,
+    homeroom_id: Uuid,
     subject_id: Uuid,
     grade_level_id: Uuid,
     duration_minutes: i32,
@@ -120,10 +126,10 @@ struct DayRoomAssignmentPlacementContext {
 async fn lock_exam_session_conflict_scope(
     tx: &mut Transaction<'_, Postgres>,
     exam_day_id: Uuid,
-    classroom_id: Uuid,
+    homeroom_id: Uuid,
     room_id: Uuid,
 ) -> Result<(), AppError> {
-    for lock_key in exam_session_conflict_lock_keys(exam_day_id, classroom_id, room_id) {
+    for lock_key in exam_session_conflict_lock_keys(exam_day_id, homeroom_id, room_id) {
         sqlx::query("SELECT pg_advisory_xact_lock($1)")
             .bind(lock_key)
             .execute(&mut **tx)
@@ -159,11 +165,11 @@ pub async fn place_exam_session(
     .map_err(validation_error_to_app_error)?;
 
     let day_room_assignment =
-        fetch_day_room_assignment_placement_context(&mut tx, day.id, item.classroom_id).await?;
+        fetch_day_room_assignment_placement_context(&mut tx, day.id, item.homeroom_id).await?;
     lock_exam_session_conflict_scope(
         &mut tx,
         day.id,
-        item.classroom_id,
+        item.homeroom_id,
         day_room_assignment.room_id,
     )
     .await?;
@@ -172,7 +178,7 @@ pub async fn place_exam_session(
 
     let candidate = CandidateSession {
         session_id: existing_session_id,
-        classroom_id: item.classroom_id,
+        homeroom_id: item.homeroom_id,
         exam_day_id: day.id,
         starts_at: request.starts_at,
         ends_at,
@@ -287,11 +293,13 @@ async fn fetch_schedule_item_placement_context(
         r#"
         SELECT item.id,
                item.exam_round_id,
-               item.academic_semester_id,
+               item.academic_term_id,
+               item.academic_year_id,
                item.assessment_category_id,
-               item.assessment_plan_id,
-               item.classroom_course_id,
-               item.classroom_id,
+               item.course_assessment_plan_id,
+               item.learning_offering_id,
+               item.learning_group_id,
+               item.homeroom_id,
                item.subject_id,
                item.grade_level_id,
                item.duration_minutes
@@ -349,7 +357,7 @@ async fn fetch_blocked_windows_for_day_for_placement(
 async fn fetch_day_room_assignment_placement_context(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     exam_day_id: Uuid,
-    classroom_id: Uuid,
+    homeroom_id: Uuid,
 ) -> Result<DayRoomAssignmentPlacementContext, AppError> {
     sqlx::query_as::<_, DayRoomAssignmentPlacementContext>(
         r#"
@@ -357,12 +365,12 @@ async fn fetch_day_room_assignment_placement_context(
                room_id
         FROM academic_exam_day_room_assignments
         WHERE exam_day_id = $1
-          AND classroom_id = $2
+          AND homeroom_id = $2
         FOR UPDATE
         "#,
     )
     .bind(exam_day_id)
-    .bind(classroom_id)
+    .bind(homeroom_id)
     .fetch_optional(&mut **tx)
     .await?
     .ok_or_else(|| {
@@ -394,7 +402,7 @@ async fn fetch_candidate_sessions_for_day(
     let rows = sqlx::query_as::<_, (Uuid, Uuid, Uuid, NaiveTime, NaiveTime)>(
         r#"
         SELECT session.id,
-               item.classroom_id,
+               item.homeroom_id,
                session.exam_day_id,
                session.starts_at,
                session.ends_at
@@ -412,9 +420,9 @@ async fn fetch_candidate_sessions_for_day(
     Ok(rows
         .into_iter()
         .map(
-            |(session_id, classroom_id, exam_day_id, starts_at, ends_at)| CandidateSession {
+            |(session_id, homeroom_id, exam_day_id, starts_at, ends_at)| CandidateSession {
                 session_id: Some(session_id),
-                classroom_id,
+                homeroom_id,
                 exam_day_id,
                 starts_at,
                 ends_at,
@@ -439,7 +447,7 @@ async fn fetch_candidate_room_sessions_for_day(
          AND item.exam_round_id = session.exam_round_id
         JOIN academic_exam_day_room_assignments assignment
           ON assignment.exam_day_id = session.exam_day_id
-         AND assignment.classroom_id = item.classroom_id
+         AND assignment.homeroom_id = item.homeroom_id
         WHERE session.exam_day_id = $1
         "#,
     )
@@ -472,11 +480,11 @@ async fn fetch_exam_session_view(
                session.exam_day_id,
                session.starts_at,
                session.ends_at,
-               item.academic_semester_id,
+               item.academic_term_id,
                item.assessment_category_id,
-               item.assessment_plan_id,
-               item.classroom_course_id,
-               item.classroom_id,
+               item.course_assessment_plan_id,
+               item.learning_group_id,
+               item.homeroom_id,
                item.subject_id,
                item.grade_level_id,
                item.duration_minutes,
@@ -484,13 +492,14 @@ async fn fetch_exam_session_view(
                day.exam_date AS exam_date,
                category.name AS assessment_category_name,
                subject.code AS subject_code,
-               subject.name_th AS subject_name_th,
-               subject.name_en AS subject_name_en,
-               subject.group_id AS subject_group_id,
+               subject_version.name_th AS subject_name_th,
+               subject_version.name_en AS subject_name_en,
+               offering.name_snapshot AS subject_version_display_label,
+               subject_version.group_id AS subject_group_id,
                subject_group.name_th AS subject_group_name,
                subject_group.display_order AS subject_group_display_order,
-               subject.type AS subject_type,
-               classroom.name AS classroom_name,
+               subject_version.type AS subject_type,
+               classroom.name AS homeroom_name,
                CASE grade_level.level_type
                    WHEN 'kindergarten' THEN CONCAT('อ.', grade_level.year)
                    WHEN 'primary' THEN CONCAT('ป.', grade_level.year)
@@ -510,15 +519,19 @@ async fn fetch_exam_session_view(
         JOIN academic_exam_days day
           ON day.id = session.exam_day_id
          AND day.exam_round_id = session.exam_round_id
-        JOIN academic_assessment_categories category
+        JOIN course_assessment_categories category
           ON category.id = item.assessment_category_id
+        JOIN learning_offerings offering ON offering.id = item.learning_offering_id
+        JOIN course_offering_details course_detail
+          ON course_detail.learning_offering_id = item.learning_offering_id
+        JOIN subject_versions subject_version ON subject_version.id = course_detail.subject_version_id
         JOIN subjects subject ON subject.id = item.subject_id
-        LEFT JOIN subject_groups subject_group ON subject_group.id = subject.group_id
-        JOIN class_rooms classroom ON classroom.id = item.classroom_id
+        LEFT JOIN subject_groups subject_group ON subject_group.id = subject_version.group_id
+        JOIN homerooms classroom ON classroom.id = item.homeroom_id
         JOIN grade_levels grade_level ON grade_level.id = item.grade_level_id
         LEFT JOIN academic_exam_day_room_assignments assignment
           ON assignment.exam_day_id = session.exam_day_id
-         AND assignment.classroom_id = item.classroom_id
+         AND assignment.homeroom_id = item.homeroom_id
         LEFT JOIN rooms room ON room.id = assignment.room_id
         LEFT JOIN buildings building ON building.id = room.building_id
         WHERE session.id = $1

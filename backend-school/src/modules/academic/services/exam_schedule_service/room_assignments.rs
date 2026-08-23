@@ -19,8 +19,8 @@ use super::sessions_and_conflicts::validate_day_allows_grade_level;
 struct DayRoomAssignmentViewRow {
     id: Uuid,
     exam_day_id: Uuid,
-    classroom_id: Uuid,
-    classroom_name: String,
+    homeroom_id: Uuid,
+    homeroom_name: String,
     room_id: Uuid,
     room_name: String,
     building_name: Option<String>,
@@ -30,8 +30,8 @@ struct DayRoomAssignmentViewRow {
 }
 #[derive(Debug, sqlx::FromRow)]
 struct ClassroomAssignmentContext {
-    classroom_id: Uuid,
-    classroom_name: String,
+    homeroom_id: Uuid,
+    homeroom_name: String,
     grade_level_id: Uuid,
     is_active: Option<bool>,
 }
@@ -45,7 +45,7 @@ struct RoomAssignmentContext {
 pub(super) struct SeatAssignmentContext {
     assignment_id: Uuid,
     pub(super) exam_round_id: Uuid,
-    classroom_id: Uuid,
+    homeroom_id: Uuid,
     capacity_override: Option<i32>,
     room_capacity: i32,
 }
@@ -54,8 +54,8 @@ impl DayRoomAssignmentViewRow {
         DayRoomAssignmentView {
             id: self.id,
             exam_day_id: self.exam_day_id,
-            classroom_id: self.classroom_id,
-            classroom_name: self.classroom_name,
+            homeroom_id: self.homeroom_id,
+            homeroom_name: self.homeroom_name,
             room_id: self.room_id,
             room_name: self.room_name,
             building_name: self.building_name,
@@ -139,7 +139,7 @@ pub async fn upsert_day_room_assignment(
 
     let mut tx = pool.begin().await?;
     let day_context = fetch_exam_day_context_for_update(&mut tx, exam_day_id).await?;
-    let classroom = fetch_classroom_assignment_context(&mut tx, request.classroom_id).await?;
+    let classroom = fetch_classroom_assignment_context(&mut tx, request.homeroom_id).await?;
     if classroom.is_active != Some(true) {
         return Err(AppError::BadRequest(
             "Classroom must be active before assigning an exam room".to_string(),
@@ -156,7 +156,7 @@ pub async fn upsert_day_room_assignment(
 
     let effective_capacity = capacity_override.unwrap_or(room.capacity);
     let active_student_count =
-        count_active_classroom_students(&mut tx, request.classroom_id).await?;
+        count_active_classroom_students(&mut tx, request.homeroom_id).await?;
     if active_student_count > i64::from(effective_capacity) {
         return Err(AppError::BadRequest(format!(
             "Classroom has {active_student_count} active student(s), which exceeds the room capacity of {effective_capacity}"
@@ -167,14 +167,14 @@ pub async fn upsert_day_room_assignment(
         r#"
         INSERT INTO academic_exam_day_room_assignments (
             exam_day_id,
-            classroom_id,
+            homeroom_id,
             room_id,
             capacity_override,
             created_by,
             updated_by
         )
         VALUES ($1, $2, $3, $4, $5, $5)
-        ON CONFLICT (exam_day_id, classroom_id)
+        ON CONFLICT (exam_day_id, homeroom_id)
         DO UPDATE SET
             room_id = EXCLUDED.room_id,
             capacity_override = EXCLUDED.capacity_override,
@@ -184,7 +184,7 @@ pub async fn upsert_day_room_assignment(
         "#,
     )
     .bind(exam_day_id)
-    .bind(request.classroom_id)
+    .bind(request.homeroom_id)
     .bind(request.room_id)
     .bind(capacity_override)
     .bind(actor_user_id)
@@ -233,7 +233,7 @@ pub async fn generate_seats_for_assignment(
         return Ok(existing_seats);
     }
 
-    let students = fetch_ordered_seat_students(&mut tx, assignment_context.classroom_id).await?;
+    let students = fetch_ordered_seat_students(&mut tx, assignment_context.homeroom_id).await?;
     let effective_capacity = assignment_context
         .capacity_override
         .unwrap_or(assignment_context.room_capacity);
@@ -308,19 +308,19 @@ fn validate_capacity_override(capacity_override: Option<i32>) -> Result<Option<i
 }
 async fn fetch_classroom_assignment_context(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    classroom_id: Uuid,
+    homeroom_id: Uuid,
 ) -> Result<ClassroomAssignmentContext, AppError> {
     sqlx::query_as::<_, ClassroomAssignmentContext>(
         r#"
-        SELECT id AS classroom_id,
-               name AS classroom_name,
+        SELECT id AS homeroom_id,
+               name AS homeroom_name,
                grade_level_id,
                is_active
-        FROM class_rooms
+        FROM homerooms
         WHERE id = $1
         "#,
     )
-    .bind(classroom_id)
+    .bind(homeroom_id)
     .fetch_optional(&mut **tx)
     .await?
     .ok_or_else(|| AppError::NotFound("Classroom not found".to_string()))
@@ -345,17 +345,20 @@ async fn fetch_room_assignment_context(
 }
 async fn count_active_classroom_students(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    classroom_id: Uuid,
+    homeroom_id: Uuid,
 ) -> Result<i64, AppError> {
     sqlx::query_scalar(
         r#"
         SELECT COUNT(*)::BIGINT
-        FROM student_class_enrollments enrollment
-        WHERE enrollment.class_room_id = $1
-          AND enrollment.status = 'active'
+        FROM homeroom_placements placement
+        JOIN student_academic_years student_year
+          ON student_year.id = placement.student_academic_year_id
+        WHERE placement.homeroom_id = $1
+          AND placement.status = 'current'
+          AND student_year.status = 'active'
         "#,
     )
-    .bind(classroom_id)
+    .bind(homeroom_id)
     .fetch_one(&mut **tx)
     .await
     .map_err(AppError::from)
@@ -368,8 +371,8 @@ async fn fetch_day_room_assignment_views_for_day(
         r#"
         SELECT assignment.id,
                assignment.exam_day_id,
-               assignment.classroom_id,
-               classroom.name AS classroom_name,
+               assignment.homeroom_id,
+               classroom.name AS homeroom_name,
                assignment.room_id,
                room.name_th AS room_name,
                building.name_th AS building_name,
@@ -381,7 +384,7 @@ async fn fetch_day_room_assignment_views_for_day(
                    WHERE seat.day_room_assignment_id = assignment.id
                ) AS seats_generated
         FROM academic_exam_day_room_assignments assignment
-        JOIN class_rooms classroom ON classroom.id = assignment.classroom_id
+        JOIN homerooms classroom ON classroom.id = assignment.homeroom_id
         JOIN rooms room ON room.id = assignment.room_id
         LEFT JOIN buildings building ON building.id = room.building_id
         WHERE assignment.exam_day_id = $1
@@ -402,8 +405,8 @@ pub(super) async fn fetch_day_room_assignment_view(
         r#"
         SELECT assignment.id,
                assignment.exam_day_id,
-               assignment.classroom_id,
-               classroom.name AS classroom_name,
+               assignment.homeroom_id,
+               classroom.name AS homeroom_name,
                assignment.room_id,
                room.name_th AS room_name,
                building.name_th AS building_name,
@@ -415,7 +418,7 @@ pub(super) async fn fetch_day_room_assignment_view(
                    WHERE seat.day_room_assignment_id = assignment.id
                ) AS seats_generated
         FROM academic_exam_day_room_assignments assignment
-        JOIN class_rooms classroom ON classroom.id = assignment.classroom_id
+        JOIN homerooms classroom ON classroom.id = assignment.homeroom_id
         JOIN rooms room ON room.id = assignment.room_id
         LEFT JOIN buildings building ON building.id = room.building_id
         WHERE assignment.id = $1
@@ -460,7 +463,7 @@ pub(super) async fn fetch_seat_assignment_context(
         r#"
         SELECT assignment.id AS assignment_id,
                exam_day.exam_round_id,
-               assignment.classroom_id,
+               assignment.homeroom_id,
                assignment.capacity_override,
                room.capacity AS room_capacity
         FROM academic_exam_day_room_assignments assignment
@@ -507,25 +510,28 @@ async fn fetch_seat_assignments_for_assignment(
 }
 async fn fetch_ordered_seat_students(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    classroom_id: Uuid,
+    homeroom_id: Uuid,
 ) -> Result<Vec<SeatStudent>, AppError> {
     sqlx::query_as::<_, SeatStudent>(
         r#"
         SELECT user_account.id AS student_id
-        FROM student_class_enrollments enrollment
+        FROM homeroom_placements placement
+        JOIN student_academic_years student_year
+          ON student_year.id = placement.student_academic_year_id
         JOIN users user_account
-          ON user_account.id = enrollment.student_id
+          ON user_account.id = student_year.student_id
          AND user_account.user_type = 'student'
          AND user_account.status = 'active'
         LEFT JOIN student_info ON student_info.user_id = user_account.id
-        WHERE enrollment.class_room_id = $1
-          AND enrollment.status = 'active'
-        ORDER BY enrollment.class_number ASC NULLS LAST,
+        WHERE placement.homeroom_id = $1
+          AND placement.status = 'current'
+          AND student_year.status = 'active'
+        ORDER BY placement.class_number ASC NULLS LAST,
                  student_info.student_id ASC NULLS LAST,
                  user_account.id ASC
         "#,
     )
-    .bind(classroom_id)
+    .bind(homeroom_id)
     .fetch_all(&mut **tx)
     .await
     .map_err(AppError::from)

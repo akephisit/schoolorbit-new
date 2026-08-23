@@ -1,30 +1,1500 @@
-mod batch_mutations;
-mod entries;
-mod instructors;
-mod moves_and_swaps;
-mod occupancy;
-mod shared;
-mod validation;
+use std::collections::BTreeSet;
 
-#[allow(unused_imports)]
-pub use batch_mutations::{
-    create_batch_entries, delete_batch_group, delete_entries_by_slot, BatchBlockedCell,
-    BatchCreateOutcome, BatchDeletedEntry, BatchExcludedInstructor, BatchInstructorConflict,
-    BatchSkippedCell,
+use chrono::{DateTime, NaiveTime, Utc};
+use sqlx::{FromRow, PgPool, Postgres, Transaction};
+use uuid::Uuid;
+
+use crate::error::AppError;
+use crate::modules::academic::models::timetable::{
+    BatchTimetableResult, ConflictInfo, CreateBatchTimetableEntriesRequest,
+    CreateTimetableEntryRequest, MoveValidityCell, SwapTimetableEntriesRequest,
+    SwapTimetableEntriesResponse, TimetableEntry, TimetableInstructor, TimetableOccupancyCell,
+    TimetableQuery, TimetableValidationResponse, UpdateTimetableEntryRequest,
 };
-pub use entries::{
-    create_entry, delete_entry, fetch_entry_by_id, list_entries,
-    resolve_classroom_course_semester_id, update_entry, CreateEntryOutcome, TimetableFilter,
-    UpdateEntryOutcome,
-};
-#[allow(unused_imports)]
-pub use instructors::{
-    add_entry_instructor, get_my_activity_for_entry, hide_instructor_from_slot,
-    hide_instructor_from_slot_period, remove_entry_instructor, restore_instructor_to_slot,
-    AddInstructorResult, MyActivityForEntry, MyActivityInstructor, RemoveInstructorResult,
-};
-#[allow(unused_imports)]
-pub use moves_and_swaps::{swap_entries, validate_moves, SwapConflictInfo, SwapOutcome};
-#[allow(unused_imports)]
-pub use occupancy::{get_occupancy, OccupancyRow};
-pub use validation::validate_entry;
+use crate::policies::resource_access_policy::AcademicResourceListFilter;
+
+const VALID_DAYS: &[&str] = &["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
+const VALID_ENTRY_TYPES: &[&str] = &["COURSE", "ACTIVITY", "BREAK", "HOMEROOM", "ACADEMIC"];
+
+#[derive(Debug, Clone, FromRow)]
+struct TermContext {
+    id: Uuid,
+    academic_year_id: Uuid,
+    bell_schedule_id: Uuid,
+    status: String,
+}
+
+#[derive(Debug, Clone, FromRow)]
+struct GroupContext {
+    id: Uuid,
+    learning_offering_id: Uuid,
+    academic_term_id: Uuid,
+    academic_year_id: Uuid,
+    offering_kind: String,
+    offering_name: String,
+}
+
+#[derive(Debug, Clone, FromRow)]
+struct EntryRow {
+    id: Uuid,
+    academic_term_id: Uuid,
+    academic_year_id: Uuid,
+    bell_schedule_id: Uuid,
+    bell_schedule_period_id: Uuid,
+    day_of_week: String,
+    entry_type: String,
+    learning_group_id: Option<Uuid>,
+    learning_offering_id: Option<Uuid>,
+    homeroom_id: Option<Uuid>,
+    room_id: Option<Uuid>,
+    note: Option<String>,
+    title: Option<String>,
+    batch_id: Option<Uuid>,
+    row_version: i64,
+    is_active: bool,
+    offering_code: Option<String>,
+    offering_name: Option<String>,
+    learning_group_code: Option<String>,
+    learning_group_name: Option<String>,
+    subject_id: Option<Uuid>,
+    subject_version_display_label: Option<String>,
+    activity_id: Option<Uuid>,
+    activity_version_display_label: Option<String>,
+    homeroom_name: Option<String>,
+    room_code: Option<String>,
+    period_name: Option<String>,
+    start_time: NaiveTime,
+    end_time: NaiveTime,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow)]
+struct EntryLockRow {
+    id: Uuid,
+    academic_term_id: Uuid,
+    academic_year_id: Uuid,
+    learning_group_id: Option<Uuid>,
+    learning_offering_id: Option<Uuid>,
+    homeroom_id: Option<Uuid>,
+    room_id: Option<Uuid>,
+    day_of_week: String,
+    bell_schedule_period_id: Uuid,
+    row_version: i64,
+    is_active: bool,
+}
+
+#[derive(Debug, Clone, FromRow)]
+struct SlotEntryRow {
+    id: Uuid,
+    learning_group_id: Option<Uuid>,
+    homeroom_id: Option<Uuid>,
+    room_id: Option<Uuid>,
+}
+
+#[derive(Debug, Clone)]
+struct CandidateScope {
+    learning_group_id: Option<Uuid>,
+    homeroom_ids: Vec<Uuid>,
+    instructor_ids: Vec<Uuid>,
+    room_id: Option<Uuid>,
+}
+
+pub async fn list_entries(
+    pool: &PgPool,
+    query: &TimetableQuery,
+    access: &AcademicResourceListFilter,
+) -> Result<Vec<TimetableEntry>, AppError> {
+    require_term(pool, query.academic_term_id, false).await?;
+    let entry_type = query
+        .entry_type
+        .as_deref()
+        .map(normalize_entry_type)
+        .transpose()?;
+    let owner_ids = access.allowed_organization_unit_ids();
+    let rows: Vec<EntryRow> = sqlx::query_as(&format!(
+        r#"{}
+           WHERE entry.academic_term_id = $1
+             AND entry.is_active
+             AND ($2::uuid IS NULL OR entry.learning_group_id = $2)
+             AND ($3::uuid IS NULL OR entry.homeroom_id = $3 OR EXISTS (
+                 SELECT 1 FROM learning_group_homerooms coverage
+                 WHERE coverage.learning_group_id = entry.learning_group_id
+                   AND coverage.homeroom_id = $3
+             ))
+             AND ($4::uuid IS NULL OR EXISTS (
+                 SELECT 1 FROM learning_group_teachers teacher
+                 WHERE teacher.learning_group_id = entry.learning_group_id
+                   AND teacher.teacher_id = $4
+             ) OR (
+                 entry.learning_group_id IS NULL AND EXISTS (
+                     SELECT 1 FROM timetable_entry_instructors instructor
+                     WHERE instructor.entry_id = entry.id AND instructor.instructor_id = $4
+                 )
+             ))
+             AND ($5::uuid IS NULL OR entry.room_id = $5)
+             AND ($6::text IS NULL OR entry.day_of_week = $6)
+             AND ($7::text IS NULL OR entry.entry_type = $7)
+             AND ($8 OR (
+                 offering.id IS NOT NULL AND (
+                     offering.owning_organization_unit_id = ANY($9)
+                     OR EXISTS (
+                         SELECT 1 FROM learning_group_teachers access_teacher
+                         WHERE access_teacher.learning_group_id = entry.learning_group_id
+                           AND access_teacher.teacher_id = $10
+                     )
+                 )
+             ))
+           ORDER BY period.order_index, entry.day_of_week, entry.id
+           LIMIT 2000"#,
+        entry_select()
+    ))
+    .bind(query.academic_term_id)
+    .bind(query.learning_group_id)
+    .bind(query.homeroom_id)
+    .bind(query.instructor_id)
+    .bind(query.room_id)
+    .bind(
+        query
+            .day_of_week
+            .as_deref()
+            .map(normalize_day)
+            .transpose()?,
+    )
+    .bind(entry_type)
+    .bind(access.includes_school_owned)
+    .bind(owner_ids)
+    .bind(access.assigned_actor_id)
+    .fetch_all(pool)
+    .await?;
+    hydrate_rows(pool, rows).await
+}
+
+pub async fn get_entry(pool: &PgPool, entry_id: Uuid) -> Result<TimetableEntry, AppError> {
+    let row: EntryRow = sqlx::query_as(&format!("{} WHERE entry.id = $1", entry_select()))
+        .bind(entry_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบรายการตารางสอน".to_string()))?;
+    hydrate_row(pool, row).await
+}
+
+pub async fn list_student_entries(
+    pool: &PgPool,
+    academic_term_id: Uuid,
+    student_id: Uuid,
+) -> Result<Vec<TimetableEntry>, AppError> {
+    require_term(pool, academic_term_id, false).await?;
+    let rows: Vec<EntryRow> = sqlx::query_as(&format!(
+        r#"{}
+           WHERE entry.academic_term_id = $1
+             AND entry.is_active
+             AND (
+                 EXISTS (
+                     SELECT 1
+                     FROM learning_group_students membership
+                     JOIN student_academic_years student_year
+                       ON student_year.id = membership.student_academic_year_id
+                     JOIN learning_groups roster_group
+                       ON roster_group.id = membership.learning_group_id
+                     WHERE membership.learning_group_id = entry.learning_group_id
+                       AND student_year.student_id = $2
+                       AND membership.membership_status = 'active'
+                       AND roster_group.roster_status IN ('published', 'closed')
+                 )
+                 OR (
+                     entry.learning_group_id IS NULL
+                     AND EXISTS (
+                         SELECT 1
+                         FROM student_academic_years student_year
+                         JOIN homeroom_placements placement
+                           ON placement.student_academic_year_id = student_year.id
+                         WHERE student_year.student_id = $2
+                           AND student_year.academic_year_id = entry.academic_year_id
+                           AND placement.homeroom_id = entry.homeroom_id
+                           AND placement.status = 'current'
+                     )
+                 )
+             )
+           ORDER BY period.order_index, entry.day_of_week, entry.id"#,
+        entry_select()
+    ))
+    .bind(academic_term_id)
+    .bind(student_id)
+    .fetch_all(pool)
+    .await?;
+    hydrate_rows(pool, rows).await
+}
+
+pub async fn create_entry(
+    pool: &PgPool,
+    actor_user_id: Uuid,
+    request: CreateTimetableEntryRequest,
+) -> Result<TimetableEntry, AppError> {
+    let mut transaction = pool.begin().await?;
+    let entry_id = create_entry_in_tx(&mut transaction, actor_user_id, None, &request).await?;
+    transaction.commit().await?;
+    get_entry(pool, entry_id).await
+}
+
+pub async fn create_batch(
+    pool: &PgPool,
+    actor_user_id: Uuid,
+    request: CreateBatchTimetableEntriesRequest,
+) -> Result<BatchTimetableResult, AppError> {
+    validate_batch_shape(&request)?;
+    let batch_id = Uuid::new_v4();
+    let mut transaction = pool.begin().await?;
+    require_term_in_tx(&mut transaction, request.academic_term_id, true).await?;
+
+    let mut slot_keys = BTreeSet::new();
+    for day in &request.days_of_week {
+        let normalized_day = normalize_day(day)?;
+        for period_id in &request.bell_schedule_period_ids {
+            slot_keys.insert((normalized_day.clone(), *period_id));
+        }
+    }
+    for (day, period_id) in slot_keys {
+        lock_slot(&mut transaction, request.academic_term_id, &day, period_id).await?;
+    }
+
+    let mut entry_ids = Vec::new();
+    let targets: Vec<(Option<Uuid>, Option<Uuid>)> = if !request.learning_group_ids.is_empty() {
+        request
+            .learning_group_ids
+            .iter()
+            .copied()
+            .map(|id| (Some(id), None))
+            .collect()
+    } else if !request.homeroom_ids.is_empty() {
+        request
+            .homeroom_ids
+            .iter()
+            .copied()
+            .map(|id| (None, Some(id)))
+            .collect()
+    } else {
+        vec![(None, None)]
+    };
+    for (learning_group_id, homeroom_id) in targets {
+        for day in &request.days_of_week {
+            for period_id in &request.bell_schedule_period_ids {
+                let entry_request = CreateTimetableEntryRequest {
+                    academic_term_id: request.academic_term_id,
+                    learning_group_id,
+                    homeroom_id,
+                    day_of_week: day.clone(),
+                    bell_schedule_period_id: *period_id,
+                    room_id: request.room_id,
+                    note: request.note.clone(),
+                    entry_type: request.entry_type.clone(),
+                    title: request.title.clone(),
+                    instructor_ids: request.instructor_ids.clone(),
+                };
+                entry_ids.push(
+                    create_entry_in_tx(
+                        &mut transaction,
+                        actor_user_id,
+                        Some(batch_id),
+                        &entry_request,
+                    )
+                    .await?,
+                );
+            }
+        }
+    }
+    transaction.commit().await?;
+    let mut entries = Vec::with_capacity(entry_ids.len());
+    for entry_id in entry_ids {
+        entries.push(get_entry(pool, entry_id).await?);
+    }
+    Ok(BatchTimetableResult { batch_id, entries })
+}
+
+pub async fn update_entry(
+    pool: &PgPool,
+    entry_id: Uuid,
+    actor_user_id: Uuid,
+    request: UpdateTimetableEntryRequest,
+) -> Result<TimetableEntry, AppError> {
+    let mut transaction = pool.begin().await?;
+    let existing = lock_entry(&mut transaction, entry_id).await?;
+    if existing.row_version != request.row_version {
+        return Err(stale_entry());
+    }
+    require_term_in_tx(&mut transaction, existing.academic_term_id, true).await?;
+    let day = request
+        .day_of_week
+        .as_deref()
+        .map(normalize_day)
+        .transpose()?
+        .unwrap_or(existing.day_of_week.clone());
+    let period_id = request
+        .bell_schedule_period_id
+        .unwrap_or(existing.bell_schedule_period_id);
+    require_period_in_tx(&mut transaction, existing.academic_term_id, period_id).await?;
+    lock_slots_stable(
+        &mut transaction,
+        existing.academic_term_id,
+        [
+            (
+                existing.day_of_week.clone(),
+                existing.bell_schedule_period_id,
+            ),
+            (day.clone(), period_id),
+        ],
+    )
+    .await?;
+    let room_id = if request.clear_room.unwrap_or(false) {
+        None
+    } else {
+        request.room_id.or(existing.room_id)
+    };
+    if let Some(room_id) = room_id {
+        let room_exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM rooms WHERE id = $1 AND is_active)")
+                .bind(room_id)
+                .fetch_one(&mut *transaction)
+                .await?;
+        if !room_exists {
+            return Err(AppError::ValidationError("ไม่พบห้องที่เปิดใช้งาน".to_string()));
+        }
+    }
+    let mut scope = entry_candidate_scope(&mut transaction, &existing).await?;
+    scope.room_id = room_id;
+    ensure_no_conflicts(
+        &mut transaction,
+        existing.academic_term_id,
+        &day,
+        period_id,
+        &scope,
+        &[entry_id],
+    )
+    .await?;
+    let note = if request.clear_note.unwrap_or(false) {
+        None
+    } else {
+        request.note
+    };
+    let updated = sqlx::query(
+        r#"UPDATE academic_timetable_entries
+           SET day_of_week = $2,
+               bell_schedule_period_id = $3,
+               room_id = $4,
+               note = CASE WHEN $5 THEN NULL ELSE coalesce($6, note) END,
+               title = coalesce($7, title),
+               updated_by = $8,
+               row_version = row_version + 1,
+               updated_at = now()
+           WHERE id = $1 AND row_version = $9"#,
+    )
+    .bind(entry_id)
+    .bind(&day)
+    .bind(period_id)
+    .bind(room_id)
+    .bind(request.clear_note.unwrap_or(false))
+    .bind(note)
+    .bind(request.title.as_deref())
+    .bind(actor_user_id)
+    .bind(request.row_version)
+    .execute(&mut *transaction)
+    .await?;
+    if updated.rows_affected() != 1 {
+        return Err(stale_entry());
+    }
+    transaction.commit().await?;
+    get_entry(pool, entry_id).await
+}
+
+pub async fn deactivate_entry(
+    pool: &PgPool,
+    entry_id: Uuid,
+    row_version: i64,
+    actor_user_id: Uuid,
+) -> Result<TimetableEntry, AppError> {
+    let mut transaction = pool.begin().await?;
+    let existing = lock_entry(&mut transaction, entry_id).await?;
+    if existing.row_version != row_version {
+        return Err(stale_entry());
+    }
+    require_term_in_tx(&mut transaction, existing.academic_term_id, true).await?;
+    let updated = sqlx::query(
+        r#"UPDATE academic_timetable_entries
+           SET is_active = false, updated_by = $2,
+               row_version = row_version + 1, updated_at = now()
+           WHERE id = $1 AND row_version = $3"#,
+    )
+    .bind(entry_id)
+    .bind(actor_user_id)
+    .bind(row_version)
+    .execute(&mut *transaction)
+    .await?;
+    if updated.rows_affected() != 1 {
+        return Err(stale_entry());
+    }
+    transaction.commit().await?;
+    get_entry(pool, entry_id).await
+}
+
+pub async fn deactivate_batch(
+    pool: &PgPool,
+    batch_id: Uuid,
+    actor_user_id: Uuid,
+) -> Result<Vec<TimetableEntry>, AppError> {
+    let mut transaction = pool.begin().await?;
+    let entries: Vec<EntryLockRow> = sqlx::query_as(
+        r#"SELECT id, academic_term_id, academic_year_id, learning_group_id,
+                  learning_offering_id, homeroom_id, room_id, day_of_week,
+                  bell_schedule_period_id, row_version, is_active
+           FROM academic_timetable_entries
+           WHERE batch_id = $1 AND is_active
+           ORDER BY id
+           FOR UPDATE"#,
+    )
+    .bind(batch_id)
+    .fetch_all(&mut *transaction)
+    .await?;
+    if entries.is_empty() {
+        return Err(AppError::NotFound("ไม่พบชุดตารางสอน".to_string()));
+    }
+    require_term_in_tx(&mut transaction, entries[0].academic_term_id, true).await?;
+    sqlx::query(
+        r#"UPDATE academic_timetable_entries
+           SET is_active = false, updated_by = $2,
+               row_version = row_version + 1, updated_at = now()
+           WHERE batch_id = $1 AND is_active"#,
+    )
+    .bind(batch_id)
+    .bind(actor_user_id)
+    .execute(&mut *transaction)
+    .await?;
+    let ids: Vec<Uuid> = entries.iter().map(|entry| entry.id).collect();
+    transaction.commit().await?;
+    let mut values = Vec::with_capacity(ids.len());
+    for id in ids {
+        values.push(get_entry(pool, id).await?);
+    }
+    Ok(values)
+}
+
+pub async fn swap_entries(
+    pool: &PgPool,
+    actor_user_id: Uuid,
+    request: SwapTimetableEntriesRequest,
+) -> Result<SwapTimetableEntriesResponse, AppError> {
+    if request.entry_a_id == request.entry_b_id {
+        return Err(AppError::ValidationError(
+            "ต้องเลือกรายการตารางสอนคนละรายการ".to_string(),
+        ));
+    }
+    let mut ids = vec![request.entry_a_id, request.entry_b_id];
+    ids.sort_unstable();
+    let mut transaction = pool.begin().await?;
+    let locked: Vec<EntryLockRow> = sqlx::query_as(
+        r#"SELECT id, academic_term_id, academic_year_id, learning_group_id,
+                  learning_offering_id, homeroom_id, room_id, day_of_week,
+                  bell_schedule_period_id, row_version, is_active
+           FROM academic_timetable_entries
+           WHERE id = ANY($1) AND is_active
+           ORDER BY id
+           FOR UPDATE"#,
+    )
+    .bind(&ids)
+    .fetch_all(&mut *transaction)
+    .await?;
+    if locked.len() != 2 {
+        return Err(AppError::NotFound("ไม่พบรายการตารางสอนสำหรับสลับ".to_string()));
+    }
+    let entry_a = locked
+        .iter()
+        .find(|entry| entry.id == request.entry_a_id)
+        .unwrap()
+        .clone();
+    let entry_b = locked
+        .iter()
+        .find(|entry| entry.id == request.entry_b_id)
+        .unwrap()
+        .clone();
+    if entry_a.academic_term_id != entry_b.academic_term_id {
+        return Err(AppError::ValidationError(
+            "สลับรายการข้ามภาคเรียนไม่ได้".to_string(),
+        ));
+    }
+    if entry_a.row_version != request.entry_a_row_version
+        || entry_b.row_version != request.entry_b_row_version
+    {
+        return Err(stale_entry());
+    }
+    require_term_in_tx(&mut transaction, entry_a.academic_term_id, true).await?;
+    lock_slots_stable(
+        &mut transaction,
+        entry_a.academic_term_id,
+        [
+            (entry_a.day_of_week.clone(), entry_a.bell_schedule_period_id),
+            (entry_b.day_of_week.clone(), entry_b.bell_schedule_period_id),
+        ],
+    )
+    .await?;
+    let scope_a = entry_candidate_scope(&mut transaction, &entry_a).await?;
+    let scope_b = entry_candidate_scope(&mut transaction, &entry_b).await?;
+    let excluded = [entry_a.id, entry_b.id];
+    ensure_no_conflicts(
+        &mut transaction,
+        entry_a.academic_term_id,
+        &entry_b.day_of_week,
+        entry_b.bell_schedule_period_id,
+        &scope_a,
+        &excluded,
+    )
+    .await?;
+    ensure_no_conflicts(
+        &mut transaction,
+        entry_b.academic_term_id,
+        &entry_a.day_of_week,
+        entry_a.bell_schedule_period_id,
+        &scope_b,
+        &excluded,
+    )
+    .await?;
+
+    sqlx::query("UPDATE academic_timetable_entries SET is_active = false WHERE id = ANY($1)")
+        .bind(&ids)
+        .execute(&mut *transaction)
+        .await?;
+    for (entry, target_day, target_period) in [
+        (
+            &entry_a,
+            &entry_b.day_of_week,
+            entry_b.bell_schedule_period_id,
+        ),
+        (
+            &entry_b,
+            &entry_a.day_of_week,
+            entry_a.bell_schedule_period_id,
+        ),
+    ] {
+        sqlx::query(
+            r#"UPDATE academic_timetable_entries
+               SET day_of_week = $2, bell_schedule_period_id = $3,
+                   is_active = true, updated_by = $4,
+                   row_version = row_version + 1, updated_at = now()
+               WHERE id = $1"#,
+        )
+        .bind(entry.id)
+        .bind(target_day)
+        .bind(target_period)
+        .bind(actor_user_id)
+        .execute(&mut *transaction)
+        .await?;
+    }
+    transaction.commit().await?;
+    Ok(SwapTimetableEntriesResponse {
+        entry_a: get_entry(pool, request.entry_a_id).await?,
+        entry_b: get_entry(pool, request.entry_b_id).await?,
+    })
+}
+
+pub async fn occupancy(
+    pool: &PgPool,
+    academic_term_id: Uuid,
+) -> Result<Vec<TimetableOccupancyCell>, AppError> {
+    require_term(pool, academic_term_id, false).await?;
+    let entries: Vec<EntryLockRow> = sqlx::query_as(
+        r#"SELECT id, academic_term_id, academic_year_id, learning_group_id,
+                  learning_offering_id, homeroom_id, room_id, day_of_week,
+                  bell_schedule_period_id, row_version, is_active
+           FROM academic_timetable_entries
+           WHERE academic_term_id = $1 AND is_active
+           ORDER BY day_of_week, bell_schedule_period_id, id"#,
+    )
+    .bind(academic_term_id)
+    .fetch_all(pool)
+    .await?;
+    let mut cells = Vec::with_capacity(entries.len());
+    for entry in entries {
+        cells.push(TimetableOccupancyCell {
+            entry_id: entry.id,
+            learning_group_id: entry.learning_group_id,
+            homeroom_ids: effective_homerooms(pool, entry.learning_group_id, entry.homeroom_id)
+                .await?,
+            room_id: entry.room_id,
+            instructor_ids: effective_instructors(pool, entry.id, entry.learning_group_id).await?,
+            day_of_week: entry.day_of_week,
+            bell_schedule_period_id: entry.bell_schedule_period_id,
+        });
+    }
+    Ok(cells)
+}
+
+pub async fn validate_moves(
+    pool: &PgPool,
+    academic_term_id: Uuid,
+    entry_id: Uuid,
+) -> Result<Vec<MoveValidityCell>, AppError> {
+    let term = require_term(pool, academic_term_id, false).await?;
+    let entry: EntryLockRow = sqlx::query_as(
+        r#"SELECT id, academic_term_id, academic_year_id, learning_group_id,
+                  learning_offering_id, homeroom_id, room_id, day_of_week,
+                  bell_schedule_period_id, row_version, is_active
+           FROM academic_timetable_entries WHERE id = $1 AND is_active"#,
+    )
+    .bind(entry_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound("ไม่พบรายการตารางสอน".to_string()))?;
+    if entry.academic_term_id != academic_term_id {
+        return Err(AppError::ValidationError(
+            "รายการตารางสอนไม่อยู่ในภาคเรียนที่ระบุ".to_string(),
+        ));
+    }
+    let periods: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM bell_schedule_periods WHERE bell_schedule_id = $1 AND is_active ORDER BY order_index, id",
+    )
+    .bind(term.bell_schedule_id)
+    .fetch_all(pool)
+    .await?;
+    let scope = CandidateScope {
+        learning_group_id: entry.learning_group_id,
+        homeroom_ids: effective_homerooms(pool, entry.learning_group_id, entry.homeroom_id).await?,
+        instructor_ids: effective_instructors(pool, entry.id, entry.learning_group_id).await?,
+        room_id: entry.room_id,
+    };
+    let mut cells = Vec::new();
+    for day in VALID_DAYS {
+        for period_id in &periods {
+            if *day == entry.day_of_week && *period_id == entry.bell_schedule_period_id {
+                cells.push(MoveValidityCell {
+                    day_of_week: (*day).to_string(),
+                    bell_schedule_period_id: *period_id,
+                    state: "source".to_string(),
+                    target_entry_id: None,
+                    valid: true,
+                    reason: String::new(),
+                });
+                continue;
+            }
+            let conflicts =
+                find_conflicts(pool, academic_term_id, day, *period_id, &scope, &[entry_id])
+                    .await?;
+            cells.push(MoveValidityCell {
+                day_of_week: (*day).to_string(),
+                bell_schedule_period_id: *period_id,
+                state: if conflicts.is_empty() {
+                    "empty"
+                } else {
+                    "occupied"
+                }
+                .to_string(),
+                target_entry_id: conflicts.first().map(|conflict| conflict.existing_entry_id),
+                valid: conflicts.is_empty(),
+                reason: conflicts
+                    .first()
+                    .map(|conflict| conflict.message.clone())
+                    .unwrap_or_default(),
+            });
+        }
+    }
+    Ok(cells)
+}
+
+pub async fn validate_candidate(
+    pool: &PgPool,
+    request: &CreateTimetableEntryRequest,
+) -> Result<TimetableValidationResponse, AppError> {
+    let mut transaction = pool.begin().await?;
+    let (term, _, entry_type, scope) = resolve_create_scope(&mut transaction, request).await?;
+    let _ = entry_type;
+    require_period_in_tx(&mut transaction, term.id, request.bell_schedule_period_id).await?;
+    let day = normalize_day(&request.day_of_week)?;
+    let conflicts = find_conflicts_in_tx(
+        &mut transaction,
+        term.id,
+        &day,
+        request.bell_schedule_period_id,
+        &scope,
+        &[],
+    )
+    .await?;
+    transaction.rollback().await?;
+    Ok(TimetableValidationResponse {
+        is_valid: conflicts.is_empty(),
+        conflicts,
+    })
+}
+
+pub(super) async fn create_entry_in_tx(
+    transaction: &mut Transaction<'_, Postgres>,
+    actor_user_id: Uuid,
+    batch_id: Option<Uuid>,
+    request: &CreateTimetableEntryRequest,
+) -> Result<Uuid, AppError> {
+    let (term, group, entry_type, scope) = resolve_create_scope(transaction, request).await?;
+    require_period_in_tx(transaction, term.id, request.bell_schedule_period_id).await?;
+    let day = normalize_day(&request.day_of_week)?;
+    lock_slot(transaction, term.id, &day, request.bell_schedule_period_id).await?;
+    ensure_no_conflicts(
+        transaction,
+        term.id,
+        &day,
+        request.bell_schedule_period_id,
+        &scope,
+        &[],
+    )
+    .await?;
+    let entry_id = Uuid::new_v4();
+    let (learning_group_id, offering_id, title) = match group {
+        Some(group) => (
+            Some(group.id),
+            Some(group.learning_offering_id),
+            request.title.clone().or(Some(group.offering_name)),
+        ),
+        None => (None, None, request.title.clone()),
+    };
+    sqlx::query(
+        r#"INSERT INTO academic_timetable_entries (
+               id, day_of_week, bell_schedule_period_id,
+               room_id, note, is_active, created_by, updated_by, entry_type, title,
+               homeroom_id, academic_term_id, batch_id,
+               academic_year_id, learning_offering_id, learning_group_id,
+               bell_schedule_id, migration_provenance, row_version
+           ) VALUES (
+               $1, $2, $3, $4, $5, true, $6, $6, $7, $8,
+               $9, $10, $11, $12, $13, $14, $15, '{}'::jsonb, 1
+           )"#,
+    )
+    .bind(entry_id)
+    .bind(&day)
+    .bind(request.bell_schedule_period_id)
+    .bind(request.room_id)
+    .bind(request.note.as_deref())
+    .bind(actor_user_id)
+    .bind(&entry_type)
+    .bind(title.as_deref())
+    .bind(request.homeroom_id)
+    .bind(term.id)
+    .bind(batch_id)
+    .bind(term.academic_year_id)
+    .bind(offering_id)
+    .bind(learning_group_id)
+    .bind(term.bell_schedule_id)
+    .execute(&mut **transaction)
+    .await?;
+    if learning_group_id.is_none() {
+        for (index, instructor_id) in scope.instructor_ids.iter().enumerate() {
+            sqlx::query(
+                r#"INSERT INTO timetable_entry_instructors (id, entry_id, instructor_id, role)
+                   VALUES ($1, $2, $3, $4)"#,
+            )
+            .bind(Uuid::new_v4())
+            .bind(entry_id)
+            .bind(instructor_id)
+            .bind(if index == 0 { "primary" } else { "secondary" })
+            .execute(&mut **transaction)
+            .await?;
+        }
+    }
+    Ok(entry_id)
+}
+
+async fn resolve_create_scope(
+    transaction: &mut Transaction<'_, Postgres>,
+    request: &CreateTimetableEntryRequest,
+) -> Result<(TermContext, Option<GroupContext>, String, CandidateScope), AppError> {
+    let term = require_term_in_tx(transaction, request.academic_term_id, true).await?;
+    let entry_type = normalize_entry_type(&request.entry_type)?;
+    let room_id = request.room_id;
+    if let Some(room_id) = room_id {
+        let exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM rooms WHERE id = $1 AND is_active)")
+                .bind(room_id)
+                .fetch_one(&mut **transaction)
+                .await?;
+        if !exists {
+            return Err(AppError::ValidationError("ไม่พบห้องที่เปิดใช้งาน".to_string()));
+        }
+    }
+
+    if let Some(group_id) = request.learning_group_id {
+        if !request.instructor_ids.is_empty() {
+            return Err(AppError::ValidationError(
+                "รายการของกลุ่มเรียนใช้ครูจากการมอบหมายของกลุ่มโดยอัตโนมัติ".to_string(),
+            ));
+        }
+        let group: GroupContext = sqlx::query_as(
+            r#"SELECT learning_group.id,
+                      learning_group.learning_offering_id,
+                      learning_group.academic_term_id,
+                      learning_group.academic_year_id,
+                      offering.kind AS offering_kind,
+                      offering.name_snapshot AS offering_name
+               FROM learning_groups learning_group
+               JOIN learning_offerings offering ON offering.id = learning_group.learning_offering_id
+               WHERE learning_group.id = $1"#,
+        )
+        .bind(group_id)
+        .fetch_optional(&mut **transaction)
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบกลุ่มเรียน".to_string()))?;
+        if group.academic_term_id != term.id || group.academic_year_id != term.academic_year_id {
+            return Err(AppError::ValidationError(
+                "กลุ่มเรียนไม่ได้อยู่ในภาคเรียนที่ระบุ".to_string(),
+            ));
+        }
+        let expected_entry_type = if group.offering_kind == "course" {
+            "COURSE"
+        } else {
+            "ACTIVITY"
+        };
+        if entry_type != expected_entry_type {
+            return Err(AppError::ValidationError(
+                "ชนิดรายการไม่ตรงกับชนิดการเปิดสอนของกลุ่มเรียน".to_string(),
+            ));
+        }
+        let homeroom_ids = effective_homerooms_in_tx(transaction, Some(group.id), None).await?;
+        if request
+            .homeroom_id
+            .is_some_and(|id| !homeroom_ids.contains(&id))
+        {
+            return Err(AppError::ValidationError(
+                "ห้องประจำชั้นไม่อยู่ในขอบเขตของกลุ่มเรียน".to_string(),
+            ));
+        }
+        let instructor_ids =
+            effective_instructors_in_tx(transaction, Uuid::nil(), Some(group.id)).await?;
+        let scope = CandidateScope {
+            learning_group_id: Some(group.id),
+            homeroom_ids,
+            instructor_ids,
+            room_id,
+        };
+        Ok((term, Some(group), entry_type, scope))
+    } else {
+        if matches!(entry_type.as_str(), "COURSE" | "ACTIVITY") {
+            return Err(AppError::ValidationError(
+                "รายการรายวิชาหรือกิจกรรมต้องระบุ learningGroupId".to_string(),
+            ));
+        }
+        if request.homeroom_id.is_none() && request.instructor_ids.is_empty() {
+            return Err(AppError::ValidationError(
+                "รายการโครงสร้างต้องระบุ homeroomId หรือ instructorIds".to_string(),
+            ));
+        }
+        if let Some(homeroom_id) = request.homeroom_id {
+            let valid: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM homerooms WHERE id = $1 AND academic_year_id = $2)",
+            )
+            .bind(homeroom_id)
+            .bind(term.academic_year_id)
+            .fetch_one(&mut **transaction)
+            .await?;
+            if !valid {
+                return Err(AppError::ValidationError(
+                    "ห้องประจำชั้นไม่ได้อยู่ในปีการศึกษาของภาคเรียน".to_string(),
+                ));
+            }
+        }
+        let instructor_ids = canonical_ids(&request.instructor_ids);
+        if !instructor_ids.is_empty() {
+            let active_count: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM users WHERE id = ANY($1) AND status = 'active'",
+            )
+            .bind(&instructor_ids)
+            .fetch_one(&mut **transaction)
+            .await?;
+            if active_count != instructor_ids.len() as i64 {
+                return Err(AppError::ValidationError(
+                    "มีครูที่ไม่พบหรือไม่ได้เปิดใช้งาน".to_string(),
+                ));
+            }
+        }
+        let scope = CandidateScope {
+            learning_group_id: None,
+            homeroom_ids: request.homeroom_id.into_iter().collect(),
+            instructor_ids,
+            room_id,
+        };
+        Ok((term, None, entry_type, scope))
+    }
+}
+
+fn validate_batch_shape(request: &CreateBatchTimetableEntriesRequest) -> Result<(), AppError> {
+    if !request.learning_group_ids.is_empty() && !request.homeroom_ids.is_empty() {
+        return Err(AppError::ValidationError(
+            "ชุดตารางสอนต้องเลือกกลุ่มเรียนหรือห้องประจำชั้นอย่างใดอย่างหนึ่ง".to_string(),
+        ));
+    }
+    if request.days_of_week.is_empty() || request.bell_schedule_period_ids.is_empty() {
+        return Err(AppError::ValidationError(
+            "ต้องระบุวันและคาบอย่างน้อยหนึ่งรายการ".to_string(),
+        ));
+    }
+    let target_count = request
+        .learning_group_ids
+        .len()
+        .max(request.homeroom_ids.len())
+        .max(1);
+    let total = target_count
+        .saturating_mul(request.days_of_week.len())
+        .saturating_mul(request.bell_schedule_period_ids.len());
+    if total > 500 {
+        return Err(AppError::ValidationError(
+            "สร้างตารางสอนได้ไม่เกิน 500 รายการต่อคำขอ".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+async fn require_term(
+    pool: &PgPool,
+    academic_term_id: Uuid,
+    writable: bool,
+) -> Result<TermContext, AppError> {
+    let term: TermContext = sqlx::query_as(
+        "SELECT id, academic_year_id, bell_schedule_id, status FROM academic_terms WHERE id = $1",
+    )
+    .bind(academic_term_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียน".to_string()))?;
+    ensure_term_writable(&term, writable)?;
+    Ok(term)
+}
+
+async fn require_term_in_tx(
+    transaction: &mut Transaction<'_, Postgres>,
+    academic_term_id: Uuid,
+    writable: bool,
+) -> Result<TermContext, AppError> {
+    let term: TermContext = sqlx::query_as(
+        "SELECT id, academic_year_id, bell_schedule_id, status FROM academic_terms WHERE id = $1 FOR SHARE",
+    )
+    .bind(academic_term_id)
+    .fetch_optional(&mut **transaction)
+    .await?
+    .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียน".to_string()))?;
+    ensure_term_writable(&term, writable)?;
+    Ok(term)
+}
+
+fn ensure_term_writable(term: &TermContext, writable: bool) -> Result<(), AppError> {
+    if writable && matches!(term.status.as_str(), "closed" | "archived") {
+        Err(AppError::Conflict(
+            "ภาคเรียนนี้ปิดแล้ว ไม่สามารถแก้ไขตารางสอนได้".to_string(),
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+async fn require_period_in_tx(
+    transaction: &mut Transaction<'_, Postgres>,
+    academic_term_id: Uuid,
+    period_id: Uuid,
+) -> Result<(), AppError> {
+    let valid: bool = sqlx::query_scalar(
+        r#"SELECT EXISTS(
+               SELECT 1
+               FROM academic_terms term
+               JOIN bell_schedule_periods period
+                 ON period.bell_schedule_id = term.bell_schedule_id
+               WHERE term.id = $1 AND period.id = $2 AND period.is_active
+           )"#,
+    )
+    .bind(academic_term_id)
+    .bind(period_id)
+    .fetch_one(&mut **transaction)
+    .await?;
+    if valid {
+        Ok(())
+    } else {
+        Err(AppError::ValidationError(
+            "คาบเวลาไม่ได้อยู่ใน bell schedule ของภาคเรียน".to_string(),
+        ))
+    }
+}
+
+async fn lock_entry(
+    transaction: &mut Transaction<'_, Postgres>,
+    entry_id: Uuid,
+) -> Result<EntryLockRow, AppError> {
+    sqlx::query_as(
+        r#"SELECT id, academic_term_id, academic_year_id, learning_group_id,
+                  learning_offering_id, homeroom_id, room_id, day_of_week,
+                  bell_schedule_period_id, row_version, is_active
+           FROM academic_timetable_entries
+           WHERE id = $1 AND is_active
+           FOR UPDATE"#,
+    )
+    .bind(entry_id)
+    .fetch_optional(&mut **transaction)
+    .await?
+    .ok_or_else(|| AppError::NotFound("ไม่พบรายการตารางสอน".to_string()))
+}
+
+async fn lock_slot(
+    transaction: &mut Transaction<'_, Postgres>,
+    academic_term_id: Uuid,
+    day: &str,
+    period_id: Uuid,
+) -> Result<(), AppError> {
+    let key = format!("timetable:{academic_term_id}:{day}:{period_id}");
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+        .bind(key)
+        .execute(&mut **transaction)
+        .await?;
+    Ok(())
+}
+
+async fn lock_slots_stable<const N: usize>(
+    transaction: &mut Transaction<'_, Postgres>,
+    academic_term_id: Uuid,
+    slots: [(String, Uuid); N],
+) -> Result<(), AppError> {
+    let mut slots = slots.to_vec();
+    slots.sort_unstable();
+    slots.dedup();
+    for (day, period_id) in slots {
+        lock_slot(transaction, academic_term_id, &day, period_id).await?;
+    }
+    Ok(())
+}
+
+async fn entry_candidate_scope(
+    transaction: &mut Transaction<'_, Postgres>,
+    entry: &EntryLockRow,
+) -> Result<CandidateScope, AppError> {
+    Ok(CandidateScope {
+        learning_group_id: entry.learning_group_id,
+        homeroom_ids: effective_homerooms_in_tx(
+            transaction,
+            entry.learning_group_id,
+            entry.homeroom_id,
+        )
+        .await?,
+        instructor_ids: effective_instructors_in_tx(transaction, entry.id, entry.learning_group_id)
+            .await?,
+        room_id: entry.room_id,
+    })
+}
+
+async fn ensure_no_conflicts(
+    transaction: &mut Transaction<'_, Postgres>,
+    academic_term_id: Uuid,
+    day: &str,
+    period_id: Uuid,
+    scope: &CandidateScope,
+    excluded_entry_ids: &[Uuid],
+) -> Result<(), AppError> {
+    let conflicts = find_conflicts_in_tx(
+        transaction,
+        academic_term_id,
+        day,
+        period_id,
+        scope,
+        excluded_entry_ids,
+    )
+    .await?;
+    if let Some(conflict) = conflicts.first() {
+        Err(AppError::Conflict(conflict.message.clone()))
+    } else {
+        Ok(())
+    }
+}
+
+async fn find_conflicts_in_tx(
+    transaction: &mut Transaction<'_, Postgres>,
+    academic_term_id: Uuid,
+    day: &str,
+    period_id: Uuid,
+    scope: &CandidateScope,
+    excluded_entry_ids: &[Uuid],
+) -> Result<Vec<ConflictInfo>, AppError> {
+    let entries: Vec<SlotEntryRow> = sqlx::query_as(
+        r#"SELECT id, learning_group_id, homeroom_id, room_id
+           FROM academic_timetable_entries
+           WHERE academic_term_id = $1
+             AND day_of_week = $2
+             AND bell_schedule_period_id = $3
+             AND is_active
+             AND NOT (id = ANY($4))
+           ORDER BY id
+           FOR UPDATE"#,
+    )
+    .bind(academic_term_id)
+    .bind(day)
+    .bind(period_id)
+    .bind(excluded_entry_ids)
+    .fetch_all(&mut **transaction)
+    .await?;
+    compare_conflicts_in_tx(transaction, entries, scope).await
+}
+
+async fn find_conflicts(
+    pool: &PgPool,
+    academic_term_id: Uuid,
+    day: &str,
+    period_id: Uuid,
+    scope: &CandidateScope,
+    excluded_entry_ids: &[Uuid],
+) -> Result<Vec<ConflictInfo>, AppError> {
+    let entries: Vec<SlotEntryRow> = sqlx::query_as(
+        r#"SELECT id, learning_group_id, homeroom_id, room_id
+           FROM academic_timetable_entries
+           WHERE academic_term_id = $1
+             AND day_of_week = $2
+             AND bell_schedule_period_id = $3
+             AND is_active
+             AND NOT (id = ANY($4))
+           ORDER BY id"#,
+    )
+    .bind(academic_term_id)
+    .bind(day)
+    .bind(period_id)
+    .bind(excluded_entry_ids)
+    .fetch_all(pool)
+    .await?;
+    let mut conflicts = Vec::new();
+    for entry in entries {
+        let homerooms =
+            effective_homerooms(pool, entry.learning_group_id, entry.homeroom_id).await?;
+        let instructors = effective_instructors(pool, entry.id, entry.learning_group_id).await?;
+        append_conflicts(&mut conflicts, &entry, &homerooms, &instructors, scope);
+    }
+    Ok(conflicts)
+}
+
+async fn compare_conflicts_in_tx(
+    transaction: &mut Transaction<'_, Postgres>,
+    entries: Vec<SlotEntryRow>,
+    scope: &CandidateScope,
+) -> Result<Vec<ConflictInfo>, AppError> {
+    let mut conflicts = Vec::new();
+    for entry in entries {
+        let homerooms =
+            effective_homerooms_in_tx(transaction, entry.learning_group_id, entry.homeroom_id)
+                .await?;
+        let instructors =
+            effective_instructors_in_tx(transaction, entry.id, entry.learning_group_id).await?;
+        append_conflicts(&mut conflicts, &entry, &homerooms, &instructors, scope);
+    }
+    Ok(conflicts)
+}
+
+fn append_conflicts(
+    conflicts: &mut Vec<ConflictInfo>,
+    entry: &SlotEntryRow,
+    homerooms: &[Uuid],
+    instructors: &[Uuid],
+    candidate: &CandidateScope,
+) {
+    if candidate.learning_group_id.is_some()
+        && candidate.learning_group_id == entry.learning_group_id
+    {
+        conflicts.push(conflict(
+            "GROUP_CONFLICT",
+            "กลุ่มเรียนมีตารางในคาบนี้แล้ว",
+            entry.id,
+        ));
+    }
+    if !candidate.homeroom_ids.is_empty()
+        && homerooms
+            .iter()
+            .any(|homeroom| candidate.homeroom_ids.contains(homeroom))
+    {
+        conflicts.push(conflict(
+            "HOMEROOM_CONFLICT",
+            "ขอบเขตห้องประจำชั้นมีตารางในคาบนี้แล้ว",
+            entry.id,
+        ));
+    }
+    if candidate.room_id.is_some() && candidate.room_id == entry.room_id {
+        conflicts.push(conflict("ROOM_CONFLICT", "ห้องเรียนถูกใช้ในคาบนี้แล้ว", entry.id));
+    }
+    if instructors
+        .iter()
+        .any(|instructor| candidate.instructor_ids.contains(instructor))
+    {
+        conflicts.push(conflict(
+            "INSTRUCTOR_CONFLICT",
+            "ครูมีตารางในคาบนี้แล้ว",
+            entry.id,
+        ));
+    }
+}
+
+fn conflict(kind: &str, message: &str, entry_id: Uuid) -> ConflictInfo {
+    ConflictInfo {
+        conflict_type: kind.to_string(),
+        message: message.to_string(),
+        existing_entry_id: entry_id,
+    }
+}
+
+async fn effective_homerooms(
+    pool: &PgPool,
+    learning_group_id: Option<Uuid>,
+    homeroom_id: Option<Uuid>,
+) -> Result<Vec<Uuid>, AppError> {
+    if let Some(group_id) = learning_group_id {
+        Ok(sqlx::query_scalar(
+            "SELECT homeroom_id FROM learning_group_homerooms WHERE learning_group_id = $1 ORDER BY homeroom_id",
+        )
+        .bind(group_id)
+        .fetch_all(pool)
+        .await?)
+    } else {
+        Ok(homeroom_id.into_iter().collect())
+    }
+}
+
+async fn effective_homerooms_in_tx(
+    transaction: &mut Transaction<'_, Postgres>,
+    learning_group_id: Option<Uuid>,
+    homeroom_id: Option<Uuid>,
+) -> Result<Vec<Uuid>, AppError> {
+    if let Some(group_id) = learning_group_id {
+        Ok(sqlx::query_scalar(
+            "SELECT homeroom_id FROM learning_group_homerooms WHERE learning_group_id = $1 ORDER BY homeroom_id",
+        )
+        .bind(group_id)
+        .fetch_all(&mut **transaction)
+        .await?)
+    } else {
+        Ok(homeroom_id.into_iter().collect())
+    }
+}
+
+async fn effective_instructors(
+    pool: &PgPool,
+    entry_id: Uuid,
+    learning_group_id: Option<Uuid>,
+) -> Result<Vec<Uuid>, AppError> {
+    if let Some(group_id) = learning_group_id {
+        Ok(sqlx::query_scalar(
+            "SELECT teacher_id FROM learning_group_teachers WHERE learning_group_id = $1 ORDER BY teacher_id",
+        )
+        .bind(group_id)
+        .fetch_all(pool)
+        .await?)
+    } else {
+        Ok(sqlx::query_scalar(
+            "SELECT instructor_id FROM timetable_entry_instructors WHERE entry_id = $1 ORDER BY instructor_id",
+        )
+        .bind(entry_id)
+        .fetch_all(pool)
+        .await?)
+    }
+}
+
+async fn effective_instructors_in_tx(
+    transaction: &mut Transaction<'_, Postgres>,
+    entry_id: Uuid,
+    learning_group_id: Option<Uuid>,
+) -> Result<Vec<Uuid>, AppError> {
+    if let Some(group_id) = learning_group_id {
+        Ok(sqlx::query_scalar(
+            "SELECT teacher_id FROM learning_group_teachers WHERE learning_group_id = $1 ORDER BY teacher_id",
+        )
+        .bind(group_id)
+        .fetch_all(&mut **transaction)
+        .await?)
+    } else if entry_id.is_nil() {
+        Ok(Vec::new())
+    } else {
+        Ok(sqlx::query_scalar(
+            "SELECT instructor_id FROM timetable_entry_instructors WHERE entry_id = $1 ORDER BY instructor_id",
+        )
+        .bind(entry_id)
+        .fetch_all(&mut **transaction)
+        .await?)
+    }
+}
+
+fn entry_select() -> &'static str {
+    r#"SELECT entry.id,
+              entry.academic_term_id,
+              entry.academic_year_id,
+              entry.bell_schedule_id,
+              entry.bell_schedule_period_id,
+              entry.day_of_week,
+              entry.entry_type,
+              entry.learning_group_id,
+              entry.learning_offering_id,
+              entry.homeroom_id,
+              entry.room_id,
+              entry.note,
+              entry.title,
+              entry.batch_id,
+              entry.row_version,
+              entry.is_active,
+              offering.code_snapshot AS offering_code,
+              offering.name_snapshot AS offering_name,
+              learning_group.code AS learning_group_code,
+              learning_group.name AS learning_group_name,
+              course_detail.subject_id,
+              CASE WHEN course_version.id IS NULL THEN NULL ELSE concat(
+                  coalesce(course_version.name_th, course_version.name_en, offering.name_snapshot),
+                  ' · v', course_version.version_no
+              ) END AS subject_version_display_label,
+              activity_detail.activity_id,
+              CASE WHEN activity_version.id IS NULL THEN NULL ELSE concat(
+                  activity_version.name, ' · v', activity_version.version_no
+              ) END AS activity_version_display_label,
+              homeroom.name AS homeroom_name,
+              room.code AS room_code,
+              period.name AS period_name,
+              period.start_time,
+              period.end_time,
+              entry.created_at,
+              entry.updated_at
+       FROM academic_timetable_entries entry
+       JOIN bell_schedule_periods period ON period.id = entry.bell_schedule_period_id
+       LEFT JOIN learning_groups learning_group ON learning_group.id = entry.learning_group_id
+       LEFT JOIN learning_offerings offering ON offering.id = entry.learning_offering_id
+       LEFT JOIN course_offering_details course_detail
+         ON course_detail.learning_offering_id = offering.id
+       LEFT JOIN subject_versions course_version
+         ON course_version.id = course_detail.subject_version_id
+       LEFT JOIN activity_offering_details activity_detail
+         ON activity_detail.learning_offering_id = offering.id
+       LEFT JOIN activity_versions activity_version
+         ON activity_version.id = activity_detail.activity_version_id
+       LEFT JOIN homerooms homeroom ON homeroom.id = entry.homeroom_id
+       LEFT JOIN rooms room ON room.id = entry.room_id"#
+}
+
+async fn hydrate_rows(pool: &PgPool, rows: Vec<EntryRow>) -> Result<Vec<TimetableEntry>, AppError> {
+    let mut entries = Vec::with_capacity(rows.len());
+    for row in rows {
+        entries.push(hydrate_row(pool, row).await?);
+    }
+    Ok(entries)
+}
+
+async fn hydrate_row(pool: &PgPool, row: EntryRow) -> Result<TimetableEntry, AppError> {
+    let instructors: Vec<(Uuid, String, String)> = if let Some(group_id) = row.learning_group_id {
+        sqlx::query_as(
+            r#"SELECT teacher.teacher_id,
+                      concat_ws(' ', nullif(concat(coalesce(user_account.title, ''), user_account.first_name), ''), nullif(user_account.last_name, '')) AS display_name,
+                      teacher.role
+               FROM learning_group_teachers teacher
+               JOIN users user_account ON user_account.id = teacher.teacher_id
+               WHERE teacher.learning_group_id = $1
+               ORDER BY CASE teacher.role WHEN 'primary' THEN 1 WHEN 'secondary' THEN 2 ELSE 3 END,
+                        teacher.created_at, teacher.teacher_id"#,
+        )
+        .bind(group_id)
+        .fetch_all(pool)
+        .await?
+    } else {
+        sqlx::query_as(
+            r#"SELECT instructor.instructor_id,
+                      concat_ws(' ', nullif(concat(coalesce(user_account.title, ''), user_account.first_name), ''), nullif(user_account.last_name, '')) AS display_name,
+                      instructor.role::text
+               FROM timetable_entry_instructors instructor
+               JOIN users user_account ON user_account.id = instructor.instructor_id
+               WHERE instructor.entry_id = $1
+               ORDER BY CASE instructor.role WHEN 'primary' THEN 1 ELSE 2 END,
+                        instructor.created_at, instructor.instructor_id"#,
+        )
+        .bind(row.id)
+        .fetch_all(pool)
+        .await?
+    };
+    Ok(TimetableEntry {
+        id: row.id,
+        academic_term_id: row.academic_term_id,
+        academic_year_id: row.academic_year_id,
+        bell_schedule_id: row.bell_schedule_id,
+        bell_schedule_period_id: row.bell_schedule_period_id,
+        day_of_week: row.day_of_week,
+        entry_type: row.entry_type.to_ascii_lowercase(),
+        learning_group_id: row.learning_group_id,
+        offering_id: row.learning_offering_id,
+        homeroom_id: row.homeroom_id,
+        room_id: row.room_id,
+        note: row.note,
+        title: row.title,
+        batch_id: row.batch_id,
+        row_version: row.row_version,
+        is_active: row.is_active,
+        offering_code: row.offering_code,
+        offering_name: row.offering_name,
+        learning_group_code: row.learning_group_code,
+        learning_group_name: row.learning_group_name,
+        subject_id: row.subject_id,
+        subject_version_display_label: row.subject_version_display_label,
+        activity_id: row.activity_id,
+        activity_version_display_label: row.activity_version_display_label,
+        homeroom_name: row.homeroom_name,
+        room_code: row.room_code,
+        period_name: row.period_name,
+        start_time: row.start_time,
+        end_time: row.end_time,
+        instructors: instructors
+            .into_iter()
+            .map(|(user_id, display_name, role)| TimetableInstructor {
+                user_id,
+                display_name,
+                role,
+            })
+            .collect(),
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+    })
+}
+
+fn normalize_day(day: &str) -> Result<String, AppError> {
+    let day = day.trim().to_ascii_uppercase();
+    if VALID_DAYS.contains(&day.as_str()) {
+        Ok(day)
+    } else {
+        Err(AppError::ValidationError("วันในสัปดาห์ไม่ถูกต้อง".to_string()))
+    }
+}
+
+fn normalize_entry_type(entry_type: &str) -> Result<String, AppError> {
+    let entry_type = entry_type.trim().to_ascii_uppercase();
+    if VALID_ENTRY_TYPES.contains(&entry_type.as_str()) {
+        Ok(entry_type)
+    } else {
+        Err(AppError::ValidationError(
+            "ชนิดรายการตารางสอนไม่ถูกต้อง".to_string(),
+        ))
+    }
+}
+
+fn canonical_ids(ids: &[Uuid]) -> Vec<Uuid> {
+    let mut ids = ids.to_vec();
+    ids.sort_unstable();
+    ids.dedup();
+    ids
+}
+
+fn stale_entry() -> AppError {
+    AppError::Conflict("ตารางสอนมีการแก้ไขจากผู้ใช้อื่น กรุณาโหลดใหม่".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{canonical_ids, normalize_day, normalize_entry_type};
+    use crate::error::AppError;
+    use uuid::Uuid;
+
+    #[test]
+    fn canonical_contract_normalizes_day_and_entry_kind() {
+        assert_eq!(normalize_day("mon").unwrap(), "MON");
+        assert_eq!(normalize_entry_type("activity").unwrap(), "ACTIVITY");
+        assert!(matches!(
+            normalize_day("holiday"),
+            Err(AppError::ValidationError(_))
+        ));
+    }
+
+    #[test]
+    fn instructor_ids_are_deduplicated_in_stable_order() {
+        let first = Uuid::from_u128(1);
+        let second = Uuid::from_u128(2);
+        assert_eq!(canonical_ids(&[second, first, second]), vec![first, second]);
+    }
+}

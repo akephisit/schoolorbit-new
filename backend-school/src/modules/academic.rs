@@ -19,54 +19,10 @@ use axum::Router;
 pub fn academic_routes() -> Router<AppState> {
     core::routes().merge(delivery::routes()).merge(
         Router::new()
-            // Course Planning
-            .route(
-                "/planning/courses",
-                get(handlers::course_planning::list_classroom_courses)
-                    .post(handlers::course_planning::assign_courses),
-            )
-            .route(
-                "/planning/courses/{id}",
-                put(handlers::course_planning::update_course)
-                    .delete(handlers::course_planning::remove_course),
-            )
-            // Batch endpoint — MUST be registered BEFORE `/planning/courses/{id}/instructors`
-            // so Axum doesn't match the literal path `/planning/courses/instructors` as `id = "instructors"`.
-            .route(
-                "/planning/courses/instructors/batch",
-                post(handlers::course_planning::batch_list_course_instructors),
-            )
-            .route(
-                "/planning/courses/instructors",
-                get(handlers::course_planning::batch_list_course_instructors_from_query),
-            )
-            .route(
-                "/planning/courses/{id}/instructors",
-                get(handlers::course_planning::list_course_instructors)
-                    .post(handlers::course_planning::add_course_instructor),
-            )
-            .route(
-                "/planning/courses/{id}/instructors/{uid}",
-                axum::routing::delete(handlers::course_planning::remove_course_instructor)
-                    .put(handlers::course_planning::update_course_instructor_role),
-            )
-            // Classroom Activities (junction-backed) — source of truth ต่อห้อง
-            .route(
-                "/planning/classrooms/{classroom_id}/activities",
-                get(handlers::course_planning::list_classroom_activities),
-            )
-            .route(
-                "/planning/classrooms/{classroom_id}/activities/{slot_id}",
-                axum::routing::delete(handlers::course_planning::remove_classroom_from_slot),
-            )
             // Assessment Plans (โครงสร้างคะแนนรายวิชา)
             .route(
                 "/assessments/plans",
                 get(handlers::assessment::list_assessment_plans),
-            )
-            .route(
-                "/assessments/plans/quick-scores",
-                put(handlers::assessment::bulk_save_assessment_quick_scores),
             )
             .route(
                 "/assessments/settings",
@@ -74,12 +30,12 @@ pub fn academic_routes() -> Router<AppState> {
                     .put(handlers::assessment::update_assessment_settings),
             )
             .route(
-                "/assessments/courses/{course_id}",
+                "/assessments/offerings/{offering_id}",
                 get(handlers::assessment::get_assessment_plan)
                     .put(handlers::assessment::save_assessment_plan),
             )
             .route(
-                "/assessments/courses/{course_id}/submit",
+                "/assessments/offerings/{offering_id}/submit",
                 post(handlers::assessment::submit_assessment_plan),
             )
             // Question Bank
@@ -161,8 +117,7 @@ pub fn academic_routes() -> Router<AppState> {
             )
             .route(
                 "/timetable/batch",
-                post(handlers::timetable::create_batch_timetable_entries)
-                    .delete(handlers::timetable::delete_batch_timetable_entries),
+                post(handlers::timetable::create_batch_timetable_entries),
             )
             .route(
                 "/timetable/batch-group/{batch_id}",
@@ -172,7 +127,6 @@ pub fn academic_routes() -> Router<AppState> {
                 "/timetable/swap",
                 post(handlers::timetable::swap_timetable_entries),
             )
-            .route("/timetable/replay", get(handlers::timetable::replay_events))
             .route(
                 "/timetable/validate-moves",
                 post(handlers::timetable::validate_timetable_moves),
@@ -189,32 +143,6 @@ pub fn academic_routes() -> Router<AppState> {
                 "/timetable/{id}",
                 axum::routing::put(handlers::timetable::update_timetable_entry)
                     .delete(handlers::timetable::delete_timetable_entry),
-            )
-            .route(
-                "/timetable/{id}/my-activity",
-                get(handlers::timetable::get_my_activity_for_entry),
-            )
-            .route(
-                "/timetable/{id}/instructors",
-                post(handlers::timetable::add_entry_instructor),
-            )
-            .route(
-                "/timetable/{id}/instructors/{uid}",
-                axum::routing::delete(handlers::timetable::remove_entry_instructor),
-            )
-            .route(
-                "/timetable/slots/{slot_id}/instructors/{uid}/restore",
-                post(handlers::timetable::restore_instructor_to_slot_entries),
-            )
-            .route(
-                "/timetable/slots/{slot_id}/instructors/{uid}",
-                axum::routing::delete(handlers::timetable::hide_instructor_from_slot_entries),
-            )
-            .route(
-                "/timetable/slots/{slot_id}/instructors/{uid}/period",
-                axum::routing::delete(
-                    handlers::timetable::hide_instructor_from_slot_period_entries,
-                ),
             )
             // Phase F: Timetable Templates
             // from-current + clear ต้อง register ก่อน /{id} กัน Axum match path เป็น id
@@ -240,98 +168,6 @@ pub fn academic_routes() -> Router<AppState> {
             .route(
                 "/timetable-templates/{id}/apply",
                 post(handlers::timetable_templates::apply_template),
-            )
-            // Activity Slots (ช่องกิจกรรม — Admin)
-            // POST removed: slots must come from plan via generate_courses_from_plan
-            .route(
-                "/activity-slots",
-                get(handlers::activity::list_activity_slots),
-            )
-            .route(
-                "/activity-slots/timetable-context",
-                get(handlers::activity::get_timetable_context),
-            )
-            .route(
-                "/activity-slots/{id}",
-                put(handlers::activity::update_activity_slot)
-                    .delete(handlers::activity::delete_activity_slot),
-            )
-            .route(
-                "/activity-slots/{id}/instructors",
-                get(handlers::activity::list_slot_instructors)
-                    .post(handlers::activity::add_slot_instructor),
-            )
-            .route(
-                "/activity-slots/{id}/instructors/batch",
-                post(handlers::activity::add_slot_instructors_batch),
-            )
-            .route(
-                "/activity-slots/{id}/groups",
-                axum::routing::delete(handlers::activity::delete_all_slot_groups),
-            )
-            .route(
-                "/activity-slots/{id}/timetable-entries",
-                axum::routing::delete(handlers::activity::delete_slot_timetable_entries),
-            )
-            .route(
-                "/activity-slots/{id}/instructors/all",
-                axum::routing::delete(handlers::activity::remove_all_slot_instructors),
-            )
-            .route(
-                "/activity-slots/{id}/instructors/{user_id}",
-                axum::routing::delete(handlers::activity::remove_slot_instructor),
-            )
-            .route(
-                "/activity-slots/{id}/classroom-assignments",
-                get(handlers::activity::list_slot_classroom_assignments)
-                    .post(handlers::activity::batch_upsert_slot_classroom_assignments),
-            )
-            .route(
-                "/activity-slots/{id}/classroom-assignments/all",
-                axum::routing::delete(handlers::activity::delete_all_slot_classroom_assignments),
-            )
-            .route(
-                "/activity-slots/{id}/classroom-assignments/{assignment_id}",
-                axum::routing::delete(handlers::activity::delete_slot_classroom_assignment),
-            )
-            // Activity Groups (กิจกรรมจริง ภายใต้ slot)
-            .route(
-                "/activities/my-enrollments",
-                get(handlers::activity::my_enrollments),
-            )
-            .route(
-                "/activities",
-                get(handlers::activity::list_activity_groups)
-                    .post(handlers::activity::create_activity_group),
-            )
-            .route(
-                "/activities/{id}",
-                put(handlers::activity::update_activity_group)
-                    .delete(handlers::activity::delete_activity_group),
-            )
-            .route(
-                "/activities/{id}/members",
-                get(handlers::activity::list_members).post(handlers::activity::add_members),
-            )
-            .route(
-                "/activities/{id}/enroll",
-                post(handlers::activity::self_enroll).delete(handlers::activity::self_unenroll),
-            )
-            .route(
-                "/activities/{id}/members/{student_id}",
-                axum::routing::delete(handlers::activity::remove_member),
-            )
-            .route(
-                "/activities/members/{member_id}/result",
-                put(handlers::activity::update_member_result),
-            )
-            .route(
-                "/activities/{id}/instructors",
-                get(handlers::activity::list_instructors).post(handlers::activity::add_instructor),
-            )
-            .route(
-                "/activities/{id}/instructors/{instructor_id}",
-                axum::routing::delete(handlers::activity::remove_instructor),
             ),
     )
 }

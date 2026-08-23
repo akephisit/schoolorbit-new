@@ -55,7 +55,7 @@ fn is_exam_session_start_on_slot(starts_at: NaiveTime) -> bool {
 #[derive(Debug, Clone)]
 pub(super) struct CandidateSession {
     pub(super) session_id: Option<Uuid>,
-    pub(super) classroom_id: Uuid,
+    pub(super) homeroom_id: Uuid,
     pub(super) exam_day_id: Uuid,
     pub(super) starts_at: NaiveTime,
     pub(super) ends_at: NaiveTime,
@@ -118,7 +118,7 @@ pub(super) fn has_same_classroom_conflict(
 ) -> bool {
     existing.iter().any(|item| {
         item.exam_day_id == candidate.exam_day_id
-            && item.classroom_id == candidate.classroom_id
+            && item.homeroom_id == candidate.homeroom_id
             && item.session_id != candidate.session_id
             && time_ranges_overlap(
                 candidate.starts_at,
@@ -161,14 +161,14 @@ fn exam_session_conflict_lock_key(namespace: i64, exam_day_id: Uuid, resource_id
 
 pub(super) fn exam_session_conflict_lock_keys(
     exam_day_id: Uuid,
-    classroom_id: Uuid,
+    homeroom_id: Uuid,
     room_id: Uuid,
 ) -> [i64; 2] {
     let mut keys = [
         exam_session_conflict_lock_key(
             EXAM_SESSION_CLASSROOM_LOCK_NAMESPACE,
             exam_day_id,
-            classroom_id,
+            homeroom_id,
         ),
         exam_session_conflict_lock_key(EXAM_SESSION_ROOM_LOCK_NAMESPACE, exam_day_id, room_id),
     ];
@@ -289,7 +289,7 @@ mod tests {
         let day = Uuid::from_u128(4);
         let classroom_candidate = CandidateSession {
             session_id: Some(existing_id),
-            classroom_id: classroom,
+            homeroom_id: classroom,
             exam_day_id: day,
             starts_at: t("09:00"),
             ends_at: t("10:00"),

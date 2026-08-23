@@ -33,10 +33,10 @@ struct BlockedWindowRow {
 struct ExamDayRoomAssignmentRow {
     id: Uuid,
     exam_day_id: Uuid,
-    classroom_id: Uuid,
+    homeroom_id: Uuid,
     room_id: Uuid,
     capacity_override: Option<i32>,
-    classroom_name: Option<String>,
+    homeroom_name: Option<String>,
     room_name: Option<String>,
     room_capacity: Option<i32>,
 }
@@ -57,10 +57,10 @@ impl ExamDayRoomAssignmentRow {
         ExamDayRoomAssignmentView {
             id: self.id,
             exam_day_id: self.exam_day_id,
-            classroom_id: self.classroom_id,
+            homeroom_id: self.homeroom_id,
             room_id: self.room_id,
             capacity_override: self.capacity_override,
-            classroom_name: self.classroom_name,
+            homeroom_name: self.homeroom_name,
             room_name: self.room_name,
             room_capacity: self.room_capacity,
             invigilators,
@@ -70,12 +70,13 @@ impl ExamDayRoomAssignmentRow {
 
 pub async fn list_rounds(
     pool: &PgPool,
-    academic_semester_id: Option<Uuid>,
+    academic_term_id: Uuid,
 ) -> Result<Vec<ExamRound>, AppError> {
     let rows = sqlx::query_as::<_, ExamRound>(
         r#"
         SELECT id,
-               academic_semester_id,
+               academic_year_id,
+               academic_term_id,
                name,
                description,
                exam_kind,
@@ -84,11 +85,11 @@ pub async fn list_rounds(
                created_at,
                updated_at
         FROM academic_exam_rounds
-        WHERE ($1::uuid IS NULL OR academic_semester_id = $1)
+        WHERE academic_term_id = $1
         ORDER BY created_at DESC, name ASC
         "#,
     )
-    .bind(academic_semester_id)
+    .bind(academic_term_id)
     .fetch_all(pool)
     .await?;
 
@@ -111,16 +112,20 @@ pub async fn create_round(
     let row = sqlx::query_as::<_, ExamRound>(
         r#"
         INSERT INTO academic_exam_rounds (
-            academic_semester_id,
+            academic_year_id,
+            academic_term_id,
             name,
             description,
             exam_kind,
             created_by,
             updated_by
         )
-        VALUES ($1, $2, $3, $4, $5, $5)
+        SELECT term.academic_year_id, term.id, $2, $3, $4, $5, $5
+        FROM academic_terms term
+        WHERE term.id = $1 AND term.status IN ('setup', 'open')
         RETURNING id,
-                  academic_semester_id,
+                  academic_year_id,
+                  academic_term_id,
                   name,
                   description,
                   exam_kind,
@@ -130,7 +135,7 @@ pub async fn create_round(
                   updated_at
         "#,
     )
-    .bind(request.academic_semester_id)
+    .bind(request.academic_term_id)
     .bind(name)
     .bind(request.description)
     .bind(exam_kind)
@@ -162,7 +167,8 @@ pub async fn update_round(
             updated_at = now()
         WHERE id = $1
         RETURNING id,
-                  academic_semester_id,
+                  academic_year_id,
+                  academic_term_id,
                   name,
                   description,
                   exam_kind,
@@ -543,7 +549,8 @@ pub(super) async fn fetch_round(pool: &PgPool, round_id: Uuid) -> Result<ExamRou
     sqlx::query_as::<_, ExamRound>(
         r#"
         SELECT id,
-               academic_semester_id,
+               academic_year_id,
+               academic_term_id,
                name,
                description,
                exam_kind,
@@ -664,14 +671,14 @@ pub(super) async fn hydrate_exam_day_details(
         r#"
         SELECT assignment.id,
                assignment.exam_day_id,
-               assignment.classroom_id,
+               assignment.homeroom_id,
                assignment.room_id,
                assignment.capacity_override,
-               classroom.name AS classroom_name,
+               classroom.name AS homeroom_name,
                room.name_th AS room_name,
                room.capacity AS room_capacity
         FROM academic_exam_day_room_assignments assignment
-        JOIN class_rooms classroom ON classroom.id = assignment.classroom_id
+        JOIN homerooms classroom ON classroom.id = assignment.homeroom_id
         JOIN rooms room ON room.id = assignment.room_id
         WHERE assignment.exam_day_id = ANY($1)
         ORDER BY assignment.exam_day_id, classroom.name, room.name_th, assignment.id

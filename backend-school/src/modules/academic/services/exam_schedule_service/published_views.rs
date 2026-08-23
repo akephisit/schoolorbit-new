@@ -17,14 +17,14 @@ use super::shared::minutes_between_times;
 struct PersonalExamSessionRow {
     round_id: Uuid,
     round_name: String,
-    academic_semester_id: Uuid,
+    academic_term_id: Uuid,
     published_at: Option<DateTime<Utc>>,
     exam_date: NaiveDate,
     starts_at: NaiveTime,
     ends_at: NaiveTime,
     subject_name: String,
     assessment_category_name: String,
-    classroom_name: String,
+    homeroom_name: String,
     room_name: String,
     building_name: Option<String>,
     seat_number: Option<String>,
@@ -34,14 +34,14 @@ struct PersonalExamSessionRow {
 struct StaffPublishedExamAssignmentRow {
     round_id: Uuid,
     round_name: String,
-    academic_semester_id: Uuid,
+    academic_term_id: Uuid,
     published_at: Option<DateTime<Utc>>,
     exam_day_id: Uuid,
     day_label: Option<String>,
     exam_date: NaiveDate,
     assignment_id: Uuid,
-    classroom_id: Uuid,
-    classroom_name: String,
+    homeroom_id: Uuid,
+    homeroom_name: String,
     room_id: Uuid,
     room_name: String,
     building_name: Option<String>,
@@ -53,7 +53,7 @@ struct StaffPublishedExamAssignmentRow {
 struct StaffPublishedExamSessionRow {
     round_id: Uuid,
     round_name: String,
-    academic_semester_id: Uuid,
+    academic_term_id: Uuid,
     published_at: Option<DateTime<Utc>>,
     exam_day_id: Uuid,
     day_label: Option<String>,
@@ -62,6 +62,8 @@ struct StaffPublishedExamSessionRow {
     starts_at: NaiveTime,
     ends_at: NaiveTime,
     duration_minutes: i32,
+    learning_offering_id: Uuid,
+    learning_group_id: Uuid,
     subject_id: Uuid,
     subject_code: String,
     subject_name: String,
@@ -70,8 +72,8 @@ struct StaffPublishedExamSessionRow {
     grade_level_name: String,
     grade_level_type: String,
     grade_level_year: i32,
-    classroom_id: Uuid,
-    classroom_name: String,
+    homeroom_id: Uuid,
+    homeroom_name: String,
     day_room_assignment_id: Uuid,
     room_id: Uuid,
     room_name: String,
@@ -86,7 +88,7 @@ impl PersonalExamSessionRow {
             ends_at: self.ends_at,
             subject_name: self.subject_name,
             assessment_category_name: self.assessment_category_name,
-            classroom_name: self.classroom_name,
+            homeroom_name: self.homeroom_name,
             room_name: self.room_name,
             building_name: self.building_name,
             seat_number: self.seat_number,
@@ -97,30 +99,30 @@ impl PersonalExamSessionRow {
 pub async fn list_my_published_exam_schedule(
     pool: &PgPool,
     user_id: Uuid,
-    academic_semester_id: Option<Uuid>,
+    academic_term_id: Uuid,
 ) -> Result<Vec<PersonalExamScheduleRound>, AppError> {
     ensure_active_student_user(pool, user_id).await?;
-    list_published_exam_schedule_for_student(pool, user_id, academic_semester_id).await
+    list_published_exam_schedule_for_student(pool, user_id, academic_term_id).await
 }
 
 pub async fn list_staff_published_exam_schedule(
     pool: &PgPool,
     user_id: Uuid,
-    academic_semester_id: Option<Uuid>,
+    academic_term_id: Uuid,
 ) -> Result<Vec<StaffPublishedExamScheduleRound>, AppError> {
     ensure_active_staff_user_for_exam_schedule(pool, user_id).await?;
-    list_published_exam_schedule_for_staff(pool, academic_semester_id).await
+    list_published_exam_schedule_for_staff(pool, academic_term_id).await
 }
 
 pub async fn list_child_published_exam_schedule(
     pool: &PgPool,
     parent_user_id: Uuid,
     student_id: Uuid,
-    academic_semester_id: Option<Uuid>,
+    academic_term_id: Uuid,
 ) -> Result<Vec<PersonalExamScheduleRound>, AppError> {
     ensure_parent_user_for_exam_schedule(pool, parent_user_id).await?;
     ensure_parent_student_link_for_exam_schedule(pool, parent_user_id, student_id).await?;
-    list_published_exam_schedule_for_student(pool, student_id, academic_semester_id).await
+    list_published_exam_schedule_for_student(pool, student_id, academic_term_id).await
 }
 
 async fn ensure_active_student_user(pool: &PgPool, user_id: Uuid) -> Result<(), AppError> {
@@ -215,56 +217,57 @@ async fn ensure_parent_student_link_for_exam_schedule(
 async fn list_published_exam_schedule_for_student(
     pool: &PgPool,
     student_id: Uuid,
-    academic_semester_id: Option<Uuid>,
+    academic_term_id: Uuid,
 ) -> Result<Vec<PersonalExamScheduleRound>, AppError> {
     let rows = sqlx::query_as::<_, PersonalExamSessionRow>(
         r#"
         SELECT round.id AS round_id,
                round.name AS round_name,
-               round.academic_semester_id,
+               round.academic_term_id,
                round.published_at,
                day.exam_date,
                session.starts_at,
                session.ends_at,
-               COALESCE(NULLIF(subject.name_th, ''), NULLIF(subject.name_en, ''), subject.code)
-                   AS subject_name,
+               offering.name_snapshot AS subject_name,
                category.name AS assessment_category_name,
-               classroom.name AS classroom_name,
+               classroom.name AS homeroom_name,
                room.name_th AS room_name,
                building.name_th AS building_name,
                seat.seat_number
-        FROM student_class_enrollments enrollment
+        FROM learning_group_students enrollment
         JOIN users student_user
           ON student_user.id = enrollment.student_id
          AND student_user.user_type = 'student'
          AND student_user.status = 'active'
         JOIN academic_exam_schedule_items item
-          ON item.classroom_id = enrollment.class_room_id
+          ON item.learning_group_id = enrollment.learning_group_id
+         AND item.academic_term_id = enrollment.academic_term_id
         JOIN academic_exam_rounds round
           ON round.id = item.exam_round_id
-         AND round.academic_semester_id = item.academic_semester_id
+         AND round.academic_term_id = item.academic_term_id
         JOIN academic_exam_sessions session
           ON session.exam_schedule_item_id = item.id
          AND session.exam_round_id = item.exam_round_id
         JOIN academic_exam_days day
           ON day.id = session.exam_day_id
          AND day.exam_round_id = session.exam_round_id
-        JOIN academic_assessment_categories category
+        JOIN course_assessment_categories category
           ON category.id = item.assessment_category_id
+        JOIN learning_offerings offering ON offering.id = item.learning_offering_id
         JOIN subjects subject ON subject.id = item.subject_id
-        JOIN class_rooms classroom ON classroom.id = item.classroom_id
+        JOIN homerooms classroom ON classroom.id = item.homeroom_id
         JOIN academic_exam_day_room_assignments assignment
           ON assignment.exam_day_id = session.exam_day_id
-         AND assignment.classroom_id = item.classroom_id
+         AND assignment.homeroom_id = item.homeroom_id
         JOIN rooms room ON room.id = assignment.room_id
         LEFT JOIN buildings building ON building.id = room.building_id
         LEFT JOIN academic_exam_seat_assignments seat
           ON seat.day_room_assignment_id = assignment.id
          AND seat.student_id = enrollment.student_id
         WHERE enrollment.student_id = $1
-          AND enrollment.status = 'active'
+          AND enrollment.membership_status = 'active'
           AND round.status = 'published'
-          AND ($2::uuid IS NULL OR round.academic_semester_id = $2)
+          AND round.academic_term_id = $2
         ORDER BY round.published_at DESC NULLS LAST,
                  round.name,
                  day.exam_date,
@@ -277,7 +280,7 @@ async fn list_published_exam_schedule_for_student(
         "#,
     )
     .bind(student_id)
-    .bind(academic_semester_id)
+    .bind(academic_term_id)
     .fetch_all(pool)
     .await?;
 
@@ -286,20 +289,20 @@ async fn list_published_exam_schedule_for_student(
 
 async fn list_published_exam_schedule_for_staff(
     pool: &PgPool,
-    academic_semester_id: Option<Uuid>,
+    academic_term_id: Uuid,
 ) -> Result<Vec<StaffPublishedExamScheduleRound>, AppError> {
     let assignment_rows = sqlx::query_as::<_, StaffPublishedExamAssignmentRow>(
         r#"
         SELECT round.id AS round_id,
                round.name AS round_name,
-               round.academic_semester_id,
+               round.academic_term_id,
                round.published_at,
                day.id AS exam_day_id,
                day.label AS day_label,
                day.exam_date,
                assignment.id AS assignment_id,
-               assignment.classroom_id,
-               classroom.name AS classroom_name,
+               assignment.homeroom_id,
+               classroom.name AS homeroom_name,
                assignment.room_id,
                room.name_th AS room_name,
                building.name_th AS building_name,
@@ -322,7 +325,7 @@ async fn list_published_exam_schedule_for_staff(
         FROM academic_exam_day_room_assignments assignment
         JOIN academic_exam_days day ON day.id = assignment.exam_day_id
         JOIN academic_exam_rounds round ON round.id = day.exam_round_id
-        JOIN class_rooms classroom ON classroom.id = assignment.classroom_id
+        JOIN homerooms classroom ON classroom.id = assignment.homeroom_id
         JOIN rooms room ON room.id = assignment.room_id
         LEFT JOIN buildings building ON building.id = room.building_id
         LEFT JOIN academic_exam_day_invigilators invigilator
@@ -330,7 +333,7 @@ async fn list_published_exam_schedule_for_staff(
          AND invigilator.exam_day_id = day.id
         LEFT JOIN users user_account ON user_account.id = invigilator.staff_id
         WHERE round.status = 'published'
-          AND ($1::uuid IS NULL OR round.academic_semester_id = $1)
+          AND round.academic_term_id = $1
         ORDER BY round.published_at DESC NULLS LAST,
                  round.name,
                  round.id,
@@ -342,7 +345,7 @@ async fn list_published_exam_schedule_for_staff(
                  invigilator.staff_id NULLS LAST
         "#,
     )
-    .bind(academic_semester_id)
+    .bind(academic_term_id)
     .fetch_all(pool)
     .await?;
 
@@ -350,7 +353,7 @@ async fn list_published_exam_schedule_for_staff(
         r#"
         SELECT round.id AS round_id,
                round.name AS round_name,
-               round.academic_semester_id,
+               round.academic_term_id,
                round.published_at,
                day.id AS exam_day_id,
                day.label AS day_label,
@@ -359,13 +362,11 @@ async fn list_published_exam_schedule_for_staff(
                session.starts_at,
                session.ends_at,
                item.duration_minutes,
+               item.learning_offering_id,
+               item.learning_group_id,
                subject.id AS subject_id,
                subject.code AS subject_code,
-               COALESCE(
-                   NULLIF(subject.name_th, ''),
-                   NULLIF(subject.name_en, ''),
-                   subject.code
-               ) AS subject_name,
+               offering.name_snapshot AS subject_name,
                category.name AS assessment_category_name,
                grade_level.id AS grade_level_id,
                CASE grade_level.level_type
@@ -376,8 +377,8 @@ async fn list_published_exam_schedule_for_staff(
                END AS grade_level_name,
                grade_level.level_type AS grade_level_type,
                grade_level.year AS grade_level_year,
-               classroom.id AS classroom_id,
-               classroom.name AS classroom_name,
+               classroom.id AS homeroom_id,
+               classroom.name AS homeroom_name,
                assignment.id AS day_room_assignment_id,
                room.id AS room_id,
                room.name_th AS room_name,
@@ -388,22 +389,23 @@ async fn list_published_exam_schedule_for_staff(
          AND item.exam_round_id = session.exam_round_id
         JOIN academic_exam_rounds round
           ON round.id = item.exam_round_id
-         AND round.academic_semester_id = item.academic_semester_id
+         AND round.academic_term_id = item.academic_term_id
         JOIN academic_exam_days day
           ON day.id = session.exam_day_id
          AND day.exam_round_id = session.exam_round_id
-        JOIN academic_assessment_categories category
+        JOIN course_assessment_categories category
           ON category.id = item.assessment_category_id
+        JOIN learning_offerings offering ON offering.id = item.learning_offering_id
         JOIN subjects subject ON subject.id = item.subject_id
-        JOIN class_rooms classroom ON classroom.id = item.classroom_id
+        JOIN homerooms classroom ON classroom.id = item.homeroom_id
         JOIN grade_levels grade_level ON grade_level.id = item.grade_level_id
         JOIN academic_exam_day_room_assignments assignment
           ON assignment.exam_day_id = session.exam_day_id
-         AND assignment.classroom_id = item.classroom_id
+         AND assignment.homeroom_id = item.homeroom_id
         JOIN rooms room ON room.id = assignment.room_id
         LEFT JOIN buildings building ON building.id = room.building_id
         WHERE round.status = 'published'
-          AND ($1::uuid IS NULL OR round.academic_semester_id = $1)
+          AND round.academic_term_id = $1
         ORDER BY round.published_at DESC NULLS LAST,
                  round.name,
                  round.id,
@@ -424,7 +426,7 @@ async fn list_published_exam_schedule_for_staff(
                  session.id
         "#,
     )
-    .bind(academic_semester_id)
+    .bind(academic_term_id)
     .fetch_all(pool)
     .await?;
 
@@ -449,7 +451,7 @@ fn group_personal_exam_schedule_rows(
                 rounds.push(PersonalExamScheduleRound {
                     round_id,
                     round_name: row.round_name.clone(),
-                    academic_semester_id: row.academic_semester_id,
+                    academic_term_id: row.academic_term_id,
                     published_at: row.published_at,
                     sessions: Vec::new(),
                 });
@@ -481,7 +483,7 @@ fn group_staff_published_exam_rows(
                 rounds.push(StaffPublishedExamScheduleRound {
                     round_id: row.round_id,
                     round_name: row.round_name.clone(),
-                    academic_semester_id: row.academic_semester_id,
+                    academic_term_id: row.academic_term_id,
                     published_at: row.published_at,
                     days: Vec::new(),
                 });
@@ -514,8 +516,8 @@ fn group_staff_published_exam_rows(
                 rounds[round_index].days[day_index].room_assignments.push(
                     StaffPublishedExamRoomAssignment {
                         assignment_id: row.assignment_id,
-                        classroom_id: row.classroom_id,
-                        classroom_name: row.classroom_name,
+                        homeroom_id: row.homeroom_id,
+                        homeroom_name: row.homeroom_name,
                         room_id: row.room_id,
                         room_name: row.room_name,
                         building_name: row.building_name,
@@ -561,6 +563,8 @@ fn group_staff_published_exam_rows(
                 starts_at: row.starts_at,
                 ends_at: row.ends_at,
                 duration_minutes: row.duration_minutes,
+                learning_offering_id: row.learning_offering_id,
+                learning_group_id: row.learning_group_id,
                 subject_id: row.subject_id,
                 subject_code: row.subject_code,
                 subject_name: row.subject_name,
@@ -569,8 +573,8 @@ fn group_staff_published_exam_rows(
                 grade_level_name: row.grade_level_name,
                 grade_level_type: row.grade_level_type,
                 grade_level_year: row.grade_level_year,
-                classroom_id: row.classroom_id,
-                classroom_name: row.classroom_name,
+                homeroom_id: row.homeroom_id,
+                homeroom_name: row.homeroom_name,
                 day_room_assignment_id: row.day_room_assignment_id,
                 room_id: row.room_id,
                 room_name: row.room_name,
@@ -614,7 +618,7 @@ mod tests {
         day_id: Uuid,
         session_id: Uuid,
         assignment_id: Uuid,
-        classroom_id: Uuid,
+        homeroom_id: Uuid,
         room_id: Uuid,
         published_at: DateTime<Utc>,
         starts_at: NaiveTime,
@@ -623,7 +627,7 @@ mod tests {
         StaffPublishedExamSessionRow {
             round_id,
             round_name: "กลางภาค 1/2569".to_string(),
-            academic_semester_id: Uuid::from_u128(6),
+            academic_term_id: Uuid::from_u128(6),
             published_at: Some(published_at),
             exam_day_id: day_id,
             day_label: Some("วันแรก".to_string()),
@@ -632,6 +636,8 @@ mod tests {
             starts_at,
             ends_at,
             duration_minutes: minutes_between_times(starts_at, ends_at),
+            learning_offering_id: Uuid::from_u128(7),
+            learning_group_id: Uuid::from_u128(8),
             subject_id: Uuid::from_u128(9),
             subject_code: "ค21101".to_string(),
             subject_name: "คณิตศาสตร์".to_string(),
@@ -640,8 +646,8 @@ mod tests {
             grade_level_name: "ม.1".to_string(),
             grade_level_type: "secondary".to_string(),
             grade_level_year: 1,
-            classroom_id,
-            classroom_name: "ม.1/1".to_string(),
+            homeroom_id,
+            homeroom_name: "ม.1/1".to_string(),
             day_room_assignment_id: assignment_id,
             room_id,
             room_name: "313".to_string(),
@@ -654,7 +660,7 @@ mod tests {
         let round_id = Uuid::from_u128(1);
         let day_id = Uuid::from_u128(2);
         let assignment_id = Uuid::from_u128(3);
-        let classroom_id = Uuid::from_u128(4);
+        let homeroom_id = Uuid::from_u128(4);
         let room_id = Uuid::from_u128(5);
         let published_at = Utc::now();
 
@@ -662,14 +668,14 @@ mod tests {
             StaffPublishedExamAssignmentRow {
                 round_id,
                 round_name: "กลางภาค 1/2569".to_string(),
-                academic_semester_id: Uuid::from_u128(6),
+                academic_term_id: Uuid::from_u128(6),
                 published_at: Some(published_at),
                 exam_day_id: day_id,
                 day_label: Some("วันแรก".to_string()),
                 exam_date: NaiveDate::from_ymd_opt(2026, 8, 3).expect("date must be valid"),
                 assignment_id,
-                classroom_id,
-                classroom_name: "ม.1/1".to_string(),
+                homeroom_id,
+                homeroom_name: "ม.1/1".to_string(),
                 room_id,
                 room_name: "313".to_string(),
                 building_name: Some("อาคาร 3".to_string()),
@@ -679,14 +685,14 @@ mod tests {
             StaffPublishedExamAssignmentRow {
                 round_id,
                 round_name: "กลางภาค 1/2569".to_string(),
-                academic_semester_id: Uuid::from_u128(6),
+                academic_term_id: Uuid::from_u128(6),
                 published_at: Some(published_at),
                 exam_day_id: day_id,
                 day_label: Some("วันแรก".to_string()),
                 exam_date: NaiveDate::from_ymd_opt(2026, 8, 3).expect("date must be valid"),
                 assignment_id,
-                classroom_id,
-                classroom_name: "ม.1/1".to_string(),
+                homeroom_id,
+                homeroom_name: "ม.1/1".to_string(),
                 room_id,
                 room_name: "313".to_string(),
                 building_name: Some("อาคาร 3".to_string()),
@@ -701,7 +707,7 @@ mod tests {
                 day_id,
                 Uuid::from_u128(11),
                 assignment_id,
-                classroom_id,
+                homeroom_id,
                 room_id,
                 published_at,
                 t("08:30"),
@@ -712,7 +718,7 @@ mod tests {
                 day_id,
                 Uuid::from_u128(12),
                 assignment_id,
-                classroom_id,
+                homeroom_id,
                 room_id,
                 published_at,
                 t("10:00"),

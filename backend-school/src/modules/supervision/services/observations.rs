@@ -4,8 +4,8 @@ use sqlx::{PgPool, Postgres, QueryBuilder, Row};
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::modules::academic::models::timetable::TimetableEntry;
-use crate::modules::academic::services::timetable_service::{self, TimetableFilter};
+use crate::modules::academic::models::timetable::{TimetableEntry, TimetableQuery};
+use crate::modules::academic::services::timetable_service;
 use crate::modules::supervision::models::{
     ApproveObservationRequest, CancelObservationRequest, LessonSnapshot, ManualLesson,
     ManualLessonInput, RequestSupervisionObservationRequest, ReturnObservationRequest,
@@ -14,6 +14,7 @@ use crate::modules::supervision::models::{
     SupervisionObservationStatus, UpdateRequestedObservationRequest,
     UpdateSupervisionObservationRequest,
 };
+use crate::policies::resource_access_policy::AcademicResourceListFilter;
 
 use super::cycles::SupervisionCycleTargetRow;
 use super::evaluations::{
@@ -192,15 +193,26 @@ pub async fn observation_timetable_options(
     observation_id: Uuid,
 ) -> Result<Vec<TimetableEntry>, AppError> {
     let observation = get_observation(pool, observation_id).await?;
-    let cycle = load_cycle_for_request(pool, observation.cycle_id).await?;
+    let academic_term_id: Uuid =
+        sqlx::query_scalar("SELECT academic_term_id FROM supervision_cycles WHERE id = $1")
+            .bind(observation.cycle_id)
+            .fetch_one(pool)
+            .await?;
 
     timetable_service::list_entries(
         pool,
-        TimetableFilter {
+        &TimetableQuery {
+            academic_term_id,
+            learning_group_id: None,
+            homeroom_id: None,
             instructor_id: Some(observation.observed_user_id),
-            academic_semester_id: cycle.academic_semester_id,
-            include_team_ghosts: true,
-            ..TimetableFilter::default()
+            room_id: None,
+            day_of_week: None,
+            entry_type: None,
+        },
+        &AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..Default::default()
         },
     )
     .await

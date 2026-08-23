@@ -53,7 +53,7 @@ fn display_name(title: Option<&str>, first_name: &str, last_name: &str, username
 pub async fn authorize_socket(
     pool: &PgPool,
     actor: &ActorContext,
-    semester_id: Uuid,
+    academic_term_id: Uuid,
 ) -> Result<TimetableSocketAccess, AppError> {
     let user = sqlx::query_as::<_, RealtimeUser>(
         "SELECT COALESCE(username, '') AS username, title, first_name, last_name FROM users WHERE id = $1 AND status = 'active'",
@@ -64,13 +64,12 @@ pub async fn authorize_socket(
     .ok_or_else(|| AppError::AuthError("ไม่พบผู้ใช้งานที่เปิดใช้งาน".to_string()))?;
 
     let can_manage = socket_permission(actor)?;
-    let semester_exists = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM academic_semesters WHERE id = $1)",
-    )
-    .bind(semester_id)
-    .fetch_one(pool)
-    .await?;
-    if !semester_exists {
+    let term_exists =
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM academic_terms WHERE id = $1)")
+            .bind(academic_term_id)
+            .fetch_one(pool)
+            .await?;
+    if !term_exists {
         return Err(AppError::NotFound("ไม่พบภาคเรียน".to_string()));
     }
 

@@ -8,11 +8,13 @@ use uuid::Uuid;
 use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::modules::academic::models::assessment::{
-    AssessmentPlanListQuery, BulkSaveAssessmentQuickScoresRequest, SaveAssessmentPlanRequest,
-    UpdateAssessmentSettingsRequest,
+    AssessmentPlanListQuery, SaveAssessmentPlanRequest, UpdateAssessmentSettingsRequest,
 };
 use crate::modules::academic::services::assessment_service;
 use crate::modules::auth::session_service::AuthenticatedSession;
+use crate::policies::learning_offering_access_policy::{
+    require_learning_offering_access, require_learning_offering_list_access, OfferingAction,
+};
 use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 
@@ -22,15 +24,19 @@ pub async fn list_assessment_plans(
     Query(query): Query<AssessmentPlanListQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    let actor = context.actor;
-    let pool = context.tenant.pool;
-    let access = assessment_service::resolve_assessment_plan_list_access(&pool, &actor).await?;
-    if !access.is_school() {
-        assessment_service::require_teacher_access_enabled_for_assigned_reader(&pool, &actor)
-            .await?;
-    }
-
-    let plans = assessment_service::list_assessment_plans(&pool, &query, &access).await?;
+    let access = require_learning_offering_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        OfferingAction::Read,
+    )
+    .await?;
+    assessment_service::require_teacher_access_enabled_for_reader(
+        &context.tenant.pool,
+        &context.actor,
+    )
+    .await?;
+    let plans =
+        assessment_service::list_assessment_plans(&context.tenant.pool, &query, &access).await?;
     Ok(Json(ApiResponse::ok(plans)).into_response())
 }
 
@@ -59,41 +65,47 @@ pub async fn update_assessment_settings(
 pub async fn get_assessment_plan(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
-    Path(course_id): Path<Uuid>,
+    Path(offering_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    assessment_service::require_course_read_access(&context.tenant.pool, &context.actor, course_id)
-        .await?;
-    assessment_service::require_teacher_access_enabled_for_assigned_reader(
+    require_learning_offering_access(
+        &context.tenant.pool,
+        &context.actor,
+        offering_id,
+        OfferingAction::Read,
+    )
+    .await?;
+    assessment_service::require_teacher_access_enabled_for_reader(
         &context.tenant.pool,
         &context.actor,
     )
     .await?;
-    let plan = assessment_service::get_plan_detail(&context.tenant.pool, course_id).await?;
+    let plan = assessment_service::get_plan_detail(&context.tenant.pool, offering_id).await?;
     Ok(Json(ApiResponse::ok(plan)).into_response())
 }
 
 pub async fn save_assessment_plan(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
-    Path(course_id): Path<Uuid>,
+    Path(offering_id): Path<Uuid>,
     Json(payload): Json<SaveAssessmentPlanRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    assessment_service::require_course_manage_access(
+    require_learning_offering_access(
         &context.tenant.pool,
         &context.actor,
-        course_id,
+        offering_id,
+        OfferingAction::Manage,
     )
     .await?;
-    assessment_service::require_teacher_access_enabled_for_assigned_manager(
+    assessment_service::require_teacher_access_enabled_for_manager(
         &context.tenant.pool,
         &context.actor,
     )
     .await?;
     let plan = assessment_service::save_plan(
         &context.tenant.pool,
-        course_id,
+        offering_id,
         context.actor.user_id,
         payload,
     )
@@ -101,53 +113,26 @@ pub async fn save_assessment_plan(
     Ok(Json(ApiResponse::ok(plan)).into_response())
 }
 
-pub async fn bulk_save_assessment_quick_scores(
-    State(state): State<AppState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Json(payload): Json<BulkSaveAssessmentQuickScoresRequest>,
-) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context_from_session(&state, &session).await?;
-    for entry in &payload.plans {
-        assessment_service::require_course_manage_access(
-            &context.tenant.pool,
-            &context.actor,
-            entry.classroom_course_id,
-        )
-        .await?;
-    }
-    assessment_service::require_teacher_access_enabled_for_assigned_manager(
-        &context.tenant.pool,
-        &context.actor,
-    )
-    .await?;
-    let response = assessment_service::bulk_save_quick_scores(
-        &context.tenant.pool,
-        context.actor.user_id,
-        payload,
-    )
-    .await?;
-    Ok(Json(ApiResponse::ok(response)).into_response())
-}
-
 pub async fn submit_assessment_plan(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
-    Path(course_id): Path<Uuid>,
+    Path(offering_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    assessment_service::require_course_manage_access(
+    require_learning_offering_access(
         &context.tenant.pool,
         &context.actor,
-        course_id,
+        offering_id,
+        OfferingAction::Manage,
     )
     .await?;
-    assessment_service::require_teacher_access_enabled_for_assigned_manager(
+    assessment_service::require_teacher_access_enabled_for_manager(
         &context.tenant.pool,
         &context.actor,
     )
     .await?;
     let plan =
-        assessment_service::submit_plan(&context.tenant.pool, course_id, context.actor.user_id)
+        assessment_service::submit_plan(&context.tenant.pool, offering_id, context.actor.user_id)
             .await?;
     Ok(Json(ApiResponse::ok(plan)).into_response())
 }

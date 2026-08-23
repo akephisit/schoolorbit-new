@@ -37,7 +37,7 @@ fn t(value: &str) -> NaiveTime {
 #[test]
 fn room_assignment_payload_without_invigilators_preserves_existing_staff() {
     let request = serde_json::json!({
-        "classroomId": Uuid::from_u128(1),
+        "homeroomId": Uuid::from_u128(1),
         "roomId": Uuid::from_u128(2),
         "capacityOverride": null
     });
@@ -48,10 +48,10 @@ fn room_assignment_payload_without_invigilators_preserves_existing_staff() {
 }
 
 #[test]
-fn room_assignment_payload_with_invigilators_remains_backwards_compatible() {
+fn room_assignment_payload_with_invigilators_uses_canonical_homeroom_identity() {
     let staff_id = Uuid::from_u128(3);
     let request = serde_json::json!({
-        "classroomId": Uuid::from_u128(1),
+        "homeroomId": Uuid::from_u128(1),
         "roomId": Uuid::from_u128(2),
         "capacityOverride": null,
         "invigilatorStaffIds": [staff_id]
@@ -60,6 +60,16 @@ fn room_assignment_payload_with_invigilators_remains_backwards_compatible() {
     let parsed: UpsertDayRoomAssignmentRequest = serde_json::from_value(request).unwrap();
 
     assert_eq!(parsed.invigilator_staff_ids, Some(vec![staff_id]));
+}
+
+#[test]
+fn room_assignment_payload_rejects_legacy_classroom_identity() {
+    let request = serde_json::json!({
+        "classroomId": Uuid::from_u128(1),
+        "roomId": Uuid::from_u128(2),
+        "capacityOverride": null
+    });
+    assert!(serde_json::from_value::<UpsertDayRoomAssignmentRequest>(request).is_err());
 }
 
 #[test]
@@ -132,14 +142,14 @@ fn detects_half_open_time_overlap() {
 fn detects_classroom_time_conflict() {
     let candidate = CandidateSession {
         session_id: None,
-        classroom_id: Uuid::nil(),
+        homeroom_id: Uuid::nil(),
         exam_day_id: Uuid::nil(),
         starts_at: t("09:00"),
         ends_at: t("10:00"),
     };
     let existing = vec![CandidateSession {
         session_id: Some(Uuid::max()),
-        classroom_id: Uuid::nil(),
+        homeroom_id: Uuid::nil(),
         exam_day_id: Uuid::nil(),
         starts_at: t("09:30"),
         ends_at: t("10:30"),
@@ -524,7 +534,7 @@ fn clear_mismatched_exam_items_deletes_only_items_outside_round_kind() {
     assert!(clear_body.contains("SELECT status"));
     assert!(clear_body.contains("FOR UPDATE"));
     assert!(clear_body.contains("DELETE FROM academic_exam_schedule_items"));
-    assert!(clear_body.contains("USING academic_assessment_categories c"));
+    assert!(clear_body.contains("USING course_assessment_categories c"));
     assert!(clear_body.contains("round_context rc"));
     assert!(clear_body.contains("item.assessment_category_id = c.id"));
     assert!(clear_body.contains("c.code IS DISTINCT FROM rc.exam_kind"));
@@ -570,14 +580,14 @@ fn placement_locks_conflict_scope_before_conflict_queries() {
 #[test]
 fn exam_session_conflict_lock_keys_are_sorted_and_scoped() {
     let exam_day_id = Uuid::parse_str("01020304-0506-0708-090a-0b0c0d0e0f10").unwrap();
-    let classroom_id = Uuid::parse_str("11121314-1516-1718-191a-1b1c1d1e1f20").unwrap();
+    let homeroom_id = Uuid::parse_str("11121314-1516-1718-191a-1b1c1d1e1f20").unwrap();
     let room_id = Uuid::parse_str("21222324-2526-2728-292a-2b2c2d2e2f30").unwrap();
 
-    let keys = exam_session_conflict_lock_keys(exam_day_id, classroom_id, room_id);
+    let keys = exam_session_conflict_lock_keys(exam_day_id, homeroom_id, room_id);
 
     assert_eq!(
         keys,
-        exam_session_conflict_lock_keys(exam_day_id, classroom_id, room_id)
+        exam_session_conflict_lock_keys(exam_day_id, homeroom_id, room_id)
     );
     assert!(keys[0] < keys[1]);
 }
@@ -684,7 +694,7 @@ fn readiness_sql_rechecks_sessions_after_grade_scope_changes() {
 #[test]
 fn readiness_sql_requires_seats_for_every_active_student() {
     assert!(WORKSPACE_COUNTS_SQL.contains("missing_seat_student_count"));
-    assert!(WORKSPACE_COUNTS_SQL.contains("student_class_enrollments enrollment"));
+    assert!(WORKSPACE_COUNTS_SQL.contains("learning_group_students enrollment"));
     assert!(WORKSPACE_COUNTS_SQL.contains("seat.student_id IS NULL"));
 }
 

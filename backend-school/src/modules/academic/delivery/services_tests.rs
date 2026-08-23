@@ -653,6 +653,7 @@ fn course_request(context: &RuntimeContext) -> CreateLearningOfferingRequest {
         }],
         grading_policy: CourseGradingPolicy {
             policy_code: "school_default".to_string(),
+            total_score: "100.00".to_string(),
             passing_score: Some("50.00".to_string()),
         },
     })

@@ -9,7 +9,8 @@ use uuid::Uuid;
 #[serde(rename_all = "camelCase")]
 pub struct ExamRound {
     pub id: Uuid,
-    pub academic_semester_id: Uuid,
+    pub academic_year_id: Uuid,
+    pub academic_term_id: Uuid,
     pub name: String,
     pub description: Option<String>,
     pub exam_kind: String,
@@ -20,16 +21,16 @@ pub struct ExamRound {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateExamRoundRequest {
-    pub academic_semester_id: Uuid,
+    pub academic_term_id: Uuid,
     pub name: String,
     pub description: Option<String>,
     pub exam_kind: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateExamRoundRequest {
     pub name: Option<String>,
     pub description: Option<String>,
@@ -78,7 +79,7 @@ pub struct BlockedWindowInput {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpsertDayRoomAssignmentRequest {
-    pub classroom_id: Uuid,
+    pub homeroom_id: Uuid,
     pub room_id: Uuid,
     pub capacity_override: Option<i32>,
     #[serde(default)]
@@ -116,8 +117,8 @@ pub struct ClearMismatchedExamItemsResult {
 pub struct DayRoomAssignmentView {
     pub id: Uuid,
     pub exam_day_id: Uuid,
-    pub classroom_id: Uuid,
-    pub classroom_name: String,
+    pub homeroom_id: Uuid,
+    pub homeroom_name: String,
     pub room_id: Uuid,
     pub room_name: String,
     pub building_name: Option<String>,
@@ -140,8 +141,8 @@ pub struct InvigilatorView {
 pub struct ExamInvigilatorAssignmentSummary {
     pub assignment_id: Uuid,
     pub exam_day_id: Uuid,
-    pub classroom_id: Uuid,
-    pub classroom_name: String,
+    pub homeroom_id: Uuid,
+    pub homeroom_name: String,
     pub room_id: Uuid,
     pub room_name: String,
     pub session_minutes: i32,
@@ -225,10 +226,10 @@ pub struct ExamDayDetail {
 pub struct ExamDayRoomAssignmentView {
     pub id: Uuid,
     pub exam_day_id: Uuid,
-    pub classroom_id: Uuid,
+    pub homeroom_id: Uuid,
     pub room_id: Uuid,
     pub capacity_override: Option<i32>,
-    pub classroom_name: Option<String>,
+    pub homeroom_name: Option<String>,
     pub room_name: Option<String>,
     pub room_capacity: Option<i32>,
     pub invigilators: Vec<ExamInvigilatorView>,
@@ -250,11 +251,13 @@ pub struct ExamInvigilatorView {
 pub struct ExamScheduleItem {
     pub id: Uuid,
     pub exam_round_id: Uuid,
-    pub academic_semester_id: Uuid,
+    pub academic_term_id: Uuid,
+    pub academic_year_id: Uuid,
     pub assessment_category_id: Uuid,
-    pub assessment_plan_id: Uuid,
-    pub classroom_course_id: Uuid,
-    pub classroom_id: Uuid,
+    pub course_assessment_plan_id: Uuid,
+    pub learning_offering_id: Uuid,
+    pub learning_group_id: Uuid,
+    pub homeroom_id: Uuid,
     pub subject_id: Uuid,
     pub grade_level_id: Uuid,
     pub duration_minutes: i32,
@@ -266,11 +269,13 @@ pub struct ExamScheduleItem {
 pub struct ExamScheduleItemView {
     pub id: Uuid,
     pub exam_round_id: Uuid,
-    pub academic_semester_id: Uuid,
+    pub academic_term_id: Uuid,
+    pub academic_year_id: Uuid,
     pub assessment_category_id: Uuid,
-    pub assessment_plan_id: Uuid,
-    pub classroom_course_id: Uuid,
-    pub classroom_id: Uuid,
+    pub course_assessment_plan_id: Uuid,
+    pub learning_offering_id: Uuid,
+    pub learning_group_id: Uuid,
+    pub homeroom_id: Uuid,
     pub subject_id: Uuid,
     pub grade_level_id: Uuid,
     pub duration_minutes: i32,
@@ -279,11 +284,12 @@ pub struct ExamScheduleItemView {
     pub subject_code: Option<String>,
     pub subject_name_th: Option<String>,
     pub subject_name_en: Option<String>,
+    pub subject_version_display_label: Option<String>,
     pub subject_group_id: Option<Uuid>,
     pub subject_group_name: Option<String>,
     pub subject_group_display_order: Option<i32>,
     pub subject_type: Option<String>,
-    pub classroom_name: Option<String>,
+    pub homeroom_name: Option<String>,
     pub grade_level_name: Option<String>,
     pub grade_level_type: Option<String>,
     pub grade_level_year: Option<i32>,
@@ -311,11 +317,13 @@ pub struct ExamSessionView {
     pub exam_day_id: Uuid,
     pub starts_at: NaiveTime,
     pub ends_at: NaiveTime,
-    pub academic_semester_id: Uuid,
+    pub academic_term_id: Uuid,
+    pub academic_year_id: Uuid,
     pub assessment_category_id: Uuid,
-    pub assessment_plan_id: Uuid,
-    pub classroom_course_id: Uuid,
-    pub classroom_id: Uuid,
+    pub course_assessment_plan_id: Uuid,
+    pub learning_offering_id: Uuid,
+    pub learning_group_id: Uuid,
+    pub homeroom_id: Uuid,
     pub subject_id: Uuid,
     pub grade_level_id: Uuid,
     pub duration_minutes: i32,
@@ -325,11 +333,12 @@ pub struct ExamSessionView {
     pub subject_code: Option<String>,
     pub subject_name_th: Option<String>,
     pub subject_name_en: Option<String>,
+    pub subject_version_display_label: Option<String>,
     pub subject_group_id: Option<Uuid>,
     pub subject_group_name: Option<String>,
     pub subject_group_display_order: Option<i32>,
     pub subject_type: Option<String>,
-    pub classroom_name: Option<String>,
+    pub homeroom_name: Option<String>,
     pub grade_level_name: Option<String>,
     pub grade_level_type: Option<String>,
     pub grade_level_year: Option<i32>,
@@ -361,7 +370,7 @@ pub struct ExamScheduleReadiness {
 pub struct PersonalExamScheduleRound {
     pub round_id: Uuid,
     pub round_name: String,
-    pub academic_semester_id: Uuid,
+    pub academic_term_id: Uuid,
     #[schema(required = true)]
     pub published_at: Option<DateTime<Utc>>,
     pub sessions: Vec<PersonalExamSessionView>,
@@ -375,7 +384,7 @@ pub struct PersonalExamSessionView {
     pub ends_at: NaiveTime,
     pub subject_name: String,
     pub assessment_category_name: String,
-    pub classroom_name: String,
+    pub homeroom_name: String,
     pub room_name: String,
     #[schema(required = true)]
     pub building_name: Option<String>,
@@ -388,7 +397,7 @@ pub struct PersonalExamSessionView {
 pub struct StaffPublishedExamScheduleRound {
     pub round_id: Uuid,
     pub round_name: String,
-    pub academic_semester_id: Uuid,
+    pub academic_term_id: Uuid,
     #[schema(required = true)]
     pub published_at: Option<DateTime<Utc>>,
     pub days: Vec<StaffPublishedExamDay>,
@@ -413,6 +422,8 @@ pub struct StaffPublishedExamSession {
     pub ends_at: NaiveTime,
     pub duration_minutes: i32,
     pub subject_id: Uuid,
+    pub learning_offering_id: Uuid,
+    pub learning_group_id: Uuid,
     pub subject_code: String,
     pub subject_name: String,
     pub assessment_category_name: String,
@@ -420,8 +431,8 @@ pub struct StaffPublishedExamSession {
     pub grade_level_name: String,
     pub grade_level_type: String,
     pub grade_level_year: i32,
-    pub classroom_id: Uuid,
-    pub classroom_name: String,
+    pub homeroom_id: Uuid,
+    pub homeroom_name: String,
     pub day_room_assignment_id: Uuid,
     pub room_id: Uuid,
     pub room_name: String,
@@ -433,8 +444,8 @@ pub struct StaffPublishedExamSession {
 #[serde(rename_all = "camelCase")]
 pub struct StaffPublishedExamRoomAssignment {
     pub assignment_id: Uuid,
-    pub classroom_id: Uuid,
-    pub classroom_name: String,
+    pub homeroom_id: Uuid,
+    pub homeroom_name: String,
     pub room_id: Uuid,
     pub room_name: String,
     #[schema(required = true)]

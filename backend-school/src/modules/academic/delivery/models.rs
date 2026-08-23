@@ -93,8 +93,15 @@ pub enum CurriculumPreviewAction {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CourseGradingPolicy {
     pub policy_code: String,
+    #[serde(default = "default_course_total_score")]
+    #[schema(value_type = String, pattern = r"^(0|[1-9]\d*)(\.\d{1,2})?$")]
+    pub total_score: String,
     #[schema(value_type = Option<String>, pattern = r"^-?(0|[1-9]\d*)(\.\d{1,2})?$")]
     pub passing_score: Option<String>,
+}
+
+fn default_course_total_score() -> String {
+    "100.00".to_string()
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

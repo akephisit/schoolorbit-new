@@ -556,8 +556,19 @@ async fn insert_course(
             "ต้องระบุนโยบายโครงสร้างคะแนน".to_string(),
         ));
     }
+    let total_score = validate_canonical_decimal(&request.grading_policy.total_score, 2)?;
+    if total_score <= bigdecimal::BigDecimal::from(0) {
+        return Err(AppError::ValidationError(
+            "คะแนนรวมตามนโยบายต้องมากกว่า 0".to_string(),
+        ));
+    }
     if let Some(score) = &request.grading_policy.passing_score {
-        validate_canonical_decimal(score, 2)?;
+        let passing_score = validate_canonical_decimal(score, 2)?;
+        if passing_score < bigdecimal::BigDecimal::from(0) || passing_score > total_score {
+            return Err(AppError::ValidationError(
+                "คะแนนผ่านต้องอยู่ระหว่าง 0 ถึงคะแนนรวม".to_string(),
+            ));
+        }
     }
     let source = course_version_source(transaction, request.subject_version_id).await?;
     validate_version_for_term(

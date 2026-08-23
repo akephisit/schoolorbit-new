@@ -71,7 +71,7 @@ fn public_routes() -> Router<AppState> {
             "/api/admin/routes/sync",
             post(modules::system::handlers::register_routes::register_routes),
         )
-        // WebSocket authentication runs in the handler; query selects semester only.
+        // WebSocket authentication runs in the handler; query selects academic term only.
         .route(
             "/ws/timetable",
             get(modules::academic::websockets::timetable_websocket_handler),
