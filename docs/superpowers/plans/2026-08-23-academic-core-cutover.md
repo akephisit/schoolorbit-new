@@ -1193,7 +1193,7 @@ placement endpoints defined earlier. Add `bigdecimal = { version = "0.4", featur
 and the SQLx `bigdecimal` feature. Wire DTO decimal fields are validated canonical strings and
 OpenAPI documents them as strings with a decimal pattern.
 
-- [ ] **Step 1: Add RED model/validation tests**
+- [x] **Step 1: Add RED model/validation tests**
 
 Test enum serialization in `snake_case`, camel-case DTO fields, decimal validation, date containment,
 term code/sequence uniqueness messages, optimistic row-version parsing, immutable published
@@ -1206,14 +1206,14 @@ cargo test modules::academic::core::services_tests --bin backend-school -- --noc
 
 Expected: FAIL because core models/services do not exist.
 
-- [ ] **Step 2: Implement typed models and pure validators**
+- [x] **Step 2: Implement typed models and pure validators**
 
 Define separate wire DTOs and DB rows. Requests use `#[serde(rename_all = "camelCase",
 deny_unknown_fields)]`; stable responses expose IDs/statuses/provenance state but no dynamic metadata
 unless it has a named type. `UpdateAcademicYearRequest` and `UpdateAcademicTermRequest` omit status.
 All mutable requests include `row_version`.
 
-- [ ] **Step 3: Implement context and year/term services**
+- [x] **Step 3: Implement context and year/term services**
 
 `context::list_options` returns all authorized contexts in one bounded query ordered by year
 descending and term sequence ascending. It reads active IDs only to suggest defaults.
@@ -1225,7 +1225,7 @@ Bell-schedule services validate non-overlapping ordered periods and same-year te
 Progression services replace a complete validated transition set transactionally and reject an
 invalid grade/curriculum scope.
 
-- [ ] **Step 4: Implement catalog and curriculum services**
+- [x] **Step 4: Implement catalog and curriculum services**
 
 Stable identity updates affect only stable code/archival metadata permitted by policy. Version detail
 updates are draft-only and effective-range checked in the transaction. Publishing a curriculum
@@ -1235,21 +1235,21 @@ credit/hour values, then freezes version/program/requirements atomically.
 List services accept typed filters and resource-policy decisions. Do not put `sqlx::query*` in
 handlers.
 
-- [ ] **Step 5: Implement student-year and placement services**
+- [x] **Step 5: Implement student-year and placement services**
 
 Creating a future student-year never queries for or closes rows from another academic year. Enforce
 one student/year row. Placement transfer locks the student-year and current placement, validates
 same-year target homeroom/program, ends the old placement, creates the new one, appends an audit
 event, and returns both rows. An idempotency key prevents a retried transfer from duplicating rows.
 
-- [ ] **Step 6: Implement thin handlers and route registration**
+- [x] **Step 6: Implement thin handlers and route registration**
 
 Handlers perform session context, exact permission/policy, service call, `ApiResponse`, and a bounded
 `academic_core_changed` signal. Register the clean paths only. Remove the old structure/year-active/
 semester/classroom/enrollment/subject/study-plan handlers and routes after their replacements compile;
 do not retain aliases.
 
-- [ ] **Step 7: Add service and HTTP tests**
+- [x] **Step 7: Add service, authorization-boundary, and route contract tests**
 
 Cover allowed/denied access, union-scoped listing, future-year coexistence, stale update conflict,
 published immutability, planning-only deletion, same-year placement enforcement, transfer retry,
@@ -1265,7 +1265,13 @@ cargo fmt --all -- --check
 cargo check
 ```
 
-- [ ] **Step 8: Commit Task 6**
+Verification evidence for this checkpoint: 19 Academic Core database/service tests, the catalog and
+curriculum allow/deny policy boundary tests, the migration 044 runtime-contract test, all 140 static
+architecture tests, `cargo fmt --all -- --check`, `cargo check --offline`, and `git diff --check`
+passed with one test thread where applicable. Full generated OpenAPI ownership remains Task 10 and is
+therefore not a Phase A release claim at this checkpoint.
+
+- [x] **Step 8: Commit Task 6**
 
 ```bash
 git add backend-school/Cargo.toml backend-school/src/modules/academic/core.rs \
