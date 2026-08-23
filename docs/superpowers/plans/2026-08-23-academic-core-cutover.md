@@ -750,7 +750,7 @@ cargo fmt --all -- --check
 
 Expected: PASS; the active migration timeline is contiguous through 041.
 
-- [ ] **Step 8: Commit Task 2**
+- [x] **Step 8: Commit Task 2**
 
 ```bash
 git add backend-school/migrations/041_academic_core_catalog.sql \
