@@ -6,7 +6,7 @@ use axum::{
 };
 use uuid::Uuid;
 
-use crate::api_response::ApiResponse;
+use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
 use crate::modules::academic::models::timetable::{
     CreateBatchTimetableEntriesRequest, CreateTimetableEntryRequest, DeleteTimetableEntryQuery,
@@ -43,8 +43,13 @@ pub async fn list_timetable_entries(
 #[utoipa::path(
     get,
     path = "/api/staff/me/timetable",
+    operation_id = "getStaffTimetable",
     params(TimetableQuery),
-    responses((status = 200, body = ApiResponse<Vec<crate::modules::academic::models::timetable::TimetableEntry>>)),
+    responses(
+        (status = 200, description = "Current staff timetable in the selected term", body = ApiResponse<Vec<crate::modules::academic::models::timetable::TimetableEntry>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Staff timetable access denied", body = ApiErrorResponse)
+    ),
     tag = "staff"
 )]
 pub async fn get_my_timetable(
@@ -219,6 +224,7 @@ pub async fn get_timetable_occupancy(
 #[utoipa::path(
     get,
     path = "/api/academic/timetable/daily-teaching",
+    operation_id = "getDailyTeachingOverview",
     params(daily_teaching_service::DailyTeachingQuery),
     responses((status = 200, body = ApiResponse<daily_teaching_service::DailyTeachingOverview>)),
     tag = "academic"

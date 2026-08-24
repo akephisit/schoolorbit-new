@@ -274,7 +274,7 @@ test('generated lookup, menu, and feature contracts own read transport DTOs', as
 		['/api/lookup/organization-units', 'get', 'lookupOrganizationUnits'],
 		['/api/lookup/organization-units/{id}', 'get', 'getLookupOrganizationUnit'],
 		['/api/lookup/grade-levels', 'get', 'lookupGradeLevels'],
-		['/api/lookup/classrooms', 'get', 'lookupClassrooms'],
+		['/api/lookup/homerooms', 'get', 'lookupHomerooms'],
 		['/api/lookup/academic-years', 'get', 'lookupAcademicYears'],
 		['/api/lookup/subjects', 'get', 'lookupSubjects']
 	];
@@ -613,8 +613,10 @@ test('daily teaching overview API uses typed response contracts', async () => {
 	assert.equal(contract.paths[dailyTeachingPath].get.operationId, 'getDailyTeachingOverview');
 
 	const dailyEntrySchema = extractGeneratedSchemaBlock(generated, 'DailyTeachingEntry');
-	assert.match(dailyEntrySchema, /activitySlotId:\s*string \| null/);
-	assert.match(dailyEntrySchema, /activitySchedulingMode:/);
+	for (const field of ['learningGroupId', 'offeringId', 'subjectId', 'activityId']) {
+		assert.match(dailyEntrySchema, new RegExp(`${field}\\?:\\s*string \\| null`));
+	}
+	assert.doesNotMatch(dailyEntrySchema, /activitySlotId|classroomCourseId|semesterId/);
 
 	assert.doesNotMatch(frontendTimetableApi, /interface\s+DailyTeachingOverview/);
 	assert.doesNotMatch(frontendTimetableApi, /interface\s+DailyTeachingTeacher/);
@@ -628,7 +630,7 @@ test('daily teaching overview API uses typed response contracts', async () => {
 	assert.match(frontendTimetableApi, /\/api\/academic\/timetable\/daily-teaching/);
 	assert.match(backendService, /struct\s+DailyTeachingOverview/);
 	assert.match(backendService, /#\[serde\(rename_all = "camelCase"\)\]/);
-	assert.match(backendHandler, /ApiResponse::ok\(data\)/);
+	assert.match(backendHandler, /ApiResponse::ok\(overview\)/);
 });
 
 test('admission application detail contract returns application and documents in data', async () => {

@@ -200,7 +200,8 @@ pub struct PublishLearningOfferingRequest {
     pub idempotency_key: Uuid,
 }
 
-#[derive(Clone, Debug, Deserialize, IntoParams)]
+#[derive(Clone, Debug, Deserialize, IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LearningOfferingQuery {
     pub academic_term_id: Uuid,
@@ -363,6 +364,10 @@ pub struct ReplaceLearningGroupHomeroomsRequest {
     pub row_version: i64,
     pub homeroom_ids: Vec<Uuid>,
 }
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(transparent)]
+pub struct LearningGroupHomeroomIds(pub Vec<Uuid>);
 
 #[derive(Clone, Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]

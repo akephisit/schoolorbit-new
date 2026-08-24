@@ -5,143 +5,47 @@
  */
 
 export interface paths {
-	'/api/academic/activities': {
+	'/api/academic/bell-schedules': {
 		parameters: {
 			query?: never;
 			header?: never;
 			path?: never;
 			cookie?: never;
 		};
-		get: operations['listActivityGroups'];
+		get: operations['listBellSchedules'];
 		put?: never;
-		post: operations['createActivityGroup'];
+		post: operations['createBellSchedule'];
 		delete?: never;
 		options?: never;
 		head?: never;
 		patch?: never;
 		trace?: never;
 	};
-	'/api/academic/activities/{id}': {
+	'/api/academic/bell-schedules/{id}': {
 		parameters: {
 			query?: never;
 			header?: never;
 			path?: never;
 			cookie?: never;
 		};
-		get?: never;
-		put: operations['updateActivityGroup'];
-		post?: never;
-		delete: operations['deleteActivityGroup'];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/activities/{id}/enroll': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post: operations['selfEnrollActivityGroup'];
-		delete: operations['selfUnenrollActivityGroup'];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/activities/{id}/instructors': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['listActivityGroupInstructors'];
-		put?: never;
-		post: operations['addActivityGroupInstructor'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/activities/{id}/instructors/{instructor_id}': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
+		get: operations['getBellSchedule'];
 		put?: never;
 		post?: never;
-		delete: operations['removeActivityGroupInstructor'];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/activities/{id}/members': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['listActivityGroupMembers'];
-		put?: never;
-		post: operations['addActivityGroupMembers'];
 		delete?: never;
 		options?: never;
 		head?: never;
-		patch?: never;
+		patch: operations['updateBellSchedule'];
 		trace?: never;
 	};
-	'/api/academic/activities/{id}/members/{student_id}': {
+	'/api/academic/bell-schedules/{id}/periods': {
 		parameters: {
 			query?: never;
 			header?: never;
 			path?: never;
 			cookie?: never;
 		};
-		get?: never;
-		put?: never;
-		post?: never;
-		delete: operations['removeActivityGroupMember'];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/activities/generate-from-plan': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post: operations['generateActivitiesFromStudyPlan'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/activities/members/{member_id}/result': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put: operations['updateActivityGroupMemberResult'];
+		get: operations['listBellSchedulePeriods'];
+		put: operations['replaceBellSchedulePeriods'];
 		post?: never;
 		delete?: never;
 		options?: never;
@@ -149,15 +53,47 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
-	'/api/academic/activities/my-enrollments': {
+	'/api/academic/catalog/activities': {
 		parameters: {
 			query?: never;
 			header?: never;
 			path?: never;
 			cookie?: never;
 		};
-		get: operations['listMyActivityEnrollments'];
+		get: operations['listCatalogActivities'];
 		put?: never;
+		post: operations['createCatalogActivity'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/catalog/activities/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getCatalogActivity'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch: operations['updateCatalogActivity'];
+		trace?: never;
+	};
+	'/api/academic/catalog/activities/{id}/default-teachers': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listActivityDefaultTeachers'];
+		put: operations['replaceActivityDefaultTeachers'];
 		post?: never;
 		delete?: never;
 		options?: never;
@@ -165,119 +101,39 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
-	'/api/academic/activity-catalog': {
+	'/api/academic/catalog/activities/{id}/versions': {
 		parameters: {
 			query?: never;
 			header?: never;
 			path?: never;
 			cookie?: never;
 		};
-		get: operations['listActivityCatalog'];
+		get: operations['listActivityVersions'];
 		put?: never;
-		post: operations['createActivityCatalog'];
+		post: operations['createActivityVersion'];
 		delete?: never;
 		options?: never;
 		head?: never;
 		patch?: never;
 		trace?: never;
 	};
-	'/api/academic/activity-catalog/{id}': {
+	'/api/academic/catalog/activity-versions/{id}': {
 		parameters: {
 			query?: never;
 			header?: never;
 			path?: never;
 			cookie?: never;
 		};
-		get?: never;
-		put: operations['updateActivityCatalog'];
-		post?: never;
-		delete: operations['deleteActivityCatalog'];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/activity-catalog/{id}/default-instructors': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['listActivityCatalogDefaultInstructors'];
-		put?: never;
-		post: operations['addActivityCatalogDefaultInstructor'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/activity-catalog/{id}/default-instructors/{uid}': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put: operations['updateActivityCatalogDefaultInstructorRole'];
-		post?: never;
-		delete: operations['removeActivityCatalogDefaultInstructor'];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/activity-slots': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['listActivitySlots'];
+		get: operations['getActivityVersion'];
 		put?: never;
 		post?: never;
 		delete?: never;
 		options?: never;
 		head?: never;
-		patch?: never;
+		patch: operations['updateActivityVersion'];
 		trace?: never;
 	};
-	'/api/academic/activity-slots/{id}': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put: operations['updateActivitySlot'];
-		post?: never;
-		delete: operations['deleteActivitySlot'];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/activity-slots/{id}/classroom-assignments': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['listActivitySlotClassroomAssignments'];
-		put?: never;
-		post: operations['upsertActivitySlotClassroomAssignments'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/activity-slots/{id}/classroom-assignments/{assignment_id}': {
+	'/api/academic/catalog/activity-versions/{id}/publish': {
 		parameters: {
 			query?: never;
 			header?: never;
@@ -286,686 +142,14 @@ export interface paths {
 		};
 		get?: never;
 		put?: never;
-		post?: never;
-		delete: operations['deleteActivitySlotClassroomAssignment'];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/activity-slots/{id}/classroom-assignments/all': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post?: never;
-		delete: operations['deleteAllActivitySlotClassroomAssignments'];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/activity-slots/{id}/groups': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post?: never;
-		delete: operations['deleteAllActivitySlotGroups'];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/activity-slots/{id}/instructors': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['listActivitySlotInstructors'];
-		put?: never;
-		post: operations['addActivitySlotInstructor'];
+		post: operations['publishActivityVersion'];
 		delete?: never;
 		options?: never;
 		head?: never;
 		patch?: never;
 		trace?: never;
 	};
-	'/api/academic/activity-slots/{id}/instructors/{user_id}': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post?: never;
-		delete: operations['removeActivitySlotInstructor'];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/activity-slots/{id}/instructors/all': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post?: never;
-		delete: operations['removeAllActivitySlotInstructors'];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/activity-slots/{id}/instructors/batch': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post: operations['addActivitySlotInstructorsBatch'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/activity-slots/{id}/timetable-entries': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post?: never;
-		delete: operations['deleteActivitySlotTimetableEntries'];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/activity-slots/timetable-context': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['getActivitySlotTimetableContext'];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/classrooms': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['listClassrooms'];
-		put?: never;
-		post: operations['createClassroom'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/classrooms/{id}': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put: operations['updateClassroom'];
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/enrollments': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post: operations['enrollStudents'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/enrollments/{id}': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post?: never;
-		delete: operations['removeEnrollment'];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/enrollments/{id}/number': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put: operations['updateEnrollmentNumber'];
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/enrollments/class/{id}': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['listClassEnrollments'];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/enrollments/class/{id}/auto-number': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post: operations['autoAssignClassNumbers'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/levels': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post: operations['createGradeLevel'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/levels/{id}': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post?: never;
-		delete: operations['deleteGradeLevel'];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/planning/classrooms/{classroom_id}/activities': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['listClassroomActivities'];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/planning/classrooms/{classroom_id}/activities/{slot_id}': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post?: never;
-		delete: operations['removeClassroomFromActivitySlot'];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/planning/courses': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['listClassroomCourses'];
-		put?: never;
-		post: operations['assignCourses'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/planning/courses/{id}': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put: operations['updateClassroomCourse'];
-		post?: never;
-		delete: operations['removeClassroomCourse'];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/planning/courses/{id}/instructors': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['listCourseInstructors'];
-		put?: never;
-		post: operations['addCourseInstructor'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/planning/courses/{id}/instructors/{uid}': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put: operations['updateCourseInstructorRole'];
-		post?: never;
-		delete: operations['removeCourseInstructor'];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/planning/courses/instructors': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['batchListCourseInstructorsFromQuery'];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/planning/courses/instructors/batch': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post: operations['batchListCourseInstructors'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/planning/generate-from-plan': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post: operations['generateCoursesFromStudyPlan'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/semesters': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post: operations['createSemester'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/semesters/{id}': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put: operations['updateSemester'];
-		post?: never;
-		delete: operations['deleteSemester'];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/structure': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['getAcademicStructure'];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/study-plan-activities/{id}': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put: operations['updateStudyPlanActivity'];
-		post?: never;
-		delete: operations['deleteStudyPlanActivity'];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/study-plan-subjects/{id}': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post?: never;
-		delete: operations['deleteStudyPlanSubject'];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/study-plan-versions': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['listStudyPlanVersions'];
-		put?: never;
-		post: operations['createStudyPlanVersion'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/study-plan-versions/{id}': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['getStudyPlanVersion'];
-		put: operations['updateStudyPlanVersion'];
-		post?: never;
-		delete: operations['deleteStudyPlanVersion'];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/study-plan-versions/{id}/activities': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['listStudyPlanActivities'];
-		put?: never;
-		post: operations['addStudyPlanActivity'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/study-plan-versions/{id}/subjects': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['listStudyPlanSubjects'];
-		put?: never;
-		post: operations['addSubjectsToStudyPlanVersion'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/study-plans': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['listStudyPlans'];
-		put?: never;
-		post: operations['createStudyPlan'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/study-plans/{id}': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['getStudyPlan'];
-		put: operations['updateStudyPlan'];
-		post?: never;
-		delete: operations['deleteStudyPlan'];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/subjects': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['listSubjects'];
-		put?: never;
-		post: operations['createSubject'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/subjects/{id}': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put: operations['updateSubject'];
-		post?: never;
-		delete: operations['deleteSubject'];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/subjects/{id}/default-instructors': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['listSubjectDefaultInstructors'];
-		put?: never;
-		post: operations['addSubjectDefaultInstructor'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/subjects/{id}/default-instructors/{uid}': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put: operations['updateSubjectDefaultInstructorRole'];
-		post?: never;
-		delete: operations['removeSubjectDefaultInstructor'];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/subjects/default-instructors': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['batchListSubjectDefaultInstructors'];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/subjects/groups': {
+	'/api/academic/catalog/subject-groups': {
 		parameters: {
 			query?: never;
 			header?: never;
@@ -974,11 +158,603 @@ export interface paths {
 		};
 		get: operations['listSubjectGroups'];
 		put?: never;
+		post: operations['createSubjectGroup'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/catalog/subject-groups/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getSubjectGroup'];
+		put?: never;
+		post?: never;
+		delete: operations['deleteSubjectGroup'];
+		options?: never;
+		head?: never;
+		patch: operations['updateSubjectGroup'];
+		trace?: never;
+	};
+	'/api/academic/catalog/subject-versions/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getSubjectVersion'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch: operations['updateSubjectVersion'];
+		trace?: never;
+	};
+	'/api/academic/catalog/subject-versions/{id}/publish': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['publishSubjectVersion'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/catalog/subjects': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listCatalogSubjects'];
+		put?: never;
+		post: operations['createCatalogSubject'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/catalog/subjects/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getCatalogSubject'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch: operations['updateCatalogSubject'];
+		trace?: never;
+	};
+	'/api/academic/catalog/subjects/{id}/default-teachers': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listSubjectDefaultTeachers'];
+		put: operations['replaceSubjectDefaultTeachers'];
 		post?: never;
 		delete?: never;
 		options?: never;
 		head?: never;
 		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/catalog/subjects/{id}/versions': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listSubjectVersions'];
+		put?: never;
+		post: operations['createSubjectVersion'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/context/options': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listAcademicContextOptions'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/curricula': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listCurricula'];
+		put?: never;
+		post: operations['createCurriculum'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/curricula/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getCurriculum'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch: operations['updateCurriculum'];
+		trace?: never;
+	};
+	'/api/academic/curricula/{id}/versions': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listCurriculumVersions'];
+		put?: never;
+		post: operations['createCurriculumVersion'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/curriculum-versions/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getCurriculumVersion'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch: operations['updateCurriculumVersion'];
+		trace?: never;
+	};
+	'/api/academic/curriculum-versions/{id}/programs': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listStudyPrograms'];
+		put?: never;
+		post: operations['createStudyProgram'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/curriculum-versions/{id}/publish': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['publishCurriculumVersion'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/grade-progressions': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listGradeProgressions'];
+		put: operations['replaceGradeProgressions'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/homerooms': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listHomerooms'];
+		put?: never;
+		post: operations['createHomeroom'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/homerooms/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getHomeroom'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch: operations['updateHomeroom'];
+		trace?: never;
+	};
+	'/api/academic/homerooms/{id}/advisors': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listHomeroomAdvisors'];
+		put: operations['replaceHomeroomAdvisors'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/learning-groups/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getLearningGroup'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch: operations['updateLearningGroup'];
+		trace?: never;
+	};
+	'/api/academic/learning-groups/{id}/homerooms': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listLearningGroupHomerooms'];
+		put: operations['replaceLearningGroupHomerooms'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/learning-groups/{id}/roster': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['previewLearningGroupRoster'];
+		put: operations['applyLearningGroupRoster'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/learning-groups/{id}/roster/publish': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['publishLearningGroupRoster'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/learning-groups/{id}/teachers': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listLearningGroupTeachers'];
+		put: operations['replaceLearningGroupTeachers'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/offerings': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listLearningOfferings'];
+		put?: never;
+		post: operations['createLearningOffering'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/offerings/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getLearningOffering'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch: operations['updateLearningOffering'];
+		trace?: never;
+	};
+	'/api/academic/offerings/{id}/groups': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listLearningGroups'];
+		put?: never;
+		post: operations['createLearningGroup'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/offerings/{id}/publish': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['publishLearningOffering'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/offerings/apply-from-curriculum': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['applyLearningOfferingsFromCurriculum'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/offerings/preview-from-curriculum': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['previewLearningOfferingsFromCurriculum'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/placements/{id}/transfer': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['transferHomeroomPlacement'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/student-years': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listStudentAcademicYears'];
+		put?: never;
+		post: operations['createStudentAcademicYear'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/student-years/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getStudentAcademicYear'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch: operations['updateStudentAcademicYear'];
+		trace?: never;
+	};
+	'/api/academic/student-years/{id}/placements': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['createHomeroomPlacement'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/study-programs/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getStudyProgram'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch: operations['updateStudyProgram'];
+		trace?: never;
+	};
+	'/api/academic/study-programs/{id}/requirements': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listProgramRequirements'];
+		put: operations['replaceProgramRequirements'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/terms': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listAcademicTerms'];
+		put?: never;
+		post: operations['createAcademicTerm'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/terms/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getAcademicTerm'];
+		put?: never;
+		post?: never;
+		delete: operations['deleteAcademicTerm'];
+		options?: never;
+		head?: never;
+		patch: operations['updateAcademicTerm'];
 		trace?: never;
 	};
 	'/api/academic/timetable/daily-teaching': {
@@ -988,7 +764,6 @@ export interface paths {
 			path?: never;
 			cookie?: never;
 		};
-		/** GET /api/academic/timetable/daily-teaching */
 		get: operations['getDailyTeachingOverview'];
 		put?: never;
 		post?: never;
@@ -1005,7 +780,7 @@ export interface paths {
 			path?: never;
 			cookie?: never;
 		};
-		get?: never;
+		get: operations['listAcademicYears'];
 		put?: never;
 		post: operations['createAcademicYear'];
 		delete?: never;
@@ -1021,45 +796,13 @@ export interface paths {
 			path?: never;
 			cookie?: never;
 		};
-		get?: never;
-		put: operations['updateAcademicYear'];
+		get: operations['getAcademicYear'];
+		put?: never;
 		post?: never;
 		delete?: never;
 		options?: never;
 		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/years/{id}/active': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put: operations['setActiveAcademicYear'];
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/years/{id}/levels': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['getAcademicYearLevels'];
-		put: operations['updateAcademicYearLevels'];
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
+		patch: operations['updateAcademicYear'];
 		trace?: never;
 	};
 	'/api/achievements': {
@@ -2188,26 +1931,6 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
-	'/api/lookup/classrooms': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/**
-		 * GET /api/lookup/classrooms
-		 *     Returns minimal classroom data for dropdowns
-		 */
-		get: operations['lookupClassrooms'];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
 	'/api/lookup/grade-levels': {
 		parameters: {
 			query?: never;
@@ -2220,6 +1943,26 @@ export interface paths {
 		 *     Returns minimal grade level data for dropdowns
 		 */
 		get: operations['lookupGradeLevels'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/lookup/homerooms': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/**
+		 * GET /api/lookup/homerooms
+		 *     Returns homerooms for the caller-selected academic year.
+		 */
+		get: operations['lookupHomerooms'];
 		put?: never;
 		post?: never;
 		delete?: never;
@@ -2337,7 +2080,7 @@ export interface paths {
 		};
 		/**
 		 * GET /api/lookup/students
-		 *     Returns minimal student data for dropdowns (with student_id and class_room)
+		 *     Returns students and placements for the caller-selected academic year.
 		 */
 		get: operations['lookupStudents'];
 		put?: never;
@@ -2441,28 +2184,6 @@ export interface paths {
 		};
 		/** GET /api/me/exam-schedules */
 		get: operations['listMyExamSchedules'];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/me/timetable': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/**
-		 * GET /api/me/timetable — ผู้ใช้ดูตารางของตัวเอง (student/staff)
-		 *     - student: filter ตาม student_class_enrollments
-		 *     - staff: filter ตาม timetable_entry_instructors (+ team ghosts ถ้าเลือก)
-		 *     - parent: ใช้ /api/parent/students/{id}/timetable แทน
-		 */
-		get: operations['getMyTimetable'];
 		put?: never;
 		post?: never;
 		delete?: never;
@@ -3066,6 +2787,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/staff/me/timetable': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getStaffTimetable'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/student/profile': {
 		parameters: {
 			query?: never;
@@ -3205,26 +2942,80 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
 	schemas: {
-		AcademicStructure: {
-			levels: components['schemas']['GradeLevelResponse'][];
-			semesters: components['schemas']['Semester'][];
-			years: components['schemas']['AcademicYear'][];
+		AcademicContextOptions: {
+			/** Format: uuid */
+			activeAcademicTermId?: string | null;
+			/** Format: uuid */
+			activeAcademicYearId?: string | null;
+			terms: components['schemas']['AcademicTermOption'][];
+			years: components['schemas']['AcademicYearOption'][];
 		};
-		AcademicYear: {
+		AcademicTerm: {
+			/** Format: uuid */
+			academicYearId: string;
+			/** Format: uuid */
+			bellScheduleId: string;
+			blocksYearClosure: boolean;
+			code: string;
 			/** Format: date-time */
-			created_at: string;
+			createdAt: string;
 			/** Format: date */
-			end_date: string;
+			endDate: string;
 			/** Format: uuid */
 			id: string;
-			is_active: boolean;
-			metadata?: unknown;
+			includedInYearResult: boolean;
+			migrated: boolean;
 			name: string;
-			school_days: string;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: int32 */
+			sequence: number;
 			/** Format: date */
-			start_date: string;
+			startDate: string;
+			status: components['schemas']['AcademicTermStatus'];
+			termType: components['schemas']['AcademicTermType'];
 			/** Format: date-time */
-			updated_at: string;
+			updatedAt: string;
+		};
+		AcademicTermOption: {
+			/** Format: uuid */
+			academicYearId: string;
+			blocksYearClosure: boolean;
+			code: string;
+			/** Format: date */
+			endDate: string;
+			/** Format: uuid */
+			id: string;
+			includedInYearResult: boolean;
+			name: string;
+			/** Format: int32 */
+			sequence: number;
+			/** Format: date */
+			startDate: string;
+			status: components['schemas']['AcademicTermStatus'];
+			termType: components['schemas']['AcademicTermType'];
+		};
+		/** @enum {string} */
+		AcademicTermStatus: 'planning' | 'ready' | 'active' | 'closing' | 'closed' | 'cancelled';
+		/** @enum {string} */
+		AcademicTermType: 'regular' | 'summer' | 'remedial' | 'custom';
+		AcademicYear: {
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: date */
+			endDate: string;
+			/** Format: uuid */
+			id: string;
+			migrated: boolean;
+			name: string;
+			/** Format: int64 */
+			rowVersion: number;
+			schoolDays: string[];
+			/** Format: date */
+			startDate: string;
+			status: components['schemas']['AcademicYearStatus'];
+			/** Format: date-time */
+			updatedAt: string;
 			/** Format: int32 */
 			year: number;
 		};
@@ -3232,11 +3023,25 @@ export interface components {
 		AcademicYearLookupItem: {
 			/** Format: uuid */
 			id: string;
-			is_current: boolean;
 			name: string;
+			status: components['schemas']['AcademicYearStatus'];
 			/** Format: int32 */
 			year: number;
 		};
+		AcademicYearOption: {
+			/** Format: date */
+			endDate: string;
+			/** Format: uuid */
+			id: string;
+			name: string;
+			/** Format: date */
+			startDate: string;
+			status: components['schemas']['AcademicYearStatus'];
+			/** Format: int32 */
+			year: number;
+		};
+		/** @enum {string} */
+		AcademicYearStatus: 'planning' | 'ready' | 'active' | 'closing' | 'closed' | 'archived';
 		Achievement: {
 			/** Format: date */
 			achievement_date: string;
@@ -3267,171 +3072,73 @@ export interface components {
 			/** Format: uuid */
 			user_id?: string | null;
 		};
-		ActivityAddedCountData: {
-			added: number;
-		};
-		ActivityCatalog: {
-			activity_type: components['schemas']['ActivityCatalogType'];
-			/** Format: date-time */
-			created_at: string;
-			description?: string | null;
-			grade_level_ids?: string[] | null;
-			/** Format: uuid */
-			id: string;
-			is_active: boolean;
-			name: string;
+		ActivityAttendanceRequirement: {
+			minimumPercent?: string | null;
 			/** Format: int32 */
-			periods_per_week: number;
-			scheduling_mode: components['schemas']['ActivitySchedulingMode'];
-			/** Format: uuid */
-			start_academic_year_id: string;
-			term?: string | null;
-			/** Format: date-time */
-			updated_at: string;
+			requiredSessions?: number | null;
 		};
-		/** @enum {string} */
-		ActivityCatalogType: 'scout' | 'club' | 'guidance' | 'social' | 'other';
-		ActivityDeletedCountData: {
-			/** Format: int64 */
-			deleted_count: number;
-		};
-		ActivityGroup: {
-			activity_type?: string | null;
-			/** @description ห้องที่ group นี้รับ (override slot). NULL = รับทุกห้องที่ slot รับ */
-			allowed_classroom_ids?: string[] | null;
-			/** Format: date-time */
-			created_at: string;
+		ActivityOfferingSnapshot: {
 			/** Format: uuid */
-			created_by?: string | null;
-			description?: string | null;
+			activityId: string;
 			/** Format: uuid */
-			id: string;
-			/** Format: uuid */
-			instructor_id?: string | null;
-			instructor_name?: string | null;
-			is_active: boolean;
+			activityVersionId: string;
+			attendanceRequirement: components['schemas']['ActivityAttendanceRequirement'];
 			/** Format: int32 */
-			max_capacity?: number | null;
-			/** Format: int64 */
-			member_count?: number | null;
-			name: string;
-			registration_open: boolean;
-			semester_name?: string | null;
+			capacity?: number | null;
 			/** Format: uuid */
-			slot_id?: string | null;
-			slot_name?: string | null;
-			/** Format: date-time */
-			updated_at: string;
+			curriculumActivityRequirementId?: string | null;
+			hours: string;
+			passCriteria: components['schemas']['ActivityPassCriteria'];
+			registrationType: components['schemas']['ActivityRegistrationType'];
+			schedulingMode: components['schemas']['ActivitySchedulingMode'];
 		};
-		ActivityGroupFilter: {
-			activity_type?: string | null;
-			/** Format: uuid */
-			instructor_id?: string | null;
-			registration_open?: boolean | null;
-			search?: string | null;
-			/** Format: uuid */
-			semester_id?: string | null;
-			/** Format: uuid */
-			slot_id?: string | null;
-		};
-		/** @enum {string} */
-		ActivityGroupInstructorRole: 'primary' | 'assistant';
-		ActivityGroupMember: {
-			/** Format: uuid */
-			activity_group_id: string;
-			classroom_name?: string | null;
-			/** Format: date-time */
-			enrolled_at: string;
-			/** Format: uuid */
-			enrolled_by?: string | null;
-			grade_level_name?: string | null;
-			/** Format: uuid */
-			id: string;
-			result?: null | components['schemas']['ActivityMemberResult'];
-			student_code?: string | null;
-			/**
-			 * Format: uuid
-			 * @description FK → users(id) (เปลี่ยนจาก student_info(id) ใน M114)
-			 */
-			student_id: string;
-			student_name?: string | null;
-		};
-		ActivityInsertedCountData: {
-			inserted: number;
-		};
-		/** @enum {string} */
-		ActivityMemberResult: 'pass' | 'fail';
-		ActivityProcessedCountData: {
-			count: number;
+		ActivityPassCriteria: {
+			outcomes: string[];
+			requireAttendance: boolean;
+			requireTeacherConfirmation: boolean;
 		};
 		/** @enum {string} */
 		ActivityRegistrationType: 'self' | 'assigned';
+		ActivityResult: {
+			attendancePercent?: string | null;
+			/** Format: date-time */
+			finalizedAt?: string | null;
+			/** Format: uuid */
+			learningGroupStudentId: string;
+			/** Format: uuid */
+			learningResultId: string;
+			outcome?: string | null;
+			teacherComment?: string | null;
+		};
 		/** @enum {string} */
 		ActivitySchedulingMode: 'synchronized' | 'independent';
-		ActivitySlot: {
+		ActivityVersion: {
 			/** Format: uuid */
-			activity_catalog_id: string;
-			activity_type?: string | null;
-			allowed_grade_level_ids?: string[] | null;
-			/**
-			 * @description UUIDs of classrooms participating in this slot (from activity_slot_classrooms junction).
-			 *     Used on the activities page to show only real participants (instead of grade-matched set).
-			 */
-			classroom_ids?: string[] | null;
+			activityId: string;
 			/** Format: date-time */
-			created_at: string;
-			/** Format: uuid */
-			created_by?: string | null;
+			createdAt: string;
 			description?: string | null;
-			/** Format: int64 */
-			group_count?: number | null;
+			/** Format: date */
+			effectiveFrom: string;
+			/** Format: date */
+			effectiveUntil?: string | null;
+			gradeLevelIds: string[];
+			hoursPerWeek: string;
 			/** Format: uuid */
 			id: string;
-			is_active: boolean;
-			name?: string | null;
-			/** Format: int32 */
-			periods_per_week?: number | null;
-			registration_type: components['schemas']['ActivityRegistrationType'];
-			scheduling_mode?: string | null;
-			/** Format: uuid */
-			semester_id: string;
-			semester_name?: string | null;
+			migrated: boolean;
+			name: string;
 			/** Format: date-time */
-			student_reg_end?: string | null;
-			student_reg_open: boolean;
-			/** Format: date-time */
-			student_reg_start?: string | null;
-			teacher_reg_open: boolean;
+			publishedAt?: string | null;
 			/** Format: int64 */
-			total_members?: number | null;
+			rowVersion: number;
+			schedulingMode: string;
+			status: components['schemas']['VersionStatus'];
+			termCode?: string | null;
 			/** Format: date-time */
-			updated_at: string;
-		};
-		ActivitySlotFilter: {
-			activity_type?: string | null;
-			/** Format: uuid */
-			semester_id?: string | null;
-			student_reg_open?: boolean | null;
-			teacher_reg_open?: boolean | null;
-		};
-		ActivitySlotTimetableContextResponse: {
-			classroomAssignmentsBySlot: {
-				[key: string]: components['schemas']['SlotClassroomAssignment'][];
-			};
-			instructorsBySlot: {
-				[key: string]: components['schemas']['SlotInstructorInfo'][];
-			};
-			slots: components['schemas']['ActivitySlot'][];
-		};
-		AddCatalogDefaultInstructorRequest: {
-			/** Format: uuid */
-			instructor_id: string;
-			role?: null | components['schemas']['CurriculumInstructorRole'];
-		};
-		AddCourseInstructorRequest: {
-			/** Format: uuid */
-			instructor_id: string;
-			role?: null | components['schemas']['CourseInstructorRole'];
+			updatedAt: string;
+			/** Format: int32 */
+			versionNo: number;
 		};
 		AddMemberRequest: {
 			is_primary?: boolean | null;
@@ -3441,33 +3148,17 @@ export interface components {
 			/** Format: uuid */
 			user_id: string;
 		};
-		AddMembersRequest: {
-			student_ids: string[];
-		};
-		AddSlotInstructorRequest: {
-			/** Format: uuid */
-			user_id: string;
-		};
-		AddSlotInstructorsBatchRequest: {
-			user_ids: string[];
-		};
-		AddSubjectDefaultInstructorRequest: {
-			/** Format: uuid */
-			instructor_id: string;
-			role?: null | components['schemas']['CurriculumInstructorRole'];
-		};
-		AddSubjectsToVersionRequest: {
-			subjects: components['schemas']['SubjectInPlan'][];
-		};
-		/** @description ห้องที่ครูเป็นครูที่ปรึกษา — ดึงจาก classroom_advisors */
-		AdvisorClassroomItem: {
+		/** @description ห้องประจำชั้นที่ครูเป็นที่ปรึกษา */
+		AdvisorHomeroomItem: {
 			/** Format: int32 */
-			academic_year: number;
-			academic_year_label: string;
-			classroom_code: string;
+			academicYear: number;
 			/** Format: uuid */
-			classroom_id: string;
-			classroom_name: string;
+			academicYearId: string;
+			academicYearLabel: string;
+			homeroomCode: string;
+			/** Format: uuid */
+			homeroomId: string;
+			homeroomName: string;
 			role: string;
 		};
 		ApiErrorResponse: {
@@ -3504,11 +3195,45 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
-		ApiResponse_AcademicStructure: {
+		ApiResponse_AcademicContextOptions: {
 			data: {
-				levels: components['schemas']['GradeLevelResponse'][];
-				semesters: components['schemas']['Semester'][];
-				years: components['schemas']['AcademicYear'][];
+				/** Format: uuid */
+				activeAcademicTermId?: string | null;
+				/** Format: uuid */
+				activeAcademicYearId?: string | null;
+				terms: components['schemas']['AcademicTermOption'][];
+				years: components['schemas']['AcademicYearOption'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_AcademicTerm: {
+			data: {
+				/** Format: uuid */
+				academicYearId: string;
+				/** Format: uuid */
+				bellScheduleId: string;
+				blocksYearClosure: boolean;
+				code: string;
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: date */
+				endDate: string;
+				/** Format: uuid */
+				id: string;
+				includedInYearResult: boolean;
+				migrated: boolean;
+				name: string;
+				/** Format: int64 */
+				rowVersion: number;
+				/** Format: int32 */
+				sequence: number;
+				/** Format: date */
+				startDate: string;
+				status: components['schemas']['AcademicTermStatus'];
+				termType: components['schemas']['AcademicTermType'];
+				/** Format: date-time */
+				updatedAt: string;
 			};
 			message?: string;
 			success: boolean;
@@ -3516,19 +3241,21 @@ export interface components {
 		ApiResponse_AcademicYear: {
 			data: {
 				/** Format: date-time */
-				created_at: string;
+				createdAt: string;
 				/** Format: date */
-				end_date: string;
+				endDate: string;
 				/** Format: uuid */
 				id: string;
-				is_active: boolean;
-				metadata?: unknown;
+				migrated: boolean;
 				name: string;
-				school_days: string;
+				/** Format: int64 */
+				rowVersion: number;
+				schoolDays: string[];
 				/** Format: date */
-				start_date: string;
+				startDate: string;
+				status: components['schemas']['AcademicYearStatus'];
 				/** Format: date-time */
-				updated_at: string;
+				updatedAt: string;
 				/** Format: int32 */
 				year: number;
 			};
@@ -3561,142 +3288,107 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
-		ApiResponse_ActivityAddedCountData: {
+		ApiResponse_ActivityVersion: {
 			data: {
-				added: number;
-			};
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_ActivityCatalog: {
-			data: {
-				activity_type: components['schemas']['ActivityCatalogType'];
+				/** Format: uuid */
+				activityId: string;
 				/** Format: date-time */
-				created_at: string;
+				createdAt: string;
 				description?: string | null;
-				grade_level_ids?: string[] | null;
+				/** Format: date */
+				effectiveFrom: string;
+				/** Format: date */
+				effectiveUntil?: string | null;
+				gradeLevelIds: string[];
+				hoursPerWeek: string;
 				/** Format: uuid */
 				id: string;
-				is_active: boolean;
+				migrated: boolean;
 				name: string;
-				/** Format: int32 */
-				periods_per_week: number;
-				scheduling_mode: components['schemas']['ActivitySchedulingMode'];
-				/** Format: uuid */
-				start_academic_year_id: string;
-				term?: string | null;
 				/** Format: date-time */
-				updated_at: string;
-			};
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_ActivityDeletedCountData: {
-			data: {
+				publishedAt?: string | null;
 				/** Format: int64 */
-				deleted_count: number;
+				rowVersion: number;
+				schedulingMode: string;
+				status: components['schemas']['VersionStatus'];
+				termCode?: string | null;
+				/** Format: date-time */
+				updatedAt: string;
+				/** Format: int32 */
+				versionNo: number;
 			};
 			message?: string;
 			success: boolean;
 		};
-		ApiResponse_ActivityGroup: {
+		ApiResponse_ApplyCurriculumOfferingsResult: {
 			data: {
-				activity_type?: string | null;
-				/** @description ห้องที่ group นี้รับ (override slot). NULL = รับทุกห้องที่ slot รับ */
-				allowed_classroom_ids?: string[] | null;
-				/** Format: date-time */
-				created_at: string;
 				/** Format: uuid */
-				created_by?: string | null;
-				description?: string | null;
+				academicTermId: string;
+				createdCount: number;
+				offeringIds: string[];
+				retainedCount: number;
+				sourceHash: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_BellSchedule: {
+			data: {
+				/** Format: uuid */
+				academicYearId: string;
+				code: string;
+				/** Format: date-time */
+				createdAt: string;
 				/** Format: uuid */
 				id: string;
-				/** Format: uuid */
-				instructor_id?: string | null;
-				instructor_name?: string | null;
-				is_active: boolean;
-				/** Format: int32 */
-				max_capacity?: number | null;
-				/** Format: int64 */
-				member_count?: number | null;
+				isDefault: boolean;
 				name: string;
-				registration_open: boolean;
-				semester_name?: string | null;
 				/** Format: uuid */
-				slot_id?: string | null;
-				slot_name?: string | null;
-				/** Format: date-time */
-				updated_at: string;
-			};
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_ActivityInsertedCountData: {
-			data: {
-				inserted: number;
-			};
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_ActivityProcessedCountData: {
-			data: {
-				count: number;
-			};
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_ActivitySlot: {
-			data: {
-				/** Format: uuid */
-				activity_catalog_id: string;
-				activity_type?: string | null;
-				allowed_grade_level_ids?: string[] | null;
-				/**
-				 * @description UUIDs of classrooms participating in this slot (from activity_slot_classrooms junction).
-				 *     Used on the activities page to show only real participants (instead of grade-matched set).
-				 */
-				classroom_ids?: string[] | null;
-				/** Format: date-time */
-				created_at: string;
-				/** Format: uuid */
-				created_by?: string | null;
-				description?: string | null;
+				owningOrganizationUnitId?: string | null;
 				/** Format: int64 */
-				group_count?: number | null;
+				rowVersion: number;
+				status: components['schemas']['VersionStatus'];
+				/** Format: date-time */
+				updatedAt: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CatalogActivity: {
+			data: {
+				activityType: string;
+				/** Format: date-time */
+				archivedAt?: string | null;
+				code: string;
+				/** Format: date-time */
+				createdAt: string;
 				/** Format: uuid */
 				id: string;
-				is_active: boolean;
-				name?: string | null;
-				/** Format: int32 */
-				periods_per_week?: number | null;
-				registration_type: components['schemas']['ActivityRegistrationType'];
-				scheduling_mode?: string | null;
 				/** Format: uuid */
-				semester_id: string;
-				semester_name?: string | null;
-				/** Format: date-time */
-				student_reg_end?: string | null;
-				student_reg_open: boolean;
-				/** Format: date-time */
-				student_reg_start?: string | null;
-				teacher_reg_open: boolean;
+				owningOrganizationUnitId?: string | null;
 				/** Format: int64 */
-				total_members?: number | null;
+				rowVersion: number;
 				/** Format: date-time */
-				updated_at: string;
+				updatedAt: string;
 			};
 			message?: string;
 			success: boolean;
 		};
-		ApiResponse_ActivitySlotTimetableContextResponse: {
+		ApiResponse_CatalogSubject: {
 			data: {
-				classroomAssignmentsBySlot: {
-					[key: string]: components['schemas']['SlotClassroomAssignment'][];
-				};
-				instructorsBySlot: {
-					[key: string]: components['schemas']['SlotInstructorInfo'][];
-				};
-				slots: components['schemas']['ActivitySlot'][];
+				/** Format: date-time */
+				archivedAt?: string | null;
+				code: string;
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				id: string;
+				/** Format: uuid */
+				owningOrganizationUnitId?: string | null;
+				/** Format: int64 */
+				rowVersion: number;
+				/** Format: date-time */
+				updatedAt: string;
 			};
 			message?: string;
 			success: boolean;
@@ -3953,47 +3645,6 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
-		ApiResponse_Classroom: {
-			data: {
-				/** Format: uuid */
-				academic_year_id: string;
-				academic_year_label?: string | null;
-				/** @description Advisors aggregated from classroom_advisors junction (1 primary + N secondary) */
-				advisors?: components['schemas']['ClassroomAdvisor'][];
-				/** Format: int32 */
-				capacity: number;
-				code: string;
-				/** Format: uuid */
-				grade_level_id: string;
-				grade_level_name?: string | null;
-				/** Format: uuid */
-				id: string;
-				is_active: boolean;
-				name: string;
-				room_number?: string | null;
-				/** Format: int64 */
-				student_count?: number | null;
-				/** Format: uuid */
-				study_plan_version_id?: string | null;
-			};
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_CountData_usize: {
-			data: {
-				count: number;
-			};
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_CourseAssignedCountData: {
-			data: {
-				/** Format: int64 */
-				assigned: number;
-			};
-			message?: string;
-			success: boolean;
-		};
 		ApiResponse_CreateStudentResponse: {
 			data: {
 				/** Format: uuid */
@@ -4020,10 +3671,68 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Curriculum: {
+			data: {
+				code: string;
+				/** Format: date-time */
+				createdAt: string;
+				description?: string | null;
+				gradeLevelIds: string[];
+				/** Format: uuid */
+				id: string;
+				isActive?: boolean | null;
+				nameEn?: string | null;
+				nameTh: string;
+				/** Format: uuid */
+				owningOrganizationUnitId?: string | null;
+				/** Format: int64 */
+				rowVersion: number;
+				/** Format: date-time */
+				updatedAt: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CurriculumOfferingPreview: {
+			data: {
+				/** Format: uuid */
+				academicTermId: string;
+				items: components['schemas']['CurriculumOfferingPreviewItem'][];
+				sourceHash: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CurriculumVersion: {
+			data: {
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				curriculumId: string;
+				description?: string | null;
+				/** Format: uuid */
+				endAcademicYearId?: string | null;
+				/** Format: uuid */
+				id: string;
+				migrated: boolean;
+				/** Format: date-time */
+				publishedAt?: string | null;
+				/** Format: int64 */
+				rowVersion: number;
+				/** Format: uuid */
+				startAcademicYearId: string;
+				status: components['schemas']['VersionStatus'];
+				/** Format: date-time */
+				updatedAt: string;
+				versionName: string;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_DailyTeachingOverview: {
 			data: {
 				/** Format: uuid */
-				academicSemesterId: string;
+				academicTermId: string;
 				/** Format: date */
 				date: string;
 				dayOfWeek: string;
@@ -4093,73 +3802,11 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
-		ApiResponse_GenerateActivitiesFromPlanOutcome: {
+		ApiResponse_GradeProgressionSet: {
 			data: {
-				/** Format: int32 */
-				created: number;
-				groups: components['schemas']['ActivityGroup'][];
-				/** Format: int32 */
-				skipped: number;
-				slot_classroom_assignments: {
-					[key: string]: components['schemas']['SlotClassroomAssignment'][];
-				};
-				slot_instructors: {
-					[key: string]: components['schemas']['SlotInstructorInfo'][];
-				};
-				slots: components['schemas']['ActivitySlot'][];
+				progressions: components['schemas']['GradeProgression'][];
 				/** Format: int64 */
-				total_templates: number;
-			};
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_GenerateCoursesData: {
-			data: {
-				/** Format: int32 */
-				activities_created: number;
-				/** Format: int32 */
-				activities_skipped: number;
-				/** Format: int32 */
-				courses_created: number;
-				/** Format: int32 */
-				courses_skipped: number;
-				items: components['schemas']['GenerateCoursesResponse'];
-			};
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_GradeLevelResponse: {
-			/** @description Serializable version with computed fields for API responses */
-			data: {
-				code: string;
-				/** Format: uuid */
-				id: string;
-				is_active: boolean;
-				level_type: components['schemas']['GradeLevelType'];
-				name: string;
-				/** Format: uuid */
-				next_grade_level_id?: string | null;
-				short_name: string;
-				/** Format: int32 */
-				year: number;
-			};
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_HashMap_String_Vec_CourseInstructor: {
-			data: {
-				[key: string]: {
-					/** Format: uuid */
-					classroom_course_id: string;
-					/** Format: date-time */
-					created_at: string;
-					/** Format: uuid */
-					id: string;
-					/** Format: uuid */
-					instructor_id: string;
-					instructor_name?: string | null;
-					role: components['schemas']['CourseInstructorRole'];
-				}[];
+				rowVersion: number;
 			};
 			message?: string;
 			success: boolean;
@@ -4182,20 +3829,67 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
-		ApiResponse_HashMap_String_Vec_SubjectDefaultInstructor: {
+		ApiResponse_Homeroom: {
 			data: {
-				[key: string]: {
-					/** Format: date-time */
-					created_at: string;
-					/** Format: uuid */
-					id: string;
-					/** Format: uuid */
-					instructor_id: string;
-					instructor_name?: string | null;
-					role: components['schemas']['CurriculumInstructorRole'];
-					/** Format: uuid */
-					subject_id: string;
-				}[];
+				/** Format: uuid */
+				academicYearId: string;
+				/** Format: int32 */
+				capacity: number;
+				code: string;
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				gradeLevelId: string;
+				/** Format: uuid */
+				id: string;
+				isActive?: boolean | null;
+				migrated: boolean;
+				name: string;
+				roomNumber?: string | null;
+				/** Format: int64 */
+				rowVersion: number;
+				/** Format: uuid */
+				studyProgramId: string;
+				/** Format: date-time */
+				updatedAt: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_HomeroomPlacement: {
+			data: {
+				/** Format: uuid */
+				academicYearId: string;
+				/** Format: int32 */
+				classNumber?: number | null;
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: date */
+				endDate?: string | null;
+				enrollmentType: string;
+				/** Format: uuid */
+				homeroomId: string;
+				/** Format: uuid */
+				id: string;
+				migrated: boolean;
+				/** Format: int64 */
+				rowVersion: number;
+				/** Format: date */
+				startDate: string;
+				status: components['schemas']['HomeroomPlacementStatus'];
+				/** Format: uuid */
+				studentAcademicYearId: string;
+				/** Format: date-time */
+				updatedAt: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_HomeroomPlacementTransfer: {
+			data: {
+				endedPlacement: components['schemas']['HomeroomPlacement'];
+				newPlacement: components['schemas']['HomeroomPlacement'];
+				replayed: boolean;
 			};
 			message?: string;
 			success: boolean;
@@ -4248,6 +3942,76 @@ export interface components {
 				/** Format: uuid */
 				revokedBy: string | null;
 				schoolName: string;
+				/** Format: date-time */
+				updatedAt: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_LearningGroup: {
+			data: {
+				/** Format: uuid */
+				academicTermId: string;
+				/** Format: uuid */
+				academicYearId: string;
+				/** Format: int32 */
+				capacity?: number | null;
+				code: string;
+				/** Format: date-time */
+				createdAt: string;
+				description?: string | null;
+				homeroomIds: string[];
+				/** Format: uuid */
+				id: string;
+				/** Format: uuid */
+				learningOfferingId: string;
+				migrated: boolean;
+				name: string;
+				preferredRoomIds: string[];
+				/** Format: date-time */
+				rosterPublishedAt?: string | null;
+				rosterStatus: components['schemas']['RosterStatus'];
+				/** Format: int64 */
+				rowVersion: number;
+				status: components['schemas']['LearningOfferingStatus'];
+				teacherAssignments: components['schemas']['TeacherAssignmentInput'][];
+				/** Format: date-time */
+				updatedAt: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_LearningGroupHomeroomIds: {
+			data: string[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_LearningOffering: {
+			data: {
+				/** Format: uuid */
+				academicTermId: string;
+				/** Format: uuid */
+				academicYearId: string;
+				codeSnapshot: string;
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				id: string;
+				kind: components['schemas']['LearningOfferingKind'];
+				migrated: boolean;
+				nameSnapshot: string;
+				/** Format: uuid */
+				owningOrganizationUnitId?: string | null;
+				/** Format: date-time */
+				publishedAt?: string | null;
+				/** Format: int64 */
+				rowVersion: number;
+				snapshot: components['schemas']['LearningOfferingSnapshot'];
+				/** Format: uuid */
+				sourceRequirementId?: string | null;
+				sourceRequirementKind?: string | null;
+				status: components['schemas']['LearningOfferingStatus'];
+				targets: components['schemas']['LearningOfferingTarget'][];
 				/** Format: date-time */
 				updatedAt: string;
 			};
@@ -4334,16 +4098,6 @@ export interface components {
 			data: {
 				/** Format: int64 */
 				moved_count: number;
-			};
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_MyTimetableData: {
-			data: {
-				/** Format: int64 */
-				current_seq: number;
-				items: components['schemas']['TimetableEntry'][];
-				periods: components['schemas']['TimetablePeriod'][];
 			};
 			message?: string;
 			success: boolean;
@@ -4553,6 +4307,20 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_RosterPreview: {
+			data: {
+				added: number;
+				conflicts: number;
+				/** Format: uuid */
+				learningGroupId: string;
+				removed: number;
+				retained: number;
+				sourceHash: string;
+				students: components['schemas']['RosterPreviewStudent'][];
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_SchoolFontListResponse: {
 			data: {
 				items: components['schemas']['SchoolFontSummary'][];
@@ -4575,24 +4343,6 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
-		ApiResponse_Semester: {
-			data: {
-				/** Format: uuid */
-				academic_year_id: string;
-				/** Format: date */
-				end_date: string;
-				/** Format: uuid */
-				id: string;
-				is_active: boolean;
-				metadata?: unknown;
-				name: string;
-				/** Format: date */
-				start_date: string;
-				term: string;
-			};
-			message?: string;
-			success: boolean;
-		};
 		ApiResponse_SessionListData: {
 			data: {
 				sessions: components['schemas']['SessionResponse'][];
@@ -4603,7 +4353,7 @@ export interface components {
 		ApiResponse_StaffDashboardOverview: {
 			data: {
 				/** Format: int64 */
-				activeClassrooms: number;
+				activeHomerooms: number;
 				/** Format: int64 */
 				totalStaff: number;
 				/** Format: int64 */
@@ -4630,7 +4380,7 @@ export interface components {
 		ApiResponse_StaffProfileResponse: {
 			data: {
 				address: string | null;
-				advisor_classrooms: components['schemas']['AdvisorClassroomItem'][];
+				advisor_homerooms: components['schemas']['AdvisorHomeroomItem'][];
 				date_of_birth: string | null;
 				email: string | null;
 				emergency_contact: string | null;
@@ -4651,10 +4401,34 @@ export interface components {
 				roles: components['schemas']['RoleResponse'][];
 				staff_info: null | components['schemas']['StaffInfoResponse'];
 				status: string;
-				teaching_courses: components['schemas']['TeachingCourseItem'][];
+				teaching_assignments: components['schemas']['TeachingAssignmentItem'][];
 				title: string | null;
 				user_type: string;
 				username: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_StudentAcademicYear: {
+			data: {
+				/** Format: uuid */
+				academicYearId: string;
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				gradeLevelId: string;
+				/** Format: uuid */
+				id: string;
+				migrated: boolean;
+				/** Format: int64 */
+				rowVersion: number;
+				status: components['schemas']['StudentAcademicYearStatus'];
+				/** Format: uuid */
+				studentId: string;
+				/** Format: uuid */
+				studyProgramId: string;
+				/** Format: date-time */
+				updatedAt: string;
 			};
 			message?: string;
 			success: boolean;
@@ -4666,118 +4440,84 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
-		ApiResponse_StudyPlan: {
+		ApiResponse_StudyProgram: {
 			data: {
 				code: string;
 				/** Format: date-time */
-				created_at: string;
-				description?: string | null;
-				grade_level_ids?: string[] | null;
+				createdAt: string;
+				/** Format: uuid */
+				curriculumVersionId: string;
 				/** Format: uuid */
 				id: string;
-				is_active: boolean;
-				name_en?: string | null;
-				name_th: string;
-				/** Format: date-time */
-				updated_at: string;
-			};
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_StudyPlanVersion: {
-			data: {
-				/** Format: date-time */
-				created_at: string;
-				description?: string | null;
+				isDefault: boolean;
+				nameEn?: string | null;
+				nameTh: string;
 				/** Format: uuid */
-				end_academic_year_id?: string | null;
-				/** Format: uuid */
-				id: string;
-				is_active: boolean;
-				/** Format: uuid */
-				start_academic_year_id: string;
-				start_year_name?: string | null;
-				/** Format: uuid */
-				study_plan_id: string;
-				study_plan_name_th?: string | null;
-				/** Format: date-time */
-				updated_at: string;
-				version_name: string;
-			};
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_StudyPlanVersionActivity: {
-			data: {
-				/** Format: uuid */
-				activity_catalog_id: string;
-				catalog_activity_type?: null | components['schemas']['ActivityCatalogType'];
-				catalog_description?: string | null;
-				catalog_grade_level_ids?: string[] | null;
-				catalog_name?: string | null;
-				/** Format: int32 */
-				catalog_periods_per_week?: number | null;
-				catalog_scheduling_mode?: null | components['schemas']['ActivitySchedulingMode'];
-				catalog_term?: string | null;
-				/** Format: date-time */
-				created_at: string;
-				/** Format: int32 */
-				display_order: number;
-				/**
-				 * Format: uuid
-				 * @description ระดับชั้นที่ plan กำหนดให้กิจกรรมนี้ใช้ (1 row ต่อ grade — pattern เดียวกับ sps)
-				 */
-				grade_level_id: string;
-				/** Format: uuid */
-				id: string;
-				/** Format: uuid */
-				study_plan_version_id: string;
-				/**
-				 * @description Snapshot from activity_catalog.term at add time. null = ทุกเทอม.
-				 *     Pinned in the plan — editing catalog term does NOT change existing plan rows.
-				 */
-				term?: string | null;
-				/** Format: date-time */
-				updated_at: string;
-			};
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_Subject: {
-			data: {
-				code: string;
-				/** Format: date-time */
-				created_at: string;
-				/** Format: double */
-				credit: number;
-				default_instructor_name?: string | null;
-				description?: string | null;
-				grade_level_ids?: string[] | null;
-				/** Format: uuid */
-				group_id?: string | null;
-				group_name_th?: string | null;
-				/** Format: int32 */
-				hours_per_semester?: number | null;
-				/** Format: uuid */
-				id: string;
-				is_active: boolean;
-				name_en?: string | null;
-				name_th: string;
-				/** Format: uuid */
-				start_academic_year_id: string;
-				term?: string | null;
-				type: components['schemas']['SubjectType'];
-				/** Format: date-time */
-				updated_at: string;
-			};
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_TimetableItemsData: {
-			data: {
+				owningOrganizationUnitId?: string | null;
 				/** Format: int64 */
-				current_seq: number;
-				items: components['schemas']['TimetableEntry'][];
+				rowVersion: number;
+				status: components['schemas']['VersionStatus'];
+				/** Format: date-time */
+				updatedAt: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_SubjectGroup: {
+			data: {
+				code: string;
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: int32 */
+				displayOrder?: number | null;
+				/** Format: uuid */
+				id: string;
+				isActive?: boolean | null;
+				nameEn: string;
+				nameTh: string;
+				/** Format: int64 */
+				rowVersion: number;
+				/** Format: date-time */
+				updatedAt: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_SubjectVersion: {
+			data: {
+				/** Format: date-time */
+				createdAt: string;
+				credit: string;
+				description?: string | null;
+				/** Format: date */
+				effectiveFrom: string;
+				/** Format: date */
+				effectiveUntil?: string | null;
+				gradeLevelIds: string[];
+				/** Format: uuid */
+				groupId?: string | null;
+				/** Format: int32 */
+				hoursPerSemester?: number | null;
+				/** Format: uuid */
+				id: string;
+				migrated: boolean;
+				nameEn?: string | null;
+				nameTh: string;
+				/** Format: int32 */
+				periodsPerWeek?: number | null;
+				/** Format: date-time */
+				publishedAt?: string | null;
+				/** Format: int64 */
+				rowVersion: number;
+				status: components['schemas']['VersionStatus'];
+				/** Format: uuid */
+				subjectId: string;
+				subjectType: string;
+				termCode?: string | null;
+				/** Format: date-time */
+				updatedAt: string;
+				/** Format: int32 */
+				versionNo: number;
 			};
 			message?: string;
 			success: boolean;
@@ -4798,12 +4538,67 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Vec_AcademicTerm: {
+			data: {
+				/** Format: uuid */
+				academicYearId: string;
+				/** Format: uuid */
+				bellScheduleId: string;
+				blocksYearClosure: boolean;
+				code: string;
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: date */
+				endDate: string;
+				/** Format: uuid */
+				id: string;
+				includedInYearResult: boolean;
+				migrated: boolean;
+				name: string;
+				/** Format: int64 */
+				rowVersion: number;
+				/** Format: int32 */
+				sequence: number;
+				/** Format: date */
+				startDate: string;
+				status: components['schemas']['AcademicTermStatus'];
+				termType: components['schemas']['AcademicTermType'];
+				/** Format: date-time */
+				updatedAt: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_AcademicYear: {
+			data: {
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: date */
+				endDate: string;
+				/** Format: uuid */
+				id: string;
+				migrated: boolean;
+				name: string;
+				/** Format: int64 */
+				rowVersion: number;
+				schoolDays: string[];
+				/** Format: date */
+				startDate: string;
+				status: components['schemas']['AcademicYearStatus'];
+				/** Format: date-time */
+				updatedAt: string;
+				/** Format: int32 */
+				year: number;
+			}[];
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Vec_AcademicYearLookupItem: {
 			data: {
 				/** Format: uuid */
 				id: string;
-				is_current: boolean;
 				name: string;
+				status: components['schemas']['AcademicYearStatus'];
 				/** Format: int32 */
 				year: number;
 			}[];
@@ -4836,124 +4631,73 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
-		ApiResponse_Vec_ActivityCatalog: {
+		ApiResponse_Vec_ActivityVersion: {
 			data: {
-				activity_type: components['schemas']['ActivityCatalogType'];
+				/** Format: uuid */
+				activityId: string;
 				/** Format: date-time */
-				created_at: string;
+				createdAt: string;
 				description?: string | null;
-				grade_level_ids?: string[] | null;
+				/** Format: date */
+				effectiveFrom: string;
+				/** Format: date */
+				effectiveUntil?: string | null;
+				gradeLevelIds: string[];
+				hoursPerWeek: string;
 				/** Format: uuid */
 				id: string;
-				is_active: boolean;
+				migrated: boolean;
 				name: string;
-				/** Format: int32 */
-				periods_per_week: number;
-				scheduling_mode: components['schemas']['ActivitySchedulingMode'];
-				/** Format: uuid */
-				start_academic_year_id: string;
-				term?: string | null;
 				/** Format: date-time */
-				updated_at: string;
+				publishedAt?: string | null;
+				/** Format: int64 */
+				rowVersion: number;
+				schedulingMode: string;
+				status: components['schemas']['VersionStatus'];
+				termCode?: string | null;
+				/** Format: date-time */
+				updatedAt: string;
+				/** Format: int32 */
+				versionNo: number;
 			}[];
 			message?: string;
 			success: boolean;
 		};
-		ApiResponse_Vec_ActivityGroup: {
+		ApiResponse_Vec_BellSchedule: {
 			data: {
-				activity_type?: string | null;
-				/** @description ห้องที่ group นี้รับ (override slot). NULL = รับทุกห้องที่ slot รับ */
-				allowed_classroom_ids?: string[] | null;
-				/** Format: date-time */
-				created_at: string;
 				/** Format: uuid */
-				created_by?: string | null;
-				description?: string | null;
+				academicYearId: string;
+				code: string;
+				/** Format: date-time */
+				createdAt: string;
 				/** Format: uuid */
 				id: string;
-				/** Format: uuid */
-				instructor_id?: string | null;
-				instructor_name?: string | null;
-				is_active: boolean;
-				/** Format: int32 */
-				max_capacity?: number | null;
-				/** Format: int64 */
-				member_count?: number | null;
+				isDefault: boolean;
 				name: string;
-				registration_open: boolean;
-				semester_name?: string | null;
 				/** Format: uuid */
-				slot_id?: string | null;
-				slot_name?: string | null;
-				/** Format: date-time */
-				updated_at: string;
-			}[];
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_Vec_ActivityGroupMember: {
-			data: {
-				/** Format: uuid */
-				activity_group_id: string;
-				classroom_name?: string | null;
-				/** Format: date-time */
-				enrolled_at: string;
-				/** Format: uuid */
-				enrolled_by?: string | null;
-				grade_level_name?: string | null;
-				/** Format: uuid */
-				id: string;
-				result?: null | components['schemas']['ActivityMemberResult'];
-				student_code?: string | null;
-				/**
-				 * Format: uuid
-				 * @description FK → users(id) (เปลี่ยนจาก student_info(id) ใน M114)
-				 */
-				student_id: string;
-				student_name?: string | null;
-			}[];
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_Vec_ActivitySlot: {
-			data: {
-				/** Format: uuid */
-				activity_catalog_id: string;
-				activity_type?: string | null;
-				allowed_grade_level_ids?: string[] | null;
-				/**
-				 * @description UUIDs of classrooms participating in this slot (from activity_slot_classrooms junction).
-				 *     Used on the activities page to show only real participants (instead of grade-matched set).
-				 */
-				classroom_ids?: string[] | null;
-				/** Format: date-time */
-				created_at: string;
-				/** Format: uuid */
-				created_by?: string | null;
-				description?: string | null;
+				owningOrganizationUnitId?: string | null;
 				/** Format: int64 */
-				group_count?: number | null;
+				rowVersion: number;
+				status: components['schemas']['VersionStatus'];
+				/** Format: date-time */
+				updatedAt: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_BellSchedulePeriod: {
+			data: {
+				applicableDays?: string | null;
+				/** Format: uuid */
+				bellScheduleId: string;
+				endTime: string;
 				/** Format: uuid */
 				id: string;
-				is_active: boolean;
+				isActive: boolean;
 				name?: string | null;
 				/** Format: int32 */
-				periods_per_week?: number | null;
-				registration_type: components['schemas']['ActivityRegistrationType'];
-				scheduling_mode?: string | null;
-				/** Format: uuid */
-				semester_id: string;
-				semester_name?: string | null;
-				/** Format: date-time */
-				student_reg_end?: string | null;
-				student_reg_open: boolean;
-				/** Format: date-time */
-				student_reg_start?: string | null;
-				teacher_reg_open: boolean;
-				/** Format: int64 */
-				total_members?: number | null;
-				/** Format: date-time */
-				updated_at: string;
+				orderIndex: number;
+				startTime: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -4977,6 +4721,10 @@ export interface components {
 		};
 		ApiResponse_Vec_CalendarEvent: {
 			data: {
+				/** Format: uuid */
+				academicTermId: string | null;
+				/** Format: uuid */
+				academicYearId: string;
 				allDay: boolean;
 				categoryColor: string | null;
 				/** Format: uuid */
@@ -5011,6 +4759,10 @@ export interface components {
 		};
 		ApiResponse_Vec_CalendarPublicEvent: {
 			data: {
+				/** Format: uuid */
+				academicTermId: string | null;
+				/** Format: uuid */
+				academicYearId: string;
 				allDay: boolean;
 				categoryColor: string | null;
 				/** Format: uuid */
@@ -5052,6 +4804,10 @@ export interface components {
 		};
 		ApiResponse_Vec_CalendarViewerEvent: {
 			data: {
+				/** Format: uuid */
+				academicTermId: string | null;
+				/** Format: uuid */
+				academicYearId: string;
 				allDay: boolean;
 				categoryColor: string | null;
 				/** Format: uuid */
@@ -5078,18 +4834,41 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
-		ApiResponse_Vec_CatalogDefaultInstructor: {
+		ApiResponse_Vec_CatalogActivity: {
 			data: {
-				/** Format: uuid */
-				catalog_id: string;
+				activityType: string;
 				/** Format: date-time */
-				created_at: string;
+				archivedAt?: string | null;
+				code: string;
+				/** Format: date-time */
+				createdAt: string;
 				/** Format: uuid */
 				id: string;
 				/** Format: uuid */
-				instructor_id: string;
-				instructor_name?: string | null;
-				role: components['schemas']['CurriculumInstructorRole'];
+				owningOrganizationUnitId?: string | null;
+				/** Format: int64 */
+				rowVersion: number;
+				/** Format: date-time */
+				updatedAt: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_CatalogSubject: {
+			data: {
+				/** Format: date-time */
+				archivedAt?: string | null;
+				code: string;
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				id: string;
+				/** Format: uuid */
+				owningOrganizationUnitId?: string | null;
+				/** Format: int64 */
+				rowVersion: number;
+				/** Format: date-time */
+				updatedAt: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -5243,99 +5022,59 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
-		ApiResponse_Vec_Classroom: {
+		ApiResponse_Vec_Curriculum: {
 			data: {
-				/** Format: uuid */
-				academic_year_id: string;
-				academic_year_label?: string | null;
-				/** @description Advisors aggregated from classroom_advisors junction (1 primary + N secondary) */
-				advisors?: components['schemas']['ClassroomAdvisor'][];
-				/** Format: int32 */
-				capacity: number;
 				code: string;
-				/** Format: uuid */
-				grade_level_id: string;
-				grade_level_name?: string | null;
-				/** Format: uuid */
-				id: string;
-				is_active: boolean;
-				name: string;
-				room_number?: string | null;
-				/** Format: int64 */
-				student_count?: number | null;
-				/** Format: uuid */
-				study_plan_version_id?: string | null;
-			}[];
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_Vec_ClassroomActivity: {
-			data: {
-				/** Format: uuid */
-				activity_catalog_id: string;
-				activity_type: string;
-				is_active: boolean;
-				name: string;
-				/** Format: int32 */
-				periods_per_week: number;
-				scheduling_mode: string;
-				/** Format: uuid */
-				slot_id: string;
-			}[];
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_Vec_ClassroomCourse: {
-			data: {
-				/** Format: uuid */
-				academic_semester_id: string;
-				/** Format: uuid */
-				classroom_id: string;
-				classroom_name: string | null;
-				/** Format: uuid */
-				id: string;
-				instructor_name: string | null;
-				/** Format: uuid */
-				primary_instructor_id: string | null;
-				settings: components['schemas']['ClassroomCourseSettings'];
-				subject_code: string | null;
-				/** Format: double */
-				subject_credit: number | null;
-				/** Format: int32 */
-				subject_hours: number | null;
-				/** Format: uuid */
-				subject_id: string;
-				subject_name_en: string | null;
-				subject_name_th: string | null;
-				subject_type: string | null;
-			}[];
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_Vec_ClassroomLookupItem: {
-			data: {
-				grade_level?: string;
-				/** Format: uuid */
-				grade_level_id?: string;
-				/** Format: uuid */
-				id: string;
-				name: string;
-			}[];
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_Vec_CourseInstructor: {
-			data: {
-				/** Format: uuid */
-				classroom_course_id: string;
 				/** Format: date-time */
-				created_at: string;
+				createdAt: string;
+				description?: string | null;
+				gradeLevelIds: string[];
 				/** Format: uuid */
 				id: string;
+				isActive?: boolean | null;
+				nameEn?: string | null;
+				nameTh: string;
 				/** Format: uuid */
-				instructor_id: string;
-				instructor_name?: string | null;
-				role: components['schemas']['CourseInstructorRole'];
+				owningOrganizationUnitId?: string | null;
+				/** Format: int64 */
+				rowVersion: number;
+				/** Format: date-time */
+				updatedAt: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_CurriculumVersion: {
+			data: {
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				curriculumId: string;
+				description?: string | null;
+				/** Format: uuid */
+				endAcademicYearId?: string | null;
+				/** Format: uuid */
+				id: string;
+				migrated: boolean;
+				/** Format: date-time */
+				publishedAt?: string | null;
+				/** Format: int64 */
+				rowVersion: number;
+				/** Format: uuid */
+				startAcademicYearId: string;
+				status: components['schemas']['VersionStatus'];
+				/** Format: date-time */
+				updatedAt: string;
+				versionName: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_DefaultTeacher: {
+			data: {
+				role: string;
+				/** Format: uuid */
+				userId: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -5387,14 +5126,52 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
-		ApiResponse_Vec_InstructorInfo: {
+		ApiResponse_Vec_Homeroom: {
+			data: {
+				/** Format: uuid */
+				academicYearId: string;
+				/** Format: int32 */
+				capacity: number;
+				code: string;
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				gradeLevelId: string;
+				/** Format: uuid */
+				id: string;
+				isActive?: boolean | null;
+				migrated: boolean;
+				name: string;
+				roomNumber?: string | null;
+				/** Format: int64 */
+				rowVersion: number;
+				/** Format: uuid */
+				studyProgramId: string;
+				/** Format: date-time */
+				updatedAt: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_HomeroomAdvisor: {
 			data: {
 				/** Format: uuid */
 				id: string;
+				role: string;
 				/** Format: uuid */
-				instructor_id: string;
-				instructor_name?: string | null;
-				role: components['schemas']['ActivityGroupInstructorRole'];
+				userId: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_HomeroomLookupItem: {
+			data: {
+				gradeLevel?: string;
+				/** Format: uuid */
+				gradeLevelId?: string;
+				/** Format: uuid */
+				id: string;
+				name: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -5439,6 +5216,71 @@ export interface components {
 				templateId: string;
 				templateName: string;
 				title: string | null;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_LearningGroup: {
+			data: {
+				/** Format: uuid */
+				academicTermId: string;
+				/** Format: uuid */
+				academicYearId: string;
+				/** Format: int32 */
+				capacity?: number | null;
+				code: string;
+				/** Format: date-time */
+				createdAt: string;
+				description?: string | null;
+				homeroomIds: string[];
+				/** Format: uuid */
+				id: string;
+				/** Format: uuid */
+				learningOfferingId: string;
+				migrated: boolean;
+				name: string;
+				preferredRoomIds: string[];
+				/** Format: date-time */
+				rosterPublishedAt?: string | null;
+				rosterStatus: components['schemas']['RosterStatus'];
+				/** Format: int64 */
+				rowVersion: number;
+				status: components['schemas']['LearningOfferingStatus'];
+				teacherAssignments: components['schemas']['TeacherAssignmentInput'][];
+				/** Format: date-time */
+				updatedAt: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_LearningOffering: {
+			data: {
+				/** Format: uuid */
+				academicTermId: string;
+				/** Format: uuid */
+				academicYearId: string;
+				codeSnapshot: string;
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				id: string;
+				kind: components['schemas']['LearningOfferingKind'];
+				migrated: boolean;
+				nameSnapshot: string;
+				/** Format: uuid */
+				owningOrganizationUnitId?: string | null;
+				/** Format: date-time */
+				publishedAt?: string | null;
+				/** Format: int64 */
+				rowVersion: number;
+				snapshot: components['schemas']['LearningOfferingSnapshot'];
+				/** Format: uuid */
+				sourceRequirementId?: string | null;
+				sourceRequirementKind?: string | null;
+				status: components['schemas']['LearningOfferingStatus'];
+				targets: components['schemas']['LearningOfferingTarget'][];
+				/** Format: date-time */
+				updatedAt: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -5604,13 +5446,34 @@ export interface components {
 		ApiResponse_Vec_PersonalExamScheduleRound: {
 			data: {
 				/** Format: uuid */
-				academicSemesterId: string;
+				academicTermId: string;
 				/** Format: date-time */
 				publishedAt: string | null;
 				/** Format: uuid */
 				roundId: string;
 				roundName: string;
 				sessions: components['schemas']['PersonalExamSessionView'][];
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_ProgramRequirement: {
+			data: {
+				/** Format: uuid */
+				catalogVersionId: string;
+				credit?: string | null;
+				/** Format: int32 */
+				displayOrder: number;
+				/** Format: uuid */
+				gradeLevelId: string;
+				hours?: string | null;
+				/** Format: uuid */
+				id: string;
+				recommendedTermCode?: string | null;
+				requirementKind: components['schemas']['RequirementKind'];
+				resourceKind: components['schemas']['RequirementResourceKind'];
+				/** Format: int64 */
+				rowVersion: number;
 			}[];
 			message?: string;
 			success: boolean;
@@ -5673,35 +5536,6 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
-		ApiResponse_Vec_SlotClassroomAssignment: {
-			data: {
-				/** Format: uuid */
-				classroom_id: string;
-				classroom_name?: string | null;
-				/** Format: date-time */
-				created_at: string;
-				/** Format: uuid */
-				id: string;
-				/** Format: uuid */
-				instructor_id: string;
-				instructor_name?: string | null;
-				/** Format: uuid */
-				slot_id: string;
-			}[];
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_Vec_SlotInstructorInfo: {
-			data: {
-				/** Format: uuid */
-				id: string;
-				instructor_name?: string | null;
-				/** Format: uuid */
-				user_id: string;
-			}[];
-			message?: string;
-			success: boolean;
-		};
 		ApiResponse_Vec_StaffLookupItem: {
 			data: {
 				/** Format: uuid */
@@ -5715,7 +5549,7 @@ export interface components {
 		ApiResponse_Vec_StaffPublishedExamScheduleRound: {
 			data: {
 				/** Format: uuid */
-				academicSemesterId: string;
+				academicTermId: string;
 				days: components['schemas']['StaffPublishedExamDay'][];
 				/** Format: date-time */
 				publishedAt: string | null;
@@ -5731,188 +5565,61 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
-		ApiResponse_Vec_StudentEnrollment: {
+		ApiResponse_Vec_StudentAcademicYear: {
 			data: {
-				class_name?: string | null;
-				/** Format: int32 */
-				class_number?: number | null;
 				/** Format: uuid */
-				class_room_id: string;
-				/** Format: date */
-				enrollment_date: string;
+				academicYearId: string;
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				gradeLevelId: string;
 				/** Format: uuid */
 				id: string;
-				status: string;
-				student_code?: string | null;
+				migrated: boolean;
+				/** Format: int64 */
+				rowVersion: number;
+				status: components['schemas']['StudentAcademicYearStatus'];
 				/** Format: uuid */
-				student_id: string;
-				student_name?: string | null;
+				studentId: string;
+				/** Format: uuid */
+				studyProgramId: string;
+				/** Format: date-time */
+				updatedAt: string;
 			}[];
 			message?: string;
 			success: boolean;
 		};
 		ApiResponse_Vec_StudentLookupItem: {
 			data: {
-				class_room?: string;
+				homeroom?: string;
 				/** Format: uuid */
 				id: string;
 				name: string;
-				student_id?: string;
+				studentId?: string;
 				title?: string;
 			}[];
 			message?: string;
 			success: boolean;
 		};
-		ApiResponse_Vec_StudyPlan: {
+		ApiResponse_Vec_StudyProgram: {
 			data: {
 				code: string;
 				/** Format: date-time */
-				created_at: string;
-				description?: string | null;
-				grade_level_ids?: string[] | null;
+				createdAt: string;
+				/** Format: uuid */
+				curriculumVersionId: string;
 				/** Format: uuid */
 				id: string;
-				is_active: boolean;
-				name_en?: string | null;
-				name_th: string;
+				isDefault: boolean;
+				nameEn?: string | null;
+				nameTh: string;
+				/** Format: uuid */
+				owningOrganizationUnitId?: string | null;
+				/** Format: int64 */
+				rowVersion: number;
+				status: components['schemas']['VersionStatus'];
 				/** Format: date-time */
-				updated_at: string;
-			}[];
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_Vec_StudyPlanSubject: {
-			data: {
-				/** Format: date-time */
-				created_at: string;
-				/** Format: int32 */
-				display_order: number;
-				/** Format: uuid */
-				grade_level_id: string;
-				grade_level_name?: string | null;
-				/** Format: uuid */
-				id: string;
-				metadata: unknown;
-				/** Format: uuid */
-				study_plan_version_id: string;
-				subject_code?: string | null;
-				/** Format: double */
-				subject_credit?: number | null;
-				/** Format: int32 */
-				subject_hours?: number | null;
-				/** Format: uuid */
-				subject_id: string;
-				subject_name_en?: string | null;
-				subject_name_th?: string | null;
-				subject_type?: string | null;
-				term: string;
-				/** Format: date-time */
-				updated_at: string;
-			}[];
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_Vec_StudyPlanVersion: {
-			data: {
-				/** Format: date-time */
-				created_at: string;
-				description?: string | null;
-				/** Format: uuid */
-				end_academic_year_id?: string | null;
-				/** Format: uuid */
-				id: string;
-				is_active: boolean;
-				/** Format: uuid */
-				start_academic_year_id: string;
-				start_year_name?: string | null;
-				/** Format: uuid */
-				study_plan_id: string;
-				study_plan_name_th?: string | null;
-				/** Format: date-time */
-				updated_at: string;
-				version_name: string;
-			}[];
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_Vec_StudyPlanVersionActivity: {
-			data: {
-				/** Format: uuid */
-				activity_catalog_id: string;
-				catalog_activity_type?: null | components['schemas']['ActivityCatalogType'];
-				catalog_description?: string | null;
-				catalog_grade_level_ids?: string[] | null;
-				catalog_name?: string | null;
-				/** Format: int32 */
-				catalog_periods_per_week?: number | null;
-				catalog_scheduling_mode?: null | components['schemas']['ActivitySchedulingMode'];
-				catalog_term?: string | null;
-				/** Format: date-time */
-				created_at: string;
-				/** Format: int32 */
-				display_order: number;
-				/**
-				 * Format: uuid
-				 * @description ระดับชั้นที่ plan กำหนดให้กิจกรรมนี้ใช้ (1 row ต่อ grade — pattern เดียวกับ sps)
-				 */
-				grade_level_id: string;
-				/** Format: uuid */
-				id: string;
-				/** Format: uuid */
-				study_plan_version_id: string;
-				/**
-				 * @description Snapshot from activity_catalog.term at add time. null = ทุกเทอม.
-				 *     Pinned in the plan — editing catalog term does NOT change existing plan rows.
-				 */
-				term?: string | null;
-				/** Format: date-time */
-				updated_at: string;
-			}[];
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_Vec_Subject: {
-			data: {
-				code: string;
-				/** Format: date-time */
-				created_at: string;
-				/** Format: double */
-				credit: number;
-				default_instructor_name?: string | null;
-				description?: string | null;
-				grade_level_ids?: string[] | null;
-				/** Format: uuid */
-				group_id?: string | null;
-				group_name_th?: string | null;
-				/** Format: int32 */
-				hours_per_semester?: number | null;
-				/** Format: uuid */
-				id: string;
-				is_active: boolean;
-				name_en?: string | null;
-				name_th: string;
-				/** Format: uuid */
-				start_academic_year_id: string;
-				term?: string | null;
-				type: components['schemas']['SubjectType'];
-				/** Format: date-time */
-				updated_at: string;
-			}[];
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_Vec_SubjectDefaultInstructor: {
-			data: {
-				/** Format: date-time */
-				created_at: string;
-				/** Format: uuid */
-				id: string;
-				/** Format: uuid */
-				instructor_id: string;
-				instructor_name?: string | null;
-				role: components['schemas']['CurriculumInstructorRole'];
-				/** Format: uuid */
-				subject_id: string;
+				updatedAt: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -5921,16 +5628,66 @@ export interface components {
 			data: {
 				code: string;
 				/** Format: date-time */
-				created_at: string;
+				createdAt: string;
 				/** Format: int32 */
-				display_order: number;
+				displayOrder?: number | null;
 				/** Format: uuid */
 				id: string;
-				is_active: boolean;
-				name_en: string;
-				name_th: string;
+				isActive?: boolean | null;
+				nameEn: string;
+				nameTh: string;
+				/** Format: int64 */
+				rowVersion: number;
 				/** Format: date-time */
-				updated_at: string;
+				updatedAt: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_SubjectVersion: {
+			data: {
+				/** Format: date-time */
+				createdAt: string;
+				credit: string;
+				description?: string | null;
+				/** Format: date */
+				effectiveFrom: string;
+				/** Format: date */
+				effectiveUntil?: string | null;
+				gradeLevelIds: string[];
+				/** Format: uuid */
+				groupId?: string | null;
+				/** Format: int32 */
+				hoursPerSemester?: number | null;
+				/** Format: uuid */
+				id: string;
+				migrated: boolean;
+				nameEn?: string | null;
+				nameTh: string;
+				/** Format: int32 */
+				periodsPerWeek?: number | null;
+				/** Format: date-time */
+				publishedAt?: string | null;
+				/** Format: int64 */
+				rowVersion: number;
+				status: components['schemas']['VersionStatus'];
+				/** Format: uuid */
+				subjectId: string;
+				subjectType: string;
+				termCode?: string | null;
+				/** Format: date-time */
+				updatedAt: string;
+				/** Format: int32 */
+				versionNo: number;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_TeacherAssignmentInput: {
+			data: {
+				role: components['schemas']['LearningTeacherRole'];
+				/** Format: uuid */
+				teacherId: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -5938,61 +5695,55 @@ export interface components {
 		ApiResponse_Vec_TimetableEntry: {
 			data: {
 				/** Format: uuid */
-				academic_semester_id: string;
-				activity_scheduling_mode?: string;
+				academicTermId: string;
 				/** Format: uuid */
-				activity_slot_id: string | null;
-				activity_slot_name?: string;
-				activity_type?: string;
-				/**
-				 * Format: uuid
-				 * @description UUID ของ batch ที่สร้าง entry นี้; NULL = สร้างแยก
-				 */
-				batch_id?: string;
+				academicYearId: string;
 				/** Format: uuid */
-				classroom_course_id: string | null;
+				activityId?: string | null;
+				activityVersionDisplayLabel?: string | null;
 				/** Format: uuid */
-				classroom_id: string | null;
-				classroom_name?: string;
-				created_at?: string;
+				batchId?: string | null;
 				/** Format: uuid */
-				created_by: string | null;
-				day_of_week: string;
-				end_time?: string;
-				entry_type: string;
+				bellScheduleId: string;
+				/** Format: uuid */
+				bellSchedulePeriodId: string;
+				/** Format: date-time */
+				createdAt: string;
+				dayOfWeek: string;
+				endTime: string;
+				entryType: string;
+				/** Format: uuid */
+				homeroomId?: string | null;
+				homeroomName?: string | null;
 				/** Format: uuid */
 				id: string;
-				/** @description UUID ของครูทุกคนใน cell — parallel กับ instructor_names เรียงตาม role+created_at */
-				instructor_ids?: string[];
-				instructor_name?: string;
-				instructor_names?: string[];
-				instructor_roles?: string[];
-				instructor_subject_group_display_orders?: (number | null)[];
-				/** @description กลุ่มสาระหลักของครูแต่ละคน — parallel กับ instructor_ids เรียงตาม role+created_at */
-				instructor_subject_group_ids?: (string | null)[];
-				instructor_subject_group_names?: (string | null)[];
-				is_active: boolean;
-				note: string | null;
+				instructors: components['schemas']['TimetableInstructor'][];
+				isActive: boolean;
+				learningGroupCode?: string | null;
 				/** Format: uuid */
-				period_id: string;
-				period_name?: string;
-				/** Format: int32 */
-				period_order_index?: number;
-				room_code?: string;
+				learningGroupId?: string | null;
+				learningGroupName?: string | null;
+				note?: string | null;
+				offeringCode?: string | null;
 				/** Format: uuid */
-				room_id: string | null;
-				start_time?: string;
-				subject_code?: string;
-				/** Format: int32 */
-				subject_group_display_order?: number;
+				offeringId?: string | null;
+				offeringName?: string | null;
+				periodName?: string | null;
+				roomCode?: string | null;
 				/** Format: uuid */
-				subject_group_id?: string;
-				subject_group_name?: string;
-				subject_name_th?: string;
-				title: string | null;
-				updated_at?: string;
-				/** Format: uuid */
-				updated_by: string | null;
+				roomId?: string | null;
+				/** Format: int64 */
+				rowVersion: number;
+				startTime: string;
+				/**
+				 * Format: uuid
+				 * @description Stable catalog identity. A selected version is represented by its display label only.
+				 */
+				subjectId?: string | null;
+				subjectVersionDisplayLabel?: string | null;
+				title?: string | null;
+				/** Format: date-time */
+				updatedAt: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -6022,12 +5773,29 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
-		AssignCoursesRequest: {
+		ApplyCurriculumOfferingsRequest: {
 			/** Format: uuid */
-			academic_semester_id: string;
+			academicTermId: string;
 			/** Format: uuid */
-			classroom_id: string;
-			subject_ids: string[];
+			idempotencyKey: string;
+			/** Format: uuid */
+			owningOrganizationUnitId: string;
+			sourceHash: string;
+			studyProgramIds: string[];
+		};
+		ApplyCurriculumOfferingsResult: {
+			/** Format: uuid */
+			academicTermId: string;
+			createdCount: number;
+			offeringIds: string[];
+			retainedCount: number;
+			sourceHash: string;
+		};
+		ApplyRosterRequest: {
+			overrides: components['schemas']['RosterOverrideInput'][];
+			/** Format: int64 */
+			rowVersion: number;
+			sourceHash: string;
 		};
 		AssignRoleRequest: {
 			is_primary?: boolean | null;
@@ -6053,17 +5821,45 @@ export interface components {
 			fileIds: string[];
 			rightsConfirmed?: boolean;
 		};
-		AutoAssignClassNumbersRequest: {
-			sort_by: string;
+		BellSchedule: {
+			/** Format: uuid */
+			academicYearId: string;
+			code: string;
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: uuid */
+			id: string;
+			isDefault: boolean;
+			name: string;
+			/** Format: uuid */
+			owningOrganizationUnitId?: string | null;
+			/** Format: int64 */
+			rowVersion: number;
+			status: components['schemas']['VersionStatus'];
+			/** Format: date-time */
+			updatedAt: string;
 		};
-		BatchListCourseInstructorsQuery: {
-			course_ids: string;
+		BellSchedulePeriod: {
+			applicableDays?: string | null;
+			/** Format: uuid */
+			bellScheduleId: string;
+			endTime: string;
+			/** Format: uuid */
+			id: string;
+			isActive: boolean;
+			name?: string | null;
+			/** Format: int32 */
+			orderIndex: number;
+			startTime: string;
 		};
-		BatchListCourseInstructorsRequest: {
-			course_ids: string[];
-		};
-		BatchUpsertSlotClassroomAssignmentsRequest: {
-			assignments: components['schemas']['UpsertSlotClassroomAssignmentRequest'][];
+		BellSchedulePeriodInput: {
+			applicableDays: string[];
+			endTime: string;
+			isActive: boolean;
+			name?: string | null;
+			/** Format: int32 */
+			orderIndex: number;
+			startTime: string;
 		};
 		CalendarCategory: {
 			color: string;
@@ -6079,6 +5875,10 @@ export interface components {
 			updatedAt: string;
 		};
 		CalendarEvent: {
+			/** Format: uuid */
+			academicTermId: string | null;
+			/** Format: uuid */
+			academicYearId: string;
 			allDay: boolean;
 			categoryColor: string | null;
 			/** Format: uuid */
@@ -6126,13 +5926,17 @@ export interface components {
 		CalendarEventTarget: {
 			audienceType: string;
 			/** Format: uuid */
-			classRoomId: string | null;
-			/** Format: uuid */
 			gradeLevelId: string | null;
+			/** Format: uuid */
+			homeroomId: string | null;
 			/** Format: uuid */
 			id: string;
 		};
 		CalendarPublicEvent: {
+			/** Format: uuid */
+			academicTermId: string | null;
+			/** Format: uuid */
+			academicYearId: string;
 			allDay: boolean;
 			categoryColor: string | null;
 			/** Format: uuid */
@@ -6166,6 +5970,10 @@ export interface components {
 			updatedAt: string;
 		};
 		CalendarViewerEvent: {
+			/** Format: uuid */
+			academicTermId: string | null;
+			/** Format: uuid */
+			academicYearId: string;
 			allDay: boolean;
 			categoryColor: string | null;
 			/** Format: uuid */
@@ -6220,22 +6028,36 @@ export interface components {
 			| 'duplicate_candidate';
 		/** @enum {string} */
 		CandidateValidationStatus: 'ready' | 'needs_review' | 'invalid';
-		CatalogDefaultInstructor: {
-			/** Format: uuid */
-			catalog_id: string;
+		CatalogActivity: {
+			activityType: string;
 			/** Format: date-time */
-			created_at: string;
+			archivedAt?: string | null;
+			code: string;
+			/** Format: date-time */
+			createdAt: string;
 			/** Format: uuid */
 			id: string;
 			/** Format: uuid */
-			instructor_id: string;
-			instructor_name?: string | null;
-			role: components['schemas']['CurriculumInstructorRole'];
+			owningOrganizationUnitId?: string | null;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: date-time */
+			updatedAt: string;
 		};
-		CatalogDefaultInstructorInput: {
+		CatalogSubject: {
+			/** Format: date-time */
+			archivedAt?: string | null;
+			code: string;
+			/** Format: date-time */
+			createdAt: string;
 			/** Format: uuid */
-			instructor_id: string;
-			role: components['schemas']['CurriculumInstructorRole'];
+			id: string;
+			/** Format: uuid */
+			owningOrganizationUnitId?: string | null;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: date-time */
+			updatedAt: string;
 		};
 		CertificateAccountSearchQuery: {
 			recipientType: components['schemas']['RecipientType'];
@@ -6866,9 +6688,9 @@ export interface components {
 			newPassword: string;
 		};
 		ChildDto: {
-			class_room: string | null;
 			first_name: string;
 			grade_level: string | null;
+			homeroom: string | null;
 			/** Format: uuid */
 			id: string;
 			last_name: string;
@@ -6877,121 +6699,46 @@ export interface components {
 			relationship: string;
 			student_id: string | null;
 		};
-		Classroom: {
+		CourseGradingPolicy: {
+			passingScore?: string | null;
+			policyCode: string;
+			totalScore?: string;
+		};
+		CourseOfferingSnapshot: {
+			credit: string;
 			/** Format: uuid */
-			academic_year_id: string;
-			academic_year_label?: string | null;
-			/** @description Advisors aggregated from classroom_advisors junction (1 primary + N secondary) */
-			advisors?: components['schemas']['ClassroomAdvisor'][];
-			/** Format: int32 */
-			capacity: number;
+			curriculumCourseRequirementId?: string | null;
+			gradingPolicy: components['schemas']['CourseGradingPolicy'];
+			hours?: string | null;
+			/** Format: uuid */
+			subjectId: string;
+			/** Format: uuid */
+			subjectVersionId: string;
+		};
+		CreateAcademicTermRequest: {
+			/** Format: uuid */
+			academicYearId: string;
+			/** Format: uuid */
+			bellScheduleId: string;
+			blocksYearClosure: boolean;
 			code: string;
-			/** Format: uuid */
-			grade_level_id: string;
-			grade_level_name?: string | null;
-			/** Format: uuid */
-			id: string;
-			is_active: boolean;
-			name: string;
-			room_number?: string | null;
-			/** Format: int64 */
-			student_count?: number | null;
-			/** Format: uuid */
-			study_plan_version_id?: string | null;
-		};
-		ClassroomActivity: {
-			/** Format: uuid */
-			activity_catalog_id: string;
-			activity_type: string;
-			is_active: boolean;
+			/** Format: date */
+			endDate: string;
+			includedInYearResult: boolean;
 			name: string;
 			/** Format: int32 */
-			periods_per_week: number;
-			scheduling_mode: string;
-			/** Format: uuid */
-			slot_id: string;
+			sequence: number;
+			/** Format: date */
+			startDate: string;
+			termType: components['schemas']['AcademicTermType'];
 		};
-		ClassroomActivityQuery: {
-			/** Format: uuid */
-			semester_id: string;
-		};
-		ClassroomAdvisor: {
-			name: string;
-			role: components['schemas']['ClassroomAdvisorRole'];
-			/** Format: uuid */
-			user_id: string;
-		};
-		ClassroomAdvisorInput: {
-			role: components['schemas']['ClassroomAdvisorRole'];
-			/** Format: uuid */
-			user_id: string;
-		};
-		/** @enum {string} */
-		ClassroomAdvisorRole: 'primary' | 'secondary';
-		ClassroomCourse: {
-			/** Format: uuid */
-			academic_semester_id: string;
-			/** Format: uuid */
-			classroom_id: string;
-			classroom_name: string | null;
-			/** Format: uuid */
-			id: string;
-			instructor_name: string | null;
-			/** Format: uuid */
-			primary_instructor_id: string | null;
-			settings: components['schemas']['ClassroomCourseSettings'];
-			subject_code: string | null;
-			/** Format: double */
-			subject_credit: number | null;
-			/** Format: int32 */
-			subject_hours: number | null;
-			/** Format: uuid */
-			subject_id: string;
-			subject_name_en: string | null;
-			subject_name_th: string | null;
-			subject_type: string | null;
-		};
-		ClassroomCourseSettings: {
-			[key: string]: unknown;
-		};
-		/** @description Classroom lookup item */
-		ClassroomLookupItem: {
-			grade_level?: string;
-			/** Format: uuid */
-			grade_level_id?: string;
-			/** Format: uuid */
-			id: string;
-			name: string;
-		};
-		CountData_usize: {
-			count: number;
-		};
-		CourseAssignedCountData: {
-			/** Format: int64 */
-			assigned: number;
-		};
-		CourseInstructor: {
-			/** Format: uuid */
-			classroom_course_id: string;
-			/** Format: date-time */
-			created_at: string;
-			/** Format: uuid */
-			id: string;
-			/** Format: uuid */
-			instructor_id: string;
-			instructor_name?: string | null;
-			role: components['schemas']['CourseInstructorRole'];
-		};
-		/** @enum {string} */
-		CourseInstructorRole: 'primary' | 'secondary';
 		CreateAcademicYearRequest: {
 			/** Format: date */
-			end_date: string;
-			is_active?: boolean | null;
+			endDate: string;
 			name: string;
-			school_days?: string | null;
+			schoolDays: string[];
 			/** Format: date */
-			start_date: string;
+			startDate: string;
 			/** Format: int32 */
 			year: number;
 		};
@@ -7016,34 +6763,54 @@ export interface components {
 			/** Format: uuid */
 			user_id?: string | null;
 		};
-		CreateActivityGroupRequest: {
-			allowed_classroom_ids?: string[] | null;
-			description?: string | null;
+		CreateActivityOfferingRequest: {
 			/** Format: uuid */
-			instructor_id?: string | null;
+			academicTermId: string;
+			/** Format: uuid */
+			activityVersionId: string;
+			attendanceRequirement: components['schemas']['ActivityAttendanceRequirement'];
 			/** Format: int32 */
-			max_capacity?: number | null;
-			name: string;
+			capacity?: number | null;
 			/** Format: uuid */
-			slot_id: string;
+			curriculumActivityRequirementId?: string | null;
+			/** Format: uuid */
+			owningOrganizationUnitId: string;
+			passCriteria: components['schemas']['ActivityPassCriteria'];
+			registrationType: components['schemas']['ActivityRegistrationType'];
+			schedulingMode: components['schemas']['ActivitySchedulingMode'];
+			targets: components['schemas']['OfferingTargetInput'][];
 		};
-		CreateCatalogRequest: {
-			activity_type: components['schemas']['ActivityCatalogType'];
-			/**
-			 * @description Default instructor team to insert atomically with catalog creation.
-			 *     Used by "create" and "create new version" flows so admin doesn't need
-			 *     a second save step after catalog creation.
-			 */
-			default_instructors?: components['schemas']['CatalogDefaultInstructorInput'][] | null;
+		CreateActivityVersionRequest: {
 			description?: string | null;
-			grade_level_ids?: string[] | null;
+			/** Format: date */
+			effectiveFrom: string;
+			/** Format: date */
+			effectiveUntil?: string | null;
+			gradeLevelIds: string[];
+			hoursPerWeek: string;
 			name: string;
-			/** Format: int32 */
-			periods_per_week?: number | null;
-			scheduling_mode?: null | components['schemas']['ActivitySchedulingMode'];
+			schedulingMode: string;
+			termCode?: string | null;
+		};
+		CreateBellScheduleRequest: {
 			/** Format: uuid */
-			start_academic_year_id: string;
-			term?: string | null;
+			academicYearId: string;
+			code: string;
+			isDefault: boolean;
+			name: string;
+			/** Format: uuid */
+			owningOrganizationUnitId?: string | null;
+		};
+		CreateCatalogActivityRequest: {
+			activityType: string;
+			code: string;
+			/** Format: uuid */
+			owningOrganizationUnitId?: string | null;
+		};
+		CreateCatalogSubjectRequest: {
+			code: string;
+			/** Format: uuid */
+			owningOrganizationUnitId?: string | null;
 		};
 		CreateCertificateCampaignRequest: {
 			/** Format: uuid */
@@ -7058,17 +6825,34 @@ export interface components {
 			allowedRecipientTypes: components['schemas']['RecipientType'][];
 			name: string;
 		};
-		CreateClassroomRequest: {
+		CreateCourseOfferingRequest: {
 			/** Format: uuid */
-			academic_year_id: string;
-			advisors?: components['schemas']['ClassroomAdvisorInput'][] | null;
-			/** Format: int32 */
-			capacity?: number | null;
+			academicTermId: string;
 			/** Format: uuid */
-			grade_level_id: string;
-			room_number: string;
+			curriculumCourseRequirementId?: string | null;
+			gradingPolicy: components['schemas']['CourseGradingPolicy'];
 			/** Format: uuid */
-			study_plan_version_id: string;
+			owningOrganizationUnitId: string;
+			/** Format: uuid */
+			subjectVersionId: string;
+			targets: components['schemas']['OfferingTargetInput'][];
+		};
+		CreateCurriculumRequest: {
+			code: string;
+			description?: string | null;
+			gradeLevelIds: string[];
+			nameEn?: string | null;
+			nameTh: string;
+			/** Format: uuid */
+			owningOrganizationUnitId?: string | null;
+		};
+		CreateCurriculumVersionRequest: {
+			description?: string | null;
+			/** Format: uuid */
+			endAcademicYearId?: string | null;
+			/** Format: uuid */
+			startAcademicYearId: string;
+			versionName: string;
 		};
 		CreateDelegationRequest: {
 			/** Format: date-time */
@@ -7079,14 +6863,48 @@ export interface components {
 			/** Format: uuid */
 			to_user_id: string;
 		};
-		CreateGradeLevelRequest: {
-			is_active?: boolean | null;
-			level_type: components['schemas']['GradeLevelType'];
-			/** Format: uuid */
-			next_grade_level_id?: string | null;
+		CreateHomeroomPlacementRequest: {
 			/** Format: int32 */
-			year: number;
+			classNumber?: number | null;
+			enrollmentType: string;
+			/** Format: uuid */
+			homeroomId: string;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: date */
+			startDate: string;
+			status: components['schemas']['HomeroomPlacementStatus'];
 		};
+		CreateHomeroomRequest: {
+			/** Format: uuid */
+			academicYearId: string;
+			/** Format: int32 */
+			capacity: number;
+			code: string;
+			/** Format: uuid */
+			gradeLevelId: string;
+			name: string;
+			roomNumber?: string | null;
+			/** Format: uuid */
+			studyProgramId: string;
+		};
+		CreateLearningGroupRequest: {
+			/** Format: int32 */
+			capacity?: number | null;
+			code: string;
+			description?: string | null;
+			name: string;
+			preferredRoomIds: string[];
+		};
+		CreateLearningOfferingRequest:
+			| (components['schemas']['CreateCourseOfferingRequest'] & {
+					/** @enum {string} */
+					kind: 'course';
+			  })
+			| (components['schemas']['CreateActivityOfferingRequest'] & {
+					/** @enum {string} */
+					kind: 'activity';
+			  });
 		CreateManualExternalCandidateRequest: {
 			activityItem?: string | null;
 			awardOrRole?: string | null;
@@ -7157,19 +6975,6 @@ export interface components {
 			relationship: string;
 			title?: string | null;
 		};
-		CreatePlanActivityRequest: {
-			/** Format: uuid */
-			activity_catalog_id: string;
-			/** Format: int32 */
-			display_order?: number | null;
-			/**
-			 * Format: uuid
-			 * @description ระดับชั้นที่จะเพิ่ม — required (1 row ต่อ grade)
-			 */
-			grade_level_id: string;
-			/** @description Override term for this plan. Omit to snapshot from catalog.term at insert time. */
-			term?: string | null;
-		};
 		CreateRoleRequest: {
 			code: string;
 			description?: string | null;
@@ -7179,17 +6984,6 @@ export interface components {
 			name_en?: string | null;
 			permissions?: string[] | null;
 			user_type: string;
-		};
-		CreateSemesterRequest: {
-			/** Format: uuid */
-			academic_year_id: string;
-			/** Format: date */
-			end_date: string;
-			is_active?: boolean | null;
-			name: string;
-			/** Format: date */
-			start_date: string;
-			term: string;
 		};
 		CreateStaffInfoRequest: {
 			education_level?: string | null;
@@ -7225,6 +7019,16 @@ export interface components {
 			title?: string | null;
 			username?: string | null;
 		};
+		CreateStudentAcademicYearRequest: {
+			/** Format: uuid */
+			academicYearId: string;
+			/** Format: uuid */
+			gradeLevelId: string;
+			/** Format: uuid */
+			studentId: string;
+			/** Format: uuid */
+			studyProgramId: string;
+		};
 		CreateStudentRequest: {
 			date_of_birth?: string | null;
 			email?: string | null;
@@ -7245,44 +7049,40 @@ export interface components {
 			id: string;
 			username: string;
 		};
-		CreateStudyPlanRequest: {
+		CreateStudyProgramRequest: {
 			code: string;
-			description?: string | null;
-			grade_level_ids?: string[] | null;
-			name_en?: string | null;
-			name_th: string;
+			isDefault: boolean;
+			nameEn?: string | null;
+			nameTh: string;
+			/** Format: uuid */
+			owningOrganizationUnitId?: string | null;
 		};
-		CreateStudyPlanVersionRequest: {
-			description?: string | null;
-			/** Format: uuid */
-			end_academic_year_id?: string | null;
-			/** Format: uuid */
-			start_academic_year_id: string;
-			/** Format: uuid */
-			study_plan_id: string;
-			version_name: string;
-		};
-		CreateSubjectRequest: {
+		CreateSubjectGroupRequest: {
 			code: string;
-			/** Format: double */
-			credit?: number | null;
-			/**
-			 * @description Full team to store in subject_default_instructors. When provided,
-			 *     junction rows are written exactly as listed.
-			 */
-			default_instructors?: components['schemas']['DefaultInstructorInput'][] | null;
-			description?: string | null;
-			grade_level_ids?: string[] | null;
-			/** Format: uuid */
-			group_id?: string | null;
 			/** Format: int32 */
-			hours_per_semester?: number | null;
-			name_en?: string | null;
-			name_th: string;
+			displayOrder: number;
+			isActive: boolean;
+			nameEn: string;
+			nameTh: string;
+		};
+		CreateSubjectVersionRequest: {
+			credit: string;
+			description?: string | null;
+			/** Format: date */
+			effectiveFrom: string;
+			/** Format: date */
+			effectiveUntil?: string | null;
+			gradeLevelIds: string[];
 			/** Format: uuid */
-			start_academic_year_id: string;
-			term?: string | null;
-			type: components['schemas']['SubjectType'];
+			groupId?: string | null;
+			/** Format: int32 */
+			hoursPerSemester?: number | null;
+			nameEn?: string | null;
+			nameTh: string;
+			/** Format: int32 */
+			periodsPerWeek?: number | null;
+			subjectType: string;
+			termCode?: string | null;
 		};
 		CurrentUserResponse: {
 			firstName: string;
@@ -7297,27 +7097,99 @@ export interface components {
 			username: string;
 			userType: string;
 		};
-		/** @enum {string} */
-		CurriculumInstructorRole: 'primary' | 'secondary';
-		DailyTeachingEntry: {
-			activitySchedulingMode: null | components['schemas']['ActivitySchedulingMode'];
+		Curriculum: {
+			code: string;
+			/** Format: date-time */
+			createdAt: string;
+			description?: string | null;
+			gradeLevelIds: string[];
 			/** Format: uuid */
-			activitySlotId: string | null;
-			classroomName?: string | null;
+			id: string;
+			isActive?: boolean | null;
+			nameEn?: string | null;
+			nameTh: string;
+			/** Format: uuid */
+			owningOrganizationUnitId?: string | null;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: date-time */
+			updatedAt: string;
+		};
+		CurriculumOfferingPreview: {
+			/** Format: uuid */
+			academicTermId: string;
+			items: components['schemas']['CurriculumOfferingPreviewItem'][];
+			sourceHash: string;
+		};
+		CurriculumOfferingPreviewItem: {
+			action: components['schemas']['CurriculumPreviewAction'];
+			/** Format: uuid */
+			catalogVersionId: string;
+			code: string;
+			conflictReason?: string | null;
+			credit?: string | null;
+			/** Format: uuid */
+			existingOfferingId?: string | null;
+			/** Format: uuid */
+			gradeLevelId: string;
+			hours?: string | null;
+			name: string;
+			/** Format: uuid */
+			requirementId: string;
+			resourceKind: components['schemas']['LearningOfferingKind'];
+			/** Format: uuid */
+			studyProgramId: string;
+		};
+		/** @enum {string} */
+		CurriculumPreviewAction: 'create' | 'retain' | 'conflict';
+		CurriculumVersion: {
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: uuid */
+			curriculumId: string;
+			description?: string | null;
+			/** Format: uuid */
+			endAcademicYearId?: string | null;
+			/** Format: uuid */
+			id: string;
+			migrated: boolean;
+			/** Format: date-time */
+			publishedAt?: string | null;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: uuid */
+			startAcademicYearId: string;
+			status: components['schemas']['VersionStatus'];
+			/** Format: date-time */
+			updatedAt: string;
+			versionName: string;
+		};
+		DailyTeachingEntry: {
+			/** Format: uuid */
+			activityId?: string | null;
+			activityVersionDisplayLabel?: string | null;
 			/** Format: uuid */
 			entryId: string;
 			entryType: string;
+			homeroomNames: string[];
 			isTeamTeaching: boolean;
+			/** Format: uuid */
+			learningGroupId?: string | null;
+			learningGroupName?: string | null;
 			note?: string | null;
+			offeringCode?: string | null;
+			/** Format: uuid */
+			offeringId?: string | null;
+			offeringName?: string | null;
 			roomCode?: string | null;
-			subjectCode?: string | null;
-			subjectGroupName?: string | null;
-			subjectName?: string | null;
+			/** Format: uuid */
+			subjectId?: string | null;
+			subjectVersionDisplayLabel?: string | null;
 			title?: string | null;
 		};
 		DailyTeachingOverview: {
 			/** Format: uuid */
-			academicSemesterId: string;
+			academicTermId: string;
 			/** Format: date */
 			date: string;
 			dayOfWeek: string;
@@ -7335,9 +7207,9 @@ export interface components {
 			startTime: string;
 		};
 		DailyTeachingPeriodCell: {
-			entries: components['schemas']['DailyTeachingEntry'][];
 			/** Format: uuid */
-			periodId: string;
+			bellSchedulePeriodId: string;
+			entries: components['schemas']['DailyTeachingEntry'][];
 		};
 		DailyTeachingSummary: {
 			/** Format: int64 */
@@ -7356,12 +7228,11 @@ export interface components {
 			/** Format: uuid */
 			id: string;
 			periods: components['schemas']['DailyTeachingPeriodCell'][];
-			subjectGroupNames: string[];
 		};
-		DefaultInstructorInput: {
+		DefaultTeacher: {
+			role: string;
 			/** Format: uuid */
-			instructor_id: string;
-			role: components['schemas']['CurriculumInstructorRole'];
+			userId: string;
 		};
 		DelegatablePermission: {
 			code: string;
@@ -7412,14 +7283,6 @@ export interface components {
 			y: number;
 		};
 		EmptyData: Record<string, never>;
-		EnrollStudentRequest: {
-			/** Format: uuid */
-			class_room_id: string;
-			/** Format: date */
-			enrollment_date?: string | null;
-			numbering_method?: string | null;
-			student_ids: string[];
-		};
 		FeatureListResponse: {
 			data: components['schemas']['FeatureToggle'][];
 			success: boolean;
@@ -7493,54 +7356,6 @@ export interface components {
 			/** Format: uuid */
 			resource_id?: string | null;
 		};
-		GenerateActivitiesFromPlanOutcome: {
-			/** Format: int32 */
-			created: number;
-			groups: components['schemas']['ActivityGroup'][];
-			/** Format: int32 */
-			skipped: number;
-			slot_classroom_assignments: {
-				[key: string]: components['schemas']['SlotClassroomAssignment'][];
-			};
-			slot_instructors: {
-				[key: string]: components['schemas']['SlotInstructorInfo'][];
-			};
-			slots: components['schemas']['ActivitySlot'][];
-			/** Format: int64 */
-			total_templates: number;
-		};
-		GenerateActivitiesFromPlanRequest: {
-			/** Format: uuid */
-			semester_id: string;
-			/** Format: uuid */
-			study_plan_version_id: string;
-		};
-		GenerateCoursesData: {
-			/** Format: int32 */
-			activities_created: number;
-			/** Format: int32 */
-			activities_skipped: number;
-			/** Format: int32 */
-			courses_created: number;
-			/** Format: int32 */
-			courses_skipped: number;
-			items: components['schemas']['GenerateCoursesResponse'];
-		};
-		GenerateCoursesFromPlanRequest: {
-			/** Format: uuid */
-			academic_semester_id: string;
-			/** Format: uuid */
-			classroom_id: string;
-			/** @description If true, will skip subjects that already exist in the classroom */
-			skip_existing?: boolean | null;
-		};
-		GenerateCoursesResponse: {
-			/** Format: int32 */
-			added_count: number;
-			message: string;
-			/** Format: int32 */
-			skipped_count: number;
-		};
 		/** @enum {string} */
 		GeometryAction: 'preserve' | 'scale' | 'reset';
 		/** @description Grade level lookup item */
@@ -7554,22 +7369,115 @@ export interface components {
 			name: string;
 			short_name: string | null;
 		};
-		/** @description Serializable version with computed fields for API responses */
-		GradeLevelResponse: {
-			code: string;
+		GradeProgression: {
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: uuid */
+			curriculumId?: string | null;
+			/** Format: uuid */
+			fromGradeLevelId: string;
 			/** Format: uuid */
 			id: string;
-			is_active: boolean;
-			level_type: components['schemas']['GradeLevelType'];
-			name: string;
+			isActive: boolean;
 			/** Format: uuid */
-			next_grade_level_id?: string | null;
-			short_name: string;
-			/** Format: int32 */
-			year: number;
+			toGradeLevelId?: string | null;
+			transitionKind: components['schemas']['GradeProgressionKind'];
+			/** Format: date-time */
+			updatedAt: string;
+		};
+		GradeProgressionInput: {
+			/** Format: uuid */
+			curriculumId?: string | null;
+			/** Format: uuid */
+			fromGradeLevelId: string;
+			isActive: boolean;
+			/** Format: uuid */
+			toGradeLevelId?: string | null;
+			transitionKind: components['schemas']['GradeProgressionKind'];
 		};
 		/** @enum {string} */
-		GradeLevelType: 'kindergarten' | 'primary' | 'secondary';
+		GradeProgressionKind: 'promote' | 'repeat' | 'graduate' | 'exception';
+		GradeProgressionSet: {
+			progressions: components['schemas']['GradeProgression'][];
+			/** Format: int64 */
+			rowVersion: number;
+		};
+		Homeroom: {
+			/** Format: uuid */
+			academicYearId: string;
+			/** Format: int32 */
+			capacity: number;
+			code: string;
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: uuid */
+			gradeLevelId: string;
+			/** Format: uuid */
+			id: string;
+			isActive?: boolean | null;
+			migrated: boolean;
+			name: string;
+			roomNumber?: string | null;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: uuid */
+			studyProgramId: string;
+			/** Format: date-time */
+			updatedAt: string;
+		};
+		HomeroomAdvisor: {
+			/** Format: uuid */
+			id: string;
+			role: string;
+			/** Format: uuid */
+			userId: string;
+		};
+		HomeroomAdvisorInput: {
+			role: string;
+			/** Format: uuid */
+			userId: string;
+		};
+		/** @description Homeroom lookup item for a caller-selected academic year. */
+		HomeroomLookupItem: {
+			gradeLevel?: string;
+			/** Format: uuid */
+			gradeLevelId?: string;
+			/** Format: uuid */
+			id: string;
+			name: string;
+		};
+		HomeroomPlacement: {
+			/** Format: uuid */
+			academicYearId: string;
+			/** Format: int32 */
+			classNumber?: number | null;
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: date */
+			endDate?: string | null;
+			enrollmentType: string;
+			/** Format: uuid */
+			homeroomId: string;
+			/** Format: uuid */
+			id: string;
+			migrated: boolean;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: date */
+			startDate: string;
+			status: components['schemas']['HomeroomPlacementStatus'];
+			/** Format: uuid */
+			studentAcademicYearId: string;
+			/** Format: date-time */
+			updatedAt: string;
+		};
+		/** @enum {string} */
+		HomeroomPlacementStatus: 'planned' | 'current' | 'ended';
+		HomeroomPlacementTransfer: {
+			endedPlacement: components['schemas']['HomeroomPlacement'];
+			newPlacement: components['schemas']['HomeroomPlacement'];
+			replayed: boolean;
+		};
 		ImageElement: {
 			/** Format: double */
 			aspectRatio: number;
@@ -7584,19 +7492,6 @@ export interface components {
 		};
 		InspectSchoolFontUploadsRequest: {
 			fileIds: string[];
-		};
-		InstructorInfo: {
-			/** Format: uuid */
-			id: string;
-			/** Format: uuid */
-			instructor_id: string;
-			instructor_name?: string | null;
-			role: components['schemas']['ActivityGroupInstructorRole'];
-		};
-		InstructorRoleRequest: {
-			/** Format: uuid */
-			instructor_id: string;
-			role?: null | components['schemas']['ActivityGroupInstructorRole'];
 		};
 		IssueCertificateOutcome:
 			| {
@@ -7694,6 +7589,114 @@ export interface components {
 			templateName: string;
 			title: string | null;
 		};
+		LearningGroup: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			academicYearId: string;
+			/** Format: int32 */
+			capacity?: number | null;
+			code: string;
+			/** Format: date-time */
+			createdAt: string;
+			description?: string | null;
+			homeroomIds: string[];
+			/** Format: uuid */
+			id: string;
+			/** Format: uuid */
+			learningOfferingId: string;
+			migrated: boolean;
+			name: string;
+			preferredRoomIds: string[];
+			/** Format: date-time */
+			rosterPublishedAt?: string | null;
+			rosterStatus: components['schemas']['RosterStatus'];
+			/** Format: int64 */
+			rowVersion: number;
+			status: components['schemas']['LearningOfferingStatus'];
+			teacherAssignments: components['schemas']['TeacherAssignmentInput'][];
+			/** Format: date-time */
+			updatedAt: string;
+		};
+		LearningGroupHomeroomIds: string[];
+		LearningGroupStudent: {
+			/** Format: uuid */
+			id: string;
+			/** Format: date */
+			joinedAt: string;
+			/** Format: uuid */
+			learningGroupId: string;
+			/** Format: date */
+			leftAt?: string | null;
+			membershipStatus: components['schemas']['MembershipStatus'];
+			/** Format: date-time */
+			publishedAt?: string | null;
+			rosterSource: string;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: uuid */
+			studentAcademicYearId: string;
+			/** Format: uuid */
+			studentId: string;
+		};
+		LearningOffering: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			academicYearId: string;
+			codeSnapshot: string;
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: uuid */
+			id: string;
+			kind: components['schemas']['LearningOfferingKind'];
+			migrated: boolean;
+			nameSnapshot: string;
+			/** Format: uuid */
+			owningOrganizationUnitId?: string | null;
+			/** Format: date-time */
+			publishedAt?: string | null;
+			/** Format: int64 */
+			rowVersion: number;
+			snapshot: components['schemas']['LearningOfferingSnapshot'];
+			/** Format: uuid */
+			sourceRequirementId?: string | null;
+			sourceRequirementKind?: string | null;
+			status: components['schemas']['LearningOfferingStatus'];
+			targets: components['schemas']['LearningOfferingTarget'][];
+			/** Format: date-time */
+			updatedAt: string;
+		};
+		/** @enum {string} */
+		LearningOfferingKind: 'course' | 'activity';
+		LearningOfferingQuery: {
+			/** Format: uuid */
+			academicTermId: string;
+		};
+		LearningOfferingSnapshot:
+			| (components['schemas']['CourseOfferingSnapshot'] & {
+					/** @enum {string} */
+					kind: 'course';
+			  })
+			| (components['schemas']['ActivityOfferingSnapshot'] & {
+					/** @enum {string} */
+					kind: 'activity';
+			  });
+		/** @enum {string} */
+		LearningOfferingStatus: 'draft' | 'published' | 'closed';
+		LearningOfferingTarget: {
+			/** Format: uuid */
+			gradeLevelId: string;
+			/** Format: uuid */
+			homeroomId?: string | null;
+			/** Format: uuid */
+			id: string;
+			/** Format: uuid */
+			studyProgramId: string;
+			targetKind: components['schemas']['OfferingTargetKind'];
+		};
+		/** @enum {string} */
+		LearningTeacherRole: 'primary' | 'secondary' | 'assistant';
 		ListMembersQuery: {
 			include_children?: boolean | null;
 		};
@@ -7727,6 +7730,8 @@ export interface components {
 			firstName: string;
 			lastName: string;
 		};
+		/** @enum {string} */
+		MembershipStatus: 'active' | 'ended' | 'removed';
 		/** @description Menu Group */
 		MenuGroup: {
 			code: string;
@@ -7802,12 +7807,6 @@ export interface components {
 			/** Format: uuid */
 			group_id: string;
 		};
-		MyTimetableData: {
-			/** Format: int64 */
-			current_seq: number;
-			items: components['schemas']['TimetableEntry'][];
-			periods: components['schemas']['TimetablePeriod'][];
-		};
 		Notification: {
 			/** Format: date-time */
 			created_at: string;
@@ -7828,6 +7827,17 @@ export interface components {
 			/** Format: uuid */
 			value: string | null;
 		};
+		OfferingTargetInput: {
+			/** Format: uuid */
+			gradeLevelId: string;
+			/** Format: uuid */
+			homeroomId?: string | null;
+			/** Format: uuid */
+			studyProgramId: string;
+			targetKind: components['schemas']['OfferingTargetKind'];
+		};
+		/** @enum {string} */
+		OfferingTargetKind: 'homeroom' | 'grade_program';
 		OrganizationAssignment: {
 			is_primary?: boolean | null;
 			/** Format: uuid */
@@ -7954,7 +7964,7 @@ export interface components {
 		};
 		PersonalExamScheduleRound: {
 			/** Format: uuid */
-			academicSemesterId: string;
+			academicTermId: string;
 			/** Format: date-time */
 			publishedAt: string | null;
 			/** Format: uuid */
@@ -7965,24 +7975,14 @@ export interface components {
 		PersonalExamSessionView: {
 			assessmentCategoryName: string;
 			buildingName: string | null;
-			classroomName: string;
 			endsAt: string;
 			/** Format: date */
 			examDate: string;
+			homeroomName: string;
 			roomName: string;
 			seatNumber: string | null;
 			startsAt: string;
 			subjectName: string;
-		};
-		PlanQuery: {
-			/** Format: uuid */
-			academic_semester_id?: string | null;
-			/** Format: uuid */
-			classroom_id?: string | null;
-			/** Format: uuid */
-			instructor_id?: string | null;
-			/** Format: uuid */
-			subject_id?: string | null;
 		};
 		/**
 		 * @description Credentials ที่ผู้สมัครส่งมาทุก request (stateless)
@@ -8006,6 +8006,11 @@ export interface components {
 			/** Format: int64 */
 			fileSize: number;
 			originalFilename: string;
+		};
+		PreviewCurriculumOfferingsRequest: {
+			/** Format: uuid */
+			academicTermId: string;
+			studyProgramIds: string[];
 		};
 		ProfileResponse: {
 			address: string | null;
@@ -8035,6 +8040,36 @@ export interface components {
 			updatedAt: string;
 			username: string;
 			userType: string;
+		};
+		ProgramRequirement: {
+			/** Format: uuid */
+			catalogVersionId: string;
+			credit?: string | null;
+			/** Format: int32 */
+			displayOrder: number;
+			/** Format: uuid */
+			gradeLevelId: string;
+			hours?: string | null;
+			/** Format: uuid */
+			id: string;
+			recommendedTermCode?: string | null;
+			requirementKind: components['schemas']['RequirementKind'];
+			resourceKind: components['schemas']['RequirementResourceKind'];
+			/** Format: int64 */
+			rowVersion: number;
+		};
+		ProgramRequirementInput: {
+			/** Format: uuid */
+			catalogVersionId: string;
+			credit?: string | null;
+			/** Format: int32 */
+			displayOrder: number;
+			/** Format: uuid */
+			gradeLevelId: string;
+			hours?: string | null;
+			recommendedTermCode?: string | null;
+			requirementKind: components['schemas']['RequirementKind'];
+			resourceKind: components['schemas']['RequirementResourceKind'];
 		};
 		PublicCertificateRenderRequest: {
 			receipt: string;
@@ -8102,6 +8137,22 @@ export interface components {
 			level: number | null;
 			name: string;
 		};
+		PublishLearningOfferingRequest: {
+			/** Format: uuid */
+			idempotencyKey: string;
+			/** Format: int64 */
+			rowVersion: number;
+		};
+		PublishRosterRequest: {
+			/** Format: uuid */
+			idempotencyKey: string;
+			/** Format: int64 */
+			rowVersion: number;
+		};
+		PublishVersionRequest: {
+			/** Format: int64 */
+			rowVersion: number;
+		};
 		QrCertificateVerificationRequest: {
 			certificateNumber: string;
 			proof: string;
@@ -8132,6 +8183,45 @@ export interface components {
 		ReorderWorkspacesRequest: {
 			workspaces: components['schemas']['ReorderItem'][];
 		};
+		ReplaceBellSchedulePeriodsRequest: {
+			periods: components['schemas']['BellSchedulePeriodInput'][];
+			/** Format: int64 */
+			rowVersion: number;
+		};
+		ReplaceDefaultTeachersRequest: {
+			/** Format: int64 */
+			rowVersion: number;
+			teachers: components['schemas']['DefaultTeacher'][];
+		};
+		ReplaceGradeProgressionsRequest: {
+			progressions: components['schemas']['GradeProgressionInput'][];
+			/** Format: int64 */
+			rowVersion: number;
+		};
+		ReplaceHomeroomAdvisorsRequest: {
+			advisors: components['schemas']['HomeroomAdvisorInput'][];
+			/** Format: int64 */
+			rowVersion: number;
+		};
+		ReplaceLearningGroupHomeroomsRequest: {
+			homeroomIds: string[];
+			/** Format: int64 */
+			rowVersion: number;
+		};
+		ReplaceLearningGroupTeachersRequest: {
+			/** Format: int64 */
+			rowVersion: number;
+			teachers: components['schemas']['TeacherAssignmentInput'][];
+		};
+		ReplaceProgramRequirementsRequest: {
+			requirements: components['schemas']['ProgramRequirementInput'][];
+			/** Format: int64 */
+			rowVersion: number;
+		};
+		/** @enum {string} */
+		RequirementKind: 'required' | 'elective' | 'optional';
+		/** @enum {string} */
+		RequirementResourceKind: 'course' | 'activity';
 		ReturnCertificateIssueRequest: {
 			issueCodes: components['schemas']['CertificateIssueCode'][];
 			returnNote: string;
@@ -8202,6 +8292,34 @@ export interface components {
 			/** Format: date-time */
 			updated_at: string;
 		};
+		/** @enum {string} */
+		RosterOverrideAction: 'add' | 'remove';
+		RosterOverrideInput: {
+			action: components['schemas']['RosterOverrideAction'];
+			/** Format: uuid */
+			studentAcademicYearId: string;
+		};
+		RosterPreview: {
+			added: number;
+			conflicts: number;
+			/** Format: uuid */
+			learningGroupId: string;
+			removed: number;
+			retained: number;
+			sourceHash: string;
+			students: components['schemas']['RosterPreviewStudent'][];
+		};
+		RosterPreviewStudent: {
+			conflictReason?: string | null;
+			currentlyActive: boolean;
+			proposedActive: boolean;
+			/** Format: uuid */
+			studentAcademicYearId: string;
+			/** Format: uuid */
+			studentId: string;
+		};
+		/** @enum {string} */
+		RosterStatus: 'draft' | 'published' | 'closed';
 		SchoolFontDeleteConflict: {
 			/** Format: int64 */
 			referenceCount: number;
@@ -8251,20 +8369,6 @@ export interface components {
 			/** Format: uuid */
 			logoFileId: string | null;
 		};
-		Semester: {
-			/** Format: uuid */
-			academic_year_id: string;
-			/** Format: date */
-			end_date: string;
-			/** Format: uuid */
-			id: string;
-			is_active: boolean;
-			metadata?: unknown;
-			name: string;
-			/** Format: date */
-			start_date: string;
-			term: string;
-		};
 		SessionListData: {
 			sessions: components['schemas']['SessionResponse'][];
 		};
@@ -8283,30 +8387,9 @@ export interface components {
 			lastSeenAt: string;
 			rememberMe: boolean;
 		};
-		SlotClassroomAssignment: {
-			/** Format: uuid */
-			classroom_id: string;
-			classroom_name?: string | null;
-			/** Format: date-time */
-			created_at: string;
-			/** Format: uuid */
-			id: string;
-			/** Format: uuid */
-			instructor_id: string;
-			instructor_name?: string | null;
-			/** Format: uuid */
-			slot_id: string;
-		};
-		SlotInstructorInfo: {
-			/** Format: uuid */
-			id: string;
-			instructor_name?: string | null;
-			/** Format: uuid */
-			user_id: string;
-		};
 		StaffDashboardOverview: {
 			/** Format: int64 */
-			activeClassrooms: number;
+			activeHomerooms: number;
 			/** Format: int64 */
 			totalStaff: number;
 			/** Format: int64 */
@@ -8353,7 +8436,7 @@ export interface components {
 		};
 		StaffProfileResponse: {
 			address: string | null;
-			advisor_classrooms: components['schemas']['AdvisorClassroomItem'][];
+			advisor_homerooms: components['schemas']['AdvisorHomeroomItem'][];
 			date_of_birth: string | null;
 			email: string | null;
 			emergency_contact: string | null;
@@ -8374,7 +8457,7 @@ export interface components {
 			roles: components['schemas']['RoleResponse'][];
 			staff_info: null | components['schemas']['StaffInfoResponse'];
 			status: string;
-			teaching_courses: components['schemas']['TeachingCourseItem'][];
+			teaching_assignments: components['schemas']['TeachingAssignmentItem'][];
 			title: string | null;
 			user_type: string;
 			username: string;
@@ -8397,10 +8480,10 @@ export interface components {
 			/** Format: uuid */
 			assignmentId: string;
 			buildingName: string | null;
-			/** Format: uuid */
-			classroomId: string;
-			classroomName: string;
 			earliestStartsAt: string | null;
+			/** Format: uuid */
+			homeroomId: string;
+			homeroomName: string;
 			invigilators: components['schemas']['StaffPublishedExamInvigilator'][];
 			latestEndsAt: string | null;
 			/** Format: uuid */
@@ -8411,7 +8494,7 @@ export interface components {
 		};
 		StaffPublishedExamScheduleRound: {
 			/** Format: uuid */
-			academicSemesterId: string;
+			academicTermId: string;
 			days: components['schemas']['StaffPublishedExamDay'][];
 			/** Format: date-time */
 			publishedAt: string | null;
@@ -8423,9 +8506,6 @@ export interface components {
 			assessmentCategoryName: string;
 			buildingName: string | null;
 			/** Format: uuid */
-			classroomId: string;
-			classroomName: string;
-			/** Format: uuid */
 			dayRoomAssignmentId: string;
 			/** Format: int32 */
 			durationMinutes: number;
@@ -8436,6 +8516,13 @@ export interface components {
 			gradeLevelType: string;
 			/** Format: int32 */
 			gradeLevelYear: number;
+			/** Format: uuid */
+			homeroomId: string;
+			homeroomName: string;
+			/** Format: uuid */
+			learningGroupId: string;
+			/** Format: uuid */
+			learningOfferingId: string;
 			/** Format: uuid */
 			roomId: string;
 			roomName: string;
@@ -8453,17 +8540,52 @@ export interface components {
 			/** Format: date-time */
 			expectedUpdatedAt: string;
 		};
+		StudentAcademicYear: {
+			/** Format: uuid */
+			academicYearId: string;
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: uuid */
+			gradeLevelId: string;
+			/** Format: uuid */
+			id: string;
+			migrated: boolean;
+			/** Format: int64 */
+			rowVersion: number;
+			status: components['schemas']['StudentAcademicYearStatus'];
+			/** Format: uuid */
+			studentId: string;
+			/** Format: uuid */
+			studyProgramId: string;
+			/** Format: date-time */
+			updatedAt: string;
+		};
+		StudentAcademicYearFilter: {
+			/** Format: uuid */
+			academicYearId: string;
+			/** Format: uuid */
+			gradeLevelId?: string | null;
+			/** Format: uuid */
+			homeroomId?: string | null;
+			status?: null | components['schemas']['StudentAcademicYearStatus'];
+			/** Format: uuid */
+			studentId?: string | null;
+			/** Format: uuid */
+			studyProgramId?: string | null;
+		};
+		/** @enum {string} */
+		StudentAcademicYearStatus: 'planned' | 'active' | 'completed' | 'withdrawn' | 'graduated';
 		StudentDbRow: {
 			address: string | null;
 			allergies: string | null;
 			blood_type: string | null;
-			class_room: string | null;
 			/** Format: date */
 			date_of_birth: string | null;
 			email: string | null;
 			first_name: string;
 			gender: string | null;
 			grade_level: string | null;
+			homeroom: string | null;
 			/** Format: uuid */
 			id: string;
 			last_name: string;
@@ -8480,210 +8602,117 @@ export interface components {
 			title: string | null;
 			username: string;
 		};
-		StudentEnrollment: {
-			class_name?: string | null;
-			/** Format: int32 */
-			class_number?: number | null;
-			/** Format: uuid */
-			class_room_id: string;
-			/** Format: date */
-			enrollment_date: string;
-			/** Format: uuid */
-			id: string;
-			status: string;
-			student_code?: string | null;
-			/** Format: uuid */
-			student_id: string;
-			student_name?: string | null;
-		};
-		/** @description Student lookup item with student_id and class_room for enrollment */
+		/** @description Student lookup item with the placement in the caller-selected academic year. */
 		StudentLookupItem: {
-			class_room?: string;
+			homeroom?: string;
 			/** Format: uuid */
 			id: string;
 			name: string;
-			student_id?: string;
+			studentId?: string;
 			title?: string;
 		};
 		StudentProfile: components['schemas']['StudentDbRow'] & {
 			parents: components['schemas']['ParentDto'][];
 		};
-		StudyPlan: {
+		StudyProgram: {
 			code: string;
 			/** Format: date-time */
-			created_at: string;
-			description?: string | null;
-			grade_level_ids?: string[] | null;
+			createdAt: string;
+			/** Format: uuid */
+			curriculumVersionId: string;
 			/** Format: uuid */
 			id: string;
-			is_active: boolean;
-			name_en?: string | null;
-			name_th: string;
+			isDefault: boolean;
+			nameEn?: string | null;
+			nameTh: string;
+			/** Format: uuid */
+			owningOrganizationUnitId?: string | null;
+			/** Format: int64 */
+			rowVersion: number;
+			status: components['schemas']['VersionStatus'];
 			/** Format: date-time */
-			updated_at: string;
-		};
-		StudyPlanSubject: {
-			/** Format: date-time */
-			created_at: string;
-			/** Format: int32 */
-			display_order: number;
-			/** Format: uuid */
-			grade_level_id: string;
-			grade_level_name?: string | null;
-			/** Format: uuid */
-			id: string;
-			metadata: unknown;
-			/** Format: uuid */
-			study_plan_version_id: string;
-			subject_code?: string | null;
-			/** Format: double */
-			subject_credit?: number | null;
-			/** Format: int32 */
-			subject_hours?: number | null;
-			/** Format: uuid */
-			subject_id: string;
-			subject_name_en?: string | null;
-			subject_name_th?: string | null;
-			subject_type?: string | null;
-			term: string;
-			/** Format: date-time */
-			updated_at: string;
-		};
-		StudyPlanVersion: {
-			/** Format: date-time */
-			created_at: string;
-			description?: string | null;
-			/** Format: uuid */
-			end_academic_year_id?: string | null;
-			/** Format: uuid */
-			id: string;
-			is_active: boolean;
-			/** Format: uuid */
-			start_academic_year_id: string;
-			start_year_name?: string | null;
-			/** Format: uuid */
-			study_plan_id: string;
-			study_plan_name_th?: string | null;
-			/** Format: date-time */
-			updated_at: string;
-			version_name: string;
-		};
-		StudyPlanVersionActivity: {
-			/** Format: uuid */
-			activity_catalog_id: string;
-			catalog_activity_type?: null | components['schemas']['ActivityCatalogType'];
-			catalog_description?: string | null;
-			catalog_grade_level_ids?: string[] | null;
-			catalog_name?: string | null;
-			/** Format: int32 */
-			catalog_periods_per_week?: number | null;
-			catalog_scheduling_mode?: null | components['schemas']['ActivitySchedulingMode'];
-			catalog_term?: string | null;
-			/** Format: date-time */
-			created_at: string;
-			/** Format: int32 */
-			display_order: number;
-			/**
-			 * Format: uuid
-			 * @description ระดับชั้นที่ plan กำหนดให้กิจกรรมนี้ใช้ (1 row ต่อ grade — pattern เดียวกับ sps)
-			 */
-			grade_level_id: string;
-			/** Format: uuid */
-			id: string;
-			/** Format: uuid */
-			study_plan_version_id: string;
-			/**
-			 * @description Snapshot from activity_catalog.term at add time. null = ทุกเทอม.
-			 *     Pinned in the plan — editing catalog term does NOT change existing plan rows.
-			 */
-			term?: string | null;
-			/** Format: date-time */
-			updated_at: string;
-		};
-		Subject: {
-			code: string;
-			/** Format: date-time */
-			created_at: string;
-			/** Format: double */
-			credit: number;
-			default_instructor_name?: string | null;
-			description?: string | null;
-			grade_level_ids?: string[] | null;
-			/** Format: uuid */
-			group_id?: string | null;
-			group_name_th?: string | null;
-			/** Format: int32 */
-			hours_per_semester?: number | null;
-			/** Format: uuid */
-			id: string;
-			is_active: boolean;
-			name_en?: string | null;
-			name_th: string;
-			/** Format: uuid */
-			start_academic_year_id: string;
-			term?: string | null;
-			type: components['schemas']['SubjectType'];
-			/** Format: date-time */
-			updated_at: string;
-		};
-		SubjectDefaultInstructor: {
-			/** Format: date-time */
-			created_at: string;
-			/** Format: uuid */
-			id: string;
-			/** Format: uuid */
-			instructor_id: string;
-			instructor_name?: string | null;
-			role: components['schemas']['CurriculumInstructorRole'];
-			/** Format: uuid */
-			subject_id: string;
+			updatedAt: string;
 		};
 		SubjectGroup: {
 			code: string;
 			/** Format: date-time */
-			created_at: string;
+			createdAt: string;
 			/** Format: int32 */
-			display_order: number;
+			displayOrder?: number | null;
 			/** Format: uuid */
 			id: string;
-			is_active: boolean;
-			name_en: string;
-			name_th: string;
+			isActive?: boolean | null;
+			nameEn: string;
+			nameTh: string;
+			/** Format: int64 */
+			rowVersion: number;
 			/** Format: date-time */
-			updated_at: string;
+			updatedAt: string;
 		};
-		SubjectInPlan: {
+		SubjectVersion: {
+			/** Format: date-time */
+			createdAt: string;
+			credit: string;
+			description?: string | null;
+			/** Format: date */
+			effectiveFrom: string;
+			/** Format: date */
+			effectiveUntil?: string | null;
+			gradeLevelIds: string[];
+			/** Format: uuid */
+			groupId?: string | null;
 			/** Format: int32 */
-			display_order?: number | null;
+			hoursPerSemester?: number | null;
 			/** Format: uuid */
-			grade_level_id: string;
+			id: string;
+			migrated: boolean;
+			nameEn?: string | null;
+			nameTh: string;
+			/** Format: int32 */
+			periodsPerWeek?: number | null;
+			/** Format: date-time */
+			publishedAt?: string | null;
+			/** Format: int64 */
+			rowVersion: number;
+			status: components['schemas']['VersionStatus'];
 			/** Format: uuid */
-			subject_id: string;
-			term: string;
+			subjectId: string;
+			subjectType: string;
+			termCode?: string | null;
+			/** Format: date-time */
+			updatedAt: string;
+			/** Format: int32 */
+			versionNo: number;
 		};
-		/** @enum {string} */
-		SubjectType: 'BASIC' | 'ADDITIONAL' | 'ACTIVITY';
 		SubmitCertificateIssueRequest: {
 			candidateIds: string[];
 		};
-		/**
-		 * @description วิชาที่ครูสอน — ดึงจาก classroom_courses (+ classroom_course_instructors)
-		 *     Source of truth: ระบบ Course Planning ที่ assign วิชาให้ห้อง
-		 */
-		TeachingCourseItem: {
-			/** Format: int32 */
-			academic_year: number;
-			academic_year_label: string;
-			classroom_code: string;
+		TeacherAssignmentInput: {
+			role: components['schemas']['LearningTeacherRole'];
 			/** Format: uuid */
-			classroom_course_id: string;
-			classroom_name: string;
+			teacherId: string;
+		};
+		/** @description กลุ่มการเรียนที่ครูสอนใน Academic Delivery */
+		TeachingAssignmentItem: {
+			/** Format: uuid */
+			academicTermId: string;
 			/** Format: int32 */
-			hours_per_semester: number | null;
+			academicYear: number;
+			/** Format: uuid */
+			academicYearId: string;
+			academicYearLabel: string;
+			hours: string | null;
+			learningGroupCode: string;
+			/** Format: uuid */
+			learningGroupId: string;
+			learningGroupName: string;
 			role: string;
-			subject_code: string;
-			subject_name: string;
-			term: string;
+			subjectCode: string;
+			/** Format: uuid */
+			subjectId: string;
+			subjectName: string;
+			termCode: string;
+			termName: string;
 		};
 		/** @enum {string} */
 		TextAlignment: 'left' | 'center' | 'right';
@@ -8721,86 +8750,103 @@ export interface components {
 		};
 		TimetableEntry: {
 			/** Format: uuid */
-			academic_semester_id: string;
-			activity_scheduling_mode?: string;
+			academicTermId: string;
 			/** Format: uuid */
-			activity_slot_id: string | null;
-			activity_slot_name?: string;
-			activity_type?: string;
+			academicYearId: string;
+			/** Format: uuid */
+			activityId?: string | null;
+			activityVersionDisplayLabel?: string | null;
+			/** Format: uuid */
+			batchId?: string | null;
+			/** Format: uuid */
+			bellScheduleId: string;
+			/** Format: uuid */
+			bellSchedulePeriodId: string;
+			/** Format: date-time */
+			createdAt: string;
+			dayOfWeek: string;
+			endTime: string;
+			entryType: string;
+			/** Format: uuid */
+			homeroomId?: string | null;
+			homeroomName?: string | null;
+			/** Format: uuid */
+			id: string;
+			instructors: components['schemas']['TimetableInstructor'][];
+			isActive: boolean;
+			learningGroupCode?: string | null;
+			/** Format: uuid */
+			learningGroupId?: string | null;
+			learningGroupName?: string | null;
+			note?: string | null;
+			offeringCode?: string | null;
+			/** Format: uuid */
+			offeringId?: string | null;
+			offeringName?: string | null;
+			periodName?: string | null;
+			roomCode?: string | null;
+			/** Format: uuid */
+			roomId?: string | null;
+			/** Format: int64 */
+			rowVersion: number;
+			startTime: string;
 			/**
 			 * Format: uuid
-			 * @description UUID ของ batch ที่สร้าง entry นี้; NULL = สร้างแยก
+			 * @description Stable catalog identity. A selected version is represented by its display label only.
 			 */
-			batch_id?: string;
-			/** Format: uuid */
-			classroom_course_id: string | null;
-			/** Format: uuid */
-			classroom_id: string | null;
-			classroom_name?: string;
-			created_at?: string;
-			/** Format: uuid */
-			created_by: string | null;
-			day_of_week: string;
-			end_time?: string;
-			entry_type: string;
-			/** Format: uuid */
-			id: string;
-			/** @description UUID ของครูทุกคนใน cell — parallel กับ instructor_names เรียงตาม role+created_at */
-			instructor_ids?: string[];
-			instructor_name?: string;
-			instructor_names?: string[];
-			instructor_roles?: string[];
-			instructor_subject_group_display_orders?: (number | null)[];
-			/** @description กลุ่มสาระหลักของครูแต่ละคน — parallel กับ instructor_ids เรียงตาม role+created_at */
-			instructor_subject_group_ids?: (string | null)[];
-			instructor_subject_group_names?: (string | null)[];
-			is_active: boolean;
-			note: string | null;
-			/** Format: uuid */
-			period_id: string;
-			period_name?: string;
-			/** Format: int32 */
-			period_order_index?: number;
-			room_code?: string;
-			/** Format: uuid */
-			room_id: string | null;
-			start_time?: string;
-			subject_code?: string;
-			/** Format: int32 */
-			subject_group_display_order?: number;
-			/** Format: uuid */
-			subject_group_id?: string;
-			subject_group_name?: string;
-			subject_name_th?: string;
-			title: string | null;
-			updated_at?: string;
-			/** Format: uuid */
-			updated_by: string | null;
+			subjectId?: string | null;
+			subjectVersionDisplayLabel?: string | null;
+			title?: string | null;
+			/** Format: date-time */
+			updatedAt: string;
 		};
-		TimetableItemsData: {
+		TimetableInstructor: {
+			displayName: string;
+			role: string;
+			/** Format: uuid */
+			userId: string;
+		};
+		TransferHomeroomPlacementRequest: {
+			/** Format: int32 */
+			classNumber?: number | null;
+			enrollmentType: string;
+			/** Format: uuid */
+			idempotencyKey: string;
 			/** Format: int64 */
-			current_seq: number;
-			items: components['schemas']['TimetableEntry'][];
-		};
-		TimetablePeriod: {
-			end_time: string;
+			rowVersion: number;
 			/** Format: uuid */
-			id: string;
-			name?: string | null;
+			targetHomeroomId: string;
+			/** Format: date */
+			transferDate: string;
+		};
+		UpdateAcademicTermRequest: {
+			/** Format: uuid */
+			bellScheduleId: string;
+			blocksYearClosure: boolean;
+			code: string;
+			/** Format: date */
+			endDate: string;
+			includedInYearResult: boolean;
+			name: string;
+			/** Format: int64 */
+			rowVersion: number;
 			/** Format: int32 */
-			order_index: number;
-			start_time: string;
+			sequence: number;
+			/** Format: date */
+			startDate: string;
+			termType: components['schemas']['AcademicTermType'];
 		};
 		UpdateAcademicYearRequest: {
 			/** Format: date */
-			end_date?: string | null;
-			is_active?: boolean | null;
-			name?: string | null;
-			school_days?: string | null;
+			endDate: string;
+			name: string;
+			/** Format: int64 */
+			rowVersion: number;
+			schoolDays: string[];
 			/** Format: date */
-			start_date?: string | null;
+			startDate: string;
 			/** Format: int32 */
-			year?: number | null;
+			year: number;
 		};
 		UpdateAchievementRequest: {
 			/** Format: date */
@@ -8810,42 +8856,45 @@ export interface components {
 			image_file_id?: string | null;
 			title?: string | null;
 		};
-		UpdateActivityGroupRequest: {
-			allowed_classroom_ids?: string[] | null;
+		UpdateActivityVersionRequest: {
 			description?: string | null;
+			/** Format: date */
+			effectiveFrom: string;
+			/** Format: date */
+			effectiveUntil?: string | null;
+			gradeLevelIds: string[];
+			hoursPerWeek: string;
+			name: string;
+			/** Format: int64 */
+			rowVersion: number;
+			schedulingMode: string;
+			termCode?: string | null;
+		};
+		UpdateBellScheduleRequest: {
+			code: string;
+			isDefault: boolean;
+			name: string;
 			/** Format: uuid */
-			instructor_id?: string | null;
-			is_active?: boolean | null;
-			/** Format: int32 */
-			max_capacity?: number | null;
-			name?: string | null;
-			registration_open?: boolean | null;
+			owningOrganizationUnitId?: string | null;
+			/** Format: int64 */
+			rowVersion: number;
 		};
-		/**
-		 * @description Semester-specific fields only. Template fields (name/type/periods/mode/grade)
-		 *     come from activity_catalog and are edited there — not here.
-		 */
-		UpdateActivitySlotRequest: {
-			is_active?: boolean | null;
-			registration_type?: null | components['schemas']['ActivityRegistrationType'];
-			student_reg_end?: string | null;
-			student_reg_open?: boolean | null;
-			student_reg_start?: string | null;
-			teacher_reg_open?: boolean | null;
+		UpdateCatalogActivityRequest: {
+			activityType: string;
+			archived: boolean;
+			code: string;
+			/** Format: uuid */
+			owningOrganizationUnitId?: string | null;
+			/** Format: int64 */
+			rowVersion: number;
 		};
-		UpdateCatalogDefaultInstructorRoleRequest: {
-			role: components['schemas']['CurriculumInstructorRole'];
-		};
-		UpdateCatalogRequest: {
-			activity_type?: null | components['schemas']['ActivityCatalogType'];
-			description?: string | null;
-			grade_level_ids?: string[] | null;
-			is_active?: boolean | null;
-			name?: string | null;
-			/** Format: int32 */
-			periods_per_week?: number | null;
-			scheduling_mode?: null | components['schemas']['ActivitySchedulingMode'];
-			term?: string | null;
+		UpdateCatalogSubjectRequest: {
+			archived: boolean;
+			code: string;
+			/** Format: uuid */
+			owningOrganizationUnitId?: string | null;
+			/** Format: int64 */
+			rowVersion: number;
 		};
 		UpdateCertificateCampaignRequest: {
 			/** Format: uuid */
@@ -8888,27 +8937,56 @@ export interface components {
 			safeMarginPoints?: number | null;
 			showSafeArea?: boolean | null;
 		};
-		UpdateClassroomRequest: {
-			/** @description If provided, replace advisor list entirely (atomic DELETE + INSERT) */
-			advisors?: components['schemas']['ClassroomAdvisorInput'][] | null;
+		UpdateCurriculumRequest: {
+			code: string;
+			description?: string | null;
+			gradeLevelIds: string[];
+			nameEn?: string | null;
+			nameTh: string;
+			/** Format: uuid */
+			owningOrganizationUnitId?: string | null;
+			/** Format: int64 */
+			rowVersion: number;
+		};
+		UpdateCurriculumVersionRequest: {
+			description?: string | null;
+			/** Format: uuid */
+			endAcademicYearId?: string | null;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: uuid */
+			startAcademicYearId: string;
+			versionName: string;
+		};
+		UpdateHomeroomRequest: {
+			/** Format: int32 */
+			capacity: number;
+			code: string;
+			/** Format: uuid */
+			gradeLevelId: string;
+			name: string;
+			roomNumber?: string | null;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: uuid */
+			studyProgramId: string;
+		};
+		UpdateLearningGroupRequest: {
 			/** Format: int32 */
 			capacity?: number | null;
-			is_active?: boolean | null;
-			room_number?: string | null;
+			code: string;
+			description?: string | null;
+			name: string;
+			preferredRoomIds: string[];
+			/** Format: int64 */
+			rowVersion: number;
+		};
+		UpdateLearningOfferingRequest: {
 			/** Format: uuid */
-			study_plan_version_id?: string | null;
-		};
-		UpdateCourseInstructorRoleRequest: {
-			role: components['schemas']['CourseInstructorRole'];
-		};
-		UpdateCourseRequest: {
-			/** Format: uuid */
-			primary_instructor_id?: string | null;
-			settings?: components['schemas']['ClassroomCourseSettings'];
-		};
-		UpdateEnrollmentNumberRequest: {
-			/** Format: int32 */
-			class_number?: number | null;
+			owningOrganizationUnitId: string;
+			/** Format: int64 */
+			rowVersion: number;
+			targets: components['schemas']['OfferingTargetInput'][];
 		};
 		UpdateMemberRequest: {
 			is_primary?: boolean | null;
@@ -8917,9 +8995,6 @@ export interface components {
 			position_code: string;
 			position_title?: string | null;
 			responsibilities?: string | null;
-		};
-		UpdateMemberResultRequest: {
-			result: components['schemas']['ActivityMemberResult'];
 		};
 		UpdateMenuGroupRequest: {
 			description?: string | null;
@@ -8978,15 +9053,6 @@ export interface components {
 			nickname?: string | null;
 			phone?: string | null;
 		};
-		UpdatePlanActivityRequest: {
-			/** Format: int32 */
-			display_order?: number | null;
-			/**
-			 * @description Pinned term — null means "ทุกเทอม" (always overwrites; no "keep old" semantic).
-			 *     Caller should pass the existing value to preserve.
-			 */
-			term?: string | null;
-		};
 		UpdateProfileRequest: {
 			address?: string | null;
 			dateOfBirth?: string | null;
@@ -9009,15 +9075,6 @@ export interface components {
 			name_en?: string | null;
 			permissions?: string[] | null;
 			user_type?: string | null;
-		};
-		UpdateSemesterRequest: {
-			/** Format: date */
-			end_date?: string | null;
-			is_active?: boolean | null;
-			name?: string | null;
-			/** Format: date */
-			start_date?: string | null;
-			term?: string | null;
 		};
 		UpdateStaffRequest: {
 			address?: string | null;
@@ -9043,6 +9100,14 @@ export interface components {
 			status?: string | null;
 			title?: string | null;
 		};
+		UpdateStudentAcademicYearRequest: {
+			/** Format: uuid */
+			gradeLevelId: string;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: uuid */
+			studyProgramId: string;
+		};
 		UpdateStudentRequest: {
 			address?: string | null;
 			email?: string | null;
@@ -9052,57 +9117,46 @@ export interface components {
 			/** Format: int32 */
 			student_number?: number | null;
 		};
-		UpdateStudyPlanRequest: {
-			code?: string | null;
-			description?: string | null;
-			grade_level_ids?: string[] | null;
-			is_active?: boolean | null;
-			name_en?: string | null;
-			name_th?: string | null;
-		};
-		UpdateStudyPlanVersionRequest: {
-			description?: string | null;
+		UpdateStudyProgramRequest: {
+			code: string;
+			isDefault: boolean;
+			nameEn?: string | null;
+			nameTh: string;
 			/** Format: uuid */
-			end_academic_year_id?: string | null;
-			is_active?: boolean | null;
-			/** Format: uuid */
-			start_academic_year_id?: string | null;
-			version_name?: string | null;
+			owningOrganizationUnitId?: string | null;
+			/** Format: int64 */
+			rowVersion: number;
 		};
-		UpdateSubjectDefaultInstructorRoleRequest: {
-			role: components['schemas']['CurriculumInstructorRole'];
-		};
-		UpdateSubjectRequest: {
-			code?: string | null;
-			/** Format: double */
-			credit?: number | null;
-			/**
-			 * @description When provided, replaces the subject's default team atomically.
-			 *     Pass `Some([])` to clear all defaults. Leave None to skip team update.
-			 */
-			default_instructors?: components['schemas']['DefaultInstructorInput'][] | null;
-			description?: string | null;
-			grade_level_ids?: string[] | null;
-			/** Format: uuid */
-			group_id?: string | null;
+		UpdateSubjectGroupRequest: {
+			code: string;
 			/** Format: int32 */
-			hours_per_semester?: number | null;
-			is_active?: boolean | null;
-			name_en?: string | null;
-			name_th?: string | null;
-			/** Format: uuid */
-			start_academic_year_id?: string | null;
-			term?: string | null;
-			type?: null | components['schemas']['SubjectType'];
+			displayOrder: number;
+			isActive: boolean;
+			nameEn: string;
+			nameTh: string;
+			/** Format: int64 */
+			rowVersion: number;
 		};
-		UpdateYearLevelsRequest: {
-			grade_level_ids: string[];
-		};
-		UpsertSlotClassroomAssignmentRequest: {
+		UpdateSubjectVersionRequest: {
+			credit: string;
+			description?: string | null;
+			/** Format: date */
+			effectiveFrom: string;
+			/** Format: date */
+			effectiveUntil?: string | null;
+			gradeLevelIds: string[];
 			/** Format: uuid */
-			classroom_id: string;
-			/** Format: uuid */
-			instructor_id: string;
+			groupId?: string | null;
+			/** Format: int32 */
+			hoursPerSemester?: number | null;
+			nameEn?: string | null;
+			nameTh: string;
+			/** Format: int32 */
+			periodsPerWeek?: number | null;
+			/** Format: int64 */
+			rowVersion: number;
+			subjectType: string;
+			termCode?: string | null;
 		};
 		UserMenuData: {
 			groups: components['schemas']['MenuGroupResponse'][];
@@ -9133,6 +9187,8 @@ export interface components {
 			/** Format: uuid */
 			id: string;
 		};
+		/** @enum {string} */
+		VersionStatus: 'draft' | 'published' | 'archived';
 	};
 	responses: never;
 	parameters: never;
@@ -9142,2291 +9198,10 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-	listActivityGroups: {
-		parameters: {
-			query?: {
-				activity_type?: string;
-				instructor_id?: string;
-				registration_open?: boolean;
-				search?: string;
-				semester_id?: string;
-				slot_id?: string;
-			};
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Activity groups visible to the caller */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_ActivityGroup'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity read permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity groups could not be loaded */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	createActivityGroup: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['CreateActivityGroupRequest'];
-			};
-		};
-		responses: {
-			/** @description Activity group created */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_ActivityGroup'];
-				};
-			};
-			/** @description Slot is closed, instructor is invalid, or classroom scope is invalid */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity management permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Slot, instructor, or classroom not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity group could not be created */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	updateActivityGroup: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Activity group ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['UpdateActivityGroupRequest'];
-			};
-		};
-		responses: {
-			/** @description Activity group updated */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_ActivityGroup'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity management permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Group, instructor, or classroom not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity group could not be updated */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	deleteActivityGroup: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Activity group ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Activity group deleted */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity management permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity group not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity group could not be deleted */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	selfEnrollActivityGroup: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Activity group ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Current student enrolled */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Self-enrollment is unavailable, full, or outside classroom scope */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity group not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Current student is already enrolled */
-			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Self-enrollment could not be completed */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	selfUnenrollActivityGroup: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Activity group ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Current user's enrollment removed */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Current user's activity enrollment not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Self-unenrollment could not be completed */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	listActivityGroupInstructors: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Activity group ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Activity group instructors */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_InstructorInfo'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity group read permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity group not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity instructors could not be loaded */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	addActivityGroupInstructor: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Activity group ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['InstructorRoleRequest'];
-			};
-		};
-		responses: {
-			/** @description Activity group instructor added */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Instructor role is invalid */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity group management permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity group or instructor not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity instructor could not be added */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	removeActivityGroupInstructor: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Activity group ID */
-				id: string;
-				/** @description Instructor user ID */
-				instructor_id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Activity group instructor removed */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity group management permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity instructor assignment not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity instructor could not be removed */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	listActivityGroupMembers: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Activity group ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Activity group members */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_ActivityGroupMember'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity group read permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity group not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity members could not be loaded */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	addActivityGroupMembers: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Activity group ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['AddMembersRequest'];
-			};
-		};
-		responses: {
-			/** @description Members added */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_ActivityInsertedCountData'];
-				};
-			};
-			/** @description Group capacity would be exceeded */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Member management permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity group or user not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity members could not be added */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	removeActivityGroupMember: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Activity group ID */
-				id: string;
-				/** @description Student user ID */
-				student_id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Activity member removed */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Member management permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity member not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity member could not be removed */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	generateActivitiesFromStudyPlan: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['GenerateActivitiesFromPlanRequest'];
-			};
-		};
-		responses: {
-			/** @description Semester activity workspace generated from the study plan */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_GenerateActivitiesFromPlanOutcome'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum read or school activity management permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Study-plan version or semester not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activities could not be generated */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	updateActivityGroupMemberResult: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Activity membership ID */
-				member_id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['UpdateMemberResultRequest'];
-			};
-		};
-		responses: {
-			/** @description Activity member result updated */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Result must be pass or fail */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Member management permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity member not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity result could not be updated */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	listMyActivityEnrollments: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Current user's activity group IDs */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_String'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity enrollments could not be loaded */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	listActivityCatalog: {
-		parameters: {
-			query?: {
-				/** @description Return only the latest active version per name */
-				latest_only?: boolean;
-			};
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Activity catalog */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_ActivityCatalog'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum read permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity catalog could not be loaded */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	createActivityCatalog: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['CreateCatalogRequest'];
-			};
-		};
-		responses: {
-			/** @description Activity catalog version created */
-			201: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_ActivityCatalog'];
-				};
-			};
-			/** @description Catalog request is invalid */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum create permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Academic year, grade level, or instructor not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity catalog could not be created */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	updateActivityCatalog: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Activity catalog ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['UpdateCatalogRequest'];
-			};
-		};
-		responses: {
-			/** @description Activity catalog updated */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_ActivityCatalog'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum update permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity catalog or grade level not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity catalog could not be updated */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	deleteActivityCatalog: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Activity catalog ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Activity catalog deleted */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Catalog is still referenced by a study plan */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum delete permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity catalog not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity catalog could not be deleted */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	listActivityCatalogDefaultInstructors: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Activity catalog ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Default activity instructors */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_CatalogDefaultInstructor'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum read permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity catalog not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Default instructors could not be loaded */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	addActivityCatalogDefaultInstructor: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Activity catalog ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['AddCatalogDefaultInstructorRequest'];
-			};
-		};
-		responses: {
-			/** @description Default instructor added */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Instructor role is invalid */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum update permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity catalog or instructor not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Default instructor could not be added */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	updateActivityCatalogDefaultInstructorRole: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Activity catalog ID */
-				id: string;
-				/** @description Instructor user ID */
-				uid: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['UpdateCatalogDefaultInstructorRoleRequest'];
-			};
-		};
-		responses: {
-			/** @description Default instructor role updated */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Instructor role is invalid */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum update permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Default instructor assignment not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Default instructor role could not be updated */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	removeActivityCatalogDefaultInstructor: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Activity catalog ID */
-				id: string;
-				/** @description Instructor user ID */
-				uid: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Default instructor removed */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum update permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Default instructor assignment not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Default instructor could not be removed */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	listActivitySlots: {
-		parameters: {
-			query?: {
-				activity_type?: string;
-				semester_id?: string;
-				student_reg_open?: boolean;
-				teacher_reg_open?: boolean;
-			};
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Activity slots visible to the caller */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_ActivitySlot'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity read permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity slots could not be loaded */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	updateActivitySlot: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Activity slot ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['UpdateActivitySlotRequest'];
-			};
-		};
-		responses: {
-			/** @description Activity slot updated */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_ActivitySlot'];
-				};
-			};
-			/** @description Activity registration type is invalid */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description School-wide activity management permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity slot not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity slot could not be updated */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	deleteActivitySlot: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Activity slot ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Activity slot deleted */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description School-wide activity management permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity slot not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity slot could not be deleted */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	listActivitySlotClassroomAssignments: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Activity slot ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Slot classroom assignments */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_SlotClassroomAssignment'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity slot read permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity slot not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Classroom assignments could not be loaded */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	upsertActivitySlotClassroomAssignments: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Activity slot ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['BatchUpsertSlotClassroomAssignmentsRequest'];
-			};
-		};
-		responses: {
-			/** @description Slot classroom assignments saved */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_ActivityProcessedCountData'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description School-wide activity management permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity slot, classroom, or instructor not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Classroom assignments could not be saved */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	deleteActivitySlotClassroomAssignment: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Classroom assignment ID */
-				assignment_id: string;
-				/** @description Activity slot ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Slot classroom assignment deleted */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description School-wide activity management permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity slot or classroom assignment not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Classroom assignment could not be deleted */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	deleteAllActivitySlotClassroomAssignments: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Activity slot ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description All slot classroom assignments deleted */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_ActivityDeletedCountData'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description School-wide activity management permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity slot not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Classroom assignments could not be deleted */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	deleteAllActivitySlotGroups: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Activity slot ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description All groups in the slot deleted */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_ActivityDeletedCountData'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description School-wide activity management permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity slot not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Slot groups could not be deleted */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	listActivitySlotInstructors: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Activity slot ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Activity slot instructors */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_SlotInstructorInfo'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity slot read permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity slot not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Slot instructors could not be loaded */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	addActivitySlotInstructor: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Activity slot ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['AddSlotInstructorRequest'];
-			};
-		};
-		responses: {
-			/** @description Activity slot instructor added */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description School-wide activity management permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity slot or instructor not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Slot instructor could not be added */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	removeActivitySlotInstructor: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Activity slot ID */
-				id: string;
-				/** @description Instructor user ID */
-				user_id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Activity slot instructor removed */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description School-wide activity management permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity slot or instructor assignment not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Slot instructor could not be removed */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	removeAllActivitySlotInstructors: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Activity slot ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description All slot instructors removed */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_ActivityDeletedCountData'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description School-wide activity management permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity slot not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Slot instructors could not be removed */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	addActivitySlotInstructorsBatch: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Activity slot ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['AddSlotInstructorsBatchRequest'];
-			};
-		};
-		responses: {
-			/** @description Activity slot instructors added */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_ActivityAddedCountData'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description School-wide activity management permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity slot or instructor not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Slot instructors could not be added */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	deleteActivitySlotTimetableEntries: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Activity slot ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Slot timetable entries deleted */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_ActivityDeletedCountData'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Course-plan management permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity slot not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Slot timetable entries could not be deleted */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	getActivitySlotTimetableContext: {
+	listBellSchedules: {
 		parameters: {
 			query: {
-				semester_id: string;
+				academicYearId: string;
 			};
 			header?: never;
 			path?: never;
@@ -11434,13 +9209,13 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
-			/** @description Semester activity timetable context */
+			/** @description Bell schedules in the selected year */
 			200: {
 				headers: {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiResponse_ActivitySlotTimetableContextResponse'];
+					'application/json': components['schemas']['ApiResponse_Vec_BellSchedule'];
 				};
 			};
 			/** @description Authentication required */
@@ -11452,17 +9227,8 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Timetable or activity read permission denied */
+			/** @description Academic term read permission denied */
 			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Activity timetable context could not be loaded */
-			500: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -11472,57 +9238,7 @@ export interface operations {
 			};
 		};
 	};
-	listClassrooms: {
-		parameters: {
-			query?: {
-				/** @description Filter by academic year */
-				year_id?: string;
-			};
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Classrooms */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_Classroom'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Classroom read permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Classrooms could not be loaded */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	createClassroom: {
+	createBellSchedule: {
 		parameters: {
 			query?: never;
 			header?: never;
@@ -11531,20 +9247,20 @@ export interface operations {
 		};
 		requestBody: {
 			content: {
-				'application/json': components['schemas']['CreateClassroomRequest'];
+				'application/json': components['schemas']['CreateBellScheduleRequest'];
 			};
 		};
 		responses: {
-			/** @description Classroom created */
+			/** @description Bell schedule created */
 			201: {
 				headers: {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiResponse_Classroom'];
+					'application/json': components['schemas']['ApiResponse_BellSchedule'];
 				};
 			};
-			/** @description Invalid classroom */
+			/** @description Invalid bell schedule */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -11562,7 +9278,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Classroom creation permission denied */
+			/** @description Academic term management permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -11571,17 +9287,8 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Classroom already exists */
+			/** @description Bell schedule conflict */
 			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Classroom could not be created */
-			500: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -11591,38 +9298,25 @@ export interface operations {
 			};
 		};
 	};
-	updateClassroom: {
+	getBellSchedule: {
 		parameters: {
 			query?: never;
 			header?: never;
 			path: {
-				/** @description Classroom ID */
+				/** @description Bell schedule ID */
 				id: string;
 			};
 			cookie?: never;
 		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['UpdateClassroomRequest'];
-			};
-		};
+		requestBody?: never;
 		responses: {
-			/** @description Classroom updated */
+			/** @description Bell schedule */
 			200: {
 				headers: {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiResponse_Classroom'];
-				};
-			};
-			/** @description Invalid classroom */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
+					'application/json': components['schemas']['ApiResponse_BellSchedule'];
 				};
 			};
 			/** @description Authentication required */
@@ -11634,7 +9328,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Classroom update permission denied */
+			/** @description Academic term read permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -11643,7 +9337,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Classroom not found */
+			/** @description Bell schedule not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -11652,8 +9346,35 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Classroom conflicts with an existing classroom */
-			409: {
+		};
+	};
+	updateBellSchedule: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Bell schedule ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateBellScheduleRequest'];
+			};
+		};
+		responses: {
+			/** @description Bell schedule updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BellSchedule'];
+				};
+			};
+			/** @description Invalid bell schedule */
+			400: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -11661,8 +9382,35 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Classroom could not be updated */
-			500: {
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic term management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Bell schedule not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Bell schedule row version conflict */
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -11672,7 +9420,167 @@ export interface operations {
 			};
 		};
 	};
-	enrollStudents: {
+	listBellSchedulePeriods: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Bell schedule ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Bell schedule periods */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_BellSchedulePeriod'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic term read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Bell schedule not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	replaceBellSchedulePeriods: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Bell schedule ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ReplaceBellSchedulePeriodsRequest'];
+			};
+		};
+		responses: {
+			/** @description Bell schedule periods replaced */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_BellSchedulePeriod'];
+				};
+			};
+			/** @description Invalid bell schedule periods */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic term management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Bell schedule not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Bell schedule row version conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listCatalogActivities: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Catalog activities */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_CatalogActivity'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic catalog read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createCatalogActivity: {
 		parameters: {
 			query?: never;
 			header?: never;
@@ -11681,360 +9589,20 @@ export interface operations {
 		};
 		requestBody: {
 			content: {
-				'application/json': components['schemas']['EnrollStudentRequest'];
+				'application/json': components['schemas']['CreateCatalogActivityRequest'];
 			};
 		};
 		responses: {
-			/** @description Students enrolled */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Invalid enrollment */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Enrollment update permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Classroom not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Enrollment conflicts with existing data */
-			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Students could not be enrolled */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	removeEnrollment: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Enrollment ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Enrollment removed */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Enrollment update permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Enrollment not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Enrollment could not be removed */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	updateEnrollmentNumber: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Enrollment ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['UpdateEnrollmentNumberRequest'];
-			};
-		};
-		responses: {
-			/** @description Enrollment number updated */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Invalid enrollment number */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Enrollment update permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Enrollment not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Enrollment number could not be updated */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	listClassEnrollments: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Classroom ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Class enrollments */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_StudentEnrollment'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Enrollment read permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Classroom not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Class enrollments could not be loaded */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	autoAssignClassNumbers: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Classroom ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['AutoAssignClassNumbersRequest'];
-			};
-		};
-		responses: {
-			/** @description Class numbers assigned */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Invalid numbering method */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Enrollment update permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Classroom not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Class numbers could not be assigned */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	createGradeLevel: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['CreateGradeLevelRequest'];
-			};
-		};
-		responses: {
-			/** @description Grade level created */
+			/** @description Catalog activity created */
 			201: {
 				headers: {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiResponse_GradeLevelResponse'];
+					'application/json': components['schemas']['ApiResponse_CatalogActivity'];
 				};
 			};
-			/** @description Invalid or duplicate grade level */
+			/** @description Invalid catalog activity */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -12052,7 +9620,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Academic structure management permission denied */
+			/** @description Academic catalog management permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -12061,390 +9629,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Grade level could not be created */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	deleteGradeLevel: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Grade level ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Grade level deleted */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Grade level is in use */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Academic structure management permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Grade level not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Grade level could not be deleted */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	listClassroomActivities: {
-		parameters: {
-			query: {
-				semester_id: string;
-			};
-			header?: never;
-			path: {
-				/** @description Classroom ID */
-				classroom_id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Classroom activities */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_ClassroomActivity'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Course-plan read permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Classroom or semester not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Classroom activities could not be loaded */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	removeClassroomFromActivitySlot: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Classroom ID */
-				classroom_id: string;
-				/** @description Activity slot ID */
-				slot_id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Classroom removed from activity slot */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Course-plan management permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Classroom activity assignment not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Classroom could not be removed from activity slot */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	listClassroomCourses: {
-		parameters: {
-			query?: {
-				academic_semester_id?: string;
-				classroom_id?: string;
-				instructor_id?: string;
-				subject_id?: string;
-			};
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Classroom courses */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_ClassroomCourse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Course-plan read permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Classroom courses could not be loaded */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	assignCourses: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['AssignCoursesRequest'];
-			};
-		};
-		responses: {
-			/** @description Courses assigned */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_CourseAssignedCountData'];
-				};
-			};
-			/** @description Malformed or invalid JSON request */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Course-plan management permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Classroom, semester, or subject not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Courses could not be assigned */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	updateClassroomCourse: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Classroom course ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['UpdateCourseRequest'];
-			};
-		};
-		responses: {
-			/** @description Classroom course updated */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Malformed or invalid JSON request */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Course-plan management permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Classroom course or instructor not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Instructor has another timetable entry in the same period */
+			/** @description Catalog activity conflict */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -12453,36 +9638,27 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Classroom course could not be updated */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
 		};
 	};
-	removeClassroomCourse: {
+	getCatalogActivity: {
 		parameters: {
 			query?: never;
 			header?: never;
 			path: {
-				/** @description Classroom course ID */
+				/** @description Catalog activity ID */
 				id: string;
 			};
 			cookie?: never;
 		};
 		requestBody?: never;
 		responses: {
-			/** @description Classroom course removed */
+			/** @description Catalog activity */
 			200: {
 				headers: {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
+					'application/json': components['schemas']['ApiResponse_CatalogActivity'];
 				};
 			};
 			/** @description Authentication required */
@@ -12494,7 +9670,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Course-plan management permission denied */
+			/** @description Academic catalog read permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -12503,17 +9679,8 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Classroom course not found */
+			/** @description Catalog activity not found */
 			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Classroom course could not be removed */
-			500: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -12523,91 +9690,32 @@ export interface operations {
 			};
 		};
 	};
-	listCourseInstructors: {
+	updateCatalogActivity: {
 		parameters: {
 			query?: never;
 			header?: never;
 			path: {
-				/** @description Classroom course ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Course instructors */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_CourseInstructor'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Course-plan read permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Classroom course not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Course instructors could not be loaded */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	addCourseInstructor: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Classroom course ID */
+				/** @description Catalog activity ID */
 				id: string;
 			};
 			cookie?: never;
 		};
 		requestBody: {
 			content: {
-				'application/json': components['schemas']['AddCourseInstructorRequest'];
+				'application/json': components['schemas']['UpdateCatalogActivityRequest'];
 			};
 		};
 		responses: {
-			/** @description Course instructor added */
+			/** @description Catalog activity updated */
 			200: {
 				headers: {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
+					'application/json': components['schemas']['ApiResponse_CatalogActivity'];
 				};
 			};
-			/** @description Malformed body or invalid instructor role */
+			/** @description Invalid catalog activity */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -12625,7 +9733,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Course-plan management permission denied */
+			/** @description Academic catalog management permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -12634,7 +9742,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Classroom course or instructor not found */
+			/** @description Catalog activity not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -12643,7 +9751,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Instructor has another timetable entry in the same period */
+			/** @description Catalog activity row version conflict */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -12652,8 +9760,49 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Course instructor could not be added */
-			500: {
+		};
+	};
+	listActivityDefaultTeachers: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Catalog activity ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Activity default teachers */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_DefaultTeacher'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic catalog read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Catalog activity not found */
+			404: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -12663,34 +9812,32 @@ export interface operations {
 			};
 		};
 	};
-	updateCourseInstructorRole: {
+	replaceActivityDefaultTeachers: {
 		parameters: {
 			query?: never;
 			header?: never;
 			path: {
-				/** @description Classroom course ID */
+				/** @description Catalog activity ID */
 				id: string;
-				/** @description Instructor user ID */
-				uid: string;
 			};
 			cookie?: never;
 		};
 		requestBody: {
 			content: {
-				'application/json': components['schemas']['UpdateCourseInstructorRoleRequest'];
+				'application/json': components['schemas']['ReplaceDefaultTeachersRequest'];
 			};
 		};
 		responses: {
-			/** @description Course instructor role updated */
+			/** @description Activity default teachers replaced */
 			200: {
 				headers: {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
+					'application/json': components['schemas']['ApiResponse_Vec_DefaultTeacher'];
 				};
 			};
-			/** @description Malformed body or invalid instructor role */
+			/** @description Invalid default teachers */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -12708,7 +9855,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Course-plan management permission denied */
+			/** @description Academic catalog management permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -12717,7 +9864,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Classroom course or instructor assignment not found */
+			/** @description Catalog activity not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -12726,7 +9873,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Instructor has another timetable entry in the same period */
+			/** @description Catalog activity row version conflict */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -12735,38 +9882,27 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Course instructor role could not be updated */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
 		};
 	};
-	removeCourseInstructor: {
+	listActivityVersions: {
 		parameters: {
 			query?: never;
 			header?: never;
 			path: {
-				/** @description Classroom course ID */
+				/** @description Catalog activity ID */
 				id: string;
-				/** @description Instructor user ID */
-				uid: string;
 			};
 			cookie?: never;
 		};
 		requestBody?: never;
 		responses: {
-			/** @description Course instructor removed */
+			/** @description Activity versions */
 			200: {
 				headers: {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
+					'application/json': components['schemas']['ApiResponse_Vec_ActivityVersion'];
 				};
 			};
 			/** @description Authentication required */
@@ -12778,7 +9914,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Course-plan management permission denied */
+			/** @description Academic catalog read permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -12787,7 +9923,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Classroom course or instructor assignment not found */
+			/** @description Catalog activity not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -12796,236 +9932,34 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Promoted instructor has another timetable entry in the same period */
-			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Course instructor could not be removed */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
 		};
 	};
-	batchListCourseInstructorsFromQuery: {
-		parameters: {
-			query: {
-				course_ids: string;
-			};
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Course instructors grouped by course */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_HashMap_String_Vec_CourseInstructor'];
-				};
-			};
-			/** @description course_ids contains a malformed UUID */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Course-plan read permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Course instructors could not be loaded */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	batchListCourseInstructors: {
+	createActivityVersion: {
 		parameters: {
 			query?: never;
 			header?: never;
-			path?: never;
+			path: {
+				/** @description Catalog activity ID */
+				id: string;
+			};
 			cookie?: never;
 		};
 		requestBody: {
 			content: {
-				'application/json': components['schemas']['BatchListCourseInstructorsRequest'];
+				'application/json': components['schemas']['CreateActivityVersionRequest'];
 			};
 		};
 		responses: {
-			/** @description Course instructors grouped by course */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_HashMap_String_Vec_CourseInstructor'];
-				};
-			};
-			/** @description Malformed or invalid JSON request */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Course-plan read permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Course instructors could not be loaded */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	generateCoursesFromStudyPlan: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['GenerateCoursesFromPlanRequest'];
-			};
-		};
-		responses: {
-			/** @description Classroom courses generated from the assigned study plan */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_GenerateCoursesData'];
-				};
-			};
-			/** @description Classroom has no study plan or request is invalid */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Course-plan management permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Classroom or semester not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Courses could not be generated */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	createSemester: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['CreateSemesterRequest'];
-			};
-		};
-		responses: {
-			/** @description Semester created */
+			/** @description Activity version created */
 			201: {
 				headers: {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiResponse_Semester'];
+					'application/json': components['schemas']['ApiResponse_ActivityVersion'];
 				};
 			};
-			/** @description Invalid semester */
+			/** @description Invalid activity version */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -13043,7 +9977,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Academic structure management permission denied */
+			/** @description Academic catalog management permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -13052,7 +9986,16 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Semester already exists */
+			/** @description Catalog activity not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity version conflict */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -13061,8 +10004,49 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Semester could not be created */
-			500: {
+		};
+	};
+	getActivityVersion: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Activity version ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Activity version */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ActivityVersion'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic catalog read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity version not found */
+			404: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -13072,32 +10056,32 @@ export interface operations {
 			};
 		};
 	};
-	updateSemester: {
+	updateActivityVersion: {
 		parameters: {
 			query?: never;
 			header?: never;
 			path: {
-				/** @description Semester ID */
+				/** @description Activity version ID */
 				id: string;
 			};
 			cookie?: never;
 		};
 		requestBody: {
 			content: {
-				'application/json': components['schemas']['UpdateSemesterRequest'];
+				'application/json': components['schemas']['UpdateActivityVersionRequest'];
 			};
 		};
 		responses: {
-			/** @description Semester updated */
+			/** @description Activity version updated */
 			200: {
 				headers: {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiResponse_Semester'];
+					'application/json': components['schemas']['ApiResponse_ActivityVersion'];
 				};
 			};
-			/** @description Invalid semester */
+			/** @description Invalid or immutable activity version */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -13115,7 +10099,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Academic structure management permission denied */
+			/** @description Academic catalog management permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -13124,7 +10108,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Semester not found */
+			/** @description Activity version not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -13133,7 +10117,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Semester conflicts with an existing semester */
+			/** @description Activity version row version conflict */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -13142,39 +10126,34 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Semester could not be updated */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
 		};
 	};
-	deleteSemester: {
+	publishActivityVersion: {
 		parameters: {
 			query?: never;
 			header?: never;
 			path: {
-				/** @description Semester ID */
+				/** @description Activity version ID */
 				id: string;
 			};
 			cookie?: never;
 		};
-		requestBody?: never;
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['PublishVersionRequest'];
+			};
+		};
 		responses: {
-			/** @description Semester deleted */
+			/** @description Activity version published */
 			200: {
 				headers: {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
+					'application/json': components['schemas']['ApiResponse_ActivityVersion'];
 				};
 			};
-			/** @description Semester is in use */
+			/** @description Activity version cannot be published */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -13192,7 +10171,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Academic structure management permission denied */
+			/** @description Academic catalog management permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -13201,7 +10180,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Semester not found */
+			/** @description Activity version not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -13210,1719 +10189,8 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Semester could not be deleted */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	getAcademicStructure: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Academic structure */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_AcademicStructure'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Academic structure could not be loaded */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	updateStudyPlanActivity: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Study-plan activity ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['UpdatePlanActivityRequest'];
-			};
-		};
-		responses: {
-			/** @description Study-plan activity updated */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_StudyPlanVersionActivity'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum update permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Study-plan activity not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Plan activity could not be updated */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	deleteStudyPlanActivity: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Study-plan activity ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Study-plan activity deleted */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum delete permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Study-plan activity not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Plan activity could not be deleted */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	deleteStudyPlanSubject: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Study-plan subject row ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Study-plan subject deleted */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum delete permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Study-plan subject not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Study-plan subject could not be deleted */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	listStudyPlanVersions: {
-		parameters: {
-			query?: {
-				/** @description Return active versions only */
-				active_only?: boolean;
-				/** @description Filter by study plan */
-				study_plan_id?: string;
-			};
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Study-plan versions */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_StudyPlanVersion'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum read permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Study-plan versions could not be loaded */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	createStudyPlanVersion: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['CreateStudyPlanVersionRequest'];
-			};
-		};
-		responses: {
-			/** @description Study-plan version created */
-			201: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_StudyPlanVersion'];
-				};
-			};
-			/** @description Invalid study-plan version */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum create permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Referenced plan or academic year not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Study-plan version already exists */
+			/** @description Activity version row version conflict */
 			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Study-plan version could not be created */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	getStudyPlanVersion: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Study-plan version ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Study-plan version */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_StudyPlanVersion'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum read permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Study-plan version not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Study-plan version could not be loaded */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	updateStudyPlanVersion: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Study-plan version ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['UpdateStudyPlanVersionRequest'];
-			};
-		};
-		responses: {
-			/** @description Study-plan version updated */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_StudyPlanVersion'];
-				};
-			};
-			/** @description Invalid study-plan version update */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum update permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Study-plan version not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Study-plan version conflicts with an existing version */
-			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Study-plan version could not be updated */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	deleteStudyPlanVersion: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Study-plan version ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Study-plan version deleted */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum delete permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Study-plan version not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Study-plan version could not be deleted */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	listStudyPlanActivities: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Study-plan version ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Activities in the study-plan version */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_StudyPlanVersionActivity'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum read permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Study-plan version not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Plan activities could not be loaded */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	addStudyPlanActivity: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Study-plan version ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['CreatePlanActivityRequest'];
-			};
-		};
-		responses: {
-			/** @description Activity added to the study-plan version */
-			201: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_StudyPlanVersionActivity'];
-				};
-			};
-			/** @description Activity already exists in this plan scope or request is invalid */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum update permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Study-plan version, catalog, or grade level not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Plan activity could not be added */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	listStudyPlanSubjects: {
-		parameters: {
-			query?: {
-				/** @description Filter by grade level */
-				grade_level_id?: string;
-				/** @description Filter by term */
-				term?: string;
-			};
-			header?: never;
-			path: {
-				/** @description Study-plan version ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Subjects in the study-plan version */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_StudyPlanSubject'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum read permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Study-plan version not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Study-plan subjects could not be loaded */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	addSubjectsToStudyPlanVersion: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Study-plan version ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['AddSubjectsToVersionRequest'];
-			};
-		};
-		responses: {
-			/** @description Subjects added to the study-plan version */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_CountData_usize'];
-				};
-			};
-			/** @description Invalid subject assignment */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum update permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Study-plan version or referenced item not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Subjects could not be added */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	listStudyPlans: {
-		parameters: {
-			query?: {
-				/** @description Return active plans only */
-				active_only?: boolean;
-			};
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Study plans */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_StudyPlan'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum read permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Study plans could not be loaded */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	createStudyPlan: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['CreateStudyPlanRequest'];
-			};
-		};
-		responses: {
-			/** @description Study plan created */
-			201: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_StudyPlan'];
-				};
-			};
-			/** @description Invalid study plan */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum create permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Study plan code already exists */
-			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Study plan could not be created */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	getStudyPlan: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Study plan ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Study plan */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_StudyPlan'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum read permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Study plan not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Study plan could not be loaded */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	updateStudyPlan: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Study plan ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['UpdateStudyPlanRequest'];
-			};
-		};
-		responses: {
-			/** @description Study plan updated */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_StudyPlan'];
-				};
-			};
-			/** @description Invalid study plan update */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum update permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Study plan not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Study plan conflicts with an existing plan */
-			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Study plan could not be updated */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	deleteStudyPlan: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Study plan ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Study plan deleted */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum delete permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Study plan not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Study plan could not be deleted */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	listSubjects: {
-		parameters: {
-			query?: {
-				/** @description Resolve versions active in an academic year */
-				active_in_year_id?: string;
-				/** @description Return active subjects only */
-				active_only?: boolean;
-				/** @description Filter by subject group */
-				group_id?: string;
-				/** @description Return the latest version per code */
-				latest_only?: boolean;
-				/** @description Search code or name */
-				search?: string;
-				/** @description Filter by term */
-				term?: string;
-				/** @description Filter by subject type */
-				type?: string;
-			};
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Subjects */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_Subject'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum read permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Subjects could not be loaded */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	createSubject: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['CreateSubjectRequest'];
-			};
-		};
-		responses: {
-			/** @description Subject created */
-			201: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_Subject'];
-				};
-			};
-			/** @description Invalid or duplicate subject */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum create permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Subject could not be created */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	updateSubject: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Subject ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['UpdateSubjectRequest'];
-			};
-		};
-		responses: {
-			/** @description Subject updated */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_Subject'];
-				};
-			};
-			/** @description Invalid subject update */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum update permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Subject not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Subject could not be updated */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	deleteSubject: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Subject ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Subject deleted */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Subject is in use */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum delete permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Subject not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Subject could not be deleted */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	listSubjectDefaultInstructors: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Subject ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Subject default instructors */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_SubjectDefaultInstructor'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum access denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Subject not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Default instructors could not be loaded */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	addSubjectDefaultInstructor: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Subject ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['AddSubjectDefaultInstructorRequest'];
-			};
-		};
-		responses: {
-			/** @description Default instructor added */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Invalid instructor role */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum update permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Subject not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Default instructor could not be added */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	updateSubjectDefaultInstructorRole: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Subject ID */
-				id: string;
-				/** @description Instructor user ID */
-				uid: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['UpdateSubjectDefaultInstructorRoleRequest'];
-			};
-		};
-		responses: {
-			/** @description Default instructor role updated */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Invalid instructor role */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum update permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Subject or instructor assignment not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Default instructor role could not be updated */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	removeSubjectDefaultInstructor: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Subject ID */
-				id: string;
-				/** @description Instructor user ID */
-				uid: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Default instructor removed */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum update permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Subject or instructor assignment not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Default instructor could not be removed */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	batchListSubjectDefaultInstructors: {
-		parameters: {
-			query: {
-				/** @description Comma-separated subject IDs */
-				subject_ids: string;
-			};
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Default instructors grouped by subject ID */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_HashMap_String_Vec_SubjectDefaultInstructor'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum read permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Default instructors could not be loaded */
-			500: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -14959,17 +10227,8 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Curriculum read permission denied */
+			/** @description Academic catalog read permission denied */
 			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Subject groups could not be loaded */
-			500: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -14979,26 +10238,35 @@ export interface operations {
 			};
 		};
 	};
-	getDailyTeachingOverview: {
+	createSubjectGroup: {
 		parameters: {
-			query?: {
-				academic_semester_id?: string;
-				date?: string;
-				include_empty_teachers?: boolean;
-			};
+			query?: never;
 			header?: never;
 			path?: never;
 			cookie?: never;
 		};
-		requestBody?: never;
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateSubjectGroupRequest'];
+			};
+		};
 		responses: {
-			/** @description Daily teaching overview */
-			200: {
+			/** @description Subject group created */
+			201: {
 				headers: {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiResponse_DailyTeachingOverview'];
+					'application/json': components['schemas']['ApiResponse_SubjectGroup'];
+				};
+			};
+			/** @description Invalid subject group */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
 			/** @description Authentication required */
@@ -15010,7 +10278,4073 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Daily teaching permission required */
+			/** @description Academic catalog management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Subject group conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getSubjectGroup: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Subject group ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Subject group */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SubjectGroup'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic catalog read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Subject group not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteSubjectGroup: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Subject group ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Subject group deleted */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Subject group cannot be deleted */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic catalog management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Subject group not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Subject group has dependent records */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateSubjectGroup: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Subject group ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateSubjectGroupRequest'];
+			};
+		};
+		responses: {
+			/** @description Subject group updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SubjectGroup'];
+				};
+			};
+			/** @description Invalid subject group */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic catalog management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Subject group not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Subject group row version conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getSubjectVersion: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Subject version ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Subject version */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SubjectVersion'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic catalog read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Subject version not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateSubjectVersion: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Subject version ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateSubjectVersionRequest'];
+			};
+		};
+		responses: {
+			/** @description Subject version updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SubjectVersion'];
+				};
+			};
+			/** @description Invalid or immutable subject version */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic catalog management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Subject version not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Subject version row version conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	publishSubjectVersion: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Subject version ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['PublishVersionRequest'];
+			};
+		};
+		responses: {
+			/** @description Subject version published */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SubjectVersion'];
+				};
+			};
+			/** @description Subject version cannot be published */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic catalog management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Subject version not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Subject version row version conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listCatalogSubjects: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Catalog subjects */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_CatalogSubject'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic catalog read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createCatalogSubject: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateCatalogSubjectRequest'];
+			};
+		};
+		responses: {
+			/** @description Catalog subject created */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CatalogSubject'];
+				};
+			};
+			/** @description Invalid catalog subject */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic catalog management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Catalog subject conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getCatalogSubject: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Catalog subject ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Catalog subject */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CatalogSubject'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic catalog read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Catalog subject not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateCatalogSubject: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Catalog subject ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateCatalogSubjectRequest'];
+			};
+		};
+		responses: {
+			/** @description Catalog subject updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CatalogSubject'];
+				};
+			};
+			/** @description Invalid catalog subject */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic catalog management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Catalog subject not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Catalog subject row version conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listSubjectDefaultTeachers: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Catalog subject ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Subject default teachers */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_DefaultTeacher'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic catalog read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Catalog subject not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	replaceSubjectDefaultTeachers: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Catalog subject ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ReplaceDefaultTeachersRequest'];
+			};
+		};
+		responses: {
+			/** @description Subject default teachers replaced */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_DefaultTeacher'];
+				};
+			};
+			/** @description Invalid default teachers */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic catalog management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Catalog subject not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Catalog subject row version conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listSubjectVersions: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Catalog subject ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Subject versions */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_SubjectVersion'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic catalog read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Catalog subject not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createSubjectVersion: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Catalog subject ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateSubjectVersionRequest'];
+			};
+		};
+		responses: {
+			/** @description Subject version created */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SubjectVersion'];
+				};
+			};
+			/** @description Invalid subject version */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic catalog management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Catalog subject not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Subject version conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listAcademicContextOptions: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Academic context options */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AcademicContextOptions'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic context read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listCurricula: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Curricula */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_Curriculum'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic curriculum read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createCurriculum: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateCurriculumRequest'];
+			};
+		};
+		responses: {
+			/** @description Curriculum created */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Curriculum'];
+				};
+			};
+			/** @description Invalid curriculum */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic curriculum management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Curriculum conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getCurriculum: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Curriculum ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Curriculum */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Curriculum'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic curriculum read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Curriculum not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateCurriculum: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Curriculum ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateCurriculumRequest'];
+			};
+		};
+		responses: {
+			/** @description Curriculum updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Curriculum'];
+				};
+			};
+			/** @description Invalid curriculum */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic curriculum management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Curriculum not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Curriculum row version conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listCurriculumVersions: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Curriculum ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Curriculum versions */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_CurriculumVersion'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic curriculum read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Curriculum not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createCurriculumVersion: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Curriculum ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateCurriculumVersionRequest'];
+			};
+		};
+		responses: {
+			/** @description Curriculum version created */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CurriculumVersion'];
+				};
+			};
+			/** @description Invalid curriculum version */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic curriculum management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Curriculum not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Curriculum version conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getCurriculumVersion: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Curriculum version ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Curriculum version */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CurriculumVersion'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic curriculum read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Curriculum version not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateCurriculumVersion: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Curriculum version ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateCurriculumVersionRequest'];
+			};
+		};
+		responses: {
+			/** @description Curriculum version updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CurriculumVersion'];
+				};
+			};
+			/** @description Invalid or immutable curriculum version */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic curriculum management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Curriculum version not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Curriculum version row version conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listStudyPrograms: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Curriculum version ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Study programs */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_StudyProgram'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic curriculum read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Curriculum version not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createStudyProgram: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Curriculum version ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateStudyProgramRequest'];
+			};
+		};
+		responses: {
+			/** @description Study program created */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_StudyProgram'];
+				};
+			};
+			/** @description Invalid study program */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic curriculum management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Curriculum version not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Study program conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	publishCurriculumVersion: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Curriculum version ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['PublishVersionRequest'];
+			};
+		};
+		responses: {
+			/** @description Curriculum version published */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CurriculumVersion'];
+				};
+			};
+			/** @description Curriculum version cannot be published */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic curriculum management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Curriculum version not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Curriculum version row version conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listGradeProgressions: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Grade progression rules */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_GradeProgressionSet'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic year read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	replaceGradeProgressions: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ReplaceGradeProgressionsRequest'];
+			};
+		};
+		responses: {
+			/** @description Grade progression rules replaced */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_GradeProgressionSet'];
+				};
+			};
+			/** @description Invalid grade progression rules */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic year management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Grade progression row version conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listHomerooms: {
+		parameters: {
+			query: {
+				academicYearId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Homerooms in the selected year */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_Homeroom'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Homeroom read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createHomeroom: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateHomeroomRequest'];
+			};
+		};
+		responses: {
+			/** @description Homeroom created */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Homeroom'];
+				};
+			};
+			/** @description Invalid homeroom */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Homeroom management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Homeroom conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getHomeroom: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Homeroom ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Homeroom */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Homeroom'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Homeroom read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Homeroom not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateHomeroom: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Homeroom ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateHomeroomRequest'];
+			};
+		};
+		responses: {
+			/** @description Homeroom updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Homeroom'];
+				};
+			};
+			/** @description Invalid homeroom */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Homeroom management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Homeroom not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Homeroom row version conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listHomeroomAdvisors: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Homeroom ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Homeroom advisors */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_HomeroomAdvisor'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Homeroom read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Homeroom not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	replaceHomeroomAdvisors: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Homeroom ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ReplaceHomeroomAdvisorsRequest'];
+			};
+		};
+		responses: {
+			/** @description Homeroom advisors replaced */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_HomeroomAdvisor'];
+				};
+			};
+			/** @description Invalid homeroom advisors */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Homeroom management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Homeroom not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Homeroom row version conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getLearningGroup: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Learning group ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Learning group */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LearningGroup'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning group read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning group not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateLearningGroup: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Learning group ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateLearningGroupRequest'];
+			};
+		};
+		responses: {
+			/** @description Learning group updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LearningGroup'];
+				};
+			};
+			/** @description Invalid learning group */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning group management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning group not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning group row version conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listLearningGroupHomerooms: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Learning group ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Learning group homeroom IDs */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LearningGroupHomeroomIds'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning group read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning group not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	replaceLearningGroupHomerooms: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Learning group ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ReplaceLearningGroupHomeroomsRequest'];
+			};
+		};
+		responses: {
+			/** @description Learning group homerooms replaced */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LearningGroup'];
+				};
+			};
+			/** @description Invalid learning group homerooms */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning group management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning group or homeroom not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning group row version conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	previewLearningGroupRoster: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Learning group ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Learning group roster preview */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_RosterPreview'];
+				};
+			};
+			/** @description Learning group roster cannot be previewed */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning group management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning group not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	applyLearningGroupRoster: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Learning group ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ApplyRosterRequest'];
+			};
+		};
+		responses: {
+			/** @description Learning group roster applied */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LearningGroup'];
+				};
+			};
+			/** @description Invalid learning group roster */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning group management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning group not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning group roster source conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	publishLearningGroupRoster: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Learning group ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['PublishRosterRequest'];
+			};
+		};
+		responses: {
+			/** @description Learning group roster published */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LearningGroup'];
+				};
+			};
+			/** @description Learning group roster cannot be published */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning group management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning group not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning group roster publish conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listLearningGroupTeachers: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Learning group ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Learning group teachers */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_TeacherAssignmentInput'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning group read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning group not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	replaceLearningGroupTeachers: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Learning group ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ReplaceLearningGroupTeachersRequest'];
+			};
+		};
+		responses: {
+			/** @description Learning group teachers replaced */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LearningGroup'];
+				};
+			};
+			/** @description Invalid learning group teachers */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning group management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning group or teacher not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning group row version conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listLearningOfferings: {
+		parameters: {
+			query: {
+				academicTermId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Learning offerings in the selected term */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_LearningOffering'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning offering read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createLearningOffering: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateLearningOfferingRequest'];
+			};
+		};
+		responses: {
+			/** @description Learning offering created */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LearningOffering'];
+				};
+			};
+			/** @description Invalid learning offering */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning offering management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning offering conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getLearningOffering: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Learning offering ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Learning offering */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LearningOffering'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning offering read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning offering not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateLearningOffering: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Learning offering ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateLearningOfferingRequest'];
+			};
+		};
+		responses: {
+			/** @description Learning offering updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LearningOffering'];
+				};
+			};
+			/** @description Invalid or immutable learning offering */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning offering management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning offering not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning offering row version conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listLearningGroups: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Learning offering ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Learning groups */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_LearningGroup'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning offering read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning offering not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createLearningGroup: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Learning offering ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateLearningGroupRequest'];
+			};
+		};
+		responses: {
+			/** @description Learning group created */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LearningGroup'];
+				};
+			};
+			/** @description Invalid learning group */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning offering management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning offering not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning group conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	publishLearningOffering: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Learning offering ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['PublishLearningOfferingRequest'];
+			};
+		};
+		responses: {
+			/** @description Learning offering published */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LearningOffering'];
+				};
+			};
+			/** @description Learning offering cannot be published */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning offering management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning offering not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning offering publish conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	applyLearningOfferingsFromCurriculum: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ApplyCurriculumOfferingsRequest'];
+			};
+		};
+		responses: {
+			/** @description Curriculum offerings applied */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ApplyCurriculumOfferingsResult'];
+				};
+			};
+			/** @description Invalid curriculum offering request */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning offering management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Curriculum source hash conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	previewLearningOfferingsFromCurriculum: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['PreviewCurriculumOfferingsRequest'];
+			};
+		};
+		responses: {
+			/** @description Curriculum offering preview */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CurriculumOfferingPreview'];
+				};
+			};
+			/** @description Invalid curriculum offering preview */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning offering management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Curriculum source conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	transferHomeroomPlacement: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Current homeroom placement ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['TransferHomeroomPlacementRequest'];
+			};
+		};
+		responses: {
+			/** @description Homeroom placement transferred */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_HomeroomPlacementTransfer'];
+				};
+			};
+			/** @description Invalid homeroom placement transfer */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student academic year management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Homeroom placement or target homeroom not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Homeroom placement transfer conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listStudentAcademicYears: {
+		parameters: {
+			query: {
+				academicYearId: string;
+				gradeLevelId?: string;
+				homeroomId?: string;
+				status?: components['schemas']['StudentAcademicYearStatus'];
+				studentId?: string;
+				studyProgramId?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Student academic years */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_StudentAcademicYear'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student academic year read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createStudentAcademicYear: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateStudentAcademicYearRequest'];
+			};
+		};
+		responses: {
+			/** @description Student academic year created */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_StudentAcademicYear'];
+				};
+			};
+			/** @description Invalid student academic year */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student academic year management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student academic year conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getStudentAcademicYear: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Student academic year ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Student academic year */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_StudentAcademicYear'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student academic year read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student academic year not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateStudentAcademicYear: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Student academic year ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateStudentAcademicYearRequest'];
+			};
+		};
+		responses: {
+			/** @description Student academic year updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_StudentAcademicYear'];
+				};
+			};
+			/** @description Invalid student academic year */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student academic year management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student academic year not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student academic year row version conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createHomeroomPlacement: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Student academic year ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateHomeroomPlacementRequest'];
+			};
+		};
+		responses: {
+			/** @description Homeroom placement created */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_HomeroomPlacement'];
+				};
+			};
+			/** @description Invalid homeroom placement */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student academic year management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student academic year or homeroom not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Homeroom placement conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getStudyProgram: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Study program ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Study program */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_StudyProgram'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic curriculum read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Study program not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateStudyProgram: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Study program ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateStudyProgramRequest'];
+			};
+		};
+		responses: {
+			/** @description Study program updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_StudyProgram'];
+				};
+			};
+			/** @description Invalid or immutable study program */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic curriculum management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Study program not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Study program row version conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listProgramRequirements: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Study program ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Study program requirements */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_ProgramRequirement'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic curriculum read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Study program not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	replaceProgramRequirements: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Study program ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ReplaceProgramRequirementsRequest'];
+			};
+		};
+		responses: {
+			/** @description Study program requirements replaced */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_ProgramRequirement'];
+				};
+			};
+			/** @description Invalid or immutable requirements */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic curriculum management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Study program not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Study program row version conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listAcademicTerms: {
+		parameters: {
+			query: {
+				academicYearId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Academic terms in the selected year */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_AcademicTerm'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic term read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createAcademicTerm: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateAcademicTermRequest'];
+			};
+		};
+		responses: {
+			/** @description Academic term created */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AcademicTerm'];
+				};
+			};
+			/** @description Invalid academic term */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic term management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic term conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getAcademicTerm: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Academic term ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Academic term */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AcademicTerm'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic term read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic term not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteAcademicTerm: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Academic term ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Academic term deleted */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Academic term cannot be deleted */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic term management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic term not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic term has dependent records */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateAcademicTerm: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Academic term ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateAcademicTermRequest'];
+			};
+		};
+		responses: {
+			/** @description Academic term updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AcademicTerm'];
+				};
+			};
+			/** @description Invalid academic term */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic term management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic term not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic term row version conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getDailyTeachingOverview: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				date?: string;
+				includeEmptyTeachers?: boolean;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_DailyTeachingOverview'];
+				};
+			};
+		};
+	};
+	listAcademicYears: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Academic years */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_AcademicYear'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic year read permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -15061,7 +14395,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Academic structure management permission denied */
+			/** @description Academic year management permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -15070,7 +14404,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Academic year already exists */
+			/** @description Academic year conflict */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -15079,8 +14413,49 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Academic year could not be created */
-			500: {
+		};
+	};
+	getAcademicYear: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Academic year ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Academic year */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AcademicYear'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic year read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic year not found */
+			404: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -15133,7 +14508,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Academic structure management permission denied */
+			/** @description Academic year management permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -15151,207 +14526,8 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Academic year conflicts with an existing year */
+			/** @description Academic year row version conflict */
 			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Academic year could not be updated */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	setActiveAcademicYear: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Academic year ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Active academic year updated */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Academic structure management permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Academic year not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Active academic year could not be updated */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	getAcademicYearLevels: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Academic year ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Grade level IDs enabled for the academic year */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_String'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Academic structure read permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Academic year not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Academic year levels could not be loaded */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	updateAcademicYearLevels: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Academic year ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['UpdateYearLevelsRequest'];
-			};
-		};
-		responses: {
-			/** @description Academic year levels updated */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Invalid grade level selection */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Academic structure management permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Academic year not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Academic year levels could not be updated */
-			500: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -20168,21 +19344,14 @@ export interface operations {
 	lookupAcademicYears: {
 		parameters: {
 			query?: {
-				/** @description Filter by specific Academic Year ID (for grade_levels, classrooms) */
-				academic_year_id?: string;
 				/** @description Filter for active items only (default: true) */
-				active_only?: boolean;
-				/** @description Filter by current active Academic Year (default: false unless specified) */
-				current_year?: boolean;
-				/** @description Filter by level type (kindergarten, primary, secondary) */
-				level_type?: string;
+				activeOnly?: boolean;
 				/** @description Maximum items to return (default: 100) */
 				limit?: number;
 				/** @description Filter to organization units where the current user is a member */
-				member_only?: boolean;
+				memberOnly?: boolean;
 				/** @description Search term */
 				search?: string;
-				subject_type?: string;
 			};
 			header?: never;
 			path?: never;
@@ -20210,69 +19379,21 @@ export interface operations {
 			};
 		};
 	};
-	lookupClassrooms: {
-		parameters: {
-			query?: {
-				/** @description Filter by specific Academic Year ID (for grade_levels, classrooms) */
-				academic_year_id?: string;
-				/** @description Filter for active items only (default: true) */
-				active_only?: boolean;
-				/** @description Filter by current active Academic Year (default: false unless specified) */
-				current_year?: boolean;
-				/** @description Filter by level type (kindergarten, primary, secondary) */
-				level_type?: string;
-				/** @description Maximum items to return (default: 100) */
-				limit?: number;
-				/** @description Filter to organization units where the current user is a member */
-				member_only?: boolean;
-				/** @description Search term */
-				search?: string;
-				subject_type?: string;
-			};
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Classroom lookup items */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_ClassroomLookupItem'];
-				};
-			};
-			/** @description Authentication required or account inactive */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
 	lookupGradeLevels: {
 		parameters: {
-			query?: {
-				/** @description Filter by specific Academic Year ID (for grade_levels, classrooms) */
-				academic_year_id?: string;
+			query: {
+				/** @description Academic year selected by the caller. The server never infers the active year. */
+				academicYearId: string;
 				/** @description Filter for active items only (default: true) */
-				active_only?: boolean;
-				/** @description Filter by current active Academic Year (default: false unless specified) */
-				current_year?: boolean;
+				activeOnly?: boolean;
 				/** @description Filter by level type (kindergarten, primary, secondary) */
-				level_type?: string;
+				levelType?: string;
 				/** @description Maximum items to return (default: 100) */
 				limit?: number;
-				/** @description Filter to organization units where the current user is a member */
-				member_only?: boolean;
 				/** @description Search term */
 				search?: string;
-				subject_type?: string;
+				/** @description Filter by course or activity subject type */
+				subjectType?: string;
 			};
 			header?: never;
 			path?: never;
@@ -20300,24 +19421,59 @@ export interface operations {
 			};
 		};
 	};
+	lookupHomerooms: {
+		parameters: {
+			query: {
+				/** @description Academic year selected by the caller. The server never infers the active year. */
+				academicYearId: string;
+				/** @description Filter for active items only (default: true) */
+				activeOnly?: boolean;
+				/** @description Filter by level type (kindergarten, primary, secondary) */
+				levelType?: string;
+				/** @description Maximum items to return (default: 100) */
+				limit?: number;
+				/** @description Search term */
+				search?: string;
+				/** @description Filter by course or activity subject type */
+				subjectType?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Homeroom lookup items */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_HomeroomLookupItem'];
+				};
+			};
+			/** @description Authentication required or account inactive */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	lookupOrganizationUnits: {
 		parameters: {
 			query?: {
-				/** @description Filter by specific Academic Year ID (for grade_levels, classrooms) */
-				academic_year_id?: string;
 				/** @description Filter for active items only (default: true) */
-				active_only?: boolean;
-				/** @description Filter by current active Academic Year (default: false unless specified) */
-				current_year?: boolean;
-				/** @description Filter by level type (kindergarten, primary, secondary) */
-				level_type?: string;
+				activeOnly?: boolean;
 				/** @description Maximum items to return (default: 100) */
 				limit?: number;
 				/** @description Filter to organization units where the current user is a member */
-				member_only?: boolean;
+				memberOnly?: boolean;
 				/** @description Search term */
 				search?: string;
-				subject_type?: string;
 			};
 			header?: never;
 			path?: never;
@@ -20389,21 +19545,14 @@ export interface operations {
 	lookupRoles: {
 		parameters: {
 			query?: {
-				/** @description Filter by specific Academic Year ID (for grade_levels, classrooms) */
-				academic_year_id?: string;
 				/** @description Filter for active items only (default: true) */
-				active_only?: boolean;
-				/** @description Filter by current active Academic Year (default: false unless specified) */
-				current_year?: boolean;
-				/** @description Filter by level type (kindergarten, primary, secondary) */
-				level_type?: string;
+				activeOnly?: boolean;
 				/** @description Maximum items to return (default: 100) */
 				limit?: number;
 				/** @description Filter to organization units where the current user is a member */
-				member_only?: boolean;
+				memberOnly?: boolean;
 				/** @description Search term */
 				search?: string;
-				subject_type?: string;
 			};
 			header?: never;
 			path?: never;
@@ -20472,21 +19621,14 @@ export interface operations {
 	lookupStaff: {
 		parameters: {
 			query?: {
-				/** @description Filter by specific Academic Year ID (for grade_levels, classrooms) */
-				academic_year_id?: string;
 				/** @description Filter for active items only (default: true) */
-				active_only?: boolean;
-				/** @description Filter by current active Academic Year (default: false unless specified) */
-				current_year?: boolean;
-				/** @description Filter by level type (kindergarten, primary, secondary) */
-				level_type?: string;
+				activeOnly?: boolean;
 				/** @description Maximum items to return (default: 100) */
 				limit?: number;
 				/** @description Filter to organization units where the current user is a member */
-				member_only?: boolean;
+				memberOnly?: boolean;
 				/** @description Search term */
 				search?: string;
-				subject_type?: string;
 			};
 			header?: never;
 			path?: never;
@@ -20516,22 +19658,19 @@ export interface operations {
 	};
 	lookupStudents: {
 		parameters: {
-			query?: {
-				/** @description Filter by specific Academic Year ID (for grade_levels, classrooms) */
-				academic_year_id?: string;
+			query: {
+				/** @description Academic year selected by the caller. The server never infers the active year. */
+				academicYearId: string;
 				/** @description Filter for active items only (default: true) */
-				active_only?: boolean;
-				/** @description Filter by current active Academic Year (default: false unless specified) */
-				current_year?: boolean;
+				activeOnly?: boolean;
 				/** @description Filter by level type (kindergarten, primary, secondary) */
-				level_type?: string;
+				levelType?: string;
 				/** @description Maximum items to return (default: 100) */
 				limit?: number;
-				/** @description Filter to organization units where the current user is a member */
-				member_only?: boolean;
 				/** @description Search term */
 				search?: string;
-				subject_type?: string;
+				/** @description Filter by course or activity subject type */
+				subjectType?: string;
 			};
 			header?: never;
 			path?: never;
@@ -20561,22 +19700,19 @@ export interface operations {
 	};
 	lookupSubjects: {
 		parameters: {
-			query?: {
-				/** @description Filter by specific Academic Year ID (for grade_levels, classrooms) */
-				academic_year_id?: string;
+			query: {
+				/** @description Academic year selected by the caller. The server never infers the active year. */
+				academicYearId: string;
 				/** @description Filter for active items only (default: true) */
-				active_only?: boolean;
-				/** @description Filter by current active Academic Year (default: false unless specified) */
-				current_year?: boolean;
+				activeOnly?: boolean;
 				/** @description Filter by level type (kindergarten, primary, secondary) */
-				level_type?: string;
+				levelType?: string;
 				/** @description Maximum items to return (default: 100) */
 				limit?: number;
-				/** @description Filter to organization units where the current user is a member */
-				member_only?: boolean;
 				/** @description Search term */
 				search?: string;
-				subject_type?: string;
+				/** @description Filter by course or activity subject type */
+				subjectType?: string;
 			};
 			header?: never;
 			path?: never;
@@ -20824,8 +19960,8 @@ export interface operations {
 	};
 	listMyExamSchedules: {
 		parameters: {
-			query?: {
-				academic_semester_id?: string;
+			query: {
+				academicTermId: string;
 			};
 			header?: never;
 			path?: never;
@@ -20852,57 +19988,6 @@ export interface operations {
 				};
 			};
 			/** @description Active student account required */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	getMyTimetable: {
-		parameters: {
-			query?: {
-				academic_semester_id?: string;
-				day_of_week?: string;
-				include_team_ghosts?: boolean;
-			};
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Current student's or staff member's timetable with configured periods */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_MyTimetableData'];
-				};
-			};
-			/** @description Parent accounts must use the parent timetable route */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Unsupported user type */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -21889,8 +20974,8 @@ export interface operations {
 	};
 	getParentChildExamSchedule: {
 		parameters: {
-			query?: {
-				academic_semester_id?: string;
+			query: {
+				academicTermId: string;
 			};
 			header?: never;
 			path: {
@@ -21932,8 +21017,8 @@ export interface operations {
 	};
 	getParentChildTimetable: {
 		parameters: {
-			query?: {
-				academic_semester_id?: string;
+			query: {
+				academicTermId: string;
 			};
 			header?: never;
 			path: {
@@ -23158,7 +22243,9 @@ export interface operations {
 	};
 	getStaffDashboard: {
 		parameters: {
-			query?: never;
+			query: {
+				academicYearId: string;
+			};
 			header?: never;
 			path?: never;
 			cookie?: never;
@@ -23196,8 +22283,8 @@ export interface operations {
 	};
 	listStaffExamSchedules: {
 		parameters: {
-			query?: {
-				academic_semester_id?: string;
+			query: {
+				academicTermId: string;
 			};
 			header?: never;
 			path?: never;
@@ -23224,6 +22311,52 @@ export interface operations {
 				};
 			};
 			/** @description Active staff account required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getStaffTimetable: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				dayOfWeek?: string;
+				entryType?: string;
+				homeroomId?: string;
+				instructorId?: string;
+				learningGroupId?: string;
+				roomId?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Current staff timetable in the selected term */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_TimetableEntry'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Staff timetable access denied */
 			403: {
 				headers: {
 					[name: string]: unknown;

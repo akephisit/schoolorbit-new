@@ -81,12 +81,14 @@ pub struct UpdateTimetableEntryRequest {
 }
 
 #[derive(Debug, Clone, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DeleteTimetableEntryQuery {
     pub row_version: i64,
 }
 
 #[derive(Debug, Clone, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TimetableQuery {
     pub academic_term_id: Uuid,
@@ -140,6 +142,7 @@ pub struct SwapTimetableEntriesResponse {
 }
 
 #[derive(Debug, Clone, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TimetableOccupancyQuery {
     pub academic_term_id: Uuid,

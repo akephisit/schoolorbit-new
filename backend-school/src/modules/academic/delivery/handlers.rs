@@ -6,7 +6,7 @@ use axum::{
 };
 use uuid::Uuid;
 
-use crate::api_response::ApiResponse;
+use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
 use crate::middleware::permission::ActorContext;
 use crate::modules::auth::session_service::AuthenticatedSession;
@@ -44,6 +44,18 @@ fn signal_delivery_changed(
     );
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/academic/offerings",
+    operation_id = "listLearningOfferings",
+    tag = "academic",
+    params(LearningOfferingQuery),
+    responses(
+        (status = 200, description = "Learning offerings in the selected term", body = ApiResponse<Vec<LearningOffering>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning offering read permission denied", body = ApiErrorResponse)
+    )
+)]
 pub async fn list_offerings(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -61,6 +73,20 @@ pub async fn list_offerings(
     ))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/academic/offerings",
+    operation_id = "createLearningOffering",
+    tag = "academic",
+    request_body = CreateLearningOfferingRequest,
+    responses(
+        (status = 201, description = "Learning offering created", body = ApiResponse<LearningOffering>),
+        (status = 400, description = "Invalid learning offering", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning offering management permission denied", body = ApiErrorResponse),
+        (status = 409, description = "Learning offering conflict", body = ApiErrorResponse)
+    )
+)]
 pub async fn create_offering(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -94,6 +120,20 @@ pub async fn create_offering(
     Ok(created(offering))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/academic/offerings/preview-from-curriculum",
+    operation_id = "previewLearningOfferingsFromCurriculum",
+    tag = "academic",
+    request_body = PreviewCurriculumOfferingsRequest,
+    responses(
+        (status = 200, description = "Curriculum offering preview", body = ApiResponse<CurriculumOfferingPreview>),
+        (status = 400, description = "Invalid curriculum offering preview", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning offering management permission denied", body = ApiErrorResponse),
+        (status = 409, description = "Curriculum source conflict", body = ApiErrorResponse)
+    )
+)]
 pub async fn preview_offerings_from_curriculum(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -113,6 +153,20 @@ pub async fn preview_offerings_from_curriculum(
     .await?))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/academic/offerings/apply-from-curriculum",
+    operation_id = "applyLearningOfferingsFromCurriculum",
+    tag = "academic",
+    request_body = ApplyCurriculumOfferingsRequest,
+    responses(
+        (status = 200, description = "Curriculum offerings applied", body = ApiResponse<ApplyCurriculumOfferingsResult>),
+        (status = 400, description = "Invalid curriculum offering request", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning offering management permission denied", body = ApiErrorResponse),
+        (status = 409, description = "Curriculum source hash conflict", body = ApiErrorResponse)
+    )
+)]
 pub async fn apply_offerings_from_curriculum(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -151,6 +205,19 @@ pub async fn apply_offerings_from_curriculum(
     Ok(ok(result))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/academic/offerings/{id}",
+    operation_id = "getLearningOffering",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Learning offering ID")),
+    responses(
+        (status = 200, description = "Learning offering", body = ApiResponse<LearningOffering>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning offering read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Learning offering not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn get_offering(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -167,6 +234,22 @@ pub async fn get_offering(
     Ok(ok(offerings::get(&context.tenant.pool, id).await?))
 }
 
+#[utoipa::path(
+    patch,
+    path = "/api/academic/offerings/{id}",
+    operation_id = "updateLearningOffering",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Learning offering ID")),
+    request_body = UpdateLearningOfferingRequest,
+    responses(
+        (status = 200, description = "Learning offering updated", body = ApiResponse<LearningOffering>),
+        (status = 400, description = "Invalid or immutable learning offering", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning offering management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Learning offering not found", body = ApiErrorResponse),
+        (status = 409, description = "Learning offering row version conflict", body = ApiErrorResponse)
+    )
+)]
 pub async fn update_offering(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -209,6 +292,22 @@ pub async fn update_offering(
     Ok(ok(offering))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/academic/offerings/{id}/publish",
+    operation_id = "publishLearningOffering",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Learning offering ID")),
+    request_body = PublishLearningOfferingRequest,
+    responses(
+        (status = 200, description = "Learning offering published", body = ApiResponse<LearningOffering>),
+        (status = 400, description = "Learning offering cannot be published", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning offering management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Learning offering not found", body = ApiErrorResponse),
+        (status = 409, description = "Learning offering publish conflict", body = ApiErrorResponse)
+    )
+)]
 pub async fn publish_offering(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -237,6 +336,19 @@ pub async fn publish_offering(
     Ok(ok(offering))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/academic/offerings/{id}/groups",
+    operation_id = "listLearningGroups",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Learning offering ID")),
+    responses(
+        (status = 200, description = "Learning groups", body = ApiResponse<Vec<LearningGroup>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning offering read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Learning offering not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn list_groups(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -253,6 +365,22 @@ pub async fn list_groups(
     Ok(ok(groups::list(&context.tenant.pool, offering_id).await?))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/academic/offerings/{id}/groups",
+    operation_id = "createLearningGroup",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Learning offering ID")),
+    request_body = CreateLearningGroupRequest,
+    responses(
+        (status = 201, description = "Learning group created", body = ApiResponse<LearningGroup>),
+        (status = 400, description = "Invalid learning group", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning offering management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Learning offering not found", body = ApiErrorResponse),
+        (status = 409, description = "Learning group conflict", body = ApiErrorResponse)
+    )
+)]
 pub async fn create_group(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -278,6 +406,19 @@ pub async fn create_group(
     Ok(created(group))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/academic/learning-groups/{id}",
+    operation_id = "getLearningGroup",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Learning group ID")),
+    responses(
+        (status = 200, description = "Learning group", body = ApiResponse<LearningGroup>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning group read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Learning group not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn get_group(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -294,6 +435,22 @@ pub async fn get_group(
     Ok(ok(groups::get(&context.tenant.pool, id).await?))
 }
 
+#[utoipa::path(
+    patch,
+    path = "/api/academic/learning-groups/{id}",
+    operation_id = "updateLearningGroup",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Learning group ID")),
+    request_body = UpdateLearningGroupRequest,
+    responses(
+        (status = 200, description = "Learning group updated", body = ApiResponse<LearningGroup>),
+        (status = 400, description = "Invalid learning group", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning group management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Learning group not found", body = ApiErrorResponse),
+        (status = 409, description = "Learning group row version conflict", body = ApiErrorResponse)
+    )
+)]
 pub async fn update_group(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -313,6 +470,19 @@ pub async fn update_group(
     Ok(ok(group))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/academic/learning-groups/{id}/homerooms",
+    operation_id = "listLearningGroupHomerooms",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Learning group ID")),
+    responses(
+        (status = 200, description = "Learning group homeroom IDs", body = ApiResponse<LearningGroupHomeroomIds>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning group read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Learning group not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn list_group_homerooms(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -326,11 +496,27 @@ pub async fn list_group_homerooms(
         OfferingAction::Read,
     )
     .await?;
-    Ok(ok(groups::get(&context.tenant.pool, id)
-        .await?
-        .homeroom_ids))
+    Ok(ok(LearningGroupHomeroomIds(
+        groups::get(&context.tenant.pool, id).await?.homeroom_ids,
+    )))
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/academic/learning-groups/{id}/homerooms",
+    operation_id = "replaceLearningGroupHomerooms",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Learning group ID")),
+    request_body = ReplaceLearningGroupHomeroomsRequest,
+    responses(
+        (status = 200, description = "Learning group homerooms replaced", body = ApiResponse<LearningGroup>),
+        (status = 400, description = "Invalid learning group homerooms", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning group management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Learning group or homeroom not found", body = ApiErrorResponse),
+        (status = 409, description = "Learning group row version conflict", body = ApiErrorResponse)
+    )
+)]
 pub async fn replace_group_homerooms(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -351,6 +537,19 @@ pub async fn replace_group_homerooms(
     Ok(ok(group))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/academic/learning-groups/{id}/teachers",
+    operation_id = "listLearningGroupTeachers",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Learning group ID")),
+    responses(
+        (status = 200, description = "Learning group teachers", body = ApiResponse<Vec<TeacherAssignmentInput>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning group read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Learning group not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn list_group_teachers(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -369,6 +568,22 @@ pub async fn list_group_teachers(
         .teacher_assignments))
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/academic/learning-groups/{id}/teachers",
+    operation_id = "replaceLearningGroupTeachers",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Learning group ID")),
+    request_body = ReplaceLearningGroupTeachersRequest,
+    responses(
+        (status = 200, description = "Learning group teachers replaced", body = ApiResponse<LearningGroup>),
+        (status = 400, description = "Invalid learning group teachers", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning group management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Learning group or teacher not found", body = ApiErrorResponse),
+        (status = 409, description = "Learning group row version conflict", body = ApiErrorResponse)
+    )
+)]
 pub async fn replace_group_teachers(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -389,6 +604,22 @@ pub async fn replace_group_teachers(
     Ok(ok(group))
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/academic/learning-groups/{id}/roster",
+    operation_id = "applyLearningGroupRoster",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Learning group ID")),
+    request_body = ApplyRosterRequest,
+    responses(
+        (status = 200, description = "Learning group roster applied", body = ApiResponse<LearningGroup>),
+        (status = 400, description = "Invalid learning group roster", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning group management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Learning group not found", body = ApiErrorResponse),
+        (status = 409, description = "Learning group roster source conflict", body = ApiErrorResponse)
+    )
+)]
 pub async fn apply_group_roster(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -409,6 +640,20 @@ pub async fn apply_group_roster(
     Ok(ok(group))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/academic/learning-groups/{id}/roster",
+    operation_id = "previewLearningGroupRoster",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Learning group ID")),
+    responses(
+        (status = 200, description = "Learning group roster preview", body = ApiResponse<RosterPreview>),
+        (status = 400, description = "Learning group roster cannot be previewed", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning group management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Learning group not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn preview_group_roster(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -425,6 +670,22 @@ pub async fn preview_group_roster(
     Ok(ok(groups::preview_roster(&context.tenant.pool, id).await?))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/academic/learning-groups/{id}/roster/publish",
+    operation_id = "publishLearningGroupRoster",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Learning group ID")),
+    request_body = PublishRosterRequest,
+    responses(
+        (status = 200, description = "Learning group roster published", body = ApiResponse<LearningGroup>),
+        (status = 400, description = "Learning group roster cannot be published", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning group management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Learning group not found", body = ApiErrorResponse),
+        (status = 409, description = "Learning group roster publish conflict", body = ApiErrorResponse)
+    )
+)]
 pub async fn publish_group_roster(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,

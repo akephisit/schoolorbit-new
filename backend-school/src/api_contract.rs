@@ -2,6 +2,8 @@ use crate::api_response::{
     ApiErrorResponse, ApiErrorResponseWithData, ApiErrorResponseWithOptionalData, ApiResponse,
     EmptyData, UuidIdData,
 };
+use crate::modules::academic::core::models::*;
+use crate::modules::academic::delivery::models::*;
 use crate::modules::academic::models::exam_schedule::{
     PersonalExamScheduleRound, PersonalExamSessionView, StaffPublishedExamDay,
     StaffPublishedExamInvigilator, StaffPublishedExamRoomAssignment,
@@ -258,6 +260,96 @@ use utoipa::OpenApi;
         crate::modules::academic::handlers::timetable::daily_teaching_overview,
         crate::modules::academic::handlers::exam_schedule::list_my_exam_schedule,
         crate::modules::academic::handlers::exam_schedule::list_staff_exam_schedule,
+        crate::modules::academic::core::handlers::list_context_options,
+        crate::modules::academic::core::handlers::list_years,
+        crate::modules::academic::core::handlers::create_year,
+        crate::modules::academic::core::handlers::get_year,
+        crate::modules::academic::core::handlers::update_year,
+        crate::modules::academic::core::handlers::list_terms,
+        crate::modules::academic::core::handlers::create_term,
+        crate::modules::academic::core::handlers::get_term,
+        crate::modules::academic::core::handlers::update_term,
+        crate::modules::academic::core::handlers::delete_term,
+        crate::modules::academic::core::handlers::list_bell_schedules,
+        crate::modules::academic::core::handlers::create_bell_schedule,
+        crate::modules::academic::core::handlers::get_bell_schedule,
+        crate::modules::academic::core::handlers::update_bell_schedule,
+        crate::modules::academic::core::handlers::list_bell_schedule_periods,
+        crate::modules::academic::core::handlers::replace_bell_schedule_periods,
+        crate::modules::academic::core::handlers::list_grade_progressions,
+        crate::modules::academic::core::handlers::replace_grade_progressions,
+        crate::modules::academic::core::handlers::list_catalog_subjects,
+        crate::modules::academic::core::handlers::create_catalog_subject,
+        crate::modules::academic::core::handlers::get_catalog_subject,
+        crate::modules::academic::core::handlers::update_catalog_subject,
+        crate::modules::academic::core::handlers::list_subject_versions,
+        crate::modules::academic::core::handlers::create_subject_version,
+        crate::modules::academic::core::handlers::get_subject_version,
+        crate::modules::academic::core::handlers::update_subject_version,
+        crate::modules::academic::core::handlers::publish_subject_version,
+        crate::modules::academic::core::handlers::list_subject_default_teachers,
+        crate::modules::academic::core::handlers::replace_subject_default_teachers,
+        crate::modules::academic::core::handlers::list_subject_groups,
+        crate::modules::academic::core::handlers::create_subject_group,
+        crate::modules::academic::core::handlers::get_subject_group,
+        crate::modules::academic::core::handlers::update_subject_group,
+        crate::modules::academic::core::handlers::delete_subject_group,
+        crate::modules::academic::core::handlers::list_catalog_activities,
+        crate::modules::academic::core::handlers::create_catalog_activity,
+        crate::modules::academic::core::handlers::get_catalog_activity,
+        crate::modules::academic::core::handlers::update_catalog_activity,
+        crate::modules::academic::core::handlers::list_activity_versions,
+        crate::modules::academic::core::handlers::create_activity_version,
+        crate::modules::academic::core::handlers::get_activity_version,
+        crate::modules::academic::core::handlers::update_activity_version,
+        crate::modules::academic::core::handlers::publish_activity_version,
+        crate::modules::academic::core::handlers::list_activity_default_teachers,
+        crate::modules::academic::core::handlers::replace_activity_default_teachers,
+        crate::modules::academic::core::handlers::list_curricula,
+        crate::modules::academic::core::handlers::create_curriculum,
+        crate::modules::academic::core::handlers::get_curriculum,
+        crate::modules::academic::core::handlers::update_curriculum,
+        crate::modules::academic::core::handlers::list_curriculum_versions,
+        crate::modules::academic::core::handlers::create_curriculum_version,
+        crate::modules::academic::core::handlers::get_curriculum_version,
+        crate::modules::academic::core::handlers::update_curriculum_version,
+        crate::modules::academic::core::handlers::publish_curriculum_version,
+        crate::modules::academic::core::handlers::list_study_programs,
+        crate::modules::academic::core::handlers::create_study_program,
+        crate::modules::academic::core::handlers::get_study_program,
+        crate::modules::academic::core::handlers::update_study_program,
+        crate::modules::academic::core::handlers::list_program_requirements,
+        crate::modules::academic::core::handlers::replace_program_requirements,
+        crate::modules::academic::core::handlers::list_homerooms,
+        crate::modules::academic::core::handlers::create_homeroom,
+        crate::modules::academic::core::handlers::get_homeroom,
+        crate::modules::academic::core::handlers::update_homeroom,
+        crate::modules::academic::core::handlers::list_homeroom_advisors,
+        crate::modules::academic::core::handlers::replace_homeroom_advisors,
+        crate::modules::academic::core::handlers::list_student_years,
+        crate::modules::academic::core::handlers::create_student_year,
+        crate::modules::academic::core::handlers::get_student_year,
+        crate::modules::academic::core::handlers::update_student_year,
+        crate::modules::academic::core::handlers::create_placement,
+        crate::modules::academic::core::handlers::transfer_placement,
+        crate::modules::academic::delivery::handlers::list_offerings,
+        crate::modules::academic::delivery::handlers::create_offering,
+        crate::modules::academic::delivery::handlers::preview_offerings_from_curriculum,
+        crate::modules::academic::delivery::handlers::apply_offerings_from_curriculum,
+        crate::modules::academic::delivery::handlers::get_offering,
+        crate::modules::academic::delivery::handlers::update_offering,
+        crate::modules::academic::delivery::handlers::publish_offering,
+        crate::modules::academic::delivery::handlers::list_groups,
+        crate::modules::academic::delivery::handlers::create_group,
+        crate::modules::academic::delivery::handlers::get_group,
+        crate::modules::academic::delivery::handlers::update_group,
+        crate::modules::academic::delivery::handlers::list_group_homerooms,
+        crate::modules::academic::delivery::handlers::replace_group_homerooms,
+        crate::modules::academic::delivery::handlers::list_group_teachers,
+        crate::modules::academic::delivery::handlers::replace_group_teachers,
+        crate::modules::academic::delivery::handlers::preview_group_roster,
+        crate::modules::academic::delivery::handlers::apply_group_roster,
+        crate::modules::academic::delivery::handlers::publish_group_roster,
         crate::modules::calendar::handlers::list_my_calendar_events,
         crate::modules::calendar::handlers::list_public_calendar_events,
         crate::modules::calendar::handlers::list_calendar_events,
@@ -557,6 +649,165 @@ use utoipa::OpenApi;
         ParentProfile,
         ApiResponse<StudentProfile>,
         ApiResponse<ParentProfile>,
+        AcademicYearStatus,
+        AcademicTermStatus,
+        AcademicTermType,
+        VersionStatus,
+        StudentAcademicYearStatus,
+        GradeProgressionKind,
+        CreateAcademicYearRequest,
+        UpdateAcademicYearRequest,
+        CreateAcademicTermRequest,
+        UpdateAcademicTermRequest,
+        BellSchedulePeriodInput,
+        ReplaceBellSchedulePeriodsRequest,
+        GradeProgressionInput,
+        ReplaceGradeProgressionsRequest,
+        AcademicYear,
+        AcademicTerm,
+        AcademicYearOption,
+        AcademicTermOption,
+        AcademicContextOptions,
+        CreateBellScheduleRequest,
+        UpdateBellScheduleRequest,
+        BellSchedule,
+        BellSchedulePeriod,
+        GradeProgression,
+        GradeProgressionSet,
+        CatalogSubject,
+        CreateCatalogSubjectRequest,
+        UpdateCatalogSubjectRequest,
+        SubjectVersion,
+        CreateSubjectVersionRequest,
+        UpdateSubjectVersionRequest,
+        CatalogActivity,
+        CreateCatalogActivityRequest,
+        UpdateCatalogActivityRequest,
+        ActivityVersion,
+        CreateActivityVersionRequest,
+        UpdateActivityVersionRequest,
+        DefaultTeacher,
+        ReplaceDefaultTeachersRequest,
+        SubjectGroup,
+        CreateSubjectGroupRequest,
+        UpdateSubjectGroupRequest,
+        Curriculum,
+        CreateCurriculumRequest,
+        UpdateCurriculumRequest,
+        CurriculumVersion,
+        CreateCurriculumVersionRequest,
+        UpdateCurriculumVersionRequest,
+        StudyProgram,
+        CreateStudyProgramRequest,
+        UpdateStudyProgramRequest,
+        RequirementKind,
+        RequirementResourceKind,
+        ProgramRequirement,
+        ProgramRequirementInput,
+        ReplaceProgramRequirementsRequest,
+        PublishVersionRequest,
+        Homeroom,
+        CreateHomeroomRequest,
+        UpdateHomeroomRequest,
+        HomeroomAdvisor,
+        HomeroomAdvisorInput,
+        ReplaceHomeroomAdvisorsRequest,
+        StudentAcademicYear,
+        CreateStudentAcademicYearRequest,
+        UpdateStudentAcademicYearRequest,
+        StudentAcademicYearFilter,
+        HomeroomPlacementStatus,
+        HomeroomPlacement,
+        CreateHomeroomPlacementRequest,
+        TransferHomeroomPlacementRequest,
+        HomeroomPlacementTransfer,
+        ApiResponse<AcademicContextOptions>,
+        ApiResponse<Vec<AcademicYear>>,
+        ApiResponse<AcademicYear>,
+        ApiResponse<Vec<AcademicTerm>>,
+        ApiResponse<AcademicTerm>,
+        ApiResponse<Vec<BellSchedule>>,
+        ApiResponse<BellSchedule>,
+        ApiResponse<Vec<BellSchedulePeriod>>,
+        ApiResponse<GradeProgressionSet>,
+        ApiResponse<Vec<CatalogSubject>>,
+        ApiResponse<CatalogSubject>,
+        ApiResponse<Vec<SubjectVersion>>,
+        ApiResponse<SubjectVersion>,
+        ApiResponse<Vec<DefaultTeacher>>,
+        ApiResponse<Vec<SubjectGroup>>,
+        ApiResponse<SubjectGroup>,
+        ApiResponse<Vec<CatalogActivity>>,
+        ApiResponse<CatalogActivity>,
+        ApiResponse<Vec<ActivityVersion>>,
+        ApiResponse<ActivityVersion>,
+        ApiResponse<Vec<Curriculum>>,
+        ApiResponse<Curriculum>,
+        ApiResponse<Vec<CurriculumVersion>>,
+        ApiResponse<CurriculumVersion>,
+        ApiResponse<Vec<StudyProgram>>,
+        ApiResponse<StudyProgram>,
+        ApiResponse<Vec<ProgramRequirement>>,
+        ApiResponse<Vec<Homeroom>>,
+        ApiResponse<Homeroom>,
+        ApiResponse<Vec<HomeroomAdvisor>>,
+        ApiResponse<Vec<StudentAcademicYear>>,
+        ApiResponse<StudentAcademicYear>,
+        ApiResponse<HomeroomPlacement>,
+        ApiResponse<HomeroomPlacementTransfer>,
+        LearningOfferingKind,
+        LearningOfferingStatus,
+        OfferingTargetKind,
+        ActivityRegistrationType,
+        ActivitySchedulingMode,
+        LearningTeacherRole,
+        RosterStatus,
+        MembershipStatus,
+        RosterOverrideAction,
+        CurriculumPreviewAction,
+        CourseGradingPolicy,
+        ActivityAttendanceRequirement,
+        ActivityPassCriteria,
+        OfferingTargetInput,
+        CreateCourseOfferingRequest,
+        CreateActivityOfferingRequest,
+        CreateLearningOfferingRequest,
+        UpdateLearningOfferingRequest,
+        PublishLearningOfferingRequest,
+        LearningOfferingQuery,
+        PreviewCurriculumOfferingsRequest,
+        ApplyCurriculumOfferingsRequest,
+        LearningOfferingTarget,
+        CourseOfferingSnapshot,
+        ActivityOfferingSnapshot,
+        LearningOfferingSnapshot,
+        LearningOffering,
+        CurriculumOfferingPreviewItem,
+        CurriculumOfferingPreview,
+        ApplyCurriculumOfferingsResult,
+        CreateLearningGroupRequest,
+        UpdateLearningGroupRequest,
+        TeacherAssignmentInput,
+        ReplaceLearningGroupTeachersRequest,
+        ReplaceLearningGroupHomeroomsRequest,
+        LearningGroupHomeroomIds,
+        LearningGroup,
+        RosterPreviewStudent,
+        RosterPreview,
+        RosterOverrideInput,
+        ApplyRosterRequest,
+        PublishRosterRequest,
+        LearningGroupStudent,
+        ActivityResult,
+        ApiResponse<Vec<LearningOffering>>,
+        ApiResponse<LearningOffering>,
+        ApiResponse<CurriculumOfferingPreview>,
+        ApiResponse<ApplyCurriculumOfferingsResult>,
+        ApiResponse<Vec<LearningGroup>>,
+        ApiResponse<LearningGroup>,
+        ApiResponse<LearningGroupHomeroomIds>,
+        ApiResponse<Vec<TeacherAssignmentInput>>,
+        ApiResponse<RosterPreview>,
         TimetableEntry,
         ApiResponse<Vec<TimetableEntry>>,
         DailyTeachingOverview,
@@ -1250,942 +1501,137 @@ mod tests {
     }
 
     #[test]
-    fn academic_structure_mutation_contracts() {
+    fn academic_core_and_delivery_cutover_contracts() {
         let document = school_api_value().expect("document should serialize");
         assert_operations(
             &document,
             &[
-                ("/api/academic/structure", "get", "getAcademicStructure"),
-                ("/api/academic/levels", "post", "createGradeLevel"),
-                ("/api/academic/levels/{id}", "delete", "deleteGradeLevel"),
+                (
+                    "/api/academic/context/options",
+                    "get",
+                    "listAcademicContextOptions",
+                ),
+                ("/api/academic/years", "get", "listAcademicYears"),
                 ("/api/academic/years", "post", "createAcademicYear"),
-                ("/api/academic/years/{id}", "put", "updateAcademicYear"),
+                ("/api/academic/terms", "get", "listAcademicTerms"),
+                ("/api/academic/bell-schedules", "get", "listBellSchedules"),
                 (
-                    "/api/academic/years/{id}/active",
-                    "put",
-                    "setActiveAcademicYear",
-                ),
-                (
-                    "/api/academic/years/{id}/levels",
+                    "/api/academic/catalog/subjects",
                     "get",
-                    "getAcademicYearLevels",
+                    "listCatalogSubjects",
                 ),
                 (
-                    "/api/academic/years/{id}/levels",
-                    "put",
-                    "updateAcademicYearLevels",
-                ),
-                ("/api/academic/semesters", "post", "createSemester"),
-                ("/api/academic/semesters/{id}", "put", "updateSemester"),
-                ("/api/academic/semesters/{id}", "delete", "deleteSemester"),
-                ("/api/academic/classrooms", "get", "listClassrooms"),
-                ("/api/academic/classrooms", "post", "createClassroom"),
-                ("/api/academic/classrooms/{id}", "put", "updateClassroom"),
-                ("/api/academic/enrollments", "post", "enrollStudents"),
-                (
-                    "/api/academic/enrollments/class/{id}",
+                    "/api/academic/catalog/activities",
                     "get",
-                    "listClassEnrollments",
+                    "listCatalogActivities",
+                ),
+                ("/api/academic/curricula", "get", "listCurricula"),
+                ("/api/academic/homerooms", "get", "listHomerooms"),
+                (
+                    "/api/academic/student-years",
+                    "get",
+                    "listStudentAcademicYears",
                 ),
                 (
-                    "/api/academic/enrollments/{id}",
-                    "delete",
-                    "removeEnrollment",
-                ),
-                (
-                    "/api/academic/enrollments/{id}/number",
-                    "put",
-                    "updateEnrollmentNumber",
-                ),
-                (
-                    "/api/academic/enrollments/class/{id}/auto-number",
+                    "/api/academic/placements/{id}/transfer",
                     "post",
-                    "autoAssignClassNumbers",
+                    "transferHomeroomPlacement",
+                ),
+                ("/api/academic/offerings", "get", "listLearningOfferings"),
+                ("/api/academic/offerings", "post", "createLearningOffering"),
+                (
+                    "/api/academic/offerings/preview-from-curriculum",
+                    "post",
+                    "previewLearningOfferingsFromCurriculum",
+                ),
+                (
+                    "/api/academic/learning-groups/{id}/roster",
+                    "get",
+                    "previewLearningGroupRoster",
+                ),
+                (
+                    "/api/academic/learning-groups/{id}/roster/publish",
+                    "post",
+                    "publishLearningGroupRoster",
                 ),
             ],
         );
 
-        let create_year = &document["paths"]["/api/academic/years"]["post"];
-        assert_eq!(
-            create_year["requestBody"]["content"]["application/json"]["schema"]["$ref"],
-            "#/components/schemas/CreateAcademicYearRequest"
-        );
-        assert_eq!(
-            create_year["responses"]["201"]["content"]["application/json"]["schema"]["$ref"],
-            "#/components/schemas/ApiResponse_AcademicYear"
-        );
-
-        let create_classroom = &document["paths"]["/api/academic/classrooms"]["post"];
-        assert_eq!(
-            create_classroom["requestBody"]["content"]["application/json"]["schema"]["$ref"],
-            "#/components/schemas/CreateClassroomRequest"
-        );
-        assert_eq!(
-            create_classroom["responses"]["201"]["content"]["application/json"]["schema"]["$ref"],
-            "#/components/schemas/ApiResponse_Classroom"
-        );
-
-        let enroll = &document["paths"]["/api/academic/enrollments"]["post"];
-        assert_eq!(
-            enroll["requestBody"]["content"]["application/json"]["schema"]["$ref"],
-            "#/components/schemas/EnrollStudentRequest"
-        );
-        for (path, method) in [
-            ("/api/academic/levels/{id}", "delete"),
-            ("/api/academic/years/{id}/active", "put"),
-            ("/api/academic/years/{id}/levels", "put"),
-            ("/api/academic/semesters/{id}", "delete"),
-            ("/api/academic/enrollments", "post"),
-            ("/api/academic/enrollments/{id}", "delete"),
-            ("/api/academic/enrollments/{id}/number", "put"),
-            ("/api/academic/enrollments/class/{id}/auto-number", "post"),
-        ] {
-            assert_eq!(
-                document["paths"][path][method]["responses"]["200"]["content"]["application/json"]
-                    ["schema"]["$ref"],
-                "#/components/schemas/ApiResponse_EmptyData",
-                "incorrect empty success envelope for {method} {path}"
-            );
-        }
-
-        let schemas = &document["components"]["schemas"];
-        assert_eq!(
-            schemas["AcademicYear"]["properties"]["id"]["format"],
-            "uuid"
-        );
-        assert_eq!(
-            schemas["AcademicYear"]["properties"]["start_date"]["format"],
-            "date"
-        );
-        assert_eq!(
-            schemas["Classroom"]["properties"]["advisors"]["items"]["$ref"],
-            "#/components/schemas/ClassroomAdvisor"
-        );
-        assert_eq!(
-            schemas["GradeLevelResponse"]["properties"]["level_type"]["$ref"],
-            "#/components/schemas/GradeLevelType"
-        );
-        assert_eq!(
-            schemas["ClassroomAdvisor"]["properties"]["role"]["$ref"],
-            "#/components/schemas/ClassroomAdvisorRole"
-        );
-        assert_eq!(
-            schemas["StudentEnrollment"]["properties"]["enrollment_date"]["format"],
-            "date"
-        );
-
-        let structure_responses = &document["paths"]["/api/academic/structure"]["get"]["responses"];
-        assert!(structure_responses.get("401").is_some());
-        assert!(structure_responses.get("403").is_none());
-    }
-
-    #[test]
-    fn academic_curriculum_core_contracts() {
-        let document = school_api_value().expect("document should serialize");
-        assert_operations(
-            &document,
-            &[
-                ("/api/academic/subjects/groups", "get", "listSubjectGroups"),
-                (
-                    "/api/academic/subjects/default-instructors",
-                    "get",
-                    "batchListSubjectDefaultInstructors",
-                ),
-                ("/api/academic/subjects", "get", "listSubjects"),
-                ("/api/academic/subjects", "post", "createSubject"),
-                ("/api/academic/subjects/{id}", "put", "updateSubject"),
-                ("/api/academic/subjects/{id}", "delete", "deleteSubject"),
-                (
-                    "/api/academic/subjects/{id}/default-instructors",
-                    "get",
-                    "listSubjectDefaultInstructors",
-                ),
-                (
-                    "/api/academic/subjects/{id}/default-instructors",
-                    "post",
-                    "addSubjectDefaultInstructor",
-                ),
-                (
-                    "/api/academic/subjects/{id}/default-instructors/{uid}",
-                    "delete",
-                    "removeSubjectDefaultInstructor",
-                ),
-                (
-                    "/api/academic/subjects/{id}/default-instructors/{uid}",
-                    "put",
-                    "updateSubjectDefaultInstructorRole",
-                ),
-                ("/api/academic/study-plans", "get", "listStudyPlans"),
-                ("/api/academic/study-plans", "post", "createStudyPlan"),
-                ("/api/academic/study-plans/{id}", "get", "getStudyPlan"),
-                ("/api/academic/study-plans/{id}", "put", "updateStudyPlan"),
-                (
-                    "/api/academic/study-plans/{id}",
-                    "delete",
-                    "deleteStudyPlan",
-                ),
-                (
-                    "/api/academic/study-plan-versions",
-                    "get",
-                    "listStudyPlanVersions",
-                ),
-                (
-                    "/api/academic/study-plan-versions",
-                    "post",
-                    "createStudyPlanVersion",
-                ),
-                (
-                    "/api/academic/study-plan-versions/{id}",
-                    "get",
-                    "getStudyPlanVersion",
-                ),
-                (
-                    "/api/academic/study-plan-versions/{id}",
-                    "put",
-                    "updateStudyPlanVersion",
-                ),
-                (
-                    "/api/academic/study-plan-versions/{id}",
-                    "delete",
-                    "deleteStudyPlanVersion",
-                ),
-                (
-                    "/api/academic/study-plan-versions/{id}/subjects",
-                    "get",
-                    "listStudyPlanSubjects",
-                ),
-                (
-                    "/api/academic/study-plan-versions/{id}/subjects",
-                    "post",
-                    "addSubjectsToStudyPlanVersion",
-                ),
-                (
-                    "/api/academic/study-plan-subjects/{id}",
-                    "delete",
-                    "deleteStudyPlanSubject",
-                ),
-                (
-                    "/api/academic/planning/generate-from-plan",
-                    "post",
-                    "generateCoursesFromStudyPlan",
-                ),
-            ],
-        );
-
-        let create_subject = &document["paths"]["/api/academic/subjects"]["post"];
-        assert_eq!(
-            create_subject["requestBody"]["content"]["application/json"]["schema"]["$ref"],
-            "#/components/schemas/CreateSubjectRequest"
-        );
-        assert_eq!(
-            create_subject["responses"]["201"]["content"]["application/json"]["schema"]["$ref"],
-            "#/components/schemas/ApiResponse_Subject"
-        );
-
-        let create_plan = &document["paths"]["/api/academic/study-plans"]["post"];
-        assert_eq!(
-            create_plan["requestBody"]["content"]["application/json"]["schema"]["$ref"],
-            "#/components/schemas/CreateStudyPlanRequest"
-        );
-        assert_eq!(
-            create_plan["responses"]["201"]["content"]["application/json"]["schema"]["$ref"],
-            "#/components/schemas/ApiResponse_StudyPlan"
-        );
-
-        for (path, method) in [
-            ("/api/academic/subjects/{id}", "delete"),
-            ("/api/academic/subjects/{id}/default-instructors", "post"),
-            (
-                "/api/academic/subjects/{id}/default-instructors/{uid}",
-                "delete",
-            ),
-            (
-                "/api/academic/subjects/{id}/default-instructors/{uid}",
-                "put",
-            ),
-            ("/api/academic/study-plans/{id}", "delete"),
-            ("/api/academic/study-plan-versions/{id}", "delete"),
-            ("/api/academic/study-plan-subjects/{id}", "delete"),
-        ] {
-            assert_eq!(
-                document["paths"][path][method]["responses"]["200"]["content"]["application/json"]
-                    ["schema"]["$ref"],
-                "#/components/schemas/ApiResponse_EmptyData",
-                "incorrect empty success envelope for {method} {path}"
-            );
-        }
-    }
-
-    #[test]
-    fn academic_activity_template_contracts() {
-        let document = school_api_value().expect("document should serialize");
-        assert_operations(
-            &document,
-            &[
-                (
-                    "/api/academic/study-plan-versions/{id}/activities",
-                    "get",
-                    "listStudyPlanActivities",
-                ),
-                (
-                    "/api/academic/study-plan-versions/{id}/activities",
-                    "post",
-                    "addStudyPlanActivity",
-                ),
-                (
-                    "/api/academic/study-plan-activities/{id}",
-                    "put",
-                    "updateStudyPlanActivity",
-                ),
-                (
-                    "/api/academic/study-plan-activities/{id}",
-                    "delete",
-                    "deleteStudyPlanActivity",
-                ),
-                (
-                    "/api/academic/activities/generate-from-plan",
-                    "post",
-                    "generateActivitiesFromStudyPlan",
-                ),
-                (
-                    "/api/academic/activity-catalog",
-                    "get",
-                    "listActivityCatalog",
-                ),
-                (
-                    "/api/academic/activity-catalog",
-                    "post",
-                    "createActivityCatalog",
-                ),
-                (
-                    "/api/academic/activity-catalog/{id}",
-                    "put",
-                    "updateActivityCatalog",
-                ),
-                (
-                    "/api/academic/activity-catalog/{id}",
-                    "delete",
-                    "deleteActivityCatalog",
-                ),
-                (
-                    "/api/academic/activity-catalog/{id}/default-instructors",
-                    "get",
-                    "listActivityCatalogDefaultInstructors",
-                ),
-                (
-                    "/api/academic/activity-catalog/{id}/default-instructors",
-                    "post",
-                    "addActivityCatalogDefaultInstructor",
-                ),
-                (
-                    "/api/academic/activity-catalog/{id}/default-instructors/{uid}",
-                    "delete",
-                    "removeActivityCatalogDefaultInstructor",
-                ),
-                (
-                    "/api/academic/activity-catalog/{id}/default-instructors/{uid}",
-                    "put",
-                    "updateActivityCatalogDefaultInstructorRole",
-                ),
-            ],
-        );
-
-        for (path, method, request_schema) in [
-            (
-                "/api/academic/study-plan-versions/{id}/activities",
-                "post",
-                "CreatePlanActivityRequest",
-            ),
-            (
-                "/api/academic/study-plan-activities/{id}",
-                "put",
-                "UpdatePlanActivityRequest",
-            ),
-            (
-                "/api/academic/activities/generate-from-plan",
-                "post",
-                "GenerateActivitiesFromPlanRequest",
-            ),
-            (
-                "/api/academic/activity-catalog",
-                "post",
-                "CreateCatalogRequest",
-            ),
-            (
-                "/api/academic/activity-catalog/{id}",
-                "put",
-                "UpdateCatalogRequest",
-            ),
-            (
-                "/api/academic/activity-catalog/{id}/default-instructors",
-                "post",
-                "AddCatalogDefaultInstructorRequest",
-            ),
-            (
-                "/api/academic/activity-catalog/{id}/default-instructors/{uid}",
-                "put",
-                "UpdateCatalogDefaultInstructorRoleRequest",
-            ),
-        ] {
-            assert_eq!(
-                document["paths"][path][method]["requestBody"]["content"]["application/json"]
-                    ["schema"]["$ref"],
-                format!("#/components/schemas/{request_schema}")
-            );
-        }
-
-        assert_eq!(
-            document["paths"]["/api/academic/study-plan-versions/{id}/activities"]["post"]
-                ["responses"]["201"]["content"]["application/json"]["schema"]["$ref"],
-            "#/components/schemas/ApiResponse_StudyPlanVersionActivity"
-        );
-        assert_eq!(
-            document["paths"]["/api/academic/activity-catalog"]["post"]["responses"]["201"]
-                ["content"]["application/json"]["schema"]["$ref"],
-            "#/components/schemas/ApiResponse_ActivityCatalog"
-        );
-        assert_eq!(
-            document["paths"]["/api/academic/activities/generate-from-plan"]["post"]["responses"]
-                ["200"]["content"]["application/json"]["schema"]["$ref"],
-            "#/components/schemas/ApiResponse_GenerateActivitiesFromPlanOutcome"
-        );
-
-        for (path, method) in [
-            ("/api/academic/study-plan-activities/{id}", "delete"),
-            ("/api/academic/activity-catalog/{id}", "delete"),
-            (
-                "/api/academic/activity-catalog/{id}/default-instructors",
-                "post",
-            ),
-            (
-                "/api/academic/activity-catalog/{id}/default-instructors/{uid}",
-                "delete",
-            ),
-            (
-                "/api/academic/activity-catalog/{id}/default-instructors/{uid}",
-                "put",
-            ),
-        ] {
-            assert_eq!(
-                document["paths"][path][method]["responses"]["200"]["content"]["application/json"]
-                    ["schema"]["$ref"],
-                "#/components/schemas/ApiResponse_EmptyData",
-                "incorrect empty success envelope for {method} {path}"
-            );
-        }
-
-        let schemas = &document["components"]["schemas"];
-        assert_eq!(
-            schemas["ActivityCatalog"]["properties"]["activity_type"]["$ref"],
-            "#/components/schemas/ActivityCatalogType"
-        );
-        assert_eq!(
-            schemas["ActivityCatalog"]["properties"]["scheduling_mode"]["$ref"],
-            "#/components/schemas/ActivitySchedulingMode"
-        );
-        assert_eq!(
-            schemas["CatalogDefaultInstructor"]["properties"]["role"]["$ref"],
-            "#/components/schemas/CurriculumInstructorRole"
-        );
-    }
-
-    #[test]
-    fn academic_activity_workspace_contracts() {
-        let document = school_api_value().expect("document should serialize");
-        assert_operations(
-            &document,
-            &[
-                ("/api/academic/activity-slots", "get", "listActivitySlots"),
-                (
-                    "/api/academic/activity-slots/timetable-context",
-                    "get",
-                    "getActivitySlotTimetableContext",
-                ),
-                (
-                    "/api/academic/activity-slots/{id}",
-                    "put",
-                    "updateActivitySlot",
-                ),
-                (
-                    "/api/academic/activity-slots/{id}",
-                    "delete",
-                    "deleteActivitySlot",
-                ),
-                (
-                    "/api/academic/activity-slots/{id}/instructors",
-                    "get",
-                    "listActivitySlotInstructors",
-                ),
-                (
-                    "/api/academic/activity-slots/{id}/instructors",
-                    "post",
-                    "addActivitySlotInstructor",
-                ),
-                (
-                    "/api/academic/activity-slots/{id}/instructors/batch",
-                    "post",
-                    "addActivitySlotInstructorsBatch",
-                ),
-                (
-                    "/api/academic/activity-slots/{id}/instructors/{user_id}",
-                    "delete",
-                    "removeActivitySlotInstructor",
-                ),
-                (
-                    "/api/academic/activity-slots/{id}/instructors/all",
-                    "delete",
-                    "removeAllActivitySlotInstructors",
-                ),
-                (
-                    "/api/academic/activity-slots/{id}/groups",
-                    "delete",
-                    "deleteAllActivitySlotGroups",
-                ),
-                (
-                    "/api/academic/activity-slots/{id}/timetable-entries",
-                    "delete",
-                    "deleteActivitySlotTimetableEntries",
-                ),
-                (
-                    "/api/academic/activity-slots/{id}/classroom-assignments",
-                    "get",
-                    "listActivitySlotClassroomAssignments",
-                ),
-                (
-                    "/api/academic/activity-slots/{id}/classroom-assignments",
-                    "post",
-                    "upsertActivitySlotClassroomAssignments",
-                ),
-                (
-                    "/api/academic/activity-slots/{id}/classroom-assignments/all",
-                    "delete",
-                    "deleteAllActivitySlotClassroomAssignments",
-                ),
-                (
-                    "/api/academic/activity-slots/{id}/classroom-assignments/{assignment_id}",
-                    "delete",
-                    "deleteActivitySlotClassroomAssignment",
-                ),
-                ("/api/academic/activities", "get", "listActivityGroups"),
-                ("/api/academic/activities", "post", "createActivityGroup"),
-                (
-                    "/api/academic/activities/{id}",
-                    "put",
-                    "updateActivityGroup",
-                ),
-                (
-                    "/api/academic/activities/{id}",
-                    "delete",
-                    "deleteActivityGroup",
-                ),
-                (
-                    "/api/academic/activities/{id}/members",
-                    "get",
-                    "listActivityGroupMembers",
-                ),
-                (
-                    "/api/academic/activities/{id}/members",
-                    "post",
-                    "addActivityGroupMembers",
-                ),
-                (
-                    "/api/academic/activities/{id}/members/{student_id}",
-                    "delete",
-                    "removeActivityGroupMember",
-                ),
-                (
-                    "/api/academic/activities/members/{member_id}/result",
-                    "put",
-                    "updateActivityGroupMemberResult",
-                ),
-                (
-                    "/api/academic/activities/{id}/instructors",
-                    "get",
-                    "listActivityGroupInstructors",
-                ),
-                (
-                    "/api/academic/activities/{id}/instructors",
-                    "post",
-                    "addActivityGroupInstructor",
-                ),
-                (
-                    "/api/academic/activities/{id}/instructors/{instructor_id}",
-                    "delete",
-                    "removeActivityGroupInstructor",
-                ),
-                (
-                    "/api/academic/activities/my-enrollments",
-                    "get",
-                    "listMyActivityEnrollments",
-                ),
-                (
-                    "/api/academic/activities/{id}/enroll",
-                    "post",
-                    "selfEnrollActivityGroup",
-                ),
-                (
-                    "/api/academic/activities/{id}/enroll",
-                    "delete",
-                    "selfUnenrollActivityGroup",
-                ),
-            ],
-        );
-
-        for (path, method, request_schema) in [
-            (
-                "/api/academic/activity-slots/{id}",
-                "put",
-                "UpdateActivitySlotRequest",
-            ),
-            (
-                "/api/academic/activity-slots/{id}/instructors",
-                "post",
-                "AddSlotInstructorRequest",
-            ),
-            (
-                "/api/academic/activity-slots/{id}/instructors/batch",
-                "post",
-                "AddSlotInstructorsBatchRequest",
-            ),
-            (
-                "/api/academic/activity-slots/{id}/classroom-assignments",
-                "post",
-                "BatchUpsertSlotClassroomAssignmentsRequest",
-            ),
-            (
-                "/api/academic/activities",
-                "post",
-                "CreateActivityGroupRequest",
-            ),
-            (
-                "/api/academic/activities/{id}",
-                "put",
-                "UpdateActivityGroupRequest",
-            ),
-            (
-                "/api/academic/activities/{id}/members",
-                "post",
-                "AddMembersRequest",
-            ),
-            (
-                "/api/academic/activities/members/{member_id}/result",
-                "put",
-                "UpdateMemberResultRequest",
-            ),
-            (
-                "/api/academic/activities/{id}/instructors",
-                "post",
-                "InstructorRoleRequest",
-            ),
-        ] {
-            assert_eq!(
-                document["paths"][path][method]["requestBody"]["content"]["application/json"]
-                    ["schema"]["$ref"],
-                format!("#/components/schemas/{request_schema}")
-            );
-        }
-
-        for (path, method, response_schema) in [
-            (
-                "/api/academic/activity-slots",
-                "get",
-                "ApiResponse_Vec_ActivitySlot",
-            ),
-            (
-                "/api/academic/activity-slots/timetable-context",
-                "get",
-                "ApiResponse_ActivitySlotTimetableContextResponse",
-            ),
-            (
-                "/api/academic/activity-slots/{id}",
-                "put",
-                "ApiResponse_ActivitySlot",
-            ),
-            (
-                "/api/academic/activities",
-                "get",
-                "ApiResponse_Vec_ActivityGroup",
-            ),
-            (
-                "/api/academic/activities/{id}/members",
-                "get",
-                "ApiResponse_Vec_ActivityGroupMember",
-            ),
-            (
-                "/api/academic/activities/{id}/members",
-                "post",
-                "ApiResponse_ActivityInsertedCountData",
-            ),
-            (
-                "/api/academic/activity-slots/{id}/instructors/batch",
-                "post",
-                "ApiResponse_ActivityAddedCountData",
-            ),
-            (
-                "/api/academic/activity-slots/{id}/timetable-entries",
-                "delete",
-                "ApiResponse_ActivityDeletedCountData",
-            ),
-            (
-                "/api/academic/activity-slots/{id}/classroom-assignments",
-                "post",
-                "ApiResponse_ActivityProcessedCountData",
-            ),
-        ] {
-            assert_eq!(
-                document["paths"][path][method]["responses"]["200"]["content"]["application/json"]
-                    ["schema"]["$ref"],
-                format!("#/components/schemas/{response_schema}")
-            );
-        }
-
-        assert_eq!(
-            document["paths"]["/api/academic/activities/{id}/enroll"]["post"]["responses"]["409"]
-                ["content"]["application/json"]["schema"]["$ref"],
-            "#/components/schemas/ApiErrorResponse"
-        );
-        assert_eq!(
-            document["paths"]["/api/academic/activity-slots/{id}"]["put"]["responses"]["400"]
-                ["content"]["application/json"]["schema"]["$ref"],
-            "#/components/schemas/ApiErrorResponse"
-        );
-
-        let schemas = &document["components"]["schemas"];
-        assert_eq!(
-            schemas["ActivitySlot"]["properties"]["registration_type"]["$ref"],
-            "#/components/schemas/ActivityRegistrationType"
-        );
-        assert!(schemas["ActivityGroupMember"]["properties"]["result"]
-            .to_string()
-            .contains("#/components/schemas/ActivityMemberResult"));
-        assert!(schemas["InstructorRoleRequest"]["properties"]["role"]
-            .to_string()
-            .contains("#/components/schemas/ActivityGroupInstructorRole"));
-    }
-
-    #[test]
-    fn academic_course_planning_contracts() {
-        let document = school_api_value().expect("document should serialize");
-        assert_operations(
-            &document,
-            &[
-                (
-                    "/api/academic/planning/courses",
-                    "get",
-                    "listClassroomCourses",
-                ),
-                ("/api/academic/planning/courses", "post", "assignCourses"),
-                (
-                    "/api/academic/planning/courses/{id}",
-                    "put",
-                    "updateClassroomCourse",
-                ),
-                (
-                    "/api/academic/planning/courses/{id}",
-                    "delete",
-                    "removeClassroomCourse",
-                ),
-                (
-                    "/api/academic/planning/courses/instructors/batch",
-                    "post",
-                    "batchListCourseInstructors",
-                ),
-                (
-                    "/api/academic/planning/courses/instructors",
-                    "get",
-                    "batchListCourseInstructorsFromQuery",
-                ),
-                (
-                    "/api/academic/planning/courses/{id}/instructors",
-                    "get",
-                    "listCourseInstructors",
-                ),
-                (
-                    "/api/academic/planning/courses/{id}/instructors",
-                    "post",
-                    "addCourseInstructor",
-                ),
-                (
-                    "/api/academic/planning/courses/{id}/instructors/{uid}",
-                    "put",
-                    "updateCourseInstructorRole",
-                ),
-                (
-                    "/api/academic/planning/courses/{id}/instructors/{uid}",
-                    "delete",
-                    "removeCourseInstructor",
-                ),
-                (
-                    "/api/academic/planning/classrooms/{classroom_id}/activities",
-                    "get",
-                    "listClassroomActivities",
-                ),
-                (
-                    "/api/academic/planning/classrooms/{classroom_id}/activities/{slot_id}",
-                    "delete",
-                    "removeClassroomFromActivitySlot",
-                ),
-            ],
-        );
-
-        let operation_ids: Vec<&str> = document["paths"]
-            .as_object()
-            .expect("paths must be an object")
-            .values()
-            .flat_map(|path| path.as_object().expect("path item").values())
-            .filter_map(|operation| operation["operationId"].as_str())
-            .collect();
-        assert_eq!(
-            operation_ids.len(),
-            operation_ids.iter().copied().collect::<HashSet<_>>().len(),
-            "operation IDs must be unique"
-        );
-
-        for (path, method, request_schema) in [
-            (
-                "/api/academic/planning/courses",
-                "post",
-                "AssignCoursesRequest",
-            ),
-            (
-                "/api/academic/planning/courses/{id}",
-                "put",
-                "UpdateCourseRequest",
-            ),
-            (
-                "/api/academic/planning/courses/instructors/batch",
-                "post",
-                "BatchListCourseInstructorsRequest",
-            ),
-            (
-                "/api/academic/planning/courses/{id}/instructors",
-                "post",
-                "AddCourseInstructorRequest",
-            ),
-            (
-                "/api/academic/planning/courses/{id}/instructors/{uid}",
-                "put",
-                "UpdateCourseInstructorRoleRequest",
-            ),
-        ] {
-            assert_eq!(
-                document["paths"][path][method]["requestBody"]["content"]["application/json"]
-                    ["schema"]["$ref"],
-                format!("#/components/schemas/{request_schema}"),
-                "incorrect request schema for {method} {path}"
-            );
-            assert_eq!(
-                document["paths"][path][method]["responses"]["400"]["content"]["application/json"]
-                    ["schema"]["$ref"],
-                "#/components/schemas/ApiErrorResponse",
-                "invalid JSON must use the standard 400 envelope for {method} {path}"
-            );
-        }
-
-        for (path, method) in [
-            ("/api/academic/planning/courses/{id}", "put"),
-            ("/api/academic/planning/courses/{id}/instructors", "post"),
-            (
-                "/api/academic/planning/courses/{id}/instructors/{uid}",
-                "put",
-            ),
-            (
-                "/api/academic/planning/courses/{id}/instructors/{uid}",
-                "delete",
-            ),
-        ] {
-            assert_eq!(
-                document["paths"][path][method]["responses"]["409"]["content"]["application/json"]
-                    ["schema"]["$ref"],
-                "#/components/schemas/ApiErrorResponse",
-                "timetable conflicts must use the standard 409 envelope for {method} {path}"
-            );
-        }
-
-        assert_eq!(
-            document["paths"]["/api/academic/planning/courses"]["post"]["responses"]["200"]
-                ["content"]["application/json"]["schema"]["$ref"],
-            "#/components/schemas/ApiResponse_CourseAssignedCountData"
-        );
-        assert_eq!(
-            document["paths"]["/api/academic/planning/courses/instructors"]["get"]["responses"]
-                ["400"]["content"]["application/json"]["schema"]["$ref"],
-            "#/components/schemas/ApiErrorResponse"
-        );
-
-        let schemas = &document["components"]["schemas"];
-        let primary_instructor =
-            &schemas["UpdateCourseRequest"]["properties"]["primary_instructor_id"];
-        assert!(
-            primary_instructor.to_string().contains("null"),
-            "primary_instructor_id must document explicit null clearing"
-        );
-        assert!(
-            primary_instructor.to_string().contains("uuid"),
-            "primary_instructor_id must remain UUID-typed"
-        );
-        assert_eq!(
-            schemas["CourseInstructor"]["properties"]["role"]["$ref"],
-            "#/components/schemas/CourseInstructorRole"
-        );
-        assert_eq!(
-            schemas["CourseInstructorRole"]["enum"],
-            serde_json::json!(["primary", "secondary"])
-        );
-
-        let classroom_course = &schemas["ClassroomCourse"];
-        assert_eq!(
-            required(classroom_course),
-            vec![
-                "academic_semester_id",
-                "classroom_id",
-                "classroom_name",
-                "id",
-                "instructor_name",
-                "primary_instructor_id",
-                "settings",
-                "subject_code",
-                "subject_credit",
-                "subject_hours",
-                "subject_id",
-                "subject_name_en",
-                "subject_name_th",
-                "subject_type",
-            ]
-        );
-        for nullable_field in [
-            "primary_instructor_id",
-            "subject_code",
-            "subject_name_th",
-            "subject_name_en",
-            "subject_credit",
-            "subject_hours",
-            "instructor_name",
-            "subject_type",
-            "classroom_name",
+        for retired_path in [
+            "/api/academic/structure",
+            "/api/academic/semesters",
+            "/api/academic/classrooms",
+            "/api/academic/enrollments",
+            "/api/academic/planning/courses",
+            "/api/academic/subjects",
+            "/api/academic/study-plans",
         ] {
             assert!(
-                contains_null(&classroom_course["properties"][nullable_field]),
-                "{nullable_field} must be required but nullable"
+                document["paths"][retired_path].is_null(),
+                "retired path must stay removed: {retired_path}"
             );
         }
+
+        let schemas = &document["components"]["schemas"];
         assert_eq!(
-            classroom_course["properties"]["settings"]["$ref"],
-            "#/components/schemas/ClassroomCourseSettings"
+            required(&schemas["AcademicYear"]),
+            vec![
+                "createdAt",
+                "endDate",
+                "id",
+                "migrated",
+                "name",
+                "rowVersion",
+                "schoolDays",
+                "startDate",
+                "status",
+                "updatedAt",
+                "year",
+            ]
         );
         assert_eq!(
-            schemas["UpdateCourseRequest"]["properties"]["settings"]["$ref"],
-            "#/components/schemas/ClassroomCourseSettings"
+            required(&schemas["AcademicTerm"]),
+            vec![
+                "academicYearId",
+                "bellScheduleId",
+                "blocksYearClosure",
+                "code",
+                "createdAt",
+                "endDate",
+                "id",
+                "includedInYearResult",
+                "migrated",
+                "name",
+                "rowVersion",
+                "sequence",
+                "startDate",
+                "status",
+                "termType",
+                "updatedAt",
+            ]
         );
-        assert_eq!(schemas["ClassroomCourseSettings"]["type"], "object");
-        assert!(
-            schemas["ClassroomCourseSettings"]
-                .get("additionalProperties")
-                .is_some(),
-            "course settings must allow arbitrary JSON-valued properties"
+        for retired_field in ["semesterId", "classroomCourseId", "isActive"] {
+            assert!(schemas["AcademicYear"]["properties"][retired_field].is_null());
+            assert!(schemas["AcademicTerm"]["properties"][retired_field].is_null());
+        }
+
+        let success = &document["paths"]["/api/academic/offerings"]["get"]["responses"]["200"]
+            ["content"]["application/json"]["schema"]["$ref"];
+        assert_eq!(
+            success,
+            "#/components/schemas/ApiResponse_Vec_LearningOffering"
+        );
+        assert_eq!(
+            schemas["CourseGradingPolicy"]["properties"]["totalScore"]["type"],
+            "string"
+        );
+        assert_eq!(
+            schemas["CreateLearningOfferingRequest"]["oneOf"]
+                .as_array()
+                .map(Vec::len),
+            Some(2)
         );
     }
-
     #[test]
     fn documents_organization_unit_and_permission_grant_operations() {
         let document = school_api_value().expect("document should serialize");
@@ -2342,7 +1788,7 @@ mod tests {
                     "getLookupOrganizationUnit",
                 ),
                 ("/api/lookup/grade-levels", "get", "lookupGradeLevels"),
-                ("/api/lookup/classrooms", "get", "lookupClassrooms"),
+                ("/api/lookup/homerooms", "get", "lookupHomerooms"),
                 ("/api/lookup/academic-years", "get", "lookupAcademicYears"),
                 ("/api/lookup/subjects", "get", "lookupSubjects"),
             ],
@@ -2362,11 +1808,20 @@ mod tests {
         let lookup_parameters = document["paths"]["/api/lookup/staff"]["get"]["parameters"]
             .as_array()
             .expect("lookup parameters must be an array");
-        for name in ["active_only", "search", "limit", "academic_year_id"] {
+        for name in ["activeOnly", "search", "limit", "memberOnly"] {
             assert!(lookup_parameters
                 .iter()
                 .any(|parameter| { parameter["name"] == name && parameter["in"] == "query" }));
         }
+
+        let homeroom_parameters = document["paths"]["/api/lookup/homerooms"]["get"]["parameters"]
+            .as_array()
+            .expect("homeroom lookup parameters must be an array");
+        assert!(homeroom_parameters.iter().any(|parameter| {
+            parameter["name"] == "academicYearId"
+                && parameter["in"] == "query"
+                && parameter["required"] == true
+        }));
 
         let schemas = &document["components"]["schemas"];
         let grade = &schemas["GradeLevelLookupItem"];
@@ -2481,7 +1936,7 @@ mod tests {
                     "get",
                     "getParentChildCalendarEvents",
                 ),
-                ("/api/me/timetable", "get", "getMyTimetable"),
+                ("/api/staff/me/timetable", "get", "getStaffTimetable"),
                 ("/api/me/exam-schedules", "get", "listMyExamSchedules"),
                 ("/api/staff/exam-schedules", "get", "listStaffExamSchedules"),
                 ("/api/me/calendar/events", "get", "listMyCalendarEvents"),
@@ -2489,9 +1944,9 @@ mod tests {
         );
 
         assert_eq!(
-            document["paths"]["/api/me/timetable"]["get"]["responses"]["200"]["content"]
+            document["paths"]["/api/staff/me/timetable"]["get"]["responses"]["200"]["content"]
                 ["application/json"]["schema"]["$ref"],
-            "#/components/schemas/ApiResponse_MyTimetableData"
+            "#/components/schemas/ApiResponse_Vec_TimetableEntry"
         );
         assert_eq!(
             document["paths"]["/api/parent/students/{student_id}/exam-schedules"]["get"]
@@ -2523,46 +1978,44 @@ mod tests {
                 .any(|parameter| parameter["name"] == name && parameter["in"] == location));
         }
 
-        let my_timetable_parameters = document["paths"]["/api/me/timetable"]["get"]["parameters"]
+        let my_timetable_parameters = document["paths"]["/api/staff/me/timetable"]["get"]
+            ["parameters"]
             .as_array()
-            .expect("my timetable parameters must be an array");
-        for name in ["academic_semester_id", "day_of_week", "include_team_ghosts"] {
+            .expect("staff timetable parameters must be an array");
+        for name in [
+            "academicTermId",
+            "learningGroupId",
+            "homeroomId",
+            "instructorId",
+            "roomId",
+            "dayOfWeek",
+            "entryType",
+        ] {
             assert!(my_timetable_parameters
                 .iter()
                 .any(|parameter| parameter["name"] == name && parameter["in"] == "query"));
         }
 
         let schemas = &document["components"]["schemas"];
-        let my_timetable = &schemas["MyTimetableData"];
-        for field in ["current_seq", "items", "periods"] {
-            assert!(required(my_timetable).contains(&field));
-        }
-        assert_eq!(
-            my_timetable["properties"]["periods"]["items"]["$ref"],
-            "#/components/schemas/TimetablePeriod"
-        );
-
         let timetable = &schemas["TimetableEntry"];
         for field in [
-            "classroom_course_id",
-            "room_id",
+            "learningGroupId",
+            "offeringId",
+            "homeroomId",
+            "roomId",
             "note",
             "title",
-            "classroom_id",
-            "activity_slot_id",
-            "created_by",
-            "updated_by",
+            "subjectId",
+            "subjectVersionDisplayLabel",
+            "activityId",
+            "activityVersionDisplayLabel",
         ] {
-            assert!(required(timetable).contains(&field));
+            assert!(!required(timetable).contains(&field));
             assert!(contains_null(&timetable["properties"][field]));
         }
-        for field in ["batch_id", "subject_code", "instructor_ids", "start_time"] {
-            assert!(!required(timetable).contains(&field));
-            assert!(!contains_null(&timetable["properties"][field]));
+        for forbidden in ["semesterId", "classroomCourseId", "classroomId"] {
+            assert!(timetable["properties"].get(forbidden).is_none());
         }
-        assert!(contains_null(
-            &timetable["properties"]["instructor_subject_group_ids"]["items"]
-        ));
 
         let exam_round = &schemas["PersonalExamScheduleRound"];
         assert!(required(exam_round).contains(&"publishedAt"));
