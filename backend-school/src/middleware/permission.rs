@@ -235,13 +235,17 @@ mod tests {
     }
 
     #[test]
-    fn module_permission_matches_handles_empty_module_exact_module_and_prefix() {
+    fn module_permission_matches_handles_empty_exact_prefix_and_unrelated_modules() {
         assert!(module_permission_matches(&[], ""));
         assert!(module_permission_matches(
             &["academic".to_string()],
             "academic"
         ));
         assert!(module_permission_matches(
+            &[codes::LEARNING_OFFERING_READ_SCHOOL.to_string()],
+            "learning_offering"
+        ));
+        assert!(!module_permission_matches(
             &[codes::LEARNING_OFFERING_READ_SCHOOL.to_string()],
             "academic_course_plan"
         ));

@@ -19,6 +19,31 @@ fn stable_uuid(name: &str) -> Uuid {
 }
 
 #[tokio::test]
+async fn migration_chain_supports_an_empty_new_tenant() {
+    let pool = create_named_test_pool("academic_core_empty_tenant").await;
+
+    apply_migrations_through(&pool, 44)
+        .await
+        .expect("an empty newly provisioned tenant must migrate through Phase A");
+
+    let (year_count, term_count): (i64, i64) = sqlx::query_as(
+        r#"SELECT (SELECT COUNT(*) FROM academic_years),
+                  (SELECT COUNT(*) FROM academic_terms)"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("canonical academic context tables must exist");
+    assert_eq!((year_count, term_count), (0, 0));
+
+    let latest_version: i64 =
+        sqlx::query_scalar("SELECT COALESCE(MAX(version), 0) FROM _sqlx_migrations")
+            .fetch_one(&pool)
+            .await
+            .expect("migration history must be queryable");
+    assert_eq!(latest_version, 44);
+}
+
+#[tokio::test]
 async fn migration_041_maps_core_fixture() {
     let pool = create_named_test_pool("academic_core_041").await;
     apply_migrations_through(&pool, 40)

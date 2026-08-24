@@ -210,3 +210,31 @@ test('canonical docs own the school-font rollout and lifecycle contract', async 
 	assert.match(testing, /certificate-lifecycle\.spec\.ts/);
 	assert.match(testing, /survives campaign purge/i);
 });
+
+test('canonical docs own the two-artifact Academic Core cutover and unfinished lifecycle work', async () => {
+	const [testing, operations, todo] = await Promise.all([
+		readFile(path.join(repoRoot, 'docs/TESTING.md'), 'utf8'),
+		readFile(path.join(repoRoot, 'docs/OPERATIONS.md'), 'utf8'),
+		readFile(path.join(repoRoot, 'TODO.md'), 'utf8')
+	]);
+
+	assert.match(testing, /Academic Core migration rehearsal/);
+	for (const migration of ['041', '042', '043', '044']) {
+		assert.match(testing, new RegExp(`migration_${migration}|through ${migration}`));
+	}
+	assert.match(testing, /modules::system::handlers::migration::tests/);
+	assert.match(testing, /discovery does not equal execution/i);
+	assert.match(testing, /manual Neon/i);
+
+	assert.match(operations, /Academic Core two-artifact maintenance cutover/);
+	assert.match(operations, /\/internal\/academic-core\/reconcile-all/);
+	assert.match(operations, /migrations 041-044[\s\S]*does not contain 045/i);
+	assert.match(operations, /first accepted\s+write[\s\S]*snapshot rollback boundary/i);
+	assert.match(operations, /after the first\s+write[\s\S]*do not deploy the old app/i);
+
+	const sch002 = todo.match(/SCH-002[\s\S]*?(?=\n- \[[ x]\] \*\*|\n##|$)/)?.[0] ?? '';
+	assert.match(sch002, /Gradebook\/results/);
+	assert.match(sch002, /term lifecycle/);
+	assert.match(sch002, /annual closure\/promotion/);
+	assert.match(sch002, /Thai academic documents/);
+});

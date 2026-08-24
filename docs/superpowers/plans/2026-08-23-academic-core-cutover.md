@@ -383,7 +383,8 @@ and SQL mapping output on the same fixture before Phase A.
 - `backend-school/migrations/041_academic_core_catalog.sql`
 - `backend-school/migrations/042_academic_delivery_backfill.sql`
 - `backend-school/migrations/043_academic_consumer_cutover.sql`
-- `backend-school/migrations/044_academic_core_legacy_cleanup.sql` — Phase B only
+- `backend-school/migrations/044_academic_runtime_contract.sql` — Phase A
+- `backend-school/migrations/045_academic_core_legacy_cleanup.sql` — Phase B only
 - `backend-school/src/bin/preflight_academic_core.rs`
 - `backend-school/src/modules/academic/cutover_preflight.rs`
 - `backend-school/src/modules/academic/core.rs`
@@ -2284,13 +2285,13 @@ checkpoint.
 POST /internal/academic-core/reconcile-all
 ```
 
-`reconcile-all` is valid only after 043, reruns every aggregate check, and records a success marker
+`reconcile-all` is valid only after 044, reruns every aggregate check, and records a success marker
 in `academic_core_cutover_audits` only when all checks pass. It returns bounded per-tenant status and
 counts, never row data, connection strings, or tenant secrets. Existing internal authentication and
 bounded tenant concurrency apply; no second migration runner is introduced. Preflight remains the
 read-only CLI from Task 1 so obtaining a tenant pool cannot trigger lazy migration before validation.
 
-- [ ] **Step 1: Add RED internal-operation tests**
+- [x] **Step 1: Add RED internal-operation tests**
 
 Test authentication failure, mixed tenant pass/fail aggregation, no success marker on failed
 reconciliation, idempotent success-marker recording, and bounded failure responses. Assert the
@@ -2303,14 +2304,14 @@ operation never invokes `run_tenant_migrations` itself.
 
 Expected: new endpoint tests FAIL until handlers are registered.
 
-- [ ] **Step 2: Implement internal reconciliation orchestration**
+- [x] **Step 2: Implement internal reconciliation orchestration**
 
 Reuse the admin tenant inventory and pool manager already owned by migration operations.
-Reconciliation rejects any tenant not exactly on Phase A's expected latest version 043. A
+Reconciliation rejects any tenant not exactly on Phase A's expected latest version 044. A
 successful marker stores migration version, mapping algorithm version, check codes, aggregate
 counts/checksums, and timestamp; it stores no actor/learner names.
 
-- [ ] **Step 3: Document repeatable local and clone rehearsal**
+- [x] **Step 3: Document repeatable local and clone rehearsal**
 
 Add to `docs/TESTING.md`:
 
@@ -2323,7 +2324,7 @@ Add to `docs/TESTING.md`:
 
 Add no copied table inventory; link to migrations, typed services, and canonical operations.
 
-- [ ] **Step 4: Document the two-artifact maintenance cutover**
+- [x] **Step 4: Document the two-artifact maintenance cutover**
 
 Add one durable Academic Core section to `docs/OPERATIONS.md` with these mandatory gates:
 
@@ -2360,13 +2361,20 @@ For the protected clone, record only duration, aggregate counts/checksums, findi
 fail outside the repository. Apply 041-044, run the new backend/frontend smoke workflows, then apply a
 review copy of 045 on the clone and verify cleanup. Never commit clone data or output.
 
-- [ ] **Step 6: Update unfinished backlog accurately**
+Local synthetic and blocking-fixture rehearsal is complete through 044. The protected-clone run,
+manual Neon compatibility, deployed smoke, and authenticated Playwright execution are unrun because
+this session has no authorized clone, repository credential, isolated deployment target, or dedicated
+browser accounts. The future Phase B clone rehearsal is also unrun because migration 045 and cleanup
+authorization intentionally do not exist in this artifact. Keep this step open until those external
+release gates are executed and recorded outside the repository.
+
+- [x] **Step 6: Update unfinished backlog accurately**
 
 Keep `SCH-002` open. Clarify that after Release 1 it still owns Gradebook/results, term lifecycle,
 annual closure/promotion, and Thai academic documents. Do not mark promotion or term transition
 complete and do not add a completed-work report.
 
-- [ ] **Step 7: Run the complete Phase A change-type matrix**
+- [x] **Step 7: Run the complete Phase A change-type matrix**
 
 ```bash
 # Repository and documentation
@@ -2410,7 +2418,7 @@ Execute Playwright, deployed smoke, and manual Neon compatibility only when thei
 deployment target, and explicit authority exist. Report them as unrun with the missing dependency;
 do not imply discovery equals execution.
 
-- [ ] **Step 8: Request Phase A code review**
+- [x] **Step 8: Request Phase A code review**
 
 Use `superpowers:requesting-code-review` for two passes:
 
@@ -2420,7 +2428,12 @@ Use `superpowers:requesting-code-review` for two passes:
 Apply accepted findings through `superpowers:receiving-code-review`, rerun affected checks, and
 request review again. Do not merge/deploy.
 
-- [ ] **Step 9: Commit the Phase A release candidate**
+The current session disallowed subagent dispatch, so both required passes were performed as explicit
+local self-review passes. The review covered plan/data mapping first and authorization, PII, API,
+context, rollback, and the complete diff second. It found one missing empty-new-tenant reconciliation
+regression; that test was added and passed. No critical or important finding remains open.
+
+- [x] **Step 9: Commit the Phase A release candidate**
 
 ```bash
 git add backend-school/src/modules/system/handlers/migration.rs \
@@ -2433,6 +2446,17 @@ git commit -m "docs(academic): define core cutover operations"
 Tag/build the exact reviewed Phase A commit only after explicit release approval. Confirm with
 `git ls-tree` that `backend-school/migrations/045_academic_core_legacy_cleanup.sql` is absent from
 that artifact.
+
+Release 14 local evidence: documentation passed 7 tests; the permission contract generated and
+verified 129 permissions with 22 generator tests; the API contract generated and verified with 4
+generator tests; lint passed; Svelte check reported zero errors and warnings; menu synchronization
+passed 11 tests; frontend static architecture passed 465 tests; and Playwright discovered 13 selected
+scenarios in two files. Backend format and check passed, static architecture passed 146 tests, API
+contract passed 20 tests, the complete disposable PostgreSQL suite passed 801 tests, and the focused
+handler suite passed all 9 tests after adding the empty-new-tenant regression. Playwright execution,
+protected-clone rehearsal, manual Neon compatibility, deployed smoke, and Phase B rehearsal remain
+explicitly unrun for the dependencies recorded in Step 5. No migration 045 was added and no Phase B
+work was started.
 
 ---
 
@@ -2511,9 +2535,11 @@ Expected: FAIL because migration 045 does not exist.
 
 - [ ] **Step 3: Write migration 045 with fail-closed prerequisites**
 
-At the beginning, lock the tenant audit marker and verify migration 044, mapping algorithm
-`academic-core-v1`, successful check codes, expected checksum, and no writes since the recorded
-maintenance reconciliation. Raise a stable bounded error before any drop if a prerequisite differs.
+At the beginning, lock the tenant audit records and verify the version-43 mapping snapshot uses
+`academic-core-v1`, the current version-44 reconciliation marker uses
+`academic-core-v1-reconciliation`, both carry the expected checksums/check codes, and no writes have
+occurred since the recorded maintenance reconciliation. Raise a stable bounded error before any drop
+if a prerequisite differs.
 
 Drop dependencies in foreign-key order, then old tables/columns/functions. Deactivate/delete legacy
 permissions only after asserting no active database permission contract row or unmatched grant
@@ -2542,7 +2568,7 @@ cargo fmt --all -- --check
 cargo check
 ```
 
-Expected: PASS with contiguous migrations 001-044 and zero final runtime legacy-query hits.
+Expected: PASS with contiguous migrations 001-045 and zero final runtime legacy-query hits.
 
 - [ ] **Step 6: Run all generated-contract and frontend checks again**
 
@@ -2574,7 +2600,7 @@ git status --short
 - [ ] **Step 8: Commit the Phase B cleanup artifact**
 
 ```bash
-git add -A backend-school/migrations/044_academic_core_legacy_cleanup.sql \
+git add -A backend-school/migrations/045_academic_core_legacy_cleanup.sql \
   backend-school/src backend-school/tests docs/OPERATIONS.md \
   docs/superpowers/specs/2026-08-23-academic-core-lifecycle-redesign-design.md \
   docs/superpowers/plans/2026-08-23-academic-core-cutover.md

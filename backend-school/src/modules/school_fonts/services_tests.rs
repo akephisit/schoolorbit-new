@@ -142,8 +142,8 @@ async fn insert_staged_font(
 
 async fn insert_template(pool: &PgPool, actor_id: Uuid, year: i32) -> Uuid {
     let academic_year_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO academic_years (year, name, start_date, end_date)
-         VALUES ($1, 'School font service test', make_date($1, 1, 1), make_date($1, 12, 31))
+        "INSERT INTO academic_years (year, name, start_date, end_date, status)
+         VALUES ($1, 'School font service test', make_date($1, 1, 1), make_date($1, 12, 31), 'planning')
          RETURNING id",
     )
     .bind(year)

@@ -47,11 +47,11 @@ async fn passing_legacy_fixture_reports_exact_counts_without_writes() {
     assert!(report.can_cut_over);
     assert_eq!(report.source_counts["academicYears"], 4);
     assert_eq!(report.source_counts["academicTerms"], 9);
-    assert_eq!(report.expected_target_counts["stableSubjects"], 1);
-    assert_eq!(report.expected_target_counts["subjectVersions"], 2);
+    assert_eq!(report.expected_target_counts["stableSubjects"], 2);
+    assert_eq!(report.expected_target_counts["subjectVersions"], 3);
     assert_eq!(report.expected_target_counts["studentAcademicYears"], 3);
     assert_eq!(report.expected_target_counts["homeroomPlacements"], 3);
-    assert_eq!(report.expected_target_counts["courseGroups"], 2);
+    assert_eq!(report.expected_target_counts["courseGroups"], 3);
     assert_eq!(report.expected_target_counts["activityOfferings"], 2);
     assert_eq!(report.findings.len(), 1);
     assert_eq!(

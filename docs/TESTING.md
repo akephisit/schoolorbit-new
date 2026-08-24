@@ -184,9 +184,70 @@ Routine backend-school database tests run on the developer's computer. From the 
   modules::auth::session_repository_tests -- --nocapture
 ```
 
-Docker Desktop WSL integration must be active when the repository runs in WSL. The runner accepts only a local Docker endpoint, runs Cargo and its compilation cache on the computer, creates no persistent database volume, and removes its exact PostgreSQL container after success, failure, `INT`, `TERM`, or `HUP`. It replaces any inherited `TEST_DATABASE_URL` only for the Cargo child and never uses `DATABASE_URL`. Direct Cargo against a persistent Neon URL is not the routine test recipe.
+Docker Desktop WSL integration must be active when the repository runs in WSL. The runner accepts only a local Docker endpoint, runs Cargo and its compilation cache on the computer, allocates up to 5 GiB of disposable PostgreSQL tmpfs for the complete migration-backed suite, creates no persistent database volume, and removes its exact PostgreSQL container after success, failure, `INT`, `TERM`, or `HUP`. It replaces any inherited `TEST_DATABASE_URL` only for the Cargo child and never uses `DATABASE_URL`. Direct Cargo against a persistent Neon URL is not the routine test recipe.
 
 Tests continue to isolate their schema/data within the disposable database. The local runner removes the whole database container after the command, including on test failure.
+
+### Academic Core migration rehearsal
+
+Run the Academic Core chain against disposable local PostgreSQL from the repository root. These
+focused commands prove the read-only legacy preflight and each sequential transition through 041,
+042, 043, and 044; run them one at a time so failures remain attributable:
+
+```bash
+./scripts/test_backend_school.sh \
+  modules::academic::cutover_preflight_database_tests -- --nocapture --test-threads=1
+./scripts/test_backend_school.sh \
+  modules::academic::core::schema_tests::migration_041_maps_core_fixture \
+  -- --exact --nocapture --test-threads=1
+./scripts/test_backend_school.sh \
+  modules::academic::delivery::services_tests::migration_042_maps_delivery_fixture \
+  -- --exact --nocapture --test-threads=1
+./scripts/test_backend_school.sh \
+  modules::academic::core::schema_tests::migration_043_maps_all_consumers \
+  -- --exact --nocapture --test-threads=1
+./scripts/test_backend_school.sh \
+  modules::academic::core::schema_tests::migration_044_exposes_the_clean_academic_core_runtime_contract \
+  -- --exact --nocapture --test-threads=1
+./scripts/test_backend_school.sh \
+  modules::system::handlers::migration::tests -- --nocapture --test-threads=1
+```
+
+Then run the complete disposable PostgreSQL suite:
+
+```bash
+./scripts/test_backend_school.sh -- --test-threads=1
+```
+
+The passing legacy fixture must report stable aggregate source counts without writes, every blocking
+fixture must return its expected bounded finding code, and migrations 041-044 must preserve mapped
+counts and checksums. Reconciliation must read the actual tenant migration version, reject anything
+other than exactly 044, run all aggregate checks without invoking the migration runner, create no
+success marker when a check fails, and preserve one idempotent version-44 success marker when every
+check passes. Tests and reports may contain schema labels, finding/check codes, durations, aggregate
+counts, and checksums only—never source rows, people, database URLs, or credentials.
+
+A protected tenant clone rehearsal is an external, explicitly authorized gate. Use the secret-backed
+tenant connection inventory, keep output outside the repository, apply 041-044, run authenticated
+multi-year/multi-term reads, and record only duration, aggregate counts/checksums, finding codes, and
+pass/fail. When a separately reviewed Phase B branch contains migration 045, rehearse that review
+copy on the same disposable clone after a current success marker and verify its cleanup manifest.
+Never commit clone data or its output. The manual Neon migration compatibility workflow remains a
+separate credentialed external gate and is unrun when its repository secret/variables are unavailable.
+
+For browser coverage, discovery does not equal execution. Discovery must work without tenant
+credentials:
+
+```bash
+cd frontend-school
+npx playwright test --list tests/e2e/academic-context.spec.ts \
+  tests/e2e/academic-core-cutover.spec.ts
+```
+
+Execution requires an isolated deployed target plus the dedicated accounts and permissions expected
+by those specs. Report Playwright execution, protected-clone rehearsal, manual Neon compatibility,
+and deployment smoke as `unrun` with the exact missing account, credential, target, or authorization;
+do not report discovery as a passing browser workflow and do not silently omit an external gate.
 
 ### Manual Neon migration compatibility
 

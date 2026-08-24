@@ -127,6 +127,10 @@ fn internal_routes() -> Router<AppState> {
             "/internal/migration-status",
             get(modules::system::handlers::migration::migration_status),
         )
+        .route(
+            "/internal/academic-core/reconcile-all",
+            post(modules::system::handlers::migration::reconcile_all_academic_core),
+        )
         .route_layer(from_fn(middleware::internal_auth::validate_internal_secret))
 }
 

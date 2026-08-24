@@ -924,18 +924,18 @@ fn fault_sql(fault: CutoverFixtureFault) -> &'static str {
                 study_plan_version_id, capacity
             )
             VALUES (
-                '40000000-0000-0000-0000-000000000125', 'M1-2-2025', 'ม.1/2 ปี 2025',
+                '40000000-0000-0000-0000-000000000225', 'M1-3-2025', 'ม.1/3 ปี 2025',
                 '10000000-0000-0000-0000-000000000025',
-                'e999190c-d3fc-4124-b787-3445dcb26ee8', '2',
+                'e999190c-d3fc-4124-b787-3445dcb26ee8', '3',
                 '31000000-0000-0000-0000-000000000025', 40
             );
             INSERT INTO student_class_enrollments (
                 id, student_id, class_room_id, enrollment_date, status, enrollment_type
             )
             VALUES (
-                '51000000-0000-0000-0000-000000000125',
+                '51000000-0000-0000-0000-000000000225',
                 '50000000-0000-0000-0000-000000000001',
-                '40000000-0000-0000-0000-000000000125', '2025-05-01', 'active', 'regular'
+                '40000000-0000-0000-0000-000000000225', '2025-05-01', 'active', 'regular'
             );
         "#
         }
@@ -1156,9 +1156,9 @@ fn repair_sql(fault: CutoverFixtureFault) -> &'static str {
         Fault::EnrollmentYear => {
             r#"
             DELETE FROM student_class_enrollments
-            WHERE id = '51000000-0000-0000-0000-000000000125';
+            WHERE id = '51000000-0000-0000-0000-000000000225';
             DELETE FROM class_rooms
-            WHERE id = '40000000-0000-0000-0000-000000000125';
+            WHERE id = '40000000-0000-0000-0000-000000000225';
         "#
         }
         Fault::EnrollmentStatus => {

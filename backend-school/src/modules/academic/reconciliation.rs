@@ -1,6 +1,8 @@
 use crate::error::AppError;
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use sqlx::PgPool;
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -20,6 +22,8 @@ pub struct AcademicCutoverReconciliation {
 }
 
 const TARGET_PERMISSION_COUNT: i64 = 27;
+pub const PHASE_A_MIGRATION_VERSION: i64 = 44;
+pub const RECONCILIATION_MAPPING_VERSION: &str = "academic-core-v1-reconciliation";
 
 fn check(code: &str, source_count: i64, target_count: i64, passed: bool) -> ReconciliationCheck {
     ReconciliationCheck {
@@ -270,12 +274,15 @@ pub async fn reconcile_academic_core_cutover(
             LEFT JOIN academic_exam_rounds round ON round.id = item.exam_round_id
             LEFT JOIN learning_groups learning_group ON learning_group.id = item.learning_group_id
             LEFT JOIN learning_offerings offering ON offering.id = item.learning_offering_id
+            LEFT JOIN course_offering_details detail
+              ON detail.learning_offering_id = item.learning_offering_id
             LEFT JOIN course_assessment_plans plan ON plan.id = item.course_assessment_plan_id
-            LEFT JOIN subject_versions version ON version.id = item.subject_version_id
+            LEFT JOIN subject_versions version ON version.id = detail.subject_version_id
             LEFT JOIN homerooms homeroom ON homeroom.id = item.homeroom_id
             WHERE round.id IS NULL
                OR learning_group.id IS NULL
                OR offering.id IS NULL
+               OR detail.learning_offering_id IS NULL
                OR plan.id IS NULL
                OR version.id IS NULL
                OR round.academic_term_id <> item.academic_term_id
@@ -285,10 +292,12 @@ pub async fn reconcile_academic_core_cutover(
                OR learning_group.academic_year_id <> item.academic_year_id
                OR offering.academic_term_id <> item.academic_term_id
                OR offering.academic_year_id <> item.academic_year_id
+               OR detail.academic_term_id <> item.academic_term_id
+               OR detail.academic_year_id <> item.academic_year_id
                OR plan.learning_offering_id <> item.learning_offering_id
                OR plan.academic_term_id <> item.academic_term_id
                OR plan.academic_year_id <> item.academic_year_id
-               OR plan.subject_version_id <> item.subject_version_id
+               OR plan.subject_version_id <> detail.subject_version_id
                OR version.subject_id <> item.subject_id
                OR homeroom.id IS NULL
                OR homeroom.academic_year_id <> item.academic_year_id
@@ -339,7 +348,17 @@ pub async fn reconcile_academic_core_cutover(
             SELECT question.id
             FROM academic_question_bank_questions question
             LEFT JOIN subjects subject ON subject.id = question.subject_id
+            LEFT JOIN subject_versions migrated_version
+              ON migrated_version.id::text =
+                 question.migration_provenance ->> 'legacySubjectVersionId'
             WHERE subject.id IS NULL
+               OR (
+                    question.migration_provenance @> '{"migration": 43}'::jsonb
+                    AND (
+                        migrated_version.id IS NULL
+                        OR migrated_version.subject_id <> question.subject_id
+                    )
+               )
             UNION ALL
             SELECT track.id
             FROM admission_tracks track
@@ -751,6 +770,76 @@ pub async fn reconcile_academic_core_cutover(
         passed: checks.iter().all(|entry| entry.passed),
         checks,
     })
+}
+
+pub async fn reconcile_and_record_academic_core_cutover(
+    pool: &PgPool,
+) -> Result<AcademicCutoverReconciliation, AppError> {
+    let current_version: i64 =
+        sqlx::query_scalar("SELECT COALESCE(MAX(version), 0) FROM _sqlx_migrations")
+            .fetch_one(pool)
+            .await?;
+    if current_version != PHASE_A_MIGRATION_VERSION {
+        return Err(AppError::BadRequest(
+            "ACADEMIC_CORE_PHASE_A_VERSION_MISMATCH".to_string(),
+        ));
+    }
+
+    let report = reconcile_academic_core_cutover(pool).await?;
+    if !report.passed {
+        return Ok(report);
+    }
+
+    let source_counts = report
+        .checks
+        .iter()
+        .map(|check| (check.code.clone(), check.source_count))
+        .collect::<BTreeMap<_, _>>();
+    let target_counts = report
+        .checks
+        .iter()
+        .map(|check| (check.code.clone(), check.target_count))
+        .collect::<BTreeMap<_, _>>();
+    let source_counts = serde_json::to_value(source_counts).map_err(|_| {
+        AppError::InternalServerError("Failed to encode reconciliation counts".to_string())
+    })?;
+    let target_counts = serde_json::to_value(target_counts).map_err(|_| {
+        AppError::InternalServerError("Failed to encode reconciliation counts".to_string())
+    })?;
+    let source_checksum = hex::encode(Sha256::digest(source_counts.to_string().as_bytes()));
+    let target_checksum = hex::encode(Sha256::digest(target_counts.to_string().as_bytes()));
+
+    let result = sqlx::query(
+        r#"
+        INSERT INTO academic_core_cutover_audits (
+            migration_version, mapping_algorithm_version, source_counts, target_counts,
+            source_checksum, target_checksum
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (migration_version) DO UPDATE
+        SET source_counts = EXCLUDED.source_counts,
+            target_counts = EXCLUDED.target_counts,
+            source_checksum = EXCLUDED.source_checksum,
+            target_checksum = EXCLUDED.target_checksum
+        WHERE academic_core_cutover_audits.mapping_algorithm_version =
+              EXCLUDED.mapping_algorithm_version
+        "#,
+    )
+    .bind(PHASE_A_MIGRATION_VERSION)
+    .bind(RECONCILIATION_MAPPING_VERSION)
+    .bind(source_counts)
+    .bind(target_counts)
+    .bind(source_checksum)
+    .bind(target_checksum)
+    .execute(pool)
+    .await?;
+    if result.rows_affected() != 1 {
+        return Err(AppError::InternalServerError(
+            "Academic Core reconciliation marker conflicts with an existing audit".to_string(),
+        ));
+    }
+
+    Ok(report)
 }
 
 #[cfg(test)]

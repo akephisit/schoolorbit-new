@@ -276,6 +276,52 @@ Backend-school deployment keeps the school API in maintenance mode while it call
 
 The one-time legacy rebaseline is complete and its operational scripts are retired. If a tenant with legacy `_sqlx_migrations` history is discovered, stop the rollout and prepare a new reviewed recovery plan. Never point the current release at that database, copy migration history, or edit SQLx checksum records.
 
+### Academic Core two-artifact maintenance cutover
+
+Academic Core is a two-artifact maintenance cutover. Phase A contains migrations 041-044 and the
+new runtime; it does not contain 045. Phase B is a separately reviewed and explicitly authorized
+cleanup image containing migration 045. Never combine the artifacts, allow lazy tenant migration,
+or open traffic between incompatible application/schema versions.
+
+Perform the cutover in this order:
+
+1. Inspect the exact Phase A commit with `git ls-tree` and confirm it contains migrations 041-044,
+   does not contain `045_academic_core_legacy_cleanup.sql`, and matches the reviewed generated API
+   and permission contracts.
+2. Confirm the approved Release 3 timing is before the next operational term transition. If term
+   operations cannot wait for the full lifecycle release, record a no-go instead of introducing a
+   manual status workaround.
+3. Enter global maintenance and stop academic writes, background workers, and realtime mutations.
+   Keep traffic closed throughout both artifacts.
+4. While every tenant is still on 040, run `preflight_academic_core` separately against every tenant
+   through the authorized secret-backed connection inventory. Aggregate only schema label, status,
+   finding codes, and counts; resolve every blocker and never obtain a pool through a path that can
+   run lazy migrations.
+5. Confirm the source counts remain stable, then take and verify a recoverable snapshot under the
+   retention policy. Record its protected identifier only in the operational system.
+6. Deploy the Phase A image and apply 041-044 through `/internal/migrate-all`. Require every active
+   tenant to report exactly 044 with no pending, failed, or outdated status.
+7. Deploy the matching Phase A backend and frontend while traffic remains closed; do not run an old
+   application against the new schema.
+8. Call the service-authenticated `POST /internal/academic-core/reconcile-all`. Require all aggregate
+   checks and one current version-44 success marker for every tenant; responses and retained evidence
+   must contain no row data, database URL, secret, or learner identity.
+9. On selected tenants, run read-only and authenticated workflows in multiple year and term contexts,
+   including Topbar context changes, offerings/groups, assessment, timetable, exams, supervision,
+   admission, and student/parent history views.
+10. Only after the separately reviewed Phase B artifact and explicit cleanup authorization exist,
+    deploy that image and apply 045 through the same centralized migration runner.
+11. Verify every tenant's latest version and cleanup manifest, generated contracts, permissions,
+    `/ready`, and the selected authenticated workflows again.
+12. Explicitly record the go/no-go decision. Open traffic only on `go`, then record the first accepted
+    write as the snapshot rollback boundary.
+
+Any preflight, reconciliation, migration, readiness, or smoke failure keeps maintenance active.
+Before the first accepted write, restore the snapshot and previous release together if rollback is
+chosen. After the first write, do not deploy the old app against the new schema; keep traffic closed
+and repair forward with a reviewed migration/application artifact. Do not edit `_sqlx_migrations`,
+an applied migration, reconciliation marker, or tenant source data to force a green result.
+
 ### School font library cutover
 
 Migration `040_school_font_library.sql` is an intentional empty-state cutover. Before entering the all-tenant migration gate, verify every active tenant has zero legacy certificate font assets, zero `certificate_template_font` staging rows, and zero text elements whose `fontSource.type` is `asset`. The migration enforces the same prerequisite and stops with `legacy certificate template fonts must be empty before migration 040` if any old row remains. Do not silently convert, copy, or delete a non-empty tenant during deployment; stop and use a separately reviewed data-removal or migration procedure.

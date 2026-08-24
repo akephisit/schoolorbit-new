@@ -1,6 +1,9 @@
+use crate::api_response::ApiResponse;
+use crate::db::{admin_client::ActiveSchool, pool_manager::PoolManager};
 use crate::error::AppError;
 use crate::modules::academic::reconciliation::{
-    reconcile_academic_core_cutover, ReconciliationCheck,
+    reconcile_academic_core_cutover, reconcile_and_record_academic_core_cutover,
+    ReconciliationCheck, PHASE_A_MIGRATION_VERSION,
 };
 use crate::AppState;
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
@@ -23,6 +26,28 @@ struct MigrateAllResponse {
     failed: usize,
     latest_version: i64,
     results: Vec<MigrationResult>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AcademicCoreTenantReconciliationResult {
+    subdomain: String,
+    status: String,
+    migration_version: Option<i64>,
+    passed: bool,
+    checks: Vec<ReconciliationCheck>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error_code: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReconcileAllAcademicCoreResponse {
+    total: usize,
+    success: usize,
+    failed: usize,
+    expected_migration_version: i64,
+    results: Vec<AcademicCoreTenantReconciliationResult>,
 }
 
 #[derive(Serialize)]
@@ -147,6 +172,144 @@ async fn academic_core_cutover_status_from_database(
             )
         }
     }
+}
+
+fn failed_reconciliation(
+    subdomain: String,
+    migration_version: Option<i64>,
+    error_code: &str,
+    checks: Vec<ReconciliationCheck>,
+) -> AcademicCoreTenantReconciliationResult {
+    AcademicCoreTenantReconciliationResult {
+        subdomain,
+        status: "failed".to_string(),
+        migration_version,
+        passed: false,
+        checks,
+        error_code: Some(error_code.to_string()),
+    }
+}
+
+async fn reconcile_active_school(
+    pool_manager: &PoolManager,
+    school: ActiveSchool,
+) -> AcademicCoreTenantReconciliationResult {
+    let subdomain = school.subdomain;
+    let Some(database_url) = school
+        .db_connection_string
+        .filter(|value| !value.is_empty())
+    else {
+        return failed_reconciliation(
+            subdomain,
+            school.migration_version.map(i64::from),
+            "DATABASE_URL_UNAVAILABLE",
+            Vec::new(),
+        );
+    };
+
+    let pool = match pool_manager
+        .get_pool_for_read_only_status(&database_url, &subdomain)
+        .await
+    {
+        Ok(pool) => pool,
+        Err(_) => {
+            return failed_reconciliation(
+                subdomain,
+                school.migration_version.map(i64::from),
+                "POOL_UNAVAILABLE",
+                Vec::new(),
+            );
+        }
+    };
+    let migration_version = match get_current_version(&pool).await {
+        Ok(version) => version,
+        Err(_) => {
+            return failed_reconciliation(
+                subdomain,
+                None,
+                "MIGRATION_VERSION_UNAVAILABLE",
+                Vec::new(),
+            );
+        }
+    };
+    if migration_version != PHASE_A_MIGRATION_VERSION {
+        return failed_reconciliation(
+            subdomain,
+            Some(migration_version),
+            "PHASE_A_VERSION_MISMATCH",
+            Vec::new(),
+        );
+    }
+
+    match reconcile_and_record_academic_core_cutover(&pool).await {
+        Ok(report) if report.passed => AcademicCoreTenantReconciliationResult {
+            subdomain,
+            status: "passed".to_string(),
+            migration_version: Some(migration_version),
+            passed: true,
+            checks: report.checks,
+            error_code: None,
+        },
+        Ok(report) => failed_reconciliation(
+            subdomain,
+            Some(migration_version),
+            "CHECKS_FAILED",
+            report.checks,
+        ),
+        Err(error) => {
+            tracing::warn!(
+                subdomain,
+                reason = "academic_core_reconciliation_failed",
+                database_code = ?match &error {
+                    AppError::DbError(sqlx::Error::Database(database_error)) => database_error.code(),
+                    _ => None,
+                }
+            );
+            failed_reconciliation(
+                subdomain,
+                Some(migration_version),
+                "RECONCILIATION_UNAVAILABLE",
+                Vec::new(),
+            )
+        }
+    }
+}
+
+async fn reconcile_all_active_schools(
+    pool_manager: &PoolManager,
+    schools: Vec<ActiveSchool>,
+) -> ReconcileAllAcademicCoreResponse {
+    let mut results = Vec::with_capacity(schools.len());
+    // Operational reconciliation intentionally processes one tenant at a time so database load is
+    // bounded and result ordering matches the admin inventory.
+    for school in schools {
+        results.push(reconcile_active_school(pool_manager, school).await);
+    }
+    let success = results.iter().filter(|result| result.passed).count();
+    let failed = results.len() - success;
+    ReconcileAllAcademicCoreResponse {
+        total: results.len(),
+        success,
+        failed,
+        expected_migration_version: PHASE_A_MIGRATION_VERSION,
+        results,
+    }
+}
+
+pub async fn reconcile_all_academic_core(
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, AppError> {
+    let schools = state
+        .admin_client
+        .list_active_schools()
+        .await
+        .map_err(|_| {
+            AppError::InternalServerError(
+                "Failed to fetch schools for Academic Core reconciliation".to_string(),
+            )
+        })?;
+    let response = reconcile_all_active_schools(&state.pool_manager, schools).await;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(response))))
 }
 
 /// Migrate all active schools
@@ -454,11 +617,41 @@ async fn get_current_version(pool: &PgPool) -> Result<i64, String> {
 mod tests {
     use super::*;
     use crate::{
+        middleware::internal_auth::{validate_internal_secret, INTERNAL_CALLER_HEADER},
         modules::academic::cutover_test_support::{
             apply_migrations_through, seed_academic_cutover_fixture, CutoverFixture,
         },
         test_helpers::create_named_test_pool,
     };
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+        middleware::from_fn,
+        routing::post,
+        Router,
+    };
+    use tower::ServiceExt;
+
+    async fn phase_a_pool(name: &str) -> PgPool {
+        let pool = create_named_test_pool(name).await;
+        apply_migrations_through(&pool, 40).await.unwrap();
+        seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
+            .await
+            .unwrap();
+        apply_migrations_through(&pool, 44).await.unwrap();
+        pool
+    }
+
+    fn active_school(subdomain: &str, database_url: Option<&str>) -> ActiveSchool {
+        ActiveSchool {
+            subdomain: subdomain.to_string(),
+            db_connection_string: database_url.map(str::to_string),
+            migration_version: Some(44),
+            migration_status: Some("migrated".to_string()),
+            last_migrated_at: None,
+            migration_error: None,
+        }
+    }
 
     #[tokio::test]
     async fn academic_core_status_is_not_applicable_before_migration_043() {
@@ -527,5 +720,213 @@ mod tests {
 
         assert!(value.get("academicCoreCutover").is_some());
         assert!(value.get("academic_core_cutover").is_none());
+    }
+
+    #[tokio::test]
+    async fn reconcile_all_route_is_internal_secret_authenticated() {
+        let app_source = include_str!("../../../app.rs");
+        let internal_routes = &app_source[app_source.find("fn internal_routes").unwrap()
+            ..app_source.find("fn protected_routes").unwrap()];
+        assert!(internal_routes.contains("/internal/academic-core/reconcile-all"));
+        assert!(internal_routes
+            .contains("route_layer(from_fn(middleware::internal_auth::validate_internal_secret))"));
+
+        std::env::set_var(
+            "INTERNAL_API_SECRET_ACADEMIC_RECONCILIATION_TEST",
+            "reconcile-test-secret",
+        );
+        let guarded_route = Router::new()
+            .route(
+                "/internal/academic-core/reconcile-all",
+                post(|| async { StatusCode::OK }),
+            )
+            .route_layer(from_fn(validate_internal_secret));
+        let response = guarded_route
+            .oneshot(
+                Request::post("/internal/academic-core/reconcile-all")
+                    .header(INTERNAL_CALLER_HEADER, "academic-reconciliation-test")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        std::env::remove_var("INTERNAL_API_SECRET_ACADEMIC_RECONCILIATION_TEST");
+    }
+
+    #[tokio::test]
+    async fn reconcile_all_aggregates_mixed_results_without_exposing_database_urls() {
+        let passing_pool = phase_a_pool("reconcile_all_passing").await;
+        let failing_pool = phase_a_pool("reconcile_all_failing").await;
+        sqlx::query("UPDATE academic_years SET status = 'ready' WHERE status = 'active'")
+            .execute(&failing_pool)
+            .await
+            .unwrap();
+
+        let pool_manager = PoolManager::new();
+        pool_manager
+            .insert_test_pool("postgresql://fixture/passing", passing_pool)
+            .await;
+        pool_manager
+            .insert_test_pool("postgresql://fixture/failing", failing_pool)
+            .await;
+
+        let response = reconcile_all_active_schools(
+            &pool_manager,
+            vec![
+                active_school("passing", Some("postgresql://fixture/passing")),
+                active_school("failing", Some("postgresql://fixture/failing")),
+                active_school("missing", None),
+            ],
+        )
+        .await;
+        let encoded = serde_json::to_string(&response).unwrap();
+
+        assert_eq!(response.total, 3);
+        assert_eq!(response.success, 1);
+        assert_eq!(response.failed, 2);
+        assert_eq!(response.results[0].status, "passed");
+        assert_eq!(
+            response.results[1].error_code.as_deref(),
+            Some("CHECKS_FAILED")
+        );
+        assert_eq!(
+            response.results[2].error_code.as_deref(),
+            Some("DATABASE_URL_UNAVAILABLE")
+        );
+        assert!(!encoded.contains("postgresql://"));
+        assert!(!encoded.contains("sourceId"));
+        assert!(!encoded.contains("targetId"));
+    }
+
+    #[tokio::test]
+    async fn reconcile_all_requires_exact_phase_a_version_and_never_runs_migrations() {
+        let version_43_pool = create_named_test_pool("reconcile_all_version_43").await;
+        apply_migrations_through(&version_43_pool, 40)
+            .await
+            .unwrap();
+        seed_academic_cutover_fixture(&version_43_pool, CutoverFixture::Passing)
+            .await
+            .unwrap();
+        apply_migrations_through(&version_43_pool, 43)
+            .await
+            .unwrap();
+
+        let pool_manager = PoolManager::new();
+        pool_manager
+            .insert_test_pool("postgresql://fixture/version-43", version_43_pool)
+            .await;
+        let response = reconcile_all_active_schools(
+            &pool_manager,
+            vec![active_school(
+                "version-43",
+                Some("postgresql://fixture/version-43"),
+            )],
+        )
+        .await;
+
+        assert_eq!(response.success, 0);
+        assert_eq!(response.failed, 1);
+        assert_eq!(response.results[0].migration_version, Some(43));
+        assert_eq!(
+            response.results[0].error_code.as_deref(),
+            Some("PHASE_A_VERSION_MISMATCH")
+        );
+
+        let source = include_str!("migration.rs");
+        let forbidden_runner = ["run_tenant_", "migrations"].concat();
+        assert!(!source.contains(&forbidden_runner));
+    }
+
+    #[tokio::test]
+    async fn reconciliation_records_one_success_marker_and_none_for_failed_checks() {
+        let passing_pool = phase_a_pool("reconcile_marker_passing").await;
+        let first = reconcile_and_record_academic_core_cutover(&passing_pool)
+            .await
+            .unwrap();
+        assert!(first.passed);
+        let first_created_at: chrono::DateTime<chrono::Utc> = sqlx::query_scalar(
+            "SELECT created_at FROM academic_core_cutover_audits WHERE migration_version = 44",
+        )
+        .fetch_one(&passing_pool)
+        .await
+        .unwrap();
+        let (mapping_version, source_counts, target_counts, source_checksum, target_checksum): (
+            String,
+            sqlx::types::Json<std::collections::BTreeMap<String, i64>>,
+            sqlx::types::Json<std::collections::BTreeMap<String, i64>>,
+            String,
+            String,
+        ) = sqlx::query_as(
+            r#"SELECT mapping_algorithm_version, source_counts, target_counts,
+                      source_checksum::text, target_checksum::text
+               FROM academic_core_cutover_audits
+               WHERE migration_version = 44"#,
+        )
+        .fetch_one(&passing_pool)
+        .await
+        .unwrap();
+        assert_eq!(mapping_version, "academic-core-v1-reconciliation");
+        assert_eq!(source_counts.len(), 6);
+        assert_eq!(target_counts.len(), 6);
+        assert!(source_counts
+            .get("ACADEMIC_CORE_RECON_SOURCE_TARGET_COUNTS")
+            .is_some());
+        assert_eq!(source_checksum.trim().len(), 64);
+        assert_eq!(target_checksum.trim().len(), 64);
+
+        let second = reconcile_and_record_academic_core_cutover(&passing_pool)
+            .await
+            .unwrap();
+        assert!(second.passed);
+        let (marker_count, second_created_at): (i64, chrono::DateTime<chrono::Utc>) =
+            sqlx::query_as(
+                "SELECT COUNT(*)::bigint, MIN(created_at) FROM academic_core_cutover_audits WHERE migration_version = 44",
+            )
+            .fetch_one(&passing_pool)
+            .await
+            .unwrap();
+        assert_eq!(marker_count, 1);
+        assert_eq!(second_created_at, first_created_at);
+
+        let failed_pool = phase_a_pool("reconcile_marker_failed").await;
+        sqlx::query("UPDATE academic_years SET status = 'ready' WHERE status = 'active'")
+            .execute(&failed_pool)
+            .await
+            .unwrap();
+        let failed = reconcile_and_record_academic_core_cutover(&failed_pool)
+            .await
+            .unwrap();
+        assert!(!failed.passed);
+        let failed_marker_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM academic_core_cutover_audits WHERE migration_version = 44",
+        )
+        .fetch_one(&failed_pool)
+        .await
+        .unwrap();
+        assert_eq!(failed_marker_count, 0);
+    }
+
+    #[tokio::test]
+    async fn reconciliation_accepts_an_empty_new_tenant_after_phase_a() {
+        let pool = create_named_test_pool("reconcile_empty_new_tenant").await;
+        apply_migrations_through(&pool, 44)
+            .await
+            .expect("an empty newly provisioned tenant must reach Phase A version 44");
+
+        let report = reconcile_and_record_academic_core_cutover(&pool)
+            .await
+            .expect("empty canonical context must reconcile without invented year or term rows");
+
+        assert!(report.passed);
+        assert!(report.checks.iter().all(|check| check.passed));
+        let marker_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM academic_core_cutover_audits WHERE migration_version = 44 AND mapping_algorithm_version = 'academic-core-v1-reconciliation'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(marker_count, 1);
     }
 }

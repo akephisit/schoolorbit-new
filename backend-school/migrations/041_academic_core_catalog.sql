@@ -1,6 +1,6 @@
 -- Academic Core cutover, phase A: years/terms, stable catalogs, curricula, and bell schedules.
 -- This migration is intentionally additive or rename-based. Legacy delivery consumers are cut over
--- by migrations 042-043 and removed only by the separately gated migration 044.
+-- by migrations 042-044 and removed only by the separately gated migration 045.
 
 CREATE OR REPLACE FUNCTION academic_normalize_identity(value TEXT)
 RETURNS TEXT
@@ -17,15 +17,22 @@ DECLARE
     active_year_id UUID;
     active_term_id UUID;
 BEGIN
-    IF (SELECT COUNT(*) FROM academic_years WHERE is_active IS TRUE) <> 1 THEN
-        RAISE EXCEPTION 'ACADEMIC_CORE_041_ACTIVE_YEAR_COUNT_INVALID';
-    END IF;
-    IF (SELECT COUNT(*) FROM academic_semesters WHERE is_active IS TRUE) <> 1 THEN
+    -- A newly provisioned tenant reaches the full migration chain before its first academic
+    -- year is configured. Existing tenants with any year data must still satisfy the exact
+    -- active year/term preconditions so an ambiguous cutover remains fail-closed.
+    IF EXISTS (SELECT 1 FROM academic_years) THEN
+        IF (SELECT COUNT(*) FROM academic_years WHERE is_active IS TRUE) <> 1 THEN
+            RAISE EXCEPTION 'ACADEMIC_CORE_041_ACTIVE_YEAR_COUNT_INVALID';
+        END IF;
+        IF (SELECT COUNT(*) FROM academic_semesters WHERE is_active IS TRUE) <> 1 THEN
+            RAISE EXCEPTION 'ACADEMIC_CORE_041_ACTIVE_TERM_COUNT_INVALID';
+        END IF;
+
+        SELECT id INTO active_year_id FROM academic_years WHERE is_active IS TRUE;
+        SELECT id INTO active_term_id FROM academic_semesters WHERE is_active IS TRUE;
+    ELSIF EXISTS (SELECT 1 FROM academic_semesters) THEN
         RAISE EXCEPTION 'ACADEMIC_CORE_041_ACTIVE_TERM_COUNT_INVALID';
     END IF;
-
-    SELECT id INTO active_year_id FROM academic_years WHERE is_active IS TRUE;
-    SELECT id INTO active_term_id FROM academic_semesters WHERE is_active IS TRUE;
 
     IF EXISTS (SELECT 1 FROM academic_years WHERE start_date > end_date) THEN
         RAISE EXCEPTION 'ACADEMIC_CORE_041_YEAR_DATE_RANGE_INVALID';
