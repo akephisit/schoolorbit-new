@@ -860,6 +860,7 @@ pub struct TransferHomeroomPlacementRequest {
     pub transfer_date: NaiveDate,
     pub enrollment_type: String,
     pub class_number: Option<i32>,
+    pub reason: String,
     pub row_version: i64,
     pub idempotency_key: Uuid,
 }

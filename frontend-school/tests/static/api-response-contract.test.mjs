@@ -355,9 +355,6 @@ test('generated self-service schedule contracts own timetable, exam, and calenda
 
 	assert.match(timetableApi, /export\s+type\s+TimetableEntryDto\s*=\s*Schemas\['TimetableEntry'\]/);
 	assert.match(timetableApi, /export\s+type\s+TimetableEntry\s*=\s*Omit<TimetableEntryDto,/);
-	assert.match(timetableApi, /type\s+TimetableItemsData\s*=\s*Schemas\['TimetableItemsData'\]/);
-	assert.match(timetableApi, /type\s+MyTimetableData\s*=\s*Schemas\['MyTimetableData'\]/);
-	assert.match(timetableApi, /apiClient\.get<MyTimetableData>\(`\/api\/me\/timetable/);
 	assert.doesNotMatch(timetableApi, /export\s+interface\s+TimetableEntry\b/);
 
 	for (const schemaName of ['PersonalExamScheduleRound', 'PersonalExamSessionView']) {
@@ -378,9 +375,6 @@ test('generated self-service schedule contracts own timetable, exam, and calenda
 
 	for (const schemaName of [
 		'TimetableEntry',
-		'TimetableItemsData',
-		'MyTimetableData',
-		'TimetablePeriod',
 		'PersonalExamScheduleRound',
 		'PersonalExamSessionView',
 		'CalendarViewerEvent',
@@ -579,7 +573,7 @@ test('staff dashboard API uses a typed aggregate-only response', async () => {
 	const dashboardSchema = extractGeneratedSchemaBlock(generated, 'StaffDashboardOverview');
 	assert.match(dashboardSchema, /totalStaff:\s*number/);
 	assert.match(dashboardSchema, /totalStudents:\s*number/);
-	assert.match(dashboardSchema, /activeClassrooms:\s*number/);
+	assert.match(dashboardSchema, /activeHomerooms:\s*number/);
 	assert.match(
 		frontendStaffApi,
 		/getStaffDashboard\(\):\s*Promise<ApiResponse<StaffDashboardOverview>>/
@@ -1019,110 +1013,29 @@ test('timetable template API keeps typed empty responses after scheduler removal
 	);
 });
 
-test('academic curriculum mutations patch local state instead of broad workspace reloads', async () => {
-	const structurePage = await readRepoFile(
-		'frontend-school/src/routes/(app)/staff/academic/structure/+page.svelte'
+test('new academic workspace mutations use typed returned resources', async () => {
+	const coreApi = await readRepoFile('frontend-school/src/lib/api/academic-core.ts');
+	const deliveryApi = await readRepoFile('frontend-school/src/lib/api/learning-delivery.ts');
+	const corePage = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/core/+page.svelte'
 	);
-	const subjectsPage = await readRepoFile(
-		'frontend-school/src/routes/(app)/staff/academic/subjects/+page.svelte'
-	);
-
-	for (const helper of [
-		'replaceAcademicYear',
-		'replaceSemester',
-		'removeSemester',
-		'replaceGradeLevel',
-		'removeGradeLevel'
-	]) {
-		assert.match(structurePage, new RegExp(`function ${helper}\\b`));
-	}
-
-	for (const functionName of [
-		'saveConfig',
-		'handleSaveSemester',
-		'handleDeleteSemester',
-		'handleCreateYear',
-		'handleToggleActive',
-		'handleCreateLevel',
-		'confirmDeleteLevel'
-	]) {
-		const body =
-			structurePage.match(
-				new RegExp(`async function ${functionName}\\([^)]*\\) \\{[\\s\\S]*?\\n\\t\\}`)
-			)?.[0] ?? '';
-		assert.notEqual(body, '', `${functionName} should exist`);
-		assert.doesNotMatch(body, /await loadData\(\)/, `${functionName} should patch local state`);
-	}
-
-	for (const helper of [
-		'subjectMatchesCurrentFilters',
-		'replaceSubject',
-		'removeSubject',
-		'catalogMatchesCurrentFilters',
-		'replaceCatalogItem',
-		'removeCatalogItem'
-	]) {
-		assert.match(subjectsPage, new RegExp(`function ${helper}\\b`));
-	}
-
-	for (const functionName of [
-		'handleSubmit',
-		'handleConfirmDelete',
-		'handleSaveCatalog',
-		'confirmDeleteCatalog'
-	]) {
-		const body =
-			subjectsPage.match(
-				new RegExp(`async function ${functionName}\\([^)]*\\)[:\\w\\s<>]*\\{[\\s\\S]*?\\n\\t\\}`)
-			)?.[0] ?? '';
-		assert.notEqual(body, '', `${functionName} should exist`);
-		assert.doesNotMatch(
-			body,
-			/await load(Data|Catalog)\(\)/,
-			`${functionName} should patch local state`
-		);
-	}
-});
-
-test('academic activity mutations patch affected state without broad slot reloads', async () => {
-	const activitiesPage = await readRepoFile(
-		'frontend-school/src/routes/(app)/staff/academic/activities/+page.svelte'
+	const deliveryPage = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/delivery/+page.svelte'
 	);
 
-	for (const helper of [
-		'replaceActivitySlot',
-		'removeActivitySlot',
-		'replaceActivityGroup',
-		'removeActivityGroup',
-		'replaceSlotInstructors',
-		'replaceSlotClassroomAssignment'
-	]) {
-		assert.match(activitiesPage, new RegExp(`function ${helper}\\b`));
-	}
-
-	for (const functionName of [
-		'handleToggleTeacherReg',
-		'handleToggleStudentReg',
-		'handleDeleteSlot',
-		'handleSaveGroup',
-		'handleDeleteGroup',
-		'doSaveSlot',
-		'handleAssignClassroomInstructor',
-		'handleRemoveSlotInstructor',
-		'handleAddSlotInstructorsBatch'
-	]) {
-		const body =
-			activitiesPage.match(
-				new RegExp(`async function ${functionName}\\([^)]*\\) \\{[\\s\\S]*?\\n\\t\\}`)
-			)?.[0] ?? '';
-		assert.notEqual(body, '', `${functionName} should exist`);
-		assert.doesNotMatch(body, /await loadData\(\)/, `${functionName} should patch local state`);
-		assert.doesNotMatch(
-			body,
-			/await list(SlotInstructors|SlotClassroomAssignments)\(/,
-			`${functionName} should avoid immediate list refetch after mutation`
-		);
-	}
+	assert.match(coreApi, /apiClient\.post<AcademicYear>/);
+	assert.match(coreApi, /apiClient\.post<AcademicTerm>/);
+	assert.match(deliveryApi, /apiClient\.post<LearningOffering>/);
+	assert.match(deliveryApi, /apiClient\.put<LearningGroup>/);
+	assert.doesNotMatch(
+		`${coreApi}\n${deliveryApi}`,
+		/ApiResponse<unknown>|Record<string,\s*unknown>|\sas\s/
+	);
+	assert.match(corePage, /years = \[created, \.\.\.years\]/);
+	assert.match(
+		deliveryPage,
+		/offerings = \[\.\.\.offerings, await createLearningOffering\(body\)\]/
+	);
 });
 
 test('admission exam-room mutations return typed data and patch local state', async () => {
@@ -1238,20 +1151,9 @@ test('facility API returns typed loaded envelope data without helper casts', asy
 test('timetable API exposes typed loaded responses and conflict unions without response casts', async () => {
 	const timetableApi = await readRepoFile('frontend-school/src/lib/api/timetable.ts');
 	const generated = await readRepoFile('frontend-school/src/lib/api/generated/school-api.ts');
-	const timetableService = (
-		await Promise.all(
-			[
-				'backend-school/src/modules/academic/services/timetable_service.rs',
-				'backend-school/src/modules/academic/services/timetable_service/batch_mutations.rs',
-				'backend-school/src/modules/academic/services/timetable_service/entries.rs',
-				'backend-school/src/modules/academic/services/timetable_service/instructors.rs',
-				'backend-school/src/modules/academic/services/timetable_service/moves_and_swaps.rs',
-				'backend-school/src/modules/academic/services/timetable_service/occupancy.rs',
-				'backend-school/src/modules/academic/services/timetable_service/shared.rs',
-				'backend-school/src/modules/academic/services/timetable_service/validation.rs'
-			].map(readRepoFile)
-		)
-	).join('\n');
+	const timetableService = await readRepoFile(
+		'backend-school/src/modules/academic/services/timetable_service.rs'
+	);
 	const timetablePage = await readRepoFile(
 		'frontend-school/src/routes/(app)/staff/academic/timetable/+page.svelte'
 	);
@@ -1266,7 +1168,7 @@ test('timetable API exposes typed loaded responses and conflict unions without r
 	assert.match(timetableApi, /fetchApi<AcademicPeriod\[\]>/);
 	assert.match(
 		extractGeneratedSchemaBlock(generated, 'TimetableEntry'),
-		/period_order_index\?:\s*number/
+		/bellSchedulePeriodId:\s*string/
 	);
 	assert.match(timetableApi, /fetchApi<MoveValidityCell\[\]>/);
 	assert.match(timetableApi, /fetchApi<OccupancyEntry\[\]>/);
@@ -1275,25 +1177,10 @@ test('timetable API exposes typed loaded responses and conflict unions without r
 	assert.doesNotMatch(timetableApi, /return response as T/);
 	assert.doesNotMatch(timetableApi, /ApiResponse<unknown>/);
 	assert.doesNotMatch(timetableApi, /response\.data as/);
-	assert.match(timetableService, /struct\s+MyActivityForEntry/);
-	assert.match(timetableService, /ap\.order_index\s+AS\s+period_order_index/);
-	assert.match(
-		timetableService,
-		/get_my_activity_for_entry[\s\S]*?Result<Option<MyActivityForEntry>,\s*AppError>/
-	);
-	assert.doesNotMatch(
-		timetableService,
-		/get_my_activity_for_entry[\s\S]*?Result<serde_json::Value,\s*AppError>/
-	);
-	assert.match(timetableService, /struct\s+BatchSkippedCell/);
-	assert.match(timetableService, /pub\s+skipped:\s+Vec<BatchSkippedCell>/);
-	assert.match(timetableService, /pub\s+blocked:\s+Vec<BatchBlockedCell>/);
-	assert.match(timetableService, /pub\s+deleted:\s+Vec<BatchDeletedEntry>/);
-	assert.match(timetableService, /pub\s+excluded_instructors:\s+Vec<BatchExcludedInstructor>/);
-	assert.doesNotMatch(timetableService, /pub\s+skipped:\s+Vec<serde_json::Value>/);
-	assert.match(timetableService, /conflicts:\s+Vec<ConflictInfo>/);
-	assert.match(timetableService, /let mut conflict_list:\s+Vec<ConflictInfo>/);
-	assert.doesNotMatch(timetableService, /let mut conflict_list:\s+Vec<serde_json::Value>/);
+	assert.match(timetableService, /Result<Vec<TimetableEntry>,\s*AppError>/);
+	assert.match(timetableService, /period\.order_index/);
+	assert.match(timetableService, /conflicts:\s*&mut Vec<ConflictInfo>/);
+	assert.doesNotMatch(timetableService, /serde_json::Value/);
 
 	assert.doesNotMatch(timetablePage, /await createTimetableEntry\([^)]*\)\) as/);
 	assert.doesNotMatch(timetablePage, /await updateTimetableEntry\([^)]*\)\) as/);
@@ -1303,33 +1190,14 @@ test('timetable API exposes typed loaded responses and conflict unions without r
 	);
 });
 
-test('academic API uses typed loaded responses and unwraps generate-plan payloads', async () => {
-	const academicApi = await readRepoFile('frontend-school/src/lib/api/academic.ts');
-	const planningPage = await readRepoFile(
-		'frontend-school/src/routes/(app)/staff/academic/planning/+page.svelte'
-	);
-	const activitiesPage = await readRepoFile(
-		'frontend-school/src/routes/(app)/staff/academic/activities/+page.svelte'
-	);
-
-	assert.match(academicApi, /type\s+LoadedApiResponse<T>/);
-	assert.match(academicApi, /Promise<LoadedApiResponse<T>>/);
-	assert.match(academicApi, /return \{ \.\.\.response, success: true, data: response\.data \}/);
-	assert.match(academicApi, /fetchApi<AcademicStructureData>/);
-	assert.match(academicApi, /fetchApi<ClassroomCourse\[\]>/);
-	assert.match(academicApi, /fetchApi<StudyPlan\[\]>/);
-	assert.match(academicApi, /fetchApi<ActivitySlot\[\]>/);
-	assert.match(academicApi, /fetchApi<ActivityGroup\[\]>/);
-	assert.match(academicApi, /fetchApi<GenerateCoursesFromPlanResponse>/);
-	assert.match(academicApi, /return response\.data/);
-	assert.match(academicApi, /fetchApi<GenerateActivitiesFromPlanResponse>/);
-	assert.doesNotMatch(academicApi, /return response as T/);
-	assert.doesNotMatch(academicApi, /ApiResponse<unknown>/);
-	assert.doesNotMatch(academicApi, /res\.data as/);
-
-	assert.match(planningPage, /result\.courses_created \?\? result\.items\.added_count/);
-	assert.doesNotMatch(planningPage, /result\.data\.added_count/);
-	assert.match(activitiesPage, /res\.created/);
+test('academic core and delivery APIs consume generated DTOs without response casts', async () => {
+	const coreApi = await readRepoFile('frontend-school/src/lib/api/academic-core.ts');
+	const deliveryApi = await readRepoFile('frontend-school/src/lib/api/learning-delivery.ts');
+	for (const source of [coreApi, deliveryApi]) {
+		assert.match(source, /generated\/school-api/);
+		assert.match(source, /requireApiData/);
+		assert.doesNotMatch(source, /return response as|ApiResponse<unknown>|res\.data as/);
+	}
 });
 
 test('academic course instructor batch API sends ids in POST body', async () => {

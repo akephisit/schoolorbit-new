@@ -451,6 +451,7 @@ pub async fn transfer_placement(
             "ประเภทการเข้าเรียนห้ามว่าง".to_string(),
         ));
     }
+    let reason = normalize_transfer_reason(&request.reason)?;
     let mut transaction = pool.begin().await?;
     let digest: String = sqlx::query_scalar("SELECT encode(sha256(convert_to($1, 'UTF8')), 'hex')")
         .bind(request.idempotency_key.to_string())
@@ -533,6 +534,7 @@ pub async fn transfer_placement(
         serde_json::json!({
             "newPlacementId": new_id,
             "idempotencyDigest": digest,
+            "reason": reason,
         }),
     )
     .await?;
@@ -542,6 +544,30 @@ pub async fn transfer_placement(
         new_placement: get_placement(pool, new_id).await?,
         replayed: false,
     })
+}
+
+pub async fn list_placements(
+    pool: &PgPool,
+    student_year_id: Uuid,
+) -> Result<Vec<HomeroomPlacement>, AppError> {
+    let exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM student_academic_years WHERE id = $1)")
+            .bind(student_year_id)
+            .fetch_one(pool)
+            .await?;
+    if !exists {
+        return Err(AppError::NotFound("ไม่พบข้อมูลนักเรียนประจำปี".to_string()));
+    }
+
+    let sql = format!(
+        "SELECT {PLACEMENT_COLUMNS} FROM homeroom_placements \
+         WHERE student_academic_year_id = $1 \
+         ORDER BY start_date, created_at, id"
+    );
+    Ok(sqlx::query_as(&sql)
+        .bind(student_year_id)
+        .fetch_all(pool)
+        .await?)
 }
 
 async fn get_placement(pool: &PgPool, id: Uuid) -> Result<HomeroomPlacement, AppError> {
@@ -748,4 +774,52 @@ fn map_placement_write_error(error: sqlx::Error) -> AppError {
         }
     }
     AppError::DbError(error)
+}
+
+fn normalize_transfer_reason(value: &str) -> Result<String, AppError> {
+    let reason = value.trim();
+    if reason.is_empty() || reason.chars().count() > 500 {
+        return Err(AppError::ValidationError(
+            "เหตุผลการย้ายห้องต้องมีความยาว 1-500 ตัวอักษร".to_string(),
+        ));
+    }
+    if contains_thirteen_digit_run(reason) {
+        return Err(AppError::ValidationError(
+            "เหตุผลการย้ายห้องห้ามมีเลขประจำตัวประชาชน".to_string(),
+        ));
+    }
+    Ok(reason.to_string())
+}
+
+fn contains_thirteen_digit_run(value: &str) -> bool {
+    let mut digits = 0_u8;
+    for character in value.chars() {
+        if character.is_numeric() {
+            digits = digits.saturating_add(1);
+            if digits >= 13 {
+                return true;
+            }
+        } else if digits > 0 && !character.is_alphanumeric() {
+            continue;
+        } else {
+            digits = 0;
+        }
+    }
+    false
+}
+
+#[cfg(test)]
+mod transfer_reason_tests {
+    use super::normalize_transfer_reason;
+
+    #[test]
+    fn rejects_plain_and_separated_thirteen_digit_identifiers() {
+        for reason in ["1234567890123", "ย้ายตามคำขอ 1-2345-67890-12-3"] {
+            assert!(normalize_transfer_reason(reason).is_err());
+        }
+        assert_eq!(
+            normalize_transfer_reason("  ปรับห้องให้เหมาะกับแผนการเรียน  ").unwrap(),
+            "ปรับห้องให้เหมาะกับแผนการเรียน"
+        );
+    }
 }

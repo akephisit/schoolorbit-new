@@ -77,10 +77,10 @@ test('staff and student list workspaces use shared frontend state components', a
 test('academic top-level workspaces use shared frontend state components', async () => {
 	const pages = [
 		'src/routes/(app)/staff/academic/admission/+page.svelte',
-		'src/routes/(app)/staff/academic/classrooms/+page.svelte',
+		'src/routes/(app)/staff/academic/homerooms/+page.svelte',
 		'src/routes/(app)/staff/academic/periods/+page.svelte',
-		'src/routes/(app)/staff/academic/structure/+page.svelte',
-		'src/routes/(app)/staff/academic/subject-groups/+page.svelte'
+		'src/routes/(app)/staff/academic/core/+page.svelte',
+		'src/routes/(app)/staff/academic/catalog/subject-groups/+page.svelte'
 	];
 
 	for (const page of pages) {
@@ -98,10 +98,10 @@ test('academic top-level workspaces use shared frontend state components', async
 
 test('academic curriculum and planning workspaces use shared frontend state components', async () => {
 	const pages = [
-		'src/routes/(app)/staff/academic/activities/+page.svelte',
-		'src/routes/(app)/staff/academic/enrollments/+page.svelte',
-		'src/routes/(app)/staff/academic/planning/+page.svelte',
-		'src/routes/(app)/staff/academic/study-plans/+page.svelte',
+		'src/routes/(app)/staff/academic/catalog/activities/+page.svelte',
+		'src/routes/(app)/staff/academic/student-years/+page.svelte',
+		'src/routes/(app)/staff/academic/delivery/+page.svelte',
+		'src/routes/(app)/staff/academic/curricula/+page.svelte',
 		'src/routes/(app)/staff/academic/timetable/templates/+page.svelte'
 	];
 
@@ -120,7 +120,7 @@ test('academic curriculum and planning workspaces use shared frontend state comp
 
 test('academic large workspaces use shared frontend state components', async () => {
 	const pages = [
-		'src/routes/(app)/staff/academic/subjects/+page.svelte',
+		'src/routes/(app)/staff/academic/catalog/subjects/+page.svelte',
 		'src/routes/(app)/staff/academic/supervision/+page.svelte'
 	];
 
@@ -226,25 +226,6 @@ test('parent and student self-service workspaces use shared frontend state compo
 		'src/routes/(app)/student/activities/+page.svelte',
 		'src/routes/(app)/student/profile/+page.svelte',
 		'src/routes/(app)/student/timetable/+page.svelte'
-	];
-
-	for (const page of pages) {
-		const source = await readProjectFile(page);
-
-		assert.match(
-			source,
-			/from '\$lib\/components\/app-state'/,
-			`${page} should import shared app-state components`
-		);
-		assert.match(source, /<PageSkeleton\b/, `${page} should use PageSkeleton for loading`);
-		assert.match(source, /<PageState\b/, `${page} should use PageState for empty/error states`);
-	}
-});
-
-test('academic detail workspaces use shared frontend state components', async () => {
-	const pages = [
-		'src/routes/(app)/staff/academic/activities/[id]/+page.svelte',
-		'src/routes/(app)/staff/academic/subject-groups/[id]/+page.svelte'
 	];
 
 	for (const page of pages) {

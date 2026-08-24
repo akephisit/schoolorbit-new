@@ -1,0 +1,126 @@
+import { ApiClientError, apiClient, requireApiData, type ApiResponse } from '$lib/api/client';
+import type { components } from '$lib/api/generated/school-api';
+
+type Schemas = components['schemas'];
+
+export type LearningOffering = Schemas['LearningOffering'];
+export type LearningGroup = Schemas['LearningGroup'];
+export type TeacherAssignment = Schemas['TeacherAssignmentInput'];
+export type RosterPreview = Schemas['RosterPreview'];
+export type CurriculumOfferingPreview = Schemas['CurriculumOfferingPreview'];
+export type ApplyCurriculumOfferingsResult = Schemas['ApplyCurriculumOfferingsResult'];
+export type CreateLearningOfferingRequest = Schemas['CreateLearningOfferingRequest'];
+export type UpdateLearningOfferingRequest = Schemas['UpdateLearningOfferingRequest'];
+export type PublishLearningOfferingRequest = Schemas['PublishLearningOfferingRequest'];
+export type PreviewCurriculumOfferingsRequest = Schemas['PreviewCurriculumOfferingsRequest'];
+export type ApplyCurriculumOfferingsRequest = Schemas['ApplyCurriculumOfferingsRequest'];
+export type CreateLearningGroupRequest = Schemas['CreateLearningGroupRequest'];
+export type UpdateLearningGroupRequest = Schemas['UpdateLearningGroupRequest'];
+export type ReplaceLearningGroupHomeroomsRequest = Schemas['ReplaceLearningGroupHomeroomsRequest'];
+export type ReplaceLearningGroupTeachersRequest = Schemas['ReplaceLearningGroupTeachersRequest'];
+export type ApplyRosterRequest = Schemas['ApplyRosterRequest'];
+export type PublishRosterRequest = Schemas['PublishRosterRequest'];
+
+async function deliveryData<T>(request: Promise<ApiResponse<T>>, fallback: string): Promise<T> {
+	const response = await request;
+	if (response.status === 409) {
+		const serverMessage = response.error || fallback;
+		throw new ApiClientError(
+			`${serverMessage} กรุณาโหลดข้อมูลล่าสุดหรือสร้างตัวอย่างใหม่ก่อนดำเนินการ`,
+			409
+		);
+	}
+	return requireApiData(response, fallback);
+}
+
+function selectedTerm(academicTermId: string): string {
+	const value = academicTermId.trim();
+	if (!value) throw new Error('กรุณาเลือกภาคเรียนก่อน');
+	return encodeURIComponent(value);
+}
+
+export const listLearningOfferings = (academicTermId: string) =>
+	deliveryData(
+		apiClient.get<LearningOffering[]>(
+			`/api/academic/offerings?academicTermId=${selectedTerm(academicTermId)}`
+		),
+		'ไม่สามารถโหลดชุดการเรียนได้'
+	);
+export const createLearningOffering = (body: CreateLearningOfferingRequest) =>
+	deliveryData(
+		apiClient.post<LearningOffering>('/api/academic/offerings', body),
+		'สร้างชุดการเรียนไม่สำเร็จ'
+	);
+export const updateLearningOffering = (id: string, body: UpdateLearningOfferingRequest) =>
+	deliveryData(
+		apiClient.patch<LearningOffering>(`/api/academic/offerings/${id}`, body),
+		'แก้ไขชุดการเรียนไม่สำเร็จ'
+	);
+export const publishLearningOffering = (id: string, body: PublishLearningOfferingRequest) =>
+	deliveryData(
+		apiClient.post<LearningOffering>(`/api/academic/offerings/${id}/publish`, body),
+		'เผยแพร่ชุดการเรียนไม่สำเร็จ'
+	);
+export const previewLearningOfferingsFromCurriculum = (body: PreviewCurriculumOfferingsRequest) =>
+	deliveryData(
+		apiClient.post<CurriculumOfferingPreview>(
+			'/api/academic/offerings/preview-from-curriculum',
+			body
+		),
+		'สร้างตัวอย่างจากหลักสูตรไม่สำเร็จ'
+	);
+export const applyLearningOfferingsFromCurriculum = (body: ApplyCurriculumOfferingsRequest) =>
+	deliveryData(
+		apiClient.post<ApplyCurriculumOfferingsResult>(
+			'/api/academic/offerings/apply-from-curriculum',
+			body
+		),
+		'นำชุดการเรียนจากหลักสูตรมาใช้ไม่สำเร็จ'
+	);
+
+export const listLearningGroups = (offeringId: string) =>
+	deliveryData(
+		apiClient.get<LearningGroup[]>(`/api/academic/offerings/${offeringId}/groups`),
+		'ไม่สามารถโหลดกลุ่มเรียนได้'
+	);
+export const createLearningGroup = (offeringId: string, body: CreateLearningGroupRequest) =>
+	deliveryData(
+		apiClient.post<LearningGroup>(`/api/academic/offerings/${offeringId}/groups`, body),
+		'สร้างกลุ่มเรียนไม่สำเร็จ'
+	);
+export const updateLearningGroup = (id: string, body: UpdateLearningGroupRequest) =>
+	deliveryData(
+		apiClient.patch<LearningGroup>(`/api/academic/learning-groups/${id}`, body),
+		'แก้ไขกลุ่มเรียนไม่สำเร็จ'
+	);
+export const replaceLearningGroupHomerooms = (
+	id: string,
+	body: ReplaceLearningGroupHomeroomsRequest
+) =>
+	deliveryData(
+		apiClient.put<LearningGroup>(`/api/academic/learning-groups/${id}/homerooms`, body),
+		'บันทึกห้องต้นทางไม่สำเร็จ'
+	);
+export const replaceLearningGroupTeachers = (
+	id: string,
+	body: ReplaceLearningGroupTeachersRequest
+) =>
+	deliveryData(
+		apiClient.put<LearningGroup>(`/api/academic/learning-groups/${id}/teachers`, body),
+		'บันทึกครูผู้สอนไม่สำเร็จ'
+	);
+export const previewLearningGroupRoster = (id: string) =>
+	deliveryData(
+		apiClient.get<RosterPreview>(`/api/academic/learning-groups/${id}/roster`),
+		'สร้างตัวอย่างรายชื่อนักเรียนไม่สำเร็จ'
+	);
+export const applyLearningGroupRoster = (id: string, body: ApplyRosterRequest) =>
+	deliveryData(
+		apiClient.put<LearningGroup>(`/api/academic/learning-groups/${id}/roster`, body),
+		'ยืนยันรายชื่อนักเรียนไม่สำเร็จ'
+	);
+export const publishLearningGroupRoster = (id: string, body: PublishRosterRequest) =>
+	deliveryData(
+		apiClient.post<LearningGroup>(`/api/academic/learning-groups/${id}/roster/publish`, body),
+		'เผยแพร่รายชื่อนักเรียนไม่สำเร็จ'
+	);

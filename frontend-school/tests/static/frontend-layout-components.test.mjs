@@ -396,9 +396,9 @@ test('staff operational pages use shared app page shell', async () => {
 
 test('academic foundation workspace pages use shared app page shell', async () => {
 	const pages = [
-		'src/routes/(app)/staff/academic/structure/+page.svelte',
-		'src/routes/(app)/staff/academic/classrooms/+page.svelte',
-		'src/routes/(app)/staff/academic/subject-groups/+page.svelte',
+		'src/routes/(app)/staff/academic/core/+page.svelte',
+		'src/routes/(app)/staff/academic/homerooms/+page.svelte',
+		'src/routes/(app)/staff/academic/catalog/subject-groups/+page.svelte',
 		'src/routes/(app)/staff/academic/periods/+page.svelte',
 		'src/routes/(app)/staff/academic/admission/+page.svelte'
 	];
@@ -422,12 +422,11 @@ test('academic foundation workspace pages use shared app page shell', async () =
 
 test('academic curriculum planning pages use shared app page shell', async () => {
 	const pages = [
-		'src/routes/(app)/staff/academic/subjects/+page.svelte',
-		'src/routes/(app)/staff/academic/subject-groups/[id]/+page.svelte',
-		'src/routes/(app)/staff/academic/study-plans/+page.svelte',
-		'src/routes/(app)/staff/academic/planning/+page.svelte',
-		'src/routes/(app)/staff/academic/enrollments/+page.svelte',
-		'src/routes/(app)/staff/academic/activities/+page.svelte'
+		'src/routes/(app)/staff/academic/catalog/subjects/+page.svelte',
+		'src/routes/(app)/staff/academic/catalog/activities/+page.svelte',
+		'src/routes/(app)/staff/academic/curricula/+page.svelte',
+		'src/routes/(app)/staff/academic/delivery/+page.svelte',
+		'src/routes/(app)/staff/academic/student-years/+page.svelte'
 	];
 
 	for (const page of pages) {
@@ -501,11 +500,8 @@ test('academic admission workflow pages use shared app page shell', async () => 
 	}
 });
 
-test('academic detail and supervision pages use shared app page shell', async () => {
-	const pages = [
-		'src/routes/(app)/staff/academic/activities/[id]/+page.svelte',
-		'src/lib/components/supervision/SupervisionWorkspace.svelte'
-	];
+test('academic supervision workspace uses shared app page shell', async () => {
+	const pages = ['src/lib/components/supervision/SupervisionWorkspace.svelte'];
 	const supervisionRoute = await readProjectFile(
 		'src/routes/(app)/staff/academic/supervision/+page.svelte'
 	);

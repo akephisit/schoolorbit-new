@@ -42,8 +42,8 @@ pub async fn list_timetable_entries(
 
 #[utoipa::path(
     get,
-    path = "/api/staff/me/timetable",
-    operation_id = "getStaffTimetable",
+    path = "/api/me/timetable",
+    operation_id = "getMyTimetable",
     params(TimetableQuery),
     responses(
         (status = 200, description = "Current staff timetable in the selected term", body = ApiResponse<Vec<crate::modules::academic::models::timetable::TimetableEntry>>),

@@ -684,7 +684,7 @@ export interface paths {
 			path?: never;
 			cookie?: never;
 		};
-		get?: never;
+		get: operations['listHomeroomPlacements'];
 		put?: never;
 		post: operations['createHomeroomPlacement'];
 		delete?: never;
@@ -2192,6 +2192,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/me/timetable': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getMyTimetable'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/menu/user': {
 		parameters: {
 			query?: never;
@@ -2779,22 +2795,6 @@ export interface paths {
 		};
 		/** GET /api/staff/exam-schedules */
 		get: operations['listStaffExamSchedules'];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/staff/me/timetable': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['getStaffTimetable'];
 		put?: never;
 		post?: never;
 		delete?: never;
@@ -5172,6 +5172,35 @@ export interface components {
 				/** Format: uuid */
 				id: string;
 				name: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_HomeroomPlacement: {
+			data: {
+				/** Format: uuid */
+				academicYearId: string;
+				/** Format: int32 */
+				classNumber?: number | null;
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: date */
+				endDate?: string | null;
+				enrollmentType: string;
+				/** Format: uuid */
+				homeroomId: string;
+				/** Format: uuid */
+				id: string;
+				migrated: boolean;
+				/** Format: int64 */
+				rowVersion: number;
+				/** Format: date */
+				startDate: string;
+				status: components['schemas']['HomeroomPlacementStatus'];
+				/** Format: uuid */
+				studentAcademicYearId: string;
+				/** Format: date-time */
+				updatedAt: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -8812,6 +8841,7 @@ export interface components {
 			enrollmentType: string;
 			/** Format: uuid */
 			idempotencyKey: string;
+			reason: string;
 			/** Format: int64 */
 			rowVersion: number;
 			/** Format: uuid */
@@ -13679,6 +13709,56 @@ export interface operations {
 			};
 			/** @description Student academic year row version conflict */
 			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listHomeroomPlacements: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Student academic year ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Homeroom placement history */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_HomeroomPlacement'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student academic year read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student academic year not found */
+			404: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -19998,6 +20078,52 @@ export interface operations {
 			};
 		};
 	};
+	getMyTimetable: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				dayOfWeek?: string;
+				entryType?: string;
+				homeroomId?: string;
+				instructorId?: string;
+				learningGroupId?: string;
+				roomId?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Current staff timetable in the selected term */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_TimetableEntry'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Staff timetable access denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	getUserMenu: {
 		parameters: {
 			query?: never;
@@ -22311,52 +22437,6 @@ export interface operations {
 				};
 			};
 			/** @description Active staff account required */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	getStaffTimetable: {
-		parameters: {
-			query: {
-				academicTermId: string;
-				dayOfWeek?: string;
-				entryType?: string;
-				homeroomId?: string;
-				instructorId?: string;
-				learningGroupId?: string;
-				roomId?: string;
-			};
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Current staff timetable in the selected term */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_TimetableEntry'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Staff timetable access denied */
 			403: {
 				headers: {
 					[name: string]: unknown;

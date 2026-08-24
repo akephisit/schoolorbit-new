@@ -330,6 +330,7 @@ use utoipa::OpenApi;
         crate::modules::academic::core::handlers::create_student_year,
         crate::modules::academic::core::handlers::get_student_year,
         crate::modules::academic::core::handlers::update_student_year,
+        crate::modules::academic::core::handlers::list_placements,
         crate::modules::academic::core::handlers::create_placement,
         crate::modules::academic::core::handlers::transfer_placement,
         crate::modules::academic::delivery::handlers::list_offerings,
@@ -753,6 +754,7 @@ use utoipa::OpenApi;
         ApiResponse<Vec<HomeroomAdvisor>>,
         ApiResponse<Vec<StudentAcademicYear>>,
         ApiResponse<StudentAcademicYear>,
+        ApiResponse<Vec<HomeroomPlacement>>,
         ApiResponse<HomeroomPlacement>,
         ApiResponse<HomeroomPlacementTransfer>,
         LearningOfferingKind,
@@ -1531,6 +1533,11 @@ mod tests {
                     "/api/academic/student-years",
                     "get",
                     "listStudentAcademicYears",
+                ),
+                (
+                    "/api/academic/student-years/{id}/placements",
+                    "get",
+                    "listHomeroomPlacements",
                 ),
                 (
                     "/api/academic/placements/{id}/transfer",

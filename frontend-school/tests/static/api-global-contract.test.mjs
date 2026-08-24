@@ -764,16 +764,19 @@ test('staff module workspace routes use module-level menu permission gates', asy
 		['frontend-school/src/routes/(app)/staff/facility/buildings/+page.ts', 'FACILITY'],
 		['frontend-school/src/routes/(app)/staff/academic/periods/+page.ts', 'ACADEMIC_TERM'],
 		[
-			'frontend-school/src/routes/(app)/staff/academic/enrollments/+page.ts',
+			'frontend-school/src/routes/(app)/staff/academic/student-years/+page.ts',
 			'STUDENT_ACADEMIC_YEAR'
 		],
 		['frontend-school/src/routes/(app)/staff/academic/admission/+page.ts', 'ADMISSION'],
 		['frontend-school/src/routes/(app)/staff/academic/timetable/+page.ts', 'LEARNING_OFFERING'],
-		['frontend-school/src/routes/(app)/staff/academic/structure/+page.ts', 'ACADEMIC_CONTEXT'],
-		['frontend-school/src/routes/(app)/staff/academic/classrooms/+page.ts', 'HOMEROOM'],
-		['frontend-school/src/routes/(app)/staff/academic/study-plans/+page.ts', 'ACADEMIC_CURRICULUM'],
-		['frontend-school/src/routes/(app)/staff/academic/planning/+page.ts', 'LEARNING_OFFERING'],
-		['frontend-school/src/routes/(app)/staff/academic/activities/+page.ts', 'LEARNING_OFFERING']
+		['frontend-school/src/routes/(app)/staff/academic/core/+page.ts', 'ACADEMIC_YEAR'],
+		['frontend-school/src/routes/(app)/staff/academic/homerooms/+page.ts', 'HOMEROOM'],
+		['frontend-school/src/routes/(app)/staff/academic/curricula/+page.ts', 'ACADEMIC_CURRICULUM'],
+		['frontend-school/src/routes/(app)/staff/academic/delivery/+page.ts', 'LEARNING_OFFERING'],
+		[
+			'frontend-school/src/routes/(app)/staff/academic/catalog/activities/+page.ts',
+			'ACADEMIC_CATALOG'
+		]
 	]);
 	const violations = [];
 
@@ -967,17 +970,14 @@ test('settings workspace pages gate module actions with permission booleans', as
 test('academic structure workspace pages gate read and mutation actions', async () => {
 	const routeExpectations = [
 		{
-			file: 'frontend-school/src/routes/(app)/staff/academic/structure/+page.svelte',
+			file: 'frontend-school/src/routes/(app)/staff/academic/core/+page.svelte',
 			imports: ['$lib/components/app-state'],
 			permissions: [
 				'PERMISSIONS.ACADEMIC_YEAR_READ_SCHOOL',
 				'PERMISSIONS.ACADEMIC_YEAR_MANAGE_SCHOOL',
-				'PERMISSIONS.ACADEMIC_TERM_READ_SCHOOL',
-				'PERMISSIONS.ACADEMIC_TERM_MANAGE_SCHOOL',
-				'PERMISSIONS.ACADEMIC_CATALOG_READ_SCHOOL',
-				'PERMISSIONS.ACADEMIC_CATALOG_MANAGE_SCHOOL'
+				'PERMISSIONS.ACADEMIC_TERM_MANAGE_SCHOOL'
 			],
-			identifiers: ['canReadAcademicStructure', 'canManageAcademicStructure']
+			identifiers: ['canRead', 'canManage']
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/periods/+page.svelte',
@@ -989,19 +989,16 @@ test('academic structure workspace pages gate read and mutation actions', async 
 			identifiers: ['canReadAcademicPeriods', 'canManageAcademicPeriods']
 		},
 		{
-			file: 'frontend-school/src/routes/(app)/staff/academic/classrooms/+page.svelte',
+			file: 'frontend-school/src/routes/(app)/staff/academic/homerooms/+page.svelte',
 			imports: ['$lib/components/app-state'],
-			permissions: ['PERMISSIONS.HOMEROOM_READ_SCHOOL', 'PERMISSIONS.HOMEROOM_MANAGE_SCHOOL'],
-			identifiers: ['canReadClassrooms', 'canCreateClassrooms', 'canUpdateClassrooms']
+			permissions: ['PERMISSIONS.HOMEROOM_MANAGE_SCHOOL'],
+			identifiers: ['canManage']
 		},
 		{
-			file: 'frontend-school/src/routes/(app)/staff/academic/enrollments/+page.svelte',
+			file: 'frontend-school/src/routes/(app)/staff/academic/student-years/+page.svelte',
 			imports: ['$lib/components/app-state'],
-			permissions: [
-				'PERMISSIONS.STUDENT_ACADEMIC_YEAR_READ_SCHOOL',
-				'PERMISSIONS.STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL'
-			],
-			identifiers: ['canReadEnrollments', 'canUpdateEnrollments']
+			permissions: ['PERMISSIONS.STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL'],
+			identifiers: ['canManage']
 		}
 	];
 	const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -1023,49 +1020,25 @@ test('academic structure workspace pages gate read and mutation actions', async 
 	}
 });
 
-test('academic curriculum workspace pages gate read and mutation actions', async () => {
-	const scopedCurriculumPermissions = [
-		'PERMISSIONS.ACADEMIC_CURRICULUM_READ_SCHOOL',
-		'PERMISSIONS.ACADEMIC_CURRICULUM_READ_ORGANIZATION_UNIT',
-		'PERMISSIONS.ACADEMIC_CURRICULUM_READ_ORGANIZATION_TREE',
-		'PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_SCHOOL',
-		'PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT',
-		'PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_TREE'
-	];
+test('academic catalog and curriculum workspaces gate mutation actions', async () => {
 	const routeExpectations = [
 		{
-			file: 'frontend-school/src/routes/(app)/staff/academic/subjects/+page.svelte',
+			file: 'frontend-school/src/routes/(app)/staff/academic/catalog/subjects/+page.svelte',
 			imports: ['$lib/components/app-state'],
-			permissions: scopedCurriculumPermissions,
-			identifiers: [
-				'canReadCurriculum',
-				'canCreateCurriculum',
-				'canUpdateCurriculum',
-				'canDeleteCurriculum'
-			]
+			permissions: ['PERMISSIONS.ACADEMIC_CATALOG_MANAGE_SCHOOL'],
+			identifiers: ['canManage']
 		},
 		{
-			file: 'frontend-school/src/routes/(app)/staff/academic/subject-groups/+page.svelte',
+			file: 'frontend-school/src/routes/(app)/staff/academic/catalog/subject-groups/+page.svelte',
 			imports: ['$lib/components/app-state'],
-			permissions: scopedCurriculumPermissions,
-			identifiers: ['canReadSubjectGroups', 'canManageSubjectGroupPermissions']
+			permissions: ['PERMISSIONS.ACADEMIC_CATALOG_MANAGE_SCHOOL'],
+			identifiers: ['canManage']
 		},
 		{
-			file: 'frontend-school/src/routes/(app)/staff/academic/subject-groups/[id]/+page.svelte',
+			file: 'frontend-school/src/routes/(app)/staff/academic/curricula/+page.svelte',
 			imports: ['$lib/components/app-state'],
-			permissions: scopedCurriculumPermissions,
-			identifiers: ['canReadSubjectGroupDetail', 'canManageSubjectGroupPermissions']
-		},
-		{
-			file: 'frontend-school/src/routes/(app)/staff/academic/study-plans/+page.svelte',
-			imports: ['$lib/components/app-state'],
-			permissions: scopedCurriculumPermissions,
-			identifiers: [
-				'canReadStudyPlans',
-				'canCreateStudyPlans',
-				'canUpdateStudyPlans',
-				'canDeleteStudyPlans'
-			]
+			permissions: ['PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_SCHOOL'],
+			identifiers: ['canManage']
 		}
 	];
 	const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -1100,10 +1073,10 @@ test('academic course planning pages gate read and manage actions', async () => 
 	];
 	const routeExpectations = [
 		{
-			file: 'frontend-school/src/routes/(app)/staff/academic/planning/+page.svelte',
+			file: 'frontend-school/src/routes/(app)/staff/academic/delivery/+page.svelte',
 			imports: ['$lib/components/app-state'],
-			permissions: offeringPermissions,
-			identifiers: ['canReadCoursePlan', 'canManageCoursePlan']
+			permissions: offeringPermissions.filter((permission) => permission.includes('MANAGE')),
+			identifiers: ['canManage']
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/timetable/+page.svelte',
@@ -1299,58 +1272,6 @@ test('achievement workspace gates read and owner/all mutation actions', async ()
 	}
 	for (const identifier of requiredIdentifiers) {
 		assert.match(source, new RegExp(`\\b${identifier}\\b`));
-	}
-});
-
-test('activity workspace gates read, owner, admin, and member actions', async () => {
-	const offeringPermissions = [
-		'PERMISSIONS.LEARNING_OFFERING_READ_SCHOOL',
-		'PERMISSIONS.LEARNING_OFFERING_READ_ORGANIZATION_UNIT',
-		'PERMISSIONS.LEARNING_OFFERING_READ_ORGANIZATION_TREE',
-		'PERMISSIONS.LEARNING_OFFERING_READ_ASSIGNED',
-		'PERMISSIONS.LEARNING_OFFERING_MANAGE_SCHOOL',
-		'PERMISSIONS.LEARNING_OFFERING_MANAGE_ORGANIZATION_UNIT',
-		'PERMISSIONS.LEARNING_OFFERING_MANAGE_ORGANIZATION_TREE',
-		'PERMISSIONS.LEARNING_OFFERING_MANAGE_ASSIGNED'
-	];
-	const routeExpectations = [
-		{
-			file: 'frontend-school/src/routes/(app)/staff/academic/activities/+page.svelte',
-			imports: ['$lib/components/app-state'],
-			permissions: offeringPermissions,
-			identifiers: [
-				'canReadActivity',
-				'canManageActivity',
-				'canManageOwnActivity',
-				'canManageActivityMembers'
-			]
-		},
-		{
-			file: 'frontend-school/src/routes/(app)/staff/academic/activities/[id]/+page.svelte',
-			imports: ['$lib/components/app-state'],
-			permissions: offeringPermissions,
-			identifiers: [
-				'canReadActivity',
-				'canManageActivity',
-				'canManageOwnActivity',
-				'canManageActivityMembers'
-			]
-		}
-	];
-	const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-	for (const expectation of routeExpectations) {
-		const source = stripComments(await readFile(path.join(repoRoot, expectation.file), 'utf8'));
-
-		for (const requiredImport of expectation.imports) {
-			assert.match(source, new RegExp(escapeRegex(requiredImport)));
-		}
-		for (const requiredPermission of expectation.permissions) {
-			assert.match(source, new RegExp(escapeRegex(requiredPermission)));
-		}
-		for (const identifier of expectation.identifiers) {
-			assert.match(source, new RegExp(`\\b${identifier}\\b`));
-		}
 	}
 });
 
@@ -1596,7 +1517,7 @@ test('dashboard and self-view routes stay user-scoped with permission-filtered s
 	assert.match(staffDashboard, /loadDashboard/);
 	assert.match(staffDashboard, /<PageSkeleton\s+variant="cards"/);
 	assert.match(staffDashboard, /<PageState[\s\S]*โหลดภาพรวมโรงเรียนไม่สำเร็จ/);
-	assert.match(staffDashboard, /stats\.activeClassrooms/);
+	assert.match(staffDashboard, /stats\.activeHomerooms/);
 	assert.doesNotMatch(staffDashboard, /placeholder - should fetch from API/);
 	assert.doesNotMatch(staffDashboard, /totalStaff:\s*0/);
 	assert.doesNotMatch(staffDashboard, /listStaff\(/);

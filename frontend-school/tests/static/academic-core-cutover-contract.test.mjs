@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
@@ -91,6 +91,7 @@ const operations = [
 	['/api/academic/student-years', 'post', 'createStudentAcademicYear'],
 	['/api/academic/student-years/{id}', 'get', 'getStudentAcademicYear'],
 	['/api/academic/student-years/{id}', 'patch', 'updateStudentAcademicYear'],
+	['/api/academic/student-years/{id}/placements', 'get', 'listHomeroomPlacements'],
 	['/api/academic/student-years/{id}/placements', 'post', 'createHomeroomPlacement'],
 	['/api/academic/placements/{id}/transfer', 'post', 'transferHomeroomPlacement'],
 	['/api/academic/offerings', 'get', 'listLearningOfferings'],
@@ -213,6 +214,101 @@ test('academic JSON operations use response envelopes', async () => {
 				);
 			}
 		}
+	}
+});
+
+test('placement transfers require an auditable reason', async () => {
+	const { contract, generated } = await readContractArtifacts();
+	const schema = contract.components.schemas?.TransferHomeroomPlacementRequest;
+
+	assert.ok(schema?.required?.includes('reason'));
+	assert.equal(schema?.properties?.reason?.type, 'string');
+	assert.match(generated, /TransferHomeroomPlacementRequest:[\s\S]*?reason:\s*string/);
+});
+
+test('new academic workspaces own context and permission metadata', async () => {
+	const routes = [
+		['core', 'none', 'ACADEMIC_YEAR'],
+		['catalog/subject-groups', 'none', 'ACADEMIC_CATALOG'],
+		['catalog/subjects', 'none', 'ACADEMIC_CATALOG'],
+		['catalog/activities', 'none', 'ACADEMIC_CATALOG'],
+		['curricula', 'none', 'ACADEMIC_CURRICULUM'],
+		['homerooms', 'year_required', 'HOMEROOM'],
+		['student-years', 'year_required', 'STUDENT_ACADEMIC_YEAR'],
+		['delivery', 'term_required', 'LEARNING_OFFERING']
+	];
+
+	for (const [route, context, permission] of routes) {
+		const source = await readFile(
+			path.join(repoRoot, `frontend-school/src/routes/(app)/staff/academic/${route}/+page.ts`),
+			'utf8'
+		);
+		assert.match(source, new RegExp(`academicContext:\\s*['"]${context}['"]`), route);
+		assert.match(source, new RegExp(`PERMISSION_MODULES\\.${permission}\\b`), route);
+	}
+});
+
+test('new workspaces use focused typed APIs without legacy academic paths', async () => {
+	const requiredFiles = [
+		'frontend-school/src/lib/api/academic-core.ts',
+		'frontend-school/src/lib/api/learning-delivery.ts',
+		'frontend-school/src/lib/components/academic-core/AcademicYearTermEditor.svelte',
+		'frontend-school/src/lib/components/academic-core/CatalogVersionHistory.svelte',
+		'frontend-school/src/lib/components/academic-core/CurriculumProgramEditor.svelte',
+		'frontend-school/src/lib/components/academic-core/HomeroomEditor.svelte',
+		'frontend-school/src/lib/components/academic-core/StudentYearPlacementEditor.svelte',
+		'frontend-school/src/lib/components/academic-core/StudentYearTransferDialog.svelte',
+		'frontend-school/src/lib/components/learning-delivery/LearningOfferingEditor.svelte',
+		'frontend-school/src/lib/components/learning-delivery/LearningGroupEditor.svelte',
+		'frontend-school/src/lib/components/learning-delivery/RosterPreviewPanel.svelte',
+		'frontend-school/src/lib/components/learning-delivery/CurriculumOfferingPreview.svelte'
+	];
+
+	for (const file of requiredFiles) await access(path.join(repoRoot, file));
+
+	const wrappers = `${await readFile(path.join(repoRoot, requiredFiles[0]), 'utf8')}\n${await readFile(path.join(repoRoot, requiredFiles[1]), 'utf8')}`;
+	assert.match(wrappers, /generated\/school-api/);
+	assert.doesNotMatch(
+		wrappers,
+		/\bunknown\b|Record<string,\s*unknown>|\/api\/academic\/(structure|semesters|classrooms|enrollments|planning\/courses|subjects|study-plans)/
+	);
+
+	const allUi = [];
+	for (const file of requiredFiles.slice(2))
+		allUi.push(await readFile(path.join(repoRoot, file), 'utf8'));
+	assert.doesNotMatch(allUi.join('\n'), /numberOfTerms|number_of_terms|คะแนน|GPA|เกรดเฉลี่ย/);
+
+	const coreEditor = allUi[0];
+	assert.match(coreEditor, /onUpdateYear/);
+	assert.match(coreEditor, /onUpdateTerm/);
+	assert.match(coreEditor, /onReplaceBellSchedulePeriods/);
+	assert.match(coreEditor, /จัดคาบในตารางเวลา/);
+});
+
+test('legacy academic workspace routes are removed without aliases', async () => {
+	const retired = [
+		'frontend-school/src/routes/(app)/staff/academic/structure/+page.ts',
+		'frontend-school/src/routes/(app)/staff/academic/structure/+page.svelte',
+		'frontend-school/src/routes/(app)/staff/academic/subjects/+page.ts',
+		'frontend-school/src/routes/(app)/staff/academic/subjects/+page.svelte',
+		'frontend-school/src/routes/(app)/staff/academic/study-plans/+page.ts',
+		'frontend-school/src/routes/(app)/staff/academic/study-plans/+page.svelte',
+		'frontend-school/src/routes/(app)/staff/academic/classrooms/+page.ts',
+		'frontend-school/src/routes/(app)/staff/academic/classrooms/+page.svelte',
+		'frontend-school/src/routes/(app)/staff/academic/enrollments/+page.ts',
+		'frontend-school/src/routes/(app)/staff/academic/enrollments/+page.svelte',
+		'frontend-school/src/routes/(app)/staff/academic/planning/+page.ts',
+		'frontend-school/src/routes/(app)/staff/academic/planning/+page.svelte',
+		'frontend-school/src/routes/(app)/staff/academic/activities/+page.ts',
+		'frontend-school/src/routes/(app)/staff/academic/activities/+page.svelte',
+		'frontend-school/src/routes/(app)/staff/academic/activities/[id]/+page.svelte',
+		'frontend-school/src/routes/(app)/staff/academic/subject-groups/+page.ts',
+		'frontend-school/src/routes/(app)/staff/academic/subject-groups/+page.svelte',
+		'frontend-school/src/routes/(app)/staff/academic/subject-groups/[id]/+page.svelte'
+	];
+
+	for (const file of retired) {
+		await assert.rejects(access(path.join(repoRoot, file)), undefined, file);
 	}
 });
 

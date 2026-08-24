@@ -669,11 +669,30 @@ async fn future_student_year_and_transfer_do_not_mutate_current_year_and_retries
     .await
     .unwrap();
     let idempotency_key = Uuid::new_v4();
+    let blank_reason = student_years::transfer_placement(
+        &pool,
+        actor,
+        placement.id,
+        TransferHomeroomPlacementRequest {
+            target_homeroom_id: homeroom_b.id,
+            transfer_date: NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
+            enrollment_type: "room_transfer".to_string(),
+            class_number: Some(2),
+            reason: "  ".to_string(),
+            row_version: placement.row_version,
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(blank_reason.public_message().contains("เหตุผล"));
+
     let transfer_request = TransferHomeroomPlacementRequest {
         target_homeroom_id: homeroom_b.id,
         transfer_date: NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
         enrollment_type: "room_transfer".to_string(),
         class_number: Some(2),
+        reason: "ปรับห้องให้เหมาะกับแผนการเรียน".to_string(),
         row_version: placement.row_version,
         idempotency_key,
     };
@@ -695,6 +714,23 @@ async fn future_student_year_and_transfer_do_not_mutate_current_year_and_retries
     .await
     .unwrap();
     assert_eq!(placement_count, 2);
+
+    let history = student_years::list_placements(&pool, future.id)
+        .await
+        .unwrap();
+    assert_eq!(history.len(), 2);
+    assert_eq!(history[0].id, first.ended_placement.id);
+    assert_eq!(history[1].id, first.new_placement.id);
+
+    let audit_reason: String = sqlx::query_scalar(
+        "SELECT payload->>'reason' FROM academic_audit_events \
+         WHERE event_code = 'homeroom_placement.transferred' AND entity_id = $1",
+    )
+    .bind(first.ended_placement.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(audit_reason, "ปรับห้องให้เหมาะกับแผนการเรียน");
 }
 
 #[tokio::test]

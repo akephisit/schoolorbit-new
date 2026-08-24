@@ -157,7 +157,7 @@ pub fn routes() -> Router<AppState> {
         )
         .route(
             "/student-years/{id}/placements",
-            post(handlers::create_placement),
+            get(handlers::list_placements).post(handlers::create_placement),
         )
         .route(
             "/placements/{id}/transfer",

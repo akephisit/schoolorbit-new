@@ -2617,6 +2617,33 @@ pub async fn update_student_year(
 }
 
 #[utoipa::path(
+    get,
+    path = "/api/academic/student-years/{id}/placements",
+    operation_id = "listHomeroomPlacements",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Student academic year ID")),
+    responses(
+        (status = 200, description = "Homeroom placement history", body = ApiResponse<Vec<HomeroomPlacement>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Student academic year read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Student academic year not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_placements(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(student_year_id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::STUDENT_ACADEMIC_YEAR_READ_SCHOOL)?;
+    Ok(ok(
+        student_years::list_placements(&pool, student_year_id).await?
+    ))
+}
+
+#[utoipa::path(
     post,
     path = "/api/academic/student-years/{id}/placements",
     operation_id = "createHomeroomPlacement",

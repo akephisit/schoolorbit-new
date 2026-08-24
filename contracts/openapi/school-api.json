@@ -8202,6 +8202,97 @@
         ],
         "type": "object"
       },
+      "ApiResponse_Vec_HomeroomPlacement": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "academicYearId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "classNumber": {
+                  "format": "int32",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "createdAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "endDate": {
+                  "format": "date",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "enrollmentType": {
+                  "type": "string"
+                },
+                "homeroomId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "migrated": {
+                  "type": "boolean"
+                },
+                "rowVersion": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "startDate": {
+                  "format": "date",
+                  "type": "string"
+                },
+                "status": {
+                  "$ref": "#/components/schemas/HomeroomPlacementStatus"
+                },
+                "studentAcademicYearId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "studentAcademicYearId",
+                "academicYearId",
+                "homeroomId",
+                "startDate",
+                "status",
+                "enrollmentType",
+                "rowVersion",
+                "migrated",
+                "createdAt",
+                "updatedAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Vec_IssuedCertificateSummary": {
         "properties": {
           "data": {
@@ -21650,6 +21741,9 @@
             "format": "uuid",
             "type": "string"
           },
+          "reason": {
+            "type": "string"
+          },
           "rowVersion": {
             "format": "int64",
             "type": "integer"
@@ -21667,6 +21761,7 @@
           "targetHomeroomId",
           "transferDate",
           "enrollmentType",
+          "reason",
           "rowVersion",
           "idempotencyKey"
         ],
@@ -28741,6 +28836,66 @@
       }
     },
     "/api/academic/student-years/{id}/placements": {
+      "get": {
+        "operationId": "listHomeroomPlacements",
+        "parameters": [
+          {
+            "description": "Student academic year ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_HomeroomPlacement"
+                }
+              }
+            },
+            "description": "Homeroom placement history"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Student academic year read permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Student academic year not found"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      },
       "post": {
         "operationId": "createHomeroomPlacement",
         "parameters": [
@@ -36929,6 +37084,109 @@
         ]
       }
     },
+    "/api/me/timetable": {
+      "get": {
+        "operationId": "getMyTimetable",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "learningGroupId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "homeroomId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "instructorId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "roomId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dayOfWeek",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entryType",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_TimetableEntry"
+                }
+              }
+            },
+            "description": "Current staff timetable in the selected term"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Staff timetable access denied"
+          }
+        },
+        "tags": [
+          "staff"
+        ]
+      }
+    },
     "/api/menu/user": {
       "get": {
         "operationId": "getUserMenu",
@@ -39942,109 +40200,6 @@
         "summary": "GET /api/staff/exam-schedules",
         "tags": [
           "academic"
-        ]
-      }
-    },
-    "/api/staff/me/timetable": {
-      "get": {
-        "operationId": "getStaffTimetable",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "academicTermId",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "learningGroupId",
-            "required": false,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "homeroomId",
-            "required": false,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "instructorId",
-            "required": false,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "roomId",
-            "required": false,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "dayOfWeek",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "entryType",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_TimetableEntry"
-                }
-              }
-            },
-            "description": "Current staff timetable in the selected term"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Authentication required"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Staff timetable access denied"
-          }
-        },
-        "tags": [
-          "staff"
         ]
       }
     },

@@ -301,7 +301,7 @@
 					<CardContent class="flex items-center justify-between gap-4 p-4">
 						<div>
 							<p class="text-sm text-muted-foreground">ห้องเรียนที่เปิด</p>
-							<p class="text-2xl font-semibold">{numberFormatter.format(stats.activeClassrooms)}</p>
+							<p class="text-2xl font-semibold">{numberFormatter.format(stats.activeHomerooms)}</p>
 						</div>
 						<Building2 class="h-5 w-5 text-amber-600" />
 					</CardContent>
