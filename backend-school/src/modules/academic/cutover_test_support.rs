@@ -83,6 +83,7 @@ pub enum CutoverFixtureFault {
     SynchronizedActivityPattern,
     ActivityMemberDuplicate,
     AssessmentReference,
+    AssessmentOffering,
     TimetableReference,
     ExamReference,
     SupervisionReference,
@@ -143,6 +144,10 @@ pub fn all_cutover_fixture_faults() -> &'static [(CutoverFixtureFault, AcademicC
             Code::ActivityMemberDuplicate,
         ),
         (Fault::AssessmentReference, Code::AssessmentReferenceOrphan),
+        (
+            Fault::AssessmentOffering,
+            Code::AssessmentOfferingUnresolved,
+        ),
         (Fault::TimetableReference, Code::TimetableReferenceOrphan),
         (Fault::ExamReference, Code::ExamReferenceOrphan),
         (
@@ -995,6 +1000,26 @@ fn fault_sql(fault: CutoverFixtureFault) -> &'static str {
             WHERE id = '80000000-0000-0000-0000-000000000001';
         "#
         }
+        Fault::AssessmentOffering => {
+            r#"
+            INSERT INTO academic_assessment_plans (
+                id, classroom_course_id, academic_semester_id, subject_id, status
+            )
+            VALUES (
+                '80000000-0000-0000-0000-000000000002', NULL,
+                '11000000-0000-0000-0000-000000000251',
+                '20000000-0000-0000-0000-000000000026', 'saved'
+            );
+            INSERT INTO academic_assessment_categories (
+                id, plan_id, code, name, max_score, exam_mode, display_order
+            )
+            VALUES (
+                '81000000-0000-0000-0000-000000000002',
+                '80000000-0000-0000-0000-000000000002',
+                'midterm', 'กลางภาค', 20, 'outside_timetable', 1
+            );
+        "#
+        }
         Fault::TimetableReference => {
             r#"
             UPDATE academic_timetable_entries
@@ -1201,6 +1226,12 @@ fn repair_sql(fault: CutoverFixtureFault) -> &'static str {
             UPDATE academic_assessment_plans
             SET classroom_course_id = '60000000-0000-0000-0000-000000000025'
             WHERE id = '80000000-0000-0000-0000-000000000001';
+        "#
+        }
+        Fault::AssessmentOffering => {
+            r#"
+            DELETE FROM academic_assessment_plans
+            WHERE id = '80000000-0000-0000-0000-000000000002';
         "#
         }
         Fault::TimetableReference => {

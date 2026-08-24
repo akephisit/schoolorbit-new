@@ -30,6 +30,7 @@ pub enum AcademicCorePreflightCode {
     ActivityMemberDuplicate,
     ActivityVersionRangeOverlap,
     AdmissionProgramUnresolved,
+    AssessmentOfferingUnresolved,
     AssessmentReferenceOrphan,
     CourseTermYearMismatch,
     CurriculumVersionUnresolved,
@@ -155,6 +156,7 @@ pub fn preflight_check_codes() -> &'static [AcademicCorePreflightCode] {
         Code::SynchronizedActivityPatternConflict,
         Code::ActivityMemberDuplicate,
         Code::AssessmentReferenceOrphan,
+        Code::AssessmentOfferingUnresolved,
         Code::TimetableReferenceOrphan,
         Code::ExamReferenceOrphan,
         Code::SupervisionReferenceOrphan,
@@ -366,7 +368,7 @@ const EXPECTED_TARGET_COUNT_QUERIES: &[(&str, &str)] = &[
     ),
 ];
 
-fn finding_checks() -> [FindingCheck; 29] {
+fn finding_checks() -> [FindingCheck; 30] {
     use AcademicCorePreflightCode as Code;
     use PreflightSeverity::{Blocking, Warning};
 
@@ -780,6 +782,24 @@ fn finding_checks() -> [FindingCheck; 29] {
                     FROM affected"#,
             uses_cutover_date: false,
             guidance_th: "โครงสร้างคะแนนต้องอ้างภาคเรียน รายวิชา และรายวิชาที่เปิดสอนชุดเดียวกัน",
+        },
+        FindingCheck {
+            code: Code::AssessmentOfferingUnresolved,
+            severity: Blocking,
+            sql: r#"WITH affected AS (
+                        SELECT plan.id
+                        FROM academic_assessment_plans plan
+                        WHERE NOT EXISTS (
+                            SELECT 1
+                            FROM classroom_courses course
+                            WHERE course.academic_semester_id = plan.academic_semester_id
+                              AND course.subject_id = plan.subject_id
+                        )
+                    )
+                    SELECT COUNT(*), COALESCE((array_agg(id ORDER BY id))[1:20], ARRAY[]::uuid[])
+                    FROM affected"#,
+            uses_cutover_date: false,
+            guidance_th: "โครงสร้างคะแนนต้องมีรายวิชาที่เปิดสอนในภาคเรียนเดียวกัน หรือยืนยันลบแบบร่างที่ไม่มีการเปิดสอนก่อน cutover",
         },
         FindingCheck {
             code: Code::TimetableReferenceOrphan,
@@ -1247,7 +1267,7 @@ mod tests {
     fn database_preflight_declares_every_stable_finding_code_once() {
         let codes = preflight_check_codes();
 
-        assert_eq!(codes.len(), 29);
+        assert_eq!(codes.len(), 30);
         assert_eq!(
             codes.first(),
             Some(&AcademicCorePreflightCode::ActiveYearCountInvalid)

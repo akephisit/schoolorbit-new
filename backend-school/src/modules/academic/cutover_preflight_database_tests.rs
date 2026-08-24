@@ -3,6 +3,7 @@ use super::{
     cutover_test_support::{
         all_cutover_fixture_faults, apply_cutover_fixture_fault, apply_migrations_through,
         repair_cutover_fixture_fault, seed_academic_cutover_fixture, CutoverFixture,
+        CutoverFixtureFault,
     },
 };
 use crate::test_helpers::create_named_test_pool;
@@ -106,4 +107,42 @@ async fn every_blocking_finding_family_is_detected_by_a_legacy_fixture_fault() {
             .await
             .expect("fixture fault must be repairable");
     }
+}
+
+#[tokio::test]
+async fn assessment_plan_without_a_matching_course_offering_blocks_cutover() {
+    let pool = create_named_test_pool("academic_preflight_assessment_offering").await;
+    apply_migrations_through(&pool, 40)
+        .await
+        .expect("legacy migrations must apply");
+    seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
+        .await
+        .expect("passing cutover fixture must seed");
+
+    apply_cutover_fixture_fault(&pool, CutoverFixtureFault::AssessmentOffering)
+        .await
+        .expect("unmatched assessment plan fixture must seed");
+
+    let report = run_academic_core_preflight(
+        &pool,
+        "schoolorbit_test_academic_preflight_assessment_offering",
+        NaiveDate::from_ymd_opt(2025, 8, 23).expect("test cutover date must be valid"),
+    )
+    .await
+    .expect("unmatched assessment plan fixture must remain queryable");
+
+    let finding = report
+        .findings
+        .iter()
+        .find(|finding| {
+            serde_json::to_value(finding.code)
+                .expect("finding code must serialize")
+                .as_str()
+                == Some("ASSESSMENT_OFFERING_UNRESOLVED")
+        })
+        .expect("unmatched assessment plan must emit ASSESSMENT_OFFERING_UNRESOLVED");
+
+    assert!(!report.can_cut_over);
+    assert_eq!(finding.affected_count, 1);
+    assert_eq!(finding.resource_ids.len(), 1);
 }
