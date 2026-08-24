@@ -1610,7 +1610,7 @@ gain `academicYearId`. Parent/student timetable, exam, activity, and calendar re
 by the requested context plus self/child policy. Lookup responses use `academicTerm` and `homeroom`
 terminology and return stable subject IDs with a selected version display label.
 
-- [ ] **Step 1: Add RED cross-module tests**
+- [x] **Step 1: Add RED cross-module tests**
 
 Add tests proving:
 
@@ -1632,34 +1632,34 @@ Add tests proving:
 
 Expected: at least the new context and future-year assertions FAIL.
 
-- [ ] **Step 2: Port admission transactionally**
+- [x] **Step 2: Port admission transactionally**
 
 Admission tracks reference `study_program_id`. Capacity derives from target-year homerooms. Final
 enrollment locks the application/assignment, upserts one planned or active student-year according to
 the already-migrated year status, creates one placement idempotently, and leaves other years intact.
 Retain the existing admission identity/PII protections; this task never logs applicant data.
 
-- [ ] **Step 3: Port supervision and question-bank authorization**
+- [x] **Step 3: Port supervision and question-bank authorization**
 
 Supervision cycles use year plus optional term and observations use learning groups. Whole-year
 cycles union groups from all selected-year terms. Question-bank records reference stable subjects;
 assigned access joins stable subject -> course offering detail -> group teacher and unions all
 authorized organization scopes.
 
-- [ ] **Step 4: Port parent, student, calendar, and staff views**
+- [x] **Step 4: Port parent, student, calendar, and staff views**
 
 Require context DTOs at service boundaries. Parent/learner policies first establish self/child
 access, then term/group rosters narrow results. Staff dashboard callers explicitly resolve the active
 default from the context service and pass IDs to queries; SQL never owns that default selection.
 Annual calendar accepts year plus optional term.
 
-- [ ] **Step 5: Port generic lookups and test fixtures**
+- [x] **Step 5: Port generic lookups and test fixtures**
 
 Replace legacy lookup names and tables; return only fields needed by the caller and no national-ID/
 contact data. Update sandbox and certificate fixtures to insert stable identities/versions,
 curriculum/program, student-year, homeroom, offering, and group records using shared test builders.
 
-- [ ] **Step 6: Audit all runtime consumers**
+- [x] **Step 6: Audit all runtime consumers**
 
 Run both searches and classify every hit. After Task 9, hits outside migrations/cutover tests must be
 zero:
@@ -1675,7 +1675,7 @@ rg -n "WHERE[^;]*(is_active\s*=\s*true).*academic_(years|terms)" backend-school/
 Expected: no runtime query hits. Any legitimate migration/reconciliation constant belongs in the
 static allowlist by exact file and symbol, not a directory-wide exemption.
 
-- [ ] **Step 7: Run focused and broad backend verification**
+- [x] **Step 7: Run focused and broad backend verification**
 
 ```bash
 ./scripts/test_backend_school.sh modules::admission::services -- --nocapture
@@ -1689,7 +1689,19 @@ cargo fmt --all -- --check
 cargo check
 ```
 
-- [ ] **Step 8: Commit Task 9**
+Verification evidence for this checkpoint: all 26 admission, 21 supervision, 11 question-bank,
+4 parent, 49 calendar, and 116 certificate tests passed with one test thread. Focused database tests
+also proved explicit-year lookup, student, parent, staff dashboard/profile, future-year enrollment,
+sandbox seed idempotency, and the migration 044 runtime contract. All 146 static architecture tests,
+`cargo fmt --all -- --check`, `cargo check`, `bash -n scripts/test_backend_school.sh`, and
+`git diff --check` passed. The disposable PostgreSQL tmpfs ceiling is now 3 GiB because the expanded
+sequential migration fixtures exceed the former 1 GiB limit; the runner still removes its exact
+container after every command. Runtime-token audit hits are confined to the preflight, migration
+test support, reconciliation provenance, and schema tests. Generated OpenAPI/TypeScript artifacts
+and frontend consumers remain Tasks 10-13, so this checkpoint is not yet a deployable Phase A
+release.
+
+- [x] **Step 8: Commit Task 9**
 
 ```bash
 git add backend-school/src/bin/seed_sandbox.rs \
