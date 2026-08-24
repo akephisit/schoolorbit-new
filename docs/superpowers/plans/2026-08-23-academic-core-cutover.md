@@ -1853,7 +1853,7 @@ The URL parameters are exactly `academicYearId` and `academicTermId`. They are n
 independent selected-value copy in local storage. `store.ts` may cache context options for the
 authenticated session, but the URL remains authoritative.
 
-- [ ] **Step 1: Add RED route-context and store tests**
+- [x] **Step 1: Add RED route-context and store tests**
 
 The static test creates synthetic route modules and asserts metadata inheritance, valid literal
 values, no context on non-academic routes, URL parsing, term/year consistency, and absence of any
@@ -1879,13 +1879,13 @@ npx playwright test --list tests/e2e/academic-context.spec.ts
 Expected: static test FAIL because the context modules do not exist; Playwright discovery succeeds
 only after the test file is created.
 
-- [ ] **Step 2: Implement route metadata discovery**
+- [x] **Step 2: Implement route metadata discovery**
 
 Use an eager `import.meta.glob('/src/routes/(app)/**/+page.ts')` parallel to route access. Walk parent
 route IDs so child detail pages inherit context requirements. Reject invalid metadata at build/test
 time. Do not merge context semantics into permission checks; access and context are orthogonal.
 
-- [ ] **Step 3: Implement the URL-owned store**
+- [x] **Step 3: Implement the URL-owned store**
 
 On an authenticated route change:
 
@@ -1900,27 +1900,27 @@ On an authenticated route change:
 If no valid required year/term exists, expose `unavailable`; pages do not issue scoped API calls.
 Use `goto` with preserved unrelated query params, hash, scroll, and focus behavior.
 
-- [ ] **Step 4: Implement dirty-source coordination**
+- [x] **Step 4: Implement dirty-source coordination**
 
 Pages register a stable key and getter. Before a user-initiated context change, evaluate all current
 route sources. Show an existing AlertDialog with Thai copy naming the unsaved-change risk. On confirm,
 perform navigation and clear only sources unregistered by page teardown; never mutate page draft
 state directly from the Topbar.
 
-- [ ] **Step 5: Implement responsive switcher and Header integration**
+- [x] **Step 5: Implement responsive switcher and Header integration**
 
 Desktop uses linked year and term Select controls with status badges. Mobile uses one compact button
 opening a Sheet/Popover. Show it only for staff routes whose resolved metadata is not `none`. Keep
 search, theme, notifications, and profile controls usable at all breakpoints; shrink/hide the search
 before truncating the context label.
 
-- [ ] **Step 6: Initialize only after authentication**
+- [x] **Step 6: Initialize only after authentication**
 
 The app layout starts context resolution after `/api/auth/me` succeeds and disposes route/dirty
 subscriptions on teardown. A permission denial redirects before a protected page loads context data.
 Signing out clears cached options and selected in-memory state.
 
-- [ ] **Step 7: Run Svelte and focused browser verification**
+- [x] **Step 7: Run Svelte and focused browser verification**
 
 Run the Svelte code-writer analyzer/autofixer on:
 
@@ -1940,7 +1940,18 @@ npm run lint
 npx playwright test --list tests/e2e/academic-context.spec.ts
 ```
 
-- [ ] **Step 8: Commit Task 11**
+Verification evidence for this checkpoint: the RED static suite failed 4/4 on the absent context
+modules, while Playwright discovered all 6 planned browser flows. After implementation, the focused
+context suite passes 4/4, menu-route registration passes 11/11, Playwright still discovers all 6
+flows, `npm run lint` and `git diff --check` pass, and the Svelte analyzer reports no issues in the
+Switcher, Header, or app layout. Full `svelte-check` remains at the Task 10 cutover baseline of 558
+errors in 46 legacy consumer files; none are in Task 11 files and Tasks 12-13 own those conversions.
+The full static suite likewise retains the previously recorded legacy consumer failures, while all
+new Academic Context tests and the Academic Core cutover contract tests pass. Browser execution is
+deferred because the delivery and converted consumer routes exercised by the six flows are created
+in Tasks 12-13; discovery is the Task 11 gate.
+
+- [x] **Step 8: Commit Task 11**
 
 ```bash
 git add frontend-school/src/lib/api/academic-context.ts \
@@ -1952,6 +1963,8 @@ git add frontend-school/src/lib/api/academic-context.ts \
   frontend-school/tests/e2e/academic-context.spec.ts
 git commit -m "feat(academic): add explicit topbar context"
 ```
+
+Feature commit: `fc577c77 feat(academic): add explicit topbar context`.
 
 ---
 
