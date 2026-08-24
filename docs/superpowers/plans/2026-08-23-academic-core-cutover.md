@@ -2012,7 +2012,7 @@ untyped component-local objects.
 display state differs. They do not use `unknown`, casts, or `Record<string, unknown>` for known
 responses.
 
-- [ ] **Step 1: Add RED typed API and route tests**
+- [x] **Step 1: Add RED typed API and route tests**
 
 Extend `academic-core-cutover-contract.test.mjs` to require new routes, generated DTO imports, exact
 permissions, context metadata, and no legacy wrapper/path strings. Add Playwright component-style
@@ -2034,34 +2034,34 @@ npx playwright test --list tests/e2e/academic-core-cutover.spec.ts
 
 Expected: static test FAIL until routes/wrappers are replaced.
 
-- [ ] **Step 2: Implement strictly typed API wrappers**
+- [x] **Step 2: Implement strictly typed API wrappers**
 
 Use the generated envelope/data types and one shared query helper that requires a selected context
 for scoped calls. Mutations return typed resources and pages patch only affected rows. A 409 maps to
 Thai reload guidance without swallowing the server message/code.
 
-- [ ] **Step 3: Build the academic core setup page**
+- [x] **Step 3: Build the academic core setup page**
 
 The all-years page lists statuses and term rows. Users with manage permission may add/edit planning
 years/terms and configure sequence, code, type, dates, inclusion, blocking, and bell schedule. There
 is no active toggle and no stored term-count field. Active/closing/closed rows are read-only in
 Release 1 with guidance that lifecycle transitions arrive through the controlled workflow.
 
-- [ ] **Step 4: Build catalog and curriculum pages**
+- [x] **Step 4: Build catalog and curriculum pages**
 
 Catalog lists stable identities separately from version history. Editors never overwrite a
 published historical version. Curriculum UI shows version -> program -> requirement hierarchy and
 the exact subject/activity version selected. Publishing uses a confirmation summary and patches the
 returned immutable state.
 
-- [ ] **Step 5: Build year-scoped homeroom and student-year pages**
+- [x] **Step 5: Build year-scoped homeroom and student-year pages**
 
 Read selected year from the context store. Homeroom management includes advisor/program/capacity.
 Student-year management shows academic status and placement history. Future placement creation and
 mid-year transfer are separate actions; transfer requires date/reason and displays both ended/new
 placement responses.
 
-- [ ] **Step 6: Build term-scoped delivery workspace**
+- [x] **Step 6: Build term-scoped delivery workspace**
 
 Present course and activity offerings through one workspace with kind-specific details. Group
 management covers homerooms, teachers, rooms, and authoritative roster. Roster preview visibly
@@ -2070,13 +2070,16 @@ show score/GPA controls. Curriculum generation first displays course/activity cr
 items and applies only the reviewed source hash; a stale curriculum/term asks the user to preview
 again.
 
-- [ ] **Step 7: Delete legacy routes/wrapper and verify menu synchronization inputs**
+- [x] **Step 7: Delete legacy routes and verify menu synchronization inputs**
 
 Remove old route files without redirects or aliases. Replacement routes own new system route IDs;
 the normal menu synchronization removes stale frontend-owned records while preserving school-owned
 workspace placement for surviving route records. Add/update menu sync fixtures for the replacements.
+The old `academic.ts` wrapper is deliberately retained only until Task 13 moves its remaining
+consumers; no compatibility endpoint or alias is added, and Task 13 deletes the wrapper immediately
+after the last import is removed.
 
-- [ ] **Step 8: Run Svelte analyzer and frontend verification**
+- [x] **Step 8: Run Svelte analyzer and frontend verification**
 
 Run the Svelte tooling on every created/modified Svelte component, then:
 
@@ -2090,7 +2093,23 @@ npm run lint
 npx playwright test --list tests/e2e/academic-core-cutover.spec.ts
 ```
 
-- [ ] **Step 9: Commit Task 12**
+Verification evidence for this checkpoint: the focused RED contract suite initially failed 6
+assertions while the new routes, typed wrappers, components, and removal boundary were absent. After
+implementation it passes 9/9, menu synchronization passes 11/11, API-contract generation/check and
+all 4 generator tests pass, Playwright discovers all 7 planned flows, `npm run lint` and
+`git diff --check` pass, and the Svelte analyzer plus a Release-12-scoped `svelte-check` report 0
+errors and 0 warnings. Backend verification passes the focused Academic Core/Delivery API-contract
+test, the transfer-reason PII unit test, all 146 static-architecture tests, `cargo fmt --check`, and
+`cargo check`. The database-backed placement/transfer test remains environment-gated because
+`TEST_DATABASE_URL` is unavailable in this checkout.
+
+Full workspace `svelte-check` improves from 483 errors in 43 legacy consumer files to 471 errors in
+38 files. The remaining diagnostics and static failures are in assessment, timetable, calendar,
+student/staff profile, and other pre-cutover consumers explicitly owned by Task 13; no Release 12
+workspace file appears in the focused diagnostics. This checkpoint intentionally does not restore
+legacy DTOs or compatibility paths merely to make those consumers compile between commits.
+
+- [x] **Step 9: Commit Task 12**
 
 ```bash
 git add -A frontend-school/src/lib/api frontend-school/src/lib/components/academic-core \
@@ -2100,6 +2119,8 @@ git add -A frontend-school/src/lib/api frontend-school/src/lib/components/academ
   frontend-school/tests/e2e/academic-core-cutover.spec.ts
 git commit -m "feat(academic): build core and delivery workspaces"
 ```
+
+Feature commit: `03302b19 feat(academic): build core and delivery workspaces`.
 
 ---
 
