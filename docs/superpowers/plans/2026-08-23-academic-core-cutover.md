@@ -1721,15 +1721,22 @@ git commit -m "refactor(academic): port cross-module academic consumers"
 **Files:**
 
 - Modify: `backend-school/src/api_contract.rs`
+- Modify: `backend-school/src/modules/academic/core/handlers.rs`
+- Modify: `backend-school/src/modules/academic/core/models.rs`
+- Modify: `backend-school/src/modules/academic/delivery/handlers.rs`
+- Modify: `backend-school/src/modules/academic/delivery/models.rs`
+- Modify: `backend-school/src/modules/academic/handlers/timetable.rs`
+- Modify: `backend-school/src/modules/academic/models/timetable.rs`
 - Generate: `contracts/openapi/school-api.json`
 - Generate: `frontend-school/src/lib/api/generated/school-api.ts`
-- Modify: `frontend-school/tests/static/api-global-contract.test.mjs`
+- Modify: `frontend-school/tests/static/api-response-contract.test.mjs`
 - Create: `frontend-school/tests/static/academic-core-cutover-contract.test.mjs`
+- Delete: retired structure/curriculum/course-planning/activity generated-contract static tests
 
 **Interfaces:** The generated contract contains every clean endpoint from Tasks 6-9 and no legacy
 academic paths or legacy wire field names.
 
-- [ ] **Step 1: Add RED OpenAPI ownership tests**
+- [x] **Step 1: Add RED OpenAPI ownership tests**
 
 The new static test parses OpenAPI and requires:
 
@@ -1749,13 +1756,13 @@ node --test tests/static/academic-core-cutover-contract.test.mjs
 
 Expected: FAIL until OpenAPI is regenerated.
 
-- [ ] **Step 2: Complete utoipa registration**
+- [x] **Step 2: Complete utoipa registration**
 
 Register all paths and schemas in `api_contract.rs`; remove deleted handler registrations. Every
 operation ID is unique and uses `AcademicTerm`, `Homeroom`, `StudentAcademicYear`, `LearningOffering`,
 or `LearningGroup` vocabulary.
 
-- [ ] **Step 3: Regenerate offline artifacts**
+- [x] **Step 3: Regenerate offline artifacts**
 
 ```bash
 cd frontend-school
@@ -1767,7 +1774,7 @@ node --test tests/static/academic-core-cutover-contract.test.mjs
 
 Do not patch generated JSON/TypeScript by hand.
 
-- [ ] **Step 4: Run backend contract verification**
+- [x] **Step 4: Run backend contract verification**
 
 ```bash
 cd backend-school
@@ -1776,13 +1783,22 @@ cargo fmt --all -- --check
 cargo check
 ```
 
-- [ ] **Step 5: Commit Task 10**
+Verification evidence for this checkpoint: the RED artifact test failed on the missing context path,
+scoped query parameters, exact decimal schemas, response envelopes, and retained legacy paths before
+registration. After generation, all 5 cutover contract tests and all 4 generator tests pass. All 20
+backend API contract tests, 146 static architecture tests, `cargo fmt --all -- --check`, `cargo check`,
+`npm run lint`, `npm run check:api-contracts`, `npm run test:api-contracts`, and `git diff --check`
+pass. Full frontend `svelte-check` currently reports 558 errors in 46 files because the
+legacy API wrappers and pages intentionally have no compatibility types after generation; Tasks
+11-13 own that frontend cutover. The full static suite likewise retains consumer-level failures for
+those tasks, while the new cutover owner and the global envelope suite pass.
+
+- [x] **Step 5: Commit Task 10**
 
 ```bash
-git add backend-school/src/api_contract.rs contracts/openapi/school-api.json \
-  frontend-school/src/lib/api/generated/school-api.ts \
-  frontend-school/tests/static/api-global-contract.test.mjs \
-  frontend-school/tests/static/academic-core-cutover-contract.test.mjs
+git add -A backend-school/src/api_contract.rs backend-school/src/modules/academic \
+  contracts/openapi/school-api.json frontend-school/src/lib/api/generated/school-api.ts \
+  frontend-school/tests/static
 git commit -m "feat(academic): publish core cutover API contract"
 ```
 
