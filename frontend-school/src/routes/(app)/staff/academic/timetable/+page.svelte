@@ -1,90 +1,49 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount } from 'svelte';
 	import type { Cell, Row, Workbook, Worksheet } from 'exceljs';
-	import { goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
 	import {
-		type TimetableEntry,
-		type AcademicPeriod,
-		listTimetableEntries,
+		getAcademicContextStore,
+		registerAcademicContextDirtySource
+	} from '$lib/academic-context/store';
+	import {
+		listAcademicYears,
+		listBellSchedulePeriods,
+		listBellSchedules,
+		listHomerooms,
+		type BellSchedule,
+		type BellSchedulePeriod,
+		type Homeroom
+	} from '$lib/api/academic-core';
+	import {
+		listLearningGroups,
+		listLearningOfferings,
+		type LearningGroup,
+		type LearningOffering
+	} from '$lib/api/learning-delivery';
+	import { lookupRooms, type RoomLookupItem } from '$lib/api/lookup';
+	import {
 		createTimetableEntry,
-		updateTimetableEntry,
 		deleteTimetableEntry,
-		listPeriods,
-		createBatchTimetableEntries,
-		deleteBatchTimetableEntries,
-		deleteBatchGroup,
-		removeEntryInstructor,
-		addEntryInstructor,
-		restoreInstructorToSlot,
-		hideInstructorFromSlot,
-		hideInstructorFromSlotPeriod,
-		swapTimetableEntries,
-		getTimetableOccupancy,
-		type OccupancyEntry,
-		type MoveValidityCell,
-		type BatchSummary
+		listTimetableEntries,
+		updateTimetableEntry,
+		type TimetableEntry
 	} from '$lib/api/timetable';
-	import {
-		listClassrooms,
-		listClassroomCourses,
-		listCourseInstructors,
-		batchListCourseInstructors,
-		type CourseInstructor,
-		getSchoolDays,
-		type Classroom,
-		getAcademicStructure,
-		type AcademicYear,
-		type Semester,
-		type ActivitySlot,
-		type ActivitySlotTimetableContextResponse,
-		getActivitySlotTimetableContext,
-		getActivityTypeLabel,
-		listActivityGroups,
-		type ClassroomCourse
-	} from '$lib/api/academic';
-	import {
-		lookupRooms,
-		type RoomLookupItem,
-		lookupStaff,
-		type StaffLookupItem,
-		lookupGradeLevels,
-		type GradeLevelLookupItem
-	} from '$lib/api/lookup';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import * as Label from '$lib/components/ui/label';
-
-	import * as Card from '$lib/components/ui/card';
-	import { Button } from '$lib/components/ui/button';
-	import * as Select from '$lib/components/ui/select';
-	import * as Popover from '$lib/components/ui/popover';
-	import * as Command from '$lib/components/ui/command';
-	import { Badge } from '$lib/components/ui/badge';
-	import * as Tooltip from '$lib/components/ui/tooltip';
-	import MobileDragDropPolyfill from '$lib/components/MobileDragDropPolyfill.svelte';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { Badge } from '$lib/components/ui/badge';
+	import { Button } from '$lib/components/ui/button';
+	import * as Card from '$lib/components/ui/card';
+	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
 	import { PERMISSIONS } from '$lib/permissions/registry';
+	import { authStore } from '$lib/stores/auth';
 	import { can } from '$lib/stores/permissions';
-
 	import {
-		CalendarDays,
-		Trash2,
-		Loader2,
-		School,
-		BookOpen,
-		Users,
-		PlusCircle,
-		MapPin,
-		Download,
-		Lock,
-		FileStack,
-		FileSpreadsheet,
-		ChevronsUpDown,
-		Check
-	} from 'lucide-svelte';
-	import { generateTimetablePDF } from '$lib/utils/pdf';
+		connectTimetableSocket,
+		disconnectTimetableSocket,
+		refreshTrigger
+	} from '$lib/stores/timetable-socket';
 	import {
 		buildTeacherLoadExportRows,
 		calculateTeacherLoadColumnWidths,
@@ -92,65 +51,64 @@
 		TEACHER_LOAD_SUMMARY_COLUMN_WIDTH_OPTIONS,
 		type TeacherLoadExportRows
 	} from '$lib/utils/timetable-teacher-load-export';
-	import { SvelteSet, SvelteMap } from 'svelte/reactivity';
-	import { createRequestCoordinator, isAbortError } from '$lib/utils/request-coordinator';
 	import {
-		activityInstructorEntries,
-		independentItemsForInstructor,
-		synchronizedSlotsForInstructor
-	} from '$lib/utils/timetable-activity-context';
+		CalendarClock,
+		FileSpreadsheet,
+		Loader2,
+		Plus,
+		RotateCcw,
+		Save,
+		Trash2
+	} from 'lucide-svelte';
 
-	import { Checkbox } from '$lib/components/ui/checkbox';
+	type ViewKind = 'learning_group' | 'homeroom';
+	type EntryType = 'COURSE' | 'ACTIVITY' | 'HOMEROOM' | 'ACADEMIC' | 'BREAK';
 
-	import { authStore } from '$lib/stores/auth';
-	import {
-		connectTimetableSocket,
-		disconnectTimetableSocket,
-		sendTimetableEvent,
-		sendDropIntent,
-		sendEntryIntent,
-		activeUsers,
-		remoteCursors,
-		dragPositions,
-		userDrags,
-		refreshTrigger,
-		isConnected,
-		lastPatch,
-		setInitialSeq,
-		sendUserActivity,
-		sendUserActivityEnd,
-		remoteActivities,
-		type TimetablePatch
-	} from '$lib/stores/timetable-socket';
-	import type {
-		CreateTimetableEntryRequest,
-		UpdateTimetableEntryRequest
-	} from '$lib/api/timetable';
+	const dayOptions = [
+		{ value: 'MON', label: 'จันทร์' },
+		{ value: 'TUE', label: 'อังคาร' },
+		{ value: 'WED', label: 'พุธ' },
+		{ value: 'THU', label: 'พฤหัสบดี' },
+		{ value: 'FRI', label: 'ศุกร์' },
+		{ value: 'SAT', label: 'เสาร์' },
+		{ value: 'SUN', label: 'อาทิตย์' }
+	];
+	const entryTypeOptions: Array<{ value: EntryType; label: string }> = [
+		{ value: 'COURSE', label: 'รายวิชา' },
+		{ value: 'ACTIVITY', label: 'กิจกรรม' },
+		{ value: 'HOMEROOM', label: 'โฮมรูม' },
+		{ value: 'ACADEMIC', label: 'กิจกรรมวิชาการ' },
+		{ value: 'BREAK', label: 'พัก' }
+	];
 
-	/** Extended course type used for drag-and-drop sidebar items (activity slots, courses, and entries).
-	 *  This is a structural "superset" type — includes all properties that any draggable item may have.
-	 */
-	interface DragCourse {
-		id: string;
-		_isActivity?: boolean;
-		_classroom_id?: string;
-		activity_slot_id?: string;
-		title_th?: string;
-		title?: string;
-		title_en?: string;
-		classroom_id?: string;
-		primary_instructor_id?: string | null;
-		subject_code?: string | null;
-		subject_name_th?: string | null;
-		classroom_course_id?: string;
-		room_id?: string;
-		instructor_name?: string | null;
-		classroom_name?: string | null;
-		color?: string;
-	}
+	const academicContext = getAcademicContextStore();
+	const academicTermId = $derived($academicContext.selected.academicTermId);
+	const academicYearId = $derived($academicContext.selected.academicYearId);
+	let schedules = $state<BellSchedule[]>([]);
+	let periods = $state<BellSchedulePeriod[]>([]);
+	let offerings = $state<LearningOffering[]>([]);
+	let groups = $state<LearningGroup[]>([]);
+	let homerooms = $state<Homeroom[]>([]);
+	let rooms = $state<RoomLookupItem[]>([]);
+	let entries = $state<TimetableEntry[]>([]);
+	let selectedScheduleId = $state('');
+	let viewKind = $state<ViewKind>('learning_group');
+	let selectedTargetId = $state('');
+	let selectedEntryId = $state('');
+	let formDay = $state('MON');
+	let formPeriodId = $state('');
+	let formRoomId = $state('');
+	let formEntryType = $state<EntryType>('COURSE');
+	let formTitle = $state('');
+	let formNote = $state('');
+	let loading = $state(false);
+	let busy = $state(false);
+	let isTeacherLoadExporting = $state(false);
+	let dirty = $state(false);
+	let errorMessage = $state('');
+	let revision = 0;
 
-	const requestCoordinator = createRequestCoordinator();
-	const canReadTimetable = $derived(
+	const canRead = $derived(
 		$can.hasAny(
 			PERMISSIONS.LEARNING_OFFERING_READ_SCHOOL,
 			PERMISSIONS.LEARNING_OFFERING_READ_ORGANIZATION_TREE,
@@ -162,7 +120,7 @@
 			PERMISSIONS.LEARNING_OFFERING_MANAGE_ASSIGNED
 		)
 	);
-	const canManageTimetable = $derived(
+	const canManage = $derived(
 		$can.hasAny(
 			PERMISSIONS.LEARNING_OFFERING_MANAGE_SCHOOL,
 			PERMISSIONS.LEARNING_OFFERING_MANAGE_ORGANIZATION_TREE,
@@ -170,2415 +128,237 @@
 			PERMISSIONS.LEARNING_OFFERING_MANAGE_ASSIGNED
 		)
 	);
-	const realtimeUserId = $derived($authStore.user?.id ?? null);
-
-	// Helper: Generate consistent pastel color from string
-	// แสดง label fallback เมื่อ entry ไม่มี subject_code/title
-	function getEntryTypeFallbackLabel(entryType?: string): string {
-		switch (entryType) {
-			case 'ACTIVITY':
-				return 'กิจกรรม';
-			case 'ACADEMIC':
-				return 'วิชาการ';
-			case 'BREAK':
-				return 'พัก';
-			case 'HOMEROOM':
-				return 'โฮมรูม';
-			default:
-				return '';
-		}
-	}
-
-	function getSubjectColor(code: string, type?: string): string {
-		if (type === 'BREAK') return '#fef3c7'; // amber-100
-		if (type === 'ACTIVITY' || type === 'HOMEROOM') return '#d1fae5'; // emerald-100
-		if (type === 'ACADEMIC') return '#dbeafe'; // blue-100
-
-		if (!code) return '#eff6ff'; // default blue-50
-		let hash = 0;
-		for (let i = 0; i < code.length; i++) {
-			hash = code.charCodeAt(i) + ((hash << 5) - hash);
-		}
-		const h = Math.abs(hash) % 360;
-		return `hsl(${h}, 85%, 94%)`; // Light pastel
-	}
-
-	function getSubjectBorderColor(code: string, type?: string): string {
-		if (type === 'BREAK') return '#fcd34d'; // amber-300
-		if (type === 'ACTIVITY' || type === 'HOMEROOM') return '#6ee7b7'; // emerald-300
-		if (type === 'ACADEMIC') return '#93c5fd'; // blue-300
-
-		if (!code) return '#bfdbfe'; // default blue-200
-		let hash = 0;
-		for (let i = 0; i < code.length; i++) {
-			hash = code.charCodeAt(i) + ((hash << 5) - hash);
-		}
-		const h = Math.abs(hash) % 360;
-		return `hsl(${h}, 60%, 80%)`; // Slightly darker for border
-	}
-
-	// Export State
-	let showExportModal = $state(false);
-	let exportType = $state<'CLASSROOM' | 'INSTRUCTOR'>('CLASSROOM');
-	let exportTargetIds = $state<string[]>([]);
-	let exportLayout = $state<'full' | 'portrait-2col'>('full');
-	let isExporting = $state(false);
-	let isTeacherLoadExporting = $state(false);
-
-	// State
-	let timetableEntries = $state<TimetableEntry[]>([]);
-	let periods = $state<AcademicPeriod[]>([]);
-	let classrooms = $state<Classroom[]>([]);
-	let courses = $state<ClassroomCourse[]>([]);
-	let academicYears = $state<AcademicYear[]>([]);
-	let allSemesters = $state<Semester[]>([]);
-	let rooms = $state<RoomLookupItem[]>([]);
-	let instructors = $state<StaffLookupItem[]>([]);
-	let initialLoading = $state(true);
-
-	// Activity slots for sidebar
-	let sidebarActivitySlots = $state<ActivitySlot[]>([]);
-	let activityTimetableContext = $state<ActivitySlotTimetableContextResponse | null>(null);
-	let activityContextSemesterId = $state('');
-
-	// Instructor's activity groups map: slot_id → group name (for INSTRUCTOR view)
-	let instructorGroupsMap = $state<Record<string, string>>({});
-
-	// Delete activity dialog (synchronized: ask single vs batch)
-	let showDeleteActivityDialog = $state(false);
-	let deleteActivityTarget = $state<TimetableEntry | null>(null);
-	let showDeleteBatchDialog = $state(false);
-	let deleteBatchTarget = $state<TimetableEntry | null>(null);
-
-	// View Mode: 'CLASSROOM' or 'INSTRUCTOR'
-	let viewMode = $state<'CLASSROOM' | 'INSTRUCTOR'>('CLASSROOM');
-
-	// Per-cell instructor editor (Popover dialog)
-	let entryPopoverOpen = $state(false);
-	let entryPopoverTarget = $state<TimetableEntry | null>(null);
-	let entryPopoverTeam = $state<CourseInstructor[]>([]);
-	let entryPopoverLoading = $state(false);
-	let entryPopoverSaving = $state('');
-	let entryPopoverSavingRoom = $state(false);
-	let entryPopoverRoomPickerOpen = $state(false);
-	let entryPopoverUnavailableRooms = new SvelteSet<string>();
-
-	function replaceSvelteMap<K, V>(target: SvelteMap<K, V>, source: Iterable<[K, V]>) {
-		target.clear();
-		for (const [key, value] of source) {
-			target.set(key, value);
-		}
-	}
-
-	function replaceSvelteSet<T>(target: SvelteSet<T>, source: Iterable<T>) {
-		target.clear();
-		for (const value of source) {
-			target.add(value);
-		}
-	}
-
-	// INSTRUCTOR view: toggle "แสดงคาบในทีม" (ghost cells)
-	let showTeamGhosts = $state(false);
-	// Raw entries (รวม ghost เสมอ) ใช้คำนวณ unscheduled ให้เสถียร — ไม่กระพริบเวลา toggle
-	let rawTeamEntries = $state<TimetableEntry[]>([]);
-
-	let popoverInCell = $derived(entryPopoverTarget?.instructor_ids ?? []);
-	let popoverInCellNames = $derived(entryPopoverTarget?.instructor_names ?? []);
-	let popoverNotInCell = $derived(
-		entryPopoverTeam.filter(
-			(t) => !(entryPopoverTarget?.instructor_ids ?? []).includes(t.instructor_id)
-		)
+	const selectedEntry = $derived(entries.find((entry) => entry.id === selectedEntryId) ?? null);
+	const activeDays = $derived.by(() => {
+		const selectedYear = $academicContext.options?.years.find((year) => year.id === academicYearId);
+		void selectedYear;
+		const configured = new Set(
+			periods.flatMap((period) =>
+				(period.applicableDays ?? '')
+					.split(',')
+					.map((day) => day.trim())
+					.filter(Boolean)
+			)
+		);
+		return configured.size > 0
+			? dayOptions.filter((day) => configured.has(day.value))
+			: dayOptions.slice(0, 5);
+	});
+	const visibleEntries = $derived(
+		entries.filter((entry) => {
+			if (entry.bellScheduleId !== selectedScheduleId) return false;
+			return viewKind === 'learning_group'
+				? entry.learningGroupId === selectedTargetId
+				: entry.homeroomId === selectedTargetId;
+		})
 	);
 
-	let selectedYearId = $state('');
-	let selectedSemesterId = $state('');
-	let selectedClassroomId = $state('');
-	let selectedInstructorId = $state('');
-
-	// ghost = ครูที่เลือกอยู่ในทีมวิชา แต่ไม่ได้สอนคาบนี้ → entry ไม่ใช่ของเขา → ซ่อน "เปลี่ยนห้อง"
-	// (กันครูแก้ห้องของ entry คนอื่นโดยไม่ตั้งใจ)
-	let entryPopoverIsGhost = $derived(
-		viewMode === 'INSTRUCTOR' &&
-			selectedInstructorId !== '' &&
-			entryPopoverTarget !== null &&
-			!(entryPopoverTarget.instructor_ids ?? []).includes(selectedInstructorId)
-	);
-
-	// Searchable picker state
-	let classroomPickerOpen = $state(false);
-	let instructorPickerOpen = $state(false);
-	let roomPickerOpen = $state(false);
-
-	// Derived
-	let DAYS = $derived(
-		getSchoolDays(academicYears.find((y) => y.id === selectedYearId)?.school_days)
-	);
-	let semesters = $derived(allSemesters.filter((s) => s.academic_year_id === selectedYearId));
-
-	// Drag & Drop state
-	let draggedCourse = $state<DragCourse | null>(null);
-	let submitting = $state(false);
-	let isDropPending = $state(false);
-	// Identify what is being dragged: 'NEW' (from list) | 'MOVE' (from grid)
-	let dragType = $state<'NEW' | 'MOVE'>('NEW');
-
-	let draggedEntryId = $state<string | null>(null);
-
-	async function loadInitialData() {
-		if (!canReadTimetable) {
-			academicYears = [];
-			allSemesters = [];
-			classrooms = [];
-			periods = [];
-			rooms = [];
-			instructors = [];
-			timetableEntries = [];
-			rawTeamEntries = [];
-			initialLoading = false;
-			return;
-		}
-		initialLoading = true;
-		try {
-			const structureRes = await getAcademicStructure();
-			academicYears = structureRes.data.years;
-			allSemesters = structureRes.data.semesters;
-
-			// Find active year
-			const activeYear = academicYears.find((y) => y.is_active) || academicYears[0];
-
-			if (activeYear) {
-				selectedYearId = activeYear.id;
-
-				// Active semester
-				const yearSemesters = allSemesters.filter((s) => s.academic_year_id === activeYear.id);
-				const activeSemester = yearSemesters.find((s) => s.is_active) || yearSemesters[0];
-				if (activeSemester) selectedSemesterId = activeSemester.id;
-
-				await Promise.all([loadClassrooms(), loadRooms(), loadInstructors()]);
-			}
-		} catch (e) {
-			console.error(e);
-			toast.error('โหลดข้อมูลไม่สำเร็จ');
-		} finally {
-			initialLoading = false;
-		}
+	function offeringForGroup(group: LearningGroup): LearningOffering | undefined {
+		return offerings.find((offering) => offering.id === group.learningOfferingId);
 	}
 
-	async function loadInstructors() {
-		if (!canReadTimetable) return;
-		try {
-			const data = await lookupStaff({ limit: 500 });
-			instructors = data;
-		} catch (e) {
-			console.error('Failed to load instructors', e);
-		}
+	function groupLabel(group: LearningGroup): string {
+		const offering = offeringForGroup(group);
+		return `${offering?.codeSnapshot ?? ''} · ${group.code} ${group.name}`.trim();
 	}
 
-	async function loadClassrooms() {
-		if (!canReadTimetable || !selectedYearId) return;
-		try {
-			const res = await listClassrooms({ year_id: selectedYearId });
-			classrooms = res.data;
-		} catch (e) {
-			console.error(e);
-		}
-	}
-
-	async function loadPeriods() {
-		if (!canReadTimetable || !selectedYearId) return;
-		try {
-			const res = await listPeriods({ academic_year_id: selectedYearId, active_only: true });
-			periods = res.data;
-		} catch (e) {
-			console.error(e);
-		}
-	}
-
-	async function loadRooms() {
-		if (!canReadTimetable) return;
-		try {
-			const res = await lookupRooms();
-			rooms = res;
-		} catch (e) {
-			console.error('Failed to load rooms', e);
-		}
-	}
-
-	async function loadCourseTeams(courseIds: string[], requestKey: string) {
-		if (!canReadTimetable) return;
-		if (courseIds.length === 0) {
-			if (currentSelectionRequestKey() === requestKey) {
-				courseTeamsMap.clear();
-			}
-			return;
-		}
-		try {
-			const res = await batchListCourseInstructors(courseIds);
-			if (currentSelectionRequestKey() !== requestKey) return;
-			const map = new SvelteMap<string, CourseInstructor[]>();
-			for (const [cid, team] of Object.entries(res.data ?? {})) {
-				map.set(cid, team);
-			}
-			replaceSvelteMap(courseTeamsMap, map);
-		} catch {
-			// ถ้า fetch ไม่สำเร็จ → buildTempEntry fallback กลับไปใช้ primary instructor (เหมือนเดิม)
-		}
-	}
-
-	function checkClassroomHasInstructor(slotId: string, classroomIdOverride?: string): boolean {
-		const classroomId = classroomIdOverride || selectedClassroomId;
-		return (activityTimetableContext?.classroomAssignmentsBySlot[slotId] ?? []).some(
-			(assignment) => assignment.classroom_id === classroomId
-		);
-	}
-
-	// For INSTRUCTOR view: independent slots with per-classroom items
-	let instructorActivityItems = $state<
-		Array<{
-			slot: ActivitySlot;
-			classroom_id: string;
-			classroom_name: string;
-		}>
-	>([]);
-
-	// INSTRUCTOR view + sync activity → ปุ่มใน batch delete dialog ทำ "ซ่อน" แทน "ลบจริง"
-	let isInstructorSyncDelete = $derived(
-		viewMode === 'INSTRUCTOR' &&
-			!!deleteBatchTarget?.activity_slot_id &&
-			(sidebarActivitySlots.find((s) => s.id === deleteBatchTarget?.activity_slot_id)
-				?.scheduling_mode === 'synchronized' ||
-				instructorActivityItems.find((i) => i.slot.id === deleteBatchTarget?.activity_slot_id)?.slot
-					?.scheduling_mode === 'synchronized')
-	);
-
-	type SelectionLoadResult<T> = { ok: true; value: T } | { ok: false; error: unknown };
-
-	async function captureSelectionLoad<T>(promise: Promise<T>): Promise<SelectionLoadResult<T>> {
-		try {
-			return { ok: true, value: await promise };
-		} catch (error) {
-			if (isAbortError(error)) throw error;
-			return { ok: false, error };
-		}
-	}
-
-	function currentSelectionRequestKey(): string {
-		const selectedViewId = viewMode === 'CLASSROOM' ? selectedClassroomId : selectedInstructorId;
-		if (!selectedSemesterId || !selectedViewId) return '';
-		return [
-			selectedSemesterId,
-			viewMode,
-			selectedViewId,
-			showTeamGhosts ? 'team-ghosts' : 'own-cells'
-		].join('|');
-	}
-
-	function clearSelectionData() {
-		requestCoordinator.abort('selection');
-		timetableEntries = [];
-		rawTeamEntries = [];
-		courses = [];
-		occupancyEntries = [];
-		sidebarActivitySlots = [];
-		instructorActivityItems = [];
-		instructorGroupsMap = {};
-	}
-
-	function applyActivityContext(
-		context: ActivitySlotTimetableContextResponse,
-		mode: 'CLASSROOM' | 'INSTRUCTOR',
-		classroomId: string,
-		instructorId: string
-	) {
-		activityTimetableContext = context;
-		activityContextSemesterId = selectedSemesterId;
-		activitySlots = context.slots.filter((slot) => slot.scheduling_mode === 'synchronized');
-		replaceSvelteMap(
-			activityInstructorMap,
-			activityInstructorEntries(context.classroomAssignmentsBySlot)
-		);
-
-		if (mode === 'CLASSROOM') {
-			sidebarActivitySlots = context.slots.filter((slot) =>
-				(slot.classroom_ids ?? []).includes(classroomId)
-			);
-			instructorActivityItems = [];
-			return;
-		}
-
-		sidebarActivitySlots = synchronizedSlotsForInstructor(
-			context.slots,
-			context.instructorsBySlot,
-			instructorId
-		);
-		instructorActivityItems = independentItemsForInstructor(
-			context.slots,
-			context.classroomAssignmentsBySlot,
-			instructorId
-		);
-	}
-
-	async function loadSelectionData() {
-		if (!canReadTimetable) {
-			clearSelectionData();
-			return;
-		}
-
-		const requestKey = currentSelectionRequestKey();
-		if (!requestKey) {
-			clearSelectionData();
-			return;
-		}
-
-		const semesterId = selectedSemesterId;
-		const mode = viewMode;
-		const classroomId = selectedClassroomId;
-		const instructorId = selectedInstructorId;
-		const includeTeamGhosts = showTeamGhosts;
-
-		try {
-			const results = await requestCoordinator.run('selection', requestKey, async (signal) => {
-				const entriesRequest =
-					mode === 'CLASSROOM'
-						? listTimetableEntries(
-								{
-									classroom_id: classroomId,
-									academic_semester_id: semesterId
-								},
-								{ signal }
-							)
-						: listTimetableEntries(
-								{
-									instructor_id: instructorId,
-									academic_semester_id: semesterId,
-									include_team_ghosts: true
-								},
-								{ signal }
-							);
-				const coursesRequest =
-					mode === 'CLASSROOM'
-						? listClassroomCourses({ classroomId, semesterId }, { signal })
-						: listClassroomCourses({ instructorId, semesterId }, { signal });
-				const groupsRequest =
-					mode === 'INSTRUCTOR'
-						? listActivityGroups(
-								{ instructor_id: instructorId, semester_id: semesterId },
-								{ signal }
-							)
-						: Promise.resolve({ data: [] });
-
-				const [entries, occupancy, loadedCourses, activityContext, groups] = await Promise.all([
-					captureSelectionLoad(entriesRequest),
-					captureSelectionLoad(getTimetableOccupancy(semesterId, { signal })),
-					captureSelectionLoad(coursesRequest),
-					captureSelectionLoad(getActivitySlotTimetableContext(semesterId, { signal })),
-					captureSelectionLoad(groupsRequest)
-				]);
-
-				return { entries, occupancy, loadedCourses, activityContext, groups };
-			});
-
-			if (currentSelectionRequestKey() !== requestKey) return;
-
-			if (results.entries.ok) {
-				const response = results.entries.value;
-				if (mode === 'INSTRUCTOR') {
-					rawTeamEntries = response.data;
-					timetableEntries = includeTeamGhosts
-						? response.data
-						: response.data.filter((entry) => (entry.instructor_ids ?? []).includes(instructorId));
-				} else {
-					rawTeamEntries = [];
-					timetableEntries = response.data;
-				}
-				if (typeof response.current_seq === 'number') {
-					setInitialSeq(response.current_seq);
-				}
-			} else {
-				toast.error('โหลดตารางสอนไม่สำเร็จ');
-			}
-
-			if (results.occupancy.ok) {
-				occupancyEntries = results.occupancy.value.data ?? [];
-			} else {
-				occupancyEntries = [];
-			}
-
-			if (results.loadedCourses.ok) {
-				courses = results.loadedCourses.value.data;
-				void loadCourseTeams(
-					courses.map((course) => course.id),
-					requestKey
-				);
-			} else {
-				console.error(results.loadedCourses.error);
-				toast.error('โหลดรายวิชาไม่สำเร็จ');
-			}
-
-			if (results.activityContext.ok) {
-				applyActivityContext(results.activityContext.value.data, mode, classroomId, instructorId);
-			} else {
-				console.error('Failed to load activity slots for sidebar', results.activityContext.error);
-				sidebarActivitySlots = [];
-				instructorActivityItems = [];
-				if (activityContextSemesterId !== semesterId) {
-					activityTimetableContext = null;
-					activityContextSemesterId = '';
-					activityInstructorMap.clear();
-				}
-			}
-
-			if (mode === 'INSTRUCTOR' && results.groups.ok) {
-				const groupsMap: Record<string, string> = {};
-				for (const group of results.groups.value.data ?? []) {
-					if (group.slot_id) groupsMap[group.slot_id] = group.name;
-				}
-				instructorGroupsMap = groupsMap;
-			} else if (mode === 'CLASSROOM') {
-				instructorGroupsMap = {};
-			} else if (!results.groups.ok) {
-				console.error('Failed to load instructor groups', results.groups.error);
-			}
-		} catch (error) {
-			if (!isAbortError(error)) {
-				console.error('Failed to load timetable selection', error);
-			}
-		}
-	}
-
-	function loadTimetable() {
-		void loadSelectionData();
-	}
-
-	function entryToOccupancy(e: TimetableEntry): OccupancyEntry {
-		return {
-			id: e.id,
-			classroom_id: e.classroom_id ?? null,
-			day_of_week: e.day_of_week,
-			period_id: e.period_id,
-			room_id: e.room_id ?? null,
-			instructor_ids: e.instructor_ids ?? []
-		};
-	}
-
-	function upsertOccupancy(e: TimetableEntry) {
-		const o = entryToOccupancy(e);
-		const idx = occupancyEntries.findIndex((x) => x.id === o.id);
-		if (idx >= 0) {
-			occupancyEntries[idx] = o;
-			occupancyEntries = [...occupancyEntries];
-		} else {
-			occupancyEntries = [...occupancyEntries, o];
-		}
-	}
-
-	function removeOccupancy(entryId: string) {
-		occupancyEntries = occupancyEntries.filter((e) => e.id !== entryId);
-	}
-
-	/** Build optimistic TimetableEntry จาก local state lookups — สำหรับ NEW drop (CREATE).
-	 *  Joined fields ที่ frontend คำนวณเองได้: subject_code/name, classroom_name, room_code,
-	 *  period_name, start/end_time, instructor_id/name (primary). 100ms ภายหลัง backend จะ broadcast
-	 *  EntryCreated มาทับด้วยข้อมูลครบ (รวมทีมครูทุกคน). */
-	function buildTempEntry(args: {
-		tempId: string;
-		classroomId: string;
-		classroomCourseId?: string;
-		activitySlotId?: string;
-		day: TimetableEntry['day_of_week'];
-		periodId: string;
-		roomId?: string;
-		title?: string;
-		entryType: 'COURSE' | 'ACTIVITY';
-	}): TimetableEntry {
-		const room = args.roomId ? rooms.find((r) => r.id === args.roomId) : null;
-		const classroom = classrooms.find((c) => c.id === args.classroomId);
-		const period = periods.find((p) => p.id === args.periodId);
-		const courseInfo = args.classroomCourseId
-			? courses.find((c) => c.id === args.classroomCourseId)
-			: null;
-		// INSTRUCTOR view: independent slots อยู่ใน instructorActivityItems ไม่ใช่ sidebarActivitySlots
-		const activitySlot = args.activitySlotId
-			? (sidebarActivitySlots.find((s) => s.id === args.activitySlotId) ??
-				instructorActivityItems.find((i) => i.slot.id === args.activitySlotId)?.slot ??
-				null)
-			: null;
-		// instructor lookup — Phase 2 Fix 3: ใช้ทีมเต็มจาก courseTeamsMap ถ้ามี, fallback primary
-		// สำหรับ activity (independent): ใช้ activityInstructorMap[slot|classroom]
-		let instructorIds: string[] = [];
-		let instructorNames: string[] = [];
-		if (args.activitySlotId && args.classroomId) {
-			const actInstr = activityInstructorMap.get(`${args.activitySlotId}|${args.classroomId}`);
-			if (actInstr) {
-				instructorIds = [actInstr.id];
-				instructorNames = [actInstr.name];
-			}
-		}
-		if (instructorIds.length === 0 && args.classroomCourseId) {
-			const team = courseTeamsMap.get(args.classroomCourseId);
-			if (team && team.length > 0) {
-				instructorIds = team.map((m) => m.instructor_id);
-				instructorNames = team.map((m) => m.instructor_name ?? '');
-			} else if (courseInfo?.primary_instructor_id) {
-				instructorIds = [courseInfo.primary_instructor_id];
-				instructorNames = courseInfo.instructor_name ? [courseInfo.instructor_name] : [];
-			}
-		}
-		return {
-			id: args.tempId,
-			classroom_course_id: args.classroomCourseId,
-			activity_slot_id: args.activitySlotId,
-			classroom_id: args.classroomId,
-			academic_semester_id: selectedSemesterId,
-			day_of_week: args.day,
-			period_id: args.periodId,
-			room_id: args.roomId,
-			entry_type: args.entryType,
-			title: args.title ?? activitySlot?.name ?? undefined,
-			is_active: true,
-			subject_code: courseInfo?.subject_code ?? undefined,
-			subject_name_th: courseInfo?.subject_name_th ?? undefined,
-			subject_name_en: courseInfo?.subject_name_en ?? undefined,
-			instructor_ids: instructorIds,
-			instructor_names: instructorNames,
-			classroom_name: classroom?.name,
-			room_code: room?.code ?? undefined,
-			period_name: period?.name ?? undefined,
-			start_time: period?.start_time,
-			end_time: period?.end_time,
-			activity_scheduling_mode: activitySlot?.scheduling_mode ?? undefined
-		};
-	}
-
-	/** Compute replacement content fields for REPLACE optimistic — เปลี่ยน entry's content
-	 *  ไปเป็น course/activity ใหม่ โดย lookup joined fields จาก local state */
-	function computeReplacementFields(args: {
-		newCourseId?: string;
-		newActivitySlotId?: string;
-		newClassroomId?: string;
-		newTitle?: string;
-	}): Partial<TimetableEntry> {
-		if (args.newActivitySlotId) {
-			const slot = sidebarActivitySlots.find((s) => s.id === args.newActivitySlotId);
-			return {
-				classroom_course_id: undefined,
-				activity_slot_id: args.newActivitySlotId,
-				entry_type: 'ACTIVITY',
-				subject_code: undefined,
-				subject_name_th: undefined,
-				subject_name_en: undefined,
-				title: args.newTitle ?? slot?.name ?? undefined,
-				activity_scheduling_mode: slot?.scheduling_mode ?? undefined,
-				instructor_ids: [],
-				instructor_names: []
-			};
-		} else if (args.newCourseId) {
-			const course = courses.find((c) => c.id === args.newCourseId);
-			const team = courseTeamsMap.get(args.newCourseId);
-			let instructorIds: string[] = [];
-			let instructorNames: string[] = [];
-			if (team && team.length > 0) {
-				instructorIds = team.map((m) => m.instructor_id);
-				instructorNames = team.map((m) => m.instructor_name ?? '');
-			} else if (course?.primary_instructor_id) {
-				instructorIds = [course.primary_instructor_id];
-				instructorNames = course.instructor_name ? [course.instructor_name] : [];
-			}
-			return {
-				classroom_course_id: args.newCourseId,
-				activity_slot_id: undefined,
-				entry_type: 'COURSE',
-				subject_code: course?.subject_code ?? undefined,
-				subject_name_th: course?.subject_name_th ?? undefined,
-				subject_name_en: course?.subject_name_en ?? undefined,
-				title: undefined,
-				activity_scheduling_mode: undefined,
-				classroom_id: args.newClassroomId ?? course?.classroom_id,
-				instructor_ids: instructorIds,
-				instructor_names: instructorNames
-			};
-		}
-		return {};
-	}
-
-	function markPending(entryId: string) {
-		pendingEntryIds.add(entryId);
-		// Set/refresh timeout — auto rollback ถ้าครบ 15s ยังไม่ confirm
-		const existing = pendingTimeouts.get(entryId);
-		if (existing) clearTimeout(existing);
-		const t = setTimeout(() => {
-			if (pendingEntryIds.has(entryId)) {
-				autoRollbackPending(entryId);
-			}
-		}, PENDING_TIMEOUT_MS);
-		pendingTimeouts.set(entryId, t);
-	}
-
-	function clearPending(entryId: string) {
-		pendingEntryIds.delete(entryId);
-		optimisticSnapshots.delete(entryId);
-		const t = pendingTimeouts.get(entryId);
-		if (t) {
-			clearTimeout(t);
-			pendingTimeouts.delete(entryId);
-		}
-	}
-
-	/** หมดเวลา pending — ถ้า tempEntry ลบทิ้ง, ถ้า real entry restore จาก snapshot */
-	function autoRollbackPending(entryId: string) {
-		const isTemp = entryId.startsWith('temp-');
-		if (isTemp) {
-			// CREATE temp entry ค้าง → ลบทิ้ง
-			timetableEntries = timetableEntries.filter((e) => e.id !== entryId);
-			rawTeamEntries = rawTeamEntries.filter((e) => e.id !== entryId);
-			removeOccupancy(entryId);
-		} else {
-			// MOVE/SWAP/REPLACE ค้าง → restore จาก snapshot ถ้ามี
-			const snap = optimisticSnapshots.get(entryId);
-			if (snap) {
-				applyEntryMutation(entryId, {
-					day_of_week: snap.day_of_week as TimetableEntry['day_of_week'],
-					period_id: snap.period_id,
-					room_id: snap.room_id ?? undefined
-				});
-			}
-		}
-		clearPending(entryId);
-		toast.error('การบันทึกไม่ตอบกลับ — ลองอีกครั้ง');
-	}
-
-	function snapshotPosition(entryId: string) {
-		const e =
-			timetableEntries.find((x) => x.id === entryId) ??
-			rawTeamEntries.find((x) => x.id === entryId) ??
-			occupancyEntries.find((x) => x.id === entryId);
-		if (!e) return null;
-		return {
-			day_of_week: e.day_of_week,
-			period_id: e.period_id,
-			room_id: 'room_id' in e ? (e.room_id ?? null) : null
-		};
-	}
-
-	/** Optimistic mutation: apply partial fields to entry locally across timetableEntries,
-	 *  rawTeamEntries, and occupancyEntries. Returns snapshot used to rollback on failure. */
-	function applyEntryMutation(
-		entryId: string,
-		fields: Partial<TimetableEntry>
-	): Partial<TimetableEntry> | null {
-		const current =
-			timetableEntries.find((e) => e.id === entryId) ??
-			rawTeamEntries.find((e) => e.id === entryId);
-		if (!current) return null;
-
-		// Build snapshot of fields about to change (so rollback is precise)
-		const snapshot: Partial<TimetableEntry> = {};
-		for (const k of Object.keys(fields) as (keyof TimetableEntry)[]) {
-			(snapshot as Record<string, unknown>)[k] = current[k];
-		}
-
-		const merge = (e: TimetableEntry) => (e.id === entryId ? { ...e, ...fields } : e);
-		timetableEntries = timetableEntries.map(merge);
-		rawTeamEntries = rawTeamEntries.map(merge);
-
-		// Mirror occupancy fields (only the keys that affect conflict checks)
-		const occMutation: Partial<OccupancyEntry> = {};
-		if ('day_of_week' in fields) occMutation.day_of_week = fields.day_of_week as string;
-		if ('period_id' in fields) occMutation.period_id = fields.period_id as string;
-		if ('room_id' in fields) occMutation.room_id = (fields.room_id ?? null) as string | null;
-		if ('classroom_id' in fields)
-			occMutation.classroom_id = (fields.classroom_id ?? null) as string | null;
-		if (Object.keys(occMutation).length > 0) {
-			occupancyEntries = occupancyEntries.map((e) =>
-				e.id === entryId ? { ...e, ...occMutation } : e
-			);
-		}
-		return snapshot;
-	}
-
-	/** Compute MoveValidityCell map locally — replaces POST /validate-moves
-	 *  Logic mirrors backend handler: pairwise swap validation vs empty-cell direct fit. */
-	function computeValidMoves(entryId: string): SvelteMap<string, MoveValidityCell> {
-		const result = new SvelteMap<string, MoveValidityCell>();
-		const source = occupancyEntries.find((e) => e.id === entryId);
-		if (!source) return result;
-
-		// Index entries by cell key once → O(1) lookup per cell
-		const cellIndex = new SvelteMap<string, OccupancyEntry[]>();
-		for (const e of occupancyEntries) {
-			const k = `${e.day_of_week}|${e.period_id}`;
-			const arr = cellIndex.get(k);
-			if (arr) arr.push(e);
-			else cellIndex.set(k, [e]);
-		}
-
-		const srcInstructorSet = new SvelteSet(source.instructor_ids);
-		const srcCellKey = `${source.day_of_week}|${source.period_id}`;
-
-		for (const day of DAYS) {
-			for (const period of periods) {
-				const key = `${day.value}|${period.id}`;
-
-				if (key === srcCellKey) {
-					result.set(key, {
-						day_of_week: day.value,
-						period_id: period.id,
-						state: 'source',
-						target_entry_id: null,
-						valid: false,
-						reason: ''
-					});
-					continue;
-				}
-
-				const occupants = cellIndex.get(key) ?? [];
-				const others = occupants.filter((e) => e.id !== entryId);
-
-				if (others.length === 0) {
-					// Empty — source moves freely (no entry at this cell to conflict with)
-					result.set(key, {
-						day_of_week: day.value,
-						period_id: period.id,
-						state: 'empty',
-						target_entry_id: null,
-						valid: true,
-						reason: ''
-					});
-					continue;
-				}
-
-				// Occupied — try swap with first other entry (matches backend behavior)
-				const target = others[0];
-				const targetInstructorSet = new SvelteSet(target.instructor_ids);
-
-				// Other entries at source's pos (excluding source itself, excluding target if it's there)
-				const srcPosOthers = (cellIndex.get(srcCellKey) ?? []).filter(
-					(e) => e.id !== entryId && e.id !== target.id
-				);
-				// Other entries at target's pos (excluding source if it's there, excluding target)
-				const tgtPosOthers = others.filter((e) => e.id !== target.id);
-
-				let valid = true;
-				let reason = '';
-
-				// Classroom: source's classroom mustn't have a 3rd entry at target's pos
-				if (
-					source.classroom_id &&
-					tgtPosOthers.some((e) => e.classroom_id === source.classroom_id)
-				) {
-					valid = false;
-					reason = 'ห้องของต้นทางถูกใช้ที่คาบนี้';
-				}
-				// Classroom: target's classroom mustn't have a 3rd entry at source's pos
-				if (
-					valid &&
-					target.classroom_id &&
-					srcPosOthers.some((e) => e.classroom_id === target.classroom_id)
-				) {
-					valid = false;
-					reason = 'ห้องของปลายทางถูกใช้ที่คาบต้นทาง';
-				}
-
-				// Instructor: source's instructors mustn't conflict at target's pos
-				if (valid) {
-					for (const e of tgtPosOthers) {
-						if (e.instructor_ids.some((iid) => srcInstructorSet.has(iid))) {
-							valid = false;
-							reason = 'ครูต้นทางติดคาบปลายทาง';
-							break;
-						}
-					}
-				}
-				// Instructor: target's instructors mustn't conflict at source's pos
-				if (valid) {
-					for (const e of srcPosOthers) {
-						if (e.instructor_ids.some((iid) => targetInstructorSet.has(iid))) {
-							valid = false;
-							reason = 'ครูปลายทางติดคาบต้นทาง';
-							break;
-						}
-					}
-				}
-
-				// Room: source's room mustn't conflict at target's pos
-				if (valid && source.room_id && tgtPosOthers.some((e) => e.room_id === source.room_id)) {
-					valid = false;
-					reason = 'ห้องต้นทางถูกใช้ที่คาบปลายทาง';
-				}
-				// Room: target's room mustn't conflict at source's pos
-				if (valid && target.room_id && srcPosOthers.some((e) => e.room_id === target.room_id)) {
-					valid = false;
-					reason = 'ห้องปลายทางถูกใช้ที่คาบต้นทาง';
-				}
-
-				result.set(key, {
-					day_of_week: day.value,
-					period_id: period.id,
-					state: 'occupied',
-					target_entry_id: target.id,
-					valid,
-					reason
-				});
-			}
-		}
-
-		return result;
-	}
-
-	// ===== Per-cell instructor popover =====
-	async function openEntryPopover(entry: TimetableEntry) {
-		if (!canManageTimetable) return;
-		// Only support COURSE entries (activity entries have different instructor logic)
-		if (entry.entry_type !== 'COURSE' || !entry.classroom_course_id) return;
-		// Lock: block ถ้ามี user อื่นเปิด dialog ที่ entry นี้อยู่
-		const locked = getRemoteActivityForEntry(entry.id);
-		if (locked) {
-			toast.error(
-				`${locked.user.name} กำลัง${activityLabel(locked.activity)}ที่คาบนี้ — ลองอีกครั้ง`
-			);
-			return;
-		}
-		entryPopoverTarget = entry;
-		entryPopoverTeam = [];
-		entryPopoverUnavailableRooms.clear();
-		entryPopoverOpen = true;
-		entryPopoverLoading = true;
-		try {
-			const tasks: Promise<unknown>[] = [listCourseInstructors(entry.classroom_course_id)];
-			// โหลด busy rooms ถ้าจะแสดง section "เปลี่ยนห้อง" (ทุก view ยกเว้น ghost ใน INSTRUCTOR)
-			const isGhostForThisEntry =
-				viewMode === 'INSTRUCTOR' &&
-				selectedInstructorId !== '' &&
-				!(entry.instructor_ids ?? []).includes(selectedInstructorId);
-			if (!isGhostForThisEntry) {
-				tasks.push(loadUnavailableRoomsForEntry(entry));
-			}
-			const [teamRes] = (await Promise.all(tasks)) as [
-				Awaited<ReturnType<typeof listCourseInstructors>>,
-				...unknown[]
-			];
-			entryPopoverTeam = teamRes.data ?? [];
-		} catch {
-			toast.error('โหลดรายชื่อครูไม่สำเร็จ');
-		} finally {
-			entryPopoverLoading = false;
-		}
-	}
-
-	async function loadUnavailableRoomsForEntry(entry: TimetableEntry) {
-		if (!canManageTimetable) return;
-		try {
-			const res = await listTimetableEntries({
-				day_of_week: entry.day_of_week,
-				academic_semester_id: selectedSemesterId
-			});
-			const busy = new SvelteSet<string>();
-			res.data.forEach((e) => {
-				if (e.period_id === entry.period_id && e.room_id && e.id !== entry.id) {
-					busy.add(e.room_id);
-				}
-			});
-			replaceSvelteSet(entryPopoverUnavailableRooms, busy);
-		} catch {
-			entryPopoverUnavailableRooms.clear();
-		}
-	}
-
-	async function handlePopoverChangeRoom(roomId: string) {
-		if (!canManageTimetable) return;
-		if (!entryPopoverTarget) return;
-		const entry = entryPopoverTarget;
-		if (entry.room_id === roomId) {
-			entryPopoverRoomPickerOpen = false;
-			return;
-		}
-		entryPopoverSavingRoom = true;
-		try {
-			const res = await updateTimetableEntry(entry.id, { room_id: roomId });
-			if (res?.success === false) {
-				toast.error(res.message || 'เปลี่ยนห้องไม่สำเร็จ');
-				return;
-			}
-			entry.room_id = roomId;
-			rawTeamEntries = [...rawTeamEntries];
-			timetableEntries = [...timetableEntries];
-			toast.success('เปลี่ยนห้องแล้ว');
-		} catch (e: unknown) {
-			toast.error(e instanceof Error ? e.message : 'เปลี่ยนห้องไม่สำเร็จ');
-		} finally {
-			entryPopoverSavingRoom = false;
-			entryPopoverRoomPickerOpen = false;
-		}
-	}
-
-	async function handlePopoverRemoveInstructor(userId: string) {
-		if (!canManageTimetable) return;
-		if (!entryPopoverTarget) return;
-		const entry = entryPopoverTarget;
-		entryPopoverSaving = userId;
-		try {
-			await removeEntryInstructor(entry.id, userId);
-			// Update local state on the entry object (shared reference ระหว่าง rawTeamEntries + timetableEntries)
-			const idx = entry.instructor_ids?.indexOf(userId) ?? -1;
-			if (idx >= 0) {
-				entry.instructor_ids = entry.instructor_ids!.filter((i) => i !== userId);
-				entry.instructor_names = entry.instructor_names?.filter((_, i) => i !== idx);
-			}
-			// Trigger reactivity ทั้ง raw + filtered
-			rawTeamEntries = [...rawTeamEntries];
-			timetableEntries =
-				viewMode === 'INSTRUCTOR' && !showTeamGhosts
-					? rawTeamEntries.filter((e) => (e.instructor_ids ?? []).includes(selectedInstructorId))
-					: [...timetableEntries];
-			// ลบตัวเองในมุมมองครู + ghost ปิด → cell หายจาก grid → ปิด popover
-			if (viewMode === 'INSTRUCTOR' && userId === selectedInstructorId && !showTeamGhosts) {
-				entryPopoverOpen = false;
-			}
-			toast.success('ลบครูแล้ว');
-		} catch {
-			toast.error('ลบครูไม่สำเร็จ');
-		} finally {
-			entryPopoverSaving = '';
-		}
-	}
-
-	async function handlePopoverAddInstructor(userId: string, role: 'primary' | 'secondary') {
-		if (!canManageTimetable) return;
-		if (!entryPopoverTarget) return;
-		const entry = entryPopoverTarget;
-		entryPopoverSaving = userId;
-		try {
-			await addEntryInstructor(entry.id, userId, role);
-			entry.instructor_ids = [...(entry.instructor_ids ?? []), userId];
-			const member = entryPopoverTeam.find((t) => t.instructor_id === userId);
-			if (member?.instructor_name) {
-				entry.instructor_names = [...(entry.instructor_names ?? []), member.instructor_name];
-			}
-			rawTeamEntries = [...rawTeamEntries];
-			// เพิ่มตัวเองในมุมมองครู + ghost ปิด → cell กลายเป็นของตัวเอง → ปรากฏใน grid
-			timetableEntries =
-				viewMode === 'INSTRUCTOR' && !showTeamGhosts
-					? rawTeamEntries.filter((e) => (e.instructor_ids ?? []).includes(selectedInstructorId))
-					: [...timetableEntries];
-			toast.success('เพิ่มครูแล้ว');
-		} catch {
-			toast.error('เพิ่มครูไม่สำเร็จ');
-		} finally {
-			entryPopoverSaving = '';
-		}
-	}
-
-	// Toggle ghost — filter frontend จาก rawTeamEntries (ไม่ re-fetch)
-	$effect(() => {
-		void showTeamGhosts;
-		if (viewMode === 'INSTRUCTOR' && rawTeamEntries.length > 0) {
-			timetableEntries = showTeamGhosts
-				? rawTeamEntries
-				: rawTeamEntries.filter((e) => (e.instructor_ids ?? []).includes(selectedInstructorId));
-		}
-	});
-
-	// Dialog presence — broadcast activity ให้ user อื่นเห็น
-	$effect(() => {
-		if (entryPopoverOpen && entryPopoverTarget) {
-			sendUserActivity('instructor_edit', { entry_id: entryPopoverTarget.id });
-		} else if (showRoomModal && pendingDropContext) {
-			sendUserActivity('room_picker', {
-				day: pendingDropContext.day,
-				period_id: pendingDropContext.periodId,
-				classroom_id: selectedClassroomId || null
-			});
-		} else {
-			sendUserActivityEnd();
-		}
-	});
-
-	/** หา remote activity ที่ target = slot (day, periodId, classroom) ของ view ปัจจุบัน */
-	function getRemoteActivityForSlot(day: string, periodId: string) {
-		for (const [userId, act] of Object.entries($remoteActivities)) {
-			const t = (act.target ?? {}) as { day?: string; period_id?: string; classroom_id?: string };
-			if (act.activity_type !== 'room_picker') continue;
-			if (t.day !== day || t.period_id !== periodId) continue;
-			// filter classroom: ถ้า activity ระบุ classroom → ต้องตรงกับ classroom view
-			// (ไม่งั้น user ใน ห้อง 1/2 เห็น lock ของ 1/1)
-			if (t.classroom_id && viewMode === 'CLASSROOM' && t.classroom_id !== selectedClassroomId)
-				continue;
-			const user = $activeUsers.find((u) => u.user_id === userId);
-			if (!user) continue;
-			return { user, activity: act };
-		}
-		return null;
-	}
-
-	/** หา remote activity ที่ target = entry_id (instructor_edit)
-	 *  entry_id เป็น global unique — ไม่ต้อง filter context (ถ้าคุณเห็น entry นี้ = ล็อค)
-	 */
-	function getRemoteActivityForEntry(entryId: string) {
-		for (const [userId, act] of Object.entries($remoteActivities)) {
-			const t = (act.target ?? {}) as { entry_id?: string };
-			const matches = act.activity_type === 'instructor_edit' && t.entry_id === entryId;
-			if (!matches) continue;
-			const user = $activeUsers.find((u) => u.user_id === userId);
-			if (!user) continue;
-			return { user, activity: act };
-		}
-		return null;
-	}
-
-	function activityLabel(act: { activity_type: string }): string {
-		switch (act.activity_type) {
-			case 'room_picker':
-				return 'กำลังเลือกห้อง';
-			case 'instructor_edit':
-				return 'กำลังแก้ครู';
-			case 'replace_confirm':
-				return 'ยืนยันแทน';
-			default:
-				return 'กำลังแก้ไข';
-		}
-	}
-
-	async function handleDeleteEntry(entry: TimetableEntry) {
-		if (!canManageTimetable) return;
-		// Guard: ถ้ามี user อื่นเปิด dialog ที่ entry นี้ → block
-		const remoteLock = getRemoteActivityForEntry(entry.id);
-		if (remoteLock) {
-			toast.error(
-				`${remoteLock.user.name} กำลัง${activityLabel(remoteLock.activity)}ที่คาบนี้ — ลบไม่ได้`
-			);
-			return;
-		}
-
-		// batch_id ทุกชนิด (TEXT/SLOT-sync) เปิด dialog ถามก่อน
-		// — doDeleteBatch* จัดการ routing เอง: INSTRUCTOR + sync ใช้ hide endpoint,
-		//   ส่วน CLASSROOM หรือ TEXT batch ลบ entry/group จริง
-		if (entry.batch_id) {
-			deleteBatchTarget = entry;
-			showDeleteBatchDialog = true;
-			return;
-		}
-
-		// INSTRUCTOR view: non-batch entries (independent activity, course)
-		if (viewMode === 'INSTRUCTOR') {
-			if (entry.activity_slot_id) {
-				const slot =
-					sidebarActivitySlots.find((s) => s.id === entry.activity_slot_id) ||
-					instructorActivityItems.find((i) => i.slot.id === entry.activity_slot_id)?.slot;
-				if (slot?.scheduling_mode === 'synchronized') {
-					// Legacy sync ที่ไม่มี batch_id — ซ่อนทั้ง slot
-					if (!selectedInstructorId) return;
-					try {
-						await hideInstructorFromSlot(entry.activity_slot_id, selectedInstructorId);
-						toast.success('ลบครูออกจากกิจกรรมนี้แล้ว (ทุกห้อง)');
-					} catch (err: unknown) {
-						toast.error((err instanceof Error ? err.message : String(err)) || 'ลบไม่สำเร็จ');
-						return;
-					}
-				} else {
-					// Independent: one entry = one classroom; delete entry
-					try {
-						await deleteTimetableEntry(entry.id);
-						toast.success('ลบกิจกรรมออกจากตารางสำเร็จ');
-					} catch (e: unknown) {
-						toast.error((e instanceof Error ? e.message : String(e)) || 'ลบไม่สำเร็จ');
-						return;
-					}
-				}
-			} else {
-				// Regular course: ลบ entry ทั้งอัน (กระทบครูทุกคน) — ถ้าจะลบแค่ตัวเอง ใช้ × ใน popover
-				try {
-					await deleteTimetableEntry(entry.id);
-					toast.success('ลบคาบแล้ว');
-				} catch (e: unknown) {
-					toast.error((e instanceof Error ? e.message : String(e)) || 'ลบไม่สำเร็จ');
-					return;
-				}
-			}
-			// Backend broadcasts patch event ให้แล้ว — ไม่ต้องส่ง TableRefresh ซ้ำ
-			loadTimetable();
-			return;
-		}
-
-		if (entry.activity_slot_id) {
-			const slot =
-				sidebarActivitySlots.find((s) => s.id === entry.activity_slot_id) ||
-				instructorActivityItems.find((i) => i.slot.id === entry.activity_slot_id)?.slot;
-			if (slot?.scheduling_mode === 'independent') {
-				// Independent: ลบ single entry ตรง ๆ
-				await doDeleteEntry(entry.id, false);
-			} else {
-				// CLASSROOM view + synchronized: ถามก่อน
-				deleteActivityTarget = entry;
-				showDeleteActivityDialog = true;
-			}
-		} else {
-			await doDeleteEntry(entry.id, false);
-		}
-	}
-
-	async function doDeleteBatchGroup() {
-		if (!canManageTimetable) return;
-		const target = deleteBatchTarget;
-		if (!target?.batch_id) return;
-		try {
-			// INSTRUCTOR view + sync activity → ซ่อนครูคนนี้จากทั้ง slot (ไม่ลบ entry จริง)
-			if (viewMode === 'INSTRUCTOR' && target.activity_slot_id && selectedInstructorId) {
-				const slot =
-					sidebarActivitySlots.find((s) => s.id === target.activity_slot_id) ||
-					instructorActivityItems.find((i) => i.slot.id === target.activity_slot_id)?.slot;
-				if (slot?.scheduling_mode === 'synchronized') {
-					await hideInstructorFromSlot(target.activity_slot_id, selectedInstructorId);
-					toast.success('ลบครูออกจากกิจกรรมนี้แล้ว (ทุกคาบ ทุกห้อง)');
-					showDeleteBatchDialog = false;
-					deleteBatchTarget = null;
-					loadTimetable();
-					return;
-				}
-			}
-			// CLASSROOM view (หรือ INSTRUCTOR + non-sync): ลบ batch group จริง
-			const res = await deleteBatchGroup(target.batch_id);
-			toast.success(`ลบทั้งกลุ่มสำเร็จ (${res.deleted_count} คาบ)`);
-			showDeleteBatchDialog = false;
-			deleteBatchTarget = null;
-			loadTimetable();
-		} catch (e: unknown) {
-			toast.error((e instanceof Error ? e.message : String(e)) || 'ลบไม่สำเร็จ');
-		}
-	}
-
-	async function doDeleteBatchSingle() {
-		if (!canManageTimetable) return;
-		if (!deleteBatchTarget) return;
-		const target = deleteBatchTarget;
-		try {
-			// INSTRUCTOR view + sync activity → ซ่อนครูคนนี้จาก slot+day+period (ทุกห้อง)
-			// ไม่ใช่ลบ entry เพราะจะลบแค่ห้องเดียว — INSTRUCTOR view ทำ dedupe → cell ยังโผล่
-			if (viewMode === 'INSTRUCTOR' && target.activity_slot_id && selectedInstructorId) {
-				const slot =
-					sidebarActivitySlots.find((s) => s.id === target.activity_slot_id) ||
-					instructorActivityItems.find((i) => i.slot.id === target.activity_slot_id)?.slot;
-				if (slot?.scheduling_mode === 'synchronized') {
-					await hideInstructorFromSlotPeriod(
-						target.activity_slot_id,
-						selectedInstructorId,
-						target.day_of_week,
-						target.period_id
-					);
-					toast.success('ลบครูออกจากคาบนี้แล้ว (ทุกห้อง)');
-					showDeleteBatchDialog = false;
-					deleteBatchTarget = null;
-					loadTimetable();
-					return;
-				}
-			}
-			// CLASSROOM view (หรือ INSTRUCTOR + non-sync): ลบ entry เดียว
-			await deleteTimetableEntry(target.id);
-			toast.success('ลบเฉพาะคาบนี้แล้ว');
-			showDeleteBatchDialog = false;
-			deleteBatchTarget = null;
-			loadTimetable();
-		} catch (e: unknown) {
-			toast.error((e instanceof Error ? e.message : String(e)) || 'ลบไม่สำเร็จ');
-		}
-	}
-
-	async function doDeleteEntry(entryId: string, batch: boolean) {
-		if (!canManageTimetable) return;
-		try {
-			if (batch && deleteActivityTarget?.activity_slot_id) {
-				const res = await deleteBatchTimetableEntries({
-					activity_slot_id: deleteActivityTarget.activity_slot_id,
-					day_of_week: deleteActivityTarget.day_of_week,
-					academic_semester_id: deleteActivityTarget.academic_semester_id
-				});
-				toast.success(`ลบกิจกรรมทั้ง batch สำเร็จ (${res.deleted_count} รายการ)`);
-			} else {
-				await deleteTimetableEntry(entryId);
-				toast.success('ลบออกจากตารางสำเร็จ');
-			}
-
-			// Backend broadcasts patch event ให้แล้ว — ไม่ต้องส่ง TableRefresh ซ้ำ
-
-			showDeleteActivityDialog = false;
-			deleteActivityTarget = null;
-			loadTimetable();
-		} catch (e: unknown) {
-			toast.error((e instanceof Error ? e.message : String(e)) || 'ลบไม่สำเร็จ');
-		}
-	}
-
-	function getEntryForSlot(day: string, periodId: string): TimetableEntry | undefined {
-		return displayEntries.find((e) => e.day_of_week === day && e.period_id === periodId);
-	}
-
-	// In INSTRUCTOR view, deduplicate ACTIVITY entries that share the same slot+day+period
-	let displayEntries = $derived.by(() => {
-		if (viewMode !== 'INSTRUCTOR') return timetableEntries;
-		const seen = new SvelteSet<string>();
-		return timetableEntries.filter((e) => {
-			if (e.entry_type === 'ACTIVITY' && e.activity_slot_id) {
-				const key = `${e.activity_slot_id}:${e.day_of_week}:${e.period_id}`;
-				if (seen.has(key)) return false;
-				seen.add(key);
-			}
-			return true;
-		});
-	});
-
-	function formatTime(time?: string): string {
-		if (!time) return '';
-		return time.substring(0, 5);
-	}
-
-	// ============================================
-	// Drag & Drop Handlers
-	// ============================================
-
-	// Room Selection State
-	let showRoomModal = $state(false);
-
-	// Dialog ปิดโดยคลิกนอก/กด ESC → bind:open จะ set false เองแต่ cleanup ไม่ทำงาน
-	// watch: ถ้า modal ปิดตอน drop ยัง pending → treat as cancel (ลบ highlights/conflicts)
-	$effect(() => {
-		if (!showRoomModal && isDropPending) {
-			isDropPending = false;
-			pendingDropContext = null;
-			handleDragEnd();
-		}
-	});
-	let pendingDropContext = $state<{
-		day: string;
-		periodId: string;
-		dragType: 'NEW' | 'MOVE';
-		course: DragCourse;
-		entryId: string | null;
-	} | null>(null);
-
-	let selectedRoomId = $state<string>(''); // empty string = no room (default)
-
-	// Availability State
-	interface SlotConflict {
-		kind: 'classroom' | 'teacher';
-		teacher_name?: string;
-		subject_code: string;
-		subject_name: string;
-		classroom_name: string;
-		room_code?: string;
-	}
-	let slotConflicts = new SvelteMap<string, SlotConflict[]>();
-
-	// Floating conflict popup ตอน drag hover (native title tooltip ใช้ไม่ได้ระหว่าง drag)
-	let hoverDragCell = $state<{ day: string; periodId: string; x: number; y: number } | null>(null);
-
-	// Drag validity map: key "DAY|PERIODID" → cell state (computed locally from occupancyEntries)
-	// Populated on drag start for MOVE type; cleared on drag end.
-	let moveValidityMap = new SvelteMap<string, MoveValidityCell>();
-
-	// Lightweight semester-wide entry summary for client-side conflict checks.
-	// โหลดครั้งเดียวต่อ semester + sync ตาม WS events → drag validity คำนวณใน JS (0ms lag)
-	let occupancyEntries = $state<OccupancyEntry[]>([]);
-
-	// Phase 2 Fix 3: pre-fetched course teams (full instructor list per course)
-	// → buildTempEntry render ครูครบทีมตอน CREATE optimistic (ไม่ใช่แค่ primary)
-	let courseTeamsMap = new SvelteMap<string, CourseInstructor[]>();
-
-	// Pre-fetched independent activity instructor per (slot, classroom) — สำหรับ CREATE optimistic
-	// key: `${slotId}|${classroomId}` → { id, name }
-	let activityInstructorMap = new SvelteMap<string, { id: string; name: string }>();
-
-	// Phase 2: entry IDs ที่อยู่ในสถานะ pending (รอ DB confirm) — UI แสดง spinner
-	let pendingEntryIds = new SvelteSet<string>();
-
-	// Phase 2: snapshot table — สำหรับ rollback ตอน DropRejected (ทั้ง self + others)
-	// เฉพาะ entry ที่มี optimistic mutation ที่ยังไม่ confirm
-	let optimisticSnapshots = new SvelteMap<
-		string,
-		{ day_of_week: string; period_id: string; room_id: string | null }
-	>();
-
-	// Phase 2 Fix 1: timeout per pending entry — ถ้าครบ 15s ยังไม่ confirm → auto rollback
-	// ป้องกัน UI ค้างถาวรเมื่อ server crash หรือ WS drop ระหว่าง pending
-	let pendingTimeouts = new SvelteMap<string, ReturnType<typeof setTimeout>>();
-	const PENDING_TIMEOUT_MS = 15000;
-
-	function getSlotKey(day: string, periodId: string) {
-		return `${day}_${periodId}`;
-	}
-
-	function isSlotOccupiedByInstructor(day: string, periodId: string) {
-		return slotConflicts.has(getSlotKey(day, periodId));
-	}
-
-	async function fetchInstructorConflicts(course: DragCourse) {
-		if (!canManageTimetable) return;
-		// 1. Detect MOVE entry (source-of-truth สำหรับทีม via tei)
-		let moveEntry: TimetableEntry | undefined;
-		if (dragType === 'MOVE' && draggedEntryId) {
-			moveEntry =
-				timetableEntries.find((e) => e.id === draggedEntryId) ??
-				rawTeamEntries.find((e) => e.id === draggedEntryId);
-		}
-
-		// 2. Target classroom (ที่จะวาง entry ลง)
-		let targetClassroomId: string | undefined;
-		if (viewMode === 'INSTRUCTOR') {
-			targetClassroomId = moveEntry?.classroom_id ?? course._classroom_id ?? course.classroom_id;
-		} else {
-			targetClassroomId = selectedClassroomId;
-		}
-		if (!targetClassroomId) {
-			slotConflicts.clear();
-			return;
-		}
-
-		// 3. หาทีมครู
-		let teamIds: string[] = [];
-		if (moveEntry) {
-			// MOVE: ใช้ tei ปัจจุบันของ entry (source-of-truth ว่าใครสอน cell นี้จริง)
-			teamIds = moveEntry.instructor_ids ?? [];
-		} else if (course._isActivity) {
-			// ACTIVITY NEW — Independent เท่านั้น (synchronized ลากไม่ได้): 1 ครู/ห้อง
-			if (course.activity_slot_id) {
-				const assignment = (
-					activityTimetableContext?.classroomAssignmentsBySlot[course.activity_slot_id] ?? []
-				).find((candidate) => candidate.classroom_id === targetClassroomId);
-				if (assignment) teamIds = [assignment.instructor_id];
-			}
-		} else if (course.id) {
-			// COURSE NEW: ทีมจาก classroom_course_instructors
-			try {
-				const res = await listCourseInstructors(course.id);
-				teamIds = (res.data ?? []).map((m) => m.instructor_id);
-			} catch {
-				/* ignore */
-			}
-		}
-
-		// 4. Fetch parallel: entries ของห้องปลายทาง + entries ของครูแต่ละคนในทีม
-		try {
-			const results = await Promise.all([
-				listTimetableEntries({
-					classroom_id: targetClassroomId,
-					academic_semester_id: selectedSemesterId
-				}),
-				...teamIds.map((id) =>
-					listTimetableEntries({
-						instructor_id: id,
-						academic_semester_id: selectedSemesterId
-					})
-				)
-			]);
-			const classroomEntries = results[0].data;
-			const teamEntriesList = results.slice(1).map((r) => r.data);
-
-			// Build ใน SvelteMap ใหม่ก่อน แล้วค่อย clear + copy ไปที่ slotConflicts (reactive)
-			// เพื่อไม่ให้ UI "กระพริบ" ตอน populate (clear ทันทีจะเห็นเปล่าชั่วขณะก่อน set ชุดใหม่)
-			const newConflicts = new SvelteMap<string, SlotConflict[]>();
-			const addConflict = (key: string, c: SlotConflict) => {
-				if (!newConflicts.has(key)) newConflicts.set(key, []);
-				newConflicts.get(key)!.push(c);
-			};
-
-			// 5a. Classroom-busy: ห้องปลายทางติดอยู่แล้ว และผู้ drop ไม่ได้อยู่ใน tei
-			//     pivotInstructor = ใครเป็นผู้ drop ของ cell นี้
-			//     - INSTRUCTOR view: selectedInstructor (grid viewer)
-			//     - CLASSROOM view: ไม่เช็ก pivot — ถ้าห้องติด = conflict เสมอ (ยังไม่ map ผู้ drop ได้ชัด)
-			const pivotInstructor = viewMode === 'INSTRUCTOR' ? selectedInstructorId : undefined;
-			classroomEntries.forEach((entry) => {
-				if (dragType === 'MOVE' && entry.id === draggedEntryId) return;
-				if (pivotInstructor && (entry.instructor_ids ?? []).includes(pivotInstructor)) return;
-
-				const key = getSlotKey(entry.day_of_week, entry.period_id);
-				addConflict(key, {
-					kind: 'classroom',
-					subject_code: entry.subject_code || getEntryTypeFallbackLabel(entry.entry_type),
-					subject_name: entry.subject_name_th || entry.title || '',
-					classroom_name: entry.classroom_name ?? '',
-					room_code: entry.room_code
-				});
-			});
-
-			// 5b. Team-busy: ครูแต่ละคนในทีมติดคาบที่ห้องอื่นในเวลาเดียวกัน (double-book)
-			teamIds.forEach((tid, idx) => {
-				const entries = teamEntriesList[idx];
-				const teacherInfo = instructors.find((i) => i.id === tid);
-				const teacherName = teacherInfo?.name ?? '?';
-
-				entries.forEach((entry) => {
-					if (dragType === 'MOVE' && entry.id === draggedEntryId) return;
-					if (entry.classroom_id === targetClassroomId) return; // ห้องเดียวกัน = ไม่ใช่ double-book
-
-					const key = getSlotKey(entry.day_of_week, entry.period_id);
-					addConflict(key, {
-						kind: 'teacher',
-						teacher_name: teacherName,
-						subject_code: entry.subject_code || getEntryTypeFallbackLabel(entry.entry_type),
-						subject_name: entry.subject_name_th || entry.title || '',
-						classroom_name: entry.classroom_name ?? '',
-						room_code: entry.room_code
-					});
-				});
-			});
-
-			slotConflicts.clear();
-			newConflicts.forEach((v, k) => slotConflicts.set(k, v));
-		} catch (e) {
-			console.error('Failed to check conflicts', e);
-		}
-	}
-
-	function createDragFrame(code: string, bgColor: string, borderColor: string) {
-		const div = document.createElement('div');
-		div.style.cssText = `
-			position: fixed;
-			top: -1000px;
-			left: -1000px;
-			width: 120px;
-			height: 70px;
-			border: 2px solid ${borderColor};
-			border-radius: 6px;
-			background: transparent;
-			box-sizing: border-box;
-			padding: 4px 6px;
-			display: flex;
-			align-items: flex-start;
-			justify-content: flex-start;
-			font-family: system-ui, -apple-system, sans-serif;
-			transform: rotate(-2deg);
-		`;
-		if (code) {
-			const pill = document.createElement('div');
-			pill.style.cssText = `
-				background: ${bgColor};
-				border: 1px solid ${borderColor};
-				color: #1e293b;
-				font-size: 11px;
-				font-weight: 700;
-				padding: 1px 6px;
-				border-radius: 4px;
-				white-space: nowrap;
-				overflow: hidden;
-				text-overflow: ellipsis;
-				max-width: 100%;
-			`;
-			pill.textContent = code;
-			div.appendChild(pill);
-		}
-		document.body.appendChild(div);
-		return div;
-	}
-
-	function handleActivityDragStart(
-		event: DragEvent,
-		activity: (typeof unscheduledActivities)[number]
-	) {
-		if (!canManageTimetable) return;
-		dragType = 'NEW';
-		// For INSTRUCTOR view independent: classroom comes from _classroom_id
-		const classroomId = activity._classroom_id || selectedClassroomId;
-		const activityCode = getActivityTypeLabel(activity.activity_type);
-		const activityName = activity.name ?? 'กิจกรรม';
-		const nextDraggedCourse: DragCourse = {
-			id: activity.id,
-			_isActivity: true,
-			activity_slot_id: activity.id,
-			_classroom_id: classroomId,
-			subject_code: activityCode,
-			title_th: activityName,
-			title: activityName
-		};
-		draggedCourse = nextDraggedCourse;
-		draggedEntryId = null;
-
-		// conflict highlights: ใช้ draggedCourse ที่มี _isActivity + _classroom_id
-		// fetchInstructorConflicts จัดการ target classroom + team lookup เองตาม viewMode
-		fetchInstructorConflicts(nextDraggedCourse);
-
-		if (event.dataTransfer) {
-			event.dataTransfer.effectAllowed = 'copy';
-			event.dataTransfer.setData('text/plain', JSON.stringify({ type: 'NEW', id: activity.id }));
-			// Frame-only drag ghost (โปร่งตรงกลาง → popup ทะลุเห็นได้)
-			const code = activityCode;
-			const bgColor = getSubjectColor(code, 'ACTIVITY');
-			const borderColor = getSubjectBorderColor(code, 'ACTIVITY');
-			const dragElement = createDragFrame(code, bgColor, borderColor);
-			event.dataTransfer.setDragImage(dragElement, 60, 35);
-			setTimeout(() => document.body.removeChild(dragElement), 0);
-		}
-
-		// Notify others
-		if ($authStore.user) {
-			sendTimetableEvent({
-				type: 'DragStart',
-				payload: {
-					user_id: $authStore.user.id,
-					course_id: activity.id,
-					info: {
-						code: activityCode,
-						title: activityName
-					}
-				}
-			});
-		}
-	}
-
-	function handleDragStart(
-		event: DragEvent,
-		item: DragCourse | TimetableEntry,
-		type: 'NEW' | 'MOVE'
-	) {
-		if (!canManageTimetable) return;
-		dragType = type;
-
-		let courseToCheck: DragCourse | null = null;
-
-		if (type === 'NEW') {
-			draggedCourse = item;
-			draggedEntryId = null;
-			courseToCheck = item;
-		} else {
-			draggedCourse = item;
-			draggedEntryId = item.id;
-
-			const entry = item as TimetableEntry;
-			const isActivityEntry = entry.entry_type === 'ACTIVITY';
-			const originalCourse = isActivityEntry
-				? null
-				: courses.find((c) => c.id === entry.classroom_course_id);
-			courseToCheck = originalCourse || {
-				...entry,
-				id: entry.classroom_course_id ?? entry.activity_slot_id ?? entry.id,
-				subject_code: entry.subject_code ?? (isActivityEntry ? entry.title : undefined),
-				title: entry.subject_name_th ?? entry.title,
-				title_th: entry.subject_name_th ?? entry.title,
-				_isActivity: isActivityEntry,
-				activity_slot_id: entry.activity_slot_id
-			};
-		}
-
-		if (courseToCheck) {
-			fetchInstructorConflicts(courseToCheck);
-		}
-
-		// Precompute drop validity for MOVE drags (colorize cells 🟢🔵🔴)
-		// Local computation — no API call, 0ms lag
-		if (type === 'MOVE' && draggedEntryId) {
-			replaceSvelteMap(moveValidityMap, computeValidMoves(draggedEntryId));
-		}
-
-		if (event.dataTransfer) {
-			event.dataTransfer.effectAllowed = type === 'NEW' ? 'copy' : 'move';
-			event.dataTransfer.setData(
-				'text/plain',
-				JSON.stringify({
-					type,
-					id: type === 'NEW' ? item.id : item.id
-				})
-			);
-
-			// Frame-only drag ghost — สี/ขนาดตาม subject theme, กลางโปร่ง → popup ทะลุได้
-			const code = courseToCheck!.subject_code || courseToCheck!.title || 'วิชา';
-			const entryType = (courseToCheck as unknown as { entry_type?: string }).entry_type;
-			const bgColor = getSubjectColor(code, entryType);
-			const borderColor = getSubjectBorderColor(code, entryType);
-			const dragElement = createDragFrame(code, bgColor, borderColor);
-			event.dataTransfer.setDragImage(dragElement, 60, 35);
-			setTimeout(() => document.body.removeChild(dragElement), 0);
-		}
-
-		// Notify others
-		if ($authStore.user) {
-			sendTimetableEvent({
-				type: 'DragStart',
-				payload: {
-					user_id: $authStore.user.id,
-					entry_id: draggedEntryId || undefined,
-					course_id: item.classroom_course_id || item.id,
-					info: {
-						code: courseToCheck!.subject_code || '??',
-						title:
-							courseToCheck!.title_th ||
-							courseToCheck!.title_en ||
-							courseToCheck!.title ||
-							'รายวิชา',
-						color: courseToCheck!.color as string | undefined
-					}
-				}
-			});
-		}
-	}
-
-	function handleDragEnd() {
-		if (isDropPending) return;
-
-		if ($authStore.user) {
-			sendTimetableEvent({ type: 'DragEnd', payload: { user_id: $authStore.user.id } });
-		}
-		draggedCourse = null;
-		draggedEntryId = null;
-		slotConflicts.clear();
-		hoverDragCell = null;
-		moveValidityMap.clear();
-	}
-
-	function handleDragOver(event: DragEvent, day?: string, periodId?: string) {
-		if (!canManageTimetable) return;
-		event.preventDefault();
-		if (event.dataTransfer) {
-			event.dataTransfer.dropEffect = dragType === 'NEW' ? 'copy' : 'move';
-		}
-		// Track cell ที่ cursor hover ระหว่าง drag เพื่อแสดง floating popup
-		if (day && periodId && draggedCourse && slotConflicts.has(getSlotKey(day, periodId))) {
-			hoverDragCell = { day, periodId, x: event.clientX, y: event.clientY };
-		} else {
-			hoverDragCell = null;
-		}
-	}
-
-	async function handleDrop(event: DragEvent, day: string, periodId: string) {
-		event.preventDefault();
-		if (!canManageTimetable) return;
-
-		if (!draggedCourse) return;
-
-		// Lock: block ถ้ามี user อื่นเปิด dialog อยู่ที่ slot/entry นี้
-		const actSlot = getRemoteActivityForSlot(day, periodId);
-		const existingEntry = getEntryForSlot(day, periodId);
-		const actEntry = existingEntry ? getRemoteActivityForEntry(existingEntry.id) : null;
-		const lockedAct = actSlot || actEntry;
-		if (lockedAct) {
-			toast.error(
-				`${lockedAct.user.name} กำลัง${activityLabel(lockedAct.activity)}ที่ช่องนี้ — ลองอีกครั้ง`
-			);
-			handleDragEnd();
-			return;
-		}
-
-		// Block: ห้ามวาง/สลับทับ entry ที่สร้างจาก batch (TEXT/SLOT-sync — pinned)
-		if (existingEntry?.batch_id) {
-			toast.error('คาบนี้สร้างจาก Batch — ย้าย/สลับไม่ได้ (ลบแล้ว batch ใหม่แทน)');
-			handleDragEnd();
-			return;
-		}
-
-		// Phase 2 Fix 2: block drop ทับ entry ที่ยัง pending (กัน phantom race)
-		if (existingEntry && pendingEntryIds.has(existingEntry.id)) {
-			toast.error('คาบนี้กำลังบันทึก — รอสักครู่แล้วลองใหม่');
-			handleDragEnd();
-			return;
-		}
-		if (existingEntry && existingEntry.id.startsWith('temp-')) {
-			toast.error('คาบนี้ยังไม่ confirm — รอสักครู่');
-			handleDragEnd();
-			return;
-		}
-
-		// Instructor view: เช็ค hidden ghost ใน rawTeamEntries (sync, ครอบคลุม ghost mode off
-		// ที่ getEntryForSlot return undefined เพราะ filter display)
-		if (viewMode === 'INSTRUCTOR' && draggedCourse) {
-			const draggedClassroomId = draggedCourse.classroom_id;
-			if (draggedClassroomId) {
-				const hiddenEntry = rawTeamEntries.find(
-					(e) =>
-						e.day_of_week === day &&
-						e.period_id === periodId &&
-						e.classroom_id === draggedClassroomId &&
-						e.id !== draggedEntryId
-				);
-				if (hiddenEntry && !(hiddenEntry.instructor_ids ?? []).includes(selectedInstructorId)) {
-					toast.error('ห้องนี้มีวิชาอื่นอยู่ในคาบนี้แล้ว (คุณไม่ได้สอน) — วางทับไม่ได้');
-					handleDragEnd();
-					return;
-				}
-			}
-		}
-
-		// Block drop onto ghost cells ที่ displayed (ghost mode on) — ghost ไม่ใช่คาบของเรา
-		if (
-			existingEntry &&
-			viewMode === 'INSTRUCTOR' &&
-			selectedInstructorId &&
-			!(existingEntry.instructor_ids ?? []).includes(selectedInstructorId)
-		) {
-			toast.error('สลับกับคาบในทีมไม่ได้ — คาบนี้ไม่ใช่คาบของคุณ');
-			handleDragEnd();
-			return;
-		}
-
-		// Case A: MOVE drag (from table) onto occupied → SWAP (optimistic + WS intent broadcast)
-		if (
-			existingEntry &&
-			dragType === 'MOVE' &&
-			draggedEntryId &&
-			existingEntry.id !== draggedEntryId
-		) {
-			const validity = moveValidityMap.get(`${day}|${periodId}`);
-			if (validity && !validity.valid) {
-				toast.error(validity.reason || 'สลับไม่ได้');
-				handleDragEnd();
-				return;
-			}
-			const aId = draggedEntryId;
-			const bId = existingEntry.id;
-			const aOriginal = snapshotPosition(aId);
-			const bOriginal = snapshotPosition(bId);
-			if (!aOriginal || !bOriginal) {
-				handleDragEnd();
-				return;
-			}
-			// Optimistic swap: ขยับ UI ทันที, รอ API ใน background
-			optimisticSnapshots.set(aId, aOriginal);
-			optimisticSnapshots.set(bId, bOriginal);
-			markPending(aId);
-			markPending(bId);
-			applyEntryMutation(aId, {
-				day_of_week: bOriginal.day_of_week as TimetableEntry['day_of_week'],
-				period_id: bOriginal.period_id
-			});
-			applyEntryMutation(bId, {
-				day_of_week: aOriginal.day_of_week as TimetableEntry['day_of_week'],
-				period_id: aOriginal.period_id
-			});
-			// Broadcast intent → คนอื่นเห็น optimistic ทันที
-			sendDropIntent({
-				kind: 'swap',
-				entry_id: aId,
-				day_of_week: bOriginal.day_of_week,
-				period_id: bOriginal.period_id,
-				swap_partner_id: bId,
-				swap_partner_day: aOriginal.day_of_week,
-				swap_partner_period_id: aOriginal.period_id
-			});
-			handleDragEnd();
-			try {
-				await swapTimetableEntries(aId, bId);
-				// API success = confirm — clear pending ทันที (ไม่รอ WS เพราะ broadcast
-				// อาจ skip ถ้ามี subscriber คนเดียว). WS ยังมาถึงคนอื่น (idempotent)
-				clearPending(aId);
-				clearPending(bId);
-				toast.success('สลับคาบเรียบร้อย');
-			} catch (e: unknown) {
-				// Rollback locally; DropRejected broadcast (จาก server) จะมาแยก
-				applyEntryMutation(aId, {
-					day_of_week: aOriginal.day_of_week as TimetableEntry['day_of_week'],
-					period_id: aOriginal.period_id
-				});
-				applyEntryMutation(bId, {
-					day_of_week: bOriginal.day_of_week as TimetableEntry['day_of_week'],
-					period_id: bOriginal.period_id
-				});
-				clearPending(aId);
-				clearPending(bId);
-				toast.error((e instanceof Error ? e.message : String(e)) || 'สลับไม่สำเร็จ');
-			}
-			return;
-		}
-
-		// Case B: NEW drag (from sidebar) onto occupied → REPLACE (optimistic + WS intent)
-		if (existingEntry && dragType === 'NEW') {
-			const dc = draggedCourse;
-			if (!dc) {
-				handleDragEnd();
-				return;
-			}
-			const payload: UpdateTimetableEntryRequest = {};
-			let newClassroomId: string | undefined;
-			if (dc._isActivity) {
-				payload.activity_slot_id = dc.activity_slot_id;
-				payload.classroom_course_id = null;
-			} else {
-				payload.classroom_course_id = dc.id;
-				payload.activity_slot_id = null;
-				if (dc.classroom_id && dc.classroom_id !== existingEntry.classroom_id) {
-					payload.classroom_id = dc.classroom_id;
-					newClassroomId = dc.classroom_id;
-				}
-			}
-
-			// Compute new content + apply optimistic
-			const newFields = computeReplacementFields({
-				newCourseId: dc._isActivity ? undefined : dc.id,
-				newActivitySlotId: dc._isActivity ? dc.activity_slot_id : undefined,
-				newClassroomId,
-				newTitle: dc._isActivity ? dc.title_th : undefined
-			});
-			const snapshot = applyEntryMutation(existingEntry.id, newFields);
-			// Mirror occupancy ครบ (instructor_ids เปลี่ยน → ต้อง upsert)
-			const updatedEntry =
-				timetableEntries.find((e) => e.id === existingEntry.id) ??
-				rawTeamEntries.find((e) => e.id === existingEntry.id);
-			if (updatedEntry) upsertOccupancy(updatedEntry);
-			if (snapshot)
-				optimisticSnapshots.set(existingEntry.id, {
-					day_of_week: existingEntry.day_of_week,
-					period_id: existingEntry.period_id,
-					room_id: existingEntry.room_id ?? null
-				});
-			markPending(existingEntry.id);
-
-			// Broadcast intent → คนอื่น lookup local courses → overwrite
-			sendDropIntent({
-				kind: 'replace',
-				entry_id: existingEntry.id,
-				day_of_week: existingEntry.day_of_week,
-				period_id: existingEntry.period_id,
-				room_id: existingEntry.room_id ?? null,
-				new_classroom_course_id: dc._isActivity ? null : dc.id,
-				new_activity_slot_id: dc._isActivity ? dc.activity_slot_id : null,
-				new_classroom_id: newClassroomId ?? null
-			});
-
-			handleDragEnd();
-			try {
-				const result = await updateTimetableEntry(existingEntry.id, payload);
-				if (result.success === false) {
-					// Rollback content
-					if (snapshot) applyEntryMutation(existingEntry.id, snapshot);
-					const restored =
-						timetableEntries.find((e) => e.id === existingEntry.id) ??
-						rawTeamEntries.find((e) => e.id === existingEntry.id);
-					if (restored) upsertOccupancy(restored);
-					clearPending(existingEntry.id);
-					const msgs = (result.conflicts ?? []).map((c) => c.message).filter(Boolean);
-					toast.error(msgs.length > 0 ? msgs.join(' · ') : 'แทนที่ไม่สำเร็จ');
-				} else {
-					// API success = confirm
-					clearPending(existingEntry.id);
-					toast.success('แทนที่รายการเดิมแล้ว');
-				}
-			} catch (e: unknown) {
-				if (snapshot) applyEntryMutation(existingEntry.id, snapshot);
-				const restored =
-					timetableEntries.find((x) => x.id === existingEntry.id) ??
-					rawTeamEntries.find((x) => x.id === existingEntry.id);
-				if (restored) upsertOccupancy(restored);
-				clearPending(existingEntry.id);
-				toast.error((e instanceof Error ? e.message : String(e)) || 'แทนที่ไม่สำเร็จ');
-			}
-			return;
-		}
-
-		// Case C: dropping onto own source — no-op
-		if (existingEntry && existingEntry.id === draggedEntryId) {
-			handleDragEnd();
-			return;
-		}
-
-		if (isSlotOccupiedByInstructor(day, periodId)) {
-			toast.error(
-				viewMode === 'INSTRUCTOR' ? 'ห้องนี้มีวิชาอื่นในคาบนี้แล้ว' : 'ครูติดสอนในคาบนี้แล้ว'
-			);
-			handleDragEnd();
-			return;
-		}
-
-		pendingDropContext = {
-			day,
-			periodId,
-			dragType,
-			course: draggedCourse,
-			entryId: draggedEntryId
-		};
-
-		if (dragType === 'MOVE' && draggedCourse.room_id) {
-			selectedRoomId = draggedCourse.room_id;
-		} else {
-			selectedRoomId = 'none';
-		}
-
-		showRoomModal = true;
-		isDropPending = true;
-		updateUnavailableRooms(day, periodId);
-	}
-
-	let unavailableRooms = new SvelteSet<string>();
-
-	// Activity dialog: lookup ครูจาก activityInstructorMap (ตอน drop independent activity)
-	let draggedActivityInstructor = $derived.by(() => {
-		if (!draggedCourse?._isActivity || !draggedCourse?.activity_slot_id) return null;
-		const dropClassroomId = draggedCourse?._classroom_id || selectedClassroomId;
-		if (!dropClassroomId) return null;
+	function entryTitle(entry: TimetableEntry): string {
 		return (
-			activityInstructorMap.get(`${draggedCourse.activity_slot_id}|${dropClassroomId}`) ?? null
+			entry.offeringCode ??
+			entry.title ??
+			entry.activityVersionDisplayLabel ??
+			entry.subjectVersionDisplayLabel ??
+			entry.entryType
 		);
-	});
-
-	async function updateUnavailableRooms(day: string, periodId: string) {
-		if (!canManageTimetable) return;
-		unavailableRooms.clear();
-		try {
-			const res = await listTimetableEntries({
-				day_of_week: day,
-				academic_semester_id: selectedSemesterId
-			});
-
-			const busyRooms = new SvelteSet<string>();
-			res.data.forEach((entry) => {
-				if (entry.period_id === periodId && entry.room_id) {
-					if (dragType === 'MOVE' && entry.id === draggedEntryId) return;
-					busyRooms.add(entry.room_id);
-				}
-			});
-			replaceSvelteSet(unavailableRooms, busyRooms);
-		} catch (e) {
-			console.error(e);
-		}
 	}
 
-	async function confirmDropWithRoom() {
-		if (!canManageTimetable) return;
-		if (!pendingDropContext) return;
+	function entriesForCell(day: string, periodId: string): TimetableEntry[] {
+		return visibleEntries.filter(
+			(entry) => entry.dayOfWeek === day && entry.bellSchedulePeriodId === periodId
+		);
+	}
 
-		const { day, periodId, dragType, course, entryId } = pendingDropContext;
-		const roomId = selectedRoomId === 'none' ? undefined : selectedRoomId;
+	async function loadPeriods(scheduleId: string): Promise<void> {
+		periods = (await listBellSchedulePeriods(scheduleId)).sort(
+			(a, b) => a.orderIndex - b.orderIndex
+		);
+		formPeriodId = periods[0]?.id ?? '';
+	}
 
-		showRoomModal = false;
-
+	async function loadWorkspace(termId: string, yearId: string): Promise<void> {
+		const current = ++revision;
+		loading = true;
+		errorMessage = '';
 		try {
-			submitting = true;
-
-			if (dragType === 'NEW') {
-				// CREATE NEW — optimistic + WS intent broadcast
-				const courseCode = course.subject_code || course.title || 'รายการ';
-				const ac = course;
-				const tempId = `temp-${crypto.randomUUID()}`;
-				let payload: CreateTimetableEntryRequest;
-				let entryType: 'COURSE' | 'ACTIVITY' = 'COURSE';
-				// COURSE: ใช้ classroom ของ course (ใน INSTRUCTOR view ที่ selectedClassroomId ว่าง)
-				// ACTIVITY: ใช้ _classroom_id จาก sidebar item (override ด้านล่าง)
-				let dropClassroomId = ac.classroom_id || selectedClassroomId;
-
-				if (ac._isActivity) {
-					entryType = 'ACTIVITY';
-					dropClassroomId = ac._classroom_id || selectedClassroomId;
-					// Check if independent slot has instructor assigned for this classroom
-					const slot =
-						sidebarActivitySlots.find((s) => s.id === ac.activity_slot_id) ||
-						instructorActivityItems.find((i) => i.slot.id === ac.activity_slot_id)?.slot;
-					if (slot?.scheduling_mode === 'independent') {
-						const hasInstructor = await checkClassroomHasInstructor(
-							ac.activity_slot_id!,
-							dropClassroomId
-						);
-						if (!hasInstructor) {
-							toast.error('กรุณากำหนดครูประจำห้องนี้ก่อนในหน้ากิจกรรม');
-							submitting = false;
-							pendingDropContext = null;
-							isDropPending = false;
-							handleDragEnd();
-							return;
-						}
-					}
-					payload = {
-						activity_slot_id: ac.activity_slot_id,
-						classroom_id: dropClassroomId,
-						academic_semester_id: selectedSemesterId,
-						day_of_week: day,
-						period_id: periodId,
-						room_id: roomId,
-						entry_type: 'ACTIVITY',
-						title: ac.title_th,
-						client_temp_id: tempId
-					};
-				} else {
-					payload = {
-						classroom_course_id: course.id,
-						day_of_week: day,
-						period_id: periodId,
-						room_id: roomId,
-						client_temp_id: tempId
-					};
-				}
-
-				// Optimistic: build tempEntry + push + broadcast intent
-				const tempEntry = buildTempEntry({
-					tempId,
-					classroomId: dropClassroomId,
-					classroomCourseId: ac._isActivity ? undefined : course.id,
-					activitySlotId: ac._isActivity ? ac.activity_slot_id : undefined,
-					day: day as TimetableEntry['day_of_week'],
-					periodId,
-					roomId,
-					title: ac._isActivity ? ac.title_th : undefined,
-					entryType
-				});
-				timetableEntries = [...timetableEntries, tempEntry];
-				// INSTRUCTOR view: $effect ที่ derive timetableEntries จาก rawTeamEntries → tempEntry ต้องอยู่ทั้ง 2 อาร์เรย์
-				if (
-					viewMode === 'INSTRUCTOR' &&
-					(tempEntry.instructor_ids ?? []).includes(selectedInstructorId)
-				) {
-					rawTeamEntries = [...rawTeamEntries, tempEntry];
-				}
-				upsertOccupancy(tempEntry);
-				markPending(tempId);
-
-				sendEntryIntent({
-					temp_id: tempId,
-					classroom_id: dropClassroomId,
-					classroom_course_id: ac._isActivity ? null : course.id,
-					activity_slot_id: ac._isActivity ? ac.activity_slot_id : null,
-					day_of_week: day,
-					period_id: periodId,
-					room_id: roomId ?? null,
-					title: ac._isActivity ? ac.title_th : null,
-					entry_type: entryType
-				});
-
-				submitting = false;
-				pendingDropContext = null;
-				isDropPending = false;
-				handleDragEnd();
-				try {
-					const res = await createTimetableEntry(payload);
-					if (res.success === false) {
-						// Remove temp + show conflicts
-						timetableEntries = timetableEntries.filter((e) => e.id !== tempId);
-						removeOccupancy(tempId);
-						clearPending(tempId);
-						const msgs = (res.conflicts ?? []).map((c) => c.message).filter(Boolean);
-						toast.error(msgs.length > 0 ? msgs.join(' · ') : 'ลงตารางไม่สำเร็จ');
-					} else {
-						// API success = confirm. Swap temp → real (id เปลี่ยน, joined fields เก็บที่คำนวณไว้)
-						const realId = res.data.id;
-						if (realId) {
-							const swap = (e: TimetableEntry) => (e.id === tempId ? { ...e, id: realId } : e);
-							timetableEntries = timetableEntries.map(swap);
-							rawTeamEntries = rawTeamEntries.map(swap);
-							removeOccupancy(tempId);
-							const finalEntry = timetableEntries.find((e) => e.id === realId);
-							if (finalEntry) upsertOccupancy(finalEntry);
-						}
-						clearPending(tempId);
-						toast.success(`ลงตาราง ${courseCode} สำเร็จ`);
-					}
-				} catch (e: unknown) {
-					timetableEntries = timetableEntries.filter((x) => x.id !== tempId);
-					removeOccupancy(tempId);
-					clearPending(tempId);
-					toast.error((e instanceof Error ? e.message : String(e)) || 'ลงตารางไม่สำเร็จ');
-				}
-				return;
-			} else if (dragType === 'MOVE' && entryId) {
-				// UPDATE EXISTING — optimistic move + WS intent broadcast
-				const courseName = course.subject_code || course.title || 'รายการ';
-
-				const payload = {
-					day_of_week: day,
-					period_id: periodId,
-					room_id: roomId
-				};
-
-				const original = snapshotPosition(entryId);
-				if (original) optimisticSnapshots.set(entryId, original);
-				markPending(entryId);
-				// Optimistic mutation
-				applyEntryMutation(entryId, {
-					day_of_week: day as TimetableEntry['day_of_week'],
-					period_id: periodId,
-					room_id: roomId
-				});
-				// Broadcast intent → คนอื่นเห็น optimistic ทันที
-				sendDropIntent({
-					kind: 'move',
-					entry_id: entryId,
-					day_of_week: day,
-					period_id: periodId,
-					room_id: roomId ?? null
-				});
-				submitting = false;
-				pendingDropContext = null;
-				isDropPending = false;
-				handleDragEnd();
-				try {
-					const res = await updateTimetableEntry(entryId, payload);
-					if (res.success === false) {
-						if (original) {
-							applyEntryMutation(entryId, {
-								day_of_week: original.day_of_week as TimetableEntry['day_of_week'],
-								period_id: original.period_id,
-								room_id: original.room_id ?? undefined
-							});
-						}
-						clearPending(entryId);
-						const msgs = (res.conflicts ?? []).map((c) => c.message).filter(Boolean);
-						toast.error(msgs.length > 0 ? msgs.join(' · ') : 'ย้ายไม่สำเร็จ');
-					} else {
-						// API success = confirm
-						clearPending(entryId);
-						toast.success(`ย้าย ${courseName} สำเร็จ`);
-					}
-				} catch (e: unknown) {
-					if (original) {
-						applyEntryMutation(entryId, {
-							day_of_week: original.day_of_week as TimetableEntry['day_of_week'],
-							period_id: original.period_id,
-							room_id: original.room_id ?? undefined
-						});
-					}
-					clearPending(entryId);
-					toast.error((e instanceof Error ? e.message : String(e)) || 'ย้ายไม่สำเร็จ');
-				}
-				return;
+			const years = await listAcademicYears();
+			if (!years.some((year) => year.id === yearId)) throw new Error('ไม่พบปีการศึกษาที่เลือก');
+			schedules = await listBellSchedules(yearId);
+			const preferredSchedule = schedules.find((schedule) => schedule.isDefault) ?? schedules[0];
+			selectedScheduleId = preferredSchedule?.id ?? '';
+			periods = [];
+			if (preferredSchedule) await loadPeriods(preferredSchedule.id);
+			offerings = await listLearningOfferings(termId);
+			const loadedGroups: LearningGroup[] = [];
+			for (const offering of offerings) {
+				const offeringGroups = await listLearningGroups(offering.id);
+				loadedGroups.push(...offeringGroups);
 			}
-		} catch (e: unknown) {
-			toast.error((e instanceof Error ? e.message : String(e)) || 'บันทึกไม่สำเร็จ');
+			groups = loadedGroups;
+			homerooms = await listHomerooms(yearId);
+			rooms = await lookupRooms({ activeOnly: true, limit: 500 });
+			entries = await listTimetableEntries({ academicTermId: termId });
+			if (current !== revision) return;
+			viewKind = groups.length > 0 ? 'learning_group' : 'homeroom';
+			selectedTargetId = groups[0]?.id ?? homerooms[0]?.id ?? '';
+			resetForm();
+		} catch (error) {
+			if (current === revision) {
+				errorMessage = error instanceof Error ? error.message : 'โหลดพื้นที่จัดตารางสอนไม่สำเร็จ';
+			}
 		} finally {
-			// Notify others
-			// Backend broadcasts patch event ให้แล้ว — ไม่ต้องส่ง TableRefresh ซ้ำ
-
-			submitting = false;
-			pendingDropContext = null;
-			isDropPending = false;
-			handleDragEnd();
+			if (current === revision) loading = false;
 		}
 	}
 
-	async function handleExportPDF() {
-		if (!canReadTimetable) return;
-		showExportModal = true;
-		// Default to current view settings
-		exportType = viewMode;
-		exportTargetIds = [];
-		if (viewMode === 'CLASSROOM' && selectedClassroomId) {
-			exportTargetIds = [selectedClassroomId];
-		} else if (viewMode === 'INSTRUCTOR' && selectedInstructorId) {
-			exportTargetIds = [selectedInstructorId];
-		}
+	async function refreshEntries(): Promise<void> {
+		if (!academicTermId) return;
+		entries = await listTimetableEntries({ academicTermId });
 	}
 
-	async function confirmExport() {
-		if (!canReadTimetable) return;
-		if (exportTargetIds.length === 0) return;
-
+	async function changeSchedule(event: Event): Promise<void> {
+		const nextId = (event.currentTarget as HTMLSelectElement).value;
+		if (dirty) {
+			(event.currentTarget as HTMLSelectElement).value = selectedScheduleId;
+			toast.warning('กรุณาบันทึกหรือยกเลิกแบบร่างก่อนเปลี่ยนตารางเวลา');
+			return;
+		}
+		selectedScheduleId = nextId;
+		loading = true;
 		try {
-			isExporting = true;
+			await loadPeriods(nextId);
+			resetForm();
+		} finally {
+			loading = false;
+		}
+	}
 
-			const semesterName = semesters.find((s) => s.id === selectedSemesterId)?.term || '';
-			const yearObj = academicYears.find((y) => y.id === selectedYearId);
-			const yearName = (yearObj?.name || '').replace('ปีการศึกษา', '').trim();
-			const subTitle = `ภาคเรียนที่ ${semesterName} ปีการศึกษา ${yearName}`;
+	function changeViewKind(nextKind: ViewKind): void {
+		if (dirty) {
+			toast.warning('กรุณาบันทึกหรือยกเลิกแบบร่างก่อนเปลี่ยนมุมมอง');
+			return;
+		}
+		viewKind = nextKind;
+		selectedTargetId =
+			nextKind === 'learning_group' ? (groups[0]?.id ?? '') : (homerooms[0]?.id ?? '');
+		resetForm();
+	}
 
-			// id → name_th สำหรับให้ PDF แสดงชื่อห้องเต็ม (เหมือนหน้าเว็บ) แทน room_code
-			const roomNames = Object.fromEntries(rooms.map((r) => [r.id, r.name_th]));
+	function changeTarget(event: Event): void {
+		if (dirty) {
+			(event.currentTarget as HTMLSelectElement).value = selectedTargetId;
+			toast.warning('กรุณาบันทึกหรือยกเลิกแบบร่างก่อนเปลี่ยนกลุ่ม');
+			return;
+		}
+		selectedTargetId = (event.currentTarget as HTMLSelectElement).value;
+		resetForm();
+	}
 
-			// fetch entries ของทุก target พร้อมกัน แล้วรวมเป็น pages เดียวสำหรับ PDF
-			const pagePromises = exportTargetIds.map(async (id) => {
-				let entries: TimetableEntry[] = [];
-				let title = '';
+	function resetForm(): void {
+		selectedEntryId = '';
+		formDay = activeDays[0]?.value ?? 'MON';
+		formPeriodId = periods[0]?.id ?? '';
+		formRoomId = '';
+		formEntryType = viewKind === 'learning_group' ? 'COURSE' : 'HOMEROOM';
+		formTitle = '';
+		formNote = '';
+		dirty = false;
+	}
 
-				if (exportType === 'CLASSROOM') {
-					const room = classrooms.find((c) => c.id === id);
-					if (!room) return null;
-					let roomName = room.name;
-					if (roomName.startsWith('ม.')) roomName = roomName.replace('ม.', 'มัธยมศึกษาปีที่ ');
-					else if (roomName.startsWith('ป.')) roomName = roomName.replace('ป.', 'ประถมศึกษาปีที่ ');
-					else if (roomName.startsWith('อ.')) roomName = roomName.replace('อ.', 'อนุบาลปีที่ ');
-					else if (/^\d/.test(roomName)) roomName = `มัธยมศึกษาปีที่ ${roomName}`;
-					title = `ตารางเรียน ชั้น${roomName}`;
-					const res = await listTimetableEntries({
-						classroom_id: id,
-						academic_semester_id: selectedSemesterId
-					});
-					entries = res.data;
-				} else {
-					const teacher = instructors.find((inst) => inst.id === id);
-					if (!teacher) return null;
-					const targetName = teacher.name.startsWith('ครู') ? teacher.name : `ครู${teacher.name}`;
-					title = `ตารางสอน ${targetName}`;
-					const res = await listTimetableEntries({
-						instructor_id: id,
-						academic_semester_id: selectedSemesterId
-					});
-					entries = res.data;
-				}
+	function startAtCell(day: string, periodId: string): void {
+		if (!canManage) return;
+		resetForm();
+		formDay = day;
+		formPeriodId = periodId;
+		dirty = true;
+	}
 
-				return {
-					title,
-					subTitle,
-					periods,
-					timetableEntries: entries,
-					viewMode: exportType,
-					roomNames
-				};
-			});
+	function editEntry(entry: TimetableEntry): void {
+		selectedEntryId = entry.id;
+		formDay = entry.dayOfWeek;
+		formPeriodId = entry.bellSchedulePeriodId;
+		formRoomId = entry.roomId ?? '';
+		formEntryType = entry.entryType as EntryType;
+		formTitle = entry.title ?? '';
+		formNote = entry.note ?? '';
+		dirty = false;
+	}
 
-			const results = await Promise.all(pagePromises);
-			const pages = results.filter((p): p is NonNullable<typeof p> => p !== null);
+	function markDirty(): void {
+		dirty = true;
+	}
 
-			if (pages.length === 0) {
-				toast.error('ไม่พบข้อมูลสำหรับรายการที่เลือก');
-				return;
-			}
-
-			// ตั้งชื่อไฟล์: รูปแบบ "[ตารางเรียน/สอน] [id] ภาคเรียนที่ X ปีการศึกษา Y (ชนิด layout)"
-			// (replace "/" เป็น "-" กัน filesystem มีปัญหา)
-			const subjectKind = exportType === 'CLASSROOM' ? 'ตารางเรียน' : 'ตารางสอน';
-			const semYearStr = `ภาคเรียนที่ ${semesterName} ปีการศึกษา ${yearName}`;
-			const layoutTag = exportLayout === 'full' ? '1ต่อหน้า' : 'หลายต่อหน้า';
-			let identifier: string;
-			if (pages.length === 1) {
-				const targetId = exportTargetIds[0];
-				if (exportType === 'CLASSROOM') {
-					const room = classrooms.find((c) => c.id === targetId);
-					identifier = (room?.name || '').replace(/\//g, '-');
-				} else {
-					const teacher = instructors.find((inst) => inst.id === targetId);
-					const tName = teacher?.name || '';
-					identifier = tName.startsWith('ครู') ? tName : `ครู${tName}`;
-				}
+	async function saveEntry(): Promise<void> {
+		if (!academicTermId || !selectedTargetId || !formPeriodId) return;
+		busy = true;
+		errorMessage = '';
+		try {
+			if (selectedEntry) {
+				await updateTimetableEntry(selectedEntry.id, {
+					rowVersion: selectedEntry.rowVersion,
+					dayOfWeek: formDay,
+					bellSchedulePeriodId: formPeriodId,
+					roomId: formRoomId || null,
+					clearRoom: !formRoomId,
+					note: formNote.trim() || null,
+					clearNote: !formNote.trim(),
+					title: formTitle.trim() || null
+				});
 			} else {
-				identifier = `${pages.length}${exportType === 'CLASSROOM' ? 'ห้อง' : 'คน'}`;
+				const selectedGroup = groups.find((group) => group.id === selectedTargetId);
+				await createTimetableEntry({
+					academicTermId,
+					learningGroupId: viewKind === 'learning_group' ? selectedTargetId : null,
+					homeroomId: viewKind === 'homeroom' ? selectedTargetId : null,
+					dayOfWeek: formDay,
+					bellSchedulePeriodId: formPeriodId,
+					roomId: formRoomId || null,
+					note: formNote.trim() || null,
+					entryType: formEntryType,
+					title: formTitle.trim() || null,
+					instructorIds: selectedGroup?.teacherAssignments.map((teacher) => teacher.teacherId) ?? []
+				});
 			}
-			const fileName = `${subjectKind} ${identifier} ${semYearStr} (${layoutTag})`;
-
-			await generateTimetablePDF(pages, fileName, { layout: exportLayout });
-
-			toast.success(
-				pages.length === 1
-					? 'ดาวน์โหลดเสร็จสิ้น'
-					: `ดาวน์โหลดไฟล์รวม ${pages.length} รายการเสร็จสิ้น`
-			);
-			showExportModal = false;
-		} catch (e: unknown) {
-			toast.error('เกิดข้อผิดพลาดในการดาวน์โหลด');
-			console.error(e);
+			await refreshEntries();
+			resetForm();
+			toast.success('บันทึกคาบในตารางแล้ว');
+		} catch (error) {
+			errorMessage = error instanceof Error ? error.message : 'บันทึกคาบไม่สำเร็จ';
+			toast.error(errorMessage);
 		} finally {
-			isExporting = false;
+			busy = false;
+		}
+	}
+
+	async function removeEntry(): Promise<void> {
+		if (!selectedEntry) return;
+		busy = true;
+		try {
+			await deleteTimetableEntry(selectedEntry.id, selectedEntry.rowVersion);
+			await refreshEntries();
+			resetForm();
+			toast.success('ลบคาบออกจากตารางแล้ว');
+		} catch (error) {
+			errorMessage = error instanceof Error ? error.message : 'ลบคาบไม่สำเร็จ';
+			toast.error(errorMessage);
+		} finally {
+			busy = false;
 		}
 	}
 
 	const teacherLoadFontName = 'TH Sarabun New';
 
-	function appendTeacherLoadSummarySheet(workbook: Workbook, exportRows: TeacherLoadExportRows) {
-		const worksheet = workbook.addWorksheet('สรุปต่อครู');
-		worksheet.columns = calculateTeacherLoadColumnWidths(
-			exportRows.summarySheetRows,
-			TEACHER_LOAD_SUMMARY_COLUMN_WIDTH_OPTIONS
-		).map((width) => ({ width }));
-		styleTeacherLoadWorksheet(worksheet);
-
-		styleTeacherLoadHeaderRow(
-			worksheet.addRow([
-				'กลุ่มสาระครู',
-				'ครูผู้สอน',
-				'วิชาในกลุ่มสาระ (ครูหลัก)',
-				'วิชาในกลุ่มสาระ (ครูรอง)',
-				'วิชานอกกลุ่มสาระ (ครูหลัก)',
-				'วิชานอกกลุ่มสาระ (ครูรอง)',
-				'กิจกรรม independent',
-				'กิจกรรม synchronized',
-				'กิจกรรมไม่ระบุประเภท',
-				'รวม'
-			])
-		);
-
-		for (const group of exportRows.summaryGroups) {
-			const groupRow = worksheet.addRow([
-				`กลุ่มสาระ: ${group.subjectGroupName}`,
-				'',
-				group.totals.homeGroupPrimaryCoursePeriods,
-				group.totals.homeGroupSecondaryCoursePeriods,
-				group.totals.sharedPrimaryCoursePeriods,
-				group.totals.sharedSecondaryCoursePeriods,
-				group.totals.independentActivityPeriods,
-				group.totals.synchronizedActivityPeriods,
-				group.totals.unspecifiedActivityPeriods,
-				group.totals.totalPeriods
-			]);
-			worksheet.mergeCells(groupRow.number, 1, groupRow.number, 2);
-			styleTeacherLoadGroupRow(groupRow, 10);
-
-			for (const row of group.rows) {
-				styleTeacherLoadRow(
-					worksheet.addRow([
-						row.teacherSubjectGroupName,
-						row.teacherName,
-						row.homeGroupPrimaryCoursePeriods,
-						row.homeGroupSecondaryCoursePeriods,
-						row.sharedPrimaryCoursePeriods,
-						row.sharedSecondaryCoursePeriods,
-						row.independentActivityPeriods,
-						row.synchronizedActivityPeriods,
-						row.unspecifiedActivityPeriods,
-						row.totalPeriods
-					])
-				);
-			}
-		}
-
-		worksheet.views = [{ state: 'frozen', ySplit: 1 }];
-		worksheet.pageSetup = {
-			orientation: 'landscape',
-			fitToPage: true,
-			fitToWidth: 1,
-			fitToHeight: 0
-		};
-	}
-
-	function appendTeacherLoadDetailSheet(workbook: Workbook, exportRows: TeacherLoadExportRows) {
-		const worksheet = workbook.addWorksheet('รายละเอียด');
-		worksheet.columns = calculateTeacherLoadColumnWidths(
-			exportRows.detailSheetRows,
-			TEACHER_LOAD_DETAIL_COLUMN_WIDTH_OPTIONS
-		).map((width) => ({ width }));
-		styleTeacherLoadWorksheet(worksheet);
-
-		styleTeacherLoadHeaderRow(
-			worksheet.addRow([
-				'กลุ่มสาระครู',
-				'ครูผู้สอน',
-				'กลุ่มสาระรายการ',
-				'ประเภท',
-				'วัน',
-				'คาบ',
-				'เวลา',
-				'ห้อง',
-				'รายการ'
-			])
-		);
-
-		for (const group of exportRows.detailGroups) {
-			const groupRow = worksheet.addRow([`กลุ่มสาระ: ${group.subjectGroupName}`]);
-			worksheet.mergeCells(groupRow.number, 1, groupRow.number, 9);
-			styleTeacherLoadGroupRow(groupRow, 9);
-
-			for (const row of group.rows) {
-				styleTeacherLoadRow(
-					worksheet.addRow([
-						row.teacherSubjectGroupName,
-						row.teacherName,
-						row.subjectGroupName,
-						row.categoryLabel,
-						row.dayLabel,
-						row.periodName,
-						row.timeLabel,
-						row.classroomName,
-						row.title
-					])
-				);
-			}
-		}
-
-		worksheet.views = [{ state: 'frozen', ySplit: 1 }];
-		worksheet.pageSetup = {
-			orientation: 'landscape',
-			fitToPage: true,
-			fitToWidth: 1,
-			fitToHeight: 0
-		};
-	}
-
-	function styleTeacherLoadWorksheet(worksheet: Worksheet) {
-		worksheet.properties.defaultRowHeight = 24;
-	}
-
-	function styleTeacherLoadRow(row: Row) {
-		row.eachCell((cell) => styleTeacherLoadCell(cell));
-	}
-
-	function styleTeacherLoadCell(cell: Cell) {
-		cell.font = { name: teacherLoadFontName, size: 16 };
+	function styleTeacherLoadCell(cell: Cell, emphasized = false): void {
+		cell.font = { name: teacherLoadFontName, size: 16, bold: emphasized };
 		cell.alignment = { vertical: 'middle', wrapText: true };
 		cell.border = {
 			top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
@@ -2588,27 +368,87 @@
 		};
 	}
 
-	function styleTeacherLoadHeaderRow(row: Row) {
-		row.height = 28;
-		row.eachCell((cell) => {
-			styleTeacherLoadCell(cell);
-			cell.font = { name: teacherLoadFontName, size: 16, bold: true };
-			cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-			cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
+	function styleTeacherLoadRow(row: Row, kind: 'header' | 'group' | 'detail'): void {
+		row.height = kind === 'header' ? 28 : 24;
+		row.eachCell({ includeEmpty: true }, (cell) => {
+			styleTeacherLoadCell(cell, kind !== 'detail');
+			if (kind !== 'detail') {
+				cell.fill = {
+					type: 'pattern',
+					pattern: 'solid',
+					fgColor: { argb: kind === 'header' ? 'FFE2E8F0' : 'FFF1F5F9' }
+				};
+			}
 		});
 	}
 
-	function styleTeacherLoadGroupRow(row: Row, columnCount: number) {
-		row.height = 26;
-		for (let columnIndex = 1; columnIndex <= columnCount; columnIndex += 1) {
-			const cell = row.getCell(columnIndex);
-			styleTeacherLoadCell(cell);
-			cell.font = { name: teacherLoadFontName, size: 16, bold: true };
-			cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+	function appendTeacherLoadSheet(
+		workbook: Workbook,
+		name: string,
+		rows: Array<Array<string | number>>,
+		widthOptions:
+			| typeof TEACHER_LOAD_SUMMARY_COLUMN_WIDTH_OPTIONS
+			| typeof TEACHER_LOAD_DETAIL_COLUMN_WIDTH_OPTIONS
+	): Worksheet {
+		const worksheet = workbook.addWorksheet(name);
+		worksheet.columns = calculateTeacherLoadColumnWidths(rows, widthOptions).map((width) => ({
+			width
+		}));
+		worksheet.properties.defaultRowHeight = 24;
+
+		for (const [index, values] of rows.entries()) {
+			const row = worksheet.addRow(values);
+			const firstCell = String(values[0] ?? '');
+			styleTeacherLoadRow(
+				row,
+				index === 0 ? 'header' : firstCell.startsWith('กลุ่มสาระ:') ? 'group' : 'detail'
+			);
 		}
+
+		worksheet.views = [{ state: 'frozen', ySplit: 1 }];
+		worksheet.pageSetup = {
+			orientation: 'landscape',
+			fitToPage: true,
+			fitToWidth: 1,
+			fitToHeight: 0
+		};
+		return worksheet;
 	}
 
-	function saveTeacherLoadWorkbookBuffer(buffer: ArrayBuffer, fileName: string) {
+	function appendTeacherLoadSummarySheet(
+		workbook: Workbook,
+		exportRows: TeacherLoadExportRows
+	): void {
+		appendTeacherLoadSheet(
+			workbook,
+			'สรุปต่อครู',
+			exportRows.summarySheetRows,
+			TEACHER_LOAD_SUMMARY_COLUMN_WIDTH_OPTIONS
+		);
+	}
+
+	function appendTeacherLoadDetailSheet(
+		workbook: Workbook,
+		exportRows: TeacherLoadExportRows
+	): void {
+		appendTeacherLoadSheet(
+			workbook,
+			'รายละเอียด',
+			exportRows.detailSheetRows,
+			TEACHER_LOAD_DETAIL_COLUMN_WIDTH_OPTIONS
+		);
+	}
+
+	function safeFileName(value: string): string {
+		return (
+			value
+				.replace(/[\\/:*?"<>|]/g, '-')
+				.replace(/\s+/g, ' ')
+				.trim() || 'สรุปคาบสอนครู'
+		);
+	}
+
+	function saveTeacherLoadWorkbookBuffer(buffer: ArrayBuffer, fileName: string): void {
 		const blob = new Blob([buffer], {
 			type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 		});
@@ -2622,25 +462,16 @@
 		URL.revokeObjectURL(url);
 	}
 
-	async function handleExportTeacherLoadXlsx() {
-		if (!canReadTimetable) return;
-		if (!selectedSemesterId) {
-			toast.error('กรุณาเลือกภาคเรียน');
+	async function handleExportTeacherLoadXlsx(): Promise<void> {
+		if (!academicTermId || isTeacherLoadExporting) return;
+		const exportRows = buildTeacherLoadExportRows(entries);
+		if (exportRows.summaryRows.length === 0) {
+			toast.error('ไม่พบคาบสอนสำหรับภาคเรียนนี้');
 			return;
 		}
 
+		isTeacherLoadExporting = true;
 		try {
-			isTeacherLoadExporting = true;
-			const res = await listTimetableEntries({
-				academic_semester_id: selectedSemesterId
-			});
-			const exportRows = buildTeacherLoadExportRows(res.data);
-
-			if (exportRows.summaryRows.length === 0) {
-				toast.error('ไม่พบคาบสอนสำหรับภาคเรียนนี้');
-				return;
-			}
-
 			const ExcelJSModule = await import('exceljs');
 			const ExcelJS = ExcelJSModule.default;
 			const workbook = new ExcelJS.Workbook();
@@ -2650,2942 +481,379 @@
 			appendTeacherLoadSummarySheet(workbook, exportRows);
 			appendTeacherLoadDetailSheet(workbook, exportRows);
 
-			const semesterName = semesters.find((s) => s.id === selectedSemesterId)?.term || '';
-			const yearObj = academicYears.find((y) => y.id === selectedYearId);
-			const yearName = (yearObj?.name || '').replace('ปีการศึกษา', '').trim();
-			const fileName = safeFileName(
-				`สรุปคาบสอนครู-ภาคเรียนที่ ${semesterName}-ปีการศึกษา ${yearName}`
+			const selectedTerm = $academicContext.options?.terms.find(
+				(term) => term.id === academicTermId
 			);
-
+			const selectedYear = $academicContext.options?.years.find(
+				(year) => year.id === academicYearId
+			);
+			const fileName = safeFileName(
+				`สรุปคาบสอนครู-${selectedTerm?.name ?? 'ภาคเรียน'}-${selectedYear?.name ?? 'ปีการศึกษา'}`
+			);
 			const buffer = await workbook.xlsx.writeBuffer();
 			saveTeacherLoadWorkbookBuffer(buffer, `${fileName}.xlsx`);
 			toast.success(`ดาวน์โหลดสรุปคาบสอน ${exportRows.summaryRows.length} คนแล้ว`);
-		} catch (e: unknown) {
-			console.error(e);
+		} catch (error) {
+			console.error('Failed to export teacher load workbook', error);
 			toast.error('ส่งออกสรุปคาบสอนไม่สำเร็จ');
 		} finally {
 			isTeacherLoadExporting = false;
 		}
 	}
 
-	function safeFileName(value: string): string {
-		return (
-			value
-				.replace(/[\\/:*?"<>|]/g, '-')
-				.replace(/\s+/g, ' ')
-				.trim() || 'สรุปคาบสอนครู'
-		);
-	}
+	onMount(() => {
+		let selectedTermId = '';
+		let selectedYearId = '';
+		let currentUserId = '';
+		let loadedContextKey = '';
+		let connectedSocketKey = '';
+		let observedRefresh: number | null = null;
 
-	let unscheduledCourses = $derived.by(() => {
-		// ในมุมมองครูใช้ rawTeamEntries (รวม ghost) เพื่อให้นับครบทุก cell ของ course
-		// ไม่ได้นับเฉพาะ cell ที่ตัวเองอยู่ใน tei — ป้องกัน drag ซ้ำแล้วเกินคาบ
-		const sourceEntries = viewMode === 'INSTRUCTOR' ? rawTeamEntries : timetableEntries;
-		const courseCounts = new SvelteMap<string, number>();
-		sourceEntries.forEach((entry) => {
-			if (entry.classroom_course_id) {
-				const count = courseCounts.get(entry.classroom_course_id) || 0;
-				courseCounts.set(entry.classroom_course_id, count + 1);
+		function synchronizeContext() {
+			if (!selectedTermId || !selectedYearId) return;
+			const contextKey = `${selectedYearId}:${selectedTermId}`;
+			if (contextKey !== loadedContextKey) {
+				loadedContextKey = contextKey;
+				void loadWorkspace(selectedTermId, selectedYearId);
 			}
+			if (!currentUserId) return;
+			const socketKey = `${selectedTermId}:${currentUserId}`;
+			if (socketKey !== connectedSocketKey) {
+				connectedSocketKey = socketKey;
+				connectTimetableSocket({ academicTermId: selectedTermId, currentUserId });
+			}
+		}
+
+		const unregisterDirty = registerAcademicContextDirtySource('academic-timetable', () => dirty);
+		const unsubscribeContext = academicContext.subscribe((state) => {
+			selectedTermId = state.selected.academicTermId ?? '';
+			selectedYearId = state.selected.academicYearId ?? '';
+			synchronizeContext();
 		});
-
-		return courses
-			.map((course) => {
-				const scheduled = courseCounts.get(course.id) || 0;
-				const credit = course.subject_credit || 0;
-				const hours = course.subject_hours;
-				// Explicit 0 = วิชานี้ไม่ต้องจัดตาราง (เก็บคะแนนอย่างเดียว) → maxPeriods = 0
-				// null/undefined → fallback คำนวณจาก credit
-				// >0 → คำนวณจาก hours/20
-				const maxPeriods =
-					hours === 0
-						? 0
-						: hours && hours > 0
-							? Math.ceil(hours / 20)
-							: credit > 0
-								? Math.ceil(credit * 2)
-								: 3;
-
-				return {
-					...course,
-					scheduled_count: scheduled,
-					max_periods: maxPeriods,
-					is_completed: maxPeriods === 0 || scheduled >= maxPeriods
-				};
-			})
-			.filter((c) => !c.is_completed)
-			.sort((a, b) => {
-				// Sort by code?
-				return (a.subject_code ?? '').localeCompare(b.subject_code ?? '');
-			});
-	});
-
-	$effect(() => {
-		if (selectedYearId) {
-			if (!canReadTimetable) return;
-			loadClassrooms();
-			loadPeriods();
-
-			const yearSemesters = allSemesters.filter((s) => s.academic_year_id === selectedYearId);
-			if (!yearSemesters.find((s) => s.id === selectedSemesterId)) {
-				const activeOrFirst = yearSemesters.find((s) => s.is_active) || yearSemesters[0];
-				selectedSemesterId = activeOrFirst ? activeOrFirst.id : '';
-			}
-		}
-	});
-
-	type UnscheduledActivity = ActivitySlot & {
-		scheduled_count: number;
-		max_periods: number;
-		is_completed: boolean;
-		is_draggable: boolean;
-		_classroom_id?: string;
-		_classroom_name?: string;
-	};
-
-	let unscheduledActivities: UnscheduledActivity[] = $derived.by(() => {
-		if (viewMode === 'INSTRUCTOR') {
-			const items: UnscheduledActivity[] = [];
-
-			// Synchronized: count unique (day, period) ต่อ slot
-			// (1 คาบ logical = N entries ของ N ห้อง — นับเป็น 1)
-			for (const slot of sidebarActivitySlots) {
-				const maxPeriods = slot.periods_per_week ?? 0;
-				const seen = new SvelteSet<string>();
-				for (const entry of timetableEntries) {
-					if (entry.activity_slot_id === slot.id) {
-						seen.add(`${entry.day_of_week}:${entry.period_id}`);
-					}
-				}
-				const scheduled = seen.size;
-				if (scheduled < maxPeriods) {
-					items.push({
-						...slot,
-						scheduled_count: scheduled,
-						max_periods: maxPeriods,
-						is_completed: false,
-						is_draggable: false,
-						_classroom_id: undefined,
-						_classroom_name: undefined
-					});
-				}
-			}
-
-			// Independent items per classroom (draggable) — นับ entries ตรง ๆ ต่อ slot+classroom
-			const indepCounts = new SvelteMap<string, number>();
-			for (const entry of timetableEntries) {
-				if (entry.activity_slot_id && entry.classroom_id) {
-					const key = `${entry.activity_slot_id}:${entry.classroom_id}`;
-					indepCounts.set(key, (indepCounts.get(key) || 0) + 1);
-				}
-			}
-			for (const item of instructorActivityItems) {
-				const key = `${item.slot.id}:${item.classroom_id}`;
-				const scheduled = indepCounts.get(key) || 0;
-				const maxPeriods = item.slot.periods_per_week ?? 0;
-				if (scheduled < maxPeriods) {
-					items.push({
-						...item.slot,
-						// เก็บ name เดิม (ไม่ใส่ " — ห้อง") — สำหรับใช้เป็น title ของ entry ตอน drop
-						// sidebar UI จะใส่ห้องตาม _classroom_name แยก
-						scheduled_count: scheduled,
-						max_periods: maxPeriods,
-						is_completed: false,
-						is_draggable: true,
-						_classroom_id: item.classroom_id,
-						_classroom_name: item.classroom_name
-					});
-				}
-			}
-
-			return items;
-		}
-
-		// CLASSROOM view: 1 entry = 1 คาบ (entries ถูก filter เหลือห้องเดียวอยู่แล้ว)
-		const slotCounts = new SvelteMap<string, number>();
-		timetableEntries.forEach((entry) => {
-			if (entry.activity_slot_id) {
-				slotCounts.set(entry.activity_slot_id, (slotCounts.get(entry.activity_slot_id) || 0) + 1);
-			}
+		const unsubscribeAuth = authStore.subscribe((state) => {
+			currentUserId = state.user?.id ?? '';
+			synchronizeContext();
 		});
-
-		return sidebarActivitySlots
-			.map((slot) => {
-				const scheduled = slotCounts.get(slot.id) || 0;
-				const maxPeriods = slot.periods_per_week ?? 0;
-				return {
-					...slot,
-					scheduled_count: scheduled,
-					max_periods: maxPeriods,
-					is_completed: scheduled >= maxPeriods,
-					is_draggable: slot.scheduling_mode === 'independent',
-					_classroom_id: undefined as string | undefined,
-					_classroom_name: undefined as string | undefined
-				};
-			})
-			.filter((s) => !s.is_completed);
-	});
-
-	$effect(() => {
-		const requestKey = currentSelectionRequestKey();
-		if (!canReadTimetable) {
-			clearSelectionData();
-			return;
-		}
-		if (!requestKey) {
-			clearSelectionData();
-			return;
-		}
-
-		void loadSelectionData();
-
-		const user = $authStore.user;
-		if (user) {
-			const selectedViewId = viewMode === 'CLASSROOM' ? selectedClassroomId : selectedInstructorId;
-			sendTimetableEvent({
-				type: 'CursorMove',
-				payload: {
-					user_id: user.id,
-					x: 0,
-					y: 0,
-					context: {
-						view_mode: viewMode,
-						view_id: selectedViewId
-					}
-				}
-			});
-		}
-	});
-
-	// Batch Assign State
-	let showBatchModal = $state(false);
-	// Batch summary dialog (after backend response — show inserted/skipped/blocked/deleted)
-	let showBatchSummary = $state(false);
-	let batchSummary = $state<BatchSummary | null>(null);
-	let batchClassrooms = $state<string[]>([]);
-	let batchInstructors = $state<string[]>([]);
-	let batchDays = $state<string[]>(['MON']);
-	let batchPeriodIds = $state<string[]>([]);
-	let batchType = $state('ACTIVITY');
-	let batchTitle = $state('');
-	let batchRoomId = $state('none');
-
-	// Batch Mode State
-	let batchMode = $state<'TEXT' | 'SLOT'>('TEXT');
-
-	// Activity Slot mode
-	let activitySlots = $state<ActivitySlot[]>([]);
-	let batchSlotId = $state('');
-	let loadingSlots = $state(false);
-	// SLOT mode: auto-populate ห้อง + ครู จาก slot metadata เมื่อเลือก slot
-	// (user สามารถ uncheck ได้ถ้าอยากเอาออก)
-	$effect(() => {
-		const sid = batchSlotId;
-		if (canManageTimetable && batchMode === 'SLOT' && sid && showBatchModal) {
-			const slot = activitySlots.find((s) => s.id === sid);
-			if (slot?.classroom_ids) {
-				batchClassrooms = [...slot.classroom_ids];
-			}
-			batchInstructors = (activityTimetableContext?.instructorsBySlot[sid] ?? []).map(
-				(instructor) => instructor.user_id
-			);
-		}
-	});
-
-	async function ensureActivitySlotsLoaded() {
-		if (!canManageTimetable) return;
-		if (
-			!selectedSemesterId ||
-			(activityContextSemesterId === selectedSemesterId && activityTimetableContext)
-		)
-			return;
-		const semesterId = selectedSemesterId;
-		loadingSlots = true;
-		try {
-			const res = await requestCoordinator.run('activity-context', semesterId, (signal) =>
-				getActivitySlotTimetableContext(semesterId, { signal })
-			);
-			if (selectedSemesterId !== semesterId) return;
-			activityTimetableContext = res.data;
-			activityContextSemesterId = semesterId;
-			replaceSvelteMap(
-				activityInstructorMap,
-				activityInstructorEntries(res.data.classroomAssignmentsBySlot)
-			);
-			// Batch รองรับเฉพาะ synchronized (ต้องตรงกันทุกห้อง)
-			// Independent → ลากทีละห้องจาก sidebar ไม่ใช่ batch
-			activitySlots = res.data.slots.filter((slot) => slot.scheduling_mode === 'synchronized');
-		} catch (e) {
-			if (isAbortError(e)) return;
-			console.error(e);
-			toast.error('โหลดข้อมูล Activity Slot ไม่สำเร็จ');
-		} finally {
-			loadingSlots = false;
-		}
-	}
-
-	// Filter & Override State
-	let batchGradeLevels = $state<GradeLevelLookupItem[]>([]);
-	let batchGradeFilterId = $state('all');
-	let batchForce = $state(false);
-
-	async function loadBatchGradeLevels() {
-		if (!canManageTimetable) return;
-		if (batchGradeLevels.length > 0) return;
-		try {
-			// Need to pass academic_year_id if possible, or just list all
-			batchGradeLevels = await lookupGradeLevels({ limit: 100, activeOnly: true });
-		} catch (e) {
-			console.error(e);
-		}
-	}
-
-	let filteredBatchClassroomsList = $derived.by(() => {
-		let list = classrooms;
-
-		// SLOT mode: filter เฉพาะห้องที่เข้าร่วม slot จริง (junction) ไม่ใช่ catalog template
-		if (batchMode === 'SLOT' && batchSlotId) {
-			const slot = activitySlots.find((s) => s.id === batchSlotId);
-			if (slot?.classroom_ids) {
-				list = list.filter((c) => slot.classroom_ids!.includes(c.id));
-			}
-		}
-
-		if (batchGradeFilterId !== 'all') {
-			list = list.filter((c) => c.grade_level_id === batchGradeFilterId);
-		}
-
-		return list;
-	});
-
-	function toggleBatchClassroom(id: string) {
-		if (!canManageTimetable) return;
-		if (batchClassrooms.includes(id)) {
-			batchClassrooms = batchClassrooms.filter((c) => c !== id);
-		} else {
-			batchClassrooms = [...batchClassrooms, id];
-		}
-	}
-
-	function selectAllBatchClassrooms() {
-		if (!canManageTimetable) return;
-		// Only select currently filtered items
-		const currentListIds = filteredBatchClassroomsList.map((c) => c.id);
-
-		// If all currently visible are selected -> Deselect All (visible)
-		const allVisibleSelected = currentListIds.every((id) => batchClassrooms.includes(id));
-
-		if (allVisibleSelected) {
-			batchClassrooms = batchClassrooms.filter((id) => !currentListIds.includes(id));
-		} else {
-			// Add missing ones
-			const newIds = currentListIds.filter((id) => !batchClassrooms.includes(id));
-			batchClassrooms = [...batchClassrooms, ...newIds];
-		}
-	}
-
-	async function handleBatchSubmit() {
-		if (!canManageTimetable) return;
-		// SLOT mode: ต้องมีห้อง (ครูมาอัตโนมัติจาก slot); TEXT mode: ห้องหรือครู อย่างน้อย 1
-		if (batchMode === 'SLOT') {
-			if (batchClassrooms.length === 0) {
-				toast.error('กรุณาเลือกห้องเรียนอย่างน้อย 1 ห้อง');
+		const unsubscribeRefresh = refreshTrigger.subscribe((value) => {
+			if (observedRefresh === null) {
+				observedRefresh = value;
 				return;
 			}
-		} else if (batchClassrooms.length === 0 && batchInstructors.length === 0) {
-			toast.error('กรุณาเลือกห้องเรียน หรือ ครู อย่างน้อย 1 อย่าง');
-			return;
-		}
-		if (batchPeriodIds.length === 0) {
-			toast.error('กรุณาเลือกคาบเวลาอย่างน้อย 1 คาบ');
-			return;
-		}
-		if (batchDays.length === 0) {
-			toast.error('กรุณาเลือกวันอย่างน้อย 1 วัน');
-			return;
-		}
-
-		// Validate based on mode
-		if (batchMode === 'TEXT' && !batchTitle) {
-			toast.error('กรุณาระบุชื่อกิจกรรม');
-			return;
-		}
-		if (batchMode === 'SLOT' && !batchSlotId) {
-			toast.error('กรุณาเลือก Activity Slot');
-			return;
-		}
-
-		try {
-			submitting = true;
-
-			let titleToSend = batchTitle;
-			let entryTypeToSend = batchType;
-			let slotIdToSend: string | undefined = undefined;
-
-			if (batchMode === 'SLOT') {
-				const slot = activitySlots.find((s) => s.id === batchSlotId);
-				titleToSend = slot?.name || '';
-				entryTypeToSend = 'ACTIVITY';
-				slotIdToSend = batchSlotId;
+			if (value === observedRefresh) return;
+			observedRefresh = value;
+			if (!selectedTermId || !selectedYearId) return;
+			if (dirty) {
+				toast.warning(
+					'มีการเปลี่ยนแปลงตารางจากผู้ใช้อื่น กรุณาบันทึกหรือยกเลิกแบบร่างก่อนโหลดใหม่'
+				);
+				return;
 			}
-
-			// Backend รับ days_of_week: string[] → call เดียวจบ ทุก entry อยู่ใน batch เดียวกัน
-			// SLOT mode: tei attach ครูใน batchInstructors เข้า classroom entries (ไม่สร้าง
-			// teacher-only entry ซ้ำ — backend ข้ามให้เมื่อ activity_slot_id present)
-			const res = await createBatchTimetableEntries({
-				classroom_ids: batchClassrooms,
-				instructor_ids: batchInstructors,
-				days_of_week: batchDays,
-				period_ids: batchPeriodIds,
-				academic_semester_id: selectedSemesterId,
-				entry_type: entryTypeToSend as 'ACTIVITY' | 'BREAK' | 'HOMEROOM' | 'ACADEMIC',
-				title: titleToSend,
-				room_id: batchRoomId === 'none' ? undefined : batchRoomId,
-				force: batchForce,
-				activity_slot_id: slotIdToSend
-			});
-
-			// New API: summary returned even on success (skipped/blocked/deleted/excluded)
-			if (res.success && res.summary) {
-				batchSummary = res.summary;
-				const s = res.summary;
-				const hasAnyConflict =
-					s.skipped.length > 0 ||
-					s.blocked.length > 0 ||
-					s.deleted.length > 0 ||
-					s.excluded_instructors.length > 0;
-				if (hasAnyConflict) {
-					showBatchSummary = true;
-				} else {
-					toast.success(`บันทึกสำเร็จ ${s.inserted_count} รายการ`);
-				}
-				showBatchModal = false;
-				batchTitle = '';
-				batchSlotId = '';
-				batchInstructors = [];
-				loadTimetable();
-			} else {
-				toast.error(res.message || 'บันทึกไม่สำเร็จ');
-			}
-		} catch (e: unknown) {
-			toast.error((e instanceof Error ? e.message : String(e)) || 'บันทึกไม่สำเร็จ');
-		} finally {
-			submitting = false;
-		}
-	}
-
-	// WebSocket Connection
-	$effect(() => {
-		if (canReadTimetable && selectedSemesterId && realtimeUserId) {
-			connectTimetableSocket({
-				semester_id: selectedSemesterId,
-				current_user_id: realtimeUserId
-			});
-		} else {
-			disconnectTimetableSocket();
-		}
-	});
-
-	onDestroy(() => {
-		requestCoordinator.abortAll();
-		disconnectTimetableSocket();
-	});
-
-	let lastCursorSend = 0;
-	let workspaceRef = $state<HTMLDivElement>();
-	let wsRect = $state<DOMRect | null>(null);
-	function handleMouseMove(e: MouseEvent) {
-		if (!canReadTimetable) return;
-		const now = Date.now();
-		if (now - lastCursorSend > 50 && $authStore.user && workspaceRef) {
-			// 20fps cap
-			lastCursorSend = now;
-
-			// Send percentage coords (0-1) — works across any screen size
-			const rect = workspaceRef.getBoundingClientRect();
-			wsRect = rect;
-			const x = (e.clientX - rect.left) / rect.width;
-			const y = (e.clientY - rect.top) / rect.height;
-
-			const currentViewId = viewMode === 'CLASSROOM' ? selectedClassroomId : selectedInstructorId;
-
-			sendTimetableEvent({
-				type: 'CursorMove',
-				payload: {
-					user_id: $authStore.user.id,
-					x,
-					y,
-					context: {
-						view_mode: viewMode,
-						view_id: currentViewId
-					}
-				}
-			});
-		}
-	}
-
-	let lastDragSend = 0;
-
-	function handleDragMoveOnGrid(e: DragEvent) {
-		if (!canManageTimetable) return;
-		// HTML5 drag event fires during drag — use it to send cursor position
-		if (!draggedCourse || !$authStore.user || !workspaceRef) return;
-		// Chrome sometimes fires drag with clientX=0,clientY=0 — ignore those
-		if (e.clientX === 0 && e.clientY === 0) return;
-
-		const now = Date.now();
-		if (now - lastDragSend < 50) return; // throttle 20fps
-		lastDragSend = now;
-
-		const rect = workspaceRef.getBoundingClientRect();
-		wsRect = rect;
-		const x = (e.clientX - rect.left) / rect.width;
-		const y = (e.clientY - rect.top) / rect.height;
-
-		// Find target cell from element under cursor
-		const el = document.elementFromPoint(e.clientX, e.clientY);
-		const cell = el?.closest('[data-day][data-period]') as HTMLElement | null;
-		const targetDay = cell?.dataset.day;
-		const targetPeriod = cell?.dataset.period;
-
-		sendTimetableEvent({
-			type: 'DragMove',
-			payload: {
-				user_id: $authStore.user.id,
-				x,
-				y,
-				target_day: targetDay,
-				target_period_id: targetPeriod
-			}
+			void loadWorkspace(selectedTermId, selectedYearId);
 		});
-	}
-
-	// Auto Refresh Listener (fallback: TableRefresh หรือ gap-reconcile-refetch)
-	$effect(() => {
-		if (!canReadTimetable) return;
-		if ($refreshTrigger > 0) {
-			console.log('Auto-refreshing timetable...');
-			loadTimetable();
-		}
-	});
-
-	// Patch subscriber — apply realtime patches โดยไม่ต้อง fetch DB
-	$effect(() => {
-		if (!canReadTimetable) return;
-		const patch = $lastPatch;
-		if (!patch) return;
-		applyPatchToState(patch);
-		lastPatch.set(null);
-	});
-
-	function applyPatchToState(patch: TimetablePatch) {
-		// Helper: อัปเดต entry ใน array ทั้ง timetableEntries + rawTeamEntries
-		const updateEntries = (fn: (arr: TimetableEntry[]) => TimetableEntry[]) => {
-			timetableEntries = fn(timetableEntries);
-			rawTeamEntries = fn(rawTeamEntries);
+		return () => {
+			unsubscribeRefresh();
+			unsubscribeAuth();
+			unsubscribeContext();
+			unregisterDirty();
+			disconnectTimetableSocket();
 		};
-
-		switch (patch.type) {
-			case 'EntryCreated': {
-				// Backend ส่ง entry พร้อม joined fields ครบ
-				const created = patch.entry as TimetableEntry;
-				clearPending(created.id);
-
-				// ถ้ามี client_temp_id → เป็น CREATE optimistic ที่เรา push tempEntry ไว้แล้ว → swap
-				if (patch.client_temp_id) {
-					const tempId = patch.client_temp_id;
-					clearPending(tempId);
-					const swapTempToReal = (e: TimetableEntry) => (e.id === tempId ? created : e);
-					if (timetableEntries.some((e) => e.id === tempId)) {
-						timetableEntries = timetableEntries.map(swapTempToReal);
-					}
-					if (rawTeamEntries.some((e) => e.id === tempId)) {
-						rawTeamEntries = rawTeamEntries.map(swapTempToReal);
-					}
-					removeOccupancy(tempId);
-					upsertOccupancy(created);
-					break;
-				}
-
-				upsertOccupancy(created);
-				// เฉพาะ entry ที่เกี่ยวกับ view ปัจจุบันถึงจะ push
-				const relevantForClassroom =
-					viewMode === 'CLASSROOM' && created.classroom_id === selectedClassroomId;
-				const relevantForInstructor =
-					viewMode === 'INSTRUCTOR' &&
-					(created.instructor_ids ?? []).includes(selectedInstructorId);
-				if (relevantForClassroom || relevantForInstructor) {
-					timetableEntries = [...timetableEntries, created];
-				}
-				if (viewMode === 'INSTRUCTOR' && (created.instructor_ids ?? []).length > 0) {
-					// Also keep rawTeamEntries in sync (superset includes ghost cells)
-					const teamMembers = courses.some((c) => c.id === created.classroom_course_id);
-					if (teamMembers) {
-						rawTeamEntries = [...rawTeamEntries, created];
-					}
-				}
-				break;
-			}
-			case 'EntryUpdated': {
-				const updated = patch.entry;
-				clearPending(updated.id);
-				upsertOccupancy(updated);
-				const isRelevant = (e: TimetableEntry) => e.id === updated.id;
-				updateEntries((arr) => {
-					const found = arr.some(isRelevant);
-					if (found) {
-						return arr.map((e) => (isRelevant(e) ? { ...e, ...updated } : e));
-					}
-					// Entry ไม่อยู่ใน state ปัจจุบัน (เช่น view เปลี่ยนไปห้อง/ครูคนอื่น) → ไม่ต้องทำอะไร
-					return arr;
-				});
-				break;
-			}
-			case 'EntryDeleted':
-				clearPending(patch.entry_id);
-				removeOccupancy(patch.entry_id);
-				updateEntries((arr) => arr.filter((e) => e.id !== patch.entry_id));
-				break;
-			case 'EntriesSwapped':
-				// Swap = 2 entries เปลี่ยน day/period — apply ทั้งคู่
-				clearPending(patch.entry_a.id);
-				clearPending(patch.entry_b.id);
-				upsertOccupancy(patch.entry_a);
-				upsertOccupancy(patch.entry_b);
-				updateEntries((arr) =>
-					arr.map((e) => {
-						if (e.id === patch.entry_a.id) return { ...e, ...patch.entry_a };
-						if (e.id === patch.entry_b.id) return { ...e, ...patch.entry_b };
-						return e;
-					})
-				);
-				break;
-			case 'EntryInstructorAdded': {
-				const targetId = patch.entry_id;
-				const newIid = patch.instructor_id;
-				occupancyEntries = occupancyEntries.map((e) =>
-					e.id === targetId ? { ...e, instructor_ids: [...e.instructor_ids, newIid] } : e
-				);
-				updateEntries((arr) =>
-					arr.map((e) => {
-						if (e.id !== targetId) return e;
-						const ids = [...(e.instructor_ids ?? []), newIid];
-						const names = [...(e.instructor_names ?? []), patch.instructor_name];
-						return { ...e, instructor_ids: ids, instructor_names: names };
-					})
-				);
-				break;
-			}
-			case 'EntryInstructorRemoved':
-				if (patch.entry_deleted) {
-					removeOccupancy(patch.entry_id);
-					updateEntries((arr) => arr.filter((e) => e.id !== patch.entry_id));
-				} else {
-					const targetId = patch.entry_id;
-					const removeIid = patch.instructor_id;
-					occupancyEntries = occupancyEntries.map((e) =>
-						e.id === targetId
-							? { ...e, instructor_ids: e.instructor_ids.filter((iid) => iid !== removeIid) }
-							: e
-					);
-					updateEntries((arr) =>
-						arr.map((e) => {
-							if (e.id !== targetId) return e;
-							const idx = e.instructor_ids?.indexOf(removeIid) ?? -1;
-							if (idx < 0) return e;
-							return {
-								...e,
-								instructor_ids: e.instructor_ids!.filter((_, i) => i !== idx),
-								instructor_names: e.instructor_names?.filter((_, i) => i !== idx)
-							};
-						})
-					);
-				}
-				break;
-			case 'CourseTeamChanged':
-				// Team วิชาเปลี่ยน — entries ของ course นั้นทุก cell ต้อง re-fetch เพราะครู array เปลี่ยน
-				// ใช้ TableRefresh fallback
-				refreshTrigger.update((n) => n + 1);
-				break;
-			case 'DropIntent': {
-				// Phase 2: คนอื่น drop เสร็จแล้ว → apply optimistic (รอ EntryUpdated/Swapped/DropRejected)
-				if (patch.user_id === $authStore.user?.id) break; // ตัวเองทำเอง — apply ไปแล้ว
-				const original = snapshotPosition(patch.entry_id);
-				if (original && !optimisticSnapshots.has(patch.entry_id)) {
-					optimisticSnapshots.set(patch.entry_id, original);
-				}
-				markPending(patch.entry_id);
-
-				if (patch.kind === 'replace') {
-					// REPLACE: lookup new course/activity locally → overwrite content fields
-					const newFields = computeReplacementFields({
-						newCourseId: patch.new_classroom_course_id ?? undefined,
-						newActivitySlotId: patch.new_activity_slot_id ?? undefined,
-						newClassroomId: patch.new_classroom_id ?? undefined
-					});
-					applyEntryMutation(patch.entry_id, newFields);
-					const updated =
-						timetableEntries.find((e) => e.id === patch.entry_id) ??
-						rawTeamEntries.find((e) => e.id === patch.entry_id);
-					if (updated) upsertOccupancy(updated);
-				} else {
-					// move/swap: เปลี่ยน day/period/room
-					applyEntryMutation(patch.entry_id, {
-						day_of_week: patch.day_of_week as TimetableEntry['day_of_week'],
-						period_id: patch.period_id,
-						room_id: patch.room_id ?? undefined
-					});
-					if (patch.kind === 'swap' && patch.swap_partner_id) {
-						const partnerOriginal = snapshotPosition(patch.swap_partner_id);
-						if (partnerOriginal && !optimisticSnapshots.has(patch.swap_partner_id)) {
-							optimisticSnapshots.set(patch.swap_partner_id, partnerOriginal);
-						}
-						markPending(patch.swap_partner_id);
-						if (patch.swap_partner_day && patch.swap_partner_period_id) {
-							applyEntryMutation(patch.swap_partner_id, {
-								day_of_week: patch.swap_partner_day as TimetableEntry['day_of_week'],
-								period_id: patch.swap_partner_period_id
-							});
-						}
-					}
-				}
-				break;
-			}
-			case 'EntryIntent': {
-				// คนอื่น drop NEW → render tempEntry จาก local state lookups
-				if (patch.user_id === $authStore.user?.id) break; // ตัวเอง — push ไปแล้ว
-				const tempEntry = buildTempEntry({
-					tempId: patch.temp_id,
-					classroomId: patch.classroom_id,
-					classroomCourseId: patch.classroom_course_id ?? undefined,
-					activitySlotId: patch.activity_slot_id ?? undefined,
-					day: patch.day_of_week as TimetableEntry['day_of_week'],
-					periodId: patch.period_id,
-					roomId: patch.room_id ?? undefined,
-					title: patch.title ?? undefined,
-					entryType: patch.entry_type === 'ACTIVITY' ? 'ACTIVITY' : 'COURSE'
-				});
-				upsertOccupancy(tempEntry);
-				const relevantClassroom =
-					viewMode === 'CLASSROOM' && tempEntry.classroom_id === selectedClassroomId;
-				const relevantInstructor =
-					viewMode === 'INSTRUCTOR' &&
-					(tempEntry.instructor_ids ?? []).includes(selectedInstructorId);
-				if (relevantClassroom || relevantInstructor) {
-					timetableEntries = [...timetableEntries, tempEntry];
-				}
-				// INSTRUCTOR view: $effect derive จาก rawTeamEntries → ต้อง push ที่นี่ด้วย
-				if (viewMode === 'INSTRUCTOR' && relevantInstructor) {
-					rawTeamEntries = [...rawTeamEntries, tempEntry];
-				}
-				markPending(patch.temp_id);
-				break;
-			}
-			case 'EntryRejected': {
-				// CREATE 409 → ลบ tempEntry ทุก client
-				const tempId = patch.temp_id;
-				timetableEntries = timetableEntries.filter((e) => e.id !== tempId);
-				rawTeamEntries = rawTeamEntries.filter((e) => e.id !== tempId);
-				removeOccupancy(tempId);
-				clearPending(tempId);
-				if (patch.user_id === $authStore.user?.id) {
-					toast.error(patch.reason ? `ขัดแย้ง — ${patch.reason}` : 'ลงตารางไม่สำเร็จ');
-				}
-				break;
-			}
-			case 'DropRejected': {
-				// Phase 2: rollback optimistic state (ทุกคนที่เคยรับ DropIntent)
-				const snap = optimisticSnapshots.get(patch.entry_id);
-				if (snap) {
-					applyEntryMutation(patch.entry_id, {
-						day_of_week: snap.day_of_week as TimetableEntry['day_of_week'],
-						period_id: snap.period_id,
-						room_id: snap.room_id ?? undefined
-					});
-				} else if (patch.original_day && patch.original_period_id) {
-					// fallback: ใช้ original จาก server (ถ้าไม่มี local snapshot)
-					applyEntryMutation(patch.entry_id, {
-						day_of_week: patch.original_day as TimetableEntry['day_of_week'],
-						period_id: patch.original_period_id,
-						room_id: patch.original_room_id ?? undefined
-					});
-				}
-				clearPending(patch.entry_id);
-				if (patch.partner_id) {
-					const psnap = optimisticSnapshots.get(patch.partner_id);
-					if (psnap) {
-						applyEntryMutation(patch.partner_id, {
-							day_of_week: psnap.day_of_week as TimetableEntry['day_of_week'],
-							period_id: psnap.period_id,
-							room_id: psnap.room_id ?? undefined
-						});
-					} else if (patch.partner_original_day && patch.partner_original_period_id) {
-						applyEntryMutation(patch.partner_id, {
-							day_of_week: patch.partner_original_day as TimetableEntry['day_of_week'],
-							period_id: patch.partner_original_period_id
-						});
-					}
-					clearPending(patch.partner_id);
-				}
-				// Toast: เฉพาะคนที่ drop (ตอบโจทย์ feedback option b)
-				if (patch.user_id === $authStore.user?.id) {
-					toast.error(patch.reason ? `ขัดแย้ง — ${patch.reason}` : 'การลากถูก reject — ย้อนกลับ');
-				}
-				break;
-			}
-		}
-	}
-
-	function getDragOwner(entryId?: string, courseId?: string) {
-		if (!entryId && !courseId) return null;
-		for (const [userId, drag] of Object.entries($userDrags)) {
-			// Strict check: Only lock if entry_id matches (Move)
-			// or if dragging NEW course (courseId matches, but only if we want to lock new drags?)
-
-			// Request: Don't lock existing entries if dragging NEW course.
-			if (entryId) {
-				// Only lock if someone is dragging THIS SPECIFIC entry (Move)
-				if (drag.entry_id === entryId) return $activeUsers.find((u) => u.user_id === userId);
-			}
-			// If this is a course list item
-			else if (courseId) {
-				// Lock list item if someone is dragging this course
-				if (drag.course_id === courseId && !drag.entry_id)
-					return $activeUsers.find((u) => u.user_id === userId);
-			}
-		}
-		return null;
-	}
-
-	function getRemoteDragHover(day: string, periodId: string) {
-		const myViewId = viewMode === 'CLASSROOM' ? selectedClassroomId : selectedInstructorId;
-		for (const [userId, pos] of Object.entries($dragPositions)) {
-			if (pos.target_day === day && pos.target_period_id === periodId) {
-				const user = $activeUsers.find((u) => u.user_id === userId);
-				const drag = $userDrags[userId];
-				if (!user || !drag) continue;
-				// แสดง drag hover เฉพาะถ้าอยู่ view เดียวกัน
-				// (คนละห้อง/คนละครู/คนละ mode → ไม่ควรเห็น cursor ของกัน)
-				if (user.context?.view_mode !== viewMode || user.context?.view_id !== myViewId) {
-					continue;
-				}
-				return { user, drag };
-			}
-		}
-		return null;
-	}
-
-	onMount(loadInitialData);
+	});
 </script>
-
-<MobileDragDropPolyfill />
 
 <PageShell
 	title="จัดตารางสอน"
-	description="จัดและตรวจสอบตารางเรียนตามห้องเรียนหรือครูผู้สอน"
-	class="flex h-full flex-col"
-	contentClass="min-h-0 flex-1"
+	description="จัดคาบตามกลุ่มเรียนหรือห้องประจำชั้น โดยใช้ตารางเวลาและชุดการเรียนของภาคเรียนที่เลือก"
 >
 	{#snippet actions()}
-		<div class="flex bg-muted p-1 rounded-lg transition-colors">
-			<button
-				class="px-3 py-1 text-sm font-medium rounded transition-all flex items-center gap-2 {viewMode ===
-				'CLASSROOM'
-					? 'bg-background shadow-sm text-foreground'
-					: 'text-muted-foreground hover:text-foreground'}"
-				onclick={() => {
-					viewMode = 'CLASSROOM';
-					courses = [];
-					timetableEntries = [];
-				}}
-			>
-				<School class="w-4 h-4" /> ห้องเรียน
-			</button>
-			<button
-				class="px-3 py-1 text-sm font-medium rounded transition-all flex items-center gap-2 {viewMode ===
-				'INSTRUCTOR'
-					? 'bg-background shadow-sm text-foreground'
-					: 'text-muted-foreground hover:text-foreground'}"
-				onclick={() => {
-					viewMode = 'INSTRUCTOR';
-					courses = [];
-					timetableEntries = [];
-				}}
-			>
-				<Users class="w-4 h-4" /> ครูผู้สอน
-			</button>
-		</div>
-
-		<Tooltip.Provider>
-			<Tooltip.Root>
-				<Tooltip.Trigger>
-					<div
-						class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border bg-white/50 backdrop-blur shadow-sm"
-					>
-						<div
-							class="w-2 h-2 rounded-full {$isConnected
-								? 'bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.6)]'
-								: 'bg-red-500'}"
-						></div>
-						<span class="text-xs font-semibold text-muted-foreground">
-							{$isConnected ? `Online (${$activeUsers.length})` : 'Offline'}
-						</span>
-					</div>
-				</Tooltip.Trigger>
-				<Tooltip.Content>
-					{$isConnected ? `ออนไลน์ ${$activeUsers.length} คน` : 'ไม่ได้เชื่อมต่อ'}
-				</Tooltip.Content>
-			</Tooltip.Root>
-		</Tooltip.Provider>
-
-		{#if $isConnected && $activeUsers.length > 0}
-			<Tooltip.Provider>
-				<div class="flex -space-x-1.5">
-					{#each $activeUsers.slice(0, 4) as user (user.user_id + (user.context?.view_id || ''))}
-						<Tooltip.Root>
-							<Tooltip.Trigger>
-								<button
-									class="w-6 h-6 rounded-full border-2 border-white flex items-center justify-center text-[9px] text-white font-bold ring-1 ring-border/10 shadow-sm transition-transform hover:scale-110 hover:z-10 cursor-pointer"
-									style="background-color: {user.color}"
-									onclick={() => {
-										if (
-											user.context?.view_mode &&
-											(user.context.view_mode === 'CLASSROOM' ||
-												user.context.view_mode === 'INSTRUCTOR')
-										) {
-											viewMode = user.context.view_mode;
-											if (user.context.view_id) {
-												if (viewMode === 'CLASSROOM') selectedClassroomId = user.context.view_id;
-												else selectedInstructorId = user.context.view_id;
-												toast.info(`ย้ายไปดูหน้าจอของ ${user.name}`);
-											}
-										}
-									}}
-								>
-									{user.name.charAt(0).toUpperCase()}
-								</button>
-							</Tooltip.Trigger>
-							<Tooltip.Content>
-								<p class="font-semibold">{user.name}</p>
-								{#if user.context?.view_id}
-									{#if user.context.view_mode === 'CLASSROOM'}
-										<p class="text-xs text-muted-foreground">
-											กำลังดูห้อง {classrooms.find((c) => c.id === user.context?.view_id)?.name ||
-												'(ไม่พบข้อมูลห้อง)'}
-										</p>
-									{:else if user.context.view_mode === 'INSTRUCTOR'}
-										<p class="text-xs text-muted-foreground">
-											กำลังดูตารางสอน {instructors.find((i) => i.id === user.context?.view_id)
-												?.name || '(ไม่พบข้อมูลครู)'}
-										</p>
-									{/if}
-								{/if}
-							</Tooltip.Content>
-						</Tooltip.Root>
-					{/each}
-					{#if $activeUsers.length > 4}
-						<div
-							class="w-6 h-6 rounded-full bg-muted border-2 border-white flex items-center justify-center text-[8px] font-bold shadow-sm"
-						>
-							+{$activeUsers.length - 4}
-						</div>
-					{/if}
-				</div>
-			</Tooltip.Provider>
-		{/if}
-
-		{#if canManageTimetable}
-			<Button
-				variant="outline"
-				onclick={() => goto(resolve('/staff/academic/timetable/templates'))}
-			>
-				<FileStack class="w-4 h-4 mr-2" />
-				Templates
-			</Button>
-
-			<Button variant="outline" onclick={() => (showBatchModal = true)}>
-				<PlusCircle class="w-4 h-4 mr-2" /> กิจกรรมพิเศษ
-			</Button>
-		{/if}
-
-		{#if canReadTimetable}
-			<Button
-				variant="outline"
-				onclick={handleExportTeacherLoadXlsx}
-				disabled={isTeacherLoadExporting || !selectedSemesterId}
-			>
-				{#if isTeacherLoadExporting}
-					<Loader2 class="w-4 h-4 mr-2 animate-spin" />
-				{:else}
-					<FileSpreadsheet class="w-4 h-4 mr-2" />
-				{/if}
-				สรุปคาบ XLSX
-			</Button>
-
-			<Button variant="outline" onclick={handleExportPDF} disabled={isExporting}>
-				{#if isExporting}
-					<Loader2 class="w-4 h-4 mr-2 animate-spin" />
-				{:else}
-					<Download class="w-4 h-4 mr-2" />
-				{/if}
-				ดาวน์โหลด PDF
-			</Button>
-		{/if}
+		<Button
+			variant="outline"
+			disabled={isTeacherLoadExporting || loading || entries.length === 0 || !academicTermId}
+			onclick={handleExportTeacherLoadXlsx}
+		>
+			{#if isTeacherLoadExporting}
+				<Loader2 class="animate-spin" />
+			{:else}
+				<FileSpreadsheet />
+			{/if}
+			สรุปคาบ XLSX
+		</Button>
 	{/snippet}
 
-	<div class="flex h-full min-h-0 flex-col space-y-2" role="application">
-		{#if !canReadTimetable}
-			<PageState
-				variant="permission"
-				title="ไม่มีสิทธิ์ดูตารางสอน"
-				description="ต้องมีสิทธิ์อ่านแผนการจัดตารางสอนจึงจะเข้าถึงข้อมูลในหน้านี้ได้"
-			/>
-		{:else if initialLoading}
-			<PageSkeleton variant="detail" />
-		{:else if academicYears.length === 0}
-			<PageState
-				title="ยังไม่มีปีการศึกษา"
-				description="สร้างปีการศึกษาและภาคเรียนก่อน จึงจะเริ่มจัดตารางสอนได้"
-			/>
-		{:else}
-			<!-- Row 2: Filters -->
-			<div class="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-3 sm:p-4">
-				<div class="w-[180px]">
-					<Select.Root type="single" bind:value={selectedYearId}>
-						<Select.Trigger class="w-full h-9">
-							{academicYears.find((y) => y.id === selectedYearId)?.name || 'เลือกปีการศึกษา'}
-						</Select.Trigger>
-						<Select.Content>
-							{#each academicYears as year (year.id)}
-								<Select.Item value={year.id}>{year.name}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-
-				<div class="w-[180px]">
-					<Select.Root type="single" bind:value={selectedSemesterId}>
-						<Select.Trigger class="w-full h-9">
-							{#if selectedSemesterId && semesters.find((s) => s.id === selectedSemesterId)}
-								ภาคเรียนที่ {semesters.find((s) => s.id === selectedSemesterId)?.term}
-							{:else}
-								เลือกภาคเรียน
-							{/if}
-						</Select.Trigger>
-						<Select.Content>
-							{#each semesters as term (term.id)}
-								<Select.Item value={term.id}>ภาคเรียนที่ {term.term}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-
-				{#if viewMode === 'CLASSROOM'}
-					<div class="w-[220px]">
-						<Popover.Root bind:open={classroomPickerOpen}>
-							<Popover.Trigger class="w-full">
-								<Button
-									variant="outline"
-									role="combobox"
-									aria-expanded={classroomPickerOpen}
-									class="w-full justify-between font-normal h-9"
-								>
-									<span class="truncate">
-										{classrooms.find((c) => c.id === selectedClassroomId)?.name || 'เลือกห้องเรียน'}
-									</span>
-									<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
-								</Button>
-							</Popover.Trigger>
-							<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
-								<Command.Root>
-									<Command.Input placeholder="ค้นหาห้อง..." />
-									<Command.Empty>ไม่พบห้องเรียน</Command.Empty>
-									<Command.Group class="max-h-[280px] overflow-y-auto">
-										{#each classrooms as classroom (classroom.id)}
-											<Command.Item
-												value={classroom.name}
-												onSelect={() => {
-													selectedClassroomId = classroom.id;
-													classroomPickerOpen = false;
-												}}
-											>
-												<Check
-													class="mr-2 h-4 w-4 {selectedClassroomId === classroom.id
-														? 'opacity-100'
-														: 'opacity-0'}"
-												/>
-												{classroom.name}
-											</Command.Item>
-										{/each}
-									</Command.Group>
-								</Command.Root>
-							</Popover.Content>
-						</Popover.Root>
-					</div>
-				{:else}
-					<div class="w-[220px]">
-						<Popover.Root bind:open={instructorPickerOpen}>
-							<Popover.Trigger class="w-full">
-								<Button
-									variant="outline"
-									role="combobox"
-									aria-expanded={instructorPickerOpen}
-									class="w-full justify-between font-normal h-9"
-								>
-									<span class="truncate">
-										{instructors.find((i) => i.id === selectedInstructorId)?.name ||
-											'เลือกครูผู้สอน'}
-									</span>
-									<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
-								</Button>
-							</Popover.Trigger>
-							<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
-								<Command.Root>
-									<Command.Input placeholder="ค้นหาครู..." />
-									<Command.Empty>ไม่พบครู</Command.Empty>
-									<Command.Group class="max-h-[280px] overflow-y-auto">
-										{#each instructors as instructor (instructor.id)}
-											<Command.Item
-												value={instructor.name}
-												onSelect={() => {
-													selectedInstructorId = instructor.id;
-													instructorPickerOpen = false;
-												}}
-											>
-												<Check
-													class="mr-2 h-4 w-4 {selectedInstructorId === instructor.id
-														? 'opacity-100'
-														: 'opacity-0'}"
-												/>
-												{instructor.name}
-											</Command.Item>
-										{/each}
-									</Command.Group>
-								</Command.Root>
-							</Popover.Content>
-						</Popover.Root>
-					</div>
-					{#if selectedInstructorId}
-						<label
-							class="flex items-center gap-2 text-xs cursor-pointer select-none px-2 py-1 rounded border bg-muted/30 hover:bg-muted transition-colors"
+	{#if !canRead}
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์ดูตารางสอน"
+			description="ต้องมีสิทธิ์อ่านชุดการเรียนที่เกี่ยวข้อง"
+		/>
+	{:else if !academicTermId || !academicYearId}
+		<PageState
+			variant="empty"
+			title="เลือกภาคเรียนก่อน"
+			description="ใช้ตัวเลือกปีการศึกษาและภาคเรียนบนแถบด้านบน"
+		/>
+	{:else if loading}
+		<PageSkeleton variant="table" rows={7} />
+	{:else if errorMessage && entries.length === 0}
+		<PageState
+			variant="error"
+			title="โหลดตารางสอนไม่สำเร็จ"
+			description={errorMessage}
+			actionLabel="ลองอีกครั้ง"
+			onaction={() => loadWorkspace(academicTermId, academicYearId)}
+		/>
+	{:else if schedules.length === 0}
+		<PageState
+			title="ปีนี้ยังไม่มีตารางเวลา"
+			description="สร้างตารางเวลาและคาบเรียนก่อนเริ่มจัดตารางสอน"
+		/>
+	{:else}
+		<div class="space-y-5">
+			<Card.Root class="gap-0 py-0">
+				<Card.Content class="grid gap-4 pt-6 lg:grid-cols-[14rem_auto_minmax(16rem,1fr)]">
+					<div class="space-y-2">
+						<Label for="timetable-schedule">ตารางเวลา</Label>
+						<select
+							id="timetable-schedule"
+							class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+							value={selectedScheduleId}
+							onchange={changeSchedule}
 						>
-							<input type="checkbox" bind:checked={showTeamGhosts} class="cursor-pointer" />
-							<span>แสดงคาบในทีม (ghost cells)</span>
-						</label>
-					{/if}
-				{/if}
-			</div>
-
-			<!-- Main Content Grid (Workspace = cursor canvas) -->
-			<div
-				class="grid grid-cols-12 gap-3 flex-1 min-h-0 relative"
-				bind:this={workspaceRef}
-				onmousemove={handleMouseMove}
-				ondrag={handleDragMoveOnGrid}
-				role="application"
-			>
-				<!-- Left Sidebar: Courses -->
-				<Card.Root class="col-span-2 flex flex-col h-full overflow-hidden gap-0 py-0">
-					<div class="py-2 px-3 border-b shrink-0">
-						<div class="text-sm font-semibold flex items-center gap-2">
-							<BookOpen class="w-4 h-4" /> รายวิชา
-							{#if canManageTimetable}
-								<span class="text-[10px] font-normal text-muted-foreground ml-auto">
-									ลากไปวาง
-								</span>
-							{/if}
-						</div>
-					</div>
-					<div class="flex-1 overflow-y-auto p-2 space-y-2 bg-muted/20">
-						{#each unscheduledCourses as course (course.id)}
-							{@const lockedBy = getDragOwner(undefined, course.id)}
-							<div
-								class="border rounded-md p-2 shadow-sm hover:shadow-md hover:brightness-95 transition-all group relative {canManageTimetable
-									? 'cursor-grab active:cursor-grabbing'
-									: 'cursor-default'} {lockedBy ? 'opacity-50 pointer-events-none' : ''}"
-								style="background-color: {getSubjectColor(
-									viewMode === 'INSTRUCTOR'
-										? course.classroom_name || course.subject_code || ''
-										: course.subject_code || ''
-								)}; border-color: {getSubjectBorderColor(
-									viewMode === 'INSTRUCTOR'
-										? course.classroom_name || course.subject_code || ''
-										: course.subject_code || ''
-								)};"
-								draggable={canManageTimetable && !lockedBy}
-								ondragstart={(e) => handleDragStart(e, course, 'NEW')}
-								ondragend={handleDragEnd}
-								role="button"
-								tabindex="0"
-							>
-								{#if lockedBy}
-									<div
-										class="absolute inset-0 flex items-center justify-center z-10 bg-white/50 backdrop-blur-[1px] rounded-lg"
-									>
-										<span
-											class="text-[10px] font-bold px-2 py-1 rounded text-white shadow-sm"
-											style="background-color: {lockedBy.color};"
-										>
-											{lockedBy.name} กำลังใช้
-										</span>
-									</div>
-								{/if}
-
-								<div class="flex justify-between items-start mb-0.5 gap-1">
-									<Badge variant="outline" class="text-[10px] px-1 py-0 leading-tight"
-										>{course.subject_code}</Badge
-									>
-									<Badge
-										variant={course.is_completed ? 'secondary' : 'default'}
-										class="text-[10px] px-1 py-0 leading-tight"
-									>
-										{course.scheduled_count}/{course.max_periods}
-									</Badge>
-								</div>
-								<h4 class="font-medium text-xs line-clamp-2 leading-snug mb-1">
-									{course.subject_name_th || 'ไม่มีชื่อวิชา'}
-								</h4>
-								<div class="flex flex-col gap-0.5 text-[10px] text-muted-foreground">
-									{#if viewMode === 'CLASSROOM'}
-										<div class="flex items-center gap-1 truncate">
-											<Users class="w-3 h-3 shrink-0" />
-											<span class="truncate">{course.instructor_name || 'ไม่ระบุครู'}</span>
-										</div>
-									{:else}
-										<div class="flex items-center gap-1 truncate">
-											<School class="w-3 h-3 shrink-0" />
-											<span class="truncate">{course.classroom_name || 'ไม่ระบุห้อง'}</span>
-										</div>
-									{/if}
-									<div>{course.subject_credit} นก.</div>
-								</div>
-
-								<!-- Progress Bar -->
-								<div class="mt-1.5 h-1 w-full bg-secondary rounded-full overflow-hidden">
-									<div
-										class="h-full bg-primary transition-all"
-										style="width: {(course.scheduled_count / course.max_periods) * 100}%"
-									></div>
-								</div>
-							</div>
-						{:else}
-							<div class="text-center text-muted-foreground py-8 text-sm">
-								{#if !selectedClassroomId && !selectedInstructorId}
-									กรุณาเลือก{viewMode === 'CLASSROOM' ? 'ห้องเรียน' : 'ครูผู้สอน'}
-								{:else if courses.length === 0}
-									ไม่พบรายวิชา
-								{:else}
-									จัดตารางครบแล้ว
-								{/if}
-							</div>
-						{/each}
-					</div>
-
-					<!-- Activity Slots Section -->
-					{#if unscheduledActivities.length > 0}
-						<div class="border-t">
-							<div class="py-2 px-4 bg-emerald-50 border-b">
-								<span class="text-xs font-medium text-emerald-700 flex items-center gap-1">
-									<CalendarDays class="w-3 h-3" /> กิจกรรมพัฒนาผู้เรียน
-								</span>
-							</div>
-							<div class="overflow-y-auto p-3 space-y-2 max-h-[200px]">
-								{#each unscheduledActivities as activity (activity.id + ':' + (activity._classroom_id ?? ''))}
-									{#if activity.is_draggable}
-										<!-- Independent: draggable -->
-										<div
-											class="border rounded-lg p-2.5 shadow-sm hover:shadow-md transition-all bg-emerald-50 border-emerald-200 {canManageTimetable
-												? 'cursor-grab active:cursor-grabbing'
-												: 'cursor-default'}"
-											draggable={canManageTimetable}
-											ondragstart={(e) => handleActivityDragStart(e, activity)}
-											ondragend={handleDragEnd}
-											role="button"
-											tabindex="0"
-										>
-											<div class="flex justify-between items-start mb-1">
-												<Badge
-													variant="outline"
-													class="text-[10px] border-emerald-300 text-emerald-700"
-												>
-													{getActivityTypeLabel(activity.activity_type)}
-												</Badge>
-												<Badge variant="default" class="text-[10px] bg-emerald-600">
-													{activity.scheduled_count}/{activity.max_periods} คาบ
-												</Badge>
-											</div>
-											<h4 class="font-medium text-sm line-clamp-1 leading-tight">
-												{activity.name}
-											</h4>
-											{#if activity._classroom_name}
-												<div
-													class="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1"
-												>
-													<School class="w-3 h-3" />
-													{activity._classroom_name}
-												</div>
-											{/if}
-											<div class="text-[10px] text-emerald-600 mt-1">
-												{canManageTimetable ? 'อิสระ — ลากวางได้' : 'อิสระ — ดูได้อย่างเดียว'}
-											</div>
-											<div class="mt-1.5 h-1 w-full bg-emerald-100 rounded-full overflow-hidden">
-												<div
-													class="h-full bg-emerald-500 transition-all"
-													style="width: {(activity.scheduled_count / activity.max_periods) * 100}%"
-												></div>
-											</div>
-										</div>
-									{:else}
-										<!-- Synchronized: read-only -->
-										<div
-											class="border border-dashed rounded-lg p-2.5 opacity-60 bg-gray-50 border-gray-300"
-										>
-											<div class="flex justify-between items-start mb-1">
-												<Badge variant="outline" class="text-[10px]">
-													{getActivityTypeLabel(activity.activity_type)}
-												</Badge>
-												<Badge variant="secondary" class="text-[10px]">
-													{activity.scheduled_count}/{activity.max_periods} คาบ
-												</Badge>
-											</div>
-											<h4
-												class="font-medium text-sm line-clamp-1 leading-tight flex items-center gap-1"
-											>
-												<Lock class="w-3 h-3 shrink-0" />
-												{activity.name}
-											</h4>
-											{#if canManageTimetable && viewMode === 'INSTRUCTOR' && selectedInstructorId}
-												<Button
-													variant="outline"
-													size="sm"
-													class="mt-1 h-6 text-xs w-full"
-													onclick={async () => {
-														try {
-															await restoreInstructorToSlot(activity.id, selectedInstructorId);
-															toast.success('แสดงในตารางแล้ว');
-															loadTimetable();
-														} catch (e: unknown) {
-															toast.error(
-																(e instanceof Error ? e.message : String(e)) || 'ไม่สำเร็จ'
-															);
-														}
-													}}
-												>
-													แสดงในตาราง
-												</Button>
-											{:else}
-												<div class="text-[10px] text-muted-foreground mt-1">
-													{canManageTimetable ? 'จัดพร้อมกัน — ใช้ Batch' : 'จัดพร้อมกัน'}
-												</div>
-											{/if}
-										</div>
-									{/if}
-								{/each}
-							</div>
-						</div>
-					{/if}
-				</Card.Root>
-
-				<!-- Right Content: Timetable Grid -->
-				<Card.Root
-					class="col-span-10 flex flex-col h-full overflow-hidden border-2 shadow-none gap-0 py-0"
-				>
-					<div class="overflow-auto flex-1">
-						<div class="min-w-[800px] h-full flex flex-col">
-							<!-- Header Row (Periods) -->
-							<div class="flex sticky top-0 bg-background z-20">
-								<div
-									class="w-20 shrink-0 p-3 border-r border-b font-medium text-sm text-muted-foreground flex items-center justify-center bg-background sticky left-0 z-30"
-								>
-									วัน/คาบ
-								</div>
-								{#each periods as period (period.id)}
-									<div
-										class="flex-1 min-w-[100px] p-2 border-r border-b text-center relative group"
-									>
-										<div class="text-sm font-bold">{period.name || ' '}</div>
-										<div class="text-xs text-muted-foreground">
-											{formatTime(period.start_time)}-{formatTime(period.end_time)}
-										</div>
-									</div>
-								{/each}
-							</div>
-
-							<!-- Days Rows -->
-							{#each DAYS as day (day.value)}
-								<div class="flex flex-1 min-h-[70px]">
-									<!-- Day Header -->
-									<div
-										class="w-20 shrink-0 border-r border-b bg-background font-medium flex items-center justify-center relative sticky left-0 z-10"
-									>
-										<!-- Day Indicator Line -->
-										{#if day.value === 'MON'}<div
-												class="absolute left-0 inset-y-0 w-1 bg-yellow-400"
-											></div>{/if}
-										{#if day.value === 'TUE'}<div
-												class="absolute left-0 inset-y-0 w-1 bg-pink-400"
-											></div>{/if}
-										{#if day.value === 'WED'}<div
-												class="absolute left-0 inset-y-0 w-1 bg-green-400"
-											></div>{/if}
-										{#if day.value === 'THU'}<div
-												class="absolute left-0 inset-y-0 w-1 bg-orange-400"
-											></div>{/if}
-										{#if day.value === 'FRI'}<div
-												class="absolute left-0 inset-y-0 w-1 bg-blue-400"
-											></div>{/if}
-
-										<div class="text-center">
-											<div class="text-base font-bold">{day.label}</div>
-										</div>
-									</div>
-
-									<!-- Slots -->
-									{#each periods as period (period.id)}
-										{@const entry = getEntryForSlot(day.value, period.id)}
-										{@const isOccupied = isSlotOccupiedByInstructor(day.value, period.id)}
-										{@const lockedBy = entry ? getDragOwner(entry.id) : null}
-										{@const remoteDrag = !entry ? getRemoteDragHover(day.value, period.id) : null}
-										{@const remoteActivitySlot = getRemoteActivityForSlot(day.value, period.id)}
-										{@const remoteActivityEntry = entry
-											? getRemoteActivityForEntry(entry.id)
-											: null}
-										{@const remoteActivity = remoteActivitySlot || remoteActivityEntry}
-
-										<!-- Drop Zone -->
-										{@const validity =
-											draggedCourse && dragType === 'MOVE'
-												? moveValidityMap.get(`${day.value}|${period.id}`)
-												: null}
-										{@const validityClass = !validity
-											? ''
-											: validity.state === 'source'
-												? 'opacity-60'
-												: validity.state === 'empty' && validity.valid
-													? 'bg-green-50/40 ring-1 ring-inset ring-green-400/60'
-													: validity.state === 'occupied' && validity.valid
-														? 'ring-1 ring-inset ring-blue-400/70 bg-blue-50/30'
-														: 'bg-red-50/40 ring-1 ring-inset ring-red-300/60 cursor-not-allowed'}
-										<div
-											class="flex-1 border-r border-b min-w-[100px] relative transition-colors {isOccupied
-												? 'bg-red-50/50 from-red-100/20 bg-gradient-to-br'
-												: 'hover:bg-accent/50'} {draggedCourse && !entry && !isOccupied && !validity
-												? 'bg-green-50/50 ring-1 ring-inset ring-green-400/60'
-												: ''} {validityClass} {draggedCourse &&
-											entry &&
-											isOccupied &&
-											dragType === 'NEW'
-												? 'ring-2 ring-inset ring-red-500/70'
-												: ''} {remoteDrag ? 'ring-2 ring-inset ring-opacity-50' : ''}"
-											style={remoteDrag
-												? `--tw-ring-color: ${remoteDrag.user.color}40; background-color: ${remoteDrag.user.color}10;`
-												: ''}
-											data-day={day.value}
-											data-period={period.id}
-											title={validity && !validity.valid ? validity.reason : ''}
-											ondragover={(e) => {
-												if (canManageTimetable) handleDragOver(e, day.value, period.id);
-											}}
-											ondrop={(e) => {
-												if (canManageTimetable) handleDrop(e, day.value, period.id);
-											}}
-											role="application"
-										>
-											{#if remoteDrag}
-												<!-- Remote user drag ghost preview -->
-												<div
-													class="absolute inset-1 rounded border-2 border-dashed p-1.5 flex flex-col justify-center items-center gap-0.5 animate-in fade-in duration-200 pointer-events-none"
-													style="border-color: {remoteDrag.user
-														.color}80; background-color: {remoteDrag.user.color}15;"
-												>
-													<span
-														class="text-[10px] font-bold truncate max-w-full"
-														style="color: {remoteDrag.user.color}"
-													>
-														{remoteDrag.drag.info?.code || 'วิชา'}
-													</span>
-													<span class="text-[9px] text-muted-foreground truncate max-w-full">
-														{remoteDrag.drag.info?.title || ''}
-													</span>
-													<span
-														class="text-[8px] font-medium px-1.5 py-0.5 rounded-full text-white mt-0.5"
-														style="background-color: {remoteDrag.user.color};"
-													>
-														{remoteDrag.user.name}
-													</span>
-												</div>
-											{/if}
-											{#if entry && validity && validity.state === 'occupied' && validity.valid}
-												<!-- Swap indicator overlay -->
-												<div
-													class="absolute top-0.5 right-0.5 z-10 bg-blue-500 text-white text-[9px] px-1 py-0.5 rounded font-bold pointer-events-none"
-												>
-													⇄ สลับ
-												</div>
-											{/if}
-											{#if remoteActivity}
-												<!-- Remote user dialog activity — ring lock + badge (ช่วยเห็นเมื่อ cursor ไม่อยู่ใน view) -->
-												<div
-													class="absolute inset-0 ring-2 ring-inset pointer-events-none z-[5] rounded"
-													style="--tw-ring-color: {remoteActivity.user
-														.color}; background-color: {remoteActivity.user.color}1a;"
-												></div>
-												<div
-													class="absolute top-0.5 left-0.5 right-0.5 z-20 flex items-center gap-1 px-1 py-0.5 rounded text-[9px] font-medium shadow-sm pointer-events-none"
-													style="background-color: {remoteActivity.user.color}; color: white;"
-												>
-													<span>⚡</span>
-													<span class="truncate"
-														>{remoteActivity.user.name}: {activityLabel(
-															remoteActivity.activity
-														)}</span
-													>
-												</div>
-											{/if}
-											{#if entry}
-												{@const isGhost =
-													viewMode === 'INSTRUCTOR' &&
-													selectedInstructorId !== '' &&
-													!(entry.instructor_ids ?? []).includes(selectedInstructorId)}
-												{@const coTeacherCount =
-													viewMode === 'INSTRUCTOR'
-														? Math.max(0, (entry.instructor_ids?.length ?? 0) - 1)
-														: 0}
-												{@const isRemoteLocked = !!remoteActivityEntry}
-												{@const teacherText =
-													entry.instructor_names && entry.instructor_names.length > 0
-														? entry.instructor_names.join(', ')
-														: entry.instructor_name && entry.instructor_name !== '-'
-															? entry.instructor_name
-															: ''}
-												{@const hasMetaRow =
-													viewMode === 'CLASSROOM'
-														? !!teacherText || !!entry.room_id
-														: !!entry.classroom_name ||
-															!!entry.activity_slot_id ||
-															isGhost ||
-															coTeacherCount > 0 ||
-															!!entry.room_id}
-												<!-- Timetable Entry Card -->
-												<div
-													class="absolute inset-0.5 border rounded px-1.5 py-1 text-xs flex flex-col justify-between shadow-sm hover:shadow-md hover:brightness-95 transition-all group {!canManageTimetable
-														? 'cursor-default'
-														: (entry.entry_type !== 'COURSE' &&
-																	!(
-																		entry.entry_type === 'ACTIVITY' &&
-																		entry.activity_scheduling_mode === 'independent'
-																	)) ||
-															  isGhost ||
-															  isRemoteLocked
-															? 'cursor-pointer'
-															: 'cursor-grab active:cursor-grabbing'} {lockedBy
-														? 'opacity-50 pointer-events-none ring-2 ring-offset-1 ring-' +
-															lockedBy.color
-														: ''} {isGhost ? 'opacity-50 border-dashed' : ''}"
-													style="background-color: {getSubjectColor(
-														viewMode === 'INSTRUCTOR'
-															? entry.classroom_name || entry.subject_code || ''
-															: entry.subject_code || entry.title || '',
-														entry.entry_type
-													)}; border-color: {getSubjectBorderColor(
-														viewMode === 'INSTRUCTOR'
-															? entry.classroom_name || entry.subject_code || ''
-															: entry.subject_code || entry.title || '',
-														entry.entry_type
-													)};"
-													draggable={canManageTimetable &&
-														!lockedBy &&
-														!isRemoteLocked &&
-														!isGhost &&
-														!pendingEntryIds.has(entry.id) &&
-														!entry.id.startsWith('temp-') &&
-														(entry.entry_type === 'COURSE' ||
-															(entry.entry_type === 'ACTIVITY' &&
-																entry.activity_scheduling_mode === 'independent' &&
-																!entry.batch_id))}
-													ondragstart={(e) => handleDragStart(e, entry, 'MOVE')}
-													ondragend={handleDragEnd}
-													onclick={(e) => {
-														if ((e.target as HTMLElement).closest('button')) return;
-														if (canManageTimetable) openEntryPopover(entry);
-													}}
-													onkeydown={(e) => {
-														if (e.key === 'Enter' || e.key === ' ') {
-															e.preventDefault();
-															if (canManageTimetable) openEntryPopover(entry);
-														}
-													}}
-													role="button"
-													tabindex="0"
-												>
-													{#if lockedBy}
-														<div class="absolute -top-2 -right-2 z-20">
-															<span
-																class="text-[9px] font-bold px-1.5 py-0.5 rounded text-white shadow-sm"
-																style="background-color: {lockedBy.color};"
-															>
-																{lockedBy.name}
-															</span>
-														</div>
-													{/if}
-
-													{#if entry.subject_code}
-														<div
-															class="font-bold text-foreground/90 truncate text-sm leading-tight"
-														>
-															{entry.subject_code}
-														</div>
-														<div
-															class="line-clamp-1 text-foreground/70 text-[11px] leading-tight mb-auto"
-															title={entry.subject_name_th || undefined}
-														>
-															{entry.subject_name_th || ''}
-														</div>
-													{:else}
-														<!-- TEXT-batch / activity: full title (รองรับหลายบรรทัดจาก textarea) -->
-														<div
-															class="font-bold text-foreground/90 text-sm leading-tight whitespace-pre-line line-clamp-3 mb-auto"
-															title={entry.title || undefined}
-														>
-															{entry.title || getEntryTypeFallbackLabel(entry.entry_type)}
-														</div>
-													{/if}
-													{#if hasMetaRow}
-														<div
-															class="mt-1 pt-1 border-t border-foreground/15 gap-0.5 flex flex-col text-[10px] text-muted-foreground"
-														>
-															{#if viewMode === 'CLASSROOM'}
-																{#if teacherText}
-																	<div class="flex items-center gap-1 truncate">
-																		<Users class="w-3 h-3 shrink-0" />
-																		{teacherText}
-																	</div>
-																{/if}
-															{:else if entry.entry_type === 'ACTIVITY' && entry.activity_slot_id && entry.activity_scheduling_mode === 'independent'}
-																<!-- Independent: แสดงชื่อห้อง -->
-																<div class="flex items-center gap-1 truncate">
-																	<School class="w-3 h-3 shrink-0" />
-																	{entry.classroom_name || '-'}
-																</div>
-															{:else if entry.entry_type === 'ACTIVITY' && entry.activity_slot_id}
-																<!-- Synchronized: แสดงชื่อกิจกรรมถ้ามี -->
-																{@const groupName = instructorGroupsMap[entry.activity_slot_id]}
-																<div class="flex items-center gap-1 truncate">
-																	<BookOpen class="w-3 h-3 shrink-0" />
-																	{#if groupName}
-																		{groupName}
-																	{:else}
-																		{entry.activity_slot_name || '-'}
-																	{/if}
-																</div>
-															{:else if entry.classroom_name}
-																<div class="flex items-center gap-1 truncate">
-																	<School class="w-3 h-3 shrink-0" />
-																	{entry.classroom_name}
-																</div>
-															{/if}
-
-															{#if viewMode === 'INSTRUCTOR' && isGhost}
-																<div class="flex items-center gap-1 text-amber-700 text-[10px]">
-																	<span>👻</span>
-																	<span>อยู่ในทีม (ยังไม่ได้สอนคาบนี้)</span>
-																</div>
-															{:else if viewMode === 'INSTRUCTOR' && coTeacherCount > 0}
-																<div
-																	class="flex items-center gap-1 text-foreground/60 text-[10px]"
-																	title={entry.instructor_names?.join(', ')}
-																>
-																	<Users class="w-3 h-3 shrink-0" />
-																	<span>+{coTeacherCount} ครูร่วม</span>
-																</div>
-															{/if}
-
-															{#if entry.room_id}
-																<div
-																	class="flex items-center gap-1 truncate text-foreground/60"
-																	title={rooms.find((r) => r.id === entry.room_id)?.name_th}
-																>
-																	<MapPin class="w-3 h-3 shrink-0" />
-																	{rooms.find((r) => r.id === entry.room_id)?.name_th || '?'}
-																</div>
-															{/if}
-														</div>
-													{/if}
-
-													<!-- มุมขวาบน: pending spinner (กันลบระหว่างบันทึก) | delete button (hover) -->
-													{#if canManageTimetable && !isGhost && !isRemoteLocked}
-														{#if pendingEntryIds.has(entry.id)}
-															<div
-																class="absolute top-0.5 right-0.5 z-30 p-0.5 rounded bg-amber-50/90"
-																title="กำลังบันทึก..."
-															>
-																<Loader2 class="w-3 h-3 animate-spin text-amber-600" />
-															</div>
-														{:else}
-															<button
-																class="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-red-100 hover:text-red-500 rounded transition-all z-30"
-																onclick={(e) => {
-																	e.stopPropagation();
-																	handleDeleteEntry(entry);
-																}}
-															>
-																<Trash2 class="w-3 h-3" />
-															</button>
-														{/if}
-													{/if}
-												</div>
-											{:else if isOccupied}
-												{@const conflicts =
-													slotConflicts.get(getSlotKey(day.value, period.id)) ?? []}
-												{@const primary = conflicts[0]}
-												<div
-													class="absolute inset-0 flex flex-col items-center justify-center px-1 py-0.5 text-center select-none gap-0.5"
-													title={conflicts
-														.map((c) => {
-															const subj = [c.subject_code, c.subject_name]
-																.filter(Boolean)
-																.join(' · ');
-															const loc = [
-																c.classroom_name,
-																c.room_code ? `ห้อง ${c.room_code}` : ''
-															]
-																.filter(Boolean)
-																.join(' ');
-															return c.kind === 'classroom'
-																? `ห้องติด: ${subj}${loc ? ' (' + loc + ')' : ''}`
-																: `${c.teacher_name} ติด: ${subj}${loc ? ' (' + loc + ')' : ''}`;
-														})
-														.join('\n')}
-												>
-													{#if primary}
-														<div
-															class="flex items-center gap-1 text-[11px] text-red-600 font-semibold truncate max-w-full leading-tight"
-														>
-															{#if primary.kind === 'classroom'}
-																<BookOpen class="w-3 h-3 shrink-0" />
-																<span class="truncate">{primary.subject_code || 'ไม่ว่าง'}</span>
-															{:else}
-																<Users class="w-3 h-3 shrink-0" />
-																<span class="truncate">{primary.teacher_name}</span>
-															{/if}
-														</div>
-														{#if primary.subject_name}
-															<div
-																class="text-[10px] text-red-500/80 truncate max-w-full leading-tight"
-															>
-																{primary.subject_name}
-															</div>
-														{/if}
-														{#if primary.kind === 'teacher' || primary.room_code}
-															<div
-																class="text-[9px] text-red-500/70 truncate max-w-full leading-tight"
-															>
-																{#if primary.kind === 'teacher'}
-																	{primary.classroom_name}{#if primary.room_code}
-																		· ห้อง {primary.room_code}{/if}
-																{:else}
-																	ห้อง {primary.room_code}
-																{/if}
-															</div>
-														{/if}
-														{#if conflicts.length > 1}
-															<div class="text-[9px] text-red-400 leading-none">
-																+{conflicts.length - 1} ติดเพิ่ม
-															</div>
-														{/if}
-													{:else}
-														<div class="text-xs text-red-500 font-medium">
-															{viewMode === 'INSTRUCTOR' ? 'ห้องนี้ไม่ว่าง' : 'ครูติดสอน'}
-														</div>
-													{/if}
-												</div>
-											{:else if canManageTimetable && draggedCourse}
-												<div
-													class="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 pointer-events-none"
-												>
-													<div class="text-xs text-blue-500 font-medium">+ วางที่นี่</div>
-												</div>
-											{/if}
-										</div>
-									{/each}
-								</div>
+							{#each schedules as schedule (schedule.id)}
+								<option value={schedule.id}>{schedule.code} · {schedule.name}</option>
 							{/each}
+						</select>
+					</div>
+					<div class="space-y-2">
+						<Label>มุมมอง</Label>
+						<div class="flex gap-2">
+							<Button
+								variant={viewKind === 'learning_group' ? 'default' : 'outline'}
+								onclick={() => changeViewKind('learning_group')}>กลุ่มเรียน</Button
+							>
+							<Button
+								variant={viewKind === 'homeroom' ? 'default' : 'outline'}
+								onclick={() => changeViewKind('homeroom')}>ห้องประจำชั้น</Button
+							>
 						</div>
 					</div>
-				</Card.Root>
-			</div>
-
-			<!-- Floating Conflict Popup (ระหว่าง drag — native title ใช้ไม่ได้ใน drag state) -->
-			{#if hoverDragCell && draggedCourse}
-				{@const hoverConflicts =
-					slotConflicts.get(getSlotKey(hoverDragCell.day, hoverDragCell.periodId)) ?? []}
-				{#if hoverConflicts.length > 0}
-					<div
-						class="fixed z-[10000] pointer-events-none bg-white border border-red-300 rounded-md shadow-lg p-2 text-xs max-w-xs space-y-1"
-						style="top: {hoverDragCell.y + 45}px; left: {hoverDragCell.x + 68}px;"
-					>
-						{#each hoverConflicts as c, i (i)}
-							<div class="flex items-start gap-1.5 text-red-700">
-								{#if c.kind === 'classroom'}
-									<BookOpen class="w-3.5 h-3.5 shrink-0 mt-0.5" />
-									<div class="flex-1 leading-tight">
-										<div class="font-semibold">ห้องติด: {c.subject_code}</div>
-										{#if c.subject_name}
-											<div class="text-red-600/80">{c.subject_name}</div>
-										{/if}
-										{#if c.classroom_name || c.room_code}
-											<div class="text-red-500/70 text-[10px]">
-												{c.classroom_name}{#if c.room_code}
-													· ห้อง {c.room_code}{/if}
-											</div>
-										{/if}
-									</div>
-								{:else}
-									<Users class="w-3.5 h-3.5 shrink-0 mt-0.5" />
-									<div class="flex-1 leading-tight">
-										<div class="font-semibold">{c.teacher_name} ติด: {c.subject_code}</div>
-										{#if c.subject_name}
-											<div class="text-red-600/80">{c.subject_name}</div>
-										{/if}
-										{#if c.classroom_name || c.room_code}
-											<div class="text-red-500/70 text-[10px]">
-												{c.classroom_name}{#if c.room_code}
-													· ห้อง {c.room_code}{/if}
-											</div>
-										{/if}
-									</div>
-								{/if}
-							</div>
-						{/each}
+					<div class="space-y-2">
+						<Label for="timetable-target"
+							>{viewKind === 'learning_group' ? 'กลุ่มเรียน' : 'ห้องประจำชั้น'}</Label
+						>
+						<select
+							id="timetable-target"
+							class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+							value={selectedTargetId}
+							onchange={changeTarget}
+						>
+							{#if viewKind === 'learning_group'}
+								{#each groups as group (group.id)}<option value={group.id}
+										>{groupLabel(group)}</option
+									>{/each}
+							{:else}
+								{#each homerooms as homeroom (homeroom.id)}<option value={homeroom.id}
+										>{homeroom.code} · {homeroom.name}</option
+									>{/each}
+							{/if}
+						</select>
 					</div>
-				{/if}
+				</Card.Content>
+			</Card.Root>
+
+			{#if dirty}
+				<p class="text-amber-700 dark:text-amber-300 text-sm">
+					มีแบบร่างคาบที่ยังไม่บันทึก — ต้องบันทึกหรือยกเลิกก่อนเปลี่ยนบริบท
+				</p>
+			{/if}
+			{#if errorMessage}
+				<div
+					class="border-destructive/30 bg-destructive/5 text-destructive rounded-lg border p-3 text-sm"
+				>
+					{errorMessage}
+				</div>
 			{/if}
 
-			<!-- GHOST UI OVERLAY (fixed, clipped to workspace via clip-path) -->
-			<div
-				class="pointer-events-none fixed inset-0 z-[9999]"
-				style={wsRect
-					? `clip-path: inset(${wsRect.top}px ${typeof window !== 'undefined' ? window.innerWidth - wsRect.right : 0}px ${typeof window !== 'undefined' ? window.innerHeight - wsRect.bottom : 0}px ${wsRect.left}px)`
-					: 'display:none'}
-			>
-				{#each $activeUsers as user (user.user_id)}
-					{@const cursor = $remoteCursors[user.user_id]}
-
-					{#if cursor && user.user_id !== $authStore.user?.id}
-						{#if cursor.context?.view_mode === viewMode && cursor.context?.view_id === (viewMode === 'CLASSROOM' ? selectedClassroomId : selectedInstructorId)}
-							<div
-								class="absolute transition-transform duration-100 ease-linear flex flex-col items-start gap-1"
-								style="transform: translate({cursor.x * (wsRect?.width ?? 0) +
-									(wsRect?.left ?? 0)}px, {cursor.y * (wsRect?.height ?? 0) +
-									(wsRect?.top ?? 0)}px);"
-							>
-								<svg
-									xmlns="http://www.w3.org/2000/svg"
-									class="h-5 w-5 drop-shadow-md"
-									fill={user.color}
-									viewBox="0 0 24 24"
-									stroke="white"
-									stroke-width="2"
-								>
-									<path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z" />
-								</svg>
-
-								<div
-									class="px-2 py-0.5 rounded text-[10px] text-white font-bold whitespace-nowrap shadow-sm"
-									style="background-color: {user.color}"
-								>
-									{user.name}
-								</div>
-
-								{#if $remoteActivities[user.user_id]}
-									{@const act = $remoteActivities[user.user_id]}
-									<div
-										class="px-2 py-0.5 rounded text-[10px] text-white whitespace-nowrap shadow-sm flex items-center gap-1 mt-0.5"
-										style="background-color: {user.color}dd"
-									>
-										<span>⚡</span>
-										<span>{activityLabel(act)}</span>
-									</div>
-								{/if}
-
-								{#if $userDrags[user.user_id]}
-									{@const drag = $userDrags[user.user_id]}
-									<div
-										class="bg-background border rounded shadow-lg p-2.5 flex items-center gap-3 mt-2 opacity-95 scale-90 origin-top-left animate-in fade-in zoom-in duration-200 min-w-[150px]"
-									>
-										<div class="p-1.5 rounded bg-muted">
-											<BookOpen class="w-4 h-4 text-primary" />
-										</div>
-										<div class="flex flex-col">
-											<span class="text-xs font-bold leading-tight line-clamp-1"
-												>{drag.info?.code || 'วิชา'}</span
-											>
-											<span class="text-[10px] text-muted-foreground line-clamp-1"
-												>{drag.info?.title || 'กำลังลาก...'}</span
-											>
-										</div>
-									</div>
-								{/if}
-							</div>
-						{/if}
-					{/if}
-				{/each}
-			</div>
-		{/if}
-	</div>
-</PageShell>
-
-<!-- Per-cell Instructor Editor Popover -->
-{#if canManageTimetable}
-	<Dialog.Root bind:open={entryPopoverOpen}>
-		<Dialog.Content class="sm:max-w-[480px]">
-			<Dialog.Header>
-				<Dialog.Title>
-					{#if entryPopoverTarget}
-						{entryPopoverTarget.subject_code ?? ''} {entryPopoverTarget.subject_name_th ?? ''}
-					{:else}
-						แก้ไขคาบนี้
-					{/if}
-				</Dialog.Title>
-				<Dialog.Description>
-					{#if entryPopoverTarget}
-						{entryPopoverTarget.classroom_name} · {entryPopoverTarget.day_of_week} · {entryPopoverTarget.period_name ??
-							''}
-					{/if}
-				</Dialog.Description>
-			</Dialog.Header>
-
-			<div class="py-2 space-y-3">
-				{#if entryPopoverLoading}
-					<div class="text-center py-4">
-						<Loader2 class="w-5 h-5 animate-spin mx-auto" />
-					</div>
-				{:else if entryPopoverTarget}
-					<div class="space-y-2">
-						<div class="text-sm font-medium">ครูสอนในคาบนี้</div>
-						{#if popoverInCell.length === 0}
-							<p class="text-xs text-muted-foreground italic">ไม่มีครูในคาบนี้</p>
-						{:else}
-							<div class="flex flex-wrap gap-1.5">
-								{#each popoverInCell as uid, idx (uid)}
-									{@const isSelf = viewMode === 'INSTRUCTOR' && uid === selectedInstructorId}
-									<Badge variant={isSelf ? 'default' : 'secondary'} class="gap-1 pr-1">
-										<span>
-											{isSelf ? '👤 ' : ''}{popoverInCellNames[idx] ?? uid}
-											{#if isSelf}<span class="text-[10px] opacity-80">(คุณ)</span>{/if}
-										</span>
-										<button
-											type="button"
-											class="ml-1 rounded hover:bg-destructive/20 p-0.5"
-											onclick={() => handlePopoverRemoveInstructor(uid)}
-											disabled={entryPopoverSaving === uid}
-											aria-label="ลบครู"
+			<div class="grid items-start gap-5 xl:grid-cols-[minmax(0,1.7fr)_22rem]">
+				<Card.Root class="overflow-hidden">
+					<Card.Header>
+						<Card.Title class="flex items-center gap-2"
+							><CalendarClock /> ตารางรายสัปดาห์</Card.Title
+						>
+						<Card.Description>คลิกช่องว่างเพื่อเพิ่มคาบ หรือคลิกคาบเดิมเพื่อแก้ไข</Card.Description>
+					</Card.Header>
+					<Card.Content class="overflow-x-auto">
+						<table class="w-full min-w-[760px] border-separate border-spacing-0 text-sm">
+							<thead>
+								<tr>
+									<th class="bg-muted/70 sticky left-0 z-10 border p-2 text-left">คาบ</th>
+									{#each activeDays as day (day.value)}<th
+											class="bg-muted/70 border p-2 text-center">{day.label}</th
+										>{/each}
+								</tr>
+							</thead>
+							<tbody>
+								{#each periods as period (period.id)}
+									<tr>
+										<th
+											class="bg-background sticky left-0 z-10 w-28 border p-2 text-left font-normal"
 										>
-											{#if entryPopoverSaving === uid}
-												<Loader2 class="h-3 w-3 animate-spin" />
-											{:else}
-												<Trash2 class="h-3 w-3" />
-											{/if}
-										</button>
-									</Badge>
-								{/each}
-							</div>
-						{/if}
-					</div>
-
-					<div class="space-y-2 border-t pt-3">
-						<div class="text-sm font-medium">เพิ่มครูจากทีมวิชา</div>
-						{#if popoverNotInCell.length === 0}
-							<p class="text-xs text-muted-foreground italic">ครูในทีมอยู่ในคาบนี้ครบแล้ว</p>
-						{:else}
-							<div class="flex flex-wrap gap-1.5">
-								{#each popoverNotInCell as t (t.instructor_id)}
-									<Button
-										variant="outline"
-										size="sm"
-										class="h-7 text-xs"
-										onclick={() => handlePopoverAddInstructor(t.instructor_id, t.role)}
-										disabled={entryPopoverSaving === t.instructor_id}
-									>
-										{#if entryPopoverSaving === t.instructor_id}
-											<Loader2 class="h-3 w-3 animate-spin mr-1" />
-										{:else}
-											+
-										{/if}
-										{t.role === 'primary' ? '⭐ ' : ''}{t.instructor_name ?? t.instructor_id}
-									</Button>
-								{/each}
-							</div>
-						{/if}
-					</div>
-
-					<!-- ห้องเรียน — เปลี่ยนเฉพาะคาบนี้ได้ (ทุก view; INSTRUCTOR ghost = ไม่ใช่ entry ของเรา → ซ่อน) -->
-					{#if !entryPopoverIsGhost}
-						<div class="space-y-2 border-t pt-3">
-							<div class="text-sm font-medium">ห้องเรียน</div>
-							<Popover.Root bind:open={entryPopoverRoomPickerOpen}>
-								<Popover.Trigger class="w-full">
-									<Button
-										variant="outline"
-										role="combobox"
-										aria-expanded={entryPopoverRoomPickerOpen}
-										class="w-full justify-between font-normal"
-										disabled={entryPopoverSavingRoom}
-									>
-										<span class="truncate flex items-center gap-1.5">
-											{#if entryPopoverSavingRoom}
-												<Loader2 class="h-3.5 w-3.5 animate-spin" />
-											{:else}
-												<MapPin class="h-3.5 w-3.5 shrink-0 opacity-70" />
-											{/if}
-											{#if entryPopoverTarget?.room_id}
-												{@const r = rooms.find((x) => x.id === entryPopoverTarget?.room_id)}
-												{r
-													? `${r.name_th}${r.building_name ? ` (${r.building_name})` : ''}`
-													: 'ห้องไม่พบ'}
-											{:else}
-												ไม่ระบุห้อง
-											{/if}
-										</span>
-										<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
-									</Button>
-								</Popover.Trigger>
-								<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
-									<Command.Root>
-										<Command.Input placeholder="ค้นหาห้อง..." />
-										<Command.Empty>ไม่พบห้อง</Command.Empty>
-										<Command.Group class="max-h-[280px] overflow-y-auto">
-											{#each rooms as room (room.id)}
-												{@const isBusy = entryPopoverUnavailableRooms.has(room.id)}
-												{@const isSelected = entryPopoverTarget?.room_id === room.id}
-												{#if !isBusy || isSelected}
-													<Command.Item
-														value={`${room.name_th} ${room.building_name ?? ''}`}
-														onSelect={() => handlePopoverChangeRoom(room.id)}
+											<p class="font-medium">{period.name ?? `คาบ ${period.orderIndex}`}</p>
+											<p class="text-muted-foreground text-xs">
+												{period.startTime.slice(0, 5)}–{period.endTime.slice(0, 5)}
+											</p>
+										</th>
+										{#each activeDays as day (day.value)}
+											{@const cellEntries = entriesForCell(day.value, period.id)}
+											<td class="h-24 min-w-32 border p-1 align-top">
+												{#if cellEntries.length === 0}
+													<button
+														type="button"
+														class="hover:bg-muted text-muted-foreground flex size-full min-h-20 items-center justify-center rounded-md border border-dashed"
+														disabled={!canManage || !selectedTargetId}
+														onclick={() => startAtCell(day.value, period.id)}
+														title="เพิ่มคาบ"><Plus class="size-4" /></button
 													>
-														<Check
-															class="mr-2 h-4 w-4 {isSelected ? 'opacity-100' : 'opacity-0'}"
-														/>
-														{room.name_th}{room.building_name ? ` (${room.building_name})` : ''}
-													</Command.Item>
+												{:else}
+													<div class="space-y-1">
+														{#each cellEntries as entry (entry.id)}
+															<button
+																type="button"
+																class="bg-primary/10 hover:bg-primary/15 border-primary/20 w-full rounded-md border p-2 text-left {selectedEntryId ===
+																entry.id
+																	? 'ring-primary ring-2'
+																	: ''}"
+																onclick={() => editEntry(entry)}
+															>
+																<p class="truncate font-medium">{entryTitle(entry)}</p>
+																<p class="text-muted-foreground mt-1 truncate text-xs">
+																	{entry.roomCode ??
+																		entry.learningGroupCode ??
+																		entry.homeroomName ??
+																		'ไม่ระบุห้อง'}
+																</p>
+															</button>
+														{/each}
+													</div>
 												{/if}
-											{/each}
-										</Command.Group>
-									</Command.Root>
-								</Popover.Content>
-							</Popover.Root>
-						</div>
-					{/if}
-				{/if}
-			</div>
-
-			<Dialog.Footer>
-				<Button variant="outline" onclick={() => (entryPopoverOpen = false)}>ปิด</Button>
-			</Dialog.Footer>
-		</Dialog.Content>
-	</Dialog.Root>
-{/if}
-
-{#if canManageTimetable}
-	<Dialog.Root bind:open={showRoomModal}>
-		<Dialog.Content class="sm:max-w-[425px]">
-			<Dialog.Header>
-				<Dialog.Title>เลือกห้องเรียน ({draggedCourse?.subject_code})</Dialog.Title>
-				<Dialog.Description>
-					<div class="flex flex-col gap-1 mt-1 text-foreground text-left">
-						<span class="font-medium text-sm text-primary"
-							>{draggedCourse?.subject_name_th ||
-								draggedCourse?.title_th ||
-								draggedCourse?.title}</span
-						>
-						<span class="text-xs text-muted-foreground flex items-center gap-2">
-							{#if viewMode === 'CLASSROOM'}
-								<span class="flex items-center gap-1"
-									><Users class="w-3 h-3" />
-									{draggedActivityInstructor?.name || draggedCourse?.instructor_name || '-'}</span
-								>
-								<span class="flex items-center gap-1"
-									><School class="w-3 h-3" />
-									{classrooms.find((c) => c.id === selectedClassroomId)?.name || ''}</span
-								>
-							{:else}
-								<span class="flex items-center gap-1"
-									><School class="w-3 h-3" /> {draggedCourse?.classroom_name || '-'}</span
-								>
-								{#if draggedActivityInstructor}
-									<span class="flex items-center gap-1"
-										><Users class="w-3 h-3" /> {draggedActivityInstructor.name}</span
-									>
-								{/if}
-							{/if}
-						</span>
-					</div>
-				</Dialog.Description>
-			</Dialog.Header>
-
-			<div class="py-4 space-y-4">
-				<div class="space-y-2">
-					<Label.Root>ห้องเรียน</Label.Root>
-					<Popover.Root bind:open={roomPickerOpen}>
-						<Popover.Trigger class="w-full">
-							<Button
-								variant="outline"
-								role="combobox"
-								aria-expanded={roomPickerOpen}
-								class="w-full justify-between font-normal"
-							>
-								<span class="truncate">
-									{#if selectedRoomId === 'none'}
-										ไม่ระบุห้อง
-									{:else if selectedRoomId}
-										{@const r = rooms.find((x) => x.id === selectedRoomId)}
-										{r ? `${r.name_th} (${r.building_name})` : 'เลือกห้อง'}
-									{:else}
-										เลือกห้อง
-									{/if}
-								</span>
-								<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
-							</Button>
-						</Popover.Trigger>
-						<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
-							<Command.Root>
-								<Command.Input placeholder="ค้นหาห้อง..." />
-								<Command.Empty>ไม่พบห้อง</Command.Empty>
-								<Command.Group class="max-h-[280px] overflow-y-auto">
-									<Command.Item
-										value="ไม่ระบุห้อง"
-										onSelect={() => {
-											selectedRoomId = 'none';
-											roomPickerOpen = false;
-										}}
-									>
-										<Check
-											class="mr-2 h-4 w-4 {selectedRoomId === 'none' ? 'opacity-100' : 'opacity-0'}"
-										/>
-										<span class="text-muted-foreground">ไม่ระบุห้อง</span>
-									</Command.Item>
-									{#each rooms as room (room.id)}
-										{@const isBusy = unavailableRooms.has(room.id)}
-										{@const displaySelected = selectedRoomId === room.id}
-										{#if !isBusy || displaySelected}
-											<Command.Item
-												value={`${room.name_th} ${room.building_name ?? ''}`}
-												onSelect={() => {
-													selectedRoomId = room.id;
-													roomPickerOpen = false;
-												}}
-											>
-												<Check
-													class="mr-2 h-4 w-4 {selectedRoomId === room.id
-														? 'opacity-100'
-														: 'opacity-0'}"
-												/>
-												{room.name_th} ({room.building_name})
-											</Command.Item>
-										{/if}
-									{/each}
-								</Command.Group>
-							</Command.Root>
-						</Popover.Content>
-					</Popover.Root>
-				</div>
-			</div>
-
-			<Dialog.Footer>
-				<Button
-					variant="outline"
-					onclick={() => {
-						showRoomModal = false;
-						isDropPending = false;
-						handleDragEnd(); // Cancel drag
-					}}>ยกเลิก</Button
-				>
-				<Button onclick={confirmDropWithRoom} disabled={submitting}>
-					{#if submitting}
-						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
-					{/if}
-					ยืนยัน
-				</Button>
-			</Dialog.Footer>
-		</Dialog.Content>
-	</Dialog.Root>
-{/if}
-
-<!-- Delete Activity Dialog (synchronized: single vs batch) -->
-<!-- Delete Batch Group Dialog (entry ที่มาจาก /timetable/batch) -->
-{#if canManageTimetable}
-	<Dialog.Root bind:open={showDeleteBatchDialog}>
-		<Dialog.Content class="max-w-sm">
-			<Dialog.Header>
-				<Dialog.Title>
-					{isInstructorSyncDelete ? 'ซ่อนตัวเองจากกิจกรรม' : 'ลบคาบที่สร้างจาก Batch'}
-				</Dialog.Title>
-				<Dialog.Description>
-					<span class="font-medium text-foreground">{deleteBatchTarget?.title || 'กิจกรรม'}</span>
-					<br />
-					{#if isInstructorSyncDelete}
-						กิจกรรมนี้สอนพร้อมกันหลายห้อง — ซ่อนครูแบบไหนดี? (ห้องอื่นยังเห็นกิจกรรมเหมือนเดิม)
-					{:else}
-						คาบนี้ถูกสร้างพร้อมกับคาบอื่นจาก Batch เดียวกัน — ลบแบบไหนดี?
-					{/if}
-				</Dialog.Description>
-			</Dialog.Header>
-			<div class="flex flex-col gap-2 py-2">
-				<Button variant="outline" onclick={doDeleteBatchSingle}>
-					{isInstructorSyncDelete ? 'ซ่อนเฉพาะคาบนี้' : 'ลบแค่คาบนี้'}
-				</Button>
-				<Button variant="destructive" onclick={doDeleteBatchGroup}>
-					{isInstructorSyncDelete ? 'ซ่อนทั้งกิจกรรม' : 'ลบทั้งหมดที่สร้างพร้อมกัน'}
-				</Button>
-			</div>
-			<Dialog.Footer>
-				<Button
-					variant="ghost"
-					onclick={() => {
-						showDeleteBatchDialog = false;
-						deleteBatchTarget = null;
-					}}>ยกเลิก</Button
-				>
-			</Dialog.Footer>
-		</Dialog.Content>
-	</Dialog.Root>
-{/if}
-
-{#if canManageTimetable}
-	<Dialog.Root bind:open={showDeleteActivityDialog}>
-		<Dialog.Content class="max-w-sm">
-			<Dialog.Header>
-				<Dialog.Title>ลบกิจกรรมจากตาราง</Dialog.Title>
-				<Dialog.Description>
-					{deleteActivityTarget?.activity_slot_name || deleteActivityTarget?.title || 'กิจกรรม'}
-					{#if deleteActivityTarget?.classroom_name}
-						— {deleteActivityTarget.classroom_name}
-					{/if}
-				</Dialog.Description>
-			</Dialog.Header>
-			<div class="flex flex-col gap-2 py-2">
-				<Button
-					variant="outline"
-					onclick={() => {
-						if (deleteActivityTarget) doDeleteEntry(deleteActivityTarget.id, false);
-					}}
-				>
-					ลบเฉพาะห้องนี้
-				</Button>
-				<Button
-					variant="destructive"
-					onclick={() => {
-						if (deleteActivityTarget) doDeleteEntry(deleteActivityTarget.id, true);
-					}}
-				>
-					ลบทุกห้อง
-				</Button>
-			</div>
-			<Dialog.Footer>
-				<Button
-					variant="ghost"
-					onclick={() => {
-						showDeleteActivityDialog = false;
-					}}>ยกเลิก</Button
-				>
-			</Dialog.Footer>
-		</Dialog.Content>
-	</Dialog.Root>
-{/if}
-
-<!-- Export Modal -->
-{#if canReadTimetable}
-	<Dialog.Root bind:open={showExportModal}>
-		<Dialog.Content class="sm:max-w-[500px]">
-			<Dialog.Header>
-				<Dialog.Title>Download PDF</Dialog.Title>
-				<Dialog.Description>เลือกข้อมูลที่ต้องการดาวน์โหลดตารางเรียน</Dialog.Description>
-			</Dialog.Header>
-
-			<div class="grid gap-4 py-4">
-				<div class="flex flex-col gap-2">
-					<Label.Root>ประเภท</Label.Root>
-					<div class="flex gap-2">
-						<Button
-							variant={exportType === 'CLASSROOM' ? 'default' : 'outline'}
-							size="sm"
-							onclick={() => {
-								exportType = 'CLASSROOM';
-								exportTargetIds = [];
-							}}
-							class="flex-1"
-						>
-							<Users class="w-4 h-4 mr-2" /> ห้องเรียน
-						</Button>
-						<Button
-							variant={exportType === 'INSTRUCTOR' ? 'default' : 'outline'}
-							size="sm"
-							onclick={() => {
-								exportType = 'INSTRUCTOR';
-								exportTargetIds = [];
-							}}
-							class="flex-1"
-						>
-							<School class="w-4 h-4 mr-2" /> ครูผู้สอน
-						</Button>
-					</div>
-				</div>
-
-				<div class="flex flex-col gap-2">
-					<Label.Root>รูปแบบหน้า</Label.Root>
-					<div class="flex gap-2">
-						<Button
-							variant={exportLayout === 'full' ? 'default' : 'outline'}
-							size="sm"
-							onclick={() => (exportLayout = 'full')}
-							class="flex-1"
-						>
-							1 ตาราง/หน้า (Landscape)
-						</Button>
-						<Button
-							variant={exportLayout === 'portrait-2col' ? 'default' : 'outline'}
-							size="sm"
-							onclick={() => (exportLayout = 'portrait-2col')}
-							class="flex-1"
-						>
-							2 คอลัม/หน้า (Portrait)
-						</Button>
-					</div>
-					{#if exportLayout === 'portrait-2col'}
-						<p class="text-xs text-muted-foreground">
-							โหมดเปรียบเทียบ — แนวตั้ง 2 คอลัมเรียงลงมา (~6 ตาราง/หน้า) ซ่อนชื่อครู/ห้อง
-						</p>
-					{/if}
-				</div>
-
-				<div class="flex flex-col gap-2 max-h-[300px] overflow-y-auto border rounded p-2">
-					<div class="flex justify-between items-center mb-2 px-1">
-						<Label.Root>เลือกรายการ ({exportTargetIds.length})</Label.Root>
-						<Button
-							variant="ghost"
-							size="sm"
-							class="h-6 text-xs"
-							onclick={() => {
-								if (exportType === 'CLASSROOM') {
-									if (exportTargetIds.length === classrooms.length) exportTargetIds = [];
-									else exportTargetIds = classrooms.map((c) => c.id);
-								} else {
-									if (exportTargetIds.length === instructors.length) exportTargetIds = [];
-									else exportTargetIds = instructors.map((i) => i.id);
-								}
-							}}
-						>
-							{exportTargetIds.length > 0 ? 'ล้างการเลือก' : 'เลือกทั้งหมด'}
-						</Button>
-					</div>
-
-					{#if exportType === 'CLASSROOM'}
-						{#each classrooms as room (room.id)}
-							<div class="flex items-center space-x-2 p-1 hover:bg-muted rounded">
-								<Checkbox
-									id="export-room-{room.id}"
-									checked={exportTargetIds.includes(room.id)}
-									onCheckedChange={(checked) => {
-										if (checked) exportTargetIds = [...exportTargetIds, room.id];
-										else exportTargetIds = exportTargetIds.filter((id) => id !== room.id);
-									}}
-								/>
-								<Label.Root for="export-room-{room.id}" class="flex-1 cursor-pointer">
-									{room.name}
-								</Label.Root>
-							</div>
-						{/each}
-					{:else}
-						{#each instructors as teacher (teacher.id)}
-							<div class="flex items-center space-x-2 p-1 hover:bg-muted rounded">
-								<Checkbox
-									id="export-teacher-{teacher.id}"
-									checked={exportTargetIds.includes(teacher.id)}
-									onCheckedChange={(checked) => {
-										if (checked) exportTargetIds = [...exportTargetIds, teacher.id];
-										else exportTargetIds = exportTargetIds.filter((id) => id !== teacher.id);
-									}}
-								/>
-								<Label.Root for="export-teacher-{teacher.id}" class="flex-1 cursor-pointer">
-									{teacher.name}
-								</Label.Root>
-							</div>
-						{/each}
-					{/if}
-				</div>
-			</div>
-
-			<Dialog.Footer>
-				<Button variant="outline" onclick={() => (showExportModal = false)}>ยกเลิก</Button>
-				<Button onclick={confirmExport} disabled={isExporting || exportTargetIds.length === 0}>
-					{#if isExporting}
-						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
-					{/if}
-					ดาวน์โหลด ({exportTargetIds.length})
-				</Button>
-			</Dialog.Footer>
-		</Dialog.Content>
-	</Dialog.Root>
-{/if}
-
-<!-- Batch Assign Modal -->
-
-{#if canManageTimetable}
-	<Dialog.Root bind:open={showBatchModal}>
-		<Dialog.Content class="sm:max-w-[600px] max-h-[90vh] flex flex-col overflow-hidden">
-			<Dialog.Header>
-				<Dialog.Title>เพิ่มกิจกรรมพิเศษ (Batch)</Dialog.Title>
-				<Dialog.Description>
-					เพิ่มกิจกรรมให้หลายห้องเรียนพร้อมกัน (เช่น กิจกรรมหน้าเสาธง, ประชุมระดับ)
-				</Dialog.Description>
-			</Dialog.Header>
-
-			<div class="grid gap-3 py-3 overflow-y-auto flex-1 pr-2">
-				<!-- Mode Selection -->
-				<div class="grid grid-cols-4 items-center gap-4">
-					<Label.Root class="text-right">รูปแบบ</Label.Root>
-					<div class="col-span-3 flex gap-2">
-						<Button
-							variant={batchMode === 'TEXT' ? 'default' : 'outline'}
-							size="sm"
-							onclick={() => (batchMode = 'TEXT')}
-						>
-							ระบุชื่อเอง
-						</Button>
-						<Button
-							variant={batchMode === 'SLOT' ? 'default' : 'outline'}
-							size="sm"
-							onclick={() => {
-								batchMode = 'SLOT';
-								ensureActivitySlotsLoaded();
-							}}
-						>
-							จากกิจกรรมพัฒนาผู้เรียน
-						</Button>
-					</div>
-				</div>
-
-				{#if batchMode === 'TEXT'}
-					<div class="grid grid-cols-4 items-start gap-4">
-						<Label.Root class="text-right mt-2">ชื่อกิจกรรม</Label.Root>
-						<div class="col-span-3">
-							<textarea
-								rows="2"
-								class="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y min-h-[60px]"
-								bind:value={batchTitle}
-								placeholder="เช่น ประชุมระดับ, กิจกรรมพัฒนาผู้เรียน&#10;ขึ้นบรรทัดใหม่ได้ (Enter)"
-							></textarea>
-							<p class="text-[10px] text-muted-foreground mt-1">
-								พิมพ์หลายบรรทัดได้ (เช่น "พักกลางวัน\nรับประทานอาหาร")
-							</p>
-						</div>
-					</div>
-
-					<div class="grid grid-cols-4 items-center gap-4">
-						<Label.Root class="text-right">ประเภท</Label.Root>
-						<div class="col-span-3">
-							<Select.Root type="single" bind:value={batchType}>
-								<Select.Trigger class="w-full">
-									{#if batchType === 'ACTIVITY'}
-										กิจกรรม
-									{:else if batchType === 'BREAK'}
-										พักเบรค/พักเที่ยง
-									{:else if batchType === 'HOMEROOM'}
-										โฮมรูม
-									{:else if batchType === 'ACADEMIC'}
-										วิชาการ
-									{:else}
-										{batchType}
-									{/if}
-								</Select.Trigger>
-								<Select.Content>
-									<Select.Item value="ACTIVITY">กิจกรรม</Select.Item>
-									<Select.Item value="BREAK">พักเบรค/พักเที่ยง</Select.Item>
-									<Select.Item value="HOMEROOM">โฮมรูม</Select.Item>
-									<Select.Item value="ACADEMIC">วิชาการ</Select.Item>
-								</Select.Content>
-							</Select.Root>
-						</div>
-					</div>
-				{:else if batchMode === 'SLOT'}
-					<div class="grid grid-cols-4 items-center gap-4">
-						<Label.Root class="text-right">กิจกรรม</Label.Root>
-						<div class="col-span-3">
-							{#if loadingSlots}
-								<div class="text-sm text-muted-foreground flex items-center gap-2">
-									<Loader2 class="w-3 h-3 animate-spin" /> กำลังโหลด...
-								</div>
-							{:else if activitySlots.length === 0}
-								<p class="text-sm text-muted-foreground">ไม่พบ Activity Slot ในภาคเรียนนี้</p>
-							{:else}
-								<Select.Root type="single" bind:value={batchSlotId}>
-									<Select.Trigger class="w-full h-auto py-2">
-										<div class="flex flex-col items-start gap-0.5 text-left overflow-hidden">
-											<span class="truncate block w-full">
-												{activitySlots.find((s) => s.id === batchSlotId)?.name || 'เลือกกิจกรรม'}
-											</span>
-											{#if batchSlotId}
-												{@const slot = activitySlots.find((s) => s.id === batchSlotId)}
-												{#if slot}
-													<span class="text-xs text-muted-foreground">
-														{getActivityTypeLabel(slot.activity_type)}
-													</span>
-												{/if}
-											{/if}
-										</div>
-									</Select.Trigger>
-									<Select.Content class="max-h-[300px] w-[350px] overflow-y-auto">
-										{#each activitySlots as slot (slot.id)}
-											<Select.Item
-												value={slot.id}
-												label={slot.name ?? 'ไม่ระบุชื่อกิจกรรม'}
-												class="flex flex-col items-start py-2 border-b last:border-0"
-											>
-												<span class="font-medium text-sm">{slot.name}</span>
-												<span class="text-xs text-muted-foreground">
-													{getActivityTypeLabel(slot.activity_type)}
-												</span>
-											</Select.Item>
+											</td>
 										{/each}
-									</Select.Content>
-								</Select.Root>
-							{/if}
-							<p class="text-[10px] text-muted-foreground mt-1.5 leading-relaxed">
-								*Batch รองรับเฉพาะ <b>Synchronized</b> (ทุกห้องตรงกัน) — Independent
-								ให้ลากทีละห้องจาก sidebar<br />
-								นักเรียนกดดูกิจกรรมที่ตัวเองลงทะเบียนได้จากตารางเรียน
-							</p>
-						</div>
-					</div>
-				{/if}
-
-				<div class="grid grid-cols-4 items-start gap-4">
-					<Label.Root class="text-right mt-1">วัน ({batchDays.length})</Label.Root>
-					<div class="col-span-3 flex flex-wrap gap-1.5">
-						{#each DAYS.slice(0, 5) as day (day.value)}
-							<label
-								class="flex items-center gap-1.5 px-2.5 py-1 rounded border cursor-pointer text-sm transition-colors {batchDays.includes(
-									day.value
-								)
-									? 'border-primary bg-primary/10 text-primary font-medium'
-									: 'bg-background hover:bg-muted/50'}"
-							>
-								<input
-									type="checkbox"
-									checked={batchDays.includes(day.value)}
-									onchange={() => {
-										if (batchDays.includes(day.value)) {
-											batchDays = batchDays.filter((d) => d !== day.value);
-										} else {
-											batchDays = [...batchDays, day.value];
-										}
-									}}
-									class="rounded"
-								/>
-								<span>{day.label}</span>
-							</label>
-						{/each}
-					</div>
-				</div>
-
-				<div class="grid grid-cols-4 items-start gap-4">
-					<Label.Root class="text-right mt-1">คาบ ({batchPeriodIds.length})</Label.Root>
-					<div
-						class="col-span-3 border rounded-md max-h-[160px] overflow-y-auto p-2 bg-muted/20 grid grid-cols-2 gap-1.5"
-					>
-						{#each periods as period (period.id)}
-							<label
-								class="flex items-center gap-2 p-1.5 rounded border bg-background cursor-pointer hover:bg-muted/50 text-sm {batchPeriodIds.includes(
-									period.id
-								)
-									? 'border-primary bg-primary/5'
-									: ''}"
-							>
-								<input
-									type="checkbox"
-									checked={batchPeriodIds.includes(period.id)}
-									onchange={() => {
-										if (batchPeriodIds.includes(period.id)) {
-											batchPeriodIds = batchPeriodIds.filter((id) => id !== period.id);
-										} else {
-											batchPeriodIds = [...batchPeriodIds, period.id];
-										}
-									}}
-									class="rounded"
-								/>
-								<span class="truncate">
-									{period.name ? `${period.name} ` : ''}({formatTime(
-										period.start_time
-									)}-{formatTime(period.end_time)})
-								</span>
-							</label>
-						{/each}
-					</div>
-				</div>
-
-				<!-- Room (Optional) -->
-				<div class="grid grid-cols-4 items-center gap-4">
-					<Label.Root class="text-right">ห้อง (ถ้ามี)</Label.Root>
-					<div class="col-span-3">
-						<Select.Root type="single" bind:value={batchRoomId}>
-							<Select.Trigger class="w-full">
-								{rooms.find((r) => r.id === batchRoomId)?.name_th ||
-									(batchRoomId === 'none' ? 'ไม่ระบุห้อง' : 'เลือกห้อง')}
-							</Select.Trigger>
-							<Select.Content class="max-h-[200px] overflow-y-auto">
-								<Select.Item value="none" class="text-muted-foreground">ไม่ระบุห้อง</Select.Item>
-								{#each rooms as room (room.id)}
-									<Select.Item value={room.id}>
-										{room.name_th}
-									</Select.Item>
+									</tr>
 								{/each}
-							</Select.Content>
-						</Select.Root>
-					</div>
-				</div>
+							</tbody>
+						</table>
+					</Card.Content>
+				</Card.Root>
 
-				<!-- Targets Selection -->
-				<div class="border-t pt-3 mt-1 space-y-3">
-					{#if batchMode === 'SLOT' && batchSlotId}
-						<!-- SLOT mode: ใช้ข้อมูลจาก slot ทั้งห้องและครู (read-only summary) -->
-						<div class="rounded-md border border-emerald-200 bg-emerald-50/50 p-3 space-y-2">
-							<p class="text-[11px] text-emerald-800">
-								ใช้ข้อมูลจาก slot ตรงๆ — แก้จำนวนห้อง/ครูในหน้า
-								<a
-									href={resolve('/staff/academic/activities')}
-									target="_blank"
-									class="underline font-medium">Activities</a
+				<Card.Root>
+					<Card.Header>
+						<div class="flex items-center justify-between gap-2">
+							<div>
+								<Card.Title>{selectedEntry ? 'แก้ไขคาบ' : 'เพิ่มคาบ'}</Card.Title>
+								<Card.Description
+									>{selectedEntry
+										? `เวอร์ชัน ${selectedEntry.rowVersion}`
+										: 'เลือกวันและคาบที่ต้องการ'}</Card.Description
 								>
-							</p>
-							<div class="text-xs">
-								<span class="font-semibold text-emerald-700">
-									<School class="inline w-3 h-3 mb-0.5" /> ห้องเรียน ({batchClassrooms.length})
-								</span>
-								<div class="flex flex-wrap gap-1 mt-1">
-									{#if batchClassrooms.length === 0}
-										<span class="text-muted-foreground italic">
-											slot นี้ยังไม่มีห้อง — เพิ่มในหน้า Activities ก่อน
-										</span>
-									{:else}
-										{#each batchClassrooms as cid (cid)}
-											{@const cr = classrooms.find((c) => c.id === cid)}
-											<span class="bg-white border border-emerald-300 rounded px-1.5 py-0.5">
-												{cr?.name || cid.slice(0, 8)}
-											</span>
-										{/each}
-									{/if}
-								</div>
 							</div>
-							<div class="text-xs">
-								<span class="font-semibold text-emerald-700">
-									<Users class="inline w-3 h-3 mb-0.5" /> ครู ({batchInstructors.length})
-								</span>
-								<div class="flex flex-wrap gap-1 mt-1">
-									{#if batchInstructors.length === 0}
-										<span class="text-muted-foreground italic">
-											slot นี้ยังไม่มีครู — เพิ่มในหน้า Activities ก่อน
-										</span>
-									{:else}
-										{#each batchInstructors as iid (iid)}
-											{@const ins = instructors.find((i) => i.id === iid)}
-											<span class="bg-white border border-emerald-300 rounded px-1.5 py-0.5">
-												{ins?.name || iid.slice(0, 8)}
-											</span>
-										{/each}
-									{/if}
-								</div>
-							</div>
+							{#if dirty}<Badge variant="secondary">ยังไม่บันทึก</Badge>{/if}
 						</div>
-					{:else}
-						<!-- TEXT mode: เลือก ห้อง / ครู อิสระ -->
-						<p class="text-[11px] text-muted-foreground -mb-1">
-							เลือก <b>ห้องเรียน</b> ให้กิจกรรมขึ้นในตารางนักเรียน / เลือก <b>ครู</b>
-							ให้ขึ้นในตารางครู (เลือกทั้งคู่ได้ — event จะผูกครูทุกคนที่เลือกในทุกห้อง)
-						</p>
-
-						<!-- ห้องเรียน -->
-						<div>
-							<div class="flex items-center gap-2 mb-2">
-								<Label.Root class="text-xs">กรองชั้น:</Label.Root>
+					</Card.Header>
+					<Card.Content class="space-y-4">
+						<div class="grid grid-cols-2 gap-3">
+							<div class="space-y-2">
+								<Label for="entry-day">วัน</Label>
 								<select
-									class="flex h-7 w-full items-center justify-between rounded-md border border-input bg-background px-2 py-0.5 text-xs ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-									value={batchGradeFilterId}
-									onchange={(e) => (batchGradeFilterId = e.currentTarget.value)}
-									onmouseenter={loadBatchGradeLevels}
+									id="entry-day"
+									class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+									bind:value={formDay}
+									disabled={!canManage}
+									onchange={markDirty}
+									>{#each activeDays as day (day.value)}<option value={day.value}
+											>{day.label}</option
+										>{/each}</select
 								>
-									<option value="all">ทุกระดับ ({classrooms.length})</option>
-									{#each batchGradeLevels as gl (gl.id)}
-										<option value={gl.id}>{gl.name}</option>
-									{/each}
-								</select>
 							</div>
-
-							<div class="flex justify-between items-center mb-1">
-								<Label.Root class="text-xs">ห้องเรียน ({batchClassrooms.length})</Label.Root>
+							<div class="space-y-2">
+								<Label for="entry-period">คาบ</Label>
+								<select
+									id="entry-period"
+									class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+									bind:value={formPeriodId}
+									disabled={!canManage}
+									onchange={markDirty}
+									>{#each periods as period (period.id)}<option value={period.id}
+											>{period.name ?? period.orderIndex}</option
+										>{/each}</select
+								>
+							</div>
+						</div>
+						<div class="space-y-2">
+							<Label for="entry-type">ประเภทคาบ</Label>
+							<select
+								id="entry-type"
+								class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+								bind:value={formEntryType}
+								disabled={!canManage || Boolean(selectedEntry)}
+								onchange={markDirty}
+								>{#each entryTypeOptions as option (option.value)}<option value={option.value}
+										>{option.label}</option
+									>{/each}</select
+							>
+						</div>
+						<div class="space-y-2">
+							<Label for="entry-room">ห้องเรียน</Label>
+							<select
+								id="entry-room"
+								class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+								bind:value={formRoomId}
+								disabled={!canManage}
+								onchange={markDirty}
+							>
+								<option value="">ไม่ระบุ</option>
+								{#each rooms as room (room.id)}<option value={room.id}
+										>{room.code ? `${room.code} · ` : ''}{room.name_th}</option
+									>{/each}
+							</select>
+						</div>
+						<div class="space-y-2">
+							<Label for="entry-title">ชื่อแสดงเพิ่มเติม</Label>
+							<Input
+								id="entry-title"
+								bind:value={formTitle}
+								disabled={!canManage}
+								oninput={markDirty}
+							/>
+						</div>
+						<div class="space-y-2">
+							<Label for="entry-note">หมายเหตุ</Label>
+							<Input
+								id="entry-note"
+								bind:value={formNote}
+								disabled={!canManage}
+								oninput={markDirty}
+							/>
+						</div>
+						{#if canManage}
+							<div class="flex flex-wrap gap-2 pt-2">
 								<Button
-									variant="ghost"
-									size="sm"
-									class="h-6 text-xs"
-									onclick={selectAllBatchClassrooms}
+									disabled={busy || !dirty || !selectedTargetId || !formPeriodId}
+									onclick={saveEntry}
+									>{#if busy}<Loader2 class="animate-spin" />{:else}<Save />{/if} บันทึก</Button
 								>
-									เลือกทั้งหมด
-								</Button>
-							</div>
-							<div
-								class="border rounded-md max-h-[140px] min-h-[60px] overflow-y-auto p-1.5 bg-muted/20 grid grid-cols-3 gap-1"
-							>
-								{#each filteredBatchClassroomsList as classroom (classroom.id)}
-									<label
-										class="flex items-center gap-1.5 bg-background px-1.5 py-1 rounded border shadow-sm text-xs cursor-pointer hover:bg-muted/50"
-									>
-										<Checkbox
-											checked={batchClassrooms.includes(classroom.id)}
-											onCheckedChange={() => toggleBatchClassroom(classroom.id)}
-										/>
-										<span class="truncate">{classroom.name}</span>
-									</label>
-								{:else}
-									<div
-										class="col-span-3 flex flex-col items-center justify-center text-muted-foreground py-2 opacity-70"
-									>
-										<School class="w-6 h-6 mb-1 opacity-20" />
-										<span class="text-xs">ไม่พบห้องเรียน</span>
-									</div>
-								{/each}
-							</div>
-						</div>
-
-						<!-- ครู -->
-						<div>
-							<div class="flex justify-between items-center mb-1">
-								<Label.Root class="text-xs">ครู ({batchInstructors.length})</Label.Root>
-								<Button
-									variant="ghost"
-									size="sm"
-									class="h-6 text-xs"
-									onclick={() => {
-										if (batchInstructors.length === instructors.length) {
-											batchInstructors = [];
-										} else {
-											batchInstructors = instructors.map((i) => i.id);
-										}
-									}}
+								<Button variant="outline" disabled={busy || !dirty} onclick={resetForm}
+									><RotateCcw /> ยกเลิก</Button
 								>
-									{batchInstructors.length === instructors.length ? 'ล้าง' : 'เลือกทั้งหมด'}
-								</Button>
+								{#if selectedEntry}<Button
+										variant="destructive"
+										class="ml-auto"
+										disabled={busy}
+										onclick={removeEntry}><Trash2 /> ลบคาบ</Button
+									>{/if}
 							</div>
-							<div
-								class="border rounded-md max-h-[140px] min-h-[60px] overflow-y-auto p-1.5 bg-muted/20 grid grid-cols-2 gap-1"
-							>
-								{#each instructors as instructor (instructor.id)}
-									<label
-										class="flex items-center gap-1.5 bg-background px-1.5 py-1 rounded border shadow-sm text-xs cursor-pointer hover:bg-muted/50"
-									>
-										<Checkbox
-											checked={batchInstructors.includes(instructor.id)}
-											onCheckedChange={() => {
-												if (batchInstructors.includes(instructor.id)) {
-													batchInstructors = batchInstructors.filter((i) => i !== instructor.id);
-												} else {
-													batchInstructors = [...batchInstructors, instructor.id];
-												}
-											}}
-										/>
-										<span class="truncate">{instructor.name}</span>
-									</label>
-								{:else}
-									<div
-										class="col-span-2 flex flex-col items-center justify-center text-muted-foreground py-2 opacity-70"
-									>
-										<Users class="w-6 h-6 mb-1 opacity-20" />
-										<span class="text-xs">ไม่พบครู</span>
-									</div>
-								{/each}
-							</div>
-						</div>
-					{/if}
-				</div>
-				<div class="border-t pt-3 mt-1">
-					<!-- Override Option -->
-					<div
-						class="flex items-start space-x-2 mt-4 p-3 rounded-md border border-red-200 bg-red-50/50"
-					>
-						<Checkbox
-							id="batch-force"
-							bind:checked={batchForce}
-							class="mt-0.5 data-[state=checked]:bg-red-600 data-[state=checked]:border-red-600"
-						/>
-						<div class="grid gap-1.5 leading-none">
-							<label
-								for="batch-force"
-								class="text-sm font-medium leading-none text-red-600 cursor-pointer"
-							>
-								บังคับลงตาราง (Override)
-							</label>
-							<p class="text-xs text-muted-foreground">
-								หากเลือก: ระบบจะลบรายการเดิมที่เวลาชนกันออกโดยอัตโนมัติ (ทั้งตารางนักเรียน, ครู
-								และห้องเรียน) เพื่อให้กิจกรรมนี้ลงได้
-							</p>
-						</div>
-					</div>
-				</div>
+						{/if}
+					</Card.Content>
+				</Card.Root>
 			</div>
-
-			<Dialog.Footer>
-				<Button variant="outline" onclick={() => (showBatchModal = false)}>ยกเลิก</Button>
-				<Button onclick={handleBatchSubmit} disabled={submitting}>
-					{#if submitting}
-						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
-					{/if}
-					บันทึก
-				</Button>
-			</Dialog.Footer>
-		</Dialog.Content>
-	</Dialog.Root>
-{/if}
-
-<!-- Batch summary — แสดงผลลัพธ์หลัง batch (skipped/blocked/deleted/excluded) -->
-{#if canManageTimetable}
-	<Dialog.Root bind:open={showBatchSummary}>
-		<Dialog.Content class="sm:max-w-[600px] max-h-[80vh] flex flex-col">
-			<Dialog.Header>
-				<Dialog.Title>
-					{#if batchSummary && batchSummary.inserted_count > 0}
-						✅ บันทึก batch สำเร็จ — สรุปการทำงาน
-					{:else}
-						⚠️ Batch ไม่สามารถลงได้
-					{/if}
-				</Dialog.Title>
-				<Dialog.Description>
-					{#if batchSummary}
-						ลง <strong>{batchSummary.inserted_count}</strong> รายการ
-						{#if batchSummary.skipped.length > 0}
-							· ข้าม <strong>{batchSummary.skipped.length}</strong>
-						{/if}
-						{#if batchSummary.blocked.length > 0}
-							· ลงไม่ได้ <strong>{batchSummary.blocked.length}</strong>
-						{/if}
-						{#if batchSummary.deleted.length > 0}
-							· ทับ <strong>{batchSummary.deleted.length}</strong>
-						{/if}
-						{#if batchSummary.excluded_instructors.length > 0}
-							· ซ่อนครู <strong>{batchSummary.excluded_instructors.length}</strong>
-						{/if}
-					{/if}
-				</Dialog.Description>
-			</Dialog.Header>
-
-			<div class="overflow-y-auto space-y-3 py-2">
-				{#if batchSummary && batchSummary.deleted.length > 0}
-					<div class="border rounded-md p-3 bg-red-50 border-red-200">
-						<div class="text-sm font-medium text-red-700 mb-2 flex items-center gap-1.5">
-							🔄 เขียนทับ {batchSummary.deleted.length} รายการ
-						</div>
-						<ul class="text-xs space-y-1 text-foreground/80">
-							{#each batchSummary.deleted as d (d.id)}
-								<li>
-									<span class="font-medium">{d.classroom_name ?? '?'}</span>
-									· {d.day_of_week}
-									{d.period_name ?? ''} — ลบ "<span class="font-medium">{d.title}</span>"
-									{#if d.instructor_names.length > 0}
-										<span class="text-muted-foreground">({d.instructor_names.join(', ')})</span>
-									{/if}
-								</li>
-							{/each}
-						</ul>
-					</div>
-				{/if}
-
-				{#if batchSummary && batchSummary.skipped.length > 0}
-					<div class="border rounded-md p-3 bg-amber-50 border-amber-200">
-						<div class="text-sm font-medium text-amber-700 mb-2 flex items-center gap-1.5">
-							⚠️ ข้าม {batchSummary.skipped.length} รายการ
-						</div>
-						<ul class="text-xs space-y-1 text-foreground/80">
-							{#each batchSummary.skipped as s (`${s.classroom_id ?? 'all'}-${s.day_of_week}-${s.period_id}-${s.message}`)}
-								<li>{s.message}</li>
-							{/each}
-						</ul>
-					</div>
-				{/if}
-
-				{#if batchSummary && batchSummary.blocked.length > 0}
-					<div class="border rounded-md p-3 bg-rose-50 border-rose-300">
-						<div class="text-sm font-medium text-rose-700 mb-2 flex items-center gap-1.5">
-							🚫 ลงไม่ได้ {batchSummary.blocked.length} รายการ
-						</div>
-						<ul class="text-xs space-y-1 text-foreground/80">
-							{#each batchSummary.blocked as b (`${b.classroom_id}-${b.day_of_week}-${b.period_id}-${b.message}`)}
-								<li>{b.message}</li>
-							{/each}
-						</ul>
-					</div>
-				{/if}
-
-				{#if batchSummary && batchSummary.excluded_instructors.length > 0}
-					<div class="border rounded-md p-3 bg-blue-50 border-blue-200">
-						<div class="text-sm font-medium text-blue-700 mb-2 flex items-center gap-1.5">
-							👤 ซ่อนครู {batchSummary.excluded_instructors.length} คน (ครูติดสอนคาบนี้)
-						</div>
-						<ul class="text-xs space-y-1 text-foreground/80">
-							{#each batchSummary.excluded_instructors as ex (ex.instructor_id)}
-								<li>
-									<span class="font-medium">{ex.instructor_name}</span> — ไม่ได้ attach กับ entries
-									ใหม่
-									{#if ex.conflicting_at.length > 0}
-										<div class="ml-3 text-muted-foreground">
-											ติดที่: {ex.conflicting_at
-												.map((c) => `${c.day_of_week} ${c.period_name ?? ''}: ${c.existing_title}`)
-												.join(', ')}
-										</div>
-									{/if}
-								</li>
-							{/each}
-						</ul>
-					</div>
-				{/if}
-
-				{#if batchSummary && batchSummary.inserted_count === 0 && batchSummary.skipped.length === 0 && batchSummary.blocked.length === 0 && batchSummary.deleted.length === 0}
-					<p class="text-sm text-muted-foreground text-center py-4">ไม่มี cell ที่จะลง</p>
-				{/if}
-			</div>
-
-			<Dialog.Footer>
-				<Button onclick={() => (showBatchSummary = false)}>ปิด</Button>
-			</Dialog.Footer>
-		</Dialog.Content>
-	</Dialog.Root>
-{/if}
-
-<style>
-	/* Custom Scrollbar */
-	::-webkit-scrollbar {
-		width: 8px;
-		height: 8px;
-	}
-	::-webkit-scrollbar-track {
-		background: transparent;
-	}
-	::-webkit-scrollbar-thumb {
-		background: #e2e8f0;
-		border-radius: 4px;
-	}
-	::-webkit-scrollbar-thumb:hover {
-		background: #cbd5e1;
-	}
-
-	/* Mobile handling */
-	@media (max-width: 768px) {
-		.mobile-draggable {
-			touch-action: none;
-			-webkit-user-select: none;
-			user-select: none;
-		}
-
-		/* Helper class added by polyfill */
-		:global(.dnd-poly-drag-image) {
-			opacity: 0.8 !important;
-			transform: scale(1.05);
-		}
-	}
-</style>
+		</div>
+	{/if}
+</PageShell>

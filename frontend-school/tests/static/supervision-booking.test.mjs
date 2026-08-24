@@ -382,8 +382,9 @@ test('teaching supervision workflows are routed instead of tab-only state', asyn
 	assert.match(supervisionWorkspace, /section:/);
 	assert.match(supervisionWorkspace, /function sectionRoute/);
 	assert.match(supervisionWorkspace, /shouldLoadTemplates/);
-	assert.match(supervisionWorkspace, /shouldLoadStructure/);
 	assert.match(supervisionWorkspace, /shouldLoadObservations/);
+	assert.match(supervisionWorkspace, /getAcademicContextStore/);
+	assert.match(supervisionWorkspace, /academicTermId/);
 	assert.match(routeAccess, /permission\?: RoutePermission \| RoutePermission\[\]/);
 	assert.match(routeAccess, /Array\.isArray\(requiredPermission\)/);
 

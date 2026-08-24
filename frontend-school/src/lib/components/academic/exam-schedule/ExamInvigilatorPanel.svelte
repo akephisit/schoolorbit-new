@@ -62,7 +62,7 @@
 		[...(localWorkspace?.assignments ?? [])]
 			.filter((assignment) => assignment.examDayId === (selectedDay?.id ?? selectedDayId))
 			.sort((a, b) => {
-				const classroomCompare = a.classroomName.localeCompare(b.classroomName, 'th');
+				const classroomCompare = a.homeroomName.localeCompare(b.homeroomName, 'th');
 				return classroomCompare === 0
 					? a.roomName.localeCompare(b.roomName, 'th')
 					: classroomCompare;

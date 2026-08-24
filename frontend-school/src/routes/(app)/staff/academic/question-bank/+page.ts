@@ -1,6 +1,7 @@
 import { PERMISSION_MODULES } from '$lib/permissions/registry';
 
 export const _meta = {
+	academicContext: 'none' as const,
 	menu: {
 		title: 'คลังข้อสอบ',
 		icon: 'BookOpenCheck',

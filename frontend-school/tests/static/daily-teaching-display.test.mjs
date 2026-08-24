@@ -17,8 +17,8 @@ const {
 function entry(overrides = {}) {
 	return {
 		activitySchedulingMode: 'synchronized',
-		activitySlotId: 'slot-a',
-		classroomName: 'ป.1/1',
+		offeringId: 'offering-a',
+		homeroomNames: ['ป.1/1'],
 		entryId: 'entry-a',
 		entryType: 'ACTIVITY',
 		isTeamTeaching: false,
@@ -35,7 +35,7 @@ function entry(overrides = {}) {
 test('merges synchronized entries that share one activity slot', () => {
 	const groups = groupDailyTeachingEntries([
 		entry(),
-		entry({ entryId: 'entry-b', classroomName: 'ป.1/2' })
+		entry({ entryId: 'entry-b', homeroomNames: ['ป.1/2'] })
 	]);
 
 	assert.equal(groups.length, 1);
@@ -49,28 +49,28 @@ test('merges synchronized entries that share one activity slot', () => {
 
 test('sorts synchronized locations naturally by classroom then physical room', () => {
 	const groups = groupDailyTeachingEntries([
-		entry({ entryId: 'entry-10', classroomName: 'ม.1/10', roomCode: '120' }),
-		entry({ entryId: 'entry-2b', classroomName: 'ม.1/2', roomCode: '115' }),
-		entry({ entryId: 'entry-2a', classroomName: 'ม.1/2', roomCode: '101' }),
-		entry({ entryId: 'entry-duplicate', classroomName: 'ม.1/2', roomCode: '101' })
+		entry({ entryId: 'entry-10', homeroomNames: ['ม.1/10'], roomCode: '120' }),
+		entry({ entryId: 'entry-2b', homeroomNames: ['ม.1/2'], roomCode: '115' }),
+		entry({ entryId: 'entry-2a', homeroomNames: ['ม.1/2'], roomCode: '101' }),
+		entry({ entryId: 'entry-duplicate', homeroomNames: ['ม.1/2'], roomCode: '101' })
 	]);
 
 	assert.deepEqual(groups[0].locations, [
 		{
 			key: 'ม.1/2\u0000101',
-			classroomName: 'ม.1/2',
+			homeroomNames: ['ม.1/2'],
 			roomCode: '101',
 			label: 'ม.1/2 / 101'
 		},
 		{
 			key: 'ม.1/2\u0000115',
-			classroomName: 'ม.1/2',
+			homeroomNames: ['ม.1/2'],
 			roomCode: '115',
 			label: 'ม.1/2 / 115'
 		},
 		{
 			key: 'ม.1/10\u0000120',
-			classroomName: 'ม.1/10',
+			homeroomNames: ['ม.1/10'],
 			roomCode: '120',
 			label: 'ม.1/10 / 120'
 		}
@@ -82,7 +82,7 @@ test('sorts synchronized locations naturally by classroom then physical room', (
 test('keeps synchronized activities from different slots separate', () => {
 	const groups = groupDailyTeachingEntries([
 		entry(),
-		entry({ entryId: 'entry-b', activitySlotId: 'slot-b', classroomName: 'ป.1/2' })
+		entry({ entryId: 'entry-b', offeringId: 'offering-b', homeroomNames: ['ป.1/2'] })
 	]);
 
 	assert.deepEqual(
@@ -95,8 +95,8 @@ test('does not merge independent or incomplete activity entries', () => {
 	const groups = groupDailyTeachingEntries([
 		entry({ entryId: 'independent-a', activitySchedulingMode: 'independent' }),
 		entry({ entryId: 'independent-b', activitySchedulingMode: 'independent' }),
-		entry({ entryId: 'missing-slot-a', activitySlotId: null }),
-		entry({ entryId: 'missing-slot-b', activitySlotId: null }),
+		entry({ entryId: 'missing-offering-a', offeringId: null }),
+		entry({ entryId: 'missing-offering-b', offeringId: null }),
 		entry({ entryId: 'missing-mode-a', activitySchedulingMode: null }),
 		entry({ entryId: 'missing-mode-b', activitySchedulingMode: null })
 	]);
@@ -106,8 +106,8 @@ test('does not merge independent or incomplete activity entries', () => {
 		[
 			['independent-a'],
 			['independent-b'],
-			['missing-slot-a'],
-			['missing-slot-b'],
+			['missing-offering-a'],
+			['missing-offering-b'],
 			['missing-mode-a'],
 			['missing-mode-b']
 		]
@@ -116,19 +116,19 @@ test('does not merge independent or incomplete activity entries', () => {
 
 test('preserves the first occurrence order when later synchronized entries merge', () => {
 	const groups = groupDailyTeachingEntries([
-		entry({ entryId: 'sync-a-1', activitySlotId: 'slot-a' }),
+		entry({ entryId: 'sync-a-1', offeringId: 'offering-a' }),
 		entry({
 			entryId: 'course-a',
 			entryType: 'COURSE',
-			activitySlotId: null,
+			offeringId: 'course-offering-a',
 			activitySchedulingMode: null,
-			classroomName: 'ป.2/1',
+			homeroomNames: ['ป.2/1'],
 			subjectCode: 'ค12101',
 			subjectName: 'คณิตศาสตร์',
 			title: null
 		}),
-		entry({ entryId: 'sync-a-2', activitySlotId: 'slot-a', classroomName: 'ป.1/2' }),
-		entry({ entryId: 'sync-b-1', activitySlotId: 'slot-b', classroomName: 'ป.3/1' })
+		entry({ entryId: 'sync-a-2', offeringId: 'offering-a', homeroomNames: ['ป.1/2'] }),
+		entry({ entryId: 'sync-b-1', offeringId: 'offering-b', homeroomNames: ['ป.3/1'] })
 	]);
 
 	assert.deepEqual(
@@ -141,8 +141,8 @@ test('deduplicates classroom and room labels without discarding entries', () => 
 	const groups = groupDailyTeachingEntries([
 		entry({ roomCode: '101' }),
 		entry({ entryId: 'entry-b', roomCode: '101' }),
-		entry({ entryId: 'entry-c', classroomName: null, roomCode: 'หอประชุม' }),
-		entry({ entryId: 'entry-d', classroomName: null, roomCode: null })
+		entry({ entryId: 'entry-c', homeroomNames: [], roomCode: 'หอประชุม' }),
+		entry({ entryId: 'entry-d', homeroomNames: [], roomCode: null })
 	]);
 
 	assert.deepEqual(groups[0].classroomLabels, ['ป.1/1 / 101', 'หอประชุม']);
@@ -152,8 +152,8 @@ test('deduplicates classroom and room labels without discarding entries', () => 
 
 test('falls back to an entry count when a synchronized group has no classroom labels', () => {
 	const groups = groupDailyTeachingEntries([
-		entry({ classroomName: null, roomCode: null }),
-		entry({ entryId: 'entry-b', classroomName: null, roomCode: null })
+		entry({ homeroomNames: [], roomCode: null }),
+		entry({ entryId: 'entry-b', homeroomNames: [], roomCode: null })
 	]);
 
 	assert.equal(displayGroupCountLabel(groups[0]), '2 รายการ');
@@ -186,7 +186,7 @@ test('uses detailed cards for courses and independent activities', () => {
 	assert.equal(typeof dailyTeachingEntryCardPresentation, 'function');
 	assert.deepEqual(
 		dailyTeachingEntryCardPresentation(
-			entry({ entryType: 'COURSE', activitySchedulingMode: null, activitySlotId: null })
+			entry({ entryType: 'COURSE', activitySchedulingMode: null })
 		),
 		{ tone: 'course', layout: 'details', titleLineLimit: 2 }
 	);

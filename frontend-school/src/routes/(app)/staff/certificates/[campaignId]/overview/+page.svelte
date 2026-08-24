@@ -42,6 +42,10 @@
 	} from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 
+	type CertificateAcademicYearOption = Omit<AcademicYearLookupItem, 'status'> & {
+		status?: AcademicYearLookupItem['status'];
+	};
+
 	const campaignId = $derived(page.params.campaignId ?? '');
 	const canReadCampaign = $derived(
 		$can.hasAny(PERMISSIONS.CERTIFICATE_READ_ORGANIZATION_UNIT, PERMISSIONS.CERTIFICATE_READ_SCHOOL)
@@ -53,7 +57,7 @@
 	const canCreateCampaign = $derived(canCreateOrganizationCampaign || canCreateSchoolCampaign);
 
 	let campaign: CertificateCampaignDetail | null = $state.raw(null);
-	let academicYears: AcademicYearLookupItem[] = $state.raw([]);
+	let academicYears: CertificateAcademicYearOption[] = $state.raw([]);
 	let ownerOptions: OrganizationUnitLookupItem[] = $state.raw([]);
 	let loading = $state(true);
 	let error = $state('');
@@ -96,14 +100,13 @@
 		}
 	}
 
-	function currentAcademicYear(): AcademicYearLookupItem[] {
+	function currentAcademicYear(): CertificateAcademicYearOption[] {
 		if (!campaign) return [];
 		return [
 			{
 				id: campaign.academicYearId,
 				name: campaign.academicYearName,
-				year: campaign.academicYearValue,
-				is_current: false
+				year: campaign.academicYearValue
 			}
 		];
 	}

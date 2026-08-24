@@ -38,13 +38,13 @@ export interface TimelineExamDay {
 }
 
 export interface TimelineRoomAssignment {
-	classroomId: string;
+	homeroomId: string;
 	roomId: string;
 }
 
 export interface TimelineSessionCandidate {
 	examScheduleItemId: string;
-	classroomId: string;
+	homeroomId: string;
 	gradeLevelId: string;
 	startTime: string;
 	durationMinutes: number;
@@ -54,7 +54,7 @@ export interface TimelineSessionCandidate {
 export interface TimelineScheduledSession {
 	id: string;
 	examDayId: string;
-	classroomId: string;
+	homeroomId: string;
 	roomId?: string | null;
 	startsAt: string;
 	endsAt: string;
@@ -75,7 +75,7 @@ export interface TimelineDragPreviewInput {
 	durationMinutes: number;
 	candidate: {
 		examScheduleItemId: string;
-		classroomId: string;
+		homeroomId: string;
 		gradeLevelId: string;
 		sourceSessionId?: string;
 	};
@@ -195,7 +195,7 @@ export function validateExamSessionPlacement({
 	}
 
 	const candidateAssignment = (day.roomAssignments ?? []).find(
-		(assignment) => assignment.classroomId === candidate.classroomId
+		(assignment) => assignment.homeroomId === candidate.homeroomId
 	);
 	if (!candidateAssignment) {
 		return { ok: false, reason: 'ยังไม่ได้กำหนดห้องสอบสำหรับห้องเรียนนี้ในวันสอบที่เลือก' };
@@ -214,7 +214,7 @@ export function validateExamSessionPlacement({
 	const classroomConflict = scheduledSessions.find(
 		(session) =>
 			session.examDayId === day.id &&
-			session.classroomId === candidate.classroomId &&
+			session.homeroomId === candidate.homeroomId &&
 			session.id !== candidate.sourceSessionId &&
 			rangesOverlap(candidate.startTime, candidateEndTime, session.startsAt, session.endsAt)
 	);

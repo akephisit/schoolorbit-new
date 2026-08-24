@@ -1,22 +1,14 @@
 import { writable, type Writable } from 'svelte/store';
-import { apiClient, BACKEND_WS_URL, getSchoolSubdomainHint } from '$lib/api/client';
-import type { TimetableEntry } from '$lib/api/timetable';
+import { BACKEND_WS_URL, getSchoolSubdomainHint } from '$lib/api/client';
 import { realtimeAuthRecovery } from '$lib/realtime/auth-recovery';
 import {
 	createTimetableSocketRuntime,
 	type TimetableSocketParams
 } from '$lib/utils/timetable-socket-runtime';
 
-// Types matching backend
 export interface UserContext {
 	view_mode: string;
 	view_id?: string;
-}
-
-export interface DragInfo {
-	code: string;
-	title: string;
-	color?: string;
 }
 
 export interface UserPresence {
@@ -26,455 +18,176 @@ export interface UserPresence {
 	context?: UserContext;
 }
 
-export interface UserActivityState {
-	activity_type: string;
-	target?: unknown;
-}
+type StateSyncEvent = {
+	type: 'StateSync';
+	payload: { users: UserPresence[]; current_seq: number };
+};
+
+type UserJoinedEvent = { type: 'UserJoined'; payload: UserPresence };
+type UserLeftEvent = { type: 'UserLeft'; payload: { user_id: string } };
+type CursorMoveEvent = {
+	type: 'CursorMove';
+	payload: { user_id: string; x: number; y: number; context?: UserContext };
+};
+type AcademicCoreChangedEvent = {
+	type: 'AcademicCoreChanged';
+	payload: {
+		user_id: string;
+		entity_type: string;
+		entity_id?: string | null;
+		academic_year_id?: string | null;
+		academic_term_id?: string | null;
+	};
+};
+type LearningDeliveryChangedEvent = {
+	type: 'LearningDeliveryChanged';
+	payload: {
+		user_id: string;
+		academic_term_id: string;
+		learning_offering_id: string;
+		learning_group_id?: string | null;
+		revision: number;
+	};
+};
+type TimetableChangedEvent = {
+	type: 'TimetableChanged';
+	payload: {
+		user_id: string;
+		academic_term_id: string;
+		learning_group_id?: string | null;
+		revision: number;
+	};
+};
 
 export type TimetableEvent =
-	| {
-			type: 'StateSync';
-			payload: {
-				users: UserPresence[];
-				drags: Record<string, { course_id?: string; entry_id?: string; info?: DragInfo }>;
-				activities: Record<string, UserActivityState>;
-				current_seq: number;
-			};
-	  }
-	| { type: 'TableRefresh'; payload: { user_id: string } }
-	| { type: 'UserJoined'; payload: UserPresence }
-	| { type: 'UserLeft'; payload: { user_id: string } }
-	| {
-			type: 'CursorMove';
-			payload: { user_id: string; x: number; y: number; context?: UserContext };
-	  }
-	| {
-			type: 'DragStart';
-			payload: { user_id: string; course_id?: string; entry_id?: string; info?: DragInfo };
-	  }
-	| { type: 'DragEnd'; payload: { user_id: string } }
-	| {
-			type: 'DragMove';
-			payload: {
-				user_id: string;
-				x: number;
-				y: number;
-				target_day?: string;
-				target_period_id?: string;
-			};
-	  }
-	| { type: 'UserActivity'; payload: { user_id: string; activity_type: string; target?: unknown } }
-	| { type: 'UserActivityEnd'; payload: { user_id: string } }
-	// Patch events (new — seq-tracked)
-	| { type: 'EntryCreated'; payload: { user_id: string; entry: TimetableEntry } }
-	| { type: 'EntryUpdated'; payload: { user_id: string; entry: TimetableEntry } }
-	| { type: 'EntryDeleted'; payload: { user_id: string; entry_id: string } }
-	| {
-			type: 'EntriesSwapped';
-			payload: { user_id: string; entry_a: TimetableEntry; entry_b: TimetableEntry };
-	  }
-	| {
-			type: 'EntryInstructorAdded';
-			payload: {
-				user_id: string;
-				entry_id: string;
-				instructor_id: string;
-				instructor_name: string;
-				role: string;
-			};
-	  }
-	| {
-			type: 'EntryInstructorRemoved';
-			payload: { user_id: string; entry_id: string; instructor_id: string; entry_deleted: boolean };
-	  }
-	| { type: 'CourseTeamChanged'; payload: { user_id: string; course_id: string } }
-	| {
-			type: 'DropIntent';
-			payload: {
-				user_id: string;
-				kind: string;
-				entry_id: string;
-				day_of_week: string;
-				period_id: string;
-				room_id?: string | null;
-				swap_partner_id?: string | null;
-				swap_partner_day?: string | null;
-				swap_partner_period_id?: string | null;
-				new_classroom_course_id?: string | null;
-				new_activity_slot_id?: string | null;
-				new_classroom_id?: string | null;
-			};
-	  }
-	| {
-			type: 'DropRejected';
-			payload: {
-				user_id: string;
-				entry_id: string;
-				original_day: string;
-				original_period_id: string;
-				original_room_id?: string | null;
-				partner_id?: string | null;
-				partner_original_day?: string | null;
-				partner_original_period_id?: string | null;
-				reason: string;
-			};
-	  }
-	| {
-			type: 'EntryIntent';
-			payload: {
-				user_id: string;
-				temp_id: string;
-				classroom_id: string;
-				classroom_course_id?: string | null;
-				activity_slot_id?: string | null;
-				day_of_week: string;
-				period_id: string;
-				room_id?: string | null;
-				title?: string | null;
-				entry_type: string;
-			};
-	  }
-	| {
-			type: 'EntryRejected';
-			payload: { user_id: string; temp_id: string; reason: string };
-	  };
+	| StateSyncEvent
+	| UserJoinedEvent
+	| UserLeftEvent
+	| CursorMoveEvent
+	| AcademicCoreChangedEvent
+	| LearningDeliveryChangedEvent
+	| TimetableChangedEvent;
 
-/** Patch events ที่ page subscribe เพื่อ apply ต่อ state — ไม่ fetch DB ซ้ำ */
-export type TimetablePatch =
-	| { type: 'EntryCreated'; entry: TimetableEntry; client_temp_id: string | null }
-	| { type: 'EntryUpdated'; entry: TimetableEntry }
-	| { type: 'EntryDeleted'; entry_id: string }
-	| { type: 'EntriesSwapped'; entry_a: TimetableEntry; entry_b: TimetableEntry }
-	| {
-			type: 'EntryInstructorAdded';
-			entry_id: string;
-			instructor_id: string;
-			instructor_name: string;
-			role: string;
-	  }
-	| {
-			type: 'EntryInstructorRemoved';
-			entry_id: string;
-			instructor_id: string;
-			entry_deleted: boolean;
-	  }
-	| { type: 'CourseTeamChanged'; course_id: string }
-	| {
-			type: 'DropIntent';
-			user_id: string;
-			kind: string; // 'move' | 'swap' | 'replace'
-			entry_id: string;
-			day_of_week: string;
-			period_id: string;
-			room_id: string | null;
-			swap_partner_id: string | null;
-			swap_partner_day: string | null;
-			swap_partner_period_id: string | null;
-			new_classroom_course_id: string | null;
-			new_activity_slot_id: string | null;
-			new_classroom_id: string | null;
-	  }
-	| {
-			type: 'DropRejected';
-			user_id: string;
-			entry_id: string;
-			original_day: string;
-			original_period_id: string;
-			original_room_id: string | null;
-			partner_id: string | null;
-			partner_original_day: string | null;
-			partner_original_period_id: string | null;
-			reason: string;
-	  }
-	| {
-			type: 'EntryIntent';
-			user_id: string;
-			temp_id: string;
-			classroom_id: string;
-			classroom_course_id: string | null;
-			activity_slot_id: string | null;
-			day_of_week: string;
-			period_id: string;
-			room_id: string | null;
-			title: string | null;
-			entry_type: string;
-	  }
-	| { type: 'EntryRejected'; user_id: string; temp_id: string; reason: string };
+type SequencedTimetableEvent = TimetableEvent & { seq?: number };
+type MutationEvent =
+	| AcademicCoreChangedEvent
+	| LearningDeliveryChangedEvent
+	| TimetableChangedEvent;
 
-// Stores
 export const activeUsers: Writable<UserPresence[]> = writable([]);
 export const remoteCursors: Writable<
 	Record<string, { x: number; y: number; context?: UserContext }>
 > = writable({});
-// Key: user_id -> What they are dragging
-export const userDrags: Writable<
-	Record<string, { course_id?: string; entry_id?: string; info?: DragInfo }>
-> = writable({});
-// Key: user_id -> Current drag position & target cell
-export const dragPositions: Writable<
-	Record<string, { x: number; y: number; target_day?: string; target_period_id?: string }>
-> = writable({});
-// Key: user_id -> Current dialog activity (room picker, instructor edit, etc.)
-export const remoteActivities: Writable<Record<string, UserActivityState>> = writable({});
 export const refreshTrigger: Writable<number> = writable(0);
 export const isConnected: Writable<boolean> = writable(false);
-/** Patch events ที่ broadcast จาก backend — page subscribe เพื่อ apply ต่อ state
- *  reset เป็น null หลัง apply เพื่อ dedupe */
-export const lastPatch: Writable<TimetablePatch | null> = writable(null);
 
-// Seq tracking (ใช้ detect gap + reconcile)
+let currentUserId: string | null = null;
+let currentAcademicTermId: string | null = null;
 let lastSeq = 0;
-let reconcileInFlight = false;
-
-export function setInitialSeq(seq: number) {
-	lastSeq = seq;
-}
 
 export function getLastSeq(): number {
 	return lastSeq;
 }
 
-/** Force reconcile: fetch replay หรือ full-fetch, apply, update lastSeq */
-async function triggerReconcile(semesterId: string) {
-	if (reconcileInFlight) return;
-	reconcileInFlight = true;
-	try {
-		const response = await apiClient
-			.get<{
-				events?: SeqEvent[];
-				current_seq?: number;
-				needs_refetch?: boolean;
-			}>(`/api/academic/timetable/replay?semester_id=${semesterId}&after_seq=${lastSeq}`)
-			.catch(() => null);
-		if (!response?.success || !response.data) {
-			// ล้มเหลว → fallback full-fetch ผ่าน refreshTrigger
-			refreshTrigger.update((n) => n + 1);
-			return;
-		}
-		const data = response.data;
-		if (data.needs_refetch) {
-			// Buffer หมด → full-fetch
-			lastSeq = data.current_seq ?? 0;
-			refreshTrigger.update((n) => n + 1);
-		} else {
-			// Apply events ตามลำดับ
-			for (const seqEvent of data.events ?? []) {
-				applyPatchFromSeqEvent(seqEvent);
-			}
-			lastSeq = data.current_seq ?? lastSeq;
-		}
-	} finally {
-		reconcileInFlight = false;
-	}
-}
-
-interface RawMessagePayload {
-	// StateSync
-	users?: UserPresence[];
-	drags?: Record<string, { course_id?: string; entry_id?: string; info?: DragInfo }>;
-	activities?: Record<string, UserActivityState>;
-	current_seq?: number;
-	// User events
-	user_id?: string;
-	name?: string;
-	color?: string;
-	// Activity
-	activity_type?: string;
-	target?: unknown;
-	// Cursor
-	x?: number;
-	y?: number;
-	context?: UserContext;
-	// Drag
-	course_id?: string;
-	entry_id?: string;
-	info?: DragInfo;
-	target_day?: string;
-	target_period_id?: string;
-	// Patch events
-	entry?: TimetableEntry;
-	entry_a?: TimetableEntry;
-	entry_b?: TimetableEntry;
-	instructor_id?: string;
-	instructor_name?: string;
-	role?: string;
-	entry_deleted?: boolean;
-	// Phase 2 — DropIntent / DropRejected / EntryIntent / EntryRejected
-	kind?: string;
-	day_of_week?: string;
-	period_id?: string;
-	room_id?: string | null;
-	swap_partner_id?: string | null;
-	swap_partner_day?: string | null;
-	swap_partner_period_id?: string | null;
-	new_classroom_course_id?: string | null;
-	new_activity_slot_id?: string | null;
-	new_classroom_id?: string | null;
-	original_day?: string;
-	original_period_id?: string;
-	original_room_id?: string | null;
-	partner_id?: string | null;
-	partner_original_day?: string | null;
-	partner_original_period_id?: string | null;
-	reason?: string;
-	temp_id?: string;
-	client_temp_id?: string | null;
-	classroom_id?: string;
-	classroom_course_id?: string | null;
-	activity_slot_id?: string | null;
-	title?: string | null;
-	entry_type?: string;
-}
-
-interface SeqEvent {
-	type: string;
-	payload: RawMessagePayload;
-	seq?: number;
-}
-
-function applyPatchFromSeqEvent(seqEvent: SeqEvent) {
-	const { type, payload } = seqEvent;
-	if (seqEvent.seq !== undefined && seqEvent.seq !== null) {
-		lastSeq = Math.max(lastSeq, seqEvent.seq);
-	}
-	switch (type) {
-		case 'TableRefresh':
-			refreshTrigger.update((n) => n + 1);
-			break;
-		case 'EntryCreated':
-			if (payload.entry)
-				lastPatch.set({
-					type: 'EntryCreated',
-					entry: payload.entry,
-					client_temp_id: payload.client_temp_id ?? null
-				});
-			break;
-		case 'EntryUpdated':
-			if (payload.entry) lastPatch.set({ type: 'EntryUpdated', entry: payload.entry });
-			break;
-		case 'EntryDeleted':
-			if (payload.entry_id) lastPatch.set({ type: 'EntryDeleted', entry_id: payload.entry_id });
-			break;
-		case 'EntriesSwapped':
-			if (payload.entry_a && payload.entry_b)
-				lastPatch.set({
-					type: 'EntriesSwapped',
-					entry_a: payload.entry_a,
-					entry_b: payload.entry_b
-				});
-			break;
-		case 'EntryInstructorAdded':
-			if (payload.entry_id && payload.instructor_id && payload.instructor_name && payload.role) {
-				lastPatch.set({
-					type: 'EntryInstructorAdded',
-					entry_id: payload.entry_id,
-					instructor_id: payload.instructor_id,
-					instructor_name: payload.instructor_name,
-					role: payload.role
-				});
-			}
-			break;
-		case 'EntryInstructorRemoved':
-			if (payload.entry_id && payload.instructor_id && payload.entry_deleted !== undefined) {
-				lastPatch.set({
-					type: 'EntryInstructorRemoved',
-					entry_id: payload.entry_id,
-					instructor_id: payload.instructor_id,
-					entry_deleted: payload.entry_deleted
-				});
-			}
-			break;
-		case 'CourseTeamChanged':
-			if (payload.course_id)
-				lastPatch.set({ type: 'CourseTeamChanged', course_id: payload.course_id });
-			break;
-		case 'DropIntent':
-			if (payload.user_id && payload.entry_id && payload.day_of_week && payload.period_id) {
-				lastPatch.set({
-					type: 'DropIntent',
-					user_id: payload.user_id,
-					kind: payload.kind ?? 'move',
-					entry_id: payload.entry_id,
-					day_of_week: payload.day_of_week,
-					period_id: payload.period_id,
-					room_id: payload.room_id ?? null,
-					swap_partner_id: payload.swap_partner_id ?? null,
-					swap_partner_day: payload.swap_partner_day ?? null,
-					swap_partner_period_id: payload.swap_partner_period_id ?? null,
-					new_classroom_course_id: payload.new_classroom_course_id ?? null,
-					new_activity_slot_id: payload.new_activity_slot_id ?? null,
-					new_classroom_id: payload.new_classroom_id ?? null
-				});
-			}
-			break;
-		case 'EntryIntent':
-			if (
-				payload.user_id &&
-				payload.temp_id &&
-				payload.classroom_id &&
-				payload.day_of_week &&
-				payload.period_id &&
-				payload.entry_type
-			) {
-				lastPatch.set({
-					type: 'EntryIntent',
-					user_id: payload.user_id,
-					temp_id: payload.temp_id,
-					classroom_id: payload.classroom_id,
-					classroom_course_id: payload.classroom_course_id ?? null,
-					activity_slot_id: payload.activity_slot_id ?? null,
-					day_of_week: payload.day_of_week,
-					period_id: payload.period_id,
-					room_id: payload.room_id ?? null,
-					title: payload.title ?? null,
-					entry_type: payload.entry_type
-				});
-			}
-			break;
-		case 'EntryRejected':
-			if (payload.user_id && payload.temp_id) {
-				lastPatch.set({
-					type: 'EntryRejected',
-					user_id: payload.user_id,
-					temp_id: payload.temp_id,
-					reason: payload.reason ?? ''
-				});
-			}
-			break;
-		case 'DropRejected':
-			if (
-				payload.user_id &&
-				payload.entry_id &&
-				payload.original_day &&
-				payload.original_period_id
-			) {
-				lastPatch.set({
-					type: 'DropRejected',
-					user_id: payload.user_id,
-					entry_id: payload.entry_id,
-					original_day: payload.original_day,
-					original_period_id: payload.original_period_id,
-					original_room_id: payload.original_room_id ?? null,
-					partner_id: payload.partner_id ?? null,
-					partner_original_day: payload.partner_original_day ?? null,
-					partner_original_period_id: payload.partner_original_period_id ?? null,
-					reason: payload.reason ?? ''
-				});
-			}
-			break;
-	}
-}
-
-let currentUserId: string | null = null;
-let currentSemesterId: string | null = null;
-
 function clearRealtimeState() {
 	isConnected.set(false);
 	activeUsers.set([]);
 	remoteCursors.set({});
-	userDrags.set({});
-	dragPositions.set({});
-	remoteActivities.set({});
+}
+
+function triggerReconcile(currentSeq?: number) {
+	if (typeof currentSeq === 'number') lastSeq = currentSeq;
+	refreshTrigger.update((count) => count + 1);
+}
+
+function isMutationEvent(
+	event: SequencedTimetableEvent
+): event is MutationEvent & { seq?: number } {
+	return (
+		event.type === 'AcademicCoreChanged' ||
+		event.type === 'LearningDeliveryChanged' ||
+		event.type === 'TimetableChanged'
+	);
+}
+
+function mutationMatchesSelectedTerm(event: MutationEvent): boolean {
+	if (!currentAcademicTermId) return false;
+	if (event.type === 'AcademicCoreChanged') {
+		return (
+			event.payload.academic_term_id == null ||
+			event.payload.academic_term_id === currentAcademicTermId
+		);
+	}
+	return event.payload.academic_term_id === currentAcademicTermId;
+}
+
+function handleMutation(event: MutationEvent & { seq?: number }) {
+	if (!mutationMatchesSelectedTerm(event)) return;
+	const seq = event.seq;
+	if (typeof seq !== 'number') {
+		triggerReconcile();
+		return;
+	}
+	if (seq <= lastSeq) return;
+	if (lastSeq > 0 && seq > lastSeq + 1) {
+		triggerReconcile(seq);
+		return;
+	}
+	lastSeq = seq;
+	triggerReconcile();
+}
+
+function handleStateSync(event: StateSyncEvent) {
+	activeUsers.set(event.payload.users.filter((user) => user.user_id !== currentUserId));
+	const currentSeq = event.payload.current_seq;
+	if (currentSeq !== lastSeq) triggerReconcile(currentSeq);
+}
+
+function handleMessage(event: SequencedTimetableEvent) {
+	if (isMutationEvent(event)) {
+		handleMutation(event);
+		return;
+	}
+
+	switch (event.type) {
+		case 'StateSync':
+			handleStateSync(event);
+			break;
+		case 'UserJoined':
+			if (event.payload.user_id === currentUserId) return;
+			activeUsers.update((users) =>
+				users.some((user) => user.user_id === event.payload.user_id)
+					? users
+					: [...users, event.payload]
+			);
+			break;
+		case 'UserLeft':
+			activeUsers.update((users) => users.filter((user) => user.user_id !== event.payload.user_id));
+			remoteCursors.update((cursors) => {
+				const next = { ...cursors };
+				delete next[event.payload.user_id];
+				return next;
+			});
+			break;
+		case 'CursorMove':
+			if (event.payload.user_id === currentUserId) return;
+			activeUsers.update((users) =>
+				users.map((user) =>
+					user.user_id === event.payload.user_id
+						? { ...user, context: event.payload.context }
+						: user
+				)
+			);
+			remoteCursors.update((cursors) => ({
+				...cursors,
+				[event.payload.user_id]: {
+					x: event.payload.x,
+					y: event.payload.y,
+					context: event.payload.context
+				}
+			}));
+			break;
+	}
 }
 
 async function recoverTimetableAuth() {
@@ -488,10 +201,10 @@ async function recoverTimetableAuth() {
 
 const timetableSocketRuntime = createTimetableSocketRuntime({
 	createSocket: (params) => {
-		currentUserId = params.current_user_id;
-		currentSemesterId = params.semester_id;
+		currentUserId = params.currentUserId;
+		currentAcademicTermId = params.academicTermId;
 		const url = new URL('/ws/timetable', BACKEND_WS_URL);
-		url.searchParams.set('semester_id', String(params.semester_id));
+		url.searchParams.set('academicTermId', String(params.academicTermId));
 		const schoolSubdomain = getSchoolSubdomainHint();
 		if (schoolSubdomain) url.searchParams.set('school_subdomain', schoolSubdomain);
 		return new WebSocket(url);
@@ -501,302 +214,43 @@ const timetableSocketRuntime = createTimetableSocketRuntime({
 	isOnline: () => navigator.onLine,
 	addOnlineListener: (listener) => window.addEventListener('online', listener),
 	removeOnlineListener: (listener) => window.removeEventListener('online', listener),
-	onOpen: () => {
-		console.log('WS Connected');
-		isConnected.set(true);
-	},
+	onOpen: () => isConnected.set(true),
 	onMessage: (data) => {
 		try {
-			handleMessage(JSON.parse(String(data)));
+			handleMessage(JSON.parse(String(data)) as SequencedTimetableEvent);
 		} catch (error) {
-			console.error('WS Parse Error', error);
+			console.error('Failed to parse timetable realtime event', error);
 		}
 	},
 	onClose: (event) => {
-		console.log('WS Disconnected');
 		clearRealtimeState();
 		if (event.code !== 1008) return;
 		void recoverTimetableAuth();
 	},
-	onError: (error) => {
-		console.error('WS Error', error);
-	}
+	onError: (error) => console.error('Timetable realtime connection failed', error)
 });
 
 export function connectTimetableSocket(params: TimetableSocketParams) {
+	if (currentAcademicTermId !== params.academicTermId) {
+		lastSeq = 0;
+		clearRealtimeState();
+	}
 	timetableSocketRuntime.connect(params);
 }
 
 export function disconnectTimetableSocket() {
 	currentUserId = null;
-	currentSemesterId = null;
+	currentAcademicTermId = null;
+	lastSeq = 0;
 	timetableSocketRuntime.disconnect();
 	clearRealtimeState();
 }
 
-export function sendTimetableEvent(event: TimetableEvent) {
-	timetableSocketRuntime.send(JSON.stringify(event));
-}
-
-export function sendUserActivity(activityType: string, target?: unknown) {
-	if (!currentUserId) return;
-	sendTimetableEvent({
-		type: 'UserActivity',
-		payload: { user_id: currentUserId, activity_type: activityType, target }
-	});
-}
-
-export function sendUserActivityEnd() {
-	if (!currentUserId) return;
-	sendTimetableEvent({
-		type: 'UserActivityEnd',
-		payload: { user_id: currentUserId }
-	});
-}
-
-/** Phase 2: broadcast optimistic drop intent — server relays to other clients
- *  so they apply the same optimistic mutation before DB confirms. */
-export function sendDropIntent(payload: {
-	kind: 'move' | 'swap' | 'replace';
-	entry_id: string;
-	day_of_week: string;
-	period_id: string;
-	room_id?: string | null;
-	swap_partner_id?: string | null;
-	swap_partner_day?: string | null;
-	swap_partner_period_id?: string | null;
-	new_classroom_course_id?: string | null;
-	new_activity_slot_id?: string | null;
-	new_classroom_id?: string | null;
-}) {
-	if (!currentUserId) return;
-	sendTimetableEvent({
-		type: 'DropIntent',
-		payload: {
-			user_id: currentUserId,
-			...payload
-		}
-	});
-}
-
-/** Phase 2: broadcast optimistic CREATE intent — relays so other clients render tempEntry
- *  before backend confirms. They lookup joined fields from local state. */
-export function sendEntryIntent(payload: {
-	temp_id: string;
-	classroom_id: string;
-	classroom_course_id?: string | null;
-	activity_slot_id?: string | null;
-	day_of_week: string;
-	period_id: string;
-	room_id?: string | null;
-	title?: string | null;
-	entry_type: string;
-}) {
-	if (!currentUserId) return;
-	sendTimetableEvent({
-		type: 'EntryIntent',
-		payload: {
-			user_id: currentUserId,
-			...payload
-		}
-	});
-}
-
-function handleMessage(msg: SeqEvent & { seq?: number }) {
-	const { type, payload, seq } = msg;
-
-	// Patch events: เช็ค seq + gap detection
-	const isMutation = [
-		'TableRefresh',
-		'EntryCreated',
-		'EntryUpdated',
-		'EntryDeleted',
-		'EntriesSwapped',
-		'EntryInstructorAdded',
-		'EntryInstructorRemoved',
-		'CourseTeamChanged'
-	].includes(type);
-
-	if (isMutation && typeof seq === 'number') {
-		if (seq <= lastSeq) {
-			// Duplicate หรือ out-of-order เก่า — ignore
-			return;
-		}
-		if (seq > lastSeq + 1 && lastSeq > 0) {
-			// Gap detected — reconcile
-			const semId = currentSemesterId;
-			if (semId) triggerReconcile(semId);
-			return;
-		}
-		// Sequential — apply
-		applyPatchFromSeqEvent(msg);
-		return;
-	}
-
-	switch (type) {
-		case 'StateSync': {
-			const { users = [], drags = {}, activities = {}, current_seq } = payload;
-			// Filter out self
-			const others = users.filter((u: UserPresence) => u.user_id !== currentUserId);
-			activeUsers.set(others);
-
-			// Sync drags (filter self if necessary, but usually drag store is by user_id ok)
-			if (currentUserId && drags[currentUserId]) {
-				delete drags[currentUserId];
-			}
-			userDrags.set(drags);
-
-			// Sync activities
-			const otherActivities = { ...activities };
-			if (currentUserId) delete otherActivities[currentUserId];
-			remoteActivities.set(otherActivities);
-
-			// Seq reconciliation — handle restart/reconnect
-			if (typeof current_seq === 'number') {
-				if (current_seq < lastSeq) {
-					// Server restart detected — seq counter reset ลง → full reset
-					console.log('[WS] Server restart detected (seq reset):', lastSeq, '->', current_seq);
-					lastSeq = current_seq;
-					refreshTrigger.update((n) => n + 1);
-				} else if (current_seq > lastSeq) {
-					// Gap — events หายช่วง disconnect หรือระหว่าง API→WS → replay
-					const semId = currentSemesterId;
-					if (semId) {
-						console.log('[WS] Gap detected on StateSync:', lastSeq, '->', current_seq);
-						triggerReconcile(semId);
-					} else {
-						lastSeq = current_seq;
-					}
-				}
-				// current_seq === lastSeq → no-op
-			}
-			break;
-		}
-		case 'UserJoined': {
-			const user = payload as UserPresence;
-			if (user.user_id === currentUserId) return; // Ignore reflection if any
-
-			// Add if not exists
-			activeUsers.update((users) => {
-				if (users.find((u) => u.user_id === user.user_id)) return users;
-				return [...users, user];
-			});
-			break;
-		}
-		case 'UserLeft': {
-			const { user_id } = payload;
-			if (!user_id) return;
-			activeUsers.update((users) => users.filter((u) => u.user_id !== user_id));
-
-			// Allow cleanup of cursor/drag/activity
-			remoteCursors.update((cursors) => {
-				const newCursors = { ...cursors };
-				delete newCursors[user_id];
-				return newCursors;
-			});
-			userDrags.update((drags) => {
-				const newDrags = { ...drags };
-				delete newDrags[user_id];
-				return newDrags;
-			});
-			dragPositions.update((pos) => {
-				const newPos = { ...pos };
-				delete newPos[user_id];
-				return newPos;
-			});
-			remoteActivities.update((acts) => {
-				const next = { ...acts };
-				delete next[user_id];
-				return next;
-			});
-			break;
-		}
-		case 'UserActivity': {
-			const { user_id, activity_type, target } = payload;
-			if (!user_id || user_id === currentUserId) return;
-			if (!activity_type) return;
-			remoteActivities.update((acts) => ({
-				...acts,
-				[user_id]: { activity_type, target }
-			}));
-			break;
-		}
-		case 'UserActivityEnd': {
-			const { user_id } = payload;
-			if (!user_id || user_id === currentUserId) return;
-			remoteActivities.update((acts) => {
-				const next = { ...acts };
-				delete next[user_id];
-				return next;
-			});
-			break;
-		}
-		case 'CursorMove': {
-			const { user_id, x, y, context } = payload;
-			if (!user_id || user_id === currentUserId) return;
-			if (typeof x !== 'number' || typeof y !== 'number') return;
-
-			// Update user context in activeUsers list too?
-			activeUsers.update((users) =>
-				users.map((u) => (u.user_id === user_id ? { ...u, context } : u))
-			);
-
-			remoteCursors.update((cursors) => ({
-				...cursors,
-				[user_id]: { x, y, context }
-			}));
-			break;
-		}
-		case 'DragStart': {
-			const { user_id, course_id, entry_id, info } = payload;
-			if (!user_id || user_id === currentUserId) return;
-
-			userDrags.update((drags) => ({
-				...drags,
-				[user_id]: { course_id, entry_id, info }
-			}));
-			break;
-		}
-		case 'DragMove': {
-			const { user_id, x, y, target_day, target_period_id } = payload;
-			if (!user_id || user_id === currentUserId) return;
-			if (typeof x !== 'number' || typeof y !== 'number') return;
-
-			// Update cursor position during drag
-			remoteCursors.update((cursors) => ({
-				...cursors,
-				[user_id]: { ...cursors[user_id], x, y }
-			}));
-
-			dragPositions.update((pos) => ({
-				...pos,
-				[user_id]: { x, y, target_day, target_period_id }
-			}));
-			break;
-		}
-		case 'DragEnd': {
-			const { user_id } = payload;
-			if (!user_id || user_id === currentUserId) return;
-
-			userDrags.update((drags) => {
-				const newDrags = { ...drags };
-				delete newDrags[user_id];
-				return newDrags;
-			});
-			dragPositions.update((pos) => {
-				const newPos = { ...pos };
-				delete newPos[user_id];
-				return newPos;
-			});
-			break;
-		}
-		case 'DropIntent':
-		case 'DropRejected':
-		case 'EntryIntent':
-		case 'EntryRejected':
-			// Phase 2 ephemeral — page subscribes via lastPatch
-			applyPatchFromSeqEvent(msg);
-			break;
-		// TableRefresh + patch events จัดการใน isMutation branch ด้านบน
-	}
+export function sendCursorMove(x: number, y: number, context?: UserContext) {
+	if (!currentUserId) return false;
+	const event: CursorMoveEvent = {
+		type: 'CursorMove',
+		payload: { user_id: currentUserId, x, y, context }
+	};
+	return timetableSocketRuntime.send(JSON.stringify(event));
 }

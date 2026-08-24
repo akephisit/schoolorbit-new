@@ -16,424 +16,189 @@ async function readRepoFile(relativePath) {
 	return readFile(path.join(repoRoot, relativePath), 'utf8');
 }
 
-test('academic assessment permissions are registered for teachers and academic office', async () => {
+test('academic assessment permissions remain generated for teachers and academic office', async () => {
 	const registry = await readProjectFile('src/lib/permissions/registry.generated.ts');
 
-	assert.match(registry, /ACADEMIC_ASSESSMENT:\s*['"]academic_assessment['"]/);
-	assert.match(
-		registry,
-		/ACADEMIC_ASSESSMENT_READ_ASSIGNED:\s*['"]academic_assessment\.read\.assigned['"]/
-	);
-	assert.match(
-		registry,
-		/ACADEMIC_ASSESSMENT_READ_ORGANIZATION_UNIT:\s*['"]academic_assessment\.read\.organization_unit['"]/
-	);
-	assert.match(
-		registry,
-		/ACADEMIC_ASSESSMENT_MANAGE_ASSIGNED:\s*['"]academic_assessment\.manage\.assigned['"]/
-	);
-	assert.match(
-		registry,
-		/ACADEMIC_ASSESSMENT_READ_SCHOOL:\s*['"]academic_assessment\.read\.school['"]/
-	);
-	assert.match(
-		registry,
-		/ACADEMIC_ASSESSMENT_MANAGE_SCHOOL:\s*['"]academic_assessment\.manage\.school['"]/
-	);
+	for (const permission of [
+		'ACADEMIC_ASSESSMENT_READ_ASSIGNED',
+		'ACADEMIC_ASSESSMENT_READ_ORGANIZATION_UNIT',
+		'ACADEMIC_ASSESSMENT_MANAGE_ASSIGNED',
+		'ACADEMIC_ASSESSMENT_READ_SCHOOL',
+		'ACADEMIC_ASSESSMENT_MANAGE_SCHOOL'
+	]) {
+		assert.match(registry, new RegExp(`${permission}:`));
+	}
 });
 
-test('academic assessment api client targets the assessment plan endpoints', async () => {
-	const source = await readProjectFile('src/lib/api/academicAssessments.ts');
+test('assessment api uses generated DTOs and offering-scoped endpoints', async () => {
+	const api = await readProjectFile('src/lib/api/academicAssessments.ts');
 
-	for (const exportName of [
+	assert.match(api, /import type \{ components \} from '\$lib\/api\/generated\/school-api'/);
+	for (const schema of [
+		'AssessmentPlanSummary',
+		'AssessmentPlanDetail',
+		'SaveAssessmentPlanRequest',
+		'AssessmentSettingsResponse'
+	]) {
+		assert.match(api, new RegExp(`Schemas\\['${schema}'\\]`));
+	}
+	assert.match(api, /academicTermId:\s*string/);
+	assert.match(api, /new URLSearchParams\(\{ academicTermId \}\)/);
+	assert.match(
+		api,
+		/\/api\/academic\/assessments\/offerings\/\$\{encodeURIComponent\(offeringId\)\}/
+	);
+	assert.match(api, /\/api\/academic\/assessments\/plans/);
+	assert.match(api, /\/api\/academic\/assessments\/settings/);
+	for (const retiredToken of [
+		['classroom', 'CourseId'].join(''),
+		['academic', 'SemesterId'].join(''),
+		'quick-scores'
+	]) {
+		assert.doesNotMatch(api, new RegExp(retiredToken));
+	}
+	assert.doesNotMatch(api, /courses\/\$\{/);
+	assert.doesNotMatch(api, /interface AssessmentPlanSummary|interface AssessmentPlanDetail/);
+});
+
+test('generated contract publishes every assessment operation and DTO', async () => {
+	const contract = await readProjectFile('src/lib/api/generated/school-api.ts');
+
+	for (const operation of [
 		'listAssessmentPlans',
 		'getAssessmentPlan',
 		'saveAssessmentPlan',
-		'bulkSaveAssessmentQuickScores',
 		'submitAssessmentPlan',
 		'getAssessmentSettings',
 		'updateAssessmentSettings'
 	]) {
-		assert.match(source, new RegExp(`export async function ${exportName}`));
+		assert.match(contract, new RegExp(`${operation}:`));
 	}
-
-	assert.match(source, /\/api\/academic\/assessments\/plans/);
-	assert.match(source, /\/api\/academic\/assessments\/plans\/quick-scores/);
-	assert.match(source, /\/api\/academic\/assessments\/settings/);
-	assert.match(source, /\/api\/academic\/assessments\/courses\/\$\{courseId\}/);
-	assert.match(source, /\/api\/academic\/assessments\/courses\/\$\{courseId\}\/submit/);
-	assert.match(source, /interface BulkSaveAssessmentQuickScoresRequest/);
-	assert.match(source, /interface SaveAssessmentQuickScoreEntryRequest/);
-	assert.match(source, /interface BulkSaveAssessmentQuickScoresResponse/);
-	assert.match(
-		source,
-		/type AssessmentExamMode = 'none' \| 'in_timetable' \| 'outside_timetable' \| 'practical'/
-	);
-	assert.match(
-		source,
-		/type AssessmentPlanStatus = 'not_configured' \| 'draft' \| 'saved' \| 'submitted' \| 'locked'/
-	);
+	assert.match(contract, /academicTermId:\s*string/);
+	assert.match(contract, /offeringId:\s*string/);
+	assert.match(contract, /rowVersion\?:\s*number \| null/);
 });
 
-test('academic assessment route exposes overview, downloads, and quick score editing', async () => {
+test('backend assessment model is term and offering scoped with optimistic locking', async () => {
+	const model = await readRepoFile('backend-school/src/modules/academic/models/assessment.rs');
+
+	assert.match(model, /pub academic_term_id: Uuid/);
+	assert.match(model, /pub offering_id: Uuid/);
+	assert.match(model, /pub learning_group_ids: Vec<Uuid>/);
+	assert.match(model, /pub row_version: Option<i64>/);
+	assert.match(model, /pub grading_policy: CourseGradingPolicy/);
+	assert.match(model, /#\[into_params\(parameter_in = Query\)\]/);
+	assert.doesNotMatch(model, /classroom_course_id|academic_semester_id/);
+});
+
+test('backend routes assessment plans through offering IDs and registers OpenAPI paths', async () => {
+	const handler = await readRepoFile('backend-school/src/modules/academic/handlers/assessment.rs');
+	const router = await readRepoFile('backend-school/src/modules/academic.rs');
+	const contract = await readRepoFile('backend-school/src/api_contract.rs');
+
+	assert.match(handler, /path = "\/api\/academic\/assessments\/offerings\/\{offering_id\}"/);
+	assert.match(
+		handler,
+		/path = "\/api\/academic\/assessments\/offerings\/\{offering_id\}\/submit"/
+	);
+	assert.match(router, /\/assessments\/offerings\/\{offering_id\}/);
+	assert.match(contract, /crate::modules::academic::handlers::assessment::get_assessment_plan/);
+	assert.match(contract, /AssessmentPlanDetail/);
+	assert.doesNotMatch(router, /quick-scores|assessments\/courses/);
+});
+
+test('assessment route requires an explicit term context', async () => {
 	const meta = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.ts');
 	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
 
-	assert.match(meta, /title:\s*['"]โครงสร้างคะแนน['"]/);
+	assert.match(meta, /academicContext:\s*'term_required'/);
 	assert.match(meta, /permission:\s*PERMISSION_MODULES\.ACADEMIC_ASSESSMENT/);
-	assert.match(meta, /group:\s*['"]academic['"]/);
-
-	assert.match(page, /PageShell/);
-	assert.match(page, /Download/);
-	assert.match(page, /exportAssessmentReport/);
-	assert.match(page, /quickScoreDrafts/);
-	assert.match(page, /saveAllQuickScoreRows/);
-	assert.match(page, /assessment-score-input/);
-	assert.match(page, /assessment-exam-cell/);
-	assert.match(page, /quickExamModeOptions/);
-	assert.match(page, /outside_timetable/);
-	assert.match(page, /canEditAssessmentPlan/);
-	assert.match(page, /plan\.canManage/);
-	assert.match(page, /ดูอย่างเดียว/);
+	assert.match(page, /getAcademicContextStore/);
+	assert.match(page, /state\.selected\.academicTermId/);
+	assert.match(page, /listAssessmentPlans\(\{ academicTermId: termId \}\)/);
+	assert.match(page, /เลือกภาคเรียนก่อน/);
+	assert.doesNotMatch(page, /getAcademicStructure|listClassrooms|selectedSemesterId/);
 });
 
-test('academic assessment score table uses dedicated score and exam columns', async () => {
+test('assessment workspace exposes offering snapshots instead of classroom course rows', async () => {
 	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
 
-	for (const heading of ['ก่อน', 'กลาง', 'หลัง', 'ปลาย']) {
-		assert.match(page, new RegExp(`heading:\\s*['"]${heading}['"]`));
+	assert.match(page, /plan\.offeringId/);
+	assert.match(page, /plan\.offeringCode/);
+	assert.match(page, /plan\.offeringName/);
+	assert.match(page, /plan\.subjectVersionDisplayLabel/);
+	assert.match(page, /plan\.learningGroupCount/);
+	assert.match(page, /plan\.totalScore/);
+	assert.match(page, /plan\.expectedTotalScore/);
+	for (const retiredToken of [
+		['classroom', 'CourseId'].join(''),
+		['classroom', 'Name'].join(''),
+		['classroom', 'Id'].join('')
+	]) {
+		assert.doesNotMatch(page, new RegExp(retiredToken));
 	}
-
-	for (const heading of ['สอบกลางภาค', 'สอบปลายภาค']) {
-		assert.match(
-			page,
-			new RegExp(`<Table\\.Head[^>]*>[\\s\\S]*${heading}[\\s\\S]*</Table\\.Head\\s*>`)
-		);
-	}
-	for (const heading of ['เวลากลางภาค', 'เวลาปลายภาค']) {
-		assert.match(
-			page,
-			new RegExp(
-				`<Table\\.Head[\\s\\S]*class="[^"]*w-\\[84px\\] min-w-\\[84px\\][^"]*"[\\s\\S]*>${heading}</Table\\.Head\\s*>`
-			)
-		);
-	}
-
-	const tableHeader = page.slice(page.indexOf('<Table.Header>'), page.indexOf('<Table.Body>'));
-	assert.match(
-		tableHeader,
-		/\{#each quickScoreColumns as column \(column\.field\)\}[\s\S]*สอบกลางภาค[\s\S]*เวลากลางภาค[\s\S]*สอบปลายภาค[\s\S]*เวลาปลายภาค/
-	);
-	assert.match(page, /\{#each quickScoreColumns as column \(column\.field\)\}/);
-	assert.doesNotMatch(page, /preMidtermScoreColumns/);
-	assert.doesNotMatch(page, /postMidtermScoreColumns/);
-	assert.match(page, /\{column\.heading\}/);
-	assert.match(page, /Table\.Root class="min-w-\[1240px\]"/);
-	assert.match(page, /w-\[78px\] min-w-\[78px\][^"]*px-2 text-right/);
-	assert.match(page, /assessment-score-cell w-\[78px\] min-w-\[78px\] px-2/);
-	assert.match(page, /assessment-score-input h-8 w-14 min-w-14 px-2 text-right tabular-nums/);
-	assert.match(page, /\[appearance:textfield\]/);
-	assert.match(page, /\[&::-webkit-inner-spin-button\]:appearance-none/);
-	assert.match(page, /\[&::-webkit-outer-spin-button\]:appearance-none/);
-	assert.match(page, /<Table\.Cell class="assessment-exam-cell">/);
-	assert.match(page, /<Table\.Cell class="assessment-duration-cell w-\[84px\] min-w-\[84px\]">/);
-	assert.equal(
-		page.match(/<Table\.Cell class="assessment-duration-cell w-\[84px\] min-w-\[84px\]">/g)?.length,
-		2
-	);
-	assert.match(page, /class="h-9 w-\[72px\] min-w-\[72px\] text-right tabular-nums/);
-	assert.doesNotMatch(page, /assessment-duration-cell w-\[96px\]/);
-	assert.match(page, /<Select\.Trigger class="h-9 text-xs">/);
-	assert.doesNotMatch(page, /w-\[72px\] px-2 text-right/);
-	assert.doesNotMatch(page, /assessment-score-cell px-2/);
-	assert.doesNotMatch(page, /w-\[116px\] px-2/);
-	assert.doesNotMatch(page, /w-\[104px\] px-2/);
-	assert.doesNotMatch(page, /assessment-exam-cell px-2/);
-	assert.doesNotMatch(page, /Select\.Trigger class="h-8 px-2 text-xs"/);
-	assert.doesNotMatch(page, /<Table\.Head[^>]*>คะแนน<\/Table\.Head>/);
-	assert.match(page, /handleQuickScoreEnter/);
-	assert.match(page, /data-assessment-quick-score-input/);
-	assert.match(page, /canEditExamDuration/);
-	assert.match(page, /mode === 'in_timetable'/);
 });
 
-test('academic assessment summary exposes core score buckets for table editing', async () => {
+test('assessment editor supports categories, items, exam modes, save, and submit', async () => {
+	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
+
+	for (const symbol of [
+		'addCategory',
+		'removeCategory',
+		'addItem',
+		'removeItem',
+		'saveAssessmentPlan',
+		'submitAssessmentPlan'
+	]) {
+		assert.match(page, new RegExp(symbol));
+	}
+	for (const mode of ['none', 'in_timetable', 'outside_timetable', 'practical']) {
+		assert.match(page, new RegExp(`value: '${mode}'`));
+	}
+	assert.match(page, /bind:value=\{category\.maxScore\}/);
+	assert.match(page, /bind:value=\{item\.maxScore\}/);
+	assert.match(page, /bind:value=\{category\.examDurationMinutes\}/);
+	assert.match(page, /detail\.status !== 'saved'/);
+});
+
+test('assessment save sends rowVersion and keeps dirty draft on conflicts', async () => {
 	const api = await readProjectFile('src/lib/api/academicAssessments.ts');
-	const model = await readRepoFile('backend-school/src/modules/academic/models/assessment.rs');
+	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
 	const service = await readRepoFile(
 		'backend-school/src/modules/academic/services/assessment_service.rs'
 	);
 
-	for (const field of [
-		'beforeMidtermScore',
-		'midtermScore',
-		'afterMidtermScore',
-		'finalScore',
-		'midtermExamMode',
-		'finalExamMode',
-		'canManage'
-	]) {
-		assert.match(api, new RegExp(`${field}[?]?:`));
-	}
+	assert.match(page, /rowVersion:\s*detail\.rowVersion \?\? null/);
+	assert.match(page, /registerAcademicContextDirtySource/);
+	assert.match(page, /\(\) => dirty/);
+	assert.match(page, /if \(dirty && plan\.offeringId !== selectedOfferingId\)/);
+	assert.match(api, /response\.status === 409/);
+	assert.match(api, /เก็บข้อมูลที่แก้ไว้/);
+	assert.match(service, /row_version/);
+	assert.match(service, /conflict|Conflict/i);
 
-	for (const field of [
-		'before_midterm_score',
-		'midterm_score',
-		'after_midterm_score',
-		'final_score',
-		'midterm_exam_mode',
-		'final_exam_mode',
-		'can_manage'
-	]) {
-		assert.match(model, new RegExp(`pub ${field}:`));
-		assert.match(service, new RegExp(`${field}`));
-	}
+	const saveHandler = page.slice(
+		page.indexOf('async function savePlan'),
+		page.indexOf('async function submitPlan')
+	);
+	const catchBlock = saveHandler.slice(
+		saveHandler.indexOf('} catch (error)'),
+		saveHandler.indexOf('} finally')
+	);
+	assert.doesNotMatch(catchBlock, /draftCategories\s*=|dirty\s*=\s*false/);
 });
 
-test('academic assessment exposes subject-group read access while keeping row editing scoped', async () => {
+test('assessment settings still gate assigned teachers while school managers control the switch', async () => {
 	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
-	const api = await readProjectFile('src/lib/api/academicAssessments.ts');
 	const service = await readRepoFile(
 		'backend-school/src/modules/academic/services/assessment_service.rs'
 	);
-	const backendRegistry = await readRepoFile(
-		'backend-school/src/permissions/registry_generated.rs'
-	);
-	const migration = await readRepoFile(
-		'backend-school/migrations/015_academic_assessment_subject_group_read.sql'
-	);
-
-	assert.match(api, /canManage:\s*boolean/);
-	assert.match(page, /PERMISSIONS\.ACADEMIC_ASSESSMENT_READ_ORGANIZATION_UNIT/);
-	assert.match(page, /function canEditAssessmentPlan\(plan: AssessmentPlanSummary\)/);
-	assert.match(page, /plan\.canManage/);
-	assert.match(page, /const dirtyPlans = plans[\s\S]*\.filter\(canEditAssessmentPlan\)/);
-	assert.match(page, /ดูอย่างเดียว/);
-
-	assert.match(backendRegistry, /ACADEMIC_ASSESSMENT_READ_ORGANIZATION_UNIT/);
-	assert.match(service, /AssessmentPlanListAccess/);
-	assert.match(service, /subject_group_ids/);
-	assert.match(service, /s\.group_id = ANY/);
-	assert.match(service, /can_manage/);
-	assert.match(migration, /academic_assessment\.read\.organization_unit/);
-	assert.match(migration, /unit_type = 'subject_group'/);
-	assert.match(migration, /organization_permission_grants/);
-});
-
-test('academic assessment page can gate teacher access from the overview', async () => {
-	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
 
 	assert.match(page, /teacherAccessEnabled/);
 	assert.match(page, /toggleTeacherAccess/);
-	assert.match(page, /Switch/);
-	assert.match(page, /เปิดให้ครูกรอก/);
-	assert.match(page, /ยังไม่เปิดให้ครูกรอกโครงสร้างคะแนน/);
-});
-
-test('academic assessment page uses one-save spreadsheet editing without expanded inline panels', async () => {
-	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
-
-	assert.doesNotMatch(page, /Dialog\.Root/);
-	assert.doesNotMatch(page, /Dialog\.Content/);
-	assert.doesNotMatch(page, /editorOpen/);
-	assert.doesNotMatch(page, /expandedPlanKey/);
-	assert.doesNotMatch(page, /toggleInlineEditor/);
-	assert.doesNotMatch(page, /assessment-inline-editor-row/);
-	assert.doesNotMatch(page, /assessment-inline-category-grid/);
-	assert.doesNotMatch(page, /assessment-inline-item-grid/);
-	assert.doesNotMatch(page, /saveQuickScoreRow/);
-	assert.doesNotMatch(page, /submitQuickScoreRow/);
-	assert.doesNotMatch(page, /ChevronDown/);
-	assert.doesNotMatch(page, /ChevronRight/);
-	assert.match(page, /บันทึกการเปลี่ยนแปลง/);
-});
-
-test('academic assessment table keeps save action near grid without sticky subject column', async () => {
-	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
-	const headerActions = page.slice(
-		page.indexOf('{#snippet actions()}'),
-		page.indexOf('{/snippet}')
-	);
-	const tableShell = page.slice(
-		page.indexOf('assessment-table-shell'),
-		page.indexOf('</Table.Root>')
-	);
-
-	assert.doesNotMatch(headerActions, /saveAllQuickScoreRows/);
-	assert.match(tableShell, /assessment-table-toolbar/);
-	assert.match(tableShell, /onclick=\{saveAllQuickScoreRows\}/);
-	assert.match(tableShell, /class="w-full md:w-auto"/);
-	assert.ok(
-		tableShell.indexOf('onclick={saveAllQuickScoreRows}') < tableShell.indexOf('<Table.Root')
-	);
-	assert.match(tableShell, /assessment-table-scroll/);
-	assert.match(tableShell, /\[&_\[data-slot='table-container'\]\]:overflow-visible/);
-	assert.match(tableShell, /assessment-sticky-head/);
-	assert.match(tableShell, /sticky top-0/);
-	assert.doesNotMatch(tableShell, /assessment-sticky-subject/);
-	assert.doesNotMatch(tableShell, /left-0/);
-	assert.doesNotMatch(tableShell, /sticky left/);
-});
-
-test('academic assessment save feedback uses toast and saved status label', async () => {
-	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
-
-	assert.match(page, /toast\.success\(['"]บันทึกการเปลี่ยนแปลงแล้ว['"]\)/);
-	assert.doesNotMatch(page, /บันทึกคะแนนทั้งหมดแล้ว/);
-	assert.match(page, /ยังไม่บันทึก/);
-	assert.match(page, /\{ value: 'saved', label: 'บันทึกแล้ว' \}/);
-	assert.match(page, /saved:\s*plans\.filter\(\(plan\) => plan\.status === 'saved'\)\.length/);
-});
-
-test('academic assessment quick save validates required score and duration fields', async () => {
-	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
-
-	assert.match(page, /function quickScoreDraftValue/);
-	assert.match(page, /plan\.status === 'not_configured' && value === 0/);
-	assert.match(page, /beforeMidtermScore: quickScoreDraftValue\(plan, plan\.beforeMidtermScore\)/);
-	assert.match(page, /midtermScore: quickScoreDraftValue\(plan, plan\.midtermScore\)/);
-	assert.match(page, /afterMidtermScore: quickScoreDraftValue\(plan, plan\.afterMidtermScore\)/);
-	assert.match(page, /finalScore: quickScoreDraftValue\(plan, plan\.finalScore\)/);
-	assert.match(page, /type QuickValidationField = QuickScoreField \| QuickDurationField/);
-	assert.match(page, /type QuickScoreValidationIssue =/);
-	assert.match(page, /function firstQuickScoreValidationIssue/);
-	assert.match(page, /function showQuickScoreValidationIssue/);
-	assert.match(page, /function focusQuickScoreValidationIssue/);
-	assert.match(page, /function scoreToSaveValue/);
-	assert.match(page, /draft\[column\.field\] == null/);
-	assert.match(page, /draft\.midtermExamDurationMinutes == null/);
-	assert.match(page, /draft\.finalExamDurationMinutes == null/);
-	assert.match(page, /กรุณากรอกคะแนน/);
-	assert.match(page, /กรุณากรอกระยะเวลา/);
-	assert.match(page, /data-assessment-plan-key=\{assessmentPlanKey\(plan\)\}/);
-	assert.match(page, /data-assessment-field=\{column\.field\}/);
-	assert.match(page, /data-assessment-field="midtermExamDurationMinutes"/);
-	assert.match(page, /data-assessment-field="finalExamDurationMinutes"/);
-	assert.match(page, /required=\{canEditPlan\}/);
-	assert.match(
-		page,
-		/required=\{canEditPlan && canEditExamDuration\(quickDraft\.midtermExamMode\)\}/
-	);
-	assert.match(
-		page,
-		/required=\{canEditPlan && canEditExamDuration\(quickDraft\.finalExamMode\)\}/
-	);
-	assert.match(
-		page,
-		/const validationIssue = firstQuickScoreValidationIssue\(dirtyPlans\);[\s\S]*if \(validationIssue\) \{[\s\S]*showQuickScoreValidationIssue\(validationIssue\);[\s\S]*return;[\s\S]*\}/
-	);
-	assert.match(page, /beforeMidtermScore: scoreToSaveValue\(draft\.beforeMidtermScore\)/);
-	assert.match(page, /midtermScore: scoreToSaveValue\(draft\.midtermScore\)/);
-	assert.match(page, /afterMidtermScore: scoreToSaveValue\(draft\.afterMidtermScore\)/);
-	assert.match(page, /finalScore: scoreToSaveValue\(draft\.finalScore\)/);
-	assert.doesNotMatch(page, /maxScore: quickScoreValue/);
-});
-
-test('academic assessment quick save uses one bulk request and patches rows locally', async () => {
-	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
-	const handler = await readRepoFile('backend-school/src/modules/academic/handlers/assessment.rs');
-	const router = await readRepoFile('backend-school/src/modules/academic.rs');
-	const model = await readRepoFile('backend-school/src/modules/academic/models/assessment.rs');
-	const service = await readRepoFile(
-		'backend-school/src/modules/academic/services/assessment_service.rs'
-	);
-
-	assert.match(page, /bulkSaveAssessmentQuickScores/);
-	assert.match(page, /function buildQuickScoreEntry/);
-	assert.match(page, /function patchQuickScoreSaveResults/);
-	assert.match(page, /function planMatchesStatusFilter/);
-	assert.match(page, /const response = await bulkSaveAssessmentQuickScores/);
-	assert.match(page, /patchQuickScoreSaveResults\(response\.data\.plans\)/);
-	assert.match(page, /patchedPlans\.filter\(planMatchesStatusFilter\)/);
-	assert.doesNotMatch(page, /function persistQuickScorePlan/);
-	assert.doesNotMatch(page, /getAssessmentPlan\(plan\.classroomCourseId\)/);
-	assert.doesNotMatch(page, /saveAssessmentPlan\(/);
-	const saveAllQuickScoreRows = page.slice(
-		page.indexOf('async function saveAllQuickScoreRows'),
-		page.indexOf('async function exportAssessmentReport')
-	);
-	assert.doesNotMatch(saveAllQuickScoreRows, /await loadPlans\(\)/);
-
-	assert.match(handler, /pub async fn bulk_save_assessment_quick_scores/);
-	assert.match(router, /\/assessments\/plans\/quick-scores/);
-	assert.match(model, /BulkSaveAssessmentQuickScoresRequest/);
-	assert.match(model, /SaveAssessmentQuickScoreEntryRequest/);
-	assert.match(model, /BulkSaveAssessmentQuickScoresResponse/);
-	assert.match(service, /pub async fn bulk_save_quick_scores/);
-	assert.match(service, /validate_quick_score_bulk_payload/);
-});
-
-test('academic assessment plans are grouped by subject and capture exam duration', async () => {
-	const api = await readProjectFile('src/lib/api/academicAssessments.ts');
-	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
-
-	assert.match(api, /classroomCount:\s*number/);
-	assert.match(api, /examDurationMinutes\?:\s*number\s*\|\s*null/);
-	assert.match(page, /function assessmentPlanKey\(plan: AssessmentPlanSummary\)/);
-	assert.match(page, /\{#each plans as plan \(assessmentPlanKey\(plan\)\)\}/);
-	assert.match(page, /ห้องเรียนที่เปิด/);
-	assert.match(page, /เวลากลางภาค/);
-	assert.match(page, /เวลาปลายภาค/);
-	assert.match(page, /ระยะเวลากลางภาค/);
-	assert.match(page, /ระยะเวลาปลายภาค/);
-	assert.match(page, /midtermExamDurationMinutes/);
-	assert.match(page, /finalExamDurationMinutes/);
-	assert.doesNotMatch(page, /\{#each plans as plan \(plan\.classroomCourseId\)\}/);
-});
-
-test('academic assessment export sorts by grade level before subject group', async () => {
-	const api = await readProjectFile('src/lib/api/academicAssessments.ts');
-	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
-	const model = await readRepoFile('backend-school/src/modules/academic/models/assessment.rs');
-	const service = await readRepoFile(
-		'backend-school/src/modules/academic/services/assessment_service.rs'
-	);
-
-	assert.match(api, /subjectGroupName\?:\s*string/);
-	assert.match(api, /subjectGroupDisplayOrder\?:\s*number\s*\|\s*null/);
-	assert.match(api, /gradeLevelSort:\s*number/);
-	assert.match(api, /gradeYear:\s*number/);
-	assert.match(api, /classroomRoomNumber\?:\s*string\s*\|\s*null/);
-
-	assert.match(model, /pub subject_group_name: Option<String>/);
-	assert.match(model, /pub subject_group_display_order: Option<i32>/);
-	assert.match(model, /pub grade_level_sort: i32/);
-	assert.match(model, /pub grade_year: i32/);
-	assert.match(model, /pub classroom_room_number: Option<String>/);
-
-	assert.match(service, /LEFT JOIN subject_groups sg ON sg\.id = s\.group_id/);
-	assert.match(service, /sg\.name_th AS subject_group_name/);
-	assert.match(service, /sg\.display_order AS subject_group_display_order/);
-
-	assert.match(page, /function sortedAssessmentExportPlans/);
-	assert.match(page, /subjectGroupDisplayOrder/);
-	assert.match(page, /subjectGroupName/);
-	assert.match(page, /gradeLevelSort/);
-	assert.match(page, /gradeYear/);
-	assert.match(page, /classroomRoomNumber/);
-	assert.match(page, /const rows = sortedAssessmentExportPlans\(plans\)/);
-	assert.match(page, /กลุ่มสาระ:\s*plan\.subjectGroupName/);
-	assert.match(page, /ระดับชั้น:\s*gradeLevelLabel\(plan\)/);
-
-	const exportSortHelper = page.slice(
-		page.indexOf('function sortedAssessmentExportPlans'),
-		page.indexOf('function assessmentPlanKey')
-	);
-	const gradeLevelSortIndex = exportSortHelper.indexOf(
-		'compareNullableNumber(left.gradeLevelSort, right.gradeLevelSort)'
-	);
-	const gradeYearIndex = exportSortHelper.indexOf(
-		'compareNullableNumber(left.gradeYear, right.gradeYear)'
-	);
-	const subjectGroupOrderIndex = exportSortHelper.indexOf(
-		'compareNullableNumber(left.subjectGroupDisplayOrder, right.subjectGroupDisplayOrder)'
-	);
-	const subjectGroupNameIndex = exportSortHelper.indexOf(
-		'compareExportText(left.subjectGroupName, right.subjectGroupName)'
-	);
-
-	assert.ok(gradeLevelSortIndex >= 0);
-	assert.ok(gradeYearIndex > gradeLevelSortIndex);
-	assert.ok(subjectGroupOrderIndex > gradeYearIndex);
-	assert.ok(subjectGroupNameIndex > subjectGroupOrderIndex);
+	assert.match(page, /canManageSchool/);
+	assert.match(page, /ACADEMIC_ASSESSMENT_MANAGE_ASSIGNED/);
+	assert.match(page, /<Switch/);
+	assert.match(service, /require_teacher_access_enabled_for_manager/);
+	assert.match(service, /ยังไม่เปิดให้ครูกรอกโครงสร้างคะแนน/);
 });

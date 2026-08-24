@@ -2,6 +2,7 @@ import { PERMISSION_MODULES } from '$lib/permissions/registry';
 import type { PageLoad } from './$types';
 
 export const _meta = {
+	academicContext: 'term_optional' as const,
 	menu: {
 		title: 'นิเทศการสอน',
 		icon: 'ClipboardCheck',

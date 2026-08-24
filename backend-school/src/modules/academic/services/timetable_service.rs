@@ -57,9 +57,14 @@ struct EntryRow {
     learning_group_code: Option<String>,
     learning_group_name: Option<String>,
     subject_id: Option<Uuid>,
+    subject_group_id: Option<Uuid>,
+    subject_group_name: Option<String>,
+    subject_group_display_order: Option<i32>,
     subject_version_display_label: Option<String>,
     activity_id: Option<Uuid>,
     activity_version_display_label: Option<String>,
+    activity_scheduling_mode:
+        Option<crate::modules::academic::delivery::models::ActivitySchedulingMode>,
     homeroom_name: Option<String>,
     room_code: Option<String>,
     period_name: Option<String>,
@@ -1332,6 +1337,9 @@ fn entry_select() -> &'static str {
               learning_group.code AS learning_group_code,
               learning_group.name AS learning_group_name,
               course_detail.subject_id,
+              subject_group.id AS subject_group_id,
+              subject_group.name_th AS subject_group_name,
+              subject_group.display_order AS subject_group_display_order,
               CASE WHEN course_version.id IS NULL THEN NULL ELSE concat(
                   coalesce(course_version.name_th, course_version.name_en, offering.name_snapshot),
                   ' · v', course_version.version_no
@@ -1340,6 +1348,7 @@ fn entry_select() -> &'static str {
               CASE WHEN activity_version.id IS NULL THEN NULL ELSE concat(
                   activity_version.name, ' · v', activity_version.version_no
               ) END AS activity_version_display_label,
+              activity_detail.scheduling_mode AS activity_scheduling_mode,
               homeroom.name AS homeroom_name,
               room.code AS room_code,
               period.name AS period_name,
@@ -1355,6 +1364,8 @@ fn entry_select() -> &'static str {
          ON course_detail.learning_offering_id = offering.id
        LEFT JOIN subject_versions course_version
          ON course_version.id = course_detail.subject_version_id
+       LEFT JOIN subject_groups subject_group
+         ON subject_group.id = course_version.group_id
        LEFT JOIN activity_offering_details activity_detail
          ON activity_detail.learning_offering_id = offering.id
        LEFT JOIN activity_versions activity_version
@@ -1372,13 +1383,39 @@ async fn hydrate_rows(pool: &PgPool, rows: Vec<EntryRow>) -> Result<Vec<Timetabl
 }
 
 async fn hydrate_row(pool: &PgPool, row: EntryRow) -> Result<TimetableEntry, AppError> {
-    let instructors: Vec<(Uuid, String, String)> = if let Some(group_id) = row.learning_group_id {
+    let instructors: Vec<(
+        Uuid,
+        String,
+        String,
+        Option<Uuid>,
+        Option<String>,
+        Option<i32>,
+    )> = if let Some(group_id) = row.learning_group_id {
         sqlx::query_as(
             r#"SELECT teacher.teacher_id,
                       concat_ws(' ', nullif(concat(coalesce(user_account.title, ''), user_account.first_name), ''), nullif(user_account.last_name, '')) AS display_name,
-                      teacher.role
+                      teacher.role,
+                      teacher_subject_group.id AS subject_group_id,
+                      teacher_subject_group.name_th AS subject_group_name,
+                      teacher_subject_group.display_order AS subject_group_display_order
                FROM learning_group_teachers teacher
                JOIN users user_account ON user_account.id = teacher.teacher_id
+               LEFT JOIN LATERAL (
+                   SELECT subject_group.id, subject_group.name_th, subject_group.display_order
+                   FROM organization_members membership
+                   JOIN organization_units unit
+                     ON unit.id = membership.organization_unit_id
+                   JOIN subject_groups subject_group
+                     ON subject_group.id = unit.subject_group_id
+                   WHERE membership.user_id = teacher.teacher_id
+                     AND membership.started_at <= CURRENT_DATE
+                     AND (membership.ended_at IS NULL OR membership.ended_at >= CURRENT_DATE)
+                   ORDER BY membership.is_primary DESC,
+                            subject_group.display_order,
+                            membership.started_at,
+                            membership.id
+                   LIMIT 1
+               ) teacher_subject_group ON true
                WHERE teacher.learning_group_id = $1
                ORDER BY CASE teacher.role WHEN 'primary' THEN 1 WHEN 'secondary' THEN 2 ELSE 3 END,
                         teacher.created_at, teacher.teacher_id"#,
@@ -1390,9 +1427,28 @@ async fn hydrate_row(pool: &PgPool, row: EntryRow) -> Result<TimetableEntry, App
         sqlx::query_as(
             r#"SELECT instructor.instructor_id,
                       concat_ws(' ', nullif(concat(coalesce(user_account.title, ''), user_account.first_name), ''), nullif(user_account.last_name, '')) AS display_name,
-                      instructor.role::text
+                      instructor.role::text,
+                      teacher_subject_group.id AS subject_group_id,
+                      teacher_subject_group.name_th AS subject_group_name,
+                      teacher_subject_group.display_order AS subject_group_display_order
                FROM timetable_entry_instructors instructor
                JOIN users user_account ON user_account.id = instructor.instructor_id
+               LEFT JOIN LATERAL (
+                   SELECT subject_group.id, subject_group.name_th, subject_group.display_order
+                   FROM organization_members membership
+                   JOIN organization_units unit
+                     ON unit.id = membership.organization_unit_id
+                   JOIN subject_groups subject_group
+                     ON subject_group.id = unit.subject_group_id
+                   WHERE membership.user_id = instructor.instructor_id
+                     AND membership.started_at <= CURRENT_DATE
+                     AND (membership.ended_at IS NULL OR membership.ended_at >= CURRENT_DATE)
+                   ORDER BY membership.is_primary DESC,
+                            subject_group.display_order,
+                            membership.started_at,
+                            membership.id
+                   LIMIT 1
+               ) teacher_subject_group ON true
                WHERE instructor.entry_id = $1
                ORDER BY CASE instructor.role WHEN 'primary' THEN 1 ELSE 2 END,
                         instructor.created_at, instructor.instructor_id"#,
@@ -1408,7 +1464,7 @@ async fn hydrate_row(pool: &PgPool, row: EntryRow) -> Result<TimetableEntry, App
         bell_schedule_id: row.bell_schedule_id,
         bell_schedule_period_id: row.bell_schedule_period_id,
         day_of_week: row.day_of_week,
-        entry_type: row.entry_type.to_ascii_lowercase(),
+        entry_type: wire_entry_type(&row.entry_type),
         learning_group_id: row.learning_group_id,
         offering_id: row.learning_offering_id,
         homeroom_id: row.homeroom_id,
@@ -1423,9 +1479,13 @@ async fn hydrate_row(pool: &PgPool, row: EntryRow) -> Result<TimetableEntry, App
         learning_group_code: row.learning_group_code,
         learning_group_name: row.learning_group_name,
         subject_id: row.subject_id,
+        subject_group_id: row.subject_group_id,
+        subject_group_name: row.subject_group_name,
+        subject_group_display_order: row.subject_group_display_order,
         subject_version_display_label: row.subject_version_display_label,
         activity_id: row.activity_id,
         activity_version_display_label: row.activity_version_display_label,
+        activity_scheduling_mode: row.activity_scheduling_mode,
         homeroom_name: row.homeroom_name,
         room_code: row.room_code,
         period_name: row.period_name,
@@ -1433,11 +1493,23 @@ async fn hydrate_row(pool: &PgPool, row: EntryRow) -> Result<TimetableEntry, App
         end_time: row.end_time,
         instructors: instructors
             .into_iter()
-            .map(|(user_id, display_name, role)| TimetableInstructor {
-                user_id,
-                display_name,
-                role,
-            })
+            .map(
+                |(
+                    user_id,
+                    display_name,
+                    role,
+                    subject_group_id,
+                    subject_group_name,
+                    subject_group_display_order,
+                )| TimetableInstructor {
+                    user_id,
+                    display_name,
+                    role,
+                    subject_group_id,
+                    subject_group_name,
+                    subject_group_display_order,
+                },
+            )
             .collect(),
         created_at: row.created_at,
         updated_at: row.updated_at,
@@ -1464,6 +1536,10 @@ fn normalize_entry_type(entry_type: &str) -> Result<String, AppError> {
     }
 }
 
+fn wire_entry_type(entry_type: &str) -> String {
+    entry_type.trim().to_ascii_uppercase()
+}
+
 fn canonical_ids(ids: &[Uuid]) -> Vec<Uuid> {
     let mut ids = ids.to_vec();
     ids.sort_unstable();
@@ -1477,7 +1553,7 @@ fn stale_entry() -> AppError {
 
 #[cfg(test)]
 mod tests {
-    use super::{canonical_ids, normalize_day, normalize_entry_type};
+    use super::{canonical_ids, normalize_day, normalize_entry_type, wire_entry_type};
     use crate::error::AppError;
     use uuid::Uuid;
 
@@ -1489,6 +1565,12 @@ mod tests {
             normalize_day("holiday"),
             Err(AppError::ValidationError(_))
         ));
+    }
+
+    #[test]
+    fn timetable_wire_kind_uses_the_canonical_uppercase_values() {
+        assert_eq!(wire_entry_type("course"), "COURSE");
+        assert_eq!(wire_entry_type("ACTIVITY"), "ACTIVITY");
     }
 
     #[test]

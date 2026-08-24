@@ -2175,7 +2175,7 @@ changed Svelte file.
 | student/parent timetable/activity/exam | page-local term selector |
 | student/parent calendar | page-local year plus optional term selector |
 
-- [ ] **Step 1: Add RED context-propagation tests**
+- [x] **Step 1: Add RED context-propagation tests**
 
 Static tests scan wrappers/pages and require selected IDs in every scoped call, metadata on every
 staff academic route, generated DTO usage, and no legacy path/wire token. Extend Playwright flows to
@@ -2191,34 +2191,34 @@ node --test tests/static/academic-context-contract.test.mjs \
 
 Expected: FAIL until every consumer passes explicit context.
 
-- [ ] **Step 2: Port assessment and timetable pages**
+- [x] **Step 2: Port assessment and timetable pages**
 
 Assessment structure selects offerings rather than subject/classroom-course rows and shows the
 offering snapshot source. Timetable works with groups/homeroom coverage and the selected term's bell
 schedule. Register dirty sources for unsaved assessment/timetable edits so Topbar changes require
 confirmation.
 
-- [ ] **Step 3: Port exam, supervision, question-bank, and admission pages**
+- [x] **Step 3: Port exam, supervision, question-bank, and admission pages**
 
 Exam candidates show offering/group context. Supervision supports `ทั้งปี` and term-specific queries.
 Question bank uses stable subjects and no term context for catalog authoring; assigned filters remain
 backend-authoritative. Admission uses the target year, study program, homeroom capacity, and explicit
 placement outcome.
 
-- [ ] **Step 4: Port teacher, student, and parent views**
+- [x] **Step 4: Port teacher, student, and parent views**
 
 Teacher timetable/exam pages use the staff Topbar context. Student and parent pages show a local
 history selector populated only with authorized years/terms; they pass IDs on every request and
 cannot infer or browse another learner. Default to active context locally only when URL selection is
 absent.
 
-- [ ] **Step 5: Remove legacy API and type vocabulary**
+- [x] **Step 5: Remove legacy API and type vocabulary**
 
 Delete manual types that duplicate generated DTOs. Replace user-facing Thai labels where the old
 word “ภาคเรียน” remains valid, but replace internal identifiers such as semester/classroom-course/
 enrollment with term/learning-group/student-year. Do not add response casts.
 
-- [ ] **Step 6: Run static, Svelte, and browser discovery checks**
+- [x] **Step 6: Run static, Svelte, and browser discovery checks**
 
 Run Svelte tooling on every changed Svelte file, then:
 
@@ -2237,7 +2237,7 @@ npx playwright test --list tests/e2e/academic-context.spec.ts \
 Expected: both `rg` commands return no runtime/manual-contract hits; generated historical test
 fixtures are updated rather than globally exempted.
 
-- [ ] **Step 7: Commit Task 13**
+- [x] **Step 7: Commit Task 13**
 
 ```bash
 git add -A frontend-school/src/lib/api \
@@ -2247,6 +2247,20 @@ git add -A frontend-school/src/lib/api \
   frontend-school/tests
 git commit -m "refactor(academic): port frontend consumers to explicit context"
 ```
+
+Release 13 verification evidence: every scoped staff workspace now reads the Topbar academic context,
+learner and parent workspaces use authorized page-local history options, and learner activity
+registration uses canonical offering/group delivery routes. Timetable realtime was reduced to the
+canonical academic-core, learning-delivery, and timetable reload signals and reconnects per selected
+term; no legacy optimistic timetable wire DTO remains. The unused `academic.ts`, `scheduling.ts`,
+curriculum-export, and timetable-activity compatibility sources were deleted instead of retained as
+aliases. The frontend static suite passed 464 tests, menu synchronization passed 11 tests, generated
+API contract tests passed 4 tests, Svelte check reported zero errors and warnings, lint passed, and
+Playwright discovered all 16 selected academic-context/core/timetable scenarios. Backend static
+architecture passed 146 tests, the focused timetable database tests passed 4 tests, `cargo fmt
+--all -- --check`, `cargo check`, generated-contract freshness, both forbidden-token scans, and `git
+diff --check` passed. Every changed Svelte component was analyzed individually before this
+checkpoint.
 
 ---
 

@@ -207,6 +207,13 @@ pub struct LearningOfferingQuery {
     pub academic_term_id: Uuid,
 }
 
+#[derive(Clone, Debug, Deserialize, IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct StudentActivityRegistrationQuery {
+    pub academic_term_id: Uuid,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PreviewCurriculumOfferingsRequest {
@@ -257,6 +264,43 @@ pub struct ActivityOfferingSnapshot {
     pub capacity: Option<i32>,
     pub attendance_requirement: ActivityAttendanceRequirement,
     pub pass_criteria: ActivityPassCriteria,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct StudentActivityGroupOption {
+    pub id: Uuid,
+    pub code: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub capacity: Option<i32>,
+    pub member_count: i64,
+    pub teacher_names: Vec<String>,
+    pub enrolled: bool,
+    pub registration_open: bool,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct StudentActivityOfferingOption {
+    pub id: Uuid,
+    pub academic_term_id: Uuid,
+    pub academic_year_id: Uuid,
+    pub code: String,
+    pub name: String,
+    pub activity_type: String,
+    pub enrolled_group_id: Option<Uuid>,
+    pub groups: Vec<StudentActivityGroupOption>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct StudentActivityRegistrationResult {
+    pub learning_offering_id: Uuid,
+    pub learning_group_id: Uuid,
+    pub student_academic_year_id: Uuid,
+    pub enrolled: bool,
+    pub revision: i64,
 }
 
 #[derive(Clone, Debug, Serialize, ToSchema)]

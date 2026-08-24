@@ -96,9 +96,11 @@
 		loading = true;
 		error = '';
 		try {
-			const [roundData, examRoomsData, configData, facilityData, allRoundsData] = await Promise.all(
-				[getRound(id), listExamRooms(id), getExamConfig(id), listRooms({}), listRounds()]
-			);
+			const roundData = await getRound(id);
+			const examRoomsData = await listExamRooms(id);
+			const configData = await getExamConfig(id);
+			const facilityData = await listRooms({});
+			const allRoundsData = await listRounds(roundData.academicYearId);
 			round = roundData;
 			examRooms = examRoomsData.rooms;
 			totalCapacity = examRoomsData.totalCapacity;

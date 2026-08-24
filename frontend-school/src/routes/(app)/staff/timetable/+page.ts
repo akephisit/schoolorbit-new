@@ -1,4 +1,5 @@
 export const _meta = {
+	academicContext: 'term_required' as const,
 	menu: {
 		title: 'ตารางสอน',
 		icon: 'CalendarDays',

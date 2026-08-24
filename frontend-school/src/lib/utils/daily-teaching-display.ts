@@ -19,7 +19,7 @@ export type DailyTeachingEntryCardPresentation = {
 
 export interface DailyTeachingDisplayLocation {
 	key: string;
-	classroomName: string | null;
+	homeroomNames: string[];
 	roomCode: string | null;
 	label: string;
 }
@@ -41,12 +41,12 @@ function synchronizedActivityKey(entry: DailyTeachingEntry): string | null {
 	if (
 		entry.entryType !== 'ACTIVITY' ||
 		entry.activitySchedulingMode !== 'synchronized' ||
-		!entry.activitySlotId
+		!entry.offeringId
 	) {
 		return null;
 	}
 
-	return `synchronized:${entry.activitySlotId}`;
+	return `activity:${entry.offeringId}`;
 }
 
 function textOrNull(value: string | null | undefined): string | null {
@@ -55,15 +55,16 @@ function textOrNull(value: string | null | undefined): string | null {
 }
 
 function locationFromEntry(entry: DailyTeachingEntry): DailyTeachingDisplayLocation | null {
-	const classroomName = textOrNull(entry.classroomName);
+	const homeroomNames = entry.homeroomNames.map(textOrNull).filter((name) => name !== null);
 	const roomCode = textOrNull(entry.roomCode);
-	if (!classroomName && !roomCode) return null;
+	if (homeroomNames.length === 0 && !roomCode) return null;
+	const homeroomLabel = homeroomNames.join(', ');
 
 	return {
-		key: `${classroomName ?? ''}\u0000${roomCode ?? ''}`,
-		classroomName,
+		key: `${homeroomLabel}\u0000${roomCode ?? ''}`,
+		homeroomNames,
 		roomCode,
-		label: [classroomName, roomCode].filter(Boolean).join(' / ')
+		label: [homeroomLabel, roomCode].filter(Boolean).join(' / ')
 	};
 }
 
@@ -72,8 +73,8 @@ function compareLocations(
 	right: DailyTeachingDisplayLocation
 ): number {
 	return (
-		Number(!left.classroomName) - Number(!right.classroomName) ||
-		thaiNaturalCollator.compare(left.classroomName ?? '', right.classroomName ?? '') ||
+		Number(left.homeroomNames.length === 0) - Number(right.homeroomNames.length === 0) ||
+		thaiNaturalCollator.compare(left.homeroomNames.join(', '), right.homeroomNames.join(', ')) ||
 		thaiNaturalCollator.compare(left.roomCode ?? '', right.roomCode ?? '') ||
 		left.key.localeCompare(right.key)
 	);
@@ -162,14 +163,13 @@ export function dailyTeachingEntryCardPresentation(
 	if (entry.entryType === 'COURSE') {
 		return { tone: 'course', layout: 'details', titleLineLimit: 2 };
 	}
-	if (entry.entryType === 'ACTIVITY' && entry.activitySchedulingMode === 'independent') {
-		return { tone: 'activity', layout: 'details', titleLineLimit: 2 };
-	}
-
 	switch (entry.entryType) {
 		case 'BREAK':
 			return { tone: 'break', layout: 'centered', titleLineLimit: 3 };
 		case 'ACTIVITY':
+			return entry.activitySchedulingMode === 'independent'
+				? { tone: 'activity', layout: 'details', titleLineLimit: 2 }
+				: { tone: 'activity', layout: 'centered', titleLineLimit: 3 };
 		case 'HOMEROOM':
 			return { tone: 'activity', layout: 'centered', titleLineLimit: 3 };
 		default:

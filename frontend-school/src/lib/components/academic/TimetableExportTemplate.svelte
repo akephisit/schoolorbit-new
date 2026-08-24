@@ -36,7 +36,17 @@
 
 	function getEntry(day: string, periodId: string) {
 		return timetableEntries.find(
-			(e) => e.day_of_week === day && e.period_id === periodId && e.is_active
+			(e) => e.dayOfWeek === day && e.bellSchedulePeriodId === periodId && e.isActive
+		);
+	}
+
+	function resourceName(entry: TimetableEntry): string {
+		return (
+			entry.offeringName ??
+			entry.subjectVersionDisplayLabel ??
+			entry.activityVersionDisplayLabel ??
+			entry.title ??
+			'กิจกรรม'
 		);
 	}
 </script>
@@ -96,21 +106,21 @@
 								>
 									<!-- Course Code & Name -->
 									<div class="font-bold text-lg text-[#1e3a8a] leading-tight">
-										{entry.subject_code || ''}
+										{entry.offeringCode ?? entry.learningGroupCode ?? ''}
 									</div>
 									<div class="text-base text-[#1f2937] line-clamp-2 px-1">
-										{entry.subject_name_th || entry.subject_name_en || 'วิชา'}
+										{resourceName(entry)}
 									</div>
 
 									<!-- Detail (Room or Instructor depending on View) -->
-									{#if entry.room_code || entry.classroom_name}
+									{#if entry.roomCode || entry.homeroomName || entry.learningGroupName}
 										<div
 											class="mt-1 text-sm bg-[#f3f4f6] px-2 py-0.5 rounded-full border border-[#d1d5db]"
 										>
-											{#if entry.room_code}
-												ห้อง {entry.room_code}
+											{#if entry.roomCode}
+												ห้อง {entry.roomCode}
 											{:else}
-												{entry.classroom_name || ''}
+												{entry.homeroomName ?? entry.learningGroupName ?? ''}
 											{/if}
 										</div>
 									{/if}

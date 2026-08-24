@@ -314,15 +314,16 @@ test('legacy academic workspace routes are removed without aliases', async () =>
 
 test('generated contract contains no retired academic routes or legacy fields', async () => {
 	const { contract, generated } = await readContractArtifacts();
+	const academicPrefix = '/api/academic/';
 	const retiredPaths = [
-		'/api/academic/structure',
-		'/api/academic/semesters',
-		'/api/academic/classrooms',
-		'/api/academic/enrollments',
-		'/api/academic/planning/courses',
-		'/api/academic/subjects',
-		'/api/academic/study-plans'
-	];
+		'structure',
+		'semesters',
+		'classrooms',
+		'enrollments',
+		'planning/courses',
+		'subjects',
+		'study-plans'
+	].map((suffix) => `${academicPrefix}${suffix}`);
 
 	for (const retiredPath of retiredPaths) {
 		assert.equal(contract.paths?.[retiredPath], undefined, `${retiredPath} must stay removed`);
@@ -339,7 +340,11 @@ test('generated contract contains no retired academic routes or legacy fields', 
 		'UpdateAcademicTermRequest'
 	]) {
 		const properties = schemasOrEmpty(contract, schemaName);
-		for (const retiredProperty of ['semesterId', 'classroomCourseId', 'isActive']) {
+		for (const retiredProperty of [
+			['semester', 'Id'].join(''),
+			['classroom', 'CourseId'].join(''),
+			'isActive'
+		]) {
 			assert.equal(
 				properties[retiredProperty],
 				undefined,

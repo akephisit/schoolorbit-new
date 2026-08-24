@@ -20,6 +20,9 @@
 	import { AlertCircle, Award, Building2, CalendarDays, GraduationCap, Save } from 'lucide-svelte';
 
 	const SCHOOL_OWNER_VALUE = '__school__';
+	type AcademicYearFormOption = Omit<AcademicYearLookupItem, 'status'> & {
+		status?: AcademicYearLookupItem['status'];
+	};
 
 	let {
 		academicYears,
@@ -32,7 +35,7 @@
 		onsubmit,
 		oncancel
 	}: {
-		academicYears: AcademicYearLookupItem[];
+		academicYears: AcademicYearFormOption[];
 		ownerOptions: OrganizationUnitLookupItem[];
 		campaign?: CertificateCampaignDetail;
 		allowSchoolOwner?: boolean;
@@ -56,7 +59,7 @@
 		untrack(() => ({
 			academicYearId:
 				campaign?.academicYearId ??
-				academicYears.find((year) => year.is_current)?.id ??
+				academicYears.find((year) => year.status === 'active')?.id ??
 				academicYears[0]?.id ??
 				'',
 			ownerValue:
@@ -179,7 +182,7 @@
 				<Select.Content>
 					{#each academicYears as year (year.id)}
 						<Select.Item value={year.id}>
-							{year.name}{year.is_current ? ' · ปีปัจจุบัน' : ''}
+							{year.name}{year.status === 'active' ? ' · ปีกำลังใช้งาน' : ''}
 						</Select.Item>
 					{/each}
 				</Select.Content>

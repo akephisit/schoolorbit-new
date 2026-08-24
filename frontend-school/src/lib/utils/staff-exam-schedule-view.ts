@@ -10,7 +10,7 @@ export type StaffExamScheduleLevelFilter = 'all' | 'lower_secondary' | 'upper_se
 export interface StaffExamScheduleFilters {
 	dayId: string;
 	level: StaffExamScheduleLevelFilter;
-	classroomId: string;
+	homeroomId: string;
 	query: string;
 }
 
@@ -100,7 +100,7 @@ function compareSessions(
 		left.startsAt.localeCompare(right.startsAt) ||
 		left.endsAt.localeCompare(right.endsAt) ||
 		left.gradeLevelYear - right.gradeLevelYear ||
-		compareText(left.classroomName, right.classroomName) ||
+		compareText(left.homeroomName, right.homeroomName) ||
 		compareText(left.subjectName, right.subjectName) ||
 		compareText(left.assessmentCategoryName, right.assessmentCategoryName) ||
 		left.sessionId.localeCompare(right.sessionId)
@@ -113,7 +113,7 @@ function compareAssignments(
 ): number {
 	return (
 		left.examDate.localeCompare(right.examDate) ||
-		compareText(left.classroomName, right.classroomName) ||
+		compareText(left.homeroomName, right.homeroomName) ||
 		compareText(left.roomName, right.roomName) ||
 		left.assignmentId.localeCompare(right.assignmentId)
 	);
@@ -145,7 +145,7 @@ function sessionSearchText(session: StaffExamScheduleSessionRecord): string {
 		session.subjectCode,
 		session.assessmentCategoryName,
 		session.gradeLevelName,
-		session.classroomName,
+		session.homeroomName,
 		session.buildingName,
 		session.roomName,
 		...session.invigilators.map((invigilator) => invigilator.displayName)
@@ -154,7 +154,7 @@ function sessionSearchText(session: StaffExamScheduleSessionRecord): string {
 
 function assignmentSearchText(assignment: StaffExamRoomAssignmentRecord): string {
 	return searchableText([
-		assignment.classroomName,
+		assignment.homeroomName,
 		assignment.buildingName,
 		assignment.roomName,
 		...assignment.invigilators.map((invigilator) => invigilator.displayName),
@@ -227,13 +227,13 @@ export function filterStaffExamScheduleRound(
 	const flattened = flattenStaffExamScheduleRound(round);
 	const query = normalizeSearch(filters.query);
 	const dayMatches = (examDayId: string) => filters.dayId === 'all' || examDayId === filters.dayId;
-	const classroomMatches = (classroomId: string) =>
-		filters.classroomId === 'all' || classroomId === filters.classroomId;
+	const homeroomMatches = (homeroomId: string) =>
+		filters.homeroomId === 'all' || homeroomId === filters.homeroomId;
 
 	const sessions = flattened.sessions.filter(
 		(session) =>
 			dayMatches(session.examDayId) &&
-			classroomMatches(session.classroomId) &&
+			homeroomMatches(session.homeroomId) &&
 			sessionMatchesLevel(session, filters.level) &&
 			(!query || sessionSearchText(session).includes(query))
 	);
@@ -244,7 +244,7 @@ export function filterStaffExamScheduleRound(
 			assignment.sessions.some((session) => sessionMatchesLevel(session, filters.level));
 		return (
 			dayMatches(assignment.examDayId) &&
-			classroomMatches(assignment.classroomId) &&
+			homeroomMatches(assignment.homeroomId) &&
 			hasMatchingLevel &&
 			(!query || assignmentSearchText(assignment).includes(query))
 		);

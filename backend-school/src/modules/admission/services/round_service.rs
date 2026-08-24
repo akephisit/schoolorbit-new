@@ -116,7 +116,10 @@ pub async fn get_public_round_info(
     ))
 }
 
-pub async fn list_rounds(pool: &PgPool) -> Result<Vec<AdmissionRound>, AppError> {
+pub async fn list_rounds(
+    pool: &PgPool,
+    academic_year_id: Uuid,
+) -> Result<Vec<AdmissionRound>, AppError> {
     sqlx::query_as::<_, AdmissionRound>(&format!(
         r#"SELECT ar.*, ay.name AS academic_year_name,
                   {grade_case} AS grade_level_name,
@@ -124,9 +127,11 @@ pub async fn list_rounds(pool: &PgPool) -> Result<Vec<AdmissionRound>, AppError>
            FROM admission_rounds ar
            JOIN academic_years ay ON ar.academic_year_id = ay.id
            JOIN grade_levels gl ON ar.grade_level_id = gl.id
+           WHERE ar.academic_year_id = $1
            ORDER BY ar.created_at DESC"#,
         grade_case = ROUND_GRADE_LEVEL_CASE
     ))
+    .bind(academic_year_id)
     .fetch_all(pool).await
     .map_err(|e| {
         tracing::error!("Failed to fetch admission rounds: {}", e);

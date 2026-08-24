@@ -1,322 +1,253 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import { onMount } from 'svelte';
-	import { toast } from 'svelte-sonner';
 	import {
-		type TimetableEntry,
-		type MyActivityForEntry,
-		type TimetablePeriodSummary,
+		listMyAcademicContextOptions,
+		type AcademicContextOptionsResponse
+	} from '$lib/api/academic-context';
+	import {
 		getMyTimetable,
-		getMyActivityForEntry,
-		periodsFromTimetableEntries
+		periodsFromTimetableEntries,
+		type TimetableEntry,
+		type TimetablePeriodSummary
 	} from '$lib/api/timetable';
-	import {
-		getAcademicStructure,
-		getSchoolDays,
-		type AcademicYear,
-		type Semester
-	} from '$lib/api/academic';
-	import { getOwnProfile, type Student } from '$lib/api/students';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import { Loader2, Users, BookOpen } from 'lucide-svelte';
+	import { Label } from '$lib/components/ui/label';
+	import { MapPin, School } from 'lucide-svelte';
 
-	let loading = $state(true);
-	let student = $state<Student | null>(null);
-	let entries = $state<TimetableEntry[]>([]);
+	const dayOptions = [
+		{ value: 'MON', label: 'จันทร์' },
+		{ value: 'TUE', label: 'อังคาร' },
+		{ value: 'WED', label: 'พุธ' },
+		{ value: 'THU', label: 'พฤหัสบดี' },
+		{ value: 'FRI', label: 'ศุกร์' },
+		{ value: 'SAT', label: 'เสาร์' },
+		{ value: 'SUN', label: 'อาทิตย์' }
+	];
+
+	let contextOptions = $state<AcademicContextOptionsResponse | null>(null);
+	let selectedYearId = $state('');
+	let selectedTermId = $state('');
 	let periods = $state<TimetablePeriodSummary[]>([]);
-	let years = $state<AcademicYear[]>([]);
-	let semesters = $state<Semester[]>([]);
-	let selectedSemesterId = $state('');
-	let schoolDays = $state<{ value: string; label: string; shortLabel: string }[]>([]);
-	let error = $state('');
+	let entries = $state<TimetableEntry[]>([]);
+	let loading = $state(true);
+	let errorMessage = $state('');
+	let revision = 0;
 
-	// คอลัมน์วัน 80px + คาบละ 110px → mobile บีบไม่ได้ ต้องเลื่อน
-	const tableMinWidth = $derived(80 + periods.length * 110);
+	const termOptions = $derived(
+		contextOptions?.terms.filter((term) => term.academicYearId === selectedYearId) ?? []
+	);
+	const schoolDays = $derived.by(() => {
+		const configured = new Set(entries.map((entry) => entry.dayOfWeek));
+		return configured.size > 0
+			? dayOptions.filter((day) => configured.has(day.value))
+			: dayOptions.slice(0, 5);
+	});
+	const tableMinWidth = $derived(96 + periods.length * 132);
 
-	// Activity detail dialog
-	let showActivityDetail = $state(false);
-	let activityLoading = $state(false);
-	let activityData = $state<MyActivityForEntry | null>(null);
-	let activityEntryTitle = $state('');
-
-	function formatTime(t?: string): string {
-		if (!t) return '';
-		return t.substring(0, 5);
+	function authorizedSelection(options: AcademicContextOptionsResponse): {
+		yearId: string;
+		termId: string;
+	} {
+		const queryYearId = page.url.searchParams.get('academicYearId');
+		const yearId =
+			options.years.find((year) => year.id === queryYearId)?.id ??
+			options.years.find((year) => year.id === options.activeAcademicYearId)?.id ??
+			options.years[0]?.id ??
+			'';
+		const terms = options.terms.filter((term) => term.academicYearId === yearId);
+		const queryTermId = page.url.searchParams.get('academicTermId');
+		const termId =
+			terms.find((term) => term.id === queryTermId)?.id ??
+			terms.find((term) => term.id === options.activeAcademicTermId)?.id ??
+			terms[0]?.id ??
+			'';
+		return { yearId, termId };
 	}
 
-	function getEntryColor(type: string): string {
-		if (type === 'COURSE') return 'bg-blue-50 border-blue-200 text-blue-900';
-		if (type === 'ACTIVITY') return 'bg-emerald-50 border-emerald-200 text-emerald-900';
-		if (type === 'BREAK') return 'bg-amber-50 border-amber-200 text-amber-800';
-		if (type === 'HOMEROOM') return 'bg-purple-50 border-purple-200 text-purple-900';
-		return 'bg-gray-50 border-gray-200 text-gray-900';
-	}
-
-	async function loadData() {
+	async function loadHistory(): Promise<void> {
 		loading = true;
-		error = '';
+		errorMessage = '';
 		try {
-			const [profileRes, structRes] = await Promise.all([getOwnProfile(), getAcademicStructure()]);
-
-			student = profileRes.data;
-			years = structRes.data.years;
-			semesters = structRes.data.semesters;
-
-			// Find active year + semester
-			const activeYear = years.find((y) => y.is_active);
-			if (activeYear) {
-				schoolDays = getSchoolDays(activeYear.school_days);
-				const activeSem = semesters.find(
-					(s) => s.academic_year_id === activeYear.id && s.is_active
-				);
-				if (activeSem) {
-					selectedSemesterId = activeSem.id;
-					await loadTimetable();
-				}
-			}
-		} catch (loadError: unknown) {
-			console.error(loadError);
-			error =
-				(loadError instanceof Error ? loadError.message : String(loadError)) ||
-				'โหลดข้อมูลไม่สำเร็จ';
-			toast.error(error);
+			contextOptions = await listMyAcademicContextOptions();
+			const selection = authorizedSelection(contextOptions);
+			selectedYearId = selection.yearId;
+			selectedTermId = selection.termId;
+			if (selectedYearId && selectedTermId) await loadTimetable(selectedYearId, selectedTermId);
+		} catch (error) {
+			errorMessage = error instanceof Error ? error.message : 'โหลดประวัติปีและภาคเรียนไม่สำเร็จ';
 		} finally {
 			loading = false;
 		}
 	}
 
-	async function loadTimetable() {
-		if (!student || !selectedSemesterId) return;
+	async function loadTimetable(yearId: string, termId: string): Promise<void> {
+		void yearId;
+		const current = ++revision;
+		loading = true;
+		errorMessage = '';
 		try {
-			error = '';
-			const res = await getMyTimetable({
-				academic_semester_id: selectedSemesterId
-			});
-			entries = res.data;
-			periods = periodsFromTimetableEntries(entries);
-		} catch (e: unknown) {
-			console.error(e);
-			error = 'โหลดตารางเรียนไม่สำเร็จ';
-			toast.error(error);
-		}
-	}
-
-	function getEntry(day: string, periodId: string): TimetableEntry | undefined {
-		return entries.find((e) => e.day_of_week === day && e.period_id === periodId);
-	}
-
-	async function handleActivityClick(entry: TimetableEntry) {
-		if (!entry.activity_slot_id) return;
-		activityEntryTitle = entry.title || entry.activity_slot_name || 'กิจกรรม';
-		showActivityDetail = true;
-		activityLoading = true;
-		activityData = null;
-		try {
-			const res = await getMyActivityForEntry(entry.id);
-			activityData = res.data;
-		} catch (e: unknown) {
-			console.error(e);
-			toast.error('โหลดข้อมูลกิจกรรมไม่สำเร็จ');
+			const loadedEntries = await getMyTimetable({ academicTermId: termId });
+			if (current !== revision) return;
+			periods = periodsFromTimetableEntries(loadedEntries);
+			entries = loadedEntries;
+		} catch (error) {
+			if (current === revision) {
+				errorMessage = error instanceof Error ? error.message : 'โหลดตารางเรียนไม่สำเร็จ';
+			}
 		} finally {
-			activityLoading = false;
+			if (current === revision) loading = false;
 		}
 	}
 
-	onMount(loadData);
+	async function updateUrl(yearId: string, termId: string): Promise<void> {
+		await goto(
+			resolve(
+				`/student/timetable?academicYearId=${encodeURIComponent(yearId)}&academicTermId=${encodeURIComponent(termId)}`
+			),
+			{ noScroll: true, keepFocus: true }
+		);
+	}
+
+	async function changeYear(event: Event): Promise<void> {
+		const yearId = (event.currentTarget as HTMLSelectElement).value;
+		const firstTerm = contextOptions?.terms.find((term) => term.academicYearId === yearId);
+		selectedYearId = yearId;
+		selectedTermId = firstTerm?.id ?? '';
+		if (!selectedTermId) return;
+		await updateUrl(selectedYearId, selectedTermId);
+		await loadTimetable(selectedYearId, selectedTermId);
+	}
+
+	async function changeTerm(event: Event): Promise<void> {
+		selectedTermId = (event.currentTarget as HTMLSelectElement).value;
+		await updateUrl(selectedYearId, selectedTermId);
+		await loadTimetable(selectedYearId, selectedTermId);
+	}
+
+	function entriesForCell(day: string, periodId: string): TimetableEntry[] {
+		return entries.filter(
+			(entry) => entry.dayOfWeek === day && entry.bellSchedulePeriodId === periodId
+		);
+	}
+
+	function entryTitle(entry: TimetableEntry): string {
+		return (
+			entry.offeringCode ??
+			entry.title ??
+			entry.subjectVersionDisplayLabel ??
+			entry.activityVersionDisplayLabel ??
+			entry.entryType
+		);
+	}
+
+	function entryColor(entryType: string): string {
+		if (entryType === 'COURSE')
+			return 'border-blue-200 bg-blue-50 text-blue-950 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-100';
+		if (entryType === 'ACTIVITY')
+			return 'border-emerald-200 bg-emerald-50 text-emerald-950 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-100';
+		if (entryType === 'BREAK')
+			return 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100';
+		return 'border-violet-200 bg-violet-50 text-violet-950 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-100';
+	}
+
+	onMount(loadHistory);
 </script>
 
-<PageShell
-	title="ตารางเรียน"
-	description={student
-		? `${student.first_name} ${student.last_name}${student.grade_level && student.class_room ? ` | ${student.grade_level}/${student.class_room}` : ''}`
-		: 'ตารางเรียนของฉัน'}
->
+<PageShell title="ตารางเรียน" description="ดูตารางเรียนย้อนหลังหรือภาคเรียนปัจจุบันของฉัน">
+	<div class="flex flex-wrap gap-3 rounded-xl border bg-card p-4">
+		<div class="min-w-52 space-y-2">
+			<Label for="student-year">ปีการศึกษา</Label><select
+				id="student-year"
+				class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+				value={selectedYearId}
+				disabled={loading}
+				onchange={changeYear}
+				>{#each contextOptions?.years ?? [] as year (year.id)}<option value={year.id}
+						>{year.name}</option
+					>{/each}</select
+			>
+		</div>
+		<div class="min-w-52 space-y-2">
+			<Label for="student-term">ภาคเรียน</Label><select
+				id="student-term"
+				class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+				value={selectedTermId}
+				disabled={loading || termOptions.length === 0}
+				onchange={changeTerm}
+				>{#each termOptions as term (term.id)}<option value={term.id}>{term.name}</option
+					>{/each}</select
+			>
+		</div>
+	</div>
+
 	{#if loading}
-		<PageSkeleton variant="detail" />
-	{:else if error}
+		<PageSkeleton variant="table" rows={6} columns={Math.max(periods.length + 1, 4)} />
+	{:else if errorMessage}
 		<PageState
 			variant="error"
 			title="โหลดตารางเรียนไม่สำเร็จ"
-			description={error}
+			description={errorMessage}
 			actionLabel="ลองอีกครั้ง"
-			onaction={loadData}
+			onaction={loadHistory}
+		/>
+	{:else if !contextOptions || contextOptions.years.length === 0}
+		<PageState
+			title="ยังไม่มีประวัติปีการศึกษา"
+			description="เมื่อโรงเรียนสร้างข้อมูลนักเรียนประจำปีแล้ว ประวัติจะปรากฏที่นี่"
 		/>
 	{:else if entries.length === 0}
-		<PageState title="ยังไม่มีตารางเรียน" description="ยังไม่มีตารางเรียนในภาคเรียนนี้" />
-	{:else if periods.length === 0}
 		<PageState
-			title="ยังไม่มีข้อมูลคาบเรียน"
-			description="ตารางเรียนนี้ยังไม่มีข้อมูลคาบเรียนให้แสดง"
+			title="ยังไม่มีตารางเรียน"
+			description="โรงเรียนยังไม่ได้จัดตารางเรียนในภาคเรียนที่เลือก"
 		/>
 	{:else}
-		<!-- Timetable Grid (วัน=แถว, คาบ=คอลัมน์) -->
-		<div class="overflow-x-auto">
-			<table class="w-full table-fixed border-collapse" style="min-width: {tableMinWidth}px">
-				<thead>
-					<tr>
-						<th class="p-2 border bg-muted/50 text-xs font-medium text-muted-foreground w-20">
-							วัน / คาบ
-						</th>
-						{#each periods as period (period.id)}
-							<th class="p-2 border bg-muted/50 text-xs font-medium text-center">
-								<div class="font-semibold">{period.name || ' '}</div>
-								<div class="text-[10px] text-muted-foreground font-normal">
-									{formatTime(period.start_time)}-{formatTime(period.end_time)}
-								</div>
-							</th>
-						{/each}
-					</tr>
-				</thead>
-				<tbody>
-					{#each schoolDays as day (day.value)}
-						<tr>
-							<td class="p-2 border bg-muted/30 text-center text-xs font-medium">
-								{day.label}
-							</td>
-							{#each periods as period (period.id)}
-								{@const entry = getEntry(day.value, period.id)}
-								<td class="p-1 border relative h-20">
-									{#if entry}
-										{@const isClickable =
-											entry.entry_type === 'ACTIVITY' && !!entry.activity_slot_id}
-										{@const isCourse = entry.entry_type === 'COURSE'}
-										<button
-											class="w-full h-full rounded border p-2 text-xs flex flex-col gap-0.5 transition-all {getEntryColor(
-												entry.entry_type
-											)} {isCourse
-												? 'text-left'
-												: 'text-center justify-center items-center'} {isClickable
-												? 'cursor-pointer hover:shadow-md hover:brightness-95'
-												: 'cursor-default'}"
-											onclick={() => isClickable && handleActivityClick(entry)}
-											disabled={!isClickable}
+		<div class="overflow-x-auto rounded-lg border">
+			<table class="w-full table-fixed border-collapse" style={`min-width: ${tableMinWidth}px`}>
+				<thead
+					><tr
+						><th class="bg-muted/70 w-24 border p-2 text-xs">วัน / คาบ</th
+						>{#each periods as period, index (period.id)}<th
+								class="bg-muted/70 border p-2 text-center text-xs"
+								><p class="font-semibold">{period.name ?? `คาบ ${index + 1}`}</p>
+								<p class="text-muted-foreground font-normal">
+									{period.startTime.slice(0, 5)}–{period.endTime.slice(0, 5)}
+								</p></th
+							>{/each}</tr
+					></thead
+				>
+				<tbody
+					>{#each schoolDays as day (day.value)}<tr
+							><th class="bg-muted/30 border p-2 text-xs">{day.label}</th
+							>{#each periods as period (period.id)}{@const cellEntries = entriesForCell(
+									day.value,
+									period.id
+								)}<td class="h-24 border p-1 align-top"
+									>{#each cellEntries as entry (entry.id)}<div
+											class={`mb-1 flex min-h-20 flex-col rounded-md border p-2 text-xs ${entryColor(entry.entryType)}`}
 										>
-											<div
-												class="font-semibold w-full {isCourse
-													? 'truncate'
-													: 'whitespace-pre-line line-clamp-3 leading-tight'}"
-											>
-												{entry.subject_code || entry.title || entry.subject_name_th || ''}
-											</div>
-											{#if isCourse && entry.subject_name_th}
-												<div class="truncate text-[10px] opacity-80 w-full">
-													{entry.subject_name_th}
-												</div>
-											{/if}
-											{#if isCourse && entry.instructor_name}
-												<div class="truncate text-[10px] opacity-70 mt-auto w-full">
-													{entry.instructor_name}
-												</div>
-											{/if}
-											{#if isCourse && entry.room_code}
-												<div class="text-[10px] opacity-60 w-full">{entry.room_code}</div>
-											{/if}
-											{#if isClickable}
-												<Badge
-													variant="outline"
-													class="text-[9px] px-1 py-0 mt-0.5 border-emerald-300 text-emerald-700"
+											<p class="truncate font-semibold">{entryTitle(entry)}</p>
+											{#if entry.offeringName}<p class="mt-1 line-clamp-2 opacity-80">
+													{entry.offeringName}
+												</p>{/if}{#if entry.learningGroupName || entry.homeroomName}<p
+													class="mt-auto flex items-center gap-1 truncate opacity-70"
 												>
-													กดดูกิจกรรม
-												</Badge>
-											{/if}
-										</button>
-									{/if}
-								</td>
-							{/each}
-						</tr>
-					{/each}
-				</tbody>
+													<School class="size-3" />
+													{entry.learningGroupName ?? entry.homeroomName}
+												</p>{/if}{#if entry.roomCode}<p
+													class="flex items-center gap-1 truncate opacity-70"
+												>
+													<MapPin class="size-3" />
+													{entry.roomCode}
+												</p>{/if}
+										</div>{/each}</td
+								>{/each}</tr
+						>{/each}</tbody
+				>
 			</table>
-		</div>
-
-		<!-- Legend -->
-		<div class="flex flex-wrap gap-3 text-xs text-muted-foreground">
-			<div class="flex items-center gap-1.5">
-				<div class="w-3 h-3 rounded bg-blue-100 border border-blue-200"></div>
-				วิชาเรียน
-			</div>
-			<div class="flex items-center gap-1.5">
-				<div class="w-3 h-3 rounded bg-emerald-100 border border-emerald-200"></div>
-				กิจกรรม
-			</div>
-			<div class="flex items-center gap-1.5">
-				<div class="w-3 h-3 rounded bg-amber-100 border border-amber-200"></div>
-				พัก
-			</div>
-			<div class="flex items-center gap-1.5">
-				<div class="w-3 h-3 rounded bg-purple-100 border border-purple-200"></div>
-				โฮมรูม
-			</div>
 		</div>
 	{/if}
 </PageShell>
-
-<!-- Activity Detail Dialog -->
-<Dialog.Root bind:open={showActivityDetail}>
-	<Dialog.Content class="sm:max-w-[420px]">
-		<Dialog.Header>
-			<Dialog.Title>{activityEntryTitle}</Dialog.Title>
-			<Dialog.Description>รายละเอียดกิจกรรมที่ลงทะเบียน</Dialog.Description>
-		</Dialog.Header>
-
-		{#if activityLoading}
-			<div class="flex items-center justify-center py-8">
-				<Loader2 class="w-6 h-6 animate-spin text-muted-foreground" />
-			</div>
-		{:else if activityData}
-			{#if activityData.enrolled}
-				<div class="space-y-4 py-2">
-					<div class="flex items-start gap-3">
-						<BookOpen class="w-5 h-5 text-emerald-600 mt-0.5 shrink-0" />
-						<div>
-							<p class="font-semibold text-sm">{activityData.group_name}</p>
-							<Badge variant="default" class="mt-1 text-xs bg-emerald-600">ลงทะเบียนแล้ว</Badge>
-						</div>
-					</div>
-
-					{#if activityData.instructors && activityData.instructors.length > 0}
-						<div class="flex items-start gap-3">
-							<Users class="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
-							<div>
-								<p class="text-xs text-muted-foreground mb-1">ครูผู้สอน</p>
-								{#each activityData.instructors as instr (instr.id)}
-									<p class="text-sm">{instr.name}</p>
-								{/each}
-							</div>
-						</div>
-					{/if}
-
-					<div class="flex items-start gap-3">
-						<Users class="w-5 h-5 text-orange-500 mt-0.5 shrink-0" />
-						<div>
-							<p class="text-xs text-muted-foreground mb-1">สมาชิก</p>
-							<p class="text-sm">
-								{activityData.member_count}{#if activityData.max_capacity}/{activityData.max_capacity}{/if}
-								คน
-							</p>
-						</div>
-					</div>
-				</div>
-			{:else}
-				<div class="py-6 text-center text-muted-foreground">
-					<BookOpen class="w-10 h-10 mx-auto mb-2 opacity-30" />
-					<p class="text-sm">ยังไม่ได้ลงทะเบียนกิจกรรมในช่วงเวลานี้</p>
-					<Button variant="outline" size="sm" class="mt-3" href="/student/activities">
-						ไปลงทะเบียนกิจกรรม
-					</Button>
-				</div>
-			{/if}
-		{:else}
-			<div class="py-6 text-center text-muted-foreground">
-				<p class="text-sm">ไม่พบข้อมูลกิจกรรม</p>
-			</div>
-		{/if}
-
-		<Dialog.Footer>
-			<Button variant="outline" onclick={() => (showActivityDetail = false)}>ปิด</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>

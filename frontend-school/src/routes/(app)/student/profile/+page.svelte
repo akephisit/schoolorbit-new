@@ -126,8 +126,8 @@
 				<div class="space-y-2">
 					<Label>ระดับชั้น</Label>
 					<div class="px-3 py-2 bg-muted/50 rounded-md text-foreground">
-						{#if student.grade_level && student.class_room}
-							{student.grade_level}/{student.class_room}
+						{#if student.grade_level && student.homeroom}
+							{student.grade_level}/{student.homeroom}
 						{:else}
 							-
 						{/if}

@@ -44,7 +44,7 @@
 		? `${student.title || ''}${student.first_name} ${student.last_name}`
 		: 'ข้อมูลนักเรียน'}
 	description={student
-		? `${student.grade_level || 'ไม่ระบุชั้น'} | ห้อง ${student.class_room || '-'} | รหัสนักเรียน: ${student.student_number || '-'}`
+		? `${student.grade_level || 'ไม่ระบุชั้น'} | ห้อง ${student.homeroom || '-'} | รหัสนักเรียน: ${student.student_number || '-'}`
 		: 'ข้อมูลนักเรียนที่เชื่อมโยงกับบัญชีผู้ปกครอง'}
 	backHref="/parent"
 >
@@ -82,7 +82,7 @@
 						{student.grade_level || 'ไม่ระบุชั้น'}
 					</Badge>
 					<Badge variant="outline" class="text-sm px-3 py-1 text-muted-foreground">
-						ห้อง {student.class_room || '-'}
+						ห้อง {student.homeroom || '-'}
 					</Badge>
 					<Badge variant="outline" class="text-sm px-3 py-1 text-muted-foreground">
 						รหัสนักเรียน: {student.student_number || '-'}

@@ -86,6 +86,33 @@ pub struct ChildExamScheduleQuery {
     pub academic_term_id: Uuid,
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/parent/students/{student_id}/academic-context/options",
+    operation_id = "listChildAcademicContextOptions",
+    tag = "parent",
+    params(("student_id" = Uuid, Path, description = "Linked student user ID")),
+    responses(
+        (status = 200, description = "Academic years and terms available to the linked student", body = ApiResponse<crate::modules::academic::core::models::AcademicContextOptions>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Parent-child access denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_child_academic_context_options(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(student_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let options = parent_service::get_child_academic_context_options(
+        &context.tenant.pool,
+        context.actor.user_id,
+        student_id,
+    )
+    .await?;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(options))))
+}
+
 /// GET /api/parent/students/:student_id/timetable
 /// ผู้ปกครองดูตารางเรียนของบุตรหลาน — verify ownership ผ่าน student_parents
 #[utoipa::path(

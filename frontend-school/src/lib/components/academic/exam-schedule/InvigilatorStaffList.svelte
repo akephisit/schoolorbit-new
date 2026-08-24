@@ -79,7 +79,7 @@
 	}
 
 	function statusLabel(staff: InvigilatorStaffCardView): string {
-		if (staff.assignedAssignment) return staff.assignedAssignment.classroomName || 'มีคุมวันนี้';
+		if (staff.assignedAssignment) return staff.assignedAssignment.homeroomName || 'มีคุมวันนี้';
 		return 'ว่างวันนี้';
 	}
 

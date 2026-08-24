@@ -1,5 +1,4 @@
 <script lang="ts">
-	import type { Semester } from '$lib/api/academic';
 	import type { CreateExamRoundInput, ExamRoundKind } from '$lib/api/examSchedule';
 	import { LoadingButton } from '$lib/components/app-state';
 	import { Button } from '$lib/components/ui/button';
@@ -11,45 +10,33 @@
 
 	let {
 		open = $bindable(false),
-		semesters = [],
-		defaultSemesterId = '',
+		academicTermId,
+		termLabel,
 		saving = false,
 		onCreate
 	}: {
 		open?: boolean;
-		semesters: Semester[];
-		defaultSemesterId?: string;
+		academicTermId: string;
+		termLabel: string;
 		saving?: boolean;
 		onCreate?: (input: CreateExamRoundInput) => Promise<boolean> | boolean;
 	} = $props();
 
 	let name = $state('');
-	let academicSemesterId = $state('');
 	let examKind = $state<ExamRoundKind>('midterm');
 	let description = $state('');
 
-	const selectedSemesterLabel = $derived(
-		semesters.find((semester) => semester.id === academicSemesterId)?.name ?? 'เลือกภาคเรียน'
-	);
-
-	$effect(() => {
-		if (open && !academicSemesterId && defaultSemesterId) {
-			academicSemesterId = defaultSemesterId;
-		}
-	});
-
 	function resetForm() {
 		name = '';
-		academicSemesterId = defaultSemesterId;
 		examKind = 'midterm';
 		description = '';
 	}
 
 	async function submitForm() {
-		if (!name.trim() || !academicSemesterId) return;
+		if (!name.trim() || !academicTermId) return;
 
 		const created = await onCreate?.({
-			academicSemesterId,
+			academicTermId,
 			name: name.trim(),
 			description: description.trim() || null,
 			examKind
@@ -62,7 +49,7 @@
 	<Dialog.Content class="max-w-xl p-0">
 		<Dialog.Header class="border-b px-6 py-5">
 			<Dialog.Title>สร้างรอบตารางสอบ</Dialog.Title>
-			<Dialog.Description>ระบุชื่อรอบสอบและภาคเรียน</Dialog.Description>
+			<Dialog.Description>รอบสอบจะถูกสร้างในภาคเรียนที่เลือกบนแถบด้านบน</Dialog.Description>
 		</Dialog.Header>
 
 		<form
@@ -85,14 +72,7 @@
 
 			<div class="grid gap-2">
 				<Label>ภาคเรียน</Label>
-				<Select.Root type="single" bind:value={academicSemesterId}>
-					<Select.Trigger class="w-full">{selectedSemesterLabel}</Select.Trigger>
-					<Select.Content>
-						{#each semesters as semester (semester.id)}
-							<Select.Item value={semester.id}>{semester.name}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
+				<div class="bg-muted/40 rounded-md border px-3 py-2 text-sm">{termLabel}</div>
 			</div>
 
 			<div class="grid gap-2">
@@ -124,7 +104,7 @@
 					type="submit"
 					loading={saving}
 					loadingLabel="กำลังสร้าง..."
-					disabled={!name.trim() || !academicSemesterId}
+					disabled={!name.trim() || !academicTermId}
 				>
 					สร้างรอบสอบ
 				</LoadingButton>

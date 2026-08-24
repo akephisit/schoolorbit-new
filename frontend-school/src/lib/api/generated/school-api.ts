@@ -5,6 +5,70 @@
  */
 
 export interface paths {
+	'/api/academic/assessments/offerings/{offering_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getAssessmentPlan'];
+		put: operations['saveAssessmentPlan'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/assessments/offerings/{offering_id}/submit': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['submitAssessmentPlan'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/assessments/plans': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listAssessmentPlans'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/assessments/settings': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getAssessmentSettings'];
+		put: operations['updateAssessmentSettings'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/bell-schedules': {
 		parameters: {
 			query?: never;
@@ -389,6 +453,266 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/exam-schedules': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** GET /api/academic/exam-schedules */
+		get: operations['listExamRounds'];
+		put?: never;
+		/** POST /api/academic/exam-schedules */
+		post: operations['createExamRound'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/exam-schedules/{round_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** GET /api/academic/exam-schedules/{round_id} */
+		get: operations['getExamScheduleWorkspace'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		/** PATCH /api/academic/exam-schedules/{round_id} */
+		patch: operations['updateExamRound'];
+		trace?: never;
+	};
+	'/api/academic/exam-schedules/{round_id}/clear-mismatched-items': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		/** POST /api/academic/exam-schedules/{round_id}/clear-mismatched-items */
+		post: operations['clearMismatchedExamItems'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/exam-schedules/{round_id}/days': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		/** POST /api/academic/exam-schedules/{round_id}/days */
+		post: operations['upsertExamDay'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/exam-schedules/{round_id}/import-items': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		/** POST /api/academic/exam-schedules/{round_id}/import-items */
+		post: operations['importExamItems'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/exam-schedules/{round_id}/invigilator-staff-options': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** GET /api/academic/exam-schedules/{round_id}/invigilator-staff-options */
+		get: operations['listExamInvigilatorStaffOptions'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/exam-schedules/{round_id}/invigilators': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** GET /api/academic/exam-schedules/{round_id}/invigilators */
+		get: operations['getExamInvigilatorWorkspace'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/exam-schedules/{round_id}/publish': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		/** POST /api/academic/exam-schedules/{round_id}/publish */
+		post: operations['publishExamRound'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/exam-schedules/days/{exam_day_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		/** DELETE /api/academic/exam-schedules/days/{exam_day_id} */
+		delete: operations['deleteExamDay'];
+		options?: never;
+		head?: never;
+		/** PATCH /api/academic/exam-schedules/days/{exam_day_id} */
+		patch: operations['updateExamDay'];
+		trace?: never;
+	};
+	'/api/academic/exam-schedules/days/{exam_day_id}/room-assignments': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** GET /api/academic/exam-schedules/days/{exam_day_id}/room-assignments */
+		get: operations['listExamDayRoomAssignments'];
+		put?: never;
+		/** POST /api/academic/exam-schedules/days/{exam_day_id}/room-assignments */
+		post: operations['upsertExamDayRoomAssignment'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/exam-schedules/room-assignments/{assignment_id}/invigilators': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		/** PUT /api/academic/exam-schedules/room-assignments/{assignment_id}/invigilators */
+		put: operations['updateExamAssignmentInvigilators'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/exam-schedules/room-assignments/{assignment_id}/invigilators/{staff_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		/** PUT /api/academic/exam-schedules/room-assignments/{assignment_id}/invigilators/{staff_id} */
+		put: operations['assignExamAssignmentInvigilator'];
+		post?: never;
+		/** DELETE /api/academic/exam-schedules/room-assignments/{assignment_id}/invigilators/{staff_id} */
+		delete: operations['removeExamAssignmentInvigilator'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/exam-schedules/room-assignments/{assignment_id}/seats': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		/** POST /api/academic/exam-schedules/room-assignments/{assignment_id}/seats */
+		post: operations['generateExamSeats'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/exam-schedules/sessions': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		/** POST /api/academic/exam-schedules/sessions */
+		post: operations['placeExamSession'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/exam-schedules/sessions/{session_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		/** DELETE /api/academic/exam-schedules/sessions/{session_id} */
+		delete: operations['deleteExamSession'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/grade-progressions': {
 		parameters: {
 			query?: never;
@@ -757,6 +1081,150 @@ export interface paths {
 		patch: operations['updateAcademicTerm'];
 		trace?: never;
 	};
+	'/api/academic/timetable': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listTimetableEntries'];
+		put?: never;
+		post: operations['createTimetableEntry'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/timetable-templates': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listTimetableTemplates'];
+		put?: never;
+		post: operations['createTimetableTemplate'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/timetable-templates/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getTimetableTemplate'];
+		put: operations['updateTimetableTemplate'];
+		post?: never;
+		delete: operations['deleteTimetableTemplate'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/timetable-templates/{template_id}/apply': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['applyTimetableTemplate'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/timetable-templates/from-current': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['createTimetableTemplateFromCurrent'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/timetable/{entry_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['updateTimetableEntry'];
+		post?: never;
+		delete: operations['deleteTimetableEntry'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/timetable/batch': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['createBatchTimetableEntries'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/timetable/batch-group/{batch_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['deleteTimetableBatch'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/timetable/clear': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['clearTimetable'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/timetable/daily-teaching': {
 		parameters: {
 			query?: never;
@@ -767,6 +1235,54 @@ export interface paths {
 		get: operations['getDailyTeachingOverview'];
 		put?: never;
 		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/timetable/occupancy': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getTimetableOccupancy'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/timetable/swap': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['swapTimetableEntries'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/timetable/validate-moves': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['validateTimetableMoves'];
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -2111,6 +2627,54 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/me/academic-context/options': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listMyAcademicContextOptions'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/me/activity-registrations': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listMyActivityRegistrations'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/me/activity-registrations/{group_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['enrollMyActivityRegistration'];
+		delete: operations['unenrollMyActivityRegistration'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/me/calendar/events': {
 		parameters: {
 			query?: never;
@@ -2403,6 +2967,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/parent/students/{student_id}/academic-context/options': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listChildAcademicContextOptions'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/parent/students/{student_id}/calendar/events': {
 		parameters: {
 			query?: never;
@@ -2484,6 +3064,22 @@ export interface paths {
 			cookie?: never;
 		};
 		get: operations['listPermissionsByModule'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/public/academic-context/options': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listPublicAcademicContextOptions'];
 		put?: never;
 		post?: never;
 		delete?: never;
@@ -3332,6 +3928,52 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_AssessmentPlanDetail: {
+			data: {
+				/** Format: uuid */
+				academicTermId: string;
+				/** Format: uuid */
+				academicYearId: string;
+				categories: components['schemas']['AssessmentCategory'][];
+				expectedTotalScore: string;
+				gradingPolicy: components['schemas']['CourseGradingPolicy'];
+				/** Format: uuid */
+				id?: string | null;
+				learningGroupIds: string[];
+				/** Format: date-time */
+				lockedAt?: string | null;
+				offeringCode: string;
+				/** Format: uuid */
+				offeringId: string;
+				offeringName: string;
+				/** Format: int64 */
+				rowVersion?: number | null;
+				status: string;
+				/** Format: uuid */
+				subjectId: string;
+				subjectVersionDisplayLabel: string;
+				/** Format: date-time */
+				submittedAt?: string | null;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_AssessmentSettingsResponse: {
+			data: {
+				teacherAccessEnabled: boolean;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_BatchTimetableResult: {
+			data: {
+				/** Format: uuid */
+				batchId: string;
+				entries: components['schemas']['TimetableEntry'][];
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_BellSchedule: {
 			data: {
 				/** Format: uuid */
@@ -3645,6 +4287,14 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_ClearMismatchedExamItemsResult: {
+			data: {
+				/** Format: int64 */
+				deletedCount: number;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_CreateStudentResponse: {
 			data: {
 				/** Format: uuid */
@@ -3743,6 +4393,29 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_DayRoomAssignmentView: {
+			data: {
+				buildingName?: string | null;
+				/** Format: int32 */
+				capacityOverride?: number | null;
+				/** Format: uuid */
+				examDayId: string;
+				/** Format: uuid */
+				homeroomId: string;
+				homeroomName: string;
+				/** Format: uuid */
+				id: string;
+				invigilators: components['schemas']['InvigilatorView'][];
+				/** Format: int32 */
+				roomCapacity?: number | null;
+				/** Format: uuid */
+				roomId: string;
+				roomName: string;
+				seatsGenerated: boolean;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_DelegationIdData: {
 			data: {
 				/** Format: uuid */
@@ -3766,6 +4439,128 @@ export interface components {
 		};
 		ApiResponse_EmptyData: {
 			data: Record<string, never>;
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_ExamDayDetail: {
+			data: {
+				blockedWindows: components['schemas']['BlockedWindow'][];
+				endTime: string;
+				/** Format: date */
+				examDate: string;
+				/** Format: uuid */
+				examRoundId: string;
+				gradeLevelIds: string[];
+				/** Format: uuid */
+				id: string;
+				label?: string | null;
+				roomAssignments: components['schemas']['ExamDayRoomAssignmentView'][];
+				startTime: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_ExamInvigilatorWorkspace: {
+			data: {
+				assignments: components['schemas']['ExamInvigilatorAssignmentSummary'][];
+				/** Format: uuid */
+				roundId: string;
+				staffWorkloads: components['schemas']['ExamInvigilatorStaffWorkload'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_ExamRound: {
+			data: {
+				/** Format: uuid */
+				academicTermId: string;
+				/** Format: uuid */
+				academicYearId: string;
+				/** Format: date-time */
+				createdAt: string;
+				description?: string | null;
+				examKind: string;
+				/** Format: uuid */
+				id: string;
+				name: string;
+				/** Format: date-time */
+				publishedAt?: string | null;
+				status: string;
+				/** Format: date-time */
+				updatedAt: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_ExamScheduleWorkspace: {
+			data: {
+				days: components['schemas']['ExamDayDetail'][];
+				readiness: components['schemas']['ExamScheduleReadiness'];
+				round: components['schemas']['ExamRound'];
+				scheduledSessions: components['schemas']['ExamSessionView'][];
+				unscheduledItems: components['schemas']['ExamScheduleItemView'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_ExamSessionView: {
+			data: {
+				/** Format: uuid */
+				academicTermId: string;
+				/** Format: uuid */
+				academicYearId: string;
+				/** Format: uuid */
+				assessmentCategoryId: string;
+				assessmentCategoryName?: string | null;
+				buildingName?: string | null;
+				/** Format: uuid */
+				courseAssessmentPlanId: string;
+				/** Format: int32 */
+				durationMinutes: number;
+				endsAt: string;
+				/** Format: date */
+				examDate?: string | null;
+				/** Format: uuid */
+				examDayId: string;
+				/** Format: uuid */
+				examRoundId: string;
+				/** Format: uuid */
+				examScheduleItemId: string;
+				/** Format: uuid */
+				gradeLevelId: string;
+				gradeLevelName?: string | null;
+				gradeLevelType?: string | null;
+				/** Format: int32 */
+				gradeLevelYear?: number | null;
+				/** Format: uuid */
+				homeroomId: string;
+				homeroomName?: string | null;
+				/** Format: uuid */
+				id: string;
+				/** Format: date-time */
+				importedAt: string;
+				invigilators: components['schemas']['ExamInvigilatorView'][];
+				/** Format: uuid */
+				learningGroupId: string;
+				/** Format: uuid */
+				learningOfferingId: string;
+				/** Format: uuid */
+				roomId?: string | null;
+				roomName?: string | null;
+				startsAt: string;
+				subjectCode?: string | null;
+				/** Format: int32 */
+				subjectGroupDisplayOrder?: number | null;
+				/** Format: uuid */
+				subjectGroupId?: string | null;
+				subjectGroupName?: string | null;
+				/** Format: uuid */
+				subjectId: string;
+				subjectNameEn?: string | null;
+				subjectNameTh?: string | null;
+				subjectType?: string | null;
+				subjectVersionDisplayLabel?: string | null;
+			};
 			message?: string;
 			success: boolean;
 		};
@@ -3890,6 +4685,18 @@ export interface components {
 				endedPlacement: components['schemas']['HomeroomPlacement'];
 				newPlacement: components['schemas']['HomeroomPlacement'];
 				replayed: boolean;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_ImportExamItemsResult: {
+			data: {
+				/** Format: int64 */
+				insertedCount: number;
+				/** Format: int64 */
+				skippedExistingCount: number;
+				/** Format: int64 */
+				skippedMissingDurationCount: number;
 			};
 			message?: string;
 			success: boolean;
@@ -4433,6 +5240,21 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_StudentActivityRegistrationResult: {
+			data: {
+				enrolled: boolean;
+				/** Format: uuid */
+				learningGroupId: string;
+				/** Format: uuid */
+				learningOfferingId: string;
+				/** Format: int64 */
+				revision: number;
+				/** Format: uuid */
+				studentAcademicYearId: string;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_StudentProfile: {
 			data: components['schemas']['StudentDbRow'] & {
 				parents: components['schemas']['ParentDto'][];
@@ -4518,6 +5340,108 @@ export interface components {
 				updatedAt: string;
 				/** Format: int32 */
 				versionNo: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_SwapTimetableEntriesResponse: {
+			data: {
+				entryA: components['schemas']['TimetableEntry'];
+				entryB: components['schemas']['TimetableEntry'];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_TemplateApplyResult: {
+			data: {
+				applied: number;
+				entryIds: string[];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_TemplateWithEntries: {
+			data: {
+				entries: components['schemas']['TimetableTemplateEntry'][];
+				template: components['schemas']['TimetableTemplate'];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_TimetableEntry: {
+			data: {
+				/** Format: uuid */
+				academicTermId: string;
+				/** Format: uuid */
+				academicYearId: string;
+				/** Format: uuid */
+				activityId?: string | null;
+				activitySchedulingMode?: null | components['schemas']['ActivitySchedulingMode'];
+				activityVersionDisplayLabel?: string | null;
+				/** Format: uuid */
+				batchId?: string | null;
+				/** Format: uuid */
+				bellScheduleId: string;
+				/** Format: uuid */
+				bellSchedulePeriodId: string;
+				/** Format: date-time */
+				createdAt: string;
+				dayOfWeek: string;
+				endTime: string;
+				entryType: string;
+				/** Format: uuid */
+				homeroomId?: string | null;
+				homeroomName?: string | null;
+				/** Format: uuid */
+				id: string;
+				instructors: components['schemas']['TimetableInstructor'][];
+				isActive: boolean;
+				learningGroupCode?: string | null;
+				/** Format: uuid */
+				learningGroupId?: string | null;
+				learningGroupName?: string | null;
+				note?: string | null;
+				offeringCode?: string | null;
+				/** Format: uuid */
+				offeringId?: string | null;
+				offeringName?: string | null;
+				periodName?: string | null;
+				roomCode?: string | null;
+				/** Format: uuid */
+				roomId?: string | null;
+				/** Format: int64 */
+				rowVersion: number;
+				startTime: string;
+				/** Format: int32 */
+				subjectGroupDisplayOrder?: number | null;
+				/** Format: uuid */
+				subjectGroupId?: string | null;
+				subjectGroupName?: string | null;
+				/**
+				 * Format: uuid
+				 * @description Stable catalog identity. A selected version is represented by its display label only.
+				 */
+				subjectId?: string | null;
+				subjectVersionDisplayLabel?: string | null;
+				title?: string | null;
+				/** Format: date-time */
+				updatedAt: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_TimetableTemplate: {
+			data: {
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				createdBy?: string | null;
+				description?: string | null;
+				/** Format: uuid */
+				id: string;
+				name: string;
+				/** Format: date-time */
+				updatedAt: string;
 			};
 			message?: string;
 			success: boolean;
@@ -4659,6 +5583,37 @@ export interface components {
 				updatedAt: string;
 				/** Format: int32 */
 				versionNo: number;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_AssessmentPlanSummary: {
+			data: {
+				/** Format: uuid */
+				academicTermId: string;
+				/** Format: uuid */
+				academicYearId: string;
+				/** Format: int64 */
+				categoryCount: number;
+				expectedTotalScore: string;
+				/** Format: int64 */
+				itemCount: number;
+				/** Format: int64 */
+				learningGroupCount: number;
+				learningGroupIds: string[];
+				offeringCode: string;
+				/** Format: uuid */
+				offeringId: string;
+				offeringName: string;
+				/** Format: uuid */
+				planId?: string | null;
+				/** Format: int64 */
+				rowVersion?: number | null;
+				status: string;
+				/** Format: uuid */
+				subjectId: string;
+				subjectVersionDisplayLabel: string;
+				totalScore: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -5070,6 +6025,29 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Vec_DayRoomAssignmentView: {
+			data: {
+				buildingName?: string | null;
+				/** Format: int32 */
+				capacityOverride?: number | null;
+				/** Format: uuid */
+				examDayId: string;
+				/** Format: uuid */
+				homeroomId: string;
+				homeroomName: string;
+				/** Format: uuid */
+				id: string;
+				invigilators: components['schemas']['InvigilatorView'][];
+				/** Format: int32 */
+				roomCapacity?: number | null;
+				/** Format: uuid */
+				roomId: string;
+				roomName: string;
+				seatsGenerated: boolean;
+			}[];
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Vec_DefaultTeacher: {
 			data: {
 				role: string;
@@ -5108,6 +6086,37 @@ export interface components {
 				/** Format: uuid */
 				to_user_id: string;
 				to_user_name: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_ExamInvigilatorStaffOption: {
+			data: {
+				displayName: string;
+				/** Format: uuid */
+				staffId: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_ExamRound: {
+			data: {
+				/** Format: uuid */
+				academicTermId: string;
+				/** Format: uuid */
+				academicYearId: string;
+				/** Format: date-time */
+				createdAt: string;
+				description?: string | null;
+				examKind: string;
+				/** Format: uuid */
+				id: string;
+				name: string;
+				/** Format: date-time */
+				publishedAt?: string | null;
+				status: string;
+				/** Format: date-time */
+				updatedAt: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -5378,6 +6387,20 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Vec_MoveValidityCell: {
+			data: {
+				/** Format: uuid */
+				bellSchedulePeriodId: string;
+				dayOfWeek: string;
+				reason: string;
+				state: string;
+				/** Format: uuid */
+				targetEntryId?: string | null;
+				valid: boolean;
+			}[];
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Vec_OrganizationMemberItem: {
 			data: {
 				is_primary: boolean;
@@ -5565,6 +6588,20 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Vec_SeatAssignmentView: {
+			data: {
+				/** Format: uuid */
+				dayRoomAssignmentId: string;
+				/** Format: uuid */
+				id: string;
+				seatNumber: string;
+				/** Format: uuid */
+				studentId: string;
+				studentName: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Vec_StaffLookupItem: {
 			data: {
 				/** Format: uuid */
@@ -5614,6 +6651,24 @@ export interface components {
 				studyProgramId: string;
 				/** Format: date-time */
 				updatedAt: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_StudentActivityOfferingOption: {
+			data: {
+				/** Format: uuid */
+				academicTermId: string;
+				/** Format: uuid */
+				academicYearId: string;
+				activityType: string;
+				code: string;
+				/** Format: uuid */
+				enrolledGroupId?: string | null;
+				groups: components['schemas']['StudentActivityGroupOption'][];
+				/** Format: uuid */
+				id: string;
+				name: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -5729,6 +6784,7 @@ export interface components {
 				academicYearId: string;
 				/** Format: uuid */
 				activityId?: string | null;
+				activitySchedulingMode?: null | components['schemas']['ActivitySchedulingMode'];
 				activityVersionDisplayLabel?: string | null;
 				/** Format: uuid */
 				batchId?: string | null;
@@ -5764,6 +6820,11 @@ export interface components {
 				/** Format: int64 */
 				rowVersion: number;
 				startTime: string;
+				/** Format: int32 */
+				subjectGroupDisplayOrder?: number | null;
+				/** Format: uuid */
+				subjectGroupId?: string | null;
+				subjectGroupName?: string | null;
 				/**
 				 * Format: uuid
 				 * @description Stable catalog identity. A selected version is represented by its display label only.
@@ -5771,6 +6832,39 @@ export interface components {
 				subjectId?: string | null;
 				subjectVersionDisplayLabel?: string | null;
 				title?: string | null;
+				/** Format: date-time */
+				updatedAt: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_TimetableOccupancyCell: {
+			data: {
+				/** Format: uuid */
+				bellSchedulePeriodId: string;
+				dayOfWeek: string;
+				/** Format: uuid */
+				entryId: string;
+				homeroomIds: string[];
+				instructorIds: string[];
+				/** Format: uuid */
+				learningGroupId?: string | null;
+				/** Format: uuid */
+				roomId?: string | null;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_TimetableTemplate: {
+			data: {
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				createdBy?: string | null;
+				description?: string | null;
+				/** Format: uuid */
+				id: string;
+				name: string;
 				/** Format: date-time */
 				updatedAt: string;
 			}[];
@@ -5826,6 +6920,92 @@ export interface components {
 			rowVersion: number;
 			sourceHash: string;
 		};
+		ApplyTemplateRequest: {
+			/** Format: uuid */
+			academicTermId: string;
+		};
+		AssessmentCategory: {
+			allocationStatus: string;
+			code?: string | null;
+			/** Format: int32 */
+			displayOrder: number;
+			/** Format: int32 */
+			examDurationMinutes?: number | null;
+			examMode: string;
+			/** Format: uuid */
+			id?: string | null;
+			items: components['schemas']['AssessmentItem'][];
+			itemTotalScore: string;
+			maxScore: string;
+			name: string;
+		};
+		AssessmentItem: {
+			/** Format: uuid */
+			categoryId: string;
+			/** Format: int32 */
+			displayOrder: number;
+			/** Format: uuid */
+			id: string;
+			isActive: boolean;
+			maxScore: string;
+			name: string;
+		};
+		AssessmentPlanDetail: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			academicYearId: string;
+			categories: components['schemas']['AssessmentCategory'][];
+			expectedTotalScore: string;
+			gradingPolicy: components['schemas']['CourseGradingPolicy'];
+			/** Format: uuid */
+			id?: string | null;
+			learningGroupIds: string[];
+			/** Format: date-time */
+			lockedAt?: string | null;
+			offeringCode: string;
+			/** Format: uuid */
+			offeringId: string;
+			offeringName: string;
+			/** Format: int64 */
+			rowVersion?: number | null;
+			status: string;
+			/** Format: uuid */
+			subjectId: string;
+			subjectVersionDisplayLabel: string;
+			/** Format: date-time */
+			submittedAt?: string | null;
+		};
+		AssessmentPlanSummary: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			academicYearId: string;
+			/** Format: int64 */
+			categoryCount: number;
+			expectedTotalScore: string;
+			/** Format: int64 */
+			itemCount: number;
+			/** Format: int64 */
+			learningGroupCount: number;
+			learningGroupIds: string[];
+			offeringCode: string;
+			/** Format: uuid */
+			offeringId: string;
+			offeringName: string;
+			/** Format: uuid */
+			planId?: string | null;
+			/** Format: int64 */
+			rowVersion?: number | null;
+			status: string;
+			/** Format: uuid */
+			subjectId: string;
+			subjectVersionDisplayLabel: string;
+			totalScore: string;
+		};
+		AssessmentSettingsResponse: {
+			teacherAccessEnabled: boolean;
+		};
 		AssignRoleRequest: {
 			is_primary?: boolean | null;
 			notes?: string | null;
@@ -5849,6 +7029,11 @@ export interface components {
 		AttachSchoolFontBatchRequest: {
 			fileIds: string[];
 			rightsConfirmed?: boolean;
+		};
+		BatchTimetableResult: {
+			/** Format: uuid */
+			batchId: string;
+			entries: components['schemas']['TimetableEntry'][];
 		};
 		BellSchedule: {
 			/** Format: uuid */
@@ -5888,6 +7073,18 @@ export interface components {
 			name?: string | null;
 			/** Format: int32 */
 			orderIndex: number;
+			startTime: string;
+		};
+		BlockedWindow: {
+			endTime: string;
+			/** Format: uuid */
+			id?: string | null;
+			label: string;
+			startTime: string;
+		};
+		BlockedWindowInput: {
+			endTime: string;
+			label: string;
 			startTime: string;
 		};
 		CalendarCategory: {
@@ -6728,6 +7925,15 @@ export interface components {
 			relationship: string;
 			student_id: string | null;
 		};
+		ClearMismatchedExamItemsResult: {
+			/** Format: int64 */
+			deletedCount: number;
+		};
+		ClearTimetableRequest: {
+			/** Format: uuid */
+			academicTermId: string;
+			entryTypes?: string[] | null;
+		};
 		CourseGradingPolicy: {
 			passingScore?: string | null;
 			policyCode: string;
@@ -6821,6 +8027,20 @@ export interface components {
 			schedulingMode: string;
 			termCode?: string | null;
 		};
+		CreateBatchTimetableEntriesRequest: {
+			/** Format: uuid */
+			academicTermId: string;
+			bellSchedulePeriodIds: string[];
+			daysOfWeek: string[];
+			entryType: string;
+			homeroomIds?: string[];
+			instructorIds?: string[];
+			learningGroupIds?: string[];
+			note?: string | null;
+			/** Format: uuid */
+			roomId?: string | null;
+			title?: string | null;
+		};
 		CreateBellScheduleRequest: {
 			/** Format: uuid */
 			academicYearId: string;
@@ -6891,6 +8111,13 @@ export interface components {
 			reason?: string | null;
 			/** Format: uuid */
 			to_user_id: string;
+		};
+		CreateExamRoundRequest: {
+			/** Format: uuid */
+			academicTermId: string;
+			description?: string | null;
+			examKind?: string | null;
+			name: string;
 		};
 		CreateHomeroomPlacementRequest: {
 			/** Format: int32 */
@@ -7113,6 +8340,27 @@ export interface components {
 			subjectType: string;
 			termCode?: string | null;
 		};
+		CreateTemplateRequest: {
+			description?: string | null;
+			name: string;
+		};
+		CreateTimetableEntryRequest: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			bellSchedulePeriodId: string;
+			dayOfWeek: string;
+			entryType: string;
+			/** Format: uuid */
+			homeroomId?: string | null;
+			instructorIds?: string[];
+			/** Format: uuid */
+			learningGroupId?: string | null;
+			note?: string | null;
+			/** Format: uuid */
+			roomId?: string | null;
+			title?: string | null;
+		};
 		CurrentUserResponse: {
 			firstName: string;
 			/** Format: uuid */
@@ -7196,6 +8444,7 @@ export interface components {
 		DailyTeachingEntry: {
 			/** Format: uuid */
 			activityId?: string | null;
+			activitySchedulingMode?: null | components['schemas']['ActivitySchedulingMode'];
 			activityVersionDisplayLabel?: string | null;
 			/** Format: uuid */
 			entryId: string;
@@ -7258,6 +8507,25 @@ export interface components {
 			id: string;
 			periods: components['schemas']['DailyTeachingPeriodCell'][];
 		};
+		DayRoomAssignmentView: {
+			buildingName?: string | null;
+			/** Format: int32 */
+			capacityOverride?: number | null;
+			/** Format: uuid */
+			examDayId: string;
+			/** Format: uuid */
+			homeroomId: string;
+			homeroomName: string;
+			/** Format: uuid */
+			id: string;
+			invigilators: components['schemas']['InvigilatorView'][];
+			/** Format: int32 */
+			roomCapacity?: number | null;
+			/** Format: uuid */
+			roomId: string;
+			roomName: string;
+			seatsGenerated: boolean;
+		};
 		DefaultTeacher: {
 			role: string;
 			/** Format: uuid */
@@ -7312,6 +8580,280 @@ export interface components {
 			y: number;
 		};
 		EmptyData: Record<string, never>;
+		ExamDay: {
+			endTime: string;
+			/** Format: date */
+			examDate: string;
+			/** Format: uuid */
+			examRoundId: string;
+			/** Format: uuid */
+			id: string;
+			label?: string | null;
+			startTime: string;
+		};
+		ExamDayDetail: {
+			blockedWindows: components['schemas']['BlockedWindow'][];
+			endTime: string;
+			/** Format: date */
+			examDate: string;
+			/** Format: uuid */
+			examRoundId: string;
+			gradeLevelIds: string[];
+			/** Format: uuid */
+			id: string;
+			label?: string | null;
+			roomAssignments: components['schemas']['ExamDayRoomAssignmentView'][];
+			startTime: string;
+		};
+		ExamDayRoomAssignmentView: {
+			/** Format: int32 */
+			capacityOverride?: number | null;
+			/** Format: uuid */
+			examDayId: string;
+			/** Format: uuid */
+			homeroomId: string;
+			homeroomName?: string | null;
+			/** Format: uuid */
+			id: string;
+			invigilators: components['schemas']['ExamInvigilatorView'][];
+			/** Format: int32 */
+			roomCapacity?: number | null;
+			/** Format: uuid */
+			roomId: string;
+			roomName?: string | null;
+		};
+		ExamInvigilatorAssignmentSummary: {
+			/** Format: uuid */
+			assignmentId: string;
+			/** Format: uuid */
+			examDayId: string;
+			/** Format: uuid */
+			homeroomId: string;
+			homeroomName: string;
+			invigilators: components['schemas']['InvigilatorView'][];
+			/** Format: uuid */
+			roomId: string;
+			roomName: string;
+			/** Format: int32 */
+			sessionMinutes: number;
+		};
+		ExamInvigilatorDayWorkload: {
+			/** Format: int32 */
+			assignmentCount: number;
+			/** Format: uuid */
+			examDayId: string;
+			/** Format: int32 */
+			minutes: number;
+		};
+		ExamInvigilatorStaffOption: {
+			displayName: string;
+			/** Format: uuid */
+			staffId: string;
+		};
+		ExamInvigilatorStaffWorkload: {
+			/** Format: int32 */
+			assignedDayCount: number;
+			/** Format: int32 */
+			assignmentCount: number;
+			days: components['schemas']['ExamInvigilatorDayWorkload'][];
+			/** Format: uuid */
+			staffId: string;
+			staffName: string;
+			/** Format: int32 */
+			totalMinutes: number;
+		};
+		ExamInvigilatorView: {
+			/** Format: uuid */
+			dayRoomAssignmentId: string;
+			/** Format: uuid */
+			examDayId: string;
+			/** Format: uuid */
+			id: string;
+			roleLabel?: string | null;
+			/** Format: uuid */
+			staffId: string;
+			staffName?: string | null;
+		};
+		ExamInvigilatorWorkspace: {
+			assignments: components['schemas']['ExamInvigilatorAssignmentSummary'][];
+			/** Format: uuid */
+			roundId: string;
+			staffWorkloads: components['schemas']['ExamInvigilatorStaffWorkload'][];
+		};
+		ExamRound: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			academicYearId: string;
+			/** Format: date-time */
+			createdAt: string;
+			description?: string | null;
+			examKind: string;
+			/** Format: uuid */
+			id: string;
+			name: string;
+			/** Format: date-time */
+			publishedAt?: string | null;
+			status: string;
+			/** Format: date-time */
+			updatedAt: string;
+		};
+		ExamScheduleItem: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			academicYearId: string;
+			/** Format: uuid */
+			assessmentCategoryId: string;
+			/** Format: uuid */
+			courseAssessmentPlanId: string;
+			/** Format: int32 */
+			durationMinutes: number;
+			/** Format: uuid */
+			examRoundId: string;
+			/** Format: uuid */
+			gradeLevelId: string;
+			/** Format: uuid */
+			homeroomId: string;
+			/** Format: uuid */
+			id: string;
+			/** Format: date-time */
+			importedAt: string;
+			/** Format: uuid */
+			learningGroupId: string;
+			/** Format: uuid */
+			learningOfferingId: string;
+			/** Format: uuid */
+			subjectId: string;
+		};
+		ExamScheduleItemView: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			academicYearId: string;
+			/** Format: uuid */
+			assessmentCategoryId: string;
+			assessmentCategoryName?: string | null;
+			/** Format: uuid */
+			courseAssessmentPlanId: string;
+			/** Format: int32 */
+			durationMinutes: number;
+			/** Format: uuid */
+			examRoundId: string;
+			/** Format: uuid */
+			gradeLevelId: string;
+			gradeLevelName?: string | null;
+			gradeLevelType?: string | null;
+			/** Format: int32 */
+			gradeLevelYear?: number | null;
+			/** Format: uuid */
+			homeroomId: string;
+			homeroomName?: string | null;
+			/** Format: uuid */
+			id: string;
+			/** Format: date-time */
+			importedAt: string;
+			/** Format: uuid */
+			learningGroupId: string;
+			/** Format: uuid */
+			learningOfferingId: string;
+			subjectCode?: string | null;
+			/** Format: int32 */
+			subjectGroupDisplayOrder?: number | null;
+			/** Format: uuid */
+			subjectGroupId?: string | null;
+			subjectGroupName?: string | null;
+			/** Format: uuid */
+			subjectId: string;
+			subjectNameEn?: string | null;
+			subjectNameTh?: string | null;
+			subjectType?: string | null;
+			subjectVersionDisplayLabel?: string | null;
+		};
+		ExamScheduleReadiness: {
+			blockers: string[];
+			canPublish: boolean;
+		};
+		ExamScheduleWorkspace: {
+			days: components['schemas']['ExamDayDetail'][];
+			readiness: components['schemas']['ExamScheduleReadiness'];
+			round: components['schemas']['ExamRound'];
+			scheduledSessions: components['schemas']['ExamSessionView'][];
+			unscheduledItems: components['schemas']['ExamScheduleItemView'][];
+		};
+		ExamSession: {
+			/** Format: date-time */
+			createdAt: string;
+			endsAt: string;
+			/** Format: uuid */
+			examDayId: string;
+			/** Format: uuid */
+			examRoundId: string;
+			/** Format: uuid */
+			examScheduleItemId: string;
+			/** Format: uuid */
+			id: string;
+			startsAt: string;
+			/** Format: date-time */
+			updatedAt: string;
+		};
+		ExamSessionView: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			academicYearId: string;
+			/** Format: uuid */
+			assessmentCategoryId: string;
+			assessmentCategoryName?: string | null;
+			buildingName?: string | null;
+			/** Format: uuid */
+			courseAssessmentPlanId: string;
+			/** Format: int32 */
+			durationMinutes: number;
+			endsAt: string;
+			/** Format: date */
+			examDate?: string | null;
+			/** Format: uuid */
+			examDayId: string;
+			/** Format: uuid */
+			examRoundId: string;
+			/** Format: uuid */
+			examScheduleItemId: string;
+			/** Format: uuid */
+			gradeLevelId: string;
+			gradeLevelName?: string | null;
+			gradeLevelType?: string | null;
+			/** Format: int32 */
+			gradeLevelYear?: number | null;
+			/** Format: uuid */
+			homeroomId: string;
+			homeroomName?: string | null;
+			/** Format: uuid */
+			id: string;
+			/** Format: date-time */
+			importedAt: string;
+			invigilators: components['schemas']['ExamInvigilatorView'][];
+			/** Format: uuid */
+			learningGroupId: string;
+			/** Format: uuid */
+			learningOfferingId: string;
+			/** Format: uuid */
+			roomId?: string | null;
+			roomName?: string | null;
+			startsAt: string;
+			subjectCode?: string | null;
+			/** Format: int32 */
+			subjectGroupDisplayOrder?: number | null;
+			/** Format: uuid */
+			subjectGroupId?: string | null;
+			subjectGroupName?: string | null;
+			/** Format: uuid */
+			subjectId: string;
+			subjectNameEn?: string | null;
+			subjectNameTh?: string | null;
+			subjectType?: string | null;
+			subjectVersionDisplayLabel?: string | null;
+		};
 		FeatureListResponse: {
 			data: components['schemas']['FeatureToggle'][];
 			success: boolean;
@@ -7384,6 +8926,16 @@ export interface components {
 			purpose: components['schemas']['FilePurpose'];
 			/** Format: uuid */
 			resource_id?: string | null;
+		};
+		FromCurrentRequest: {
+			/** Format: uuid */
+			academicTermId: string;
+			description?: string | null;
+			entryTypes?: string[] | null;
+			name: string;
+		};
+		GenerateSeatsRequest: {
+			regenerate: boolean;
 		};
 		/** @enum {string} */
 		GeometryAction: 'preserve' | 'scale' | 'reset';
@@ -7519,8 +9071,24 @@ export interface components {
 			/** Format: double */
 			rotation: number;
 		};
+		ImportExamItemsRequest: {
+			gradeLevelIds?: string[] | null;
+		};
+		ImportExamItemsResult: {
+			/** Format: int64 */
+			insertedCount: number;
+			/** Format: int64 */
+			skippedExistingCount: number;
+			/** Format: int64 */
+			skippedMissingDurationCount: number;
+		};
 		InspectSchoolFontUploadsRequest: {
 			fileIds: string[];
+		};
+		InvigilatorView: {
+			displayName: string;
+			/** Format: uuid */
+			staffId: string;
 		};
 		IssueCertificateOutcome:
 			| {
@@ -7836,6 +9404,16 @@ export interface components {
 			/** Format: uuid */
 			group_id: string;
 		};
+		MoveValidityCell: {
+			/** Format: uuid */
+			bellSchedulePeriodId: string;
+			dayOfWeek: string;
+			reason: string;
+			state: string;
+			/** Format: uuid */
+			targetEntryId?: string | null;
+			valid: boolean;
+		};
 		Notification: {
 			/** Format: date-time */
 			created_at: string;
@@ -8012,6 +9590,13 @@ export interface components {
 			seatNumber: string | null;
 			startsAt: string;
 			subjectName: string;
+		};
+		PlaceExamSessionRequest: {
+			/** Format: uuid */
+			examDayId: string;
+			/** Format: uuid */
+			examScheduleItemId: string;
+			startsAt: string;
 		};
 		/**
 		 * @description Credentials ที่ผู้สมัครส่งมาทุก request (stateless)
@@ -8349,6 +9934,36 @@ export interface components {
 		};
 		/** @enum {string} */
 		RosterStatus: 'draft' | 'published' | 'closed';
+		SaveAssessmentCategoryRequest: {
+			code?: string | null;
+			/** Format: int32 */
+			displayOrder: number;
+			/** Format: int32 */
+			examDurationMinutes?: number | null;
+			examMode: string;
+			/** Format: uuid */
+			id?: string | null;
+			items: components['schemas']['SaveAssessmentItemRequest'][];
+			maxScore: string;
+			name: string;
+		};
+		SaveAssessmentItemRequest: {
+			/** Format: int32 */
+			displayOrder: number;
+			/** Format: uuid */
+			id?: string | null;
+			isActive: boolean;
+			maxScore: string;
+			name: string;
+		};
+		SaveAssessmentPlanRequest: {
+			categories: components['schemas']['SaveAssessmentCategoryRequest'][];
+			/**
+			 * Format: int64
+			 * @description Omit only when the offering does not have a persisted plan yet.
+			 */
+			rowVersion?: number | null;
+		};
 		SchoolFontDeleteConflict: {
 			/** Format: int64 */
 			referenceCount: number;
@@ -8397,6 +10012,16 @@ export interface components {
 		SchoolSettingsResponse: {
 			/** Format: uuid */
 			logoFileId: string | null;
+		};
+		SeatAssignmentView: {
+			/** Format: uuid */
+			dayRoomAssignmentId: string;
+			/** Format: uuid */
+			id: string;
+			seatNumber: string;
+			/** Format: uuid */
+			studentId: string;
+			studentName: string;
 		};
 		SessionListData: {
 			sessions: components['schemas']['SessionResponse'][];
@@ -8604,6 +10229,49 @@ export interface components {
 		};
 		/** @enum {string} */
 		StudentAcademicYearStatus: 'planned' | 'active' | 'completed' | 'withdrawn' | 'graduated';
+		StudentActivityGroupOption: {
+			/** Format: int32 */
+			capacity?: number | null;
+			code: string;
+			description?: string | null;
+			enrolled: boolean;
+			/** Format: uuid */
+			id: string;
+			/** Format: int64 */
+			memberCount: number;
+			name: string;
+			registrationOpen: boolean;
+			teacherNames: string[];
+		};
+		StudentActivityOfferingOption: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			academicYearId: string;
+			activityType: string;
+			code: string;
+			/** Format: uuid */
+			enrolledGroupId?: string | null;
+			groups: components['schemas']['StudentActivityGroupOption'][];
+			/** Format: uuid */
+			id: string;
+			name: string;
+		};
+		StudentActivityRegistrationQuery: {
+			/** Format: uuid */
+			academicTermId: string;
+		};
+		StudentActivityRegistrationResult: {
+			enrolled: boolean;
+			/** Format: uuid */
+			learningGroupId: string;
+			/** Format: uuid */
+			learningOfferingId: string;
+			/** Format: int64 */
+			revision: number;
+			/** Format: uuid */
+			studentAcademicYearId: string;
+		};
 		StudentDbRow: {
 			address: string | null;
 			allergies: string | null;
@@ -8716,6 +10384,20 @@ export interface components {
 		SubmitCertificateIssueRequest: {
 			candidateIds: string[];
 		};
+		SwapTimetableEntriesRequest: {
+			/** Format: uuid */
+			entryAId: string;
+			/** Format: int64 */
+			entryARowVersion: number;
+			/** Format: uuid */
+			entryBId: string;
+			/** Format: int64 */
+			entryBRowVersion: number;
+		};
+		SwapTimetableEntriesResponse: {
+			entryA: components['schemas']['TimetableEntry'];
+			entryB: components['schemas']['TimetableEntry'];
+		};
 		TeacherAssignmentInput: {
 			role: components['schemas']['LearningTeacherRole'];
 			/** Format: uuid */
@@ -8742,6 +10424,14 @@ export interface components {
 			subjectName: string;
 			termCode: string;
 			termName: string;
+		};
+		TemplateApplyResult: {
+			applied: number;
+			entryIds: string[];
+		};
+		TemplateWithEntries: {
+			entries: components['schemas']['TimetableTemplateEntry'][];
+			template: components['schemas']['TimetableTemplate'];
 		};
 		/** @enum {string} */
 		TextAlignment: 'left' | 'center' | 'right';
@@ -8784,6 +10474,7 @@ export interface components {
 			academicYearId: string;
 			/** Format: uuid */
 			activityId?: string | null;
+			activitySchedulingMode?: null | components['schemas']['ActivitySchedulingMode'];
 			activityVersionDisplayLabel?: string | null;
 			/** Format: uuid */
 			batchId?: string | null;
@@ -8819,6 +10510,11 @@ export interface components {
 			/** Format: int64 */
 			rowVersion: number;
 			startTime: string;
+			/** Format: int32 */
+			subjectGroupDisplayOrder?: number | null;
+			/** Format: uuid */
+			subjectGroupId?: string | null;
+			subjectGroupName?: string | null;
 			/**
 			 * Format: uuid
 			 * @description Stable catalog identity. A selected version is represented by its display label only.
@@ -8832,8 +10528,65 @@ export interface components {
 		TimetableInstructor: {
 			displayName: string;
 			role: string;
+			/** Format: int32 */
+			subjectGroupDisplayOrder?: number | null;
+			/** Format: uuid */
+			subjectGroupId?: string | null;
+			subjectGroupName?: string | null;
 			/** Format: uuid */
 			userId: string;
+		};
+		TimetableOccupancyCell: {
+			/** Format: uuid */
+			bellSchedulePeriodId: string;
+			dayOfWeek: string;
+			/** Format: uuid */
+			entryId: string;
+			homeroomIds: string[];
+			instructorIds: string[];
+			/** Format: uuid */
+			learningGroupId?: string | null;
+			/** Format: uuid */
+			roomId?: string | null;
+		};
+		TimetableTemplate: {
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: uuid */
+			createdBy?: string | null;
+			description?: string | null;
+			/** Format: uuid */
+			id: string;
+			name: string;
+			/** Format: date-time */
+			updatedAt: string;
+		};
+		TimetableTemplateEntry: {
+			/** Format: int32 */
+			bellPeriodOrderIndex: number;
+			dayOfWeek: string;
+			entryType: string;
+			/** Format: uuid */
+			id: string;
+			instructorIds: string[];
+			learningGroupCode?: string | null;
+			resourceKind: string;
+			/** Format: uuid */
+			roomId?: string | null;
+			/** Format: uuid */
+			stableResourceId?: string | null;
+			targetSelector: components['schemas']['TimetableTemplateTargetSelector'];
+			/** Format: uuid */
+			templateId: string;
+			title?: string | null;
+		};
+		TimetableTemplateTargetSelector: {
+			/** Format: uuid */
+			gradeLevelId?: string | null;
+			instructorOnly?: boolean;
+			roomNumber?: string | null;
+			/** Format: uuid */
+			studyProgramId?: string | null;
 		};
 		TransferHomeroomPlacementRequest: {
 			/** Format: int32 */
@@ -8899,6 +10652,9 @@ export interface components {
 			rowVersion: number;
 			schedulingMode: string;
 			termCode?: string | null;
+		};
+		UpdateAssessmentSettingsRequest: {
+			teacherAccessEnabled: boolean;
 		};
 		UpdateBellScheduleRequest: {
 			code: string;
@@ -8987,6 +10743,14 @@ export interface components {
 			/** Format: uuid */
 			startAcademicYearId: string;
 			versionName: string;
+		};
+		UpdateExamInvigilatorsRequest: {
+			invigilatorStaffIds: string[];
+		};
+		UpdateExamRoundRequest: {
+			description?: string | null;
+			examKind?: string | null;
+			name?: string | null;
 		};
 		UpdateHomeroomRequest: {
 			/** Format: int32 */
@@ -9188,6 +10952,41 @@ export interface components {
 			subjectType: string;
 			termCode?: string | null;
 		};
+		UpdateTemplateRequest: {
+			description?: string | null;
+			name?: string | null;
+		};
+		UpdateTimetableEntryRequest: {
+			/** Format: uuid */
+			bellSchedulePeriodId?: string | null;
+			clearNote?: boolean | null;
+			clearRoom?: boolean | null;
+			dayOfWeek?: string | null;
+			note?: string | null;
+			/** Format: uuid */
+			roomId?: string | null;
+			/** Format: int64 */
+			rowVersion: number;
+			title?: string | null;
+		};
+		UpsertDayRoomAssignmentRequest: {
+			/** Format: int32 */
+			capacityOverride?: number | null;
+			/** Format: uuid */
+			homeroomId: string;
+			invigilatorStaffIds?: string[] | null;
+			/** Format: uuid */
+			roomId: string;
+		};
+		UpsertExamDayRequest: {
+			blockedWindows: components['schemas']['BlockedWindowInput'][];
+			endTime: string;
+			/** Format: date */
+			examDate: string;
+			gradeLevelIds: string[];
+			label?: string | null;
+			startTime: string;
+		};
 		UserMenuData: {
 			groups: components['schemas']['MenuGroupResponse'][];
 		};
@@ -9217,6 +11016,12 @@ export interface components {
 			/** Format: uuid */
 			id: string;
 		};
+		ValidateMovesRequest: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			entryId: string;
+		};
 		/** @enum {string} */
 		VersionStatus: 'draft' | 'published' | 'archived';
 	};
@@ -9228,6 +11033,328 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+	getAssessmentPlan: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Learning offering ID */
+				offering_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Assessment plan for an offering */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AssessmentPlanDetail'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Assessment plan read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Offering not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	saveAssessmentPlan: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Learning offering ID */
+				offering_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SaveAssessmentPlanRequest'];
+			};
+		};
+		responses: {
+			/** @description Saved assessment plan */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AssessmentPlanDetail'];
+				};
+			};
+			/** @description Invalid assessment plan */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Assessment plan manage permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Offering not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Stale assessment plan version */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	submitAssessmentPlan: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Learning offering ID */
+				offering_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Submitted assessment plan */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AssessmentPlanDetail'];
+				};
+			};
+			/** @description Assessment plan is not ready */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Assessment plan manage permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Offering not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Assessment plan state conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listAssessmentPlans: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				instructorId?: string;
+				status?: string;
+				subjectId?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Assessment plans for the selected term */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_AssessmentPlanSummary'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Assessment read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getAssessmentSettings: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Assessment settings */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AssessmentSettingsResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Assessment settings read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateAssessmentSettings: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateAssessmentSettingsRequest'];
+			};
+		};
+		responses: {
+			/** @description Updated assessment settings */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AssessmentSettingsResponse'];
+				};
+			};
+			/** @description Invalid assessment settings */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Assessment settings manage permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	listBellSchedules: {
 		parameters: {
 			query: {
@@ -11872,6 +13999,1015 @@ export interface operations {
 			};
 		};
 	};
+	listExamRounds: {
+		parameters: {
+			query: {
+				academicTermId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Exam rounds for the selected term */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_ExamRound'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createExamRound: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateExamRoundRequest'];
+			};
+		};
+		responses: {
+			/** @description Exam round created */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ExamRound'];
+				};
+			};
+			/** @description Invalid exam round */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getExamScheduleWorkspace: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Exam round ID */
+				round_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Exam scheduling workspace */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ExamScheduleWorkspace'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Exam round not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateExamRound: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Exam round ID */
+				round_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateExamRoundRequest'];
+			};
+		};
+		responses: {
+			/** @description Exam round updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ExamRound'];
+				};
+			};
+			/** @description Invalid exam round */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Exam round not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	clearMismatchedExamItems: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Exam round ID */
+				round_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Mismatched items cleared */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ClearMismatchedExamItemsResult'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	upsertExamDay: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Exam round ID */
+				round_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpsertExamDayRequest'];
+			};
+		};
+		responses: {
+			/** @description Exam day saved */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ExamDayDetail'];
+				};
+			};
+			/** @description Invalid exam day */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	importExamItems: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Exam round ID */
+				round_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ImportExamItemsRequest'];
+			};
+		};
+		responses: {
+			/** @description Assessment items imported */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ImportExamItemsResult'];
+				};
+			};
+			/** @description Import rejected */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listExamInvigilatorStaffOptions: {
+		parameters: {
+			query?: {
+				limit?: number;
+				search?: string;
+			};
+			header?: never;
+			path: {
+				/** @description Exam round ID */
+				round_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Staff options for invigilation */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_ExamInvigilatorStaffOption'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getExamInvigilatorWorkspace: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Exam round ID */
+				round_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Exam invigilation workspace */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ExamInvigilatorWorkspace'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	publishExamRound: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Exam round ID */
+				round_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Exam round published */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ExamRound'];
+				};
+			};
+			/** @description Exam round is not ready */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Exam round not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteExamDay: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Exam day ID */
+				exam_day_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Exam day deleted */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Exam day not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateExamDay: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Exam day ID */
+				exam_day_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpsertExamDayRequest'];
+			};
+		};
+		responses: {
+			/** @description Exam day updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ExamDayDetail'];
+				};
+			};
+			/** @description Invalid exam day */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Exam day not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listExamDayRoomAssignments: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Exam day ID */
+				exam_day_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Exam room assignments */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_DayRoomAssignmentView'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	upsertExamDayRoomAssignment: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Exam day ID */
+				exam_day_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpsertDayRoomAssignmentRequest'];
+			};
+		};
+		responses: {
+			/** @description Exam room assignment saved */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_DayRoomAssignmentView'];
+				};
+			};
+			/** @description Invalid room assignment */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateExamAssignmentInvigilators: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Room assignment ID */
+				assignment_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateExamInvigilatorsRequest'];
+			};
+		};
+		responses: {
+			/** @description Invigilators updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_DayRoomAssignmentView'];
+				};
+			};
+			/** @description Invalid invigilator assignment */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	assignExamAssignmentInvigilator: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Room assignment ID */
+				assignment_id: string;
+				/** @description Staff ID */
+				staff_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Invigilator assigned */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ExamInvigilatorWorkspace'];
+				};
+			};
+			/** @description Invalid invigilator assignment */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	removeExamAssignmentInvigilator: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Room assignment ID */
+				assignment_id: string;
+				/** @description Staff ID */
+				staff_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Invigilator removed */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ExamInvigilatorWorkspace'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	generateExamSeats: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Room assignment ID */
+				assignment_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['GenerateSeatsRequest'];
+			};
+		};
+		responses: {
+			/** @description Exam seats generated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_SeatAssignmentView'];
+				};
+			};
+			/** @description Seat generation rejected */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	placeExamSession: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['PlaceExamSessionRequest'];
+			};
+		};
+		responses: {
+			/** @description Exam session placed */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ExamSessionView'];
+				};
+			};
+			/** @description Exam session conflicts or is invalid */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteExamSession: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Exam session ID */
+				session_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Exam session deleted */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Exam session not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	listGradeProgressions: {
 		parameters: {
 			query?: never;
@@ -14374,6 +17510,763 @@ export interface operations {
 			};
 		};
 	};
+	listTimetableEntries: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				dayOfWeek?: string;
+				entryType?: string;
+				homeroomId?: string;
+				instructorId?: string;
+				learningGroupId?: string;
+				roomId?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Timetable entries in the selected term */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_TimetableEntry'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createTimetableEntry: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateTimetableEntryRequest'];
+			};
+		};
+		responses: {
+			/** @description Created timetable entry */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TimetableEntry'];
+				};
+			};
+			/** @description Invalid timetable entry */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable manage permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listTimetableTemplates: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Timetable templates */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_TimetableTemplate'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable template read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createTimetableTemplate: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateTemplateRequest'];
+			};
+		};
+		responses: {
+			/** @description Created timetable template */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TimetableTemplate'];
+				};
+			};
+			/** @description Invalid timetable template */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable template manage permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getTimetableTemplate: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Timetable template ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Timetable template with entries */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TemplateWithEntries'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable template read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable template not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateTimetableTemplate: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Timetable template ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateTemplateRequest'];
+			};
+		};
+		responses: {
+			/** @description Updated timetable template */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TimetableTemplate'];
+				};
+			};
+			/** @description Invalid timetable template */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable template manage permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable template not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteTimetableTemplate: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Timetable template ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Deleted timetable template */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable template manage permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable template not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	applyTimetableTemplate: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Timetable template ID */
+				template_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ApplyTemplateRequest'];
+			};
+		};
+		responses: {
+			/** @description Applied timetable template */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TemplateApplyResult'];
+				};
+			};
+			/** @description Template cannot be applied */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable template manage permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createTimetableTemplateFromCurrent: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['FromCurrentRequest'];
+			};
+		};
+		responses: {
+			/** @description Created timetable template from selected term */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TimetableTemplate'];
+				};
+			};
+			/** @description Invalid timetable template */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable template manage permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateTimetableEntry: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Timetable entry ID */
+				entry_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateTimetableEntryRequest'];
+			};
+		};
+		responses: {
+			/** @description Updated timetable entry */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TimetableEntry'];
+				};
+			};
+			/** @description Invalid timetable update */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable manage permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable entry not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Stale version or timetable conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteTimetableEntry: {
+		parameters: {
+			query: {
+				rowVersion: number;
+			};
+			header?: never;
+			path: {
+				/** @description Timetable entry ID */
+				entry_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Deactivated timetable entry */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TimetableEntry'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable manage permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable entry not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Stale timetable entry version */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createBatchTimetableEntries: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateBatchTimetableEntriesRequest'];
+			};
+		};
+		responses: {
+			/** @description Created timetable entries */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BatchTimetableResult'];
+				};
+			};
+			/** @description Invalid timetable batch */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable manage permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteTimetableBatch: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Timetable batch ID */
+				batch_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Deactivated timetable batch */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_TimetableEntry'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable manage permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	clearTimetable: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ClearTimetableRequest'];
+			};
+		};
+		responses: {
+			/** @description Cleared timetable entries */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_TimetableEntry'];
+				};
+			};
+			/** @description Invalid clear request */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable manage permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	getDailyTeachingOverview: {
 		parameters: {
 			query: {
@@ -14393,6 +18286,148 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['ApiResponse_DailyTeachingOverview'];
+				};
+			};
+		};
+	};
+	getTimetableOccupancy: {
+		parameters: {
+			query: {
+				academicTermId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Timetable occupancy for the selected term */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_TimetableOccupancyCell'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	swapTimetableEntries: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SwapTimetableEntriesRequest'];
+			};
+		};
+		responses: {
+			/** @description Swapped timetable entries */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SwapTimetableEntriesResponse'];
+				};
+			};
+			/** @description Invalid timetable swap */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable manage permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Stale version or timetable conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	validateTimetableMoves: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ValidateMovesRequest'];
+			};
+		};
+		responses: {
+			/** @description Valid timetable destinations */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_MoveValidityCell'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable manage permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
 		};
@@ -19820,6 +23855,224 @@ export interface operations {
 			};
 		};
 	};
+	listMyAcademicContextOptions: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Academic years and terms available to the current student */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AcademicContextOptions'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student context access denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listMyActivityRegistrations: {
+		parameters: {
+			query: {
+				academicTermId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Self-registration activity options for the selected learner term */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_StudentActivityOfferingOption'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student activity access denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	enrollMyActivityRegistration: {
+		parameters: {
+			query: {
+				academicTermId: string;
+			};
+			header?: never;
+			path: {
+				/** @description Learning group ID */
+				group_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Student enrolled in the selected activity group */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_StudentActivityRegistrationResult'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student is not eligible for the selected activity */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity group not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity registration conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic term context mismatch */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	unenrollMyActivityRegistration: {
+		parameters: {
+			query: {
+				academicTermId: string;
+			};
+			header?: never;
+			path: {
+				/** @description Learning group ID */
+				group_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Student removed from the selected activity group */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_StudentActivityRegistrationResult'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student activity access denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Active activity registration not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity registration window is closed */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic term context mismatch */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	listMyCalendarEvents: {
 		parameters: {
 			query?: {
@@ -20095,7 +24348,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
-			/** @description Current staff timetable in the selected term */
+			/** @description Current staff or student timetable in the selected term */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -21033,6 +25286,47 @@ export interface operations {
 			};
 		};
 	};
+	listChildAcademicContextOptions: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Linked student user ID */
+				student_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Academic years and terms available to the linked student */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AcademicContextOptions'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Parent-child access denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	getParentChildCalendarEvents: {
 		parameters: {
 			query?: {
@@ -21251,6 +25545,35 @@ export interface operations {
 			};
 			/** @description Permission denied */
 			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listPublicAcademicContextOptions: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Published academic years and terms available to the public calendar */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AcademicContextOptions'];
+				};
+			};
+			/** @description School tenant not found */
+			404: {
 				headers: {
 					[name: string]: unknown;
 				};

@@ -6,32 +6,21 @@ const store = readFileSync(
 	new URL('../../src/lib/stores/timetable-socket.ts', import.meta.url),
 	'utf8'
 );
-const page = readFileSync(
-	new URL('../../src/routes/(app)/staff/academic/timetable/+page.svelte', import.meta.url),
-	'utf8'
-);
 const runtime = readFileSync(
 	new URL('../../src/lib/utils/timetable-socket-runtime.ts', import.meta.url),
 	'utf8'
 );
 const client = readFileSync(new URL('../../src/lib/api/client.ts', import.meta.url), 'utf8');
-const connectionContract = store.slice(
-	store.indexOf('const timetableSocketRuntime'),
-	store.indexOf('export function sendUserActivity')
-);
+const connectionContract = store.slice(store.indexOf('const timetableSocketRuntime'));
 const onCloseContract = connectionContract.slice(
 	connectionContract.indexOf('onClose:'),
 	connectionContract.indexOf('onError:')
 );
-const pageConnectionEffect = page.slice(
-	page.indexOf('// WebSocket Connection'),
-	page.indexOf('onDestroy(() =>')
-);
 
-test('timetable socket URL contains semester identity and one sanitized tenant hint', () => {
+test('timetable socket URL contains canonical term identity and one sanitized tenant hint', () => {
 	assert.match(
 		connectionContract,
-		/new URL\(['"]\/ws\/timetable['"],\s*BACKEND_WS_URL\)[\s\S]*searchParams\.set\(\s*['"]semester_id['"],\s*String\(params\.semester_id\)\s*\)/
+		/new URL\(['"]\/ws\/timetable['"],\s*BACKEND_WS_URL\)[\s\S]*searchParams\.set\(\s*['"]academicTermId['"],\s*String\(params\.academicTermId\)\s*\)/
 	);
 	assert.match(connectionContract, /getSchoolSubdomainHint\(\)/);
 	assert.match(
@@ -97,11 +86,11 @@ test('reconnect delay remains exponential, capped, and jittered', async () => {
 	);
 });
 
-test('store delegates socket ownership, timers, and network listeners to the runtime', () => {
+test('canonical store delegates socket ownership, timers, and network listeners to the runtime', () => {
 	assert.match(store, /createTimetableSocketRuntime\(\{/);
 	assert.match(connectionContract, /timetableSocketRuntime\.connect\(params\)/);
 	assert.match(connectionContract, /timetableSocketRuntime\.disconnect\(\)/);
-	assert.match(connectionContract, /timetableSocketRuntime\.send\(JSON\.stringify\(event\)\)/);
+	assert.match(store, /timetableSocketRuntime\.send\(JSON\.stringify\(event\)\)/);
 	assert.match(runtime, /socketGeneration/);
 	assert.match(runtime, /detachSocketHandlers/);
 });
@@ -118,16 +107,21 @@ test('policy close refreshes auth without clearing or blindly reconnecting', () 
 	assert.doesNotMatch(onCloseContract, /clearUser|clearSessionSecurity|\.connect\(/);
 });
 
-test('page passes server query and local-only current user identity', () => {
-	assert.match(page, /const realtimeUserId = \$derived\(\$authStore\.user\?\.id \?\? null\)/);
-	assert.match(
-		pageConnectionEffect,
-		/connectTimetableSocket\(\{\s*semester_id:[\s\S]*current_user_id:\s*realtimeUserId/
+test('socket runtime keeps term and local user identity explicit without legacy query keys', () => {
+	assert.match(runtime, /academicTermId:\s*string/);
+	assert.match(runtime, /currentUserId:\s*string/);
+	assert.match(connectionContract, /currentUserId = params\.currentUserId/);
+	assert.doesNotMatch(store, /semester_id|current_user_id|timetable\/replay/);
+});
+
+test('timetable realtime uses canonical reload signals without legacy optimistic wire DTOs', () => {
+	for (const signal of ['AcademicCoreChanged', 'LearningDeliveryChanged', 'TimetableChanged']) {
+		assert.match(store, new RegExp(`['"]${signal}['"]`));
+	}
+	assert.match(store, /refreshTrigger\.update/);
+	assert.match(store, /export function sendCursorMove/);
+	assert.doesNotMatch(
+		store,
+		/classroom_course|activity_slot|CourseTeamChanged|EntryCreated|DropIntent|EntryIntent|sendDrop/
 	);
-	assert.doesNotMatch(pageConnectionEffect, /connectTimetableSocket\(\{[\s\S]{0,180}name:/);
-	assert.match(
-		pageConnectionEffect,
-		/if \(canReadTimetable && selectedSemesterId && realtimeUserId\) \{[\s\S]*\} else \{\s*disconnectTimetableSocket\(\);\s*\}/
-	);
-	assert.doesNotMatch(pageConnectionEffect, /\$authStore\.user/);
 });

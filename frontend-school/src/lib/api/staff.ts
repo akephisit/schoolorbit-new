@@ -21,11 +21,11 @@ export type StaffDashboardOverview = Schemas['StaffDashboardOverview'];
 export type RoleResponse = Schemas['RoleResponse'];
 export type OrganizationUnitResponse = Schemas['OrganizationUnitResponse'];
 
-/** วิชาที่ครูสอน — ดึงจาก classroom_courses (Course Planning) */
-export type TeachingCourseItem = Schemas['TeachingCourseItem'];
+/** กลุ่มการเรียนและรายวิชาที่ครูสอนใน Academic Delivery */
+export type TeachingAssignmentItem = Schemas['TeachingAssignmentItem'];
 
-/** ห้องที่ครูเป็นครูที่ปรึกษา — ดึงจาก classroom_advisors */
-export type AdvisorClassroomItem = Schemas['AdvisorClassroomItem'];
+/** ห้องประจำชั้นที่ครูเป็นที่ปรึกษาตามปีการศึกษา */
+export type AdvisorHomeroomItem = Schemas['AdvisorHomeroomItem'];
 export type StaffInfoResponse = Schemas['StaffInfoResponse'];
 export type StaffProfileResponse = Schemas['StaffProfileResponse'];
 export type PublicStaffRoleResponse = Schemas['PublicStaffRole'];

@@ -1,6 +1,7 @@
 import { PERMISSIONS } from '$lib/permissions/registry';
 
 export const _meta = {
+	academicContext: 'term_required' as const,
 	menu: {
 		title: 'ตารางสอบ',
 		icon: 'CalendarClock',

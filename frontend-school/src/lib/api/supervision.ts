@@ -54,9 +54,8 @@ export interface SupervisionCycleTarget {
 
 export interface SupervisionCycle {
 	id: string;
-	academicYear: number;
-	semester: string;
-	academicSemesterId?: string | null;
+	academicYearId: string;
+	academicTermId?: string | null;
 	title: string;
 	description?: string | null;
 	templateId: string;
@@ -176,6 +175,10 @@ export interface SupervisionAction {
 export interface SupervisionObservation {
 	id: string;
 	cycleId: string;
+	academicYearId: string;
+	academicTermId: string;
+	learningGroupId?: string | null;
+	homeroomId?: string | null;
 	observedUserId: string;
 	observedDisplayName?: string | null;
 	requestedBy?: string | null;
@@ -235,9 +238,8 @@ export interface CreateSupervisionCycleTargetRequest {
 }
 
 export interface CreateSupervisionCycleRequest {
-	academicYear: number;
-	semester: string;
-	academicSemesterId?: string | null;
+	academicYearId: string;
+	academicTermId?: string | null;
 	title: string;
 	description?: string | null;
 	templateId: string;
@@ -291,6 +293,7 @@ export type UpdateSupervisionTemplateRequest = Partial<CreateSupervisionTemplate
 
 export interface RequestSupervisionObservationRequest {
 	cycleId: string;
+	academicTermId: string;
 	timetableEntryId?: string | null;
 	observedAt?: string | null;
 	manualLesson?: ManualLesson | null;
@@ -344,6 +347,8 @@ export interface AcknowledgeObservationRequest {
 }
 
 export interface ListSupervisionObservationsParams {
+	academicYearId: string;
+	academicTermId?: string | null;
 	cycleId?: string;
 	status?: SupervisionObservationStatus;
 }
@@ -374,16 +379,34 @@ export interface SupervisionTeacherStatusRow {
 	nextStepLabel: string;
 }
 
-function observationsQuery(params: ListSupervisionObservationsParams = {}): string {
-	const search = new URLSearchParams();
+function requiredAcademicYearId(value: string): string {
+	const id = value.trim();
+	if (!id) throw new Error('กรุณาเลือกปีการศึกษาก่อน');
+	return id;
+}
+
+function contextQuery(academicYearId: string, academicTermId?: string | null): URLSearchParams {
+	const search = new URLSearchParams({ academicYearId: requiredAcademicYearId(academicYearId) });
+	if (academicTermId) search.set('academicTermId', academicTermId);
+	return search;
+}
+
+function observationsQuery(params: ListSupervisionObservationsParams): string {
+	const search = contextQuery(params.academicYearId, params.academicTermId);
 	if (params.cycleId) search.set('cycleId', params.cycleId);
 	if (params.status) search.set('status', params.status);
 	const query = search.toString();
 	return query ? `?${query}` : '';
 }
 
-export async function listSupervisionCycles(): Promise<SupervisionCycle[]> {
-	const response = await apiClient.get<{ items: SupervisionCycle[] }>('/api/supervision/cycles');
+export async function listSupervisionCycles(
+	academicYearId: string,
+	academicTermId?: string | null
+): Promise<SupervisionCycle[]> {
+	const query = contextQuery(academicYearId, academicTermId);
+	const response = await apiClient.get<{ items: SupervisionCycle[] }>(
+		`/api/supervision/cycles?${query.toString()}`
+	);
 	return requireApiData(response, 'ไม่สามารถโหลดรอบนิเทศได้').items;
 }
 
@@ -426,7 +449,7 @@ export async function updateSupervisionTemplate(
 }
 
 export async function listSupervisionObservations(
-	params: ListSupervisionObservationsParams = {}
+	params: ListSupervisionObservationsParams
 ): Promise<SupervisionObservation[]> {
 	const response = await apiClient.get<{ items: SupervisionObservation[] }>(
 		`/api/supervision/observations${observationsQuery(params)}`

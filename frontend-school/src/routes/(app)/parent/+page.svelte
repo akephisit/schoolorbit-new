@@ -99,7 +99,7 @@
 												{child.grade_level || 'ไม่ระบุชั้น'}
 											</Badge>
 											<Badge variant="outline" class="font-normal text-muted-foreground">
-												ห้อง {child.class_room || '-'}
+												ห้อง {child.homeroom || '-'}
 											</Badge>
 										</div>
 									</div>

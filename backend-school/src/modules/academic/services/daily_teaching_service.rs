@@ -7,6 +7,7 @@ use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 use crate::error::AppError;
+use crate::modules::academic::delivery::models::ActivitySchedulingMode;
 
 #[derive(Debug, Clone, Deserialize, IntoParams)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -66,6 +67,7 @@ pub struct DailyTeachingEntry {
     pub subject_version_display_label: Option<String>,
     pub activity_id: Option<Uuid>,
     pub activity_version_display_label: Option<String>,
+    pub activity_scheduling_mode: Option<ActivitySchedulingMode>,
     pub offering_code: Option<String>,
     pub offering_name: Option<String>,
     pub learning_group_name: Option<String>,
@@ -105,6 +107,7 @@ struct EntrySeed {
     subject_version_display_label: Option<String>,
     activity_id: Option<Uuid>,
     activity_version_display_label: Option<String>,
+    activity_scheduling_mode: Option<ActivitySchedulingMode>,
     offering_code: Option<String>,
     offering_name: Option<String>,
     learning_group_name: Option<String>,
@@ -211,6 +214,7 @@ pub async fn get_daily_teaching_overview(
                   CASE WHEN activity_version.id IS NULL THEN NULL ELSE concat(
                       activity_version.name, ' · v', activity_version.version_no
                   ) END AS activity_version_display_label,
+                  activity_detail.scheduling_mode AS activity_scheduling_mode,
                   offering.code_snapshot AS offering_code,
                   offering.name_snapshot AS offering_name,
                   learning_group.name AS learning_group_name,
@@ -290,6 +294,7 @@ fn build_overview(
                 subject_version_display_label: entry.subject_version_display_label,
                 activity_id: entry.activity_id,
                 activity_version_display_label: entry.activity_version_display_label,
+                activity_scheduling_mode: entry.activity_scheduling_mode,
                 offering_code: entry.offering_code,
                 offering_name: entry.offering_name,
                 learning_group_name: entry.learning_group_name,

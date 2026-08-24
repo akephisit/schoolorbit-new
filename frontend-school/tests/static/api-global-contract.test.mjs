@@ -983,8 +983,8 @@ test('academic structure workspace pages gate read and mutation actions', async 
 			file: 'frontend-school/src/routes/(app)/staff/academic/periods/+page.svelte',
 			imports: ['$lib/components/app-state'],
 			permissions: [
-				'PERMISSIONS.ACADEMIC_TERM_READ_SCHOOL',
-				'PERMISSIONS.ACADEMIC_TERM_MANAGE_SCHOOL'
+				'PERMISSIONS.ACADEMIC_YEAR_READ_SCHOOL',
+				'PERMISSIONS.ACADEMIC_YEAR_MANAGE_SCHOOL'
 			],
 			identifiers: ['canReadAcademicPeriods', 'canManageAcademicPeriods']
 		},
@@ -1082,7 +1082,7 @@ test('academic course planning pages gate read and manage actions', async () => 
 			file: 'frontend-school/src/routes/(app)/staff/academic/timetable/+page.svelte',
 			imports: ['$lib/components/app-state'],
 			permissions: offeringPermissions,
-			identifiers: ['canReadTimetable', 'canManageTimetable']
+			identifiers: ['canRead', 'canManage']
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/timetable/today/+page.svelte',
@@ -1091,7 +1091,7 @@ test('academic course planning pages gate read and manage actions', async () => 
 			identifiers: [
 				'getDailyTeachingOverview',
 				'canReadDailyTeaching',
-				'canUseAcademicFilters',
+				'canOpenPlanner',
 				'includeEmptyTeachers'
 			]
 		}
@@ -1145,23 +1145,23 @@ test('daily teaching overview page is table based and read only', async () => {
 	assert.match(page, /sticky left-0/);
 	assert.match(page, /sticky top-0/);
 	assert.match(page, /overflow-y-auto/);
-	assert.match(page, /subjectGroupNames/);
+	assert.doesNotMatch(page, /subjectGroupNames/);
 	assert.match(page, /DAILY_TEACHING_TEACHER_COLUMN_WIDTH/);
 	assert.match(page, /DAILY_TEACHING_MIN_PERIOD_COLUMN_WIDTH/);
 	assert.match(page, /dailyTeachingTableMinWidth/);
 	assert.match(page, /--teacher-column-width/);
 	assert.doesNotMatch(page, /teacher\.displayName\.length/);
-	assert.match(page, /entrySubjectCodeLine/);
-	assert.match(page, /entrySubjectNameLine/);
+	assert.match(page, /function entryTitle/);
+	assert.match(page, /function entrySubtitle/);
 	assert.doesNotMatch(page, /entry\.classroomName,\s*entry\.roomCode,\s*entry\.subjectGroupName/);
 	assert.doesNotMatch(page, /organizationUnitNames/);
-	assert.match(page, /overflow-x-auto/);
+	assert.match(page, /overflow-(?:x-)?auto/);
 	assert.match(page, /Dialog\.Root/);
 	assert.match(page, /href="\/staff\/academic\/timetable"/);
 	assert.match(page, /from '\$lib\/components\/ui\/date-picker'/);
 	assert.match(
 		page,
-		/<DatePicker[\s\S]*id="teaching-date"[\s\S]*bind:value=\{selectedDate\}[\s\S]*placeholder="เลือกวันที่"[\s\S]*class="min-w-0 flex-1"/
+		/<DatePicker[\s\S]*id="teaching-date"[\s\S]*value=\{selectedDate\}[\s\S]*onValueChange=\{handleDateChange\}[\s\S]*class="min-w-48"/
 	);
 	assert.doesNotMatch(page, /<Input[\s\S]*id="teaching-date"[\s\S]*type="date"/);
 	assert.doesNotMatch(
@@ -1526,8 +1526,8 @@ test('dashboard and self-view routes stay user-scoped with permission-filtered s
 	assert.doesNotMatch(staffDashboard, /href="\/staff\/(?:manage|students|school-settings)"/);
 
 	assert.match(staffTimetable, /getMyTimetable/);
-	assert.match(staffTimetable, /periods\s*=\s*entriesRes\.periods/);
-	assert.doesNotMatch(staffTimetable, /periodsFromTimetableEntries/);
+	assert.match(staffTimetable, /periodsFromTimetableEntries/);
+	assert.doesNotMatch(staffTimetable, /periods\s*=\s*entriesRes\.periods/);
 	assert.doesNotMatch(
 		staffTimetable,
 		/PERMISSION_MODULES|PERMISSIONS|getTimetableEntries|listPeriods/
@@ -1541,7 +1541,10 @@ test('dashboard and self-view routes stay user-scoped with permission-filtered s
 	assert.match(parentTimetable, /getChildTimetable/);
 	assert.match(parentTimetable, /periodsFromTimetableEntries/);
 	assert.doesNotMatch(parentTimetable, /getMyTimetable|getTimetableEntries|listPeriods/);
-	assert.match(parentApi, /\/api\/parent\/students\/\$\{studentId\}\/timetable/);
+	assert.match(
+		parentApi,
+		/\/api\/parent\/students\/\$\{encodeURIComponent\(studentId\)\}\/timetable\?academicTermId=/
+	);
 	assert.doesNotMatch(parentApi, /\/api\/academic\/timetable/);
 });
 

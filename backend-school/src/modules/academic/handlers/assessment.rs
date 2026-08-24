@@ -5,7 +5,7 @@ use axum::{
 };
 use uuid::Uuid;
 
-use crate::api_response::ApiResponse;
+use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
 use crate::modules::academic::models::assessment::{
     AssessmentPlanListQuery, SaveAssessmentPlanRequest, UpdateAssessmentSettingsRequest,
@@ -18,6 +18,18 @@ use crate::policies::learning_offering_access_policy::{
 use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 
+#[utoipa::path(
+    get,
+    path = "/api/academic/assessments/plans",
+    operation_id = "listAssessmentPlans",
+    tag = "academic",
+    params(AssessmentPlanListQuery),
+    responses(
+        (status = 200, description = "Assessment plans for the selected term", body = ApiResponse<Vec<crate::modules::academic::models::assessment::AssessmentPlanSummary>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Assessment read permission denied", body = ApiErrorResponse)
+    )
+)]
 pub async fn list_assessment_plans(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -40,6 +52,17 @@ pub async fn list_assessment_plans(
     Ok(Json(ApiResponse::ok(plans)).into_response())
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/academic/assessments/settings",
+    operation_id = "getAssessmentSettings",
+    tag = "academic",
+    responses(
+        (status = 200, description = "Assessment settings", body = ApiResponse<crate::modules::academic::models::assessment::AssessmentSettingsResponse>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Assessment settings read permission denied", body = ApiErrorResponse)
+    )
+)]
 pub async fn get_assessment_settings(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -50,6 +73,19 @@ pub async fn get_assessment_settings(
     Ok(Json(ApiResponse::ok(settings)).into_response())
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/academic/assessments/settings",
+    operation_id = "updateAssessmentSettings",
+    tag = "academic",
+    request_body = UpdateAssessmentSettingsRequest,
+    responses(
+        (status = 200, description = "Updated assessment settings", body = ApiResponse<crate::modules::academic::models::assessment::AssessmentSettingsResponse>),
+        (status = 400, description = "Invalid assessment settings", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Assessment settings manage permission denied", body = ApiErrorResponse)
+    )
+)]
 pub async fn update_assessment_settings(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -62,6 +98,19 @@ pub async fn update_assessment_settings(
     Ok(Json(ApiResponse::ok(settings)).into_response())
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/academic/assessments/offerings/{offering_id}",
+    operation_id = "getAssessmentPlan",
+    tag = "academic",
+    params(("offering_id" = Uuid, Path, description = "Learning offering ID")),
+    responses(
+        (status = 200, description = "Assessment plan for an offering", body = ApiResponse<crate::modules::academic::models::assessment::AssessmentPlanDetail>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Assessment plan read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Offering not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn get_assessment_plan(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -84,6 +133,22 @@ pub async fn get_assessment_plan(
     Ok(Json(ApiResponse::ok(plan)).into_response())
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/academic/assessments/offerings/{offering_id}",
+    operation_id = "saveAssessmentPlan",
+    tag = "academic",
+    params(("offering_id" = Uuid, Path, description = "Learning offering ID")),
+    request_body = SaveAssessmentPlanRequest,
+    responses(
+        (status = 200, description = "Saved assessment plan", body = ApiResponse<crate::modules::academic::models::assessment::AssessmentPlanDetail>),
+        (status = 400, description = "Invalid assessment plan", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Assessment plan manage permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Offering not found", body = ApiErrorResponse),
+        (status = 409, description = "Stale assessment plan version", body = ApiErrorResponse)
+    )
+)]
 pub async fn save_assessment_plan(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -113,6 +178,21 @@ pub async fn save_assessment_plan(
     Ok(Json(ApiResponse::ok(plan)).into_response())
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/academic/assessments/offerings/{offering_id}/submit",
+    operation_id = "submitAssessmentPlan",
+    tag = "academic",
+    params(("offering_id" = Uuid, Path, description = "Learning offering ID")),
+    responses(
+        (status = 200, description = "Submitted assessment plan", body = ApiResponse<crate::modules::academic::models::assessment::AssessmentPlanDetail>),
+        (status = 400, description = "Assessment plan is not ready", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Assessment plan manage permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Offering not found", body = ApiErrorResponse),
+        (status = 409, description = "Assessment plan state conflict", body = ApiErrorResponse)
+    )
+)]
 pub async fn submit_assessment_plan(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,

@@ -18,11 +18,7 @@
 		UserCheck
 	} from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
-	import {
-		getAcademicStructure,
-		getSchoolDays,
-		type AcademicStructureData
-	} from '$lib/api/academic';
+	import { getAcademicContextStore } from '$lib/academic-context/store';
 	import { getMyTimetable, type TimetableEntry } from '$lib/api/timetable';
 	import {
 		acknowledgeSupervisionObservation,
@@ -109,7 +105,15 @@
 		sections: RubricFormSection[];
 	};
 
-	const timetableGridDays = getSchoolDays();
+	const timetableGridDays = [
+		{ value: 'MON', label: 'จันทร์', shortLabel: 'จ' },
+		{ value: 'TUE', label: 'อังคาร', shortLabel: 'อ' },
+		{ value: 'WED', label: 'พุธ', shortLabel: 'พ' },
+		{ value: 'THU', label: 'พฤหัสบดี', shortLabel: 'พฤ' },
+		{ value: 'FRI', label: 'ศุกร์', shortLabel: 'ศ' },
+		{ value: 'SAT', label: 'เสาร์', shortLabel: 'ส' },
+		{ value: 'SUN', label: 'อาทิตย์', shortLabel: 'อา' }
+	];
 
 	type TimetablePeriodRow = {
 		key: string;
@@ -122,9 +126,6 @@
 		value: string;
 	};
 	type CycleFormState = {
-		academicYear: number;
-		semester: string;
-		academicSemesterId: string;
 		title: string;
 		description: string;
 		templateId: string;
@@ -222,6 +223,10 @@
 	};
 
 	let { section }: { section: SupervisionWorkspaceSection } = $props();
+	const academicContext = getAcademicContextStore();
+	const academicYearId = $derived($academicContext.selected.academicYearId);
+	const academicTermId = $derived($academicContext.selected.academicTermId);
+	const academicContextOptions = $derived($academicContext.options);
 
 	let loading = $state(true);
 	let loadingTimetable = $state(false);
@@ -236,7 +241,6 @@
 	let timetableEntries = $state<TimetableEntry[]>([]);
 	let requestEvaluatorAvailability = $state<Record<string, SupervisionEvaluatorAvailability[]>>({});
 	let requestEvaluatorAvailabilityLoading = $state<Record<string, boolean>>({});
-	let academicStructure = $state<AcademicStructureData>({ years: [], semesters: [], levels: [] });
 	let selectedCycleId = $state('');
 	let selectedTimetableEntryId = $state('');
 	let selectedBookingDate = $state('');
@@ -267,12 +271,8 @@
 	let previewTemplateDialogOpen = $state(false);
 	let previewTemplateId = $state('');
 	let editingTemplateId = $state('');
-	let cycleAcademicYearId = $state('');
 	let loadedTimetableCycleId = $state('');
 	let cycleForm = $state<CycleFormState>({
-		academicYear: 0,
-		semester: '',
-		academicSemesterId: '',
 		title: '',
 		description: '',
 		templateId: '',
@@ -287,6 +287,7 @@
 		endsTime: '16:30'
 	});
 	let templateForm = $state<TemplateFormState>(createDefaultTemplateForm());
+	let refreshRevision = 0;
 
 	const currentUserId = $derived($authStore.user?.id ?? '');
 	const sectionConfig = $derived(sectionConfigByKey[section]);
@@ -321,17 +322,6 @@
 			canManageRequests ||
 			canApprove
 	);
-	const activeAcademicYear = $derived(
-		academicStructure.years.find((year) => year.is_active) ?? academicStructure.years[0] ?? null
-	);
-	const cycleYear = $derived(
-		academicStructure.years.find((year) => year.id === cycleAcademicYearId) ?? activeAcademicYear
-	);
-	const cycleSemesters = $derived(
-		academicStructure.semesters.filter(
-			(semester) => semester.academic_year_id === (cycleYear?.id ?? '')
-		)
-	);
 	const openCycles = $derived(cycles.filter((cycle) => cycle.status === 'open'));
 	const activeBookingCycles = $derived(openCycles.filter((cycle) => cycleAcceptsBookings(cycle)));
 	const currentBookingCycle = $derived(
@@ -345,27 +335,10 @@
 	const selectedCycleDetail = $derived(
 		cycles.find((cycle) => cycle.id === selectedCycleId) ?? null
 	);
-	const selectedCycleSemester = $derived(
-		selectedCycleDetail?.academicSemesterId
-			? (academicStructure.semesters.find(
-					(semester) => semester.id === selectedCycleDetail.academicSemesterId
-				) ?? null)
-			: null
-	);
-	const selectedCycleAcademicYear = $derived(
-		selectedCycleSemester
-			? (academicStructure.years.find(
-					(year) => year.id === selectedCycleSemester.academic_year_id
-				) ?? null)
-			: selectedCycleDetail
-				? (academicStructure.years.find((year) => year.year === selectedCycleDetail.academicYear) ??
-					activeAcademicYear)
-				: activeAcademicYear
-	);
 	const timetableSchoolDays = $derived(
-		selectedCycleAcademicYear
-			? getSchoolDays(selectedCycleAcademicYear.school_days)
-			: timetableGridDays
+		timetableGridDays.filter(
+			(day, index) => index < 5 || timetableEntries.some((entry) => entry.dayOfWeek === day.value)
+		)
 	);
 	const bookingWeekDays = $derived(
 		timetableSchoolDays.map((day) => ({
@@ -432,41 +405,6 @@
 	);
 
 	$effect(() => {
-		if (!cycleAcademicYearId && activeAcademicYear) {
-			cycleAcademicYearId = activeAcademicYear.id;
-		}
-	});
-
-	$effect(() => {
-		if (!cycleYear) return;
-		const semesters = academicStructure.semesters.filter(
-			(semester) => semester.academic_year_id === cycleYear.id
-		);
-		if (semesters.length === 0) return;
-		if (
-			!cycleForm.academicSemesterId ||
-			!semesters.some((s) => s.id === cycleForm.academicSemesterId)
-		) {
-			const selectedSemester = semesters.find((semester) => semester.is_active) ?? semesters[0];
-			setCycleSemester(selectedSemester.id);
-		}
-	});
-
-	$effect(() => {
-		if (!cycleForm.academicSemesterId) return;
-		const semester = academicStructure.semesters.find(
-			(item) => item.id === cycleForm.academicSemesterId
-		);
-		const year = semester
-			? academicStructure.years.find((item) => item.id === semester.academic_year_id)
-			: null;
-		if (!semester || !year) return;
-		if (cycleForm.academicYear !== year.year || cycleForm.semester !== semester.term) {
-			setCycleSemester(semester.id);
-		}
-	});
-
-	$effect(() => {
 		if (section !== 'mine') return;
 		if (!selectedCycleId) return;
 		void refreshTimetableForCycle(selectedCycleId);
@@ -497,22 +435,6 @@
 		}
 	});
 
-	function setCycleSemester(semesterId: string) {
-		const semester = academicStructure.semesters.find((item) => item.id === semesterId);
-		if (!semester) return;
-		const year = academicStructure.years.find((item) => item.id === semester.academic_year_id);
-		if (!year) return;
-
-		cycleAcademicYearId = year.id;
-		cycleForm.academicYear = year.year;
-		cycleForm.semester = semester.term;
-		cycleForm.academicSemesterId = semester.id;
-		cycleForm.startsDate ||= semester.start_date;
-		cycleForm.endsDate ||= semester.end_date;
-		cycleForm.bookingOpensDate ||= semester.start_date;
-		cycleForm.bookingClosesDate ||= semester.end_date;
-	}
-
 	function formatDate(value?: string | null): string {
 		if (!value) return '-';
 		return new Intl.DateTimeFormat('th-TH', {
@@ -521,21 +443,40 @@
 		}).format(new Date(value));
 	}
 
-	function semesterLabel(semesterId?: string | null): string {
-		if (!semesterId) return 'ไม่ผูกภาคเรียน';
-		const semester = academicStructure.semesters.find((item) => item.id === semesterId);
-		const year = semester
-			? academicStructure.years.find((item) => item.id === semester.academic_year_id)
-			: null;
-		if (!semester) return 'ไม่พบภาคเรียน';
-		return `${semester.name || `ภาคเรียนที่ ${semester.term}`} ${year?.name ?? ''}`.trim();
+	function academicYearLabel(yearId: string): string {
+		return (
+			academicContextOptions?.years.find((year) => year.id === yearId)?.name ?? 'ไม่พบปีการศึกษา'
+		);
+	}
+
+	function academicTermLabel(termId?: string | null): string {
+		if (!termId) return 'ทั้งปี';
+		return (
+			academicContextOptions?.terms.find((term) => term.id === termId)?.name ?? 'ไม่พบภาคเรียน'
+		);
+	}
+
+	function cycleContextLabel(cycle: SupervisionCycle): string {
+		return `${academicYearLabel(cycle.academicYearId)} · ${academicTermLabel(cycle.academicTermId)}`;
+	}
+
+	function openCreateCycleDialog() {
+		if (!academicYearId) {
+			toast.error('กรุณาเลือกปีการศึกษาก่อน');
+			return;
+		}
+		const range = academicTermId
+			? academicContextOptions?.terms.find((term) => term.id === academicTermId)
+			: academicContextOptions?.years.find((year) => year.id === academicYearId);
+		cycleForm.startsDate ||= range?.startDate ?? '';
+		cycleForm.endsDate ||= range?.endDate ?? '';
+		cycleForm.bookingOpensDate ||= range?.startDate ?? '';
+		cycleForm.bookingClosesDate ||= range?.endDate ?? '';
+		createCycleDialogOpen = true;
 	}
 
 	function cycleLabel(cycle: SupervisionCycle): string {
-		const period = cycle.academicSemesterId
-			? semesterLabel(cycle.academicSemesterId)
-			: `ปี ${cycle.academicYear} / ภาคเรียน ${cycle.semester}`;
-		return `${cycle.title} - ${period}`;
+		return `${cycle.title} - ${cycleContextLabel(cycle)}`;
 	}
 
 	function statusLabel(status: SupervisionObservationStatus | SupervisionCycle['status']): string {
@@ -706,15 +647,15 @@
 	}
 
 	function timetableLabel(entry: TimetableEntry): string {
-		const title = entry.subject_name_th || entry.title || entry.subject_code || 'คาบสอน';
-		const period = entry.period_name ? ` ${entry.period_name}` : '';
-		const room = entry.room_code ? ` ห้อง ${entry.room_code}` : '';
-		const classroom = entry.classroom_name ? ` ${entry.classroom_name}` : '';
-		return `${entry.day_of_week}${period} - ${title}${classroom}${room}`;
+		const title = entry.offeringName || entry.title || entry.offeringCode || 'คาบสอน';
+		const period = entry.periodName ? ` ${entry.periodName}` : '';
+		const room = entry.roomCode ? ` ห้อง ${entry.roomCode}` : '';
+		const classroom = entry.homeroomName ? ` ${entry.homeroomName}` : '';
+		return `${entry.dayOfWeek}${period} - ${title}${classroom}${room}`;
 	}
 
 	function timetableObservedAt(entry: TimetableEntry, bookingDate: string): string {
-		const startTime = entry.start_time?.slice(0, 5) || '08:00';
+		const startTime = entry.startTime?.slice(0, 5) || '08:00';
 		return combineLocalDateTime(bookingDate, startTime);
 	}
 
@@ -744,39 +685,36 @@
 	}
 
 	function timetableEntryTitle(entry: TimetableEntry): string {
-		return entry.subject_name_th || entry.title || entry.subject_code || 'คาบสอน';
+		return entry.offeringName || entry.title || entry.offeringCode || 'คาบสอน';
 	}
 
 	function timetablePeriodKey(entry: TimetableEntry): string {
 		return (
-			entry.period_id ||
-			`${entry.start_time ?? ''}-${entry.end_time ?? ''}-${entry.period_name ?? ''}`
+			entry.bellSchedulePeriodId ||
+			`${entry.startTime ?? ''}-${entry.endTime ?? ''}-${entry.periodName ?? ''}`
 		);
 	}
 
 	function timetablePeriodLabel(entry: TimetableEntry): string {
-		return entry.period_name || entry.title || 'ไม่ระบุคาบ';
+		return entry.periodName || entry.title || 'ไม่ระบุคาบ';
 	}
 
 	function timetableTimeLabel(entry: TimetableEntry): string {
-		if (!entry.start_time && !entry.end_time) return '';
-		return `${entry.start_time?.slice(0, 5) ?? ''}-${entry.end_time?.slice(0, 5) ?? ''}`;
+		if (!entry.startTime && !entry.endTime) return '';
+		return `${entry.startTime?.slice(0, 5) ?? ''}-${entry.endTime?.slice(0, 5) ?? ''}`;
 	}
 
 	function timetablePeriodSort(entry: TimetableEntry): number {
-		if (typeof entry.period_order_index === 'number') return entry.period_order_index;
-		if (entry.start_time) {
-			const [hour = '0', minute = '0'] = entry.start_time.split(':');
+		if (entry.startTime) {
+			const [hour = '0', minute = '0'] = entry.startTime.split(':');
 			return Number(hour) * 60 + Number(minute);
 		}
 		return 9999;
 	}
 
 	function timetableEntriesForSelectedCycle(): TimetableEntry[] {
-		if (!selectedCycleDetail?.academicSemesterId) return timetableEntries;
-		return timetableEntries.filter(
-			(entry) => entry.academic_semester_id === selectedCycleDetail.academicSemesterId
-		);
+		const termId = selectedCycleDetail?.academicTermId ?? academicTermId;
+		return termId ? timetableEntries.filter((entry) => entry.academicTermId === termId) : [];
 	}
 
 	function timetablePeriodRows(): TimetablePeriodRow[] {
@@ -800,7 +738,7 @@
 	function timetableEntryFor(day: string, row: TimetablePeriodRow): TimetableEntry | null {
 		return (
 			timetableEntriesForSelectedCycle().find(
-				(entry) => entry.day_of_week === day && timetablePeriodKey(entry) === row.key
+				(entry) => entry.dayOfWeek === day && timetablePeriodKey(entry) === row.key
 			) ?? null
 		);
 	}
@@ -814,16 +752,20 @@
 	}
 
 	async function refreshTimetableForCycle(cycleId: string) {
-		if (!cycleId || !canRequest || loadedTimetableCycleId === cycleId) return;
+		if (!cycleId || !canRequest) return;
+		const cycle = cycles.find((item) => item.id === cycleId);
+		const termId = cycle?.academicTermId ?? academicTermId;
+		const contextKey = `${cycleId}:${termId ?? ''}`;
+		if (loadedTimetableCycleId === contextKey) return;
+		if (!termId) {
+			timetableEntries = [];
+			loadedTimetableCycleId = contextKey;
+			return;
+		}
 		loadingTimetable = true;
 		try {
-			const cycle = cycles.find((item) => item.id === cycleId);
-			const timetable = await getMyTimetable({
-				academic_semester_id: cycle?.academicSemesterId ?? undefined,
-				include_team_ghosts: true
-			});
-			timetableEntries = timetable.data;
-			loadedTimetableCycleId = cycleId;
+			timetableEntries = await getMyTimetable({ academicTermId: termId });
+			loadedTimetableCycleId = contextKey;
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'ไม่สามารถโหลดตารางสอนได้');
 		} finally {
@@ -919,43 +861,49 @@
 		return section !== 'overview';
 	}
 
-	function shouldLoadStructure(): boolean {
-		return section === 'mine' || section === 'cycles';
-	}
-
 	function shouldLoadObservations(): boolean {
 		return canReadObservations && ['mine', 'evaluate', 'requests', 'approvals'].includes(section);
 	}
 
 	async function refreshAll() {
+		const yearId = academicYearId;
+		const termId = academicTermId;
+		const currentRevision = ++refreshRevision;
 		loading = true;
 		try {
-			const [cycleItems, templateItems, structure] = await Promise.all([
-				listSupervisionCycles(),
-				shouldLoadTemplates() ? listSupervisionTemplates() : Promise.resolve([]),
-				shouldLoadStructure()
-					? getAcademicStructure()
-					: Promise.resolve({ data: { years: [], semesters: [], levels: [] } })
-			]);
-			const observationItems = shouldLoadObservations() ? await listSupervisionObservations() : [];
+			if (!yearId) throw new Error('กรุณาเลือกปีการศึกษาก่อน');
+			const cycleItems = await listSupervisionCycles(yearId, termId);
+			const templateItems = shouldLoadTemplates() ? await listSupervisionTemplates() : [];
+			const observationItems = shouldLoadObservations()
+				? await listSupervisionObservations({
+						academicYearId: yearId,
+						academicTermId: termId
+					})
+				: [];
+			if (currentRevision !== refreshRevision) return;
 			cycles = cycleItems;
 			templates = templateItems;
 			observations = observationItems;
 			requestEvaluatorAvailability = {};
 			requestEvaluatorAvailabilityLoading = {};
-			academicStructure = structure.data;
-			selectedCycleId ||=
-				cycleItems.find((cycle) => cycle.status === 'open')?.id ?? cycleItems[0]?.id ?? '';
+			selectedCycleId = cycleItems.some((cycle) => cycle.id === selectedCycleId)
+				? selectedCycleId
+				: (cycleItems.find((cycle) => cycle.status === 'open')?.id ?? cycleItems[0]?.id ?? '');
 			loadedTimetableCycleId = '';
-			progressCycleId ||= cycles[0]?.id ?? '';
+			progressCycleId = cycleItems.some((cycle) => cycle.id === progressCycleId)
+				? progressCycleId
+				: (cycleItems[0]?.id ?? '');
 			cycleForm.templateId ||= templates[0]?.id ?? '';
 			if (section === 'overview' && canReport && progressCycleId) {
-				await Promise.all([loadProgress(), loadTeacherStatusOverview()]);
+				await loadProgress();
+				await loadTeacherStatusOverview();
 			}
 		} catch (error) {
-			toast.error(error instanceof Error ? error.message : 'ไม่สามารถโหลดข้อมูลนิเทศได้');
+			if (currentRevision === refreshRevision) {
+				toast.error(error instanceof Error ? error.message : 'ไม่สามารถโหลดข้อมูลนิเทศได้');
+			}
 		} finally {
-			loading = false;
+			if (currentRevision === refreshRevision) loading = false;
 		}
 	}
 
@@ -1006,6 +954,11 @@
 			toast.error('ยังไม่มีรอบนิเทศที่เปิดให้จองในขณะนี้');
 			return;
 		}
+		const bookingTermId = currentBookingCycle.academicTermId ?? academicTermId;
+		if (!bookingTermId) {
+			toast.error('กรุณาเลือกภาคเรียนบนแถบด้านบนก่อนจองคาบนิเทศ');
+			return;
+		}
 
 		if (!manualMode && (!selectedTimetableEntryId || !selectedBookingDate)) {
 			toast.error('เลือกคาบจากตารางสอนก่อน');
@@ -1027,6 +980,7 @@
 		try {
 			const response = await requestSupervisionObservation({
 				cycleId: currentBookingCycle.id,
+				academicTermId: bookingTermId,
 				timetableEntryId: manualMode ? null : selectedTimetableEntryId,
 				observedAt:
 					manualMode || !selectedTimetableEntry
@@ -1359,21 +1313,18 @@
 
 	async function createCycle() {
 		if (!canManageSchool) return;
-		if (
-			!cycleForm.title ||
-			!cycleForm.templateId ||
-			!cycleForm.academicSemesterId ||
-			!cycleForm.startsDate ||
-			!cycleForm.endsDate
-		) {
-			toast.error('กรอกชื่อรอบ ภาคเรียน แบบประเมิน และช่วงวันที่ให้ครบ');
+		if (!academicYearId) {
+			toast.error('กรุณาเลือกปีการศึกษาก่อน');
+			return;
+		}
+		if (!cycleForm.title || !cycleForm.templateId || !cycleForm.startsDate || !cycleForm.endsDate) {
+			toast.error('กรอกชื่อรอบ แบบประเมิน และช่วงวันที่ให้ครบ');
 			return;
 		}
 
 		const payload: CreateSupervisionCycleRequest = {
-			academicYear: Number(cycleForm.academicYear),
-			semester: cycleForm.semester,
-			academicSemesterId: cycleForm.academicSemesterId,
+			academicYearId,
+			academicTermId,
 			title: cycleForm.title,
 			description: cycleForm.description || null,
 			templateId: cycleForm.templateId,
@@ -1715,7 +1666,15 @@
 	}
 
 	onMount(() => {
-		void refreshAll();
+		let loadedContext = '';
+		return academicContext.subscribe((state) => {
+			const yearId = state.selected.academicYearId;
+			const termId = state.selected.academicTermId;
+			const contextKey = `${yearId ?? ''}:${termId ?? ''}`;
+			if (!yearId || contextKey === loadedContext) return;
+			loadedContext = contextKey;
+			void refreshAll();
+		});
 	});
 </script>
 
@@ -1726,7 +1685,7 @@
 			รีเฟรช
 		</Button>
 		{#if canManageSchool && section === 'cycles'}
-			<Button size="sm" onclick={() => (createCycleDialogOpen = true)}>
+			<Button size="sm" onclick={openCreateCycleDialog}>
 				<Plus class="mr-2 h-4 w-4" />
 				สร้างรอบนิเทศ
 			</Button>
@@ -1843,9 +1802,11 @@
 								<div class="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
 									<div>
 										<Label>คาบจากตารางสอน</Label>
-										{#if currentBookingCycle?.academicSemesterId}
+										{#if currentBookingCycle}
 											<p class="text-xs text-muted-foreground">
-												แสดงคาบสอนจาก {semesterLabel(currentBookingCycle.academicSemesterId)}
+												แสดงคาบสอนจาก {academicTermLabel(
+													currentBookingCycle.academicTermId ?? academicTermId
+												)}
 											</p>
 										{/if}
 									</div>
@@ -1965,14 +1926,14 @@
 																			{/if}
 																		</div>
 																		<p class="mt-1 text-xs text-muted-foreground">
-																			{entry.period_name ?? row.label}
+																			{entry.periodName ?? row.label}
 																		</p>
 																		<p class="mt-1 text-xs text-muted-foreground">
-																			{entry.classroom_name ?? '-'}
+																			{entry.homeroomName ?? '-'}
 																		</p>
-																		{#if entry.room_code}
+																		{#if entry.roomCode}
 																			<p class="text-xs text-muted-foreground">
-																				ห้อง {entry.room_code}
+																				ห้อง {entry.roomCode}
 																			</p>
 																		{/if}
 																	</button>
@@ -2553,7 +2514,7 @@
 						>
 					</div>
 					{#if canManageSchool}
-						<Button onclick={() => (createCycleDialogOpen = true)}>
+						<Button onclick={openCreateCycleDialog}>
 							<Plus class="mr-2 h-4 w-4" />
 							สร้างรอบนิเทศ
 						</Button>
@@ -2582,9 +2543,7 @@
 									<Table.Row>
 										<Table.Cell class="font-medium">{cycle.title}</Table.Cell>
 										<Table.Cell>
-											{cycle.academicSemesterId
-												? semesterLabel(cycle.academicSemesterId)
-												: `ปี ${cycle.academicYear} / ภาคเรียน ${cycle.semester}`}
+											{cycleContextLabel(cycle)}
 										</Table.Cell>
 										<Table.Cell
 											>{formatDate(cycle.startsAt)} - {formatDate(cycle.endsAt)}</Table.Cell
@@ -3063,38 +3022,15 @@
 	<Dialog.Content class="max-w-3xl">
 		<Dialog.Header>
 			<Dialog.Title>สร้างรอบนิเทศ</Dialog.Title>
-			<Dialog.Description>
-				ผูกรอบนิเทศกับปีการศึกษาและภาคเรียนเดิม เพื่อใช้ร่วมกับตารางสอนและรายงาน
-			</Dialog.Description>
+			<Dialog.Description>รอบนิเทศจะผูกกับปีและภาคเรียนที่เลือกบนแถบด้านบน</Dialog.Description>
 		</Dialog.Header>
 		<div class="grid gap-4 py-2 lg:grid-cols-2">
-			<div class="space-y-2">
-				<Label>ปีการศึกษา</Label>
-				<Select.Root type="single" bind:value={cycleAcademicYearId}>
-					<Select.Trigger class="w-full">{cycleYear?.name ?? 'เลือกปีการศึกษา'}</Select.Trigger>
-					<Select.Content>
-						{#each academicStructure.years as year (year.id)}
-							<Select.Item value={year.id}>{year.name}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-			</div>
-			<div class="space-y-2">
-				<Label>ภาคเรียน</Label>
-				<Select.Root type="single" bind:value={cycleForm.academicSemesterId}>
-					<Select.Trigger class="w-full">
-						{cycleForm.academicSemesterId
-							? semesterLabel(cycleForm.academicSemesterId)
-							: 'เลือกภาคเรียน'}
-					</Select.Trigger>
-					<Select.Content>
-						{#each cycleSemesters as semester (semester.id)}
-							<Select.Item value={semester.id}>
-								{semester.name || `ภาคเรียนที่ ${semester.term}`}
-							</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
+			<div class="rounded-lg border bg-muted/30 p-3 lg:col-span-2">
+				<p class="text-xs font-medium text-muted-foreground">บริบทของรอบนิเทศ</p>
+				<p class="mt-1 font-medium">
+					{academicYearId ? academicYearLabel(academicYearId) : 'ยังไม่ได้เลือกปีการศึกษา'} ·
+					{academicTermLabel(academicTermId)}
+				</p>
 			</div>
 			<div class="space-y-2 lg:col-span-2">
 				<Label>ชื่อรอบนิเทศ</Label>

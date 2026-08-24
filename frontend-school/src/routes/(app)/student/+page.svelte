@@ -73,8 +73,8 @@
 					<div class="space-y-2">
 						<p class="text-sm text-muted-foreground font-medium">ชั้นเรียน</p>
 						<p class="text-2xl font-bold text-foreground">
-							{#if student.grade_level && student.class_room}
-								{student.grade_level}/{student.class_room}
+							{#if student.grade_level && student.homeroom}
+								{student.grade_level}/{student.homeroom}
 							{:else}
 								-
 							{/if}

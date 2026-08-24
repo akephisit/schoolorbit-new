@@ -2,367 +2,314 @@
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import {
-		listTimetableTemplates,
-		deleteTimetableTemplate,
-		createTemplateFromCurrent,
+		getAcademicContextStore,
+		registerAcademicContextDirtySource
+	} from '$lib/academic-context/store';
+	import {
 		applyTimetableTemplate,
 		clearTimetable,
-		type TimetableTemplateView
-	} from '$lib/api/scheduling';
-	import { getAcademicStructure, type Semester } from '$lib/api/academic';
-	import * as Card from '$lib/components/ui/card';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import * as Select from '$lib/components/ui/select';
+		createTimetableTemplateFromCurrent,
+		deleteTimetableTemplate,
+		listTimetableTemplates,
+		type TimetableTemplate
+	} from '$lib/api/timetable';
 	import { PageShell } from '$lib/components/app-layout';
 	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
-	import { Plus, Trash2, Play, Eraser } from 'lucide-svelte';
+	import { Button } from '$lib/components/ui/button';
+	import * as Card from '$lib/components/ui/card';
+	import * as Dialog from '$lib/components/ui/dialog';
+	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
+	import { PERMISSIONS } from '$lib/permissions/registry';
+	import { can } from '$lib/stores/permissions';
+	import { Eraser, Play, Plus, Trash2 } from 'lucide-svelte';
 
-	let loading = $state(true);
-	let templates = $state<TimetableTemplateView[]>([]);
-	let semesters = $state<Semester[]>([]);
-	let selectedSemesterId = $state('');
-
-	// Create-from-current dialog
+	const academicContext = getAcademicContextStore();
+	const academicTermId = $derived($academicContext.selected.academicTermId);
+	let templates = $state<TimetableTemplate[]>([]);
+	let loading = $state(false);
+	let creating = $state(false);
+	let applying = $state(false);
+	let clearing = $state(false);
+	let deletingTemplateId = $state<string | null>(null);
 	let showCreateDialog = $state(false);
+	let showApplyDialog = $state(false);
+	let showClearDialog = $state(false);
+	let applyTarget = $state<TimetableTemplate | null>(null);
 	let createName = $state('');
 	let createDescription = $state('');
-	let creating = $state(false);
-	let deletingTemplateId = $state<string | null>(null);
-
-	// Apply dialog
-	let showApplyDialog = $state(false);
-	let applyTarget = $state<TimetableTemplateView | null>(null);
-	let applying = $state(false);
-
-	// Clear dialog
-	let showClearDialog = $state(false);
 	let clearMode = $state<'all_except_course' | 'course_only' | 'all'>('all_except_course');
-	let clearing = $state(false);
+	let errorMessage = $state('');
 
-	async function loadAll() {
+	const canRead = $derived(
+		$can.hasAny(
+			PERMISSIONS.LEARNING_OFFERING_READ_SCHOOL,
+			PERMISSIONS.LEARNING_OFFERING_MANAGE_SCHOOL
+		)
+	);
+	const canManage = $derived($can.has(PERMISSIONS.LEARNING_OFFERING_MANAGE_SCHOOL));
+	const hasDirtyDraft = $derived(
+		showCreateDialog && Boolean(createName.trim() || createDescription.trim())
+	);
+
+	async function loadTemplates(): Promise<void> {
 		loading = true;
+		errorMessage = '';
 		try {
-			const [tplRes, structRes] = await Promise.all([
-				listTimetableTemplates(),
-				getAcademicStructure()
-			]);
-			templates = tplRes.data ?? [];
-			const yrs = structRes.data.years;
-			const activeYr = yrs.find((y) => y.is_active) ?? yrs[0];
-			if (activeYr) {
-				semesters = (structRes.data.semesters ?? []).filter(
-					(s) => s.academic_year_id === activeYr.id
-				);
-				const activeSem = semesters.find((s) => s.is_active) ?? semesters[0];
-				if (activeSem) selectedSemesterId = activeSem.id;
-			}
-		} catch (e) {
-			toast.error(e instanceof Error ? e.message : 'โหลดข้อมูลไม่สำเร็จ');
+			templates = await listTimetableTemplates();
+		} catch (error) {
+			errorMessage = error instanceof Error ? error.message : 'โหลดแม่แบบตารางสอนไม่สำเร็จ';
 		} finally {
 			loading = false;
 		}
 	}
 
-	function replaceTemplate(template: TimetableTemplateView) {
-		templates = [template, ...templates.filter((item) => item.id !== template.id)];
-	}
-
-	function removeTemplate(templateId: string) {
-		templates = templates.filter((item) => item.id !== templateId);
-	}
-
-	async function handleCreate() {
-		if (!createName.trim()) {
-			toast.error('กรุณาระบุชื่อ template');
-			return;
-		}
-		if (!selectedSemesterId) {
-			toast.error('กรุณาเลือกภาคเรียนที่จะ snapshot');
-			return;
-		}
+	async function handleCreate(): Promise<void> {
+		if (!academicTermId || !createName.trim()) return;
 		creating = true;
 		try {
-			const response = await createTemplateFromCurrent({
-				semester_id: selectedSemesterId,
+			const created = await createTimetableTemplateFromCurrent({
+				academicTermId,
 				name: createName.trim(),
-				description: createDescription.trim() || undefined
+				description: createDescription.trim() || null,
+				entryTypes: null
 			});
-			if (response.data) {
-				replaceTemplate(response.data);
-			}
-			toast.success('สร้าง template สำเร็จ');
+			templates = [created, ...templates.filter((template) => template.id !== created.id)];
 			showCreateDialog = false;
 			createName = '';
 			createDescription = '';
-		} catch (e) {
-			toast.error(e instanceof Error ? e.message : 'สร้างไม่สำเร็จ');
+			toast.success('สร้างแม่แบบจากตารางของภาคเรียนนี้แล้ว');
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : 'สร้างแม่แบบไม่สำเร็จ');
 		} finally {
 			creating = false;
 		}
 	}
 
-	async function handleDelete(t: TimetableTemplateView) {
-		if (!window.confirm(`ลบ "${t.name}"? — ไม่สามารถกู้คืนได้`)) return;
-		deletingTemplateId = t.id;
+	async function handleDelete(template: TimetableTemplate): Promise<void> {
+		deletingTemplateId = template.id;
 		try {
-			await deleteTimetableTemplate(t.id);
-			removeTemplate(t.id);
-			toast.success('ลบสำเร็จ');
-		} catch (e) {
-			toast.error(e instanceof Error ? e.message : 'ลบไม่สำเร็จ');
+			await deleteTimetableTemplate(template.id);
+			templates = templates.filter((item) => item.id !== template.id);
+			toast.success('ลบแม่แบบแล้ว');
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : 'ลบแม่แบบไม่สำเร็จ');
 		} finally {
 			deletingTemplateId = null;
 		}
 	}
 
-	function openApply(t: TimetableTemplateView) {
-		applyTarget = t;
+	function openApply(template: TimetableTemplate): void {
+		applyTarget = template;
 		showApplyDialog = true;
 	}
 
-	async function handleApply() {
-		if (!applyTarget || !selectedSemesterId) return;
+	async function handleApply(): Promise<void> {
+		if (!academicTermId || !applyTarget) return;
 		applying = true;
 		try {
-			const res = await applyTimetableTemplate(applyTarget.id, {
-				semester_id: selectedSemesterId
-			});
-			toast.success(`Apply สำเร็จ — เพิ่ม ${res.data?.applied ?? 0} entries`);
+			const result = await applyTimetableTemplate(applyTarget.id, { academicTermId });
 			showApplyDialog = false;
 			applyTarget = null;
-		} catch (e) {
-			toast.error(e instanceof Error ? e.message : 'Apply ไม่สำเร็จ');
+			toast.success(`นำแม่แบบไปใช้แล้ว ${result.applied} คาบ`);
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : 'นำแม่แบบไปใช้ไม่สำเร็จ');
 		} finally {
 			applying = false;
 		}
 	}
 
-	async function handleClear() {
-		if (!selectedSemesterId) {
-			toast.error('กรุณาเลือกภาคเรียน');
-			return;
-		}
-		const types =
+	async function handleClear(): Promise<void> {
+		if (!academicTermId) return;
+		const entryTypes =
 			clearMode === 'all'
 				? ['BREAK', 'HOMEROOM', 'ACTIVITY', 'ACADEMIC', 'COURSE']
 				: clearMode === 'course_only'
 					? ['COURSE']
-					: undefined; // default: all except COURSE
+					: ['BREAK', 'HOMEROOM', 'ACTIVITY', 'ACADEMIC'];
 		clearing = true;
 		try {
-			const res = await clearTimetable({
-				semester_id: selectedSemesterId,
-				entry_types: types
-			});
-			toast.success(`เคลียร์สำเร็จ — ลบ ${res.data?.deleted ?? 0} entries`);
+			const removed = await clearTimetable({ academicTermId, entryTypes });
 			showClearDialog = false;
-		} catch (e) {
-			toast.error(e instanceof Error ? e.message : 'เคลียร์ไม่สำเร็จ');
+			toast.success(`ล้างออกจากตารางแล้ว ${removed.length} คาบ`);
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : 'ล้างตารางไม่สำเร็จ');
 		} finally {
 			clearing = false;
 		}
 	}
 
-	function formatDate(s: string): string {
-		return new Date(s).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' });
+	function formatDate(value: string): string {
+		return new Date(value).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' });
 	}
 
-	onMount(loadAll);
+	onMount(() => {
+		const unregisterDirty = registerAcademicContextDirtySource(
+			'timetable-template-draft',
+			() => hasDirtyDraft
+		);
+		void loadTemplates();
+		return unregisterDirty;
+	});
 </script>
 
 <PageShell
-	title="Templates ตาราง"
-	description="บันทึกและนำชุดตารางที่ใช้ซ้ำกลับมาใช้กับภาคเรียนอื่น"
+	title="แม่แบบตารางสอน"
+	description="เก็บรูปแบบตารางไว้ใช้ซ้ำ แล้วนำไปใช้กับภาคเรียนที่เลือกบนแถบด้านบน"
 	backHref="/staff/academic/timetable"
 >
 	{#snippet actions()}
-		<div class="flex items-center gap-2">
-			<Select.Root type="single" bind:value={selectedSemesterId}>
-				<Select.Trigger class="w-[200px]">
-					{semesters.find((s) => s.id === selectedSemesterId)?.name || 'เลือกภาคเรียน'}
-				</Select.Trigger>
-				<Select.Content>
-					{#each semesters as sem (sem.id)}
-						<Select.Item value={sem.id}>{sem.name}</Select.Item>
-					{/each}
-				</Select.Content>
-			</Select.Root>
-			<Button
-				variant="outline"
-				onclick={() => (showClearDialog = true)}
-				disabled={!selectedSemesterId}
-			>
-				<Eraser class="w-4 h-4 mr-2" />
-				เคลียร์ตาราง
-			</Button>
-			<Button onclick={() => (showCreateDialog = true)} disabled={!selectedSemesterId}>
-				<Plus class="w-4 h-4 mr-2" />
-				สร้างจากตารางปัจจุบัน
-			</Button>
-		</div>
+		{#if canManage && academicTermId}
+			<div class="flex flex-wrap gap-2">
+				<Button variant="outline" onclick={() => (showClearDialog = true)}
+					><Eraser /> ล้างตาราง</Button
+				>
+				<Button onclick={() => (showCreateDialog = true)}><Plus /> สร้างจากภาคนี้</Button>
+			</div>
+		{/if}
 	{/snippet}
 
-	<Card.Root class="p-3 bg-muted/30 space-y-1">
-		<p class="text-sm text-muted-foreground">
-			💡 <strong>Workflow:</strong> 1) จัดตารางด้วยมือและวางคาบที่ต้องการเก็บ → 2) สร้าง template → 3)
-			เมื่อต้องการเริ่มจัดใหม่ ให้เคลียร์ตารางแล้ว apply template เป็นจุดตั้งต้น
-		</p>
-		<p class="text-xs text-muted-foreground">
-			📌 Template เก็บเฉพาะกิจกรรมแบบ <strong>ระบุชื่อเอง</strong>
-			(พักเที่ยง / โฮมรูม / ประชุม) ทั้งแบบผูกห้องและแบบเฉพาะครู — กิจกรรมจาก slot (ชุมนุม sync/independent)
-			ไม่ถูกเก็บเพราะมีการจัดการ ที่หน้า Activities — apply ใหม่ผ่าน batch ของหน้าตารางได้ทันที
-		</p>
-	</Card.Root>
-
-	{#if loading}
+	{#if !canRead}
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์ดูแม่แบบ"
+			description="ต้องมีสิทธิ์อ่านชุดการเรียนระดับโรงเรียน"
+		/>
+	{:else if !academicTermId}
+		<PageState
+			variant="empty"
+			title="เลือกภาคเรียนก่อน"
+			description="แม่แบบไม่ผูกกับภาค แต่การสร้าง นำไปใช้ และล้างตารางต้องมีภาคเรียนเป้าหมายที่ชัดเจน"
+		/>
+	{:else if loading}
 		<PageSkeleton variant="cards" rows={3} />
+	{:else if errorMessage}
+		<PageState
+			variant="error"
+			title="โหลดแม่แบบไม่สำเร็จ"
+			description={errorMessage}
+			actionLabel="ลองอีกครั้ง"
+			onaction={loadTemplates}
+		/>
 	{:else if templates.length === 0}
 		<PageState
-			title="ยังไม่มี template"
-			description="กด &quot;สร้างจากตารางปัจจุบัน&quot; เพื่อ snapshot ตาราง semester ปัจจุบัน"
-			actionLabel="สร้างจากตารางปัจจุบัน"
-			onaction={() => (showCreateDialog = true)}
+			title="ยังไม่มีแม่แบบ"
+			description="สร้างแม่แบบจากตารางของภาคเรียนที่เลือกเพื่อใช้เป็นจุดเริ่มต้นในภาคถัดไป"
+			actionLabel={canManage ? 'สร้างจากภาคนี้' : undefined}
+			onaction={canManage ? () => (showCreateDialog = true) : undefined}
 		/>
 	{:else}
-		<div class="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-			{#each templates as t (t.id)}
-				<Card.Root class="p-4">
-					<div class="flex items-start justify-between mb-2">
-						<div class="flex-1 min-w-0">
-							<h3 class="font-semibold truncate">{t.name}</h3>
-							{#if t.description}
-								<p class="text-xs text-muted-foreground line-clamp-2 mt-1">
-									{t.description}
-								</p>
-							{/if}
-						</div>
-					</div>
-					<div class="text-xs text-muted-foreground space-y-0.5">
-						<div>📋 {t.entry_count} entries</div>
-						<div>📅 {formatDate(t.created_at)}</div>
-					</div>
-					<div class="flex gap-1 mt-3">
-						<Button
-							size="sm"
-							variant="default"
-							onclick={() => openApply(t)}
-							disabled={!selectedSemesterId}
-							class="flex-1"
-						>
-							<Play class="w-3 h-3 mr-1" />
-							ใช้ template
-						</Button>
-						<LoadingButton
-							size="sm"
-							variant="ghost"
-							onclick={() => handleDelete(t)}
-							loading={deletingTemplateId === t.id}
-							loadingLabel=""
-							aria-label={`ลบ ${t.name}`}
-						>
-							<Trash2 class="w-3 h-3 text-destructive" />
-						</LoadingButton>
-					</div>
+		<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+			{#each templates as template (template.id)}
+				<Card.Root>
+					<Card.Header>
+						<Card.Title>{template.name}</Card.Title>
+						<Card.Description>{template.description ?? 'ไม่มีคำอธิบาย'}</Card.Description>
+					</Card.Header>
+					<Card.Content>
+						<p class="text-muted-foreground text-xs">สร้างเมื่อ {formatDate(template.createdAt)}</p>
+					</Card.Content>
+					{#if canManage}
+						<Card.Footer class="gap-2">
+							<Button class="flex-1" onclick={() => openApply(template)}
+								><Play /> ใช้กับภาคนี้</Button
+							>
+							<LoadingButton
+								variant="ghost"
+								size="icon"
+								loading={deletingTemplateId === template.id}
+								loadingLabel=""
+								aria-label={`ลบ ${template.name}`}
+								onclick={() => handleDelete(template)}
+								><Trash2 class="text-destructive" /></LoadingButton
+							>
+						</Card.Footer>
+					{/if}
 				</Card.Root>
 			{/each}
 		</div>
 	{/if}
 </PageShell>
 
-<!-- Create-from-current dialog -->
 <Dialog.Root bind:open={showCreateDialog}>
 	<Dialog.Content>
 		<Dialog.Header>
-			<Dialog.Title>สร้าง Template จากตารางปัจจุบัน</Dialog.Title>
-			<Dialog.Description>
-				Snapshot กิจกรรมแบบระบุเอง (พัก/โฮมรูม/ประชุม/ฯลฯ) ของ
-				<strong>{semesters.find((s) => s.id === selectedSemesterId)?.name || ''}</strong>
-				<br />
-				<span class="text-xs">
-					ไม่เก็บกิจกรรมจาก slot (ชุมนุม sync) — apply ใหม่ผ่าน batch ของหน้าตาราง
-				</span>
-			</Dialog.Description>
+			<Dialog.Title>สร้างแม่แบบจากภาคเรียนนี้</Dialog.Title>
+			<Dialog.Description
+				>ระบบจะบันทึกตำแหน่งตามลำดับคาบและ stable resource เพื่อปรับใช้กับภาคอื่นได้</Dialog.Description
+			>
 		</Dialog.Header>
-		<div class="space-y-3 py-2">
-			<div>
-				<Label>ชื่อ template</Label>
-				<Input bind:value={createName} placeholder="เช่น ตาราง ม.ต้น 2/2569" />
+		<div class="space-y-4 py-2">
+			<div class="space-y-2">
+				<Label for="template-name">ชื่อแม่แบบ</Label><Input
+					id="template-name"
+					bind:value={createName}
+					placeholder="เช่น ตารางพื้นฐาน ม.ต้น"
+				/>
 			</div>
-			<div>
-				<Label>คำอธิบาย (optional)</Label>
-				<Input bind:value={createDescription} placeholder="เช่น พักเช้า โฮมรูม ชุมนุม sync" />
+			<div class="space-y-2">
+				<Label for="template-description">คำอธิบาย</Label><Input
+					id="template-description"
+					bind:value={createDescription}
+				/>
 			</div>
 		</div>
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => (showCreateDialog = false)}>ยกเลิก</Button>
-			<LoadingButton onclick={handleCreate} loading={creating} loadingLabel="กำลังสร้าง">
-				สร้าง
-			</LoadingButton>
+			<LoadingButton
+				loading={creating}
+				loadingLabel="กำลังสร้าง"
+				disabled={!createName.trim()}
+				onclick={handleCreate}>สร้างแม่แบบ</LoadingButton
+			>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
 
-<!-- Apply dialog -->
 <Dialog.Root bind:open={showApplyDialog}>
 	<Dialog.Content>
-		<Dialog.Header>
-			<Dialog.Title>ใช้ Template</Dialog.Title>
-			<Dialog.Description>
-				เพิ่ม entries จาก <strong>{applyTarget?.name}</strong> เข้า
-				<strong>{semesters.find((s) => s.id === selectedSemesterId)?.name || ''}</strong>
-			</Dialog.Description>
-		</Dialog.Header>
-		<p class="text-sm text-muted-foreground py-2">
-			Entries ที่ทับกับของเดิมจะถูกข้าม (ON CONFLICT DO NOTHING) — ถ้าต้องการเริ่มใหม่ทั้งหมด
-			กดเคลียร์ก่อน
-		</p>
-		<Dialog.Footer>
-			<Button variant="outline" onclick={() => (showApplyDialog = false)}>ยกเลิก</Button>
-			<LoadingButton onclick={handleApply} loading={applying} loadingLabel="กำลังใช้ template">
-				Apply
-			</LoadingButton>
-		</Dialog.Footer>
+		<Dialog.Header
+			><Dialog.Title>ใช้แม่แบบ “{applyTarget?.name}”</Dialog.Title><Dialog.Description
+				>รายการจะถูกจับคู่กับตารางเวลา กลุ่มเรียน และทรัพยากรของภาคเรียนที่เลือก
+				หากจับคู่ไม่ได้ระบบจะหยุดโดยไม่สร้าง compatibility record</Dialog.Description
+			></Dialog.Header
+		>
+		<Dialog.Footer
+			><Button variant="outline" onclick={() => (showApplyDialog = false)}>ยกเลิก</Button
+			><LoadingButton loading={applying} loadingLabel="กำลังนำไปใช้" onclick={handleApply}
+				>ยืนยัน</LoadingButton
+			></Dialog.Footer
+		>
 	</Dialog.Content>
 </Dialog.Root>
 
-<!-- Clear dialog -->
 <Dialog.Root bind:open={showClearDialog}>
 	<Dialog.Content>
-		<Dialog.Header>
-			<Dialog.Title>เคลียร์ตาราง</Dialog.Title>
-			<Dialog.Description>
-				ลบ entries ใน <strong
-					>{semesters.find((s) => s.id === selectedSemesterId)?.name || ''}</strong
-				>
-			</Dialog.Description>
-		</Dialog.Header>
+		<Dialog.Header
+			><Dialog.Title>ล้างตารางของภาคเรียนนี้</Dialog.Title><Dialog.Description
+				>เลือกชนิดคาบที่จะปิดใช้งาน การทำงานนี้ไม่ลบชุดการเรียนหรือรายชื่อนักเรียน</Dialog.Description
+			></Dialog.Header
+		>
 		<div class="space-y-2 py-2">
-			<label class="flex items-center gap-2 cursor-pointer">
-				<input type="radio" bind:group={clearMode} value="all_except_course" />
-				<span class="text-sm">ลบกิจกรรม/พัก/โฮมรูม (เก็บวิชา)</span>
-			</label>
-			<label class="flex items-center gap-2 cursor-pointer">
-				<input type="radio" bind:group={clearMode} value="course_only" />
-				<span class="text-sm">ลบเฉพาะวิชา (เก็บกิจกรรม/พัก/โฮมรูม) — รีจัดใหม่</span>
-			</label>
-			<label class="flex items-center gap-2 cursor-pointer">
-				<input type="radio" bind:group={clearMode} value="all" />
-				<span class="text-sm text-destructive">ลบทุกอย่าง — ระวัง!</span>
-			</label>
-		</div>
-		<Dialog.Footer>
-			<Button variant="outline" onclick={() => (showClearDialog = false)}>ยกเลิก</Button>
-			<LoadingButton
-				variant="destructive"
-				onclick={handleClear}
-				loading={clearing}
-				loadingLabel="กำลังเคลียร์"
+			<Label for="clear-mode">ขอบเขต</Label>
+			<select
+				id="clear-mode"
+				class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+				bind:value={clearMode}
 			>
-				เคลียร์
-			</LoadingButton>
-		</Dialog.Footer>
+				<option value="all_except_course">คาบทั่วไปและกิจกรรม (เก็บรายวิชา)</option>
+				<option value="course_only">เฉพาะรายวิชา</option>
+				<option value="all">ทุกคาบ</option>
+			</select>
+		</div>
+		<Dialog.Footer
+			><Button variant="outline" onclick={() => (showClearDialog = false)}>ยกเลิก</Button
+			><LoadingButton
+				variant="destructive"
+				loading={clearing}
+				loadingLabel="กำลังล้าง"
+				onclick={handleClear}>ล้างตามขอบเขต</LoadingButton
+			></Dialog.Footer
+		>
 	</Dialog.Content>
 </Dialog.Root>

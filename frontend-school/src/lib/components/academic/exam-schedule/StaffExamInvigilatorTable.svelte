@@ -79,7 +79,7 @@
 						</Table.Cell>
 					{/if}
 					<Table.Cell class="text-center font-medium">
-						{row.assignment.classroomName}
+						{row.assignment.homeroomName}
 					</Table.Cell>
 					<Table.Cell class="text-center whitespace-normal">
 						{roomLabel(row.assignment)}
@@ -132,7 +132,7 @@
 			<Collapsible.Content class="divide-y border-t">
 				{#each group.rows as row (row.assignment.assignmentId)}
 					<div class={cn('grid gap-2 p-4 text-sm', row.isCurrentUser && 'bg-primary/5')}>
-						<div class="font-medium">{row.assignment.classroomName}</div>
+						<div class="font-medium">{row.assignment.homeroomName}</div>
 						<div>
 							<span class="text-muted-foreground">ห้องสอบ:</span>
 							{roomLabel(row.assignment)}

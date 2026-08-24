@@ -21,7 +21,7 @@
 
 	type DragPayload = {
 		examScheduleItemId: string;
-		classroomId: string;
+		homeroomId: string;
 		gradeLevelId: string;
 		durationMinutes: number;
 		sourceSessionId?: string;
@@ -173,7 +173,7 @@
 			gradeLevelSortValue(left) - gradeLevelSortValue(right) ||
 			subjectTypeSortValue(left.subjectType) - subjectTypeSortValue(right.subjectType) ||
 			textCompare(itemSubject(left), itemSubject(right)) ||
-			textCompare(left.classroomName, right.classroomName) ||
+			textCompare(left.homeroomName, right.homeroomName) ||
 			textCompare(left.subjectCode, right.subjectCode) ||
 			textCompare(left.id, right.id)
 		);
@@ -204,7 +204,7 @@
 
 		const payload = {
 			examScheduleItemId: item.id,
-			classroomId: item.classroomId,
+			homeroomId: item.homeroomId,
 			gradeLevelId: item.gradeLevelId,
 			durationMinutes: item.durationMinutes
 		};
@@ -252,7 +252,7 @@
 			day: selectedDay,
 			candidate: {
 				examScheduleItemId: selectedItem.id,
-				classroomId: selectedItem.classroomId,
+				homeroomId: selectedItem.homeroomId,
 				gradeLevelId: selectedItem.gradeLevelId,
 				startTime: selectedStartTime,
 				durationMinutes: selectedItem.durationMinutes
@@ -362,7 +362,7 @@
 						<div class="min-w-0 flex-1">
 							<div class="truncate text-sm font-medium">{itemSubject(item)}</div>
 							<div class="truncate text-xs text-muted-foreground">
-								{item.classroomName ?? '-'} · {item.assessmentCategoryName ?? '-'}
+								{item.homeroomName ?? '-'} · {item.assessmentCategoryName ?? '-'}
 							</div>
 							<div class="truncate text-xs text-muted-foreground">
 								{item.subjectGroupName ?? 'ไม่ระบุกลุ่มสาระ'} · {item.gradeLevelName ?? '-'} ·
@@ -395,7 +395,7 @@
 		<Dialog.Header>
 			<Dialog.Title>จัดเวลารายการสอบ</Dialog.Title>
 			<Dialog.Description>
-				{selectedItem ? `${itemSubject(selectedItem)} · ${selectedItem.classroomName ?? '-'}` : ''}
+				{selectedItem ? `${itemSubject(selectedItem)} · ${selectedItem.homeroomName ?? '-'}` : ''}
 			</Dialog.Description>
 		</Dialog.Header>
 

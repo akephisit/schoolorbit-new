@@ -6,23 +6,20 @@ import type {
 	ExamScheduleWorkspace,
 	ExamSession
 } from '$lib/api/examSchedule';
+import type { Homeroom } from '$lib/api/academic-core';
 
 type WorksheetCell = string | number;
 type WorksheetRow = WorksheetCell[];
 type WorksheetObjectRow = Record<string, WorksheetCell>;
 type RowRange = { start: number; end: number };
 
-export type ExamScheduleExportClassroom = {
-	id: string;
-	name?: string | null;
-	gradeLevelId?: string | null;
-	grade_level_id?: string | null;
-	isActive?: boolean | null;
-	is_active?: boolean | null;
-};
+export type ExamScheduleExportHomeroom = Pick<
+	Homeroom,
+	'id' | 'name' | 'gradeLevelId' | 'isActive'
+>;
 
 export type ExamScheduleExportOptions = {
-	classrooms?: ExamScheduleExportClassroom[];
+	homerooms?: ExamScheduleExportHomeroom[];
 };
 
 export type ExamScheduleExportCellAddress = {
@@ -59,8 +56,8 @@ export type ExamScheduleExportWorkbook = {
 	reportSheets: ExamScheduleReportSheet[];
 	lowerSecondaryReport?: ExamScheduleReportSheet;
 	upperSecondaryReport?: ExamScheduleReportSheet;
-	lowerSecondaryClassroomReport?: ExamScheduleReportSheet;
-	upperSecondaryClassroomReport?: ExamScheduleReportSheet;
+	lowerSecondaryHomeroomReport?: ExamScheduleReportSheet;
+	upperSecondaryHomeroomReport?: ExamScheduleReportSheet;
 	invigilatorSummary: ExamScheduleReportSheet;
 	paperTransferReport: ExamScheduleReportSheet;
 	schedule: ExamScheduleExportSheet<WorksheetObjectRow>;
@@ -173,7 +170,7 @@ function sortedSessions(workspace: ExamScheduleWorkspace): ExamSession[] {
 		if (dayCompare !== 0) return dayCompare;
 		const timeCompare = timeLabel(a.startsAt).localeCompare(timeLabel(b.startsAt));
 		if (timeCompare !== 0) return timeCompare;
-		return compareThaiNatural(safeText(a.classroomName), safeText(b.classroomName));
+		return compareThaiNatural(safeText(a.homeroomName), safeText(b.homeroomName));
 	});
 }
 
@@ -199,7 +196,7 @@ function chunkPairs(values: string[]): [string, string][] {
 	return pairs;
 }
 
-type ParsedClassroomLabel = {
+type ParsedHomeroomLabel = {
 	gradeLabel: string;
 	roomNumber: number | null;
 	rawLabel: string;
@@ -211,7 +208,7 @@ function numericTextValue(value: string): number | null {
 	return Number.isNaN(parsed) ? null : parsed;
 }
 
-function parseClassroomLabel(value: string | null | undefined): ParsedClassroomLabel | null {
+function parseHomeroomLabel(value: string | null | undefined): ParsedHomeroomLabel | null {
 	const rawLabel = safeText(value);
 	if (!rawLabel) return null;
 	const match = rawLabel.match(/^(.+?[\d๐-๙]+)\/([\d๐-๙]+)$/u);
@@ -232,43 +229,43 @@ function parseClassroomLabel(value: string | null | undefined): ParsedClassroomL
 
 function sessionGradeLabel(session: ExamSession): string {
 	return (
-		safeText(session.gradeLevelName) || safeText(session.classroomName).split('/')[0]?.trim() || '-'
+		safeText(session.gradeLevelName) || safeText(session.homeroomName).split('/')[0]?.trim() || '-'
 	);
 }
 
-function classroomIsActive(classroom: ExamScheduleExportClassroom): boolean {
-	return classroom.isActive ?? classroom.is_active ?? true;
+function homeroomIsActive(homeroom: ExamScheduleExportHomeroom): boolean {
+	return homeroom.isActive ?? true;
 }
 
-function classroomGradeLevelId(classroom: ExamScheduleExportClassroom): string {
-	return safeText(classroom.gradeLevelId ?? classroom.grade_level_id);
+function homeroomGradeLevelId(homeroom: ExamScheduleExportHomeroom): string {
+	return safeText(homeroom.gradeLevelId);
 }
 
-function classroomName(classroom: ExamScheduleExportClassroom): string {
-	return safeText(classroom.name);
+function homeroomName(homeroom: ExamScheduleExportHomeroom): string {
+	return safeText(homeroom.name);
 }
 
-function activeClassroomsForSessionGrade(
-	classrooms: ExamScheduleExportClassroom[],
+function activeHomeroomsForSessionGrade(
+	homerooms: ExamScheduleExportHomeroom[],
 	session: ExamSession,
 	gradeLabel: string
-): ExamScheduleExportClassroom[] {
+): ExamScheduleExportHomeroom[] {
 	const gradeLevelId = safeText(session.gradeLevelId);
 
-	return classrooms.filter((classroom) => {
-		if (!classroomIsActive(classroom)) return false;
-		if (gradeLevelId && classroomGradeLevelId(classroom) === gradeLevelId) return true;
+	return homerooms.filter((homeroom) => {
+		if (!homeroomIsActive(homeroom)) return false;
+		if (gradeLevelId && homeroomGradeLevelId(homeroom) === gradeLevelId) return true;
 
-		const parsed = parseClassroomLabel(classroomName(classroom));
+		const parsed = parseHomeroomLabel(homeroomName(homeroom));
 		return parsed?.gradeLabel === gradeLabel;
 	});
 }
 
 function sessionGradeYear(session: ExamSession): number | null {
 	if (typeof session.gradeLevelYear === 'number') return session.gradeLevelYear;
-	const parsedClassroom = parseClassroomLabel(session.classroomName);
-	if (!parsedClassroom) return null;
-	const gradeMatch = parsedClassroom.gradeLabel.match(/([\d๐-๙]+)$/u);
+	const parsedHomeroom = parseHomeroomLabel(session.homeroomName);
+	if (!parsedHomeroom) return null;
+	const gradeMatch = parsedHomeroom.gradeLabel.match(/([\d๐-๙]+)$/u);
 	return gradeMatch ? numericTextValue(gradeMatch[1]) : null;
 }
 
@@ -312,13 +309,13 @@ function compactNumberRanges(values: number[]): string {
 	return ranges.join(',');
 }
 
-function compactClassroomLabels(classroomLabels: string[]): string {
+function compactHomeroomLabels(homeroomLabels: string[]): string {
 	const labels = Array.from(
-		new Set(classroomLabels.map((label) => safeText(label)).filter(Boolean))
+		new Set(homeroomLabels.map((label) => safeText(label)).filter(Boolean))
 	);
 	const parsedLabels = labels
-		.map(parseClassroomLabel)
-		.filter((label): label is ParsedClassroomLabel => !!label);
+		.map(parseHomeroomLabel)
+		.filter((label): label is ParsedHomeroomLabel => !!label);
 
 	if (
 		parsedLabels.length !== labels.length ||
@@ -338,7 +335,7 @@ function compactClassroomLabels(classroomLabels: string[]): string {
 	return `${gradeLabels[0]}/${compactNumberRanges(roomNumbers)}`;
 }
 
-function reportClassroomLabel(
+function reportHomeroomLabel(
 	sessions: ExamSession[],
 	options: ExamScheduleExportOptions = {}
 ): string {
@@ -346,26 +343,26 @@ function reportClassroomLabel(
 	if (!firstSession) return '-';
 
 	const gradeLabel = sessionGradeLabel(firstSession);
-	const gradeClassrooms = activeClassroomsForSessionGrade(
-		options.classrooms ?? [],
+	const gradeHomerooms = activeHomeroomsForSessionGrade(
+		options.homerooms ?? [],
 		firstSession,
 		gradeLabel
 	);
-	const scheduledClassroomIds = new Set(
-		sessions.map((session) => safeText(session.classroomId)).filter(Boolean)
+	const scheduledHomeroomIds = new Set(
+		sessions.map((session) => safeText(session.homeroomId)).filter(Boolean)
 	);
 
 	if (
-		gradeClassrooms.length > 0 &&
-		gradeClassrooms.every((classroom) => scheduledClassroomIds.has(classroom.id))
+		gradeHomerooms.length > 0 &&
+		gradeHomerooms.every((homeroom) => scheduledHomeroomIds.has(homeroom.id))
 	) {
 		return gradeLabel;
 	}
 
-	const classroomLabels = sessions
-		.map((session) => safeText(session.classroomName) || gradeLabel)
+	const homeroomLabels = sessions
+		.map((session) => safeText(session.homeroomName) || gradeLabel)
 		.filter(Boolean);
-	return compactClassroomLabels(classroomLabels);
+	return compactHomeroomLabels(homeroomLabels);
 }
 
 function printableReportTitle(workspace: ExamScheduleWorkspace): string {
@@ -404,14 +401,14 @@ function printableReportSubtitle(sessions: ExamSession[], fallback = 'ระด�
 	return `${levelGroup} (${firstLabel} - ${lastLabel})`;
 }
 
-function assignmentKey(examDayId: string, classroomId: string): string {
-	return `${examDayId}:${classroomId}`;
+function assignmentKey(examDayId: string, homeroomId: string): string {
+	return `${examDayId}:${homeroomId}`;
 }
 
-function assignmentByDayClassroom(invigilatorWorkspace: ExamInvigilatorWorkspace | null) {
+function assignmentByDayHomeroom(invigilatorWorkspace: ExamInvigilatorWorkspace | null) {
 	return new Map(
 		(invigilatorWorkspace?.assignments ?? []).map((assignment) => [
-			assignmentKey(assignment.examDayId, assignment.classroomId),
+			assignmentKey(assignment.examDayId, assignment.homeroomId),
 			assignment
 		])
 	);
@@ -480,7 +477,7 @@ function reportSheetMerges(
 	return merges;
 }
 
-function classroomReportSheetColumns(): ExamScheduleExportColumn[] {
+function homeroomReportSheetColumns(): ExamScheduleExportColumn[] {
 	return [
 		{ wch: 12 },
 		{ wch: 24 },
@@ -492,8 +489,8 @@ function classroomReportSheetColumns(): ExamScheduleExportColumn[] {
 	];
 }
 
-function classroomReportSheetMerges(
-	classroomRanges: { start: number; end: number }[],
+function homeroomReportSheetMerges(
+	homeroomRanges: { start: number; end: number }[],
 	dayRanges: { start: number; end: number }[],
 	columnCount = 7
 ): ExamScheduleExportMerge[] {
@@ -503,7 +500,7 @@ function classroomReportSheetMerges(
 		{ s: { r: 1, c: 0 }, e: { r: 1, c: lastColumn } }
 	];
 
-	for (const range of classroomRanges) {
+	for (const range of homeroomRanges) {
 		if (range.end > range.start) {
 			merges.push({ s: { r: range.start, c: 0 }, e: { r: range.end, c: 0 } });
 		}
@@ -518,8 +515,8 @@ function classroomReportSheetMerges(
 	return merges;
 }
 
-function sessionClassroomLabel(session: ExamSession): string {
-	return safeText(session.classroomName, '-');
+function sessionHomeroomLabel(session: ExamSession): string {
+	return safeText(session.homeroomName, '-');
 }
 
 function sessionExamRoomLabel(workspace: ExamScheduleWorkspace, session: ExamSession): string {
@@ -527,7 +524,7 @@ function sessionExamRoomLabel(workspace: ExamScheduleWorkspace, session: ExamSes
 	if (sessionRoom !== '-') return sessionRoom;
 
 	const day = workspace.days.find((item) => item.id === session.examDayId);
-	const assignment = day?.roomAssignments.find((item) => item.classroomId === session.classroomId);
+	const assignment = day?.roomAssignments.find((item) => item.homeroomId === session.homeroomId);
 	return safeText(assignment?.roomName, '-');
 }
 
@@ -764,7 +761,7 @@ function printableReportRows(
 					(a, b) =>
 						compareThaiNatural(subjectLabel(a[0]), subjectLabel(b[0])) ||
 						compareThaiNatural(sessionGradeLabel(a[0]), sessionGradeLabel(b[0])) ||
-						compareThaiNatural(reportClassroomLabel(a, options), reportClassroomLabel(b, options))
+						compareThaiNatural(reportHomeroomLabel(a, options), reportHomeroomLabel(b, options))
 				);
 
 			for (const groupSessions of reportGroups) {
@@ -775,7 +772,7 @@ function printableReportRows(
 					minutesLabel(session.durationMinutes),
 					subjectLabel(session),
 					safeText(session.subjectCode, '-'),
-					reportClassroomLabel(groupSessions, options)
+					reportHomeroomLabel(groupSessions, options)
 				]);
 			}
 
@@ -788,13 +785,13 @@ function printableReportRows(
 	return { rows, dayRanges, slotRanges };
 }
 
-function classroomReportRows(
+function homeroomReportRows(
 	workspace: ExamScheduleWorkspace,
 	sessions: ExamSession[],
 	fallbackSubtitle = 'ระดับชั้นที่จัดสอบ'
 ): {
 	rows: WorksheetRow[];
-	classroomRanges: { start: number; end: number }[];
+	homeroomRanges: { start: number; end: number }[];
 	dayRanges: { start: number; end: number }[];
 } {
 	const rows: WorksheetRow[] = [
@@ -803,26 +800,26 @@ function classroomReportRows(
 		[],
 		['ห้องเรียน', 'วันเดือนปี', 'เวลา', 'เวลาสอบ', 'วิชา', 'รหัสวิชา', 'ห้องสอบ']
 	];
-	const classroomRanges: { start: number; end: number }[] = [];
+	const homeroomRanges: { start: number; end: number }[] = [];
 	const dayRanges: { start: number; end: number }[] = [];
 
 	if (sessions.length === 0) {
 		rows.push(['-', '-', '-', '-', 'ยังไม่มีรายการสอบที่จัดเวลาแล้ว', '-', '-']);
-		return { rows, classroomRanges, dayRanges };
+		return { rows, homeroomRanges, dayRanges };
 	}
 
 	const orderedSessions = [...sessions].sort(
 		(a, b) =>
-			compareThaiNatural(sessionClassroomLabel(a), sessionClassroomLabel(b)) ||
+			compareThaiNatural(sessionHomeroomLabel(a), sessionHomeroomLabel(b)) ||
 			safeText(a.examDate).localeCompare(safeText(b.examDate)) ||
 			timeLabel(a.startsAt).localeCompare(timeLabel(b.startsAt)) ||
 			compareThaiNatural(subjectLabel(a), subjectLabel(b))
 	);
-	const sessionsByClassroom = groupByText(orderedSessions, sessionClassroomLabel);
+	const sessionsByHomeroom = groupByText(orderedSessions, sessionHomeroomLabel);
 
-	for (const [, classroomSessions] of sessionsByClassroom) {
-		const classroomStart = rows.length;
-		const sessionsByDate = groupByText(classroomSessions, (session) => safeText(session.examDate));
+	for (const [, homeroomSessions] of sessionsByHomeroom) {
+		const homeroomStart = rows.length;
+		const sessionsByDate = groupByText(homeroomSessions, (session) => safeText(session.examDate));
 
 		for (const [, dateSessions] of sessionsByDate) {
 			const dayStart = rows.length;
@@ -835,7 +832,7 @@ function classroomReportRows(
 
 			for (const session of daySessions) {
 				rows.push([
-					sessionClassroomLabel(session),
+					sessionHomeroomLabel(session),
 					dateLabel(session.examDate),
 					printableTimeRangeLabel(session),
 					minutesLabel(session.durationMinutes),
@@ -848,10 +845,10 @@ function classroomReportRows(
 			dayRanges.push({ start: dayStart, end: rows.length - 1 });
 		}
 
-		classroomRanges.push({ start: classroomStart, end: rows.length - 1 });
+		homeroomRanges.push({ start: homeroomStart, end: rows.length - 1 });
 	}
 
-	return { rows, classroomRanges, dayRanges };
+	return { rows, homeroomRanges, dayRanges };
 }
 
 function invigilatorSummaryRows(
@@ -863,7 +860,7 @@ function invigilatorSummaryRows(
 	const orderedAssignments = [...(invigilatorWorkspace?.assignments ?? [])].sort(
 		(a, b) =>
 			(dayOrder.get(a.examDayId) ?? 0) - (dayOrder.get(b.examDayId) ?? 0) ||
-			compareThaiNatural(safeText(a.classroomName), safeText(b.classroomName))
+			compareThaiNatural(safeText(a.homeroomName), safeText(b.homeroomName))
 	);
 	const rows: WorksheetRow[] = [
 		['สรุปกรรมการคุมสอบ'],
@@ -894,7 +891,7 @@ function invigilatorSummaryRows(
 			for (const pair of pairs) {
 				rows.push([
 					day ? dayTitle(day) : assignment.examDayId,
-					safeText(assignment.classroomName, '-'),
+					safeText(assignment.homeroomName, '-'),
 					safeText(assignment.roomName, '-'),
 					pair[0] ?? '',
 					pair[1] ?? ''
@@ -951,7 +948,7 @@ function paperTransferRows(
 				(a, b) =>
 					compareThaiNatural(subjectLabel(a), subjectLabel(b)) ||
 					compareThaiNatural(safeText(a.subjectCode), safeText(b.subjectCode)) ||
-					compareThaiNatural(sessionClassroomLabel(a), sessionClassroomLabel(b))
+					compareThaiNatural(sessionHomeroomLabel(a), sessionHomeroomLabel(b))
 			);
 
 			let hasTimeHeaderOnPage = false;
@@ -978,7 +975,7 @@ function paperTransferRows(
 				rows.push([
 					subjectLabel(session),
 					safeText(session.subjectCode, '-'),
-					sessionClassroomLabel(session),
+					sessionHomeroomLabel(session),
 					'',
 					'',
 					'',
@@ -1009,18 +1006,18 @@ function printableReportSheet(
 	};
 }
 
-function printableClassroomReportSheet(
+function printableHomeroomReportSheet(
 	workspace: ExamScheduleWorkspace,
 	name: string,
 	sessions: ExamSession[],
 	fallbackSubtitle = 'ระดับชั้นที่จัดสอบ'
 ): ExamScheduleReportSheet {
-	const report = classroomReportRows(workspace, sessions, fallbackSubtitle);
+	const report = homeroomReportRows(workspace, sessions, fallbackSubtitle);
 	return {
 		name,
 		rows: report.rows,
-		'!cols': classroomReportSheetColumns(),
-		'!merges': classroomReportSheetMerges(report.classroomRanges, report.dayRanges),
+		'!cols': homeroomReportSheetColumns(),
+		'!merges': homeroomReportSheetMerges(report.homeroomRanges, report.dayRanges),
 		'!printTitlesRow': '1:4'
 	};
 }
@@ -1071,9 +1068,9 @@ function scheduleRows(
 	workspace: ExamScheduleWorkspace,
 	invigilatorWorkspace: ExamInvigilatorWorkspace | null
 ): WorksheetObjectRow[] {
-	const assignments = assignmentByDayClassroom(invigilatorWorkspace);
+	const assignments = assignmentByDayHomeroom(invigilatorWorkspace);
 	return sortedSessions(workspace).map((session) => {
-		const assignment = assignments.get(assignmentKey(session.examDayId, session.classroomId));
+		const assignment = assignments.get(assignmentKey(session.examDayId, session.homeroomId));
 		return {
 			วันสอบ: dayTitle(
 				workspace.days.find((day) => day.id === session.examDayId) ?? ({} as ExamDayDetail)
@@ -1082,7 +1079,7 @@ function scheduleRows(
 			เวลาเริ่ม: timeLabel(session.startsAt),
 			เวลาจบ: timeLabel(session.endsAt),
 			ระยะเวลา: minutesLabel(session.durationMinutes),
-			ชั้นเรียน: safeText(session.classroomName, '-'),
+			ชั้นเรียน: safeText(session.homeroomName, '-'),
 			กลุ่มระดับ: safeText(session.gradeLevelName),
 			วิชา: subjectLabel(session),
 			รหัสวิชา: safeText(session.subjectCode),
@@ -1099,18 +1096,18 @@ function roomRows(
 	workspace: ExamScheduleWorkspace,
 	invigilatorWorkspace: ExamInvigilatorWorkspace | null
 ): WorksheetObjectRow[] {
-	const assignments = assignmentByDayClassroom(invigilatorWorkspace);
+	const assignments = assignmentByDayHomeroom(invigilatorWorkspace);
 	return sortedDays(workspace).flatMap((day) =>
 		[...day.roomAssignments]
-			.sort((a, b) => compareThaiNatural(safeText(a.classroomName), safeText(b.classroomName)))
+			.sort((a, b) => compareThaiNatural(safeText(a.homeroomName), safeText(b.homeroomName)))
 			.map((roomAssignment) => {
-				const assignment = assignments.get(assignmentKey(day.id, roomAssignment.classroomId));
+				const assignment = assignments.get(assignmentKey(day.id, roomAssignment.homeroomId));
 				const effectiveCapacity =
 					roomAssignment.capacityOverride ?? roomAssignment.roomCapacity ?? '';
 				return {
 					วันสอบ: dayTitle(day),
 					วันที่: dateLabel(day.examDate),
-					ห้องเรียน: safeText(roomAssignment.classroomName, '-'),
+					ห้องเรียน: safeText(roomAssignment.homeroomName, '-'),
 					ห้องสอบ: safeText(roomAssignment.roomName, '-'),
 					อาคาร: '',
 					ความจุห้อง: roomAssignment.roomCapacity ?? '',
@@ -1135,7 +1132,7 @@ function invigilatorRows(
 				{
 					วันสอบ: day ? dayTitle(day) : '',
 					วันที่: day ? dateLabel(day.examDate) : '',
-					ห้องเรียน: assignment.classroomName,
+					ห้องเรียน: assignment.homeroomName,
 					ห้องสอบ: assignment.roomName,
 					ชื่อกรรมการ: '',
 					บทบาท: '',
@@ -1147,7 +1144,7 @@ function invigilatorRows(
 		return assignment.invigilators.map((invigilator) => ({
 			วันสอบ: day ? dayTitle(day) : '',
 			วันที่: day ? dateLabel(day.examDate) : '',
-			ห้องเรียน: assignment.classroomName,
+			ห้องเรียน: assignment.homeroomName,
 			ห้องสอบ: assignment.roomName,
 			ชื่อกรรมการ: invigilator.displayName,
 			บทบาท: '',
@@ -1232,13 +1229,13 @@ export function buildExamScheduleExportWorkbook(
 		'ระดับชั้นมัธยมศึกษาตอนปลาย',
 		options
 	);
-	const lowerSecondaryClassroomReport = printableClassroomReportSheet(
+	const lowerSecondaryHomeroomReport = printableHomeroomReportSheet(
 		workspace,
 		'ตารางสอบแยกห้อง ม.ต้น',
 		lowerSecondarySessions,
 		'ระดับชั้นมัธยมศึกษาตอนต้น'
 	);
-	const upperSecondaryClassroomReport = printableClassroomReportSheet(
+	const upperSecondaryHomeroomReport = printableHomeroomReportSheet(
 		workspace,
 		'ตารางสอบแยกห้อง ม.ปลาย',
 		upperSecondarySessions,
@@ -1253,15 +1250,15 @@ export function buildExamScheduleExportWorkbook(
 			report,
 			lowerSecondaryReport,
 			upperSecondaryReport,
-			lowerSecondaryClassroomReport,
-			upperSecondaryClassroomReport,
+			lowerSecondaryHomeroomReport,
+			upperSecondaryHomeroomReport,
 			invigilatorSummary,
 			paperTransferReport
 		],
 		lowerSecondaryReport,
 		upperSecondaryReport,
-		lowerSecondaryClassroomReport,
-		upperSecondaryClassroomReport,
+		lowerSecondaryHomeroomReport,
+		upperSecondaryHomeroomReport,
 		invigilatorSummary,
 		paperTransferReport,
 		schedule: objectSheet(scheduleRows(workspace, invigilatorWorkspace), [

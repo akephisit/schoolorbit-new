@@ -101,7 +101,7 @@
 							<Card.Content class="grid gap-2 text-sm">
 								<div>
 									<span class="text-muted-foreground">ชั้นเรียน:</span>
-									{item.classroomName}
+									{item.homeroomName}
 								</div>
 								<div>
 									<span class="text-muted-foreground">ห้องสอบ:</span>
@@ -138,7 +138,7 @@
 						<Card.Root>
 							<Card.Header class="gap-1">
 								<Card.Title class="text-base">{formatStaffExamDate(item.examDate)}</Card.Title>
-								<Card.Description>{timeBounds(item)} · {item.classroomName}</Card.Description>
+								<Card.Description>{timeBounds(item)} · {item.homeroomName}</Card.Description>
 							</Card.Header>
 							<Card.Content class="grid gap-2 text-sm">
 								<div>{roomLabel(item)}</div>

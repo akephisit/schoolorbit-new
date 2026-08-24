@@ -3,7 +3,8 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 test.use({ serviceWorkers: 'block' });
 
 const academicYearId = '20000000-0000-4000-8000-000000000001';
-const semesterId = '30000000-0000-4000-8000-000000000001';
+const academicTermId = '30000000-0000-4000-8000-000000000001';
+const bellScheduleId = '71000000-0000-4000-8000-000000000001';
 const periodIds = {
 	first: '70000000-0000-4000-8000-000000000001',
 	second: '70000000-0000-4000-8000-000000000002',
@@ -14,48 +15,58 @@ const configuredPeriods = [
 	{
 		id: periodIds.first,
 		name: 'คาบ 1',
-		start_time: '08:00:00',
-		end_time: '08:50:00',
-		order_index: 1
+		startTime: '08:00:00',
+		endTime: '08:50:00'
 	},
 	{
 		id: periodIds.second,
 		name: 'คาบ 2',
-		start_time: '09:00:00',
-		end_time: '09:50:00',
-		order_index: 2
+		startTime: '09:00:00',
+		endTime: '09:50:00'
 	},
 	{
 		id: periodIds.third,
 		name: 'คาบ 3',
-		start_time: '10:00:00',
-		end_time: '10:50:00',
-		order_index: 3
+		startTime: '10:00:00',
+		endTime: '10:50:00'
 	}
 ];
 
 const thirdPeriodEntry = {
 	id: '40000000-0000-4000-8000-000000000001',
-	academic_semester_id: semesterId,
-	classroom_course_id: '50000000-0000-4000-8000-000000000001',
-	classroom_id: '60000000-0000-4000-8000-000000000001',
-	created_by: null,
-	day_of_week: 'MON',
-	end_time: '10:50:00',
-	entry_type: 'COURSE',
-	is_active: true,
+	academicTermId,
+	academicYearId,
+	bellScheduleId,
+	bellSchedulePeriodId: periodIds.third,
+	createdAt: '2026-08-07T00:00:00Z',
+	dayOfWeek: 'MON',
+	endTime: '10:50:00',
+	entryType: 'COURSE',
+	instructors: [],
+	isActive: true,
+	learningGroupName: 'ม.1/1',
 	note: null,
-	period_id: periodIds.third,
-	period_name: 'คาบ 3',
-	period_order_index: 3,
-	room_code: 'MATH-1',
-	room_id: null,
-	start_time: '10:00:00',
-	subject_code: 'ค21101',
-	subject_name_th: 'คณิตศาสตร์',
+	offeringCode: 'ค21101',
+	offeringName: 'คณิตศาสตร์',
+	periodName: 'คาบ 3',
+	roomCode: 'MATH-1',
+	rowVersion: 1,
+	startTime: '10:00:00',
 	title: null,
-	updated_by: null
+	updatedAt: '2026-08-07T00:00:00Z'
 };
+
+const configuredPeriodEntries = configuredPeriods.map((period, index) => ({
+	...thirdPeriodEntry,
+	id: `40000000-0000-4000-8000-00000000000${index + 1}`,
+	bellSchedulePeriodId: period.id,
+	periodName: period.name,
+	startTime: period.startTime,
+	endTime: period.endTime,
+	offeringCode: index === 2 ? 'ค21101' : `พัก-${index + 1}`,
+	offeringName: index === 2 ? 'คณิตศาสตร์' : 'ช่วงเตรียมการ',
+	entryType: index === 2 ? 'COURSE' : 'BREAK'
+}));
 
 function fulfillJson(route: Route, data: unknown) {
 	return route.fulfill({
@@ -88,37 +99,41 @@ async function mockStaffTimetableApis(page: Page, items: unknown[]) {
 				return;
 			}
 
-			if (url.pathname === '/api/academic/structure') {
+			if (url.pathname === '/api/academic/context/options') {
 				await fulfillJson(route, {
 					years: [
 						{
 							id: academicYearId,
 							name: 'ปีการศึกษา 2569',
 							year: 2569,
-							start_date: '2026-05-01',
-							end_date: '2027-03-31',
-							is_active: true,
-							school_days: 'MON,SAT'
+							startDate: '2026-05-01',
+							endDate: '2027-03-31',
+							status: 'active'
 						}
 					],
-					semesters: [
+					terms: [
 						{
-							id: semesterId,
-							academic_year_id: academicYearId,
+							id: academicTermId,
+							academicYearId,
 							name: 'ภาคเรียนที่ 1',
-							term: '1',
-							start_date: '2026-05-01',
-							end_date: '2026-10-31',
-							is_active: true
+							code: '1',
+							startDate: '2026-05-01',
+							endDate: '2026-10-31',
+							sequence: 1,
+							termType: 'regular',
+							status: 'active',
+							includedInYearResult: true,
+							blocksYearClosure: true
 						}
 					],
-					levels: []
+					activeAcademicYearId: academicYearId,
+					activeAcademicTermId: academicTermId
 				});
 				return;
 			}
 
 			if (url.pathname === '/api/me/timetable') {
-				await fulfillJson(route, { current_seq: 1, items, periods: configuredPeriods });
+				await fulfillJson(route, items);
 				return;
 			}
 
@@ -173,12 +188,12 @@ async function expectConfiguredGrid(page: Page) {
 	await expect(page.getByRole('columnheader', { name: /คาบ 2/ })).toBeVisible();
 	await expect(page.getByRole('columnheader', { name: /คาบ 3/ })).toBeVisible();
 	await expect(page.getByText('จันทร์', { exact: true })).toBeVisible();
-	await expect(page.getByText('เสาร์', { exact: true })).toBeVisible();
+	await expect(page.getByText('เสาร์', { exact: true })).toHaveCount(0);
 	await expect(page.getByText('อาทิตย์', { exact: true })).toHaveCount(0);
 }
 
 test('shows configured periods that precede the teacher first lesson', async ({ page }) => {
-	await mockStaffTimetableApis(page, [thirdPeriodEntry]);
+	await mockStaffTimetableApis(page, configuredPeriodEntries);
 
 	await page.goto('/staff/timetable');
 
@@ -186,12 +201,11 @@ test('shows configured periods that precede the teacher first lesson', async ({ 
 	await expect(page.getByText('ค21101')).toBeVisible();
 });
 
-test('shows the complete configured grid when the teacher has no lessons', async ({ page }) => {
+test('shows an explicit empty state when the teacher has no lessons', async ({ page }) => {
 	await mockStaffTimetableApis(page, []);
 
 	await page.goto('/staff/timetable');
 
-	await expectConfiguredGrid(page);
-	await expect(page.locator('tbody tr')).toHaveCount(2);
-	await expect(page.getByText('ยังไม่มีตารางสอนของคุณในภาคเรียนนี้')).toHaveCount(0);
+	await expect(page.getByText('ยังไม่มีตารางสอน', { exact: true })).toBeVisible();
+	await expect(page.getByText('ยังไม่มีคาบสอนของคุณในภาคเรียนนี้')).toBeVisible();
 });

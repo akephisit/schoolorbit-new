@@ -1,6 +1,7 @@
 import { PERMISSION_MODULES } from '$lib/permissions/registry';
 
 export const _meta = {
+	academicContext: 'year_required' as const,
 	menu: {
 		title: 'ตั้งค่าคาบเวลา',
 		icon: 'Clock',

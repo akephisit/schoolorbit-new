@@ -123,7 +123,7 @@ test('timeline drag preview reports snapped start end left width and validity', 
 		endTime: '12:00:00',
 		gradeLevelIds: [],
 		blockedWindows: [],
-		roomAssignments: [{ classroomId: 'classroom-1', roomId: 'room-1' }]
+		roomAssignments: [{ homeroomId: 'homeroom-1', roomId: 'room-1' }]
 	};
 
 	const preview = buildTimelineDragPreview({
@@ -135,7 +135,7 @@ test('timeline drag preview reports snapped start end left width and validity', 
 		durationMinutes: 60,
 		candidate: {
 			examScheduleItemId: 'item-1',
-			classroomId: 'classroom-1',
+			homeroomId: 'homeroom-1',
 			gradeLevelId: 'grade-1'
 		},
 		scheduledSessions: []
@@ -163,7 +163,7 @@ test('timeline placement rejects manually typed off-grid times', async () => {
 	assert.match(result.reason ?? '', /5|นาที/);
 });
 
-test('shared exam session validation rejects same-classroom and same-room conflicts', async () => {
+test('shared exam session validation rejects same-homeroom and same-room conflicts', async () => {
 	const { validateExamSessionPlacement } = await importTimeHelpers();
 	const day = {
 		id: 'day-1',
@@ -172,8 +172,8 @@ test('shared exam session validation rejects same-classroom and same-room confli
 		gradeLevelIds: ['g1'],
 		blockedWindows: [],
 		roomAssignments: [
-			{ classroomId: 'class-a', roomId: 'room-1' },
-			{ classroomId: 'class-b', roomId: 'room-2' }
+			{ homeroomId: 'class-a', roomId: 'room-1' },
+			{ homeroomId: 'class-b', roomId: 'room-2' }
 		]
 	};
 
@@ -182,7 +182,7 @@ test('shared exam session validation rejects same-classroom and same-room confli
 			day,
 			candidate: {
 				examScheduleItemId: 'item-new',
-				classroomId: 'class-a',
+				homeroomId: 'class-a',
 				gradeLevelId: 'g1',
 				startTime: '09:15',
 				durationMinutes: 45
@@ -191,7 +191,7 @@ test('shared exam session validation rejects same-classroom and same-room confli
 				{
 					id: 'session-existing',
 					examDayId: 'day-1',
-					classroomId: 'class-a',
+					homeroomId: 'class-a',
 					roomId: 'room-1',
 					startsAt: '09:00',
 					endsAt: '10:00'
@@ -206,13 +206,13 @@ test('shared exam session validation rejects same-classroom and same-room confli
 			day: {
 				...day,
 				roomAssignments: [
-					{ classroomId: 'class-a', roomId: 'room-1' },
-					{ classroomId: 'class-b', roomId: 'room-1' }
+					{ homeroomId: 'class-a', roomId: 'room-1' },
+					{ homeroomId: 'class-b', roomId: 'room-1' }
 				]
 			},
 			candidate: {
 				examScheduleItemId: 'item-new',
-				classroomId: 'class-a',
+				homeroomId: 'class-a',
 				gradeLevelId: 'g1',
 				startTime: '09:15',
 				durationMinutes: 45
@@ -221,7 +221,7 @@ test('shared exam session validation rejects same-classroom and same-room confli
 				{
 					id: 'session-existing',
 					examDayId: 'day-1',
-					classroomId: 'class-b',
+					homeroomId: 'class-b',
 					roomId: 'room-1',
 					startsAt: '09:00',
 					endsAt: '10:00'

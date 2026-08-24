@@ -1,10 +1,10 @@
 use axum::{
-    extract::{Extension, Path, State},
+    extract::{Extension, Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     Json,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::api_response::ApiResponse;
@@ -35,6 +35,12 @@ struct TrackCapacityData {
     room_count: usize,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct AdmissionRoundQuery {
+    academic_year_id: Uuid,
+}
+
 // ----- Public -----
 
 pub async fn list_public_rounds(
@@ -61,12 +67,13 @@ pub async fn get_public_round_info(
 pub async fn list_rounds(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<AdmissionRoundQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_READ_ALL)?;
-    let rounds = round_service::list_rounds(&pool).await?;
+    let rounds = round_service::list_rounds(&pool, query.academic_year_id).await?;
     Ok(Json(ApiResponse::ok(rounds)).into_response())
 }
 

@@ -1,6 +1,7 @@
 import { PERMISSION_MODULES } from '$lib/permissions/registry';
 
 export const _meta = {
+	academicContext: 'term_optional' as const,
 	menu: {
 		title: 'ปฏิทินโรงเรียน',
 		icon: 'CalendarDays',

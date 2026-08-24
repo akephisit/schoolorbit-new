@@ -32,7 +32,7 @@
 
 	type DragPayload = {
 		examScheduleItemId: string;
-		classroomId: string;
+		homeroomId: string;
 		gradeLevelId: string;
 		durationMinutes: number;
 		sourceSessionId?: string;
@@ -41,7 +41,7 @@
 
 	type DragPreviewState = {
 		dayId: string;
-		classroomId: string;
+		homeroomId: string;
 		leftPx: number;
 		widthPx: number;
 		startTime: string;
@@ -226,9 +226,9 @@
 		);
 	}
 
-	function sessionsForAssignment(day: ExamDayDetail, classroomId: string): ExamSession[] {
+	function sessionsForAssignment(day: ExamDayDetail, homeroomId: string): ExamSession[] {
 		return workspace.scheduledSessions
-			.filter((session) => session.examDayId === day.id && session.classroomId === classroomId)
+			.filter((session) => session.examDayId === day.id && session.homeroomId === homeroomId)
 			.sort((a, b) => a.startsAt.localeCompare(b.startsAt));
 	}
 
@@ -277,7 +277,7 @@
 
 		const payload = {
 			examScheduleItemId: session.examScheduleItemId,
-			classroomId: session.classroomId,
+			homeroomId: session.homeroomId,
 			gradeLevelId: session.gradeLevelId,
 			durationMinutes: session.durationMinutes,
 			sourceSessionId: session.id,
@@ -322,7 +322,7 @@
 			durationMinutes: payload.durationMinutes,
 			candidate: {
 				examScheduleItemId: payload.examScheduleItemId,
-				classroomId: payload.classroomId,
+				homeroomId: payload.homeroomId,
 				gradeLevelId: payload.gradeLevelId,
 				sourceSessionId: payload.sourceSessionId
 			},
@@ -330,14 +330,14 @@
 		});
 	}
 
-	function handleDragOver(event: DragEvent, day: ExamDayDetail, assignmentClassroomId: string) {
+	function handleDragOver(event: DragEvent, day: ExamDayDetail, assignmentHomeroomId: string) {
 		if (placementDisabled) return;
 		const payload = currentDragPayload(event);
 		if (!payload || payloadIsPending(payload)) return;
 
 		event.preventDefault();
 
-		if (payload.classroomId !== assignmentClassroomId) {
+		if (payload.homeroomId !== assignmentHomeroomId) {
 			if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
 			clearDragPreview();
 			return;
@@ -348,7 +348,7 @@
 		const preview = buildRowDragPreview(event, day, payload);
 		dragPreview = {
 			dayId: day.id,
-			classroomId: assignmentClassroomId,
+			homeroomId: assignmentHomeroomId,
 			leftPx: preview.leftPx,
 			widthPx: preview.widthPx,
 			startTime: preview.startTime,
@@ -358,16 +358,16 @@
 		};
 	}
 
-	function handleDragLeave(event: DragEvent, day: ExamDayDetail, assignmentClassroomId: string) {
+	function handleDragLeave(event: DragEvent, day: ExamDayDetail, assignmentHomeroomId: string) {
 		const currentTarget = event.currentTarget as HTMLElement;
 		const relatedTarget = event.relatedTarget as Node | null;
 		if (relatedTarget && currentTarget.contains(relatedTarget)) return;
-		if (dragPreview?.dayId === day.id && dragPreview.classroomId === assignmentClassroomId) {
+		if (dragPreview?.dayId === day.id && dragPreview.homeroomId === assignmentHomeroomId) {
 			clearDragPreview();
 		}
 	}
 
-	async function handleDrop(event: DragEvent, day: ExamDayDetail, assignmentClassroomId: string) {
+	async function handleDrop(event: DragEvent, day: ExamDayDetail, assignmentHomeroomId: string) {
 		if (placementDisabled) {
 			clearActiveDrag();
 			return;
@@ -381,14 +381,14 @@
 			return;
 		}
 
-		if (payload.classroomId !== assignmentClassroomId) {
+		if (payload.homeroomId !== assignmentHomeroomId) {
 			localError = 'รายการสอบต้องวางในแถวห้องเรียนเดียวกัน';
 			clearActiveDrag();
 			return;
 		}
 
 		const activePreview =
-			dragPreview?.dayId === day.id && dragPreview.classroomId === assignmentClassroomId
+			dragPreview?.dayId === day.id && dragPreview.homeroomId === assignmentHomeroomId
 				? dragPreview
 				: null;
 		const startsAt = activePreview?.startTime ?? buildRowDragPreview(event, day, payload).startTime;
@@ -416,7 +416,7 @@
 			day,
 			candidate: {
 				examScheduleItemId: payload.examScheduleItemId,
-				classroomId: payload.classroomId,
+				homeroomId: payload.homeroomId,
 				gradeLevelId: payload.gradeLevelId,
 				startTime: startsAt,
 				durationMinutes: payload.durationMinutes,
@@ -442,7 +442,7 @@
 		const placed = await placeLocallyValidated(
 			{
 				examScheduleItemId: selectedSession.examScheduleItemId,
-				classroomId: selectedSession.classroomId,
+				homeroomId: selectedSession.homeroomId,
 				gradeLevelId: selectedSession.gradeLevelId,
 				durationMinutes: selectedSession.durationMinutes,
 				sourceSessionId: selectedSession.id
@@ -607,7 +607,7 @@
 									>
 										<div class="border-r px-2 py-3">
 											<div class="truncate text-sm font-medium">
-												{assignment.classroomName ?? assignment.classroomId}
+												{assignment.homeroomName ?? assignment.homeroomId}
 											</div>
 											<div class="truncate text-xs text-muted-foreground">
 												{assignment.roomName ?? assignment.roomId}
@@ -619,11 +619,11 @@
 												class="relative h-14 w-full bg-background"
 												style:min-width={`${minimumTrackWidth(day)}px`}
 												role="group"
-												aria-label={`วางรายการสอบ ${assignment.classroomName ?? assignment.classroomId}`}
-												ondragover={(event) => handleDragOver(event, day, assignment.classroomId)}
-												ondragleave={(event) => handleDragLeave(event, day, assignment.classroomId)}
+												aria-label={`วางรายการสอบ ${assignment.homeroomName ?? assignment.homeroomId}`}
+												ondragover={(event) => handleDragOver(event, day, assignment.homeroomId)}
+												ondragleave={(event) => handleDragLeave(event, day, assignment.homeroomId)}
 												ondragend={clearActiveDrag}
-												ondrop={(event) => handleDrop(event, day, assignment.classroomId)}
+												ondrop={(event) => handleDrop(event, day, assignment.homeroomId)}
 											>
 												<div
 													class="pointer-events-none absolute inset-0 grid"
@@ -647,7 +647,7 @@
 													</div>
 												{/each}
 
-												{#if dragPreview?.dayId === day.id && dragPreview.classroomId === assignment.classroomId}
+												{#if dragPreview?.dayId === day.id && dragPreview.homeroomId === assignment.homeroomId}
 													{@const preview = dragPreview}
 													<div
 														class={`pointer-events-none absolute top-1 rounded border-2 px-2 py-1 text-xs shadow-sm ${
@@ -667,7 +667,7 @@
 													</div>
 												{/if}
 
-												{#each sessionsForAssignment(day, assignment.classroomId) as session (session.id)}
+												{#each sessionsForAssignment(day, assignment.homeroomId) as session (session.id)}
 													<ExamSessionBlock
 														{session}
 														leftPx={leftPx(day, session.startsAt)}
@@ -698,7 +698,7 @@
 			<Dialog.Title>ย้ายคาบสอบ</Dialog.Title>
 			<Dialog.Description>
 				{selectedSession
-					? `${subjectLabel(selectedSession)} · ${selectedSession.classroomName ?? '-'}`
+					? `${subjectLabel(selectedSession)} · ${selectedSession.homeroomName ?? '-'}`
 					: ''}
 			</Dialog.Description>
 		</Dialog.Header>

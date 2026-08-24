@@ -62,14 +62,8 @@ test('svelte DOM bind:this refs use stateful variables when reassigned', async (
 	const studentIdsPage = await readProjectFile(
 		'src/routes/(app)/staff/academic/admission/[id]/student-ids/+page.svelte'
 	);
-	const timetablePage = await readProjectFile(
-		'src/routes/(app)/staff/academic/timetable/+page.svelte'
-	);
-
 	assert.match(studentIdsPage, /let\s+fileInput\s*=\s*\$state<HTMLInputElement>\(\)/);
 	assert.doesNotMatch(studentIdsPage, /let\s+fileInput\s*:\s*HTMLInputElement/);
-	assert.match(timetablePage, /let\s+workspaceRef\s*=\s*\$state<HTMLDivElement>\(\)/);
-	assert.doesNotMatch(timetablePage, /let\s+workspaceRef\s*:\s*HTMLDivElement/);
 });
 
 test('api client parses non-json responses and centralizes unauthorized handling', async () => {

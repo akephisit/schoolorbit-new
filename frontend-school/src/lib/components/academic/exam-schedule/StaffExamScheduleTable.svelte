@@ -84,7 +84,7 @@
 					</Table.Cell>
 					<Table.Cell class="text-center whitespace-normal">
 						<Badge variant="outline">{row.session.gradeLevelName}</Badge>
-						<div class="mt-1">{row.session.classroomName}</div>
+						<div class="mt-1">{row.session.homeroomName}</div>
 					</Table.Cell>
 					<Table.Cell class="text-center whitespace-normal">{roomLabel(row.session)}</Table.Cell>
 					<Table.Cell class="whitespace-normal">
@@ -133,7 +133,7 @@
 						</div>
 						<div>
 							<span class="text-muted-foreground">ชั้นเรียน:</span>
-							{row.session.classroomName}
+							{row.session.homeroomName}
 						</div>
 						<div>
 							<span class="text-muted-foreground">ห้องสอบ:</span>

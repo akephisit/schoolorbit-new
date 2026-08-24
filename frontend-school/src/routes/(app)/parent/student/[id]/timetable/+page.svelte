@@ -1,205 +1,244 @@
 <script lang="ts">
-	import type { PageProps } from './$types';
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import { onMount } from 'svelte';
-	import { toast } from 'svelte-sonner';
+	import type { PageProps } from './$types';
 	import {
-		type TimetableEntry,
-		type TimetablePeriodSummary,
-		periodsFromTimetableEntries
-	} from '$lib/api/timetable';
+		listChildAcademicContextOptions,
+		type AcademicContextOptionsResponse
+	} from '$lib/api/academic-context';
 	import { getChildProfile, getChildTimetable } from '$lib/api/parents';
+	import type { Student } from '$lib/api/students';
 	import {
-		getAcademicStructure,
-		getSchoolDays,
-		type AcademicYear,
-		type Semester
-	} from '$lib/api/academic';
+		periodsFromTimetableEntries,
+		type TimetableEntry,
+		type TimetablePeriodSummary
+	} from '$lib/api/timetable';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import * as Select from '$lib/components/ui/select';
+	import { Label } from '$lib/components/ui/label';
+	import { MapPin, School } from 'lucide-svelte';
 
-	interface ChildSummary {
-		first_name?: string;
-		last_name?: string;
-		grade_level?: string | null;
-		class_room?: string | null;
-	}
+	const dayOptions = [
+		{ value: 'MON', label: 'จันทร์' },
+		{ value: 'TUE', label: 'อังคาร' },
+		{ value: 'WED', label: 'พุธ' },
+		{ value: 'THU', label: 'พฤหัสบดี' },
+		{ value: 'FRI', label: 'ศุกร์' },
+		{ value: 'SAT', label: 'เสาร์' },
+		{ value: 'SUN', label: 'อาทิตย์' }
+	];
 
 	let { params }: PageProps = $props();
-	let studentId = $derived(params.id);
-
-	let loading = $state(true);
-	let entries = $state<TimetableEntry[]>([]);
-	let periods = $state<TimetablePeriodSummary[]>([]);
-	let years = $state<AcademicYear[]>([]);
-	let semesters = $state<Semester[]>([]);
+	const studentId = $derived(params.id);
+	let child = $state<Student | null>(null);
+	let contextOptions = $state<AcademicContextOptionsResponse | null>(null);
 	let selectedYearId = $state('');
-	let selectedSemesterId = $state('');
-	let schoolDays = $state<{ value: string; label: string; shortLabel: string }[]>([]);
-	let child = $state<ChildSummary | null>(null);
-	let error = $state('');
+	let selectedTermId = $state('');
+	let periods = $state<TimetablePeriodSummary[]>([]);
+	let entries = $state<TimetableEntry[]>([]);
+	let loading = $state(true);
+	let errorMessage = $state('');
+	let revision = 0;
 
-	const semestersOfYear = $derived(semesters.filter((s) => s.academic_year_id === selectedYearId));
+	const termOptions = $derived(
+		contextOptions?.terms.filter((term) => term.academicYearId === selectedYearId) ?? []
+	);
+	const schoolDays = $derived.by(() => {
+		const configured = new Set(entries.map((entry) => entry.dayOfWeek));
+		return configured.size > 0
+			? dayOptions.filter((day) => configured.has(day.value))
+			: dayOptions.slice(0, 5);
+	});
+	const tableMinWidth = $derived(96 + periods.length * 132);
+	const childName = $derived(
+		child ? `${child.title ?? ''}${child.first_name} ${child.last_name}`.trim() : ''
+	);
 
-	// คอลัมน์วัน 80px + คาบละ 110px → mobile บีบไม่ได้ ต้องเลื่อน
-	const tableMinWidth = $derived(80 + periods.length * 110);
-
-	function formatTime(t?: string): string {
-		if (!t) return '';
-		return t.substring(0, 5);
+	function authorizedSelection(options: AcademicContextOptionsResponse): {
+		yearId: string;
+		termId: string;
+	} {
+		const queryYearId = page.url.searchParams.get('academicYearId');
+		const yearId =
+			options.years.find((year) => year.id === queryYearId)?.id ??
+			options.years.find((year) => year.id === options.activeAcademicYearId)?.id ??
+			options.years[0]?.id ??
+			'';
+		const terms = options.terms.filter((term) => term.academicYearId === yearId);
+		const queryTermId = page.url.searchParams.get('academicTermId');
+		const termId =
+			terms.find((term) => term.id === queryTermId)?.id ??
+			terms.find((term) => term.id === options.activeAcademicTermId)?.id ??
+			terms[0]?.id ??
+			'';
+		return { yearId, termId };
 	}
 
-	function getEntryColor(type: string): string {
-		if (type === 'COURSE') return 'bg-blue-50 border-blue-200 text-blue-900';
-		if (type === 'ACTIVITY') return 'bg-emerald-50 border-emerald-200 text-emerald-900';
-		if (type === 'BREAK') return 'bg-amber-50 border-amber-200 text-amber-800';
-		if (type === 'HOMEROOM') return 'bg-purple-50 border-purple-200 text-purple-900';
-		if (type === 'ACADEMIC') return 'bg-blue-50 border-blue-200 text-blue-900';
-		return 'bg-gray-50 border-gray-200 text-gray-900';
-	}
-
-	async function loadStructureAndChild() {
+	async function loadHistory(): Promise<void> {
 		loading = true;
-		error = '';
+		errorMessage = '';
 		try {
-			const [structRes, childRes] = await Promise.all([
-				getAcademicStructure(),
-				getChildProfile(studentId)
-			]);
-			years = structRes.data.years;
-			semesters = structRes.data.semesters;
-			child = childRes.data;
-
-			const activeYear = years.find((y) => y.is_active) ?? years[0];
-			if (activeYear) {
-				selectedYearId = activeYear.id;
-				schoolDays = getSchoolDays(activeYear.school_days);
-				const activeSem =
-					semesters.find((s) => s.academic_year_id === activeYear.id && s.is_active) ??
-					semesters.find((s) => s.academic_year_id === activeYear.id);
-				if (activeSem) {
-					selectedSemesterId = activeSem.id;
-				} else {
-					loading = false;
-				}
-			} else {
-				loading = false;
-			}
-		} catch (e: unknown) {
-			console.error(e);
-			error = (e instanceof Error ? e.message : String(e)) || 'โหลดข้อมูลไม่สำเร็จ';
-			toast.error(error);
-			loading = false;
-		}
-	}
-
-	async function loadPeriodsAndEntries() {
-		if (!selectedYearId || !selectedSemesterId) return;
-		try {
-			loading = true;
-			error = '';
-			const entriesRes = await getChildTimetable(studentId, selectedSemesterId);
-			entries = entriesRes.data;
-			periods = periodsFromTimetableEntries(entries);
-			const year = years.find((y) => y.id === selectedYearId);
-			if (year) schoolDays = getSchoolDays(year.school_days);
-		} catch (e: unknown) {
-			console.error(e);
-			error = 'โหลดตารางเรียนไม่สำเร็จ';
-			toast.error(error);
+			contextOptions = await listChildAcademicContextOptions(studentId);
+			child = (await getChildProfile(studentId)).data;
+			const selection = authorizedSelection(contextOptions);
+			selectedYearId = selection.yearId;
+			selectedTermId = selection.termId;
+			if (selectedTermId) await loadTimetable(selectedTermId);
+		} catch (error) {
+			errorMessage = error instanceof Error ? error.message : 'โหลดข้อมูลตารางเรียนไม่สำเร็จ';
 		} finally {
 			loading = false;
 		}
 	}
 
-	function retryLoad() {
-		if (selectedYearId && selectedSemesterId) {
-			loadPeriodsAndEntries();
-			return;
+	async function loadTimetable(termId: string): Promise<void> {
+		const current = ++revision;
+		loading = true;
+		errorMessage = '';
+		try {
+			const loaded = await getChildTimetable(studentId, termId);
+			if (current !== revision) return;
+			periods = periodsFromTimetableEntries(loaded);
+			entries = loaded;
+		} catch (error) {
+			if (current === revision) {
+				errorMessage = error instanceof Error ? error.message : 'โหลดตารางเรียนไม่สำเร็จ';
+			}
+		} finally {
+			if (current === revision) loading = false;
 		}
-		loadStructureAndChild();
 	}
 
-	function getEntry(day: string, periodId: string): TimetableEntry | undefined {
-		return entries.find((e) => e.day_of_week === day && e.period_id === periodId);
+	async function updateUrl(yearId: string, termId: string): Promise<void> {
+		await goto(
+			resolve(
+				`/parent/student/${studentId}/timetable?academicYearId=${encodeURIComponent(yearId)}&academicTermId=${encodeURIComponent(termId)}`
+			),
+			{ noScroll: true, keepFocus: true }
+		);
 	}
 
-	$effect(() => {
-		if (selectedSemesterId && selectedYearId) {
-			loadPeriodsAndEntries();
-		}
-	});
+	async function changeYear(event: Event): Promise<void> {
+		const yearId = (event.currentTarget as HTMLSelectElement).value;
+		const availableTerms =
+			contextOptions?.terms.filter((term) => term.academicYearId === yearId) ?? [];
+		const nextTerm =
+			availableTerms.find((term) => term.id === contextOptions?.activeAcademicTermId) ??
+			availableTerms[0];
+		selectedYearId = yearId;
+		selectedTermId = nextTerm?.id ?? '';
+		periods = [];
+		entries = [];
+		if (!selectedTermId) return;
+		await updateUrl(selectedYearId, selectedTermId);
+		await loadTimetable(selectedTermId);
+	}
 
-	onMount(loadStructureAndChild);
+	async function changeTerm(event: Event): Promise<void> {
+		selectedTermId = (event.currentTarget as HTMLSelectElement).value;
+		await updateUrl(selectedYearId, selectedTermId);
+		await loadTimetable(selectedTermId);
+	}
+
+	function entriesForCell(day: string, periodId: string): TimetableEntry[] {
+		return entries.filter(
+			(entry) => entry.dayOfWeek === day && entry.bellSchedulePeriodId === periodId
+		);
+	}
+
+	function entryTitle(entry: TimetableEntry): string {
+		return (
+			entry.offeringCode ??
+			entry.title ??
+			entry.subjectVersionDisplayLabel ??
+			entry.activityVersionDisplayLabel ??
+			entry.entryType
+		);
+	}
+
+	function entryColor(entryType: string): string {
+		if (entryType === 'COURSE')
+			return 'border-blue-200 bg-blue-50 text-blue-950 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-100';
+		if (entryType === 'ACTIVITY')
+			return 'border-emerald-200 bg-emerald-50 text-emerald-950 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-100';
+		if (entryType === 'BREAK')
+			return 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100';
+		return 'border-violet-200 bg-violet-50 text-violet-950 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-100';
+	}
+
+	onMount(loadHistory);
 </script>
 
 <PageShell
 	title="ตารางเรียน"
-	description={child
-		? `${child.first_name ?? ''} ${child.last_name ?? ''}${child.grade_level && child.class_room ? ` | ${child.grade_level}/${child.class_room}` : ''}`
-		: 'ตารางเรียนของนักเรียน'}
+	description={childName ? `ตารางเรียนของ ${childName}` : 'ดูตารางเรียนย้อนหลังของนักเรียน'}
 	backHref={`/parent/student/${studentId}`}
 >
-	<!-- Year + Semester selector -->
-	<div class="flex flex-wrap gap-3 rounded-xl border bg-card p-3 sm:p-4">
-		<div class="w-[220px]">
-			<Select.Root type="single" bind:value={selectedYearId}>
-				<Select.Trigger class="w-full">
-					{years.find((y) => y.id === selectedYearId)?.name || 'เลือกปีการศึกษา'}
-				</Select.Trigger>
-				<Select.Content>
-					{#each years as year (year.id)}
-						<Select.Item value={year.id}>{year.name}</Select.Item>
-					{/each}
-				</Select.Content>
-			</Select.Root>
+	<div class="flex flex-wrap gap-3 rounded-xl border bg-card p-4">
+		<div class="min-w-52 space-y-2">
+			<Label for="parent-child-year">ปีการศึกษา</Label>
+			<select
+				id="parent-child-year"
+				class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+				value={selectedYearId}
+				disabled={loading}
+				onchange={changeYear}
+			>
+				{#each contextOptions?.years ?? [] as year (year.id)}
+					<option value={year.id}>{year.name}</option>
+				{/each}
+			</select>
 		</div>
-		<div class="w-[200px]">
-			<Select.Root type="single" bind:value={selectedSemesterId}>
-				<Select.Trigger class="w-full">
-					{semestersOfYear.find((s) => s.id === selectedSemesterId)?.name || 'เลือกภาคเรียน'}
-				</Select.Trigger>
-				<Select.Content>
-					{#each semestersOfYear as sem (sem.id)}
-						<Select.Item value={sem.id}>{sem.name}</Select.Item>
-					{/each}
-				</Select.Content>
-			</Select.Root>
+		<div class="min-w-52 space-y-2">
+			<Label for="parent-child-term">ภาคเรียน</Label>
+			<select
+				id="parent-child-term"
+				class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+				value={selectedTermId}
+				disabled={loading || termOptions.length === 0}
+				onchange={changeTerm}
+			>
+				{#each termOptions as term (term.id)}
+					<option value={term.id}>{term.name}</option>
+				{/each}
+			</select>
 		</div>
 	</div>
 
 	{#if loading}
-		<PageSkeleton variant="detail" />
-	{:else if error}
+		<PageSkeleton variant="table" rows={6} columns={Math.max(periods.length + 1, 4)} />
+	{:else if errorMessage}
 		<PageState
 			variant="error"
 			title="โหลดตารางเรียนไม่สำเร็จ"
-			description={error}
+			description={errorMessage}
 			actionLabel="ลองอีกครั้ง"
-			onaction={retryLoad}
+			onaction={loadHistory}
+		/>
+	{:else if !contextOptions || contextOptions.years.length === 0}
+		<PageState
+			title="ยังไม่มีประวัติปีการศึกษา"
+			description="เมื่อโรงเรียนสร้างข้อมูลนักเรียนประจำปีแล้ว ประวัติจะปรากฏที่นี่"
 		/>
 	{:else if entries.length === 0}
-		<PageState title="ยังไม่มีตารางเรียน" description="ยังไม่มีตารางเรียนในภาคเรียนนี้" />
-	{:else if periods.length === 0}
 		<PageState
-			title="ยังไม่มีข้อมูลคาบเรียน"
-			description="ตารางเรียนนี้ยังไม่มีข้อมูลคาบเรียนให้แสดง"
+			title="ยังไม่มีตารางเรียน"
+			description="โรงเรียนยังไม่ได้จัดตารางเรียนในภาคเรียนที่เลือก"
 		/>
 	{:else}
-		<!-- Timetable Grid (วัน=แถว, คาบ=คอลัมน์) -->
-		<div class="overflow-x-auto">
-			<table class="w-full table-fixed border-collapse" style="min-width: {tableMinWidth}px">
+		<div class="overflow-x-auto rounded-lg border">
+			<table class="w-full table-fixed border-collapse" style={`min-width: ${tableMinWidth}px`}>
 				<thead>
 					<tr>
-						<th class="bg-muted/50 text-muted-foreground w-20 border p-2 text-xs font-medium">
-							วัน / คาบ
-						</th>
-						{#each periods as period (period.id)}
-							<th class="bg-muted/50 border p-2 text-center text-xs font-medium">
-								<div class="font-semibold">{period.name || ' '}</div>
-								<div class="text-muted-foreground text-[10px] font-normal">
-									{formatTime(period.start_time)}-{formatTime(period.end_time)}
-								</div>
+						<th class="bg-muted/70 w-24 border p-2 text-xs">วัน / คาบ</th>
+						{#each periods as period, index (period.id)}
+							<th class="bg-muted/70 border p-2 text-center text-xs">
+								<p class="font-semibold">{period.name ?? `คาบ ${index + 1}`}</p>
+								<p class="text-muted-foreground font-normal">
+									{period.startTime.slice(0, 5)}–{period.endTime.slice(0, 5)}
+								</p>
 							</th>
 						{/each}
 					</tr>
@@ -207,67 +246,38 @@
 				<tbody>
 					{#each schoolDays as day (day.value)}
 						<tr>
-							<td class="bg-muted/30 border p-2 text-center text-xs font-medium">
-								{day.label}
-							</td>
+							<th class="bg-muted/30 border p-2 text-xs">{day.label}</th>
 							{#each periods as period (period.id)}
-								{@const entry = getEntry(day.value, period.id)}
-								<td class="relative h-20 border p-1">
-									{#if entry}
-										{@const isCourse = entry.entry_type === 'COURSE'}
+								{@const cellEntries = entriesForCell(day.value, period.id)}
+								<td class="h-24 border p-1 align-top">
+									{#each cellEntries as entry (entry.id)}
 										<div
-											class="flex h-full w-full flex-col gap-0.5 rounded border p-2 text-xs {getEntryColor(
-												entry.entry_type
-											)} {isCourse ? 'text-left' : 'items-center justify-center text-center'}"
+											class={`mb-1 flex min-h-20 flex-col rounded-md border p-2 text-xs ${entryColor(entry.entryType)}`}
 										>
-											<div
-												class="w-full font-semibold {isCourse
-													? 'truncate'
-													: 'line-clamp-3 leading-tight whitespace-pre-line'}"
-											>
-												{entry.subject_code || entry.title || entry.subject_name_th || ''}
-											</div>
-											{#if isCourse && entry.subject_name_th}
-												<div class="w-full truncate text-[10px] opacity-80">
-													{entry.subject_name_th}
-												</div>
+											<p class="truncate font-semibold">{entryTitle(entry)}</p>
+											{#if entry.offeringName}
+												<p class="mt-1 line-clamp-2 opacity-80">{entry.offeringName}</p>
 											{/if}
-											{#if isCourse && entry.instructor_name}
-												<div class="mt-auto w-full truncate text-[10px] opacity-70">
-													{entry.instructor_name}
-												</div>
+											{#if entry.learningGroupName || entry.homeroomName}
+												<p class="mt-auto flex items-center gap-1 truncate opacity-70">
+													<School class="size-3" />
+													{entry.learningGroupName ?? entry.homeroomName}
+												</p>
 											{/if}
-											{#if isCourse && entry.room_code}
-												<div class="w-full text-[10px] opacity-60">{entry.room_code}</div>
+											{#if entry.roomCode}
+												<p class="flex items-center gap-1 truncate opacity-70">
+													<MapPin class="size-3" />
+													{entry.roomCode}
+												</p>
 											{/if}
 										</div>
-									{/if}
+									{/each}
 								</td>
 							{/each}
 						</tr>
 					{/each}
 				</tbody>
 			</table>
-		</div>
-
-		<!-- Legend -->
-		<div class="text-muted-foreground flex flex-wrap gap-3 text-xs">
-			<div class="flex items-center gap-1.5">
-				<div class="h-3 w-3 rounded border border-blue-200 bg-blue-100"></div>
-				วิชาเรียน
-			</div>
-			<div class="flex items-center gap-1.5">
-				<div class="h-3 w-3 rounded border border-emerald-200 bg-emerald-100"></div>
-				กิจกรรม
-			</div>
-			<div class="flex items-center gap-1.5">
-				<div class="h-3 w-3 rounded border border-amber-200 bg-amber-100"></div>
-				พัก
-			</div>
-			<div class="flex items-center gap-1.5">
-				<div class="h-3 w-3 rounded border border-purple-200 bg-purple-100"></div>
-				โฮมรูม
-			</div>
 		</div>
 	{/if}
 </PageShell>

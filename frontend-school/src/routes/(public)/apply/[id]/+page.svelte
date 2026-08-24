@@ -806,8 +806,8 @@
 												</div>
 												<p class="font-semibold text-card-foreground">{t.name}</p>
 											</div>
-											{#if t.studyPlanName}
-												<p class="text-xs text-muted-foreground mt-1 ml-6">{t.studyPlanName}</p>
+											{#if t.studyProgramName}
+												<p class="text-xs text-muted-foreground mt-1 ml-6">{t.studyProgramName}</p>
 											{/if}
 										</button>
 									{/each}

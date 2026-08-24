@@ -8,8 +8,8 @@ test('builds one instructor PDF page from the loaded self-service timetable', as
 	const entries = [{ id: 'entry-1', room_code: 'MATH-1' }];
 	const result = module.buildStaffOwnTimetablePdfDownload({
 		teacherName: 'สายใจ / วิทยา',
-		semesterName: '',
-		semesterTerm: '1',
+		termName: '',
+		termCode: '1',
 		academicYearName: 'ปีการศึกษา 2569',
 		entries,
 		dayValues: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'],
@@ -17,8 +17,8 @@ test('builds one instructor PDF page from the loaded self-service timetable', as
 			{
 				id: 'period-2',
 				name: 'คาบ 2',
-				start_time: '09:20:00',
-				end_time: '10:10:00'
+				startTime: '09:20:00',
+				endTime: '10:10:00'
 			},
 			{ id: 'period-activity', name: 'กิจกรรม' }
 		]
@@ -60,9 +60,9 @@ test('allows export only for loaded data matching the current valid selection', 
 		loading: false,
 		isExporting: false,
 		selectedYearId: 'year-2569',
-		selectedSemesterId: 'semester-1',
-		selectedSemesterYearId: 'year-2569',
-		loadedSelectionKey: 'year-2569:semester-1',
+		selectedAcademicTermId: 'term-1',
+		selectedTermYearId: 'year-2569',
+		loadedSelectionKey: 'year-2569:term-1',
 		entryCount: 5,
 		periodCount: 8
 	};
@@ -71,14 +71,14 @@ test('allows export only for loaded data matching the current valid selection', 
 	assert.equal(
 		module.canDownloadStaffOwnTimetablePdf({
 			...readyState,
-			loadedSelectionKey: 'year-2568:semester-2'
+			loadedSelectionKey: 'year-2568:term-2'
 		}),
 		false
 	);
 	assert.equal(
 		module.canDownloadStaffOwnTimetablePdf({
 			...readyState,
-			selectedSemesterYearId: 'year-2568'
+			selectedTermYearId: 'year-2568'
 		}),
 		false
 	);

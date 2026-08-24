@@ -26,7 +26,7 @@
 		type ReportConfig,
 		roundStatusLabel
 	} from '$lib/api/admission';
-	import { listStudyPlans } from '$lib/api/academic';
+	import { listStudyProgramOptionsForYear, type StudyProgramOption } from '$lib/api/academic-core';
 	import SchoolCombobox from '$lib/components/ui/SchoolCombobox.svelte';
 
 	import { Button } from '$lib/components/ui/button';
@@ -72,7 +72,7 @@
 	let round: AdmissionRound | null = $state(null);
 	let tracks: AdmissionTrack[] = $state([]);
 	let subjects: AdmissionExamSubject[] = $state([]);
-	let studyPlans: { id: string; nameTh: string }[] = $state([]);
+	let studyPrograms = $state<StudyProgramOption[]>([]);
 	let loading = $state(true);
 	let error = $state('');
 
@@ -89,7 +89,7 @@
 	let showTrackForm = $state(false);
 	let editingTrack: AdmissionTrack | null = $state(null);
 	let trackForm = $state({
-		studyPlanId: '',
+		studyProgramId: '',
 		name: '',
 		capacityOverride: '',
 		tiebreakMethod: 'applied_at'
@@ -199,12 +199,10 @@
 		loading = true;
 		error = '';
 		try {
-			const [r, t, s, allR] = await Promise.all([
-				getRound(id),
-				listTracks(id),
-				listSubjects(id),
-				listRounds()
-			]);
+			const r = await getRound(id);
+			const t = await listTracks(id);
+			const s = await listSubjects(id);
+			const allR = await listRounds(r.academicYearId);
 			round = r;
 			tracks = t;
 			subjects = s;
@@ -220,9 +218,8 @@
 		} finally {
 			loading = false;
 		}
-		if (canManageAdmission) {
-			const sp = await listStudyPlans({ active_only: true });
-			studyPlans = (sp.data ?? []).map((p) => ({ id: p.id, nameTh: p.name_th }));
+		if (canManageAdmission && round) {
+			studyPrograms = await listStudyProgramOptionsForYear(round.academicYearId);
 		}
 	}
 
@@ -266,14 +263,19 @@
 	function openNewTrack() {
 		if (!canManageAdmission) return;
 		editingTrack = null;
-		trackForm = { studyPlanId: '', name: '', capacityOverride: '', tiebreakMethod: 'applied_at' };
+		trackForm = {
+			studyProgramId: '',
+			name: '',
+			capacityOverride: '',
+			tiebreakMethod: 'applied_at'
+		};
 		showTrackForm = true;
 	}
 	function openEditTrack(t: AdmissionTrack) {
 		if (!canManageAdmission) return;
 		editingTrack = t;
 		trackForm = {
-			studyPlanId: t.studyPlanId,
+			studyProgramId: t.studyProgramId,
 			name: t.name,
 			capacityOverride: t.capacityOverride?.toString() ?? '',
 			tiebreakMethod: t.tiebreakMethod
@@ -299,7 +301,7 @@
 				toast.success('อัปเดตสายแล้ว');
 			} else {
 				await createTrack(id, {
-					studyPlanId: trackForm.studyPlanId,
+					studyProgramId: trackForm.studyProgramId,
 					name: trackForm.name,
 					capacityOverride: trackForm.capacityOverride
 						? parseInt(trackForm.capacityOverride)
@@ -764,14 +766,14 @@
 										<Label for="track-plan"
 											>แผนการเรียน <span class="text-destructive">*</span></Label
 										>
-										<Select.Root type="single" bind:value={trackForm.studyPlanId}>
+										<Select.Root type="single" bind:value={trackForm.studyProgramId}>
 											<Select.Trigger id="track-plan" class="w-full">
-												{studyPlans.find((s) => s.id === trackForm.studyPlanId)?.nameTh ??
+												{studyPrograms.find((s) => s.id === trackForm.studyProgramId)?.name ??
 													'-- เลือก --'}
 											</Select.Trigger>
 											<Select.Content>
-												{#each studyPlans as sp (sp.id)}
-													<Select.Item value={sp.id}>{sp.nameTh}</Select.Item>
+												{#each studyPrograms as sp (sp.id)}
+													<Select.Item value={sp.id}>{sp.name}</Select.Item>
 												{/each}
 											</Select.Content>
 										</Select.Root>
@@ -834,7 +836,7 @@
 										<div>
 											<p class="font-medium text-sm">{t.name}</p>
 											<p class="text-xs text-muted-foreground">
-												{t.studyPlanName ?? '-'} • รับ {t.computedCapacity ?? '-'} คน ({t.roomCount ??
+												{t.studyProgramName ?? '-'} • รับ {t.computedCapacity ?? '-'} คน ({t.roomCount ??
 													0} ห้อง) • สมัคร {t.applicationCount ?? 0}
 											</p>
 										</div>

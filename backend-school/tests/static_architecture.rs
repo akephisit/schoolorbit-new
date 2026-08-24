@@ -3421,8 +3421,8 @@ fn read_oriented_handlers_are_registered_in_the_openapi_document() {
 
     assert_eq!(
         read_oriented_handlers_from_routers(&main_router, &calendar_router).len(),
-        39,
-        "read-oriented router inventory must stay aligned with the 39-operation rollout"
+        42,
+        "read-oriented router inventory must stay aligned with the 42-operation rollout"
     );
     assert_eq!(
         read_oriented_handlers_missing_from_contract(&main_router, &calendar_router, &contract),

@@ -14,6 +14,7 @@ const exists = async (file) =>
 
 test('auto scheduler frontend and generated contract are absent', async () => {
 	for (const removed of [
+		'frontend-school/src/lib/api/scheduling.ts',
 		'frontend-school/src/routes/(app)/staff/academic/timetable/scheduling-config/+page.svelte',
 		'frontend-school/src/routes/(app)/staff/academic/timetable/scheduling-config/+page.ts',
 		'frontend-school/src/routes/(app)/staff/academic/timetable/scheduling/jobs/+page.svelte',
@@ -23,7 +24,7 @@ test('auto scheduler frontend and generated contract are absent', async () => {
 	}
 
 	const [api, timetable, templates, generated, contractText] = await Promise.all([
-		readRepo('frontend-school/src/lib/api/scheduling.ts'),
+		readRepo('frontend-school/src/lib/api/timetable.ts'),
 		readRepo('frontend-school/src/routes/(app)/staff/academic/timetable/+page.svelte'),
 		readRepo('frontend-school/src/routes/(app)/staff/academic/timetable/templates/+page.svelte'),
 		readRepo('frontend-school/src/lib/api/generated/school-api.ts'),

@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createTimetableSocketRuntime } from '../../src/lib/utils/timetable-socket-runtime.ts';
 
-const semesterA = { semester_id: 'semester-a', current_user_id: 'user-1' };
-const semesterB = { semester_id: 'semester-b', current_user_id: 'user-1' };
+const termA = { academicTermId: 'term-a', currentUserId: 'user-1' };
+const termB = { academicTermId: 'term-b', currentUserId: 'user-1' };
 
 class FakeSocket {
 	readyState = 0;
@@ -141,28 +141,28 @@ function createHarness() {
 	return { environment, notifications, runtime };
 }
 
-test('repeated desired params within the debounce still replace a different active semester', () => {
+test('repeated desired params within the debounce still replace a different active term', () => {
 	const { environment, runtime } = createHarness();
 
-	runtime.connect(semesterA);
+	runtime.connect(termA);
 	environment.advanceBy(50);
 	const socketA = environment.sockets[0];
 	socketA.open();
 
-	runtime.connect(semesterB);
+	runtime.connect(termB);
 	environment.advanceBy(25);
-	runtime.connect(semesterB);
+	runtime.connect(termB);
 	environment.advanceBy(50);
 
 	assert.equal(environment.sockets.length, 2);
-	assert.deepEqual(environment.sockets[1].params, semesterB);
+	assert.deepEqual(environment.sockets[1].params, termB);
 	assert.equal(socketA.closed, true);
 });
 
 test('replacement detaches every old handler and ignores already captured callbacks', () => {
 	const { environment, notifications, runtime } = createHarness();
 
-	runtime.connect(semesterA);
+	runtime.connect(termA);
 	environment.advanceBy(50);
 	const socketA = environment.sockets[0];
 	socketA.open();
@@ -173,7 +173,7 @@ test('replacement detaches every old handler and ignores already captured callba
 		onerror: socketA.onerror
 	};
 
-	runtime.connect(semesterB);
+	runtime.connect(termB);
 	environment.advanceBy(50);
 	staleCallbacks.onopen?.({ type: 'stale-open' });
 	staleCallbacks.onmessage?.({ data: 'stale-message' });
@@ -196,7 +196,7 @@ test('replacement detaches every old handler and ignores already captured callba
 test('disconnect prevents stale socket callbacks from mutating or notifying', () => {
 	const { environment, notifications, runtime } = createHarness();
 
-	runtime.connect(semesterA);
+	runtime.connect(termA);
 	environment.advanceBy(50);
 	const socket = environment.sockets[0];
 	const staleCallbacks = {
@@ -229,7 +229,7 @@ test('disconnect prevents stale socket callbacks from mutating or notifying', ()
 test('offline close registers one listener and reconnects once after returning online', () => {
 	const { environment, runtime } = createHarness();
 
-	runtime.connect(semesterA);
+	runtime.connect(termA);
 	environment.advanceBy(50);
 	environment.online = false;
 	environment.sockets[0].closeFromServer();
@@ -249,7 +249,7 @@ test('offline close registers one listener and reconnects once after returning o
 test('failed sockets schedule increasing retries and reset backoff only after open', () => {
 	const { environment, runtime } = createHarness();
 
-	runtime.connect(semesterA);
+	runtime.connect(termA);
 	environment.advanceBy(50);
 	environment.sockets[0].open();
 	environment.sockets[0].closeFromServer();
@@ -270,14 +270,14 @@ test('failed sockets schedule increasing retries and reset backoff only after op
 
 test('explicit disconnect cancels pending reconnect timers and the online listener', () => {
 	const pendingConnection = createHarness();
-	pendingConnection.runtime.connect(semesterA);
+	pendingConnection.runtime.connect(termA);
 	assert.equal(pendingConnection.environment.nextDelay(), 50);
 	pendingConnection.runtime.disconnect();
 	pendingConnection.environment.advanceBy(50);
 	assert.equal(pendingConnection.environment.sockets.length, 0);
 
 	const onlineRetry = createHarness();
-	onlineRetry.runtime.connect(semesterA);
+	onlineRetry.runtime.connect(termA);
 	onlineRetry.environment.advanceBy(50);
 	onlineRetry.environment.sockets[0].closeFromServer();
 	assert.equal(onlineRetry.environment.nextDelay(), 1000);
@@ -288,7 +288,7 @@ test('explicit disconnect cancels pending reconnect timers and the online listen
 	assert.equal(onlineRetry.environment.sockets.length, 1);
 
 	const offlineRetry = createHarness();
-	offlineRetry.runtime.connect(semesterA);
+	offlineRetry.runtime.connect(termA);
 	offlineRetry.environment.advanceBy(50);
 	offlineRetry.environment.online = false;
 	offlineRetry.environment.sockets[0].closeFromServer();
@@ -304,7 +304,7 @@ test('explicit disconnect cancels pending reconnect timers and the online listen
 test('policy close suspends automatic reconnect until an explicit connect', () => {
 	const { environment, notifications, runtime } = createHarness();
 
-	runtime.connect(semesterA);
+	runtime.connect(termA);
 	environment.advanceBy(50);
 	environment.sockets[0].open();
 	environment.sockets[0].closeFromServer(1008, 'Authentication required');
@@ -317,7 +317,7 @@ test('policy close suspends automatic reconnect until an explicit connect', () =
 	environment.advanceBy(60_000);
 	assert.equal(environment.sockets.length, 1);
 
-	runtime.connect(semesterA);
+	runtime.connect(termA);
 	assert.equal(environment.nextDelay(), 50);
 	environment.advanceBy(50);
 	assert.equal(environment.sockets.length, 2);
@@ -334,20 +334,20 @@ test('realtime auth recovery maps authoritative refresh outcomes', async () => {
 test('same-params refresh intent survives a later policy close exactly once', () => {
 	const { environment, runtime } = createHarness();
 
-	runtime.connect(semesterA);
+	runtime.connect(termA);
 	environment.advanceBy(50);
 	const originalSocket = environment.sockets[0];
 	originalSocket.open();
 
 	// A permission-refresh event can request the same connection before the
 	// backend policy close from the previous authorization reaches the browser.
-	runtime.connect(semesterA);
+	runtime.connect(termA);
 	originalSocket.closeFromServer(1008);
 
 	assert.equal(environment.nextDelay(), 50);
 	environment.advanceBy(50);
 	assert.equal(environment.sockets.length, 2);
-	assert.deepEqual(environment.sockets[1].params, semesterA);
+	assert.deepEqual(environment.sockets[1].params, termA);
 
 	environment.advanceBy(60_000);
 	assert.equal(environment.sockets.length, 2);

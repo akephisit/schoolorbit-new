@@ -1,3 +1,5 @@
+import type { TimetableEntry } from '$lib/api/timetable';
+
 export type TeacherLoadCategory =
 	| 'course'
 	| 'independentActivity'
@@ -13,33 +15,7 @@ export type TeacherLoadDetailKind =
 	| 'synchronizedActivity'
 	| 'unspecifiedActivity';
 
-export interface TeacherLoadEntry {
-	id: string;
-	entry_type: string;
-	day_of_week: string;
-	period_id: string;
-	period_name?: string | null;
-	period_order_index?: number | null;
-	start_time?: string | null;
-	end_time?: string | null;
-	classroom_name?: string | null;
-	subject_code?: string | null;
-	subject_name_th?: string | null;
-	subject_group_id?: string | null;
-	subject_group_name?: string | null;
-	subject_group_display_order?: number | null;
-	title?: string | null;
-	activity_slot_id?: string | null;
-	activity_slot_name?: string | null;
-	activity_scheduling_mode?: string | null;
-	instructor_ids?: string[] | null;
-	instructor_names?: string[] | null;
-	instructor_roles?: string[] | null;
-	instructor_name?: string | null;
-	instructor_subject_group_ids?: Array<string | null> | null;
-	instructor_subject_group_names?: Array<string | null> | null;
-	instructor_subject_group_display_orders?: Array<number | null> | null;
-}
+export type TeacherLoadEntry = TimetableEntry;
 
 export interface TeacherLoadSummaryRow {
 	teacherId: string;
@@ -75,7 +51,7 @@ export interface TeacherLoadDetailRow {
 	periodName: string;
 	periodOrderIndex: number | null;
 	timeLabel: string;
-	classroomName: string;
+	homeroomName: string;
 	title: string;
 }
 
@@ -176,27 +152,26 @@ const DAY_ORDER: Record<string, number> = {
 };
 
 export function teacherLoadCategoryForEntry(entry: TeacherLoadEntry): TeacherLoadCategory | null {
-	if (entry.entry_type === 'COURSE') return 'course';
-	if (entry.entry_type !== 'ACTIVITY') return null;
-	if (entry.activity_scheduling_mode === 'independent') return 'independentActivity';
-	if (entry.activity_scheduling_mode === 'synchronized') return 'synchronizedActivity';
+	if (entry.entryType === 'COURSE') return 'course';
+	if (entry.entryType !== 'ACTIVITY') return null;
+	if (entry.activitySchedulingMode === 'independent') return 'independentActivity';
+	if (entry.activitySchedulingMode === 'synchronized') return 'synchronizedActivity';
 	return 'unspecifiedActivity';
 }
 
 export function buildTeacherLoadExportRows(entries: TeacherLoadEntry[]): TeacherLoadExportRows {
 	const summaries = new Map<string, TeacherLoadSummaryRow>();
-	const details = new Map<string, TeacherLoadDetailRow & { classroomNames: string[] }>();
+	const details = new Map<string, TeacherLoadDetailRow & { homeroomNames: string[] }>();
 
 	for (const entry of entries) {
 		const category = teacherLoadCategoryForEntry(entry);
 		if (!category) continue;
 
-		const instructorIds = entry.instructor_ids ?? [];
-		for (let index = 0; index < instructorIds.length; index += 1) {
-			const teacherId = instructorIds[index];
-			const teacherName = teacherNameForEntry(entry, index, teacherId);
-			const teacherSubjectGroup = teacherSubjectGroupForEntry(entry, index);
-			const instructorRole = instructorRoleForEntry(entry, index);
+		for (const instructor of entry.instructors) {
+			const teacherId = instructor.userId;
+			const teacherName = instructor.displayName;
+			const teacherSubjectGroup = teacherSubjectGroupForInstructor(instructor);
+			const instructorRole = instructor.role === 'primary' ? 'primary' : 'secondary';
 			const detailKind = detailKindForEntry(
 				entry,
 				category,
@@ -207,8 +182,8 @@ export function buildTeacherLoadExportRows(entries: TeacherLoadEntry[]): Teacher
 			const existingDetail = details.get(detailKey);
 
 			if (existingDetail) {
-				appendUnique(existingDetail.classroomNames, entry.classroom_name ?? '');
-				existingDetail.classroomName = existingDetail.classroomNames.join(', ');
+				appendUnique(existingDetail.homeroomNames, entry.homeroomName ?? '');
+				existingDetail.homeroomName = existingDetail.homeroomNames.join(', ');
 				continue;
 			}
 
@@ -216,7 +191,7 @@ export function buildTeacherLoadExportRows(entries: TeacherLoadEntry[]): Teacher
 			incrementSummary(summary, detailKind);
 
 			const itemSubjectGroup = itemSubjectGroupForEntry(entry, category);
-			const classroomNames = uniqueNonEmpty([entry.classroom_name ?? '']);
+			const homeroomNames = uniqueNonEmpty([entry.homeroomName ?? '']);
 			details.set(detailKey, {
 				teacherId,
 				teacherName,
@@ -230,14 +205,14 @@ export function buildTeacherLoadExportRows(entries: TeacherLoadEntry[]): Teacher
 				category,
 				detailKind,
 				categoryLabel: CATEGORY_LABELS[detailKind],
-				dayOfWeek: entry.day_of_week,
-				dayLabel: DAY_LABELS[entry.day_of_week] ?? entry.day_of_week,
-				periodName: entry.period_name ?? '',
-				periodOrderIndex: entry.period_order_index ?? null,
-				timeLabel: formatTimeRange(entry.start_time, entry.end_time),
-				classroomName: classroomNames.join(', '),
+				dayOfWeek: entry.dayOfWeek,
+				dayLabel: DAY_LABELS[entry.dayOfWeek] ?? entry.dayOfWeek,
+				periodName: entry.periodName ?? '',
+				periodOrderIndex: null,
+				timeLabel: formatTimeRange(entry.startTime, entry.endTime),
+				homeroomName: homeroomNames.join(', '),
 				title: entryTitle(entry, category),
-				classroomNames
+				homeroomNames
 			});
 		}
 	}
@@ -257,7 +232,7 @@ export function buildTeacherLoadExportRows(entries: TeacherLoadEntry[]): Teacher
 		.sort(compareSummaryRows);
 
 	const detailRows = Array.from(details.values())
-		.map(({ classroomNames: _classroomNames, ...row }) => row)
+		.map(({ homeroomNames: _homeroomNames, ...row }) => row)
 		.sort(compareDetailRows);
 
 	const summaryGroups = groupSummaryRows(summaryRows);
@@ -345,8 +320,14 @@ function teacherLoadDetailKey(
 	teacherId: string
 ): string {
 	if (category === 'synchronizedActivity' || category === 'unspecifiedActivity') {
-		const logicalActivityId = entry.activity_slot_id || entry.id;
-		return [teacherId, category, logicalActivityId, entry.day_of_week, entry.period_id].join('|');
+		const logicalActivityId = entry.offeringId || entry.id;
+		return [
+			teacherId,
+			category,
+			logicalActivityId,
+			entry.dayOfWeek,
+			entry.bellSchedulePeriodId
+		].join('|');
 	}
 	return [teacherId, category, entry.id].join('|');
 }
@@ -362,9 +343,9 @@ function detailKindForEntry(
 	if (category === 'unspecifiedActivity') return 'unspecifiedActivity';
 
 	const isHomeGroup =
-		!!entry.subject_group_id &&
+		!!entry.subjectGroupId &&
 		!!teacherSubjectGroupId &&
-		entry.subject_group_id === teacherSubjectGroupId;
+		entry.subjectGroupId === teacherSubjectGroupId;
 	const isPrimary = instructorRole === 'primary';
 
 	if (isHomeGroup && isPrimary) return 'homeGroupPrimaryCourse';
@@ -379,20 +360,14 @@ interface SubjectGroupMeta {
 	displayOrder: number | null;
 }
 
-function teacherSubjectGroupForEntry(entry: TeacherLoadEntry, index: number): SubjectGroupMeta {
-	const id = entry.instructor_subject_group_ids?.[index] ?? null;
-	const name = entry.instructor_subject_group_names?.[index] ?? null;
-	const displayOrder = entry.instructor_subject_group_display_orders?.[index] ?? null;
-
+function teacherSubjectGroupForInstructor(
+	instructor: TeacherLoadEntry['instructors'][number]
+): SubjectGroupMeta {
 	return {
-		id,
-		name: name || UNKNOWN_SUBJECT_GROUP_NAME,
-		displayOrder
+		id: instructor.subjectGroupId ?? null,
+		name: instructor.subjectGroupName || UNKNOWN_SUBJECT_GROUP_NAME,
+		displayOrder: instructor.subjectGroupDisplayOrder ?? null
 	};
-}
-
-function instructorRoleForEntry(entry: TeacherLoadEntry, index: number): string {
-	return entry.instructor_roles?.[index] === 'primary' ? 'primary' : 'secondary';
 }
 
 function itemSubjectGroupForEntry(
@@ -408,25 +383,24 @@ function itemSubjectGroupForEntry(
 	}
 
 	return {
-		id: entry.subject_group_id ?? null,
-		name: entry.subject_group_name || UNKNOWN_SUBJECT_GROUP_NAME,
-		displayOrder: entry.subject_group_display_order ?? null
+		id: entry.subjectGroupId ?? null,
+		name: entry.subjectGroupName || UNKNOWN_SUBJECT_GROUP_NAME,
+		displayOrder: entry.subjectGroupDisplayOrder ?? null
 	};
-}
-
-function teacherNameForEntry(entry: TeacherLoadEntry, index: number, teacherId: string): string {
-	const parallelName = entry.instructor_names?.[index];
-	if (parallelName) return parallelName;
-	if ((entry.instructor_ids?.length ?? 0) === 1 && entry.instructor_name)
-		return entry.instructor_name;
-	return teacherId;
 }
 
 function entryTitle(entry: TeacherLoadEntry, category: TeacherLoadCategory): string {
 	if (category === 'course') {
-		return [entry.subject_code, entry.subject_name_th].filter(Boolean).join(' - ');
+		return [entry.offeringCode, entry.offeringName ?? entry.subjectVersionDisplayLabel]
+			.filter(Boolean)
+			.join(' - ');
 	}
-	return entry.activity_slot_name || entry.title || CATEGORY_LABELS[category];
+	return (
+		entry.offeringName ||
+		entry.activityVersionDisplayLabel ||
+		entry.title ||
+		CATEGORY_LABELS[category]
+	);
 }
 
 function formatTimeRange(start?: string | null, end?: string | null): string {
@@ -590,7 +564,7 @@ function buildDetailSheetRows(groups: TeacherLoadDetailGroup[]): Array<Array<str
 				row.dayLabel,
 				row.periodName,
 				row.timeLabel,
-				row.classroomName,
+				row.homeroomName,
 				row.title
 			])
 		])
@@ -621,6 +595,7 @@ function compareDetailRows(a: TeacherLoadDetailRow, b: TeacherLoadDetailRow): nu
 		) ||
 		(DAY_ORDER[a.dayOfWeek] ?? 99) - (DAY_ORDER[b.dayOfWeek] ?? 99) ||
 		(a.periodOrderIndex ?? 999) - (b.periodOrderIndex ?? 999) ||
+		a.timeLabel.localeCompare(b.timeLabel) ||
 		DETAIL_KIND_ORDER[a.detailKind] - DETAIL_KIND_ORDER[b.detailKind] ||
 		a.teacherName.localeCompare(b.teacherName, 'th') ||
 		a.title.localeCompare(b.title, 'th')

@@ -59,7 +59,7 @@
 		phone: '',
 		address: '',
 		grade_level: '',
-		class_room: '',
+		homeroom: '',
 		student_number: null as number | null
 	});
 
@@ -102,7 +102,7 @@
 				phone: student.phone || '',
 				address: student.address || '',
 				grade_level: student.grade_level || '',
-				class_room: student.class_room || '',
+				homeroom: student.homeroom || '',
 				student_number: student.student_number || null
 			};
 		} catch (error) {
@@ -119,7 +119,7 @@
 		if (!canUpdateStudent) return;
 		saving = true;
 		try {
-			const { grade_level: _gradeLevel, class_room: _classRoom, ...updateData } = formData;
+			const { grade_level: _gradeLevel, homeroom: _homeroom, ...updateData } = formData;
 
 			await updateStudent(studentId, {
 				...updateData,
@@ -147,7 +147,7 @@
 				phone: student.phone || '',
 				address: student.address || '',
 				grade_level: student.grade_level || '',
-				class_room: student.class_room || '',
+				homeroom: student.homeroom || '',
 				student_number: student.student_number || null
 			};
 		}
@@ -424,11 +424,11 @@
 						</div>
 
 						<div>
-							<Label for="class_room">ห้อง</Label>
+							<Label for="homeroom">ห้อง</Label>
 							<Input
-								id="class_room"
+								id="homeroom"
 								type="text"
-								bind:value={formData.class_room}
+								bind:value={formData.homeroom}
 								placeholder="1"
 								disabled={saving}
 							/>
@@ -473,7 +473,7 @@
 					<div>
 						<Label>ห้อง</Label>
 						<div class="px-3 py-2 bg-muted/50 rounded-md">
-							{student.class_room || '-'}
+							{student.homeroom || '-'}
 						</div>
 					</div>
 

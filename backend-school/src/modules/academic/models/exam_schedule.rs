@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ExamRound {
     pub id: Uuid,
@@ -20,7 +20,7 @@ pub struct ExamRound {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateExamRoundRequest {
     pub academic_term_id: Uuid,
@@ -29,7 +29,7 @@ pub struct CreateExamRoundRequest {
     pub exam_kind: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateExamRoundRequest {
     pub name: Option<String>,
@@ -37,7 +37,7 @@ pub struct UpdateExamRoundRequest {
     pub exam_kind: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ExamDay {
     pub id: Uuid,
@@ -48,8 +48,8 @@ pub struct ExamDay {
     pub end_time: NaiveTime,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpsertExamDayRequest {
     pub exam_date: NaiveDate,
     pub label: Option<String>,
@@ -59,7 +59,7 @@ pub struct UpsertExamDayRequest {
     pub blocked_windows: Vec<BlockedWindowInput>,
 }
 
-#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct BlockedWindow {
     pub id: Option<Uuid>,
@@ -68,16 +68,16 @@ pub struct BlockedWindow {
     pub end_time: NaiveTime,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BlockedWindowInput {
     pub label: String,
     pub start_time: NaiveTime,
     pub end_time: NaiveTime,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpsertDayRoomAssignmentRequest {
     pub homeroom_id: Uuid,
     pub room_id: Uuid,
@@ -86,19 +86,19 @@ pub struct UpsertDayRoomAssignmentRequest {
     pub invigilator_staff_ids: Option<Vec<Uuid>>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateExamInvigilatorsRequest {
     pub invigilator_staff_ids: Vec<Uuid>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ImportExamItemsRequest {
     pub grade_level_ids: Option<Vec<Uuid>>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportExamItemsResult {
     pub inserted_count: i64,
@@ -106,13 +106,13 @@ pub struct ImportExamItemsResult {
     pub skipped_missing_duration_count: i64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ClearMismatchedExamItemsResult {
     pub deleted_count: i64,
 }
 
-#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DayRoomAssignmentView {
     pub id: Uuid,
@@ -129,14 +129,14 @@ pub struct DayRoomAssignmentView {
     pub seats_generated: bool,
 }
 
-#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct InvigilatorView {
     pub staff_id: Uuid,
     pub display_name: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ExamInvigilatorAssignmentSummary {
     pub assignment_id: Uuid,
@@ -149,7 +149,7 @@ pub struct ExamInvigilatorAssignmentSummary {
     pub invigilators: Vec<InvigilatorView>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ExamInvigilatorDayWorkload {
     pub exam_day_id: Uuid,
@@ -157,7 +157,7 @@ pub struct ExamInvigilatorDayWorkload {
     pub assignment_count: i32,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ExamInvigilatorStaffWorkload {
     pub staff_id: Uuid,
@@ -168,7 +168,7 @@ pub struct ExamInvigilatorStaffWorkload {
     pub days: Vec<ExamInvigilatorDayWorkload>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ExamInvigilatorWorkspace {
     pub round_id: Uuid,
@@ -176,20 +176,20 @@ pub struct ExamInvigilatorWorkspace {
     pub staff_workloads: Vec<ExamInvigilatorStaffWorkload>,
 }
 
-#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ExamInvigilatorStaffOption {
     pub staff_id: Uuid,
     pub display_name: String,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GenerateSeatsRequest {
     pub regenerate: bool,
 }
 
-#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SeatAssignmentView {
     pub id: Uuid,
@@ -199,15 +199,15 @@ pub struct SeatAssignmentView {
     pub seat_number: String,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PlaceExamSessionRequest {
     pub exam_schedule_item_id: Uuid,
     pub exam_day_id: Uuid,
     pub starts_at: NaiveTime,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ExamDayDetail {
     pub id: Uuid,
@@ -221,7 +221,7 @@ pub struct ExamDayDetail {
     pub room_assignments: Vec<ExamDayRoomAssignmentView>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ExamDayRoomAssignmentView {
     pub id: Uuid,
@@ -235,7 +235,7 @@ pub struct ExamDayRoomAssignmentView {
     pub invigilators: Vec<ExamInvigilatorView>,
 }
 
-#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ExamInvigilatorView {
     pub id: Uuid,
@@ -246,7 +246,7 @@ pub struct ExamInvigilatorView {
     pub role_label: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ExamScheduleItem {
     pub id: Uuid,
@@ -264,7 +264,7 @@ pub struct ExamScheduleItem {
     pub imported_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ExamScheduleItemView {
     pub id: Uuid,
@@ -295,7 +295,7 @@ pub struct ExamScheduleItemView {
     pub grade_level_year: Option<i32>,
 }
 
-#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ExamSession {
     pub id: Uuid,
@@ -308,7 +308,7 @@ pub struct ExamSession {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ExamSessionView {
     pub id: Uuid,
@@ -348,7 +348,7 @@ pub struct ExamSessionView {
     pub invigilators: Vec<ExamInvigilatorView>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ExamScheduleWorkspace {
     pub round: ExamRound,
@@ -358,7 +358,7 @@ pub struct ExamScheduleWorkspace {
     pub readiness: ExamScheduleReadiness,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ExamScheduleReadiness {
     pub can_publish: bool,

@@ -1,13 +1,29 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { access, readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
 import ts from 'typescript';
 
 const projectRoot = path.resolve(import.meta.dirname, '../..');
+const repoRoot = path.resolve(projectRoot, '..');
 
 async function readProjectFile(relativePath) {
 	return readFile(path.join(projectRoot, relativePath), 'utf8');
+}
+
+async function sourceFiles(directory) {
+	const entries = await readdir(path.join(projectRoot, directory), { withFileTypes: true });
+	const files = [];
+	for (const entry of entries) {
+		const relativePath = path.join(directory, entry.name);
+		if (entry.isDirectory()) {
+			if (relativePath === 'src/lib/api/generated') continue;
+			files.push(...(await sourceFiles(relativePath)));
+		} else if (/\.(?:ts|svelte)$/.test(entry.name)) {
+			files.push(relativePath);
+		}
+	}
+	return files;
 }
 
 async function importRouteContext() {
@@ -211,4 +227,164 @@ test('route discovery, layout initialization, and responsive topbar remain expli
 		assert.match(switcher, new RegExp(label));
 	}
 	assert.doesNotMatch(`${layout}\n${header}\n${switcher}`, /activate|is_active/i);
+});
+
+test('existing staff academic consumers declare their exact context requirement', async () => {
+	const routes = [
+		['staff/academic/assessments', 'term_required'],
+		['staff/academic/timetable', 'term_required'],
+		['staff/academic/periods', 'year_required'],
+		['staff/academic/exam-schedules', 'term_required'],
+		['staff/academic/question-bank', 'none'],
+		['staff/academic/supervision', 'term_optional'],
+		['staff/academic/admission', 'year_required'],
+		['staff/timetable', 'term_required'],
+		['staff/exams', 'term_required']
+	];
+
+	for (const [route, requirement] of routes) {
+		const metadata = await readProjectFile(`src/routes/(app)/${route}/+page.ts`);
+		assert.match(
+			metadata,
+			new RegExp(`academicContext:\\s*['"]${requirement}['"]`),
+			`${route} must declare ${requirement}`
+		);
+	}
+});
+
+test('student and parent history selectors use learner-scoped academic context endpoints', async () => {
+	const api = await readProjectFile('src/lib/api/academic-context.ts');
+	const parentsApi = await readProjectFile('src/lib/api/parents.ts');
+	const app = await readFile(path.join(repoRoot, 'backend-school/src/app.rs'), 'utf8');
+	const coreHandlers = await readFile(
+		path.join(repoRoot, 'backend-school/src/modules/academic/core/handlers.rs'),
+		'utf8'
+	);
+	const coreService = await readFile(
+		path.join(repoRoot, 'backend-school/src/modules/academic/core/services/context.rs'),
+		'utf8'
+	);
+	const parentHandlers = await readFile(
+		path.join(repoRoot, 'backend-school/src/modules/parents/handlers.rs'),
+		'utf8'
+	);
+
+	assert.match(api, /listMyAcademicContextOptions/);
+	assert.match(api, /\/api\/me\/academic-context\/options/);
+	assert.match(api, /listChildAcademicContextOptions/);
+	assert.match(
+		api,
+		/\/api\/parent\/students\/\$\{encodeURIComponent\(studentId\)\}\/academic-context\/options/
+	);
+	assert.match(app, /"\/api\/me\/academic-context\/options"/);
+	assert.match(app, /"\/api\/parent\/students\/\{student_id\}\/academic-context\/options"/);
+	assert.match(coreHandlers, /pub async fn list_my_context_options/);
+	assert.match(parentHandlers, /pub async fn get_child_academic_context_options/);
+	assert.match(coreService, /pub async fn list_options_for_student/);
+	assert.match(coreService, /student_academic_years/);
+	assert.match(coreService, /student_id\s*=\s*\$1/);
+	assert.match(parentsApi, /academicTermId:\s*string/);
+	assert.match(parentsApi, /academicTermId=\$\{encodeURIComponent\(academicTermId\)\}/);
+	assert.doesNotMatch(parentsApi, /academicSemesterId|academic_semester_id|TimetableEntryDto/);
+});
+
+test('admission round listing is scoped by the selected academic year', async () => {
+	const api = await readProjectFile('src/lib/api/admission.ts');
+	const handlers = await readFile(
+		path.join(repoRoot, 'backend-school/src/modules/admission/handlers/rounds.rs'),
+		'utf8'
+	);
+	const service = await readFile(
+		path.join(repoRoot, 'backend-school/src/modules/admission/services/round_service.rs'),
+		'utf8'
+	);
+
+	assert.match(api, /listRounds\(academicYearId:\s*string\)/);
+	assert.match(api, /\/api\/admission\/rounds\?academicYearId=/);
+	assert.match(handlers, /struct AdmissionRoundQuery/);
+	assert.match(handlers, /Query\(query\): Query<AdmissionRoundQuery>/);
+	assert.match(service, /WHERE ar\.academic_year_id = \$1/);
+});
+
+test('calendar consumers use explicit year and optional term contexts', async () => {
+	const api = await readProjectFile('src/lib/api/calendar.ts');
+	const staffMetadata = await readProjectFile('src/routes/(app)/staff/calendar/+page.ts');
+	const staffPage = await readProjectFile('src/routes/(app)/staff/calendar/+page.svelte');
+	const studentPage = await readProjectFile('src/routes/(app)/student/calendar/+page.svelte');
+	const parentPage = await readProjectFile(
+		'src/routes/(app)/parent/student/[id]/calendar/+page.svelte'
+	);
+
+	assert.match(staffMetadata, /academicContext:\s*['"]term_optional['"]/);
+	assert.match(api, /academicYearId:\s*string/);
+	assert.match(api, /academicTermId\?:\s*string\s*\|\s*null/);
+	assert.match(api, /params\.set\(['"]academicTermId['"]/);
+	assert.doesNotMatch(api, /classRoomId|category_id|tag_id/);
+	assert.match(staffPage, /getAcademicContextStore/);
+	assert.match(studentPage, /listMyAcademicContextOptions/);
+	assert.match(studentPage, /academicYearId:\s*selectedYearId/);
+	assert.match(parentPage, /listChildAcademicContextOptions/);
+	assert.match(parentPage, /academicYearId:\s*selectedYearId/);
+});
+
+test('student activity registration uses learner term context and canonical delivery groups', async () => {
+	const apiPath = path.join(projectRoot, 'src/lib/api/student-activities.ts');
+	const apiExists = await access(apiPath).then(
+		() => true,
+		() => false
+	);
+	assert.equal(apiExists, true, 'student activity API wrapper must exist');
+
+	const api = await readFile(apiPath, 'utf8');
+	const page = await readProjectFile('src/routes/(app)/student/activities/+page.svelte');
+	assert.match(api, /components\['schemas'\]/);
+	assert.match(api, /operations\['listMyActivityRegistrations'\]/);
+	assert.match(api, /\/api\/me\/activity-registrations/);
+	assert.match(api, /academicTermId/);
+	assert.match(page, /listMyAcademicContextOptions/);
+	assert.match(page, /listMyActivityRegistrations/);
+	assert.match(page, /academicTermId:\s*selectedTermId/);
+	assert.doesNotMatch(page, /listActivitySlots|listActivityGroups|getMyActivityEnrollments/);
+	assert.doesNotMatch(page, /Promise\.all/);
+});
+
+test('public calendar discovers its explicit academic context without authentication', async () => {
+	const api = await readProjectFile('src/lib/api/academic-context.ts');
+	const view = await readProjectFile('src/lib/components/calendar/PublicCalendarView.svelte');
+	const app = await readFile(path.join(repoRoot, 'backend-school/src/app.rs'), 'utf8');
+	const handlers = await readFile(
+		path.join(repoRoot, 'backend-school/src/modules/academic/core/handlers.rs'),
+		'utf8'
+	);
+
+	assert.match(api, /listPublicAcademicContextOptions/);
+	assert.match(api, /\/api\/public\/academic-context\/options/);
+	assert.match(view, /listPublicAcademicContextOptions/);
+	assert.match(view, /academicYearId:\s*selectedYearId/);
+	assert.match(app, /"\/api\/public\/academic-context\/options"/);
+	assert.match(handlers, /pub async fn list_public_context_options/);
+});
+
+test('manual frontend sources contain no legacy academic wrapper, path, or wire vocabulary', async () => {
+	await assert.rejects(access(path.join(projectRoot, 'src/lib/api/academic.ts')));
+	const files = await sourceFiles('src');
+	const violations = [];
+	const forbidden = [
+		/\$lib\/api\/academic['"]/,
+		/\/api\/academic\/(?:semesters|structure|classrooms|enrollments|planning\/courses|subjects|study-plans)/,
+		/\b(?:academic_semester_id|semester_id|classroom_course_id|student_class_enrollment_id|activity_slot_id)\b/,
+		new RegExp(
+			`\\b(?:${[
+				['semester', 'Id'].join(''),
+				['classroom', 'CourseId'].join(''),
+				['student', 'ClassEnrollment'].join('')
+			].join('|')})\\b`
+		)
+	];
+
+	for (const file of files) {
+		const source = await readProjectFile(file);
+		if (forbidden.some((pattern) => pattern.test(source))) violations.push(file);
+	}
+	assert.deepEqual(violations, []);
 });

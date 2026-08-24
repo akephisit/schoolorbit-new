@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Classroom } from '$lib/api/academic';
+	import type { Homeroom } from '$lib/api/academic-core';
 	import type { Room } from '$lib/api/facility';
 	import type {
 		ExamDayDetail,
@@ -26,7 +26,7 @@
 
 	let {
 		days = [],
-		classrooms = [],
+		homerooms = [],
 		rooms = [],
 		readonly = false,
 		saving = false,
@@ -35,7 +35,7 @@
 		onGenerateSeats
 	}: {
 		days: ExamDayDetail[];
-		classrooms: Classroom[];
+		homerooms: Homeroom[];
 		rooms: Room[];
 		readonly?: boolean;
 		saving?: boolean;
@@ -48,7 +48,7 @@
 	} = $props();
 
 	let selectedDayId = $state('');
-	let classroomId = $state('');
+	let homeroomId = $state('');
 	let roomId = $state('');
 	let capacityOverride = $state('');
 	let editorOpen = $state(false);
@@ -62,20 +62,20 @@
 	const dayLabel = $derived(
 		selectedDay ? formatDayDate(selectedDay.examDate, selectedDay.label) : 'เลือกวันสอบ'
 	);
-	const filteredClassrooms = $derived(
+	const filteredHomerooms = $derived(
 		selectedDay
-			? classrooms.filter(
-					(classroom) =>
+			? homerooms.filter(
+					(homeroom) =>
 						selectedDay.gradeLevelIds.length === 0 ||
-						selectedDay.gradeLevelIds.includes(classroom.grade_level_id)
+						selectedDay.gradeLevelIds.includes(homeroom.gradeLevelId)
 				)
-			: classrooms
+			: homerooms
 	);
-	const usedClassroomIds = $derived(
+	const usedHomeroomIds = $derived(
 		new Set(
 			assignments
 				.filter((assignment) => assignment.id !== editingAssignmentId)
-				.map((assignment) => assignment.classroomId)
+				.map((assignment) => assignment.homeroomId)
 		)
 	);
 	const usedRoomIds = $derived(
@@ -85,16 +85,16 @@
 				.map((assignment) => assignment.roomId)
 		)
 	);
-	const availableClassrooms = $derived(
-		filteredClassrooms.filter(
-			(classroom) => !usedClassroomIds.has(classroom.id) || classroom.id === classroomId
+	const availableHomerooms = $derived(
+		filteredHomerooms.filter(
+			(homeroom) => !usedHomeroomIds.has(homeroom.id) || homeroom.id === homeroomId
 		)
 	);
 	const availableRooms = $derived(
 		rooms.filter((room) => !usedRoomIds.has(room.id) || room.id === roomId)
 	);
-	const selectedClassroomLabel = $derived(
-		classroomLabel(classrooms.find((classroom) => classroom.id === classroomId))
+	const selectedHomeroomLabel = $derived(
+		homeroomLabel(homerooms.find((homeroom) => homeroom.id === homeroomId))
 	);
 	const selectedRoomLabel = $derived(roomOptionLabel(rooms.find((room) => room.id === roomId)));
 
@@ -107,8 +107,8 @@
 		return label ? `${label} · ${dateLabel}` : dateLabel;
 	}
 
-	function classroomLabel(classroom: Classroom | undefined): string {
-		return classroom?.name ?? 'เลือกห้องเรียน';
+	function homeroomLabel(homeroom: Homeroom | undefined): string {
+		return homeroom?.name ?? 'เลือกห้องเรียน';
 	}
 
 	function roomOptionLabel(room: Room | undefined): string {
@@ -144,7 +144,7 @@
 
 	function loadAssignment(assignment: ExamDayRoomAssignmentView) {
 		selectedDayId = assignment.examDayId;
-		classroomId = assignment.classroomId;
+		homeroomId = assignment.homeroomId;
 		roomId = assignment.roomId;
 		capacityOverride = assignment.capacityOverride ? String(assignment.capacityOverride) : '';
 		editingAssignmentId = assignment.id;
@@ -152,7 +152,7 @@
 	}
 
 	function resetForm() {
-		classroomId = '';
+		homeroomId = '';
 		roomId = '';
 		capacityOverride = '';
 		editingAssignmentId = null;
@@ -160,10 +160,10 @@
 
 	async function submitForm() {
 		const dayId = selectedDay?.id ?? selectedDayId;
-		if (!dayId || !classroomId || !roomId) return;
+		if (!dayId || !homeroomId || !roomId) return;
 
 		const saved = await onSaveAssignment?.(dayId, {
-			classroomId,
+			homeroomId,
 			roomId,
 			capacityOverride: capacityOverride ? Number(capacityOverride) : null
 		});
@@ -172,16 +172,6 @@
 			editorOpen = false;
 		}
 	}
-
-	$effect(() => {
-		if (!selectedDayId && sortedDays[0]) {
-			selectedDayId = sortedDays[0].id;
-		}
-		if (selectedDayId && !days.some((day) => day.id === selectedDayId)) {
-			selectedDayId = sortedDays[0]?.id ?? '';
-			resetForm();
-		}
-	});
 </script>
 
 <section class="overflow-hidden rounded-md border bg-background">
@@ -240,7 +230,7 @@
 					<TableBody>
 						{#each assignments as assignment (assignment.id)}
 							<TableRow>
-								<TableCell class="font-medium">{assignment.classroomName ?? '-'}</TableCell>
+								<TableCell class="font-medium">{assignment.homeroomName ?? '-'}</TableCell>
 								<TableCell>
 									<div class="font-medium">{assignmentRoomLabel(assignment)}</div>
 									<div class="text-xs text-muted-foreground">{assignmentRoomMeta(assignment)}</div>
@@ -299,11 +289,11 @@
 					<div class="flex-1 space-y-4 overflow-y-auto py-1 pr-1">
 						<div class="grid gap-2">
 							<Label>ห้องเรียน</Label>
-							<Select.Root type="single" bind:value={classroomId}>
-								<Select.Trigger class="w-full">{selectedClassroomLabel}</Select.Trigger>
+							<Select.Root type="single" bind:value={homeroomId}>
+								<Select.Trigger class="w-full">{selectedHomeroomLabel}</Select.Trigger>
 								<Select.Content>
-									{#each availableClassrooms as classroom (classroom.id)}
-										<Select.Item value={classroom.id}>{classroomLabel(classroom)}</Select.Item>
+									{#each availableHomerooms as homeroom (homeroom.id)}
+										<Select.Item value={homeroom.id}>{homeroomLabel(homeroom)}</Select.Item>
 									{/each}
 								</Select.Content>
 							</Select.Root>
@@ -346,7 +336,7 @@
 							type="submit"
 							loading={saving}
 							loadingLabel="กำลังบันทึก..."
-							disabled={!selectedDay || !classroomId || !roomId}
+							disabled={!selectedDay || !homeroomId || !roomId}
 						>
 							บันทึกห้องสอบ
 						</LoadingButton>

@@ -59,8 +59,22 @@ function fitTimeRange(
 
 // Helper: Get entry
 const getEntry = (entries: TimetableEntry[], day: string, periodId: string) => {
-	return entries.find((e) => e.day_of_week === day && e.period_id === periodId && e.is_active);
+	return entries.find(
+		(e) => e.dayOfWeek === day && e.bellSchedulePeriodId === periodId && e.isActive
+	);
 };
+
+const primaryInstructorName = (entry: TimetableEntry) =>
+	entry.instructors.find((instructor) => instructor.role === 'primary')?.displayName ??
+	entry.instructors[0]?.displayName ??
+	'';
+
+const timetableResourceName = (entry: TimetableEntry) =>
+	entry.offeringName ??
+	entry.subjectVersionDisplayLabel ??
+	entry.activityVersionDisplayLabel ??
+	entry.title ??
+	'กิจกรรม';
 
 // Helper: Strip "ตารางเรียน " / "ตารางสอน " prefix → คง "ชั้นมัธยมศึกษาปีที่..." / "ครู..." ไว้
 const stripTitlePrefix = (title: string): string => {
@@ -277,7 +291,7 @@ export interface TimetablePage {
 	timetableEntries: TimetableEntry[];
 	viewMode?: 'CLASSROOM' | 'INSTRUCTOR';
 	/** room_id → name_th — ใช้แสดงชื่อห้องเต็ม (เช่น "ห้องคณิตศาสตร์ 1")
-	 *  ถ้าไม่ส่งมาจะ fallback ไปใช้ entry.room_code (รหัสสั้น) */
+	 *  ถ้าไม่ส่งมาจะ fallback ไปใช้ entry.roomCode (รหัสสั้น) */
 	roomNames?: Record<string, string>;
 }
 
@@ -464,22 +478,18 @@ function buildPageContent(
 			if (entry) {
 				const stack: Content[] = [];
 
-				if (entry.entry_type === 'COURSE') {
+				if (entry.entryType === 'COURSE') {
 					stack.push(
-						{ text: entry.subject_code || '', bold: true, fontSize: 8, color: '#1e3a8a' },
+						{ text: entry.offeringCode || '', bold: true, fontSize: 8, color: '#1e3a8a' },
 						{
-							text: wrapThaiToLines(
-								entry.subject_name_th || entry.subject_name_en || 'วิชา',
-								cellContentWidth,
-								7
-							),
+							text: wrapThaiToLines(timetableResourceName(entry), cellContentWidth, 7),
 							fontSize: 7,
 							margin: [0, 0]
 						}
 					);
 				} else {
 					stack.push({
-						text: wrapThaiToLines(entry.title || 'กิจกรรม', cellContentWidth, 8),
+						text: wrapThaiToLines(timetableResourceName(entry), cellContentWidth, 8),
 						bold: true,
 						fontSize: 8,
 						color: '#047857',
@@ -490,17 +500,13 @@ function buildPageContent(
 				// SLOT-sync activity: ห้อง+ครูไม่ได้ผูกกัน 1-to-1 (sync = ทุกห้องร่วมกัน,
 				// ครูหลายคน) — ซ่อน meta side ที่ไม่ตรงกับ view เพื่อกัน confusion
 				const isSlotSync =
-					entry.entry_type === 'ACTIVITY' && entry.activity_scheduling_mode === 'synchronized';
+					entry.entryType === 'ACTIVITY' && entry.activitySchedulingMode === 'synchronized';
+				const instructorName = primaryInstructorName(entry).trim();
 
 				if (viewMode === 'CLASSROOM') {
 					// Student PDF — แสดงชื่อครู (ยกเว้น sync activity เพราะมีหลายครู)
-					if (
-						!isSlotSync &&
-						entry.instructor_name &&
-						entry.instructor_name.trim() &&
-						entry.instructor_name !== '-'
-					) {
-						const rawName = entry.instructor_name.trim();
+					if (!isSlotSync && instructorName && instructorName !== '-') {
+						const rawName = instructorName;
 						const teacherName = rawName.startsWith('ครู') ? rawName : `ครู${rawName}`;
 						stack.push({
 							text: wrapThaiToLines(teacherName, cellContentWidth, 7),
@@ -511,9 +517,13 @@ function buildPageContent(
 					}
 				} else {
 					// Teacher PDF — แสดงห้อง (ยกเว้น sync activity เพราะเป็นกิจกรรมรวมทุกห้อง)
-					if (!isSlotSync && entry.classroom_name) {
+					if (!isSlotSync && (entry.homeroomName || entry.learningGroupName)) {
 						stack.push({
-							text: wrapThaiToLines(entry.classroom_name, cellContentWidth, 7),
+							text: wrapThaiToLines(
+								entry.homeroomName ?? entry.learningGroupName ?? '',
+								cellContentWidth,
+								7
+							),
 							fontSize: 7,
 							color: '#d97706',
 							bold: true,
@@ -524,11 +534,11 @@ function buildPageContent(
 
 				// ชื่อห้องเต็ม (name_th) ถ้ามี — ไม่งั้น fallback เป็นรหัสสั้น (code)
 				// name_th มักมีคำว่า "ห้อง" อยู่ในชื่ออยู่แล้ว → ไม่ใส่ prefix
-				const roomFullName = entry.room_id ? roomNames?.[entry.room_id] : undefined;
+				const roomFullName = entry.roomId ? roomNames?.[entry.roomId] : undefined;
 				const roomDisplay = roomFullName
 					? roomFullName
-					: entry.room_code
-						? `ห้อง ${entry.room_code}`
+					: entry.roomCode
+						? `ห้อง ${entry.roomCode}`
 						: null;
 				if (roomDisplay) {
 					stack.push({
@@ -774,17 +784,17 @@ function buildMiniTable(
 			const entry = getEntry(timetableEntries, day.value, p.id);
 			if (entry) {
 				const stack: Content[] = [];
-				if (entry.entry_type === 'COURSE') {
+				if (entry.entryType === 'COURSE') {
 					// ใน mini mode แสดงแค่ subject code (ตัดชื่อวิชาออกตามที่ user ขอ)
 					stack.push({
-						text: entry.subject_code || '',
+						text: entry.offeringCode || '',
 						bold: true,
 						fontSize: 5,
 						color: '#1e3a8a'
 					});
 				} else {
 					stack.push({
-						text: wrapThaiToLines(entry.title || 'กิจกรรม', cellContentWidth, 4),
+						text: wrapThaiToLines(timetableResourceName(entry), cellContentWidth, 4),
 						bold: true,
 						fontSize: 4,
 						color: '#047857',
@@ -794,17 +804,13 @@ function buildMiniTable(
 
 				// SLOT-sync activity (ครูหลายคน, ห้องหลายห้อง) — ซ่อน meta side
 				const isSlotSync =
-					entry.entry_type === 'ACTIVITY' && entry.activity_scheduling_mode === 'synchronized';
+					entry.entryType === 'ACTIVITY' && entry.activitySchedulingMode === 'synchronized';
+				const instructorName = primaryInstructorName(entry).trim();
 
 				if (viewMode === 'CLASSROOM') {
-					if (
-						!isSlotSync &&
-						entry.instructor_name &&
-						entry.instructor_name.trim() &&
-						entry.instructor_name !== '-'
-					) {
+					if (!isSlotSync && instructorName && instructorName !== '-') {
 						// ครูในโหมด mini แสดงแค่ชื่อแรก (ไม่มีนามสกุล) ตามที่ user ขอ
-						const rawName = entry.instructor_name.trim();
+						const rawName = instructorName;
 						const withoutPrefix = rawName.replace(/^ครู\s*/, '');
 						const firstName = withoutPrefix.split(/\s+/)[0];
 						const teacherName = `ครู${firstName}`;
@@ -816,9 +822,13 @@ function buildMiniTable(
 						});
 					}
 				} else {
-					if (!isSlotSync && entry.classroom_name) {
+					if (!isSlotSync && (entry.homeroomName || entry.learningGroupName)) {
 						stack.push({
-							text: wrapThaiToLines(entry.classroom_name, cellContentWidth, 3.5),
+							text: wrapThaiToLines(
+								entry.homeroomName ?? entry.learningGroupName ?? '',
+								cellContentWidth,
+								3.5
+							),
 							fontSize: 3.5,
 							color: '#d97706',
 							bold: true,
@@ -828,11 +838,11 @@ function buildMiniTable(
 				}
 
 				// ชื่อห้อง — ใช้ name_th ถ้ามี, fallback เป็น room_code
-				const roomFullName = entry.room_id ? roomNames?.[entry.room_id] : undefined;
+				const roomFullName = entry.roomId ? roomNames?.[entry.roomId] : undefined;
 				const roomDisplay = roomFullName
 					? roomFullName
-					: entry.room_code
-						? `ห้อง ${entry.room_code}`
+					: entry.roomCode
+						? `ห้อง ${entry.roomCode}`
 						: null;
 				if (roomDisplay) {
 					stack.push({

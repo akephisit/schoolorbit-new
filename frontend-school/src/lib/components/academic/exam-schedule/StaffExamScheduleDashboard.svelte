@@ -50,7 +50,7 @@
 	let selectedRoundId = $state('');
 	let selectedDayId = $state('all');
 	let selectedLevel = $state<StaffExamScheduleLevelFilter>('all');
-	let selectedClassroomId = $state('all');
+	let selectedHomeroomId = $state('all');
 	let query = $state('');
 	let activeTab = $state('overview');
 	const now = new Date();
@@ -66,7 +66,7 @@
 			? filterStaffExamScheduleRound(selectedRound, {
 					dayId: selectedDayId,
 					level: selectedLevel,
-					classroomId: selectedClassroomId,
+					homeroomId: selectedHomeroomId,
 					query
 				})
 			: { sessions: [], assignments: [] }
@@ -91,14 +91,14 @@
 		const records = filterStaffExamScheduleRound(selectedRound, {
 			dayId: 'all',
 			level: selectedLevel,
-			classroomId: 'all',
+			homeroomId: 'all',
 			query: ''
 		}).sessions;
 		return [
 			...new Map(
 				records.map((record) => [
-					record.classroomId,
-					{ id: record.classroomId, name: record.classroomName }
+					record.homeroomId,
+					{ id: record.homeroomId, name: record.homeroomName }
 				])
 			).values()
 		].sort((left, right) => thaiCollator.compare(left.name, right.name));
@@ -111,10 +111,10 @@
 			? 'ทุกวันสอบ'
 			: (dayOptions.find((day) => day.examDayId === selectedDayId)?.examDate ?? '-')
 	);
-	let selectedClassroomLabel = $derived(
-		selectedClassroomId === 'all'
+	let selectedHomeroomLabel = $derived(
+		selectedHomeroomId === 'all'
 			? 'ทุกชั้นเรียน'
-			: (classroomOptions.find((item) => item.id === selectedClassroomId)?.name ?? '-')
+			: (classroomOptions.find((item) => item.id === selectedHomeroomId)?.name ?? '-')
 	);
 	let lowerSecondaryCount = $derived(
 		flattened.sessions.filter(
@@ -159,7 +159,7 @@
 	function clearFilters() {
 		selectedDayId = 'all';
 		selectedLevel = 'all';
-		selectedClassroomId = 'all';
+		selectedHomeroomId = 'all';
 		query = '';
 	}
 
@@ -170,7 +170,7 @@
 
 	function selectLevel(level: StaffExamScheduleLevelFilter) {
 		selectedLevel = level;
-		selectedClassroomId = 'all';
+		selectedHomeroomId = 'all';
 	}
 
 	function openExamDay(examDayId: string) {
@@ -270,15 +270,15 @@
 					<Label for={`${controlId}-classroom`}>ชั้นเรียน</Label>
 					<Select.Root
 						type="single"
-						value={selectedClassroomId}
-						onValueChange={(value) => value && (selectedClassroomId = value)}
+						value={selectedHomeroomId}
+						onValueChange={(value) => value && (selectedHomeroomId = value)}
 					>
 						<Select.Trigger
 							id={`${controlId}-classroom`}
 							aria-label="กรองตามชั้นเรียน"
 							class="w-full"
 						>
-							{selectedClassroomLabel}
+							{selectedHomeroomLabel}
 						</Select.Trigger>
 						<Select.Content>
 							<Select.Item value="all">ทุกชั้นเรียน</Select.Item>
@@ -423,7 +423,7 @@
 										{formatStaffExamDate(roundSummary.nextPersonalAssignment.examDate)}
 									</div>
 									<div class="text-muted-foreground">
-										{roundSummary.nextPersonalAssignment.classroomName} ·
+										{roundSummary.nextPersonalAssignment.homeroomName} ·
 										{roundSummary.nextPersonalAssignment.roomName}
 									</div>
 								</div>

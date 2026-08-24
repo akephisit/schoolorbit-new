@@ -20,7 +20,7 @@
 	import { cn } from '$lib/utils';
 
 	type GradeLevelOption = { id: string; name: string };
-	type ClassroomOption = { id: string; name: string; grade_level_id?: string };
+	type HomeroomOption = { id: string; name: string; gradeLevelId: string };
 
 	let {
 		open = $bindable(false),
@@ -28,7 +28,9 @@
 		categories = [],
 		tags = [],
 		gradeLevels = [],
-		classrooms = [],
+		homerooms = [],
+		academicYearId,
+		academicTermId = null,
 		saving = false,
 		onsave
 	}: {
@@ -37,7 +39,9 @@
 		categories?: CalendarCategory[];
 		tags?: CalendarTag[];
 		gradeLevels?: GradeLevelOption[];
-		classrooms?: ClassroomOption[];
+		homerooms?: HomeroomOption[];
+		academicYearId: string;
+		academicTermId?: string | null;
 		saving?: boolean;
 		onsave?: (payload: CreateCalendarEventRequest) => void;
 	} = $props();
@@ -65,7 +69,7 @@
 	let notifyAudience = $state(true);
 	let selectedAudiences = $state<CalendarAudienceType[]>(['all']);
 	let selectedGradeLevelId = $state('');
-	let selectedClassRoomId = $state('');
+	let selectedHomeroomId = $state('');
 	let reminder1Day = $state(true);
 	let reminder3Days = $state(false);
 	let reminder7Days = $state(false);
@@ -78,17 +82,16 @@
 	let targetAudienceSelected = $derived(
 		selectedAudiences.includes('student') || selectedAudiences.includes('parent')
 	);
-	let filteredClassrooms = $derived(
+	let filteredHomerooms = $derived(
 		selectedGradeLevelId
-			? classrooms.filter((classroom) => classroom.grade_level_id === selectedGradeLevelId)
-			: classrooms
+			? homerooms.filter((homeroom) => homeroom.gradeLevelId === selectedGradeLevelId)
+			: homerooms
 	);
 	let selectedGradeLevelLabel = $derived(
 		gradeLevels.find((gradeLevel) => gradeLevel.id === selectedGradeLevelId)?.name ?? 'ทุกระดับชั้น'
 	);
-	let selectedClassroomLabel = $derived(
-		filteredClassrooms.find((classroom) => classroom.id === selectedClassRoomId)?.name ??
-			'ทุกห้องเรียน'
+	let selectedHomeroomLabel = $derived(
+		filteredHomerooms.find((homeroom) => homeroom.id === selectedHomeroomId)?.name ?? 'ทุกห้องเรียน'
 	);
 	let hasMultipleTargetRows = $derived((event?.targets.length ?? 0) > 1);
 
@@ -110,7 +113,7 @@
 		selectedAudiences = uniqueAudiences(audiences.length > 0 ? audiences : ['all']);
 		selectedGradeLevelId =
 			source?.targets.find((target) => target.gradeLevelId)?.gradeLevelId ?? '';
-		selectedClassRoomId = source?.targets.find((target) => target.classRoomId)?.classRoomId ?? '';
+		selectedHomeroomId = source?.targets.find((target) => target.homeroomId)?.homeroomId ?? '';
 
 		const reminderDays = source?.reminders.map((reminder) => reminder.daysBefore) ?? [1];
 		reminder1Day = reminderDays.includes(1);
@@ -131,14 +134,14 @@
 	function changeGradeLevel(value: string | undefined) {
 		selectedGradeLevelId = value ?? '';
 		if (
-			selectedClassRoomId &&
-			!classrooms.some(
-				(classroom) =>
-					classroom.id === selectedClassRoomId &&
-					(!selectedGradeLevelId || classroom.grade_level_id === selectedGradeLevelId)
+			selectedHomeroomId &&
+			!homerooms.some(
+				(homeroom) =>
+					homeroom.id === selectedHomeroomId &&
+					(!selectedGradeLevelId || homeroom.gradeLevelId === selectedGradeLevelId)
 			)
 		) {
-			selectedClassRoomId = '';
+			selectedHomeroomId = '';
 		}
 	}
 
@@ -146,7 +149,7 @@
 		if (audienceType === 'all') {
 			selectedAudiences = ['all'];
 			selectedGradeLevelId = '';
-			selectedClassRoomId = '';
+			selectedHomeroomId = '';
 			return;
 		}
 
@@ -195,12 +198,12 @@
 
 	function targetGradeLevelId(audienceType: CalendarAudienceType) {
 		if (!supportsTargetScope(audienceType)) return null;
-		return selectedClassRoomId ? null : selectedGradeLevelId || null;
+		return selectedHomeroomId ? null : selectedGradeLevelId || null;
 	}
 
-	function targetClassRoomId(audienceType: CalendarAudienceType) {
+	function targetHomeroomId(audienceType: CalendarAudienceType) {
 		if (!supportsTargetScope(audienceType)) return null;
-		return selectedClassRoomId || null;
+		return selectedHomeroomId || null;
 	}
 
 	function submitForm() {
@@ -209,10 +212,12 @@
 		const targets: CalendarEventTargetInput[] = selectedAudiences.map((audienceType) => ({
 			audienceType,
 			gradeLevelId: targetGradeLevelId(audienceType),
-			classRoomId: targetClassRoomId(audienceType)
+			homeroomId: targetHomeroomId(audienceType)
 		}));
 
 		onsave?.({
+			academicYearId,
+			academicTermId,
 			title: title.trim(),
 			description: description.trim() || null,
 			location: location.trim() || null,
@@ -365,12 +370,12 @@
 							</div>
 							<div class="grid gap-2">
 								<Label>ห้องเรียน</Label>
-								<Select.Root type="single" bind:value={selectedClassRoomId}>
-									<Select.Trigger class="w-full">{selectedClassroomLabel}</Select.Trigger>
+								<Select.Root type="single" bind:value={selectedHomeroomId}>
+									<Select.Trigger class="w-full">{selectedHomeroomLabel}</Select.Trigger>
 									<Select.Content>
 										<Select.Item value="">ทุกห้องเรียน</Select.Item>
-										{#each filteredClassrooms as classroom (classroom.id)}
-											<Select.Item value={classroom.id}>{classroom.name}</Select.Item>
+										{#each filteredHomerooms as homeroom (homeroom.id)}
+											<Select.Item value={homeroom.id}>{homeroom.name}</Select.Item>
 										{/each}
 									</Select.Content>
 								</Select.Root>

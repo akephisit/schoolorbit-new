@@ -382,38 +382,38 @@
 						หน้าที่ทางวิชาการ
 					</h3>
 
-					{#if staff.advisor_classrooms.length === 0 && staff.teaching_courses.length === 0}
+					{#if staff.advisor_homerooms.length === 0 && staff.teaching_assignments.length === 0}
 						<p class="text-muted-foreground">ยังไม่มีข้อมูลการสอน/ครูที่ปรึกษา</p>
 					{:else}
-						<!-- Group โดย academic_year (desc) — รวมทั้ง advisor + teaching -->
+						<!-- Group โดยปีการศึกษา (ใหม่สุดก่อน) — รวมทั้งครูประจำชั้นและงานสอน -->
 						{@const yearGroups = (() => {
 							const map = new Map<
 								number,
 								{
 									label: string;
-									advisors: typeof staff.advisor_classrooms;
-									courses: typeof staff.teaching_courses;
+									advisors: typeof staff.advisor_homerooms;
+									assignments: typeof staff.teaching_assignments;
 								}
 							>();
-							for (const a of staff.advisor_classrooms) {
-								if (!map.has(a.academic_year)) {
-									map.set(a.academic_year, {
-										label: a.academic_year_label,
+							for (const advisor of staff.advisor_homerooms) {
+								if (!map.has(advisor.academicYear)) {
+									map.set(advisor.academicYear, {
+										label: advisor.academicYearLabel,
 										advisors: [],
-										courses: []
+										assignments: []
 									});
 								}
-								map.get(a.academic_year)!.advisors.push(a);
+								map.get(advisor.academicYear)!.advisors.push(advisor);
 							}
-							for (const c of staff.teaching_courses) {
-								if (!map.has(c.academic_year)) {
-									map.set(c.academic_year, {
-										label: c.academic_year_label,
+							for (const assignment of staff.teaching_assignments) {
+								if (!map.has(assignment.academicYear)) {
+									map.set(assignment.academicYear, {
+										label: assignment.academicYearLabel,
 										advisors: [],
-										courses: []
+										assignments: []
 									});
 								}
-								map.get(c.academic_year)!.courses.push(c);
+								map.get(assignment.academicYear)!.assignments.push(assignment);
 							}
 							return Array.from(map.entries()).sort((a, b) => b[0] - a[0]);
 						})()}
@@ -426,42 +426,45 @@
 									{#if g.advisors.length > 0}
 										<div class="mb-2 flex flex-wrap gap-1.5">
 											<span class="text-xs text-muted-foreground self-center">ครูที่ปรึกษา:</span>
-											{#each g.advisors as a (a.classroom_id ?? a.classroom_name)}
+											{#each g.advisors as advisor (advisor.homeroomId)}
 												<span
-													class="text-xs px-2 py-0.5 rounded-full {a.role === 'primary'
+													class="text-xs px-2 py-0.5 rounded-full {advisor.role === 'primary'
 														? 'bg-primary/10 text-primary'
 														: 'bg-secondary text-secondary-foreground'}"
 												>
-													{a.role === 'primary' ? '⭐ ' : ''}{a.classroom_name}
+													{advisor.role === 'primary' ? '⭐ ' : ''}{advisor.homeroomName}
 												</span>
 											{/each}
 										</div>
 									{/if}
 
-									{#if g.courses.length > 0}
+									{#if g.assignments.length > 0}
 										<div class="space-y-2">
-											{#each g.courses as c (c.classroom_course_id + '-' + c.role)}
+											{#each g.assignments as assignment (`${assignment.academicTermId}-${assignment.learningGroupId}-${assignment.subjectId}-${assignment.role}`)}
 												<div
 													class="px-3 py-2 rounded-lg bg-muted/50 border border-border flex items-start justify-between"
 												>
 													<div>
 														<p class="font-medium text-foreground text-sm">
-															{c.subject_name}
-															<span class="text-xs text-muted-foreground">({c.subject_code})</span>
+															{assignment.subjectName}
+															<span class="text-xs text-muted-foreground"
+																>({assignment.subjectCode})</span
+															>
 														</p>
 														<p class="text-xs text-muted-foreground mt-0.5">
-															{c.classroom_name} • เทอม {c.term}
-															{#if c.hours_per_semester}
-																• {c.hours_per_semester} ชม./เทอม
+															{assignment.learningGroupName} • {assignment.termName}
+															{#if assignment.hours}
+																• {assignment.hours} ชม.
 															{/if}
 														</p>
 													</div>
 													<span
-														class="text-xs px-2 py-0.5 rounded-full shrink-0 {c.role === 'primary'
+														class="text-xs px-2 py-0.5 rounded-full shrink-0 {assignment.role ===
+														'primary'
 															? 'bg-primary/10 text-primary'
 															: 'bg-secondary text-secondary-foreground'}"
 													>
-														{c.role === 'primary' ? 'ครูหลัก' : 'ครูร่วม'}
+														{assignment.role === 'primary' ? 'ครูหลัก' : 'ครูร่วม'}
 													</span>
 												</div>
 											{/each}

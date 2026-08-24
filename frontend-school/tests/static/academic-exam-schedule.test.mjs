@@ -179,22 +179,23 @@ test('academic exam schedule API client maps functions to backend routes and met
 		{
 			functionName: 'updateExamRound',
 			method: 'patch',
-			routeFragment: '/api/academic/exam-schedules/${roundId}'
+			routeFragment: '/api/academic/exam-schedules/${encodeURIComponent(roundId)}'
 		},
 		{
 			functionName: 'getExamScheduleWorkspace',
 			method: 'get',
-			routeFragment: '/api/academic/exam-schedules/${roundId}'
+			routeFragment: '/api/academic/exam-schedules/${encodeURIComponent(roundId)}'
 		},
 		{
 			functionName: 'getExamInvigilatorWorkspace',
 			method: 'get',
-			routeFragment: '/api/academic/exam-schedules/${roundId}/invigilators'
+			routeFragment: '/api/academic/exam-schedules/${encodeURIComponent(roundId)}/invigilators'
 		},
 		{
 			functionName: 'listExamInvigilatorStaffOptions',
 			method: 'get',
-			routeFragment: '/api/academic/exam-schedules/${roundId}/invigilator-staff-options'
+			routeFragment:
+				'/api/academic/exam-schedules/${encodeURIComponent(roundId)}/invigilator-staff-options'
 		},
 		{
 			functionName: 'importExamItems',
@@ -209,37 +210,37 @@ test('academic exam schedule API client maps functions to backend routes and met
 		{
 			functionName: 'upsertExamDay',
 			method: 'post',
-			routeFragment: '/${roundId}/days'
+			routeFragment: '/${encodeURIComponent(roundId)}/days'
 		},
 		{
 			functionName: 'updateExamDay',
 			method: 'patch',
-			routeFragment: '/days/${examDayId}'
+			routeFragment: '/days/${encodeURIComponent(examDayId)}'
 		},
 		{
 			functionName: 'deleteExamDay',
 			method: 'delete',
-			routeFragment: '/days/${examDayId}'
+			routeFragment: '/days/${encodeURIComponent(examDayId)}'
 		},
 		{
 			functionName: 'listDayRoomAssignments',
 			method: 'get',
-			routeFragment: '/days/${examDayId}/room-assignments'
+			routeFragment: '/days/${encodeURIComponent(examDayId)}/room-assignments'
 		},
 		{
 			functionName: 'upsertDayRoomAssignment',
 			method: 'post',
-			routeFragment: '/days/${examDayId}/room-assignments'
+			routeFragment: '/days/${encodeURIComponent(examDayId)}/room-assignments'
 		},
 		{
 			functionName: 'updateExamAssignmentInvigilators',
 			method: 'put',
-			routeFragment: '/room-assignments/${assignmentId}/invigilators'
+			routeFragment: '/room-assignments/${encodeURIComponent(assignmentId)}/invigilators'
 		},
 		{
 			functionName: 'generateSeatsForAssignment',
 			method: 'post',
-			routeFragment: '/room-assignments/${assignmentId}/seats'
+			routeFragment: '/room-assignments/${encodeURIComponent(assignmentId)}/seats'
 		},
 		{
 			functionName: 'placeExamSession',
@@ -249,12 +250,12 @@ test('academic exam schedule API client maps functions to backend routes and met
 		{
 			functionName: 'deleteExamSession',
 			method: 'delete',
-			routeFragment: '/sessions/${sessionId}'
+			routeFragment: '/sessions/${encodeURIComponent(sessionId)}'
 		},
 		{
 			functionName: 'publishExamRound',
 			method: 'post',
-			routeFragment: '/${roundId}/publish'
+			routeFragment: '/${encodeURIComponent(roundId)}/publish'
 		},
 		{
 			functionName: 'listMyExamSchedules',
@@ -269,7 +270,7 @@ test('academic exam schedule API client maps functions to backend routes and met
 		{
 			functionName: 'listChildExamSchedules',
 			method: 'get',
-			routeFragment: '/api/parent/students/${studentId}/exam-schedules'
+			routeFragment: '/api/parent/students/${encodeURIComponent(studentId)}/exam-schedules'
 		}
 	];
 
@@ -302,7 +303,10 @@ test('exam schedule API exposes staff-level invigilator drag actions', () => {
 
 	assert.match(api, /export async function assignExamAssignmentInvigilator/);
 	assert.match(api, /export async function removeExamAssignmentInvigilator/);
-	assert.match(api, /room-assignments\/\$\{assignmentId\}\/invigilators\/\$\{staffId\}/);
+	assert.match(
+		api,
+		/room-assignments\/\$\{encodeURIComponent\(assignmentId\)\}\/invigilators\/\$\{encodeURIComponent\(staffId\)\}/
+	);
 	assert.match(api, /apiClient\.put<ExamInvigilatorWorkspace>/);
 	assert.match(api, /apiClient\.delete<ExamInvigilatorWorkspace>/);
 });
@@ -359,8 +363,10 @@ test('staff schedule tab can clear imported items that do not match the round ki
 	const handleClearMismatchedItems = localFunctionSource(detailPage, 'handleClearMismatchedItems');
 	const resetWorkspaceForRound = localFunctionSource(detailPage, 'resetWorkspaceForRound');
 
-	assert.match(api, /export interface ClearMismatchedExamItemsResult/);
-	assert.match(api, /deletedCount: number/);
+	assert.match(
+		api,
+		/export type ClearMismatchedExamItemsResult = Schemas\['ClearMismatchedExamItemsResult'\]/
+	);
 	assert.match(api, /export async function clearMismatchedExamItems/);
 	assert.match(api, /\/clear-mismatched-items/);
 	assert.match(detailPage, /clearMismatchedExamItems/);
@@ -420,10 +426,10 @@ test('exam schedule workspace tabs inherit app content height instead of recalcu
 test('exam schedule API exposes invigilator workspace and updates separately from room assignment', async () => {
 	const api = await readProjectFile('src/lib/api/examSchedule.ts');
 
-	assert.match(api, /export interface ExamInvigilatorWorkspace/);
+	assert.match(api, /export type ExamInvigilatorWorkspace = Schemas\['ExamInvigilatorWorkspace'\]/);
 	assert.match(api, /export async function getExamInvigilatorWorkspace/);
 	assert.match(api, /export async function updateExamAssignmentInvigilators/);
-	assert.match(api, /room-assignments\/\$\{assignmentId\}\/invigilators/);
+	assert.match(api, /room-assignments\/\$\{encodeURIComponent\(assignmentId\)\}\/invigilators/);
 
 	const roomInputStart = api.indexOf('export interface UpsertDayRoomAssignmentInput');
 	const roomInputEnd = api.indexOf('export interface GenerateSeatsInput');
@@ -449,12 +455,12 @@ test('exam room assignment panel keeps setup actions compact and labels rooms pl
 		'src/lib/components/academic/exam-schedule/ExamRoomAssignmentPanel.svelte'
 	);
 
-	assert.match(panel, /function classroomLabel\(classroom: Classroom \| undefined\): string/);
-	assert.match(panel, /return classroom\?\.name \?\? 'เลือกห้องเรียน'/);
+	assert.match(panel, /function homeroomLabel\(homeroom: Homeroom \| undefined\): string/);
+	assert.match(panel, /return homeroom\?\.name \?\? 'เลือกห้องเรียน'/);
 	assert.match(panel, /function roomOptionLabel\(room: Room \| undefined\): string/);
 	assert.match(panel, /\$\{building\} \/ \$\{name\} \/ \$\{capacity\} ที่นั่ง/);
 	assert.doesNotMatch(panel, /room\.code/);
-	assert.doesNotMatch(panel, /classroom\.grade_level_name \? `\$\{classroom\.grade_level_name\}/);
+	assert.doesNotMatch(panel, /homeroom\.grade_level_name \? `\$\{homeroom\.grade_level_name\}/);
 	assert.match(
 		panel,
 		/<Select\.Root type="single" bind:value=\{selectedDayId\}>[\s\S]*เพิ่มห้องสอบ/
@@ -468,16 +474,16 @@ test('exam room assignment panel hides already assigned classrooms and rooms fro
 		'src/lib/components/academic/exam-schedule/ExamRoomAssignmentPanel.svelte'
 	);
 
-	assert.match(panel, /usedClassroomIds/);
+	assert.match(panel, /usedHomeroomIds/);
 	assert.match(panel, /usedRoomIds/);
 	assert.match(panel, /assignment\.id !== editingAssignmentId/);
-	assert.match(panel, /availableClassrooms/);
+	assert.match(panel, /availableHomerooms/);
 	assert.match(panel, /availableRooms/);
-	assert.match(panel, /!usedClassroomIds\.has\(classroom\.id\) \|\| classroom\.id === classroomId/);
+	assert.match(panel, /!usedHomeroomIds\.has\(homeroom\.id\) \|\| homeroom\.id === homeroomId/);
 	assert.match(panel, /!usedRoomIds\.has\(room\.id\) \|\| room\.id === roomId/);
-	assert.match(panel, /\{#each availableClassrooms as classroom \(classroom\.id\)\}/);
+	assert.match(panel, /\{#each availableHomerooms as homeroom \(homeroom\.id\)\}/);
 	assert.match(panel, /\{#each availableRooms as room \(room\.id\)\}/);
-	assert.doesNotMatch(panel, /\{#each filteredClassrooms as classroom \(classroom\.id\)\}/);
+	assert.doesNotMatch(panel, /\{#each filteredHomerooms as homeroom \(homeroom\.id\)\}/);
 	assert.doesNotMatch(panel, /\{#each rooms as room \(room\.id\)\}/);
 });
 
@@ -580,7 +586,7 @@ test('exam invigilator staff loading is split from room option loading', () => {
 
 	assert.doesNotMatch(loadManagementOptions, /listStaff/);
 	assert.doesNotMatch(loadManagementOptions, /staffResponse/);
-	assert.match(loadManagementOptions, /listClassrooms/);
+	assert.match(loadManagementOptions, /listHomerooms/);
 	assert.match(loadManagementOptions, /listRooms/);
 	assert.doesNotMatch(page, /\bimport\s+\{\s*listStaff/);
 	assert.doesNotMatch(page, /\blistStaff\(/);
@@ -589,9 +595,10 @@ test('exam invigilator staff loading is split from room option loading', () => {
 	assert.match(loadInvigilatorStaffOptions, /limit: 500/);
 	assert.doesNotMatch(page, /async function searchStaffOptions/);
 	assert.doesNotMatch(page, /onSearchStaff=/);
-	assert.match(api, /export interface ExamInvigilatorStaffOption/);
-	assert.match(api, /staffId: string/);
-	assert.match(api, /displayName: string/);
+	assert.match(
+		api,
+		/export type ExamInvigilatorStaffOption = Schemas\['ExamInvigilatorStaffOption'\]/
+	);
 	assert.doesNotMatch(api, /ExamInvigilatorStaffOption[\s\S]*username/);
 	assert.doesNotMatch(api, /ExamInvigilatorStaffOption[\s\S]*email/);
 	assert.match(api, /listExamInvigilatorStaffOptions/);
@@ -680,7 +687,7 @@ test('exam schedule detail exports one editable report workbook', () => {
 	assert.match(packageJson, /"exceljs"/);
 	assert.match(
 		handleExport,
-		/buildExamScheduleExportWorkbook\(workspace,\s*invigilatorData,\s*\{\s*classrooms\s*\}\)/
+		/buildExamScheduleExportWorkbook\(workspace,\s*invigilatorData,\s*\{\s*homerooms\s*\}\)/
 	);
 	assert.match(handleExport, /for \(const reportSheet of exportWorkbook\.reportSheets\)/);
 	assert.match(handleExport, /appendReportSheet\(workbook,\s*reportSheet\)/);
@@ -724,15 +731,15 @@ test('exam schedule detail exports one editable report workbook', () => {
 	assert.match(exportUtil, /reportSheets/);
 	assert.match(exportUtil, /lowerSecondaryReport/);
 	assert.match(exportUtil, /upperSecondaryReport/);
-	assert.match(exportUtil, /lowerSecondaryClassroomReport/);
-	assert.match(exportUtil, /upperSecondaryClassroomReport/);
+	assert.match(exportUtil, /lowerSecondaryHomeroomReport/);
+	assert.match(exportUtil, /upperSecondaryHomeroomReport/);
 	assert.match(exportUtil, /invigilatorSummary/);
 	assert.match(exportUtil, /paperTransferReport/);
-	assert.match(exportUtil, /function reportClassroomLabel/);
-	assert.match(exportUtil, /function compactClassroomLabels/);
+	assert.match(exportUtil, /function reportHomeroomLabel/);
+	assert.match(exportUtil, /function compactHomeroomLabels/);
 	assert.match(exportUtil, /function printableReportSheet/);
-	assert.match(exportUtil, /function printableClassroomReportSheet/);
-	assert.match(exportUtil, /function classroomReportRows/);
+	assert.match(exportUtil, /function printableHomeroomReportSheet/);
+	assert.match(exportUtil, /function homeroomReportRows/);
 	assert.match(exportUtil, /function printableInvigilatorSummarySheet/);
 	assert.match(exportUtil, /function invigilatorSummaryRows/);
 	assert.match(exportUtil, /function printablePaperTransferSheet/);
@@ -977,7 +984,7 @@ test('staff schedule placement and unschedule patch local workspace state', () =
 		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),
 		'utf8'
 	);
-	const api = readFileSync(projectPath('src/lib/api/examSchedule.ts'), 'utf8');
+	const generated = readFileSync(projectPath('src/lib/api/generated/school-api.ts'), 'utf8');
 
 	const handlePlaceExamSession = localFunctionSource(page, 'handlePlaceExamSession');
 	const handleUnscheduleExamSession = localFunctionSource(page, 'handleUnscheduleExamSession');
@@ -1003,7 +1010,7 @@ test('staff schedule placement and unschedule patch local workspace state', () =
 		'gradeLevelType',
 		'gradeLevelYear'
 	]) {
-		assert.match(api, new RegExp(`${field}\\??:`), `ExamSession should expose ${field}`);
+		assert.match(generated, new RegExp(`${field}\\??:`), `ExamSession should expose ${field}`);
 	}
 });
 
@@ -1055,7 +1062,7 @@ test('staff timeline keeps 5-minute grid compact and room labels narrow', () => 
 });
 
 test('exam item tray filters and sorts unscheduled subjects by group grade and type', () => {
-	const api = readFileSync(projectPath('src/lib/api/examSchedule.ts'), 'utf8');
+	const generated = readFileSync(projectPath('src/lib/api/generated/school-api.ts'), 'utf8');
 	const tray = readFileSync(
 		projectPath('src/lib/components/academic/exam-schedule/ExamItemTray.svelte'),
 		'utf8'
@@ -1070,7 +1077,7 @@ test('exam item tray filters and sorts unscheduled subjects by group grade and t
 		'gradeLevelYear?: number | null'
 	]) {
 		assert.match(
-			api,
+			generated,
 			new RegExp(escapeRegExp(expectedField)),
 			`${expectedField} should be exposed`
 		);
@@ -1409,15 +1416,15 @@ test('staff workspace ignores stale management option responses after route chan
 	assert.match(page, /managementOptionsRequestToken \+= 1/);
 	assert.match(page, /const requestToken = \+\+managementOptionsRequestToken/);
 	assert.match(page, /const roundId = workspace\.round\.id/);
-	assert.match(page, /const semesterId = workspace\.round\.academicSemesterId/);
-	assert.match(page, /const yearId = currentSemester\?\.academic_year_id/);
+	assert.match(page, /const termId = workspace\.round\.academicTermId/);
+	assert.match(page, /const yearId = workspace\.round\.academicYearId/);
 	assert.match(
 		page,
-		/isCurrentManagementOptionsRequest\(requestToken,\s*roundId,\s*semesterId,\s*yearId\)/
+		/isCurrentManagementOptionsRequest\(requestToken,\s*roundId,\s*termId,\s*yearId\)/
 	);
 	assert.match(
 		page,
-		/if \(!isCurrentManagementOptionsRequest\(requestToken,\s*roundId,\s*semesterId,\s*yearId\)\) return/
+		/if \(!isCurrentManagementOptionsRequest\(requestToken,\s*roundId,\s*termId,\s*yearId\)\) return/
 	);
 });
 
@@ -1452,7 +1459,7 @@ test('personal exam schedule pages use the published schedule APIs and shared vi
 	assert.match(studentPage, /PageSkeleton/);
 	assert.match(studentPage, /PageState/);
 
-	assert.match(parentPage, /listChildExamSchedules\(requestedStudentId\)/);
+	assert.match(parentPage, /listChildExamSchedules\(requestedStudentId,\s*selectedTermId\)/);
 	assert.doesNotMatch(parentPage, /listMyExamSchedules/);
 	assert.match(parentPage, /PersonalExamScheduleView/);
 	assert.match(parentPage, /PageSkeleton/);
@@ -1460,10 +1467,17 @@ test('personal exam schedule pages use the published schedule APIs and shared vi
 	assert.match(parentPage, /data\.studentId/);
 	assert.match(parentPage, /let scheduleRequestToken = 0/);
 	assert.match(parentPage, /\$effect\(\(\) => \{/);
-	assert.match(parentPage, /void loadSchedules\(studentId\)/);
+	assert.match(parentPage, /void loadHistory\(studentId\)/);
 	assert.match(parentPage, /const requestToken = \+\+scheduleRequestToken/);
 	assert.match(parentPage, /rounds = \[\]/);
-	assert.match(parentPage, /listChildExamSchedules\(requestedStudentId\)/);
+	assert.match(
+		parentPage,
+		/const nextRounds = await listChildExamSchedules\(requestedStudentId,\s*selectedTermId\)/
+	);
+	assert.match(
+		parentPage,
+		/if \(requestToken !== scheduleRequestToken\) return;\s*rounds = nextRounds/
+	);
 	assert.match(parentPage, /requestToken !== scheduleRequestToken/);
 	assert.match(parentPage, /requestToken === scheduleRequestToken/);
 	assert.doesNotMatch(parentPage, /onMount/);
@@ -1594,7 +1608,7 @@ test('personal exam schedule view groups published sessions and hides staff supe
 		'session.endsAt',
 		'session.subjectName',
 		'session.assessmentCategoryName',
-		'session.classroomName',
+		'session.homeroomName',
 		'session.buildingName',
 		'session.roomName',
 		'session.seatNumber',
@@ -1625,5 +1639,58 @@ test('personal exam schedule view groups published sessions and hides staff supe
 			new RegExp(escapeRegExp(forbidden)),
 			`${forbidden} should not appear in personal exam schedule sources`
 		);
+	}
+});
+
+test('exam scheduling uses generated term and homeroom contracts end to end', () => {
+	const api = readFileSync(projectPath('src/lib/api/examSchedule.ts'), 'utf8');
+	const models = readFileSync(
+		path.resolve(projectRoot, '../backend-school/src/modules/academic/models/exam_schedule.rs'),
+		'utf8'
+	);
+	const handlers = readFileSync(
+		path.resolve(projectRoot, '../backend-school/src/modules/academic/handlers/exam_schedule.rs'),
+		'utf8'
+	);
+
+	for (const schema of [
+		'ExamRound',
+		'ExamScheduleWorkspace',
+		'ExamDayDetail',
+		'DayRoomAssignmentView',
+		'ExamInvigilatorWorkspace',
+		'CreateExamRoundRequest',
+		'UpsertExamDayRequest',
+		'UpsertDayRoomAssignmentRequest',
+		'PlaceExamSessionRequest'
+	]) {
+		assert.match(api, new RegExp(`Schemas\\['${schema}'\\]`));
+	}
+	assert.match(api, /academicTermId:\s*string/);
+	assert.match(api, /params\.set\('academicTermId', academicTermId\)/);
+	for (const retiredField of [
+		['academic', 'SemesterId'].join(''),
+		['academic_', 'semester_id'].join(''),
+		['classroom', 'CourseId'].join(''),
+		['classroom', 'Id'].join(''),
+		['assessment', 'PlanId'].join('')
+	]) {
+		assert.doesNotMatch(api, new RegExp(retiredField));
+	}
+	assert.match(models, /pub academic_term_id: Uuid/);
+	assert.match(models, /pub learning_offering_id: Uuid/);
+	assert.match(models, /pub homeroom_id: Uuid/);
+	assert.match(models, /ToSchema/);
+	assert.match(models, /deny_unknown_fields/);
+	for (const operationId of [
+		'listExamRounds',
+		'createExamRound',
+		'getExamScheduleWorkspace',
+		'upsertExamDay',
+		'upsertExamDayRoomAssignment',
+		'placeExamSession',
+		'publishExamRound'
+	]) {
+		assert.match(handlers, new RegExp(`operation_id = "${operationId}"`));
 	}
 });

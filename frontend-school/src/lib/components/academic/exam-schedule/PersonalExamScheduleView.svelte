@@ -50,7 +50,7 @@
 			session.examDate,
 			session.startsAt,
 			session.endsAt,
-			session.classroomName,
+			session.homeroomName,
 			session.subjectName,
 			session.assessmentCategoryName,
 			session.buildingName ?? '',
@@ -131,7 +131,7 @@
 												<TableCell class="text-sm whitespace-normal">
 													{session.assessmentCategoryName || '-'}
 												</TableCell>
-												<TableCell class="text-sm">{session.classroomName || '-'}</TableCell>
+												<TableCell class="text-sm">{session.homeroomName || '-'}</TableCell>
 												<TableCell class="text-sm whitespace-normal">{roomLabel(session)}</TableCell
 												>
 												{#if showSeatNumber}

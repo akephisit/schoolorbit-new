@@ -3,7 +3,7 @@
 // Generic lookup responses must stay small; workflow-specific detail belongs in options endpoints.
 
 import { apiClient, requireApiData } from '$lib/api/client';
-import type { components } from '$lib/api/generated/school-api';
+import type { components, operations } from '$lib/api/generated/school-api';
 
 type Schemas = components['schemas'];
 
@@ -16,31 +16,22 @@ export type StaffLookupItem = Schemas['StaffLookupItem'];
 export type RoleLookupItem = Schemas['RoleLookupItem'];
 export type OrganizationUnitLookupItem = Schemas['OrganizationUnitLookupItem'];
 export type GradeLevelLookupItem = Schemas['GradeLevelLookupItem'];
-export type ClassroomLookupItem = Schemas['ClassroomLookupItem'];
+export type HomeroomLookupItem = Schemas['HomeroomLookupItem'];
 export type AcademicYearLookupItem = Schemas['AcademicYearLookupItem'];
 export type StudentLookupItem = Schemas['StudentLookupItem'];
 export type RoomLookupItem = Schemas['Room'];
 
-export interface LookupOptions {
-	/** Filter for active items only (default: true) */
-	activeOnly?: boolean;
-	/** Search term */
-	search?: string;
-	/** Maximum items to return (default: 100, max: 500) */
-	limit?: number;
-	subjectType?: string;
-	/** Filter grade levels by academic year */
-	academicYearId?: string;
-}
+export type LookupOptions = NonNullable<operations['lookupStaff']['parameters']['query']>;
+export type AcademicLookupOptions = operations['lookupStudents']['parameters']['query'];
 
 // ===================================================================
 // Helper
 // ===================================================================
 
-function buildQueryString(options?: LookupOptions): string {
+function buildQueryString(options?: LookupOptions | AcademicLookupOptions): string {
 	const params = new URLSearchParams();
 	if (options?.activeOnly !== undefined) {
-		params.set('active_only', String(options.activeOnly));
+		params.set('activeOnly', String(options.activeOnly));
 	}
 	if (options?.search) {
 		params.set('search', options.search);
@@ -48,17 +39,23 @@ function buildQueryString(options?: LookupOptions): string {
 	if (options?.limit) {
 		params.set('limit', String(options.limit));
 	}
-	if (options?.subjectType) {
-		params.set('subject_type', options.subjectType);
+	if (options && 'subjectType' in options && options.subjectType) {
+		params.set('subjectType', options.subjectType);
 	}
-	if (options?.academicYearId) {
-		params.set('academic_year_id', options.academicYearId);
+	if (options && 'levelType' in options && options.levelType) {
+		params.set('levelType', options.levelType);
+	}
+	if (options && 'academicYearId' in options && options.academicYearId) {
+		params.set('academicYearId', options.academicYearId);
 	}
 	const queryString = params.toString();
 	return queryString ? `?${queryString}` : '';
 }
 
-async function fetchLookup<T>(endpoint: string, options?: LookupOptions): Promise<T[]> {
+async function fetchLookup<T>(
+	endpoint: string,
+	options?: LookupOptions | AcademicLookupOptions
+): Promise<T[]> {
 	const query = buildQueryString(options);
 	const response = await apiClient.get<T[]>(`/api/lookup/${endpoint}${query}`);
 	return requireApiData(response, `Failed to fetch ${endpoint}`);
@@ -80,7 +77,7 @@ export async function lookupStaff(options?: LookupOptions): Promise<StaffLookupI
  * Fetch students list for dropdowns
  * Returns: id, name, student_id, class_room
  */
-export async function lookupStudents(options?: LookupOptions): Promise<StudentLookupItem[]> {
+export async function lookupStudents(options: AcademicLookupOptions): Promise<StudentLookupItem[]> {
 	return fetchLookup<StudentLookupItem>('students', options);
 }
 
@@ -107,21 +104,25 @@ export async function lookupOrganizationUnits(
  * Fetch grade levels list for dropdowns
  * Returns: id, code, name, level_order
  */
-export async function lookupGradeLevels(options?: LookupOptions): Promise<GradeLevelLookupItem[]> {
+export async function lookupGradeLevels(
+	options: AcademicLookupOptions
+): Promise<GradeLevelLookupItem[]> {
 	return fetchLookup<GradeLevelLookupItem>('grade-levels', options);
 }
 
 /**
- * Fetch classrooms list for dropdowns
+ * Fetch homerooms for the caller-selected academic year.
  * Returns: id, name, grade_level
  */
-export async function lookupClassrooms(options?: LookupOptions): Promise<ClassroomLookupItem[]> {
-	return fetchLookup<ClassroomLookupItem>('classrooms', options);
+export async function lookupHomerooms(
+	options: AcademicLookupOptions
+): Promise<HomeroomLookupItem[]> {
+	return fetchLookup<HomeroomLookupItem>('homerooms', options);
 }
 
 /**
  * Fetch academic years list for dropdowns
- * Returns: id, name, is_current
+ * Returns: id, name, year, status
  */
 export async function lookupAcademicYears(
 	options?: LookupOptions
@@ -141,6 +142,6 @@ export async function lookupRooms(options?: LookupOptions): Promise<RoomLookupIt
  * Fetch subjects list for dropdowns
  * Returns: id, name, code
  */
-export async function lookupSubjects(options?: LookupOptions): Promise<LookupItem[]> {
+export async function lookupSubjects(options: AcademicLookupOptions): Promise<LookupItem[]> {
 	return fetchLookup<LookupItem>('subjects', options);
 }

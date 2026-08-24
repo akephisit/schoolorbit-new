@@ -735,7 +735,8 @@ test.describe.serial('complete certificate issuance lifecycle', () => {
 				'GET',
 				'/api/lookup/academic-years?active_only=false'
 			);
-			const academicYear = academicYears.find((year) => year.is_current) ?? academicYears[0];
+			const academicYear =
+				academicYears.find((year) => year.status === 'active') ?? academicYears[0];
 			if (!academicYear) throw new Error('Lifecycle tenant has no academic year.');
 			const ownerOptions = await preparer.api.request<OrganizationUnit[]>(
 				'GET',

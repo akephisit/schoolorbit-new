@@ -1,6 +1,6 @@
-import { apiClient } from '$lib/api/client';
+import { apiClient, requireApiData } from '$lib/api/client';
 import type { components } from '$lib/api/generated/school-api';
-import { timetableEntryFromDto, type TimetableEntry, type TimetableEntryDto } from './timetable';
+import type { TimetableEntry } from './timetable';
 import type { Student } from './students';
 
 type LoadedApiResponse<T> = { success: true; data: T };
@@ -36,17 +36,13 @@ export async function getChildProfile(studentId: string): Promise<LoadedApiRespo
  */
 export async function getChildTimetable(
 	studentId: string,
-	academicSemesterId?: string
-): Promise<LoadedApiResponse<TimetableEntry[]>> {
-	const params = new URLSearchParams();
-	if (academicSemesterId) params.append('academic_semester_id', academicSemesterId);
-	const qs = params.toString() ? `?${params.toString()}` : '';
-
-	const response = await apiClient.get<TimetableEntryDto[]>(
-		`/api/parent/students/${studentId}/timetable${qs}`
+	academicTermId: string
+): Promise<TimetableEntry[]> {
+	if (!academicTermId.trim()) throw new Error('กรุณาเลือกภาคเรียนก่อน');
+	return requireApiData(
+		await apiClient.get<TimetableEntry[]>(
+			`/api/parent/students/${encodeURIComponent(studentId)}/timetable?academicTermId=${encodeURIComponent(academicTermId)}`
+		),
+		'ไม่สามารถโหลดตารางเรียนของนักเรียนได้'
 	);
-	if (!response.success || !response.data) {
-		throw new Error(response.error || 'Failed to get child timetable');
-	}
-	return { success: true, data: response.data.map(timetableEntryFromDto) };
 }

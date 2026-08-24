@@ -5,8 +5,8 @@ const SOCKET_CONNECTING = 0;
 const SOCKET_OPEN = 1;
 
 export type TimetableSocketParams = {
-	semester_id: string;
-	current_user_id: string;
+	academicTermId: string;
+	currentUserId: string;
 };
 
 type TimetableSocketLike = {
@@ -42,8 +42,8 @@ export type TimetableSocketRuntime = {
 function sameParams(left: TimetableSocketParams | null, right: TimetableSocketParams): boolean {
 	return (
 		left !== null &&
-		String(left.semester_id) === String(right.semester_id) &&
-		String(left.current_user_id) === String(right.current_user_id)
+		String(left.academicTermId) === String(right.academicTermId) &&
+		String(left.currentUserId) === String(right.currentUserId)
 	);
 }
 

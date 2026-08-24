@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { getAcademicContextStore } from '$lib/academic-context/store';
 	import {
 		listRounds,
 		type AdmissionRound,
@@ -21,6 +22,8 @@
 
 	const canReadAdmission = $derived($can.has(PERMISSIONS.ADMISSION_READ_ALL));
 	const canManageAdmission = $derived($can.has(PERMISSIONS.ADMISSION_MANAGE_ALL));
+	const academicContext = getAcademicContextStore();
+	const academicYearId = $derived($academicContext.selected.academicYearId);
 
 	let rounds: AdmissionRound[] = $state([]);
 	let loading = $state(true);
@@ -28,14 +31,15 @@
 	let roundToDelete: AdmissionRound | null = $state(null);
 	let deleting = $state(false);
 
-	async function load() {
-		if (!canReadAdmission) {
+	async function load(yearId: string | null = academicYearId) {
+		if (!canReadAdmission || !yearId) {
+			rounds = [];
 			loading = false;
 			return;
 		}
 		try {
 			loading = true;
-			rounds = await listRounds();
+			rounds = await listRounds(yearId);
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'โหลดข้อมูลไม่สำเร็จ');
 		} finally {
@@ -98,7 +102,16 @@
 		closed: 'destructive'
 	};
 
-	onMount(load);
+	onMount(() => {
+		let loadedYearId: string | null = null;
+		return academicContext.subscribe((state) => {
+			const yearId = state.selected.academicYearId;
+			if (yearId && yearId !== loadedYearId) {
+				loadedYearId = yearId;
+				void load(yearId);
+			}
+		});
+	});
 </script>
 
 <PageShell title="ระบบรับสมัครนักเรียน" description="จัดการรอบรับสมัคร สายการเรียน และใบสมัคร">
@@ -118,6 +131,8 @@
 			title="ไม่มีสิทธิ์ดูรอบรับสมัคร"
 			description="บัญชีนี้เข้า module รับสมัครได้ แต่ยังไม่มีสิทธิ์อ่านข้อมูลรอบรับสมัคร"
 		/>
+	{:else if !academicYearId}
+		<PageState title="เลือกปีการศึกษาก่อน" description="ใช้ตัวเลือกปีการศึกษาบนแถบด้านบน" />
 	{:else if loading}
 		<PageSkeleton variant="cards" rows={3} />
 	{:else if rounds.length === 0}

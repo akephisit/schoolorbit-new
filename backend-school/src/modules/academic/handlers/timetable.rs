@@ -24,6 +24,18 @@ use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
 
+#[utoipa::path(
+    get,
+    path = "/api/academic/timetable",
+    operation_id = "listTimetableEntries",
+    params(TimetableQuery),
+    responses(
+        (status = 200, description = "Timetable entries in the selected term", body = ApiResponse<Vec<crate::modules::academic::models::timetable::TimetableEntry>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Timetable read permission denied", body = ApiErrorResponse)
+    ),
+    tag = "academic"
+)]
 pub async fn list_timetable_entries(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -46,17 +58,31 @@ pub async fn list_timetable_entries(
     operation_id = "getMyTimetable",
     params(TimetableQuery),
     responses(
-        (status = 200, description = "Current staff timetable in the selected term", body = ApiResponse<Vec<crate::modules::academic::models::timetable::TimetableEntry>>),
+        (status = 200, description = "Current staff or student timetable in the selected term", body = ApiResponse<Vec<crate::modules::academic::models::timetable::TimetableEntry>>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Staff timetable access denied", body = ApiErrorResponse)
     ),
-    tag = "staff"
+    tag = "academic"
 )]
 pub async fn get_my_timetable(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
     Query(mut query): Query<TimetableQuery>,
 ) -> Result<impl IntoResponse, AppError> {
+    if session.user_type == "student" {
+        let entries = timetable_service::list_student_entries(
+            &session.tenant.pool,
+            query.academic_term_id,
+            session.user_id,
+        )
+        .await?;
+        return Ok(Json(ApiResponse::ok(entries)).into_response());
+    }
+    if session.user_type != "staff" {
+        return Err(AppError::Forbidden(
+            "บัญชีนี้ไม่มีตารางเรียนหรือตารางสอนส่วนบุคคล".to_string(),
+        ));
+    }
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let access = require_learning_offering_list_access(
         &context.tenant.pool,
@@ -69,6 +95,20 @@ pub async fn get_my_timetable(
     Ok(Json(ApiResponse::ok(entries)).into_response())
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/academic/timetable",
+    operation_id = "createTimetableEntry",
+    request_body = CreateTimetableEntryRequest,
+    responses(
+        (status = 200, description = "Created timetable entry", body = ApiResponse<crate::modules::academic::models::timetable::TimetableEntry>),
+        (status = 400, description = "Invalid timetable entry", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Timetable manage permission denied", body = ApiErrorResponse),
+        (status = 409, description = "Timetable conflict", body = ApiErrorResponse)
+    ),
+    tag = "academic"
+)]
 pub async fn create_timetable_entry(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -84,6 +124,20 @@ pub async fn create_timetable_entry(
     Ok(Json(ApiResponse::ok(entry)).into_response())
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/academic/timetable/batch",
+    operation_id = "createBatchTimetableEntries",
+    request_body = CreateBatchTimetableEntriesRequest,
+    responses(
+        (status = 200, description = "Created timetable entries", body = ApiResponse<crate::modules::academic::models::timetable::BatchTimetableResult>),
+        (status = 400, description = "Invalid timetable batch", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Timetable manage permission denied", body = ApiErrorResponse),
+        (status = 409, description = "Timetable conflict", body = ApiErrorResponse)
+    ),
+    tag = "academic"
+)]
 pub async fn create_batch_timetable_entries(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -115,6 +169,22 @@ pub async fn create_batch_timetable_entries(
     Ok(Json(ApiResponse::ok(result)).into_response())
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/academic/timetable/{entry_id}",
+    operation_id = "updateTimetableEntry",
+    params(("entry_id" = Uuid, Path, description = "Timetable entry ID")),
+    request_body = UpdateTimetableEntryRequest,
+    responses(
+        (status = 200, description = "Updated timetable entry", body = ApiResponse<crate::modules::academic::models::timetable::TimetableEntry>),
+        (status = 400, description = "Invalid timetable update", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Timetable manage permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Timetable entry not found", body = ApiErrorResponse),
+        (status = 409, description = "Stale version or timetable conflict", body = ApiErrorResponse)
+    ),
+    tag = "academic"
+)]
 pub async fn update_timetable_entry(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -135,6 +205,23 @@ pub async fn update_timetable_entry(
     Ok(Json(ApiResponse::ok(entry)).into_response())
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/academic/timetable/{entry_id}",
+    operation_id = "deleteTimetableEntry",
+    params(
+        ("entry_id" = Uuid, Path, description = "Timetable entry ID"),
+        DeleteTimetableEntryQuery
+    ),
+    responses(
+        (status = 200, description = "Deactivated timetable entry", body = ApiResponse<crate::modules::academic::models::timetable::TimetableEntry>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Timetable manage permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Timetable entry not found", body = ApiErrorResponse),
+        (status = 409, description = "Stale timetable entry version", body = ApiErrorResponse)
+    ),
+    tag = "academic"
+)]
 pub async fn delete_timetable_entry(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -155,6 +242,18 @@ pub async fn delete_timetable_entry(
     Ok(Json(ApiResponse::ok(entry)).into_response())
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/academic/timetable/batch-group/{batch_id}",
+    operation_id = "deleteTimetableBatch",
+    params(("batch_id" = Uuid, Path, description = "Timetable batch ID")),
+    responses(
+        (status = 200, description = "Deactivated timetable batch", body = ApiResponse<Vec<crate::modules::academic::models::timetable::TimetableEntry>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Timetable manage permission denied", body = ApiErrorResponse)
+    ),
+    tag = "academic"
+)]
 pub async fn delete_batch_group(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -174,6 +273,20 @@ pub async fn delete_batch_group(
     Ok(Json(ApiResponse::ok(entries)).into_response())
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/academic/timetable/swap",
+    operation_id = "swapTimetableEntries",
+    request_body = SwapTimetableEntriesRequest,
+    responses(
+        (status = 200, description = "Swapped timetable entries", body = ApiResponse<crate::modules::academic::models::timetable::SwapTimetableEntriesResponse>),
+        (status = 400, description = "Invalid timetable swap", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Timetable manage permission denied", body = ApiErrorResponse),
+        (status = 409, description = "Stale version or timetable conflict", body = ApiErrorResponse)
+    ),
+    tag = "academic"
+)]
 pub async fn swap_timetable_entries(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -191,6 +304,18 @@ pub async fn swap_timetable_entries(
     Ok(Json(ApiResponse::ok(result)).into_response())
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/academic/timetable/validate-moves",
+    operation_id = "validateTimetableMoves",
+    request_body = ValidateMovesRequest,
+    responses(
+        (status = 200, description = "Valid timetable destinations", body = ApiResponse<Vec<crate::modules::academic::models::timetable::MoveValidityCell>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Timetable manage permission denied", body = ApiErrorResponse)
+    ),
+    tag = "academic"
+)]
 pub async fn validate_timetable_moves(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -207,6 +332,18 @@ pub async fn validate_timetable_moves(
     Ok(Json(ApiResponse::ok(cells)).into_response())
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/academic/timetable/occupancy",
+    operation_id = "getTimetableOccupancy",
+    params(TimetableOccupancyQuery),
+    responses(
+        (status = 200, description = "Timetable occupancy for the selected term", body = ApiResponse<Vec<crate::modules::academic::models::timetable::TimetableOccupancyCell>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Timetable read permission denied", body = ApiErrorResponse)
+    ),
+    tag = "academic"
+)]
 pub async fn get_timetable_occupancy(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,

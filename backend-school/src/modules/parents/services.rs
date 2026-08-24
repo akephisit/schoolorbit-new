@@ -2,6 +2,8 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::error::AppError;
+use crate::modules::academic::core::models::AcademicContextOptions;
+use crate::modules::academic::core::services::context as academic_context_service;
 use crate::modules::academic::models::exam_schedule::PersonalExamScheduleRound;
 use crate::modules::academic::models::timetable::TimetableEntry;
 use crate::modules::academic::services::exam_schedule_service;
@@ -123,6 +125,16 @@ pub async fn get_child_timetable(
     ensure_parent_student_link(pool, parent_id, student_id).await?;
 
     timetable_service::list_student_entries(pool, academic_term_id, student_id).await
+}
+
+pub async fn get_child_academic_context_options(
+    pool: &PgPool,
+    parent_id: Uuid,
+    student_id: Uuid,
+) -> Result<AcademicContextOptions, AppError> {
+    ensure_parent_user(pool, parent_id).await?;
+    ensure_parent_student_link(pool, parent_id, student_id).await?;
+    academic_context_service::list_options_for_student(pool, student_id).await
 }
 
 pub async fn get_child_exam_schedule(

@@ -98,7 +98,7 @@
 >
 	<div class="flex items-start justify-between gap-3">
 		<div class="min-w-0">
-			<h3 class="truncate text-sm font-semibold">{assignment.classroomName || '-'}</h3>
+			<h3 class="truncate text-sm font-semibold">{assignment.homeroomName || '-'}</h3>
 			<p class="truncate text-xs text-muted-foreground">{assignment.roomName || '-'}</p>
 		</div>
 		<Badge variant="outline" class={countBadgeClass()}>
@@ -124,7 +124,7 @@
 							disabled={pendingStaffIds.includes(invigilator.staffId)}
 							onclick={() =>
 								void onRemoveInvigilator?.(assignment.assignmentId, invigilator.staffId)}
-							aria-label={`เอา ${invigilator.displayName} ออกจากห้อง ${assignment.classroomName}`}
+							aria-label={`เอา ${invigilator.displayName} ออกจากห้อง ${assignment.homeroomName}`}
 						>
 							<X class="h-3 w-3" />
 						</Button>

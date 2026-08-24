@@ -90,25 +90,25 @@ test('calendar API client uses current typed contracts', async () => {
 	const target = generatedSchemaBody(generated, 'CalendarEventTarget');
 	const targetInput = interfaceBody(api, 'CalendarEventTargetInput');
 	const viewerEvent = generatedSchemaBody(generated, 'CalendarViewerEvent');
-	const publicFilters = interfaceBody(api, 'CalendarPublicEventFilters');
+	const publicFilters = api;
 	const publicQuery = functionBody(api, 'publicCalendarQuery');
 	const event = generatedSchemaBody(generated, 'CalendarEvent');
 	const createEvent = interfaceBody(api, 'CreateCalendarEventRequest');
 
 	assert.match(target, /\bid:\s*string;/);
 	assert.match(target, /\baudienceType:\s*string;/);
-	assert.match(target, /\bclassRoomId:\s*string \| null;/);
+	assert.match(target, /\bhomeroomId:\s*string \| null;/);
 	assert.doesNotMatch(target, /\baudience:\s*CalendarAudienceType;/);
-	assert.doesNotMatch(target, /\bclassroomId:\s*string \| null;/);
+	assert.doesNotMatch(target, /\bclassRoomId:\s*string \| null;/);
 	assert.match(
 		api,
 		/export\s+type\s+CalendarEventTarget\s*=\s*Omit<CalendarEventTargetDto, 'audienceType'>/
 	);
 	assert.match(api, /audienceType:\s*CalendarAudienceType;/);
 	assert.match(targetInput, /\baudienceType:\s*CalendarAudienceType;/);
-	assert.match(targetInput, /\bclassRoomId\?:\s*string \| null;/);
+	assert.match(targetInput, /\bhomeroomId\?:\s*string \| null;/);
 	assert.doesNotMatch(targetInput, /\baudience:\s*CalendarAudienceType;/);
-	assert.doesNotMatch(targetInput, /\bclassroomId\?:\s*string \| null;/);
+	assert.doesNotMatch(targetInput, /\bclassRoomId\?:\s*string \| null;/);
 	assert.doesNotMatch(targetInput, /\bid[?:]?:\s*string;/);
 	assert.match(api, /targets:\s*CalendarEventTargetInput\[];/);
 	assert.match(event, /tags:\s*components\['schemas'\]\['CalendarEventTag'\]\[];/);
@@ -127,9 +127,8 @@ test('calendar API client uses current typed contracts', async () => {
 	assert.doesNotMatch(api, /CalendarPublicEvent\s*=\s*Omit/);
 	assert.match(publicFilters, /categoryId\?:\s*string;/);
 	assert.match(publicFilters, /tagId\?:\s*string;/);
-	assert.match(publicQuery, /params\.set\(['"]tag_id['"], filters\.tagId\)/);
-	assert.doesNotMatch(publicFilters, /audience\?:/);
-	assert.doesNotMatch(publicFilters, /visibility\?:/);
+	assert.match(publicQuery, /params\.set\(['"]tagId['"], filters\.tagId\)/);
+	assert.match(publicFilters, /export type CalendarPublicEventFilters = CalendarEventBaseFilters;/);
 	assert.doesNotMatch(publicQuery, /\baudience\b/);
 	assert.doesNotMatch(publicQuery, /\bvisibility\b/);
 	assert.match(api, /listPublicCalendarEvents[\s\S]*Promise<CalendarPublicEvent\[]>/);
@@ -194,11 +193,11 @@ test('calendar event dialog builds backend-safe event payloads', async () => {
 	);
 
 	assert.match(eventDialog, /function targetGradeLevelId\(audienceType: CalendarAudienceType\)/);
-	assert.match(eventDialog, /function targetClassRoomId\(audienceType: CalendarAudienceType\)/);
-	assert.match(eventDialog, /selectedClassRoomId \? null : selectedGradeLevelId \|\| null/);
-	assert.match(eventDialog, /selectedClassRoomId \|\| null/);
+	assert.match(eventDialog, /function targetHomeroomId\(audienceType: CalendarAudienceType\)/);
+	assert.match(eventDialog, /selectedHomeroomId \? null : selectedGradeLevelId \|\| null/);
+	assert.match(eventDialog, /selectedHomeroomId \|\| null/);
 	assert.match(eventDialog, /function changeGradeLevel\(value: string \| undefined\)/);
-	assert.match(eventDialog, /selectedClassRoomId = ''/);
+	assert.match(eventDialog, /selectedHomeroomId = ''/);
 	assert.match(eventDialog, /notifyAudience = source \? false : true;/);
 	assert.match(eventDialog, /selectedTagIds = source\?\.tags\.map\(\(tag\) => tag\.id\) \?\? \[]/);
 	assert.match(eventDialog, /tagIds: selectedTagIds/);

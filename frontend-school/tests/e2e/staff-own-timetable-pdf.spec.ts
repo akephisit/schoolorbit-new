@@ -67,33 +67,35 @@ test('downloads the loaded staff timetable from the PageShell action', async ({ 
 				return;
 			}
 
-			if (url.pathname === '/api/academic/structure') {
+			if (url.pathname === '/api/academic/context/options') {
 				await fulfillJson(route, {
 					years: [
 						{
 							id: '20000000-0000-4000-8000-000000000001',
 							name: 'ปีการศึกษา 2569',
 							year: 2569,
-							start_date: '2026-05-01',
-							end_date: '2027-03-31',
-							is_active: true,
-							school_days: 'MON,TUE,WED,THU,FRI,SAT',
-							created_at: '2026-05-01T00:00:00Z',
-							updated_at: '2026-05-01T00:00:00Z'
+							startDate: '2026-05-01',
+							endDate: '2027-03-31',
+							status: 'active'
 						}
 					],
-					semesters: [
+					terms: [
 						{
 							id: '30000000-0000-4000-8000-000000000001',
-							academic_year_id: '20000000-0000-4000-8000-000000000001',
+							academicYearId: '20000000-0000-4000-8000-000000000001',
 							name: 'ภาคเรียนที่ 1',
-							term: '1',
-							start_date: '2026-05-01',
-							end_date: '2026-10-31',
-							is_active: true
+							code: '1',
+							startDate: '2026-05-01',
+							endDate: '2026-10-31',
+							sequence: 1,
+							termType: 'regular',
+							status: 'active',
+							includedInYearResult: true,
+							blocksYearClosure: true
 						}
 					],
-					levels: []
+					activeAcademicYearId: '20000000-0000-4000-8000-000000000001',
+					activeAcademicTermId: '30000000-0000-4000-8000-000000000001'
 				});
 				return;
 			}
@@ -148,42 +150,31 @@ test('downloads the loaded staff timetable from the PageShell action', async ({ 
 	const pendingTimetableRoute = await timetableRequest;
 	await expect(downloadButton).toBeDisabled();
 
-	await fulfillJson(pendingTimetableRoute, {
-		current_seq: 1,
-		periods: [
-			{
-				id: '70000000-0000-4000-8000-000000000001',
-				name: 'คาบ 1',
-				start_time: '08:30:00',
-				end_time: '09:20:00',
-				order_index: 1
-			}
-		],
-		items: [
-			{
-				id: '40000000-0000-4000-8000-000000000001',
-				academic_semester_id: '30000000-0000-4000-8000-000000000001',
-				classroom_course_id: '50000000-0000-4000-8000-000000000001',
-				classroom_id: '60000000-0000-4000-8000-000000000001',
-				created_by: null,
-				day_of_week: 'SAT',
-				end_time: '09:20:00',
-				entry_type: 'COURSE',
-				is_active: true,
-				note: null,
-				period_id: '70000000-0000-4000-8000-000000000001',
-				period_name: 'คาบ 1',
-				period_order_index: 1,
-				room_code: 'MATH-1',
-				room_id: null,
-				start_time: '08:30:00',
-				subject_code: 'ค21101',
-				subject_name_th: 'คณิตศาสตร์',
-				title: null,
-				updated_by: null
-			}
-		]
-	});
+	await fulfillJson(pendingTimetableRoute, [
+		{
+			id: '40000000-0000-4000-8000-000000000001',
+			academicTermId: '30000000-0000-4000-8000-000000000001',
+			academicYearId: '20000000-0000-4000-8000-000000000001',
+			bellScheduleId: '71000000-0000-4000-8000-000000000001',
+			bellSchedulePeriodId: '70000000-0000-4000-8000-000000000001',
+			createdAt: '2026-08-07T00:00:00Z',
+			dayOfWeek: 'SAT',
+			endTime: '09:20:00',
+			entryType: 'COURSE',
+			instructors: [],
+			isActive: true,
+			learningGroupName: 'ม.1/1',
+			note: null,
+			offeringCode: 'ค21101',
+			offeringName: 'คณิตศาสตร์',
+			periodName: 'คาบ 1',
+			roomCode: 'MATH-1',
+			rowVersion: 1,
+			startTime: '08:30:00',
+			title: null,
+			updatedAt: '2026-08-07T00:00:00Z'
+		}
+	]);
 
 	await expect(downloadButton).toBeEnabled();
 	await expect(page.getByText('ค21101')).toBeVisible();

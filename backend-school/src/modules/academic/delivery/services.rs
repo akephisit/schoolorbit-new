@@ -35,7 +35,7 @@ pub(super) async fn require_writable_term(
         "FOR SHARE"
     };
     let query = format!(
-        "SELECT term.id, term.academic_year_id, term.code, term.start_date, \
+        "SELECT term.id, term.academic_year_id, term.code, term.start_date, term.end_date, \
          term.status, term.row_version \
          FROM academic_terms term WHERE term.id = $1 {lock}"
     );
@@ -105,6 +105,7 @@ pub(super) struct TermContext {
     pub academic_year_id: Uuid,
     pub code: String,
     pub start_date: chrono::NaiveDate,
+    pub end_date: chrono::NaiveDate,
     pub status: String,
     pub row_version: i64,
 }

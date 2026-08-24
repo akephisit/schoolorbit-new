@@ -8,6 +8,7 @@ use uuid::Uuid;
 use crate::modules::academic::delivery::models::CourseGradingPolicy;
 
 #[derive(Debug, Clone, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AssessmentPlanListQuery {
     pub academic_term_id: Uuid,

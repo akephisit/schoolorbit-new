@@ -52,7 +52,7 @@ export interface AdmissionRound {
 export interface AdmissionTrack {
 	id: string;
 	admissionRoundId: string;
-	studyPlanId: string;
+	studyProgramId: string;
 	name: string;
 	capacityOverride?: number;
 	scoringSubjectIds: string[];
@@ -60,11 +60,27 @@ export interface AdmissionTrack {
 	displayOrder: number;
 	createdAt: string;
 	// Joined/computed
-	studyPlanName?: string;
+	studyProgramName?: string;
 	computedCapacity?: number;
 	roomCount?: number;
 	applicationCount?: number;
 }
+
+export interface CreateAdmissionTrackRequest {
+	studyProgramId: string;
+	name: string;
+	capacityOverride?: number;
+	scoringSubjectIds?: string[];
+	tiebreakMethod?: string;
+	displayOrder?: number;
+}
+
+export type UpdateAdmissionTrackRequest = Partial<
+	Pick<
+		AdmissionTrack,
+		'name' | 'capacityOverride' | 'scoringSubjectIds' | 'tiebreakMethod' | 'displayOrder'
+	>
+>;
 
 export interface AdmissionExamSubject {
 	id: string;
@@ -354,8 +370,11 @@ export interface CompleteEnrollmentResponse {
 // Rounds API
 // ==========================================
 
-export async function listRounds() {
-	const res = await apiClient.get<AdmissionRound[]>('/api/admission/rounds');
+export async function listRounds(academicYearId: string) {
+	if (!academicYearId.trim()) throw new Error('กรุณาเลือกปีการศึกษาก่อน');
+	const res = await apiClient.get<AdmissionRound[]>(
+		`/api/admission/rounds?academicYearId=${encodeURIComponent(academicYearId)}`
+	);
 	if (!res.success) throw new Error(res.error || 'ไม่สามารถโหลดรอบรับสมัครได้');
 	return res.data ?? [];
 }
@@ -421,23 +440,13 @@ export async function listTracks(roundId: string) {
 	return res.data ?? [];
 }
 
-export async function createTrack(
-	roundId: string,
-	data: {
-		studyPlanId: string;
-		name: string;
-		capacityOverride?: number;
-		scoringSubjectIds?: string[];
-		tiebreakMethod?: string;
-		displayOrder?: number;
-	}
-) {
+export async function createTrack(roundId: string, data: CreateAdmissionTrackRequest) {
 	const res = await apiClient.post<AdmissionTrack>(`/api/admission/rounds/${roundId}/tracks`, data);
 	if (!res.success) throw new Error(res.error);
 	return res.data!;
 }
 
-export async function updateTrack(id: string, data: Partial<AdmissionTrack>) {
+export async function updateTrack(id: string, data: UpdateAdmissionTrackRequest) {
 	const res = await apiClient.put<AdmissionTrack>(`/api/admission/tracks/${id}`, data);
 	if (!res.success) throw new Error(res.error);
 	return res.data!;

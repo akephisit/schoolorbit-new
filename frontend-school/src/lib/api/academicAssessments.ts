@@ -1,243 +1,91 @@
-import { apiClient, requireApiData } from '$lib/api/client';
+import { ApiClientError, apiClient, requireApiData, type ApiResponse } from '$lib/api/client';
+import type { components } from '$lib/api/generated/school-api';
 
-export type AssessmentExamMode = 'none' | 'in_timetable' | 'outside_timetable' | 'practical';
-export type AssessmentPlanStatus = 'not_configured' | 'draft' | 'saved' | 'submitted' | 'locked';
-export type AssessmentAllocationStatus =
-	| 'not_started'
-	| 'complete'
-	| 'under_allocated'
-	| 'over_allocated';
+type Schemas = components['schemas'];
+
+export type AssessmentPlanSummary = Schemas['AssessmentPlanSummary'];
+export type AssessmentPlanDetail = Schemas['AssessmentPlanDetail'];
+export type AssessmentCategory = Schemas['AssessmentCategory'];
+export type AssessmentItem = Schemas['AssessmentItem'];
+export type SaveAssessmentPlanRequest = Schemas['SaveAssessmentPlanRequest'];
+export type SaveAssessmentCategoryRequest = Schemas['SaveAssessmentCategoryRequest'];
+export type SaveAssessmentItemRequest = Schemas['SaveAssessmentItemRequest'];
+export type AssessmentSettings = Schemas['AssessmentSettingsResponse'];
+export type UpdateAssessmentSettingsRequest = Schemas['UpdateAssessmentSettingsRequest'];
+export type AssessmentPlanStatus = AssessmentPlanSummary['status'];
+export type AssessmentExamMode = AssessmentCategory['examMode'];
+export type AssessmentAllocationStatus = AssessmentCategory['allocationStatus'];
 
 export interface AssessmentPlanFilters {
-	academicSemesterId?: string;
-	classroomId?: string;
+	academicTermId: string;
 	subjectId?: string;
 	instructorId?: string;
 	status?: AssessmentPlanStatus;
 }
 
-export interface AssessmentPlanSummary {
-	planId?: string;
-	classroomCourseId: string;
-	classroomId: string;
-	subjectId: string;
-	academicSemesterId: string;
-	primaryInstructorId?: string;
-	status: AssessmentPlanStatus;
-	subjectCode?: string;
-	subjectNameTh?: string;
-	subjectNameEn?: string;
-	subjectGroupId?: string;
-	subjectGroupName?: string;
-	subjectGroupDisplayOrder?: number | null;
-	gradeLevelSort: number;
-	gradeYear: number;
-	classroomRoomNumber?: string | null;
-	classroomName?: string;
-	classroomCount: number;
-	instructorName?: string;
-	categoryCount: number;
-	itemCount: number;
-	totalScore: number;
-	beforeMidtermScore: number;
-	midtermScore: number;
-	afterMidtermScore: number;
-	finalScore: number;
-	outsideTimetableCount: number;
-	inTimetableCount: number;
-	midtermExamMode: AssessmentExamMode;
-	finalExamMode: AssessmentExamMode;
-	midtermExamDurationMinutes?: number | null;
-	finalExamDurationMinutes?: number | null;
-	hasUnallocatedCategories: boolean;
-	canManage: boolean;
+async function assessmentData<T>(request: Promise<ApiResponse<T>>, fallback: string): Promise<T> {
+	const response = await request;
+	if (response.status === 409) {
+		throw new ApiClientError(
+			`${response.error || fallback} กรุณาเก็บข้อมูลที่แก้ไว้ แล้วโหลดข้อมูลล่าสุดก่อนบันทึกอีกครั้ง`,
+			409
+		);
+	}
+	return requireApiData(response, fallback);
 }
 
-export interface AssessmentPlanDetail {
-	id?: string;
-	classroomCourseId: string;
-	subjectId: string;
-	academicSemesterId: string;
-	status: AssessmentPlanStatus;
-	submittedAt?: string;
-	lockedAt?: string;
-	categories: AssessmentCategory[];
-}
+function assessmentPlanQuery(filters: AssessmentPlanFilters): string {
+	const academicTermId = filters.academicTermId.trim();
+	if (!academicTermId) throw new Error('กรุณาเลือกภาคเรียนก่อน');
 
-export interface AssessmentCategory {
-	id?: string;
-	code?: string;
-	name: string;
-	maxScore: number;
-	examMode: AssessmentExamMode;
-	examDurationMinutes?: number | null;
-	displayOrder: number;
-	itemTotalScore: number;
-	allocationStatus: AssessmentAllocationStatus;
-	items: AssessmentItem[];
-}
-
-export interface AssessmentItem {
-	id: string;
-	categoryId: string;
-	name: string;
-	maxScore: number;
-	displayOrder: number;
-	isActive: boolean;
-}
-
-export interface SaveAssessmentPlanRequest {
-	categories: SaveAssessmentCategoryRequest[];
-}
-
-export interface BulkSaveAssessmentQuickScoresRequest {
-	plans: SaveAssessmentQuickScoreEntryRequest[];
-}
-
-export interface SaveAssessmentQuickScoreEntryRequest {
-	classroomCourseId: string;
-	beforeMidtermScore: number;
-	midtermScore: number;
-	afterMidtermScore: number;
-	finalScore: number;
-	midtermExamMode: AssessmentExamMode;
-	midtermExamDurationMinutes?: number | null;
-	finalExamMode: AssessmentExamMode;
-	finalExamDurationMinutes?: number | null;
-}
-
-export interface BulkSaveAssessmentQuickScoresResponse {
-	plans: AssessmentQuickScoreSaveResult[];
-}
-
-export interface AssessmentQuickScoreSaveResult {
-	classroomCourseId: string;
-	status: AssessmentPlanStatus;
-	categoryCount: number;
-	itemCount: number;
-	totalScore: number;
-	beforeMidtermScore: number;
-	midtermScore: number;
-	afterMidtermScore: number;
-	finalScore: number;
-	outsideTimetableCount: number;
-	inTimetableCount: number;
-	midtermExamMode: AssessmentExamMode;
-	finalExamMode: AssessmentExamMode;
-	midtermExamDurationMinutes?: number | null;
-	finalExamDurationMinutes?: number | null;
-	hasUnallocatedCategories: boolean;
-}
-
-export interface SaveAssessmentCategoryRequest {
-	id?: string;
-	code?: string;
-	name: string;
-	maxScore: number;
-	examMode: AssessmentExamMode;
-	examDurationMinutes?: number | null;
-	displayOrder: number;
-	items: SaveAssessmentItemRequest[];
-}
-
-export interface SaveAssessmentItemRequest {
-	id?: string;
-	name: string;
-	maxScore: number;
-	displayOrder: number;
-	isActive: boolean;
-}
-
-export interface AssessmentSettings {
-	teacherAccessEnabled: boolean;
-}
-
-export interface UpdateAssessmentSettingsRequest {
-	teacherAccessEnabled: boolean;
-}
-
-function assessmentPlanQuery(filters: AssessmentPlanFilters = {}): string {
-	const params = new URLSearchParams();
-	if (filters.academicSemesterId) params.set('academic_semester_id', filters.academicSemesterId);
-	if (filters.classroomId) params.set('classroom_id', filters.classroomId);
-	if (filters.subjectId) params.set('subject_id', filters.subjectId);
-	if (filters.instructorId) params.set('instructor_id', filters.instructorId);
+	const params = new URLSearchParams({ academicTermId });
+	if (filters.subjectId) params.set('subjectId', filters.subjectId);
+	if (filters.instructorId) params.set('instructorId', filters.instructorId);
 	if (filters.status) params.set('status', filters.status);
-	const query = params.toString();
-	return query ? `?${query}` : '';
+	return `?${params.toString()}`;
 }
 
-export async function listAssessmentPlans(
-	filters: AssessmentPlanFilters = {}
-): Promise<{ data: AssessmentPlanSummary[] }> {
-	const response = await apiClient.get<AssessmentPlanSummary[]>(
-		`/api/academic/assessments/plans${assessmentPlanQuery(filters)}`
+export const listAssessmentPlans = (filters: AssessmentPlanFilters) =>
+	assessmentData(
+		apiClient.get<AssessmentPlanSummary[]>(
+			`/api/academic/assessments/plans${assessmentPlanQuery(filters)}`
+		),
+		'ไม่สามารถโหลดภาพรวมโครงสร้างคะแนนได้'
 	);
-	return {
-		data: requireApiData(response, 'ไม่สามารถโหลดภาพรวมโครงสร้างคะแนนได้')
-	};
-}
 
-export async function getAssessmentPlan(courseId: string): Promise<{ data: AssessmentPlanDetail }> {
-	const response = await apiClient.get<AssessmentPlanDetail>(
-		`/api/academic/assessments/courses/${courseId}`
+export const getAssessmentPlan = (offeringId: string) =>
+	assessmentData(
+		apiClient.get<AssessmentPlanDetail>(
+			`/api/academic/assessments/offerings/${encodeURIComponent(offeringId)}`
+		),
+		'ไม่สามารถโหลดโครงสร้างคะแนนของชุดการเรียนได้'
 	);
-	return {
-		data: requireApiData(response, 'ไม่สามารถโหลดโครงสร้างคะแนนรายวิชาได้')
-	};
-}
 
-export async function getAssessmentSettings(): Promise<{ data: AssessmentSettings }> {
-	const response = await apiClient.get<AssessmentSettings>('/api/academic/assessments/settings');
-	return {
-		data: requireApiData(response, 'ไม่สามารถโหลดการตั้งค่าโครงสร้างคะแนนได้')
-	};
-}
-
-export async function updateAssessmentSettings(
-	payload: UpdateAssessmentSettingsRequest
-): Promise<{ data: AssessmentSettings }> {
-	const response = await apiClient.put<AssessmentSettings>(
-		'/api/academic/assessments/settings',
-		payload
+export const getAssessmentSettings = () =>
+	assessmentData(
+		apiClient.get<AssessmentSettings>('/api/academic/assessments/settings'),
+		'ไม่สามารถโหลดการตั้งค่าโครงสร้างคะแนนได้'
 	);
-	return {
-		data: requireApiData(response, 'ไม่สามารถบันทึกการตั้งค่าโครงสร้างคะแนนได้')
-	};
-}
 
-export async function saveAssessmentPlan(
-	courseId: string,
-	payload: SaveAssessmentPlanRequest
-): Promise<{ data: AssessmentPlanDetail }> {
-	const response = await apiClient.put<AssessmentPlanDetail>(
-		`/api/academic/assessments/courses/${courseId}`,
-		payload
+export const updateAssessmentSettings = (payload: UpdateAssessmentSettingsRequest) =>
+	assessmentData(
+		apiClient.put<AssessmentSettings>('/api/academic/assessments/settings', payload),
+		'ไม่สามารถบันทึกการตั้งค่าโครงสร้างคะแนนได้'
 	);
-	return {
-		data: requireApiData(response, 'ไม่สามารถบันทึกโครงสร้างคะแนนได้')
-	};
-}
 
-export async function bulkSaveAssessmentQuickScores(
-	payload: BulkSaveAssessmentQuickScoresRequest
-): Promise<{ data: BulkSaveAssessmentQuickScoresResponse }> {
-	const response = await apiClient.put<BulkSaveAssessmentQuickScoresResponse>(
-		'/api/academic/assessments/plans/quick-scores',
-		payload
+export const saveAssessmentPlan = (offeringId: string, payload: SaveAssessmentPlanRequest) =>
+	assessmentData(
+		apiClient.put<AssessmentPlanDetail>(
+			`/api/academic/assessments/offerings/${encodeURIComponent(offeringId)}`,
+			payload
+		),
+		'ไม่สามารถบันทึกโครงสร้างคะแนนได้'
 	);
-	return {
-		data: requireApiData(response, 'ไม่สามารถบันทึกโครงสร้างคะแนนได้')
-	};
-}
 
-export async function submitAssessmentPlan(
-	courseId: string
-): Promise<{ data: AssessmentPlanDetail }> {
-	const response = await apiClient.post<AssessmentPlanDetail>(
-		`/api/academic/assessments/courses/${courseId}/submit`
+export const submitAssessmentPlan = (offeringId: string) =>
+	assessmentData(
+		apiClient.post<AssessmentPlanDetail>(
+			`/api/academic/assessments/offerings/${encodeURIComponent(offeringId)}/submit`
+		),
+		'ไม่สามารถส่งโครงสร้างคะแนนได้'
 	);
-	return {
-		data: requireApiData(response, 'ไม่สามารถส่งโครงสร้างคะแนนได้')
-	};
-}

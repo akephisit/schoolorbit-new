@@ -1,445 +1,347 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
-
 	import {
-		type AcademicPeriod,
-		listPeriods,
-		createPeriod,
-		updatePeriod,
-		deletePeriod,
-		reorderPeriods
-	} from '$lib/api/timetable';
-	import { lookupAcademicYears, type LookupItem } from '$lib/api/academic';
-
-	import * as Card from '$lib/components/ui/card';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import { Badge } from '$lib/components/ui/badge';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import * as Select from '$lib/components/ui/select';
-	import MobileDragDropPolyfill from '$lib/components/MobileDragDropPolyfill.svelte';
+		getAcademicContextStore,
+		registerAcademicContextDirtySource
+	} from '$lib/academic-context/store';
+	import {
+		listBellSchedulePeriods,
+		listBellSchedules,
+		replaceBellSchedulePeriods,
+		type BellSchedule,
+		type ReplaceBellSchedulePeriodsRequest
+	} from '$lib/api/academic-core';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { Badge } from '$lib/components/ui/badge';
+	import { Button } from '$lib/components/ui/button';
+	import * as Card from '$lib/components/ui/card';
+	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
+	import { CirclePlus, Clock3, Loader2, Save, Trash2 } from 'lucide-svelte';
 
-	import { Plus, Settings, Trash2, Calendar, GripVertical, Info } from 'lucide-svelte';
+	type PeriodDraft = ReplaceBellSchedulePeriodsRequest['periods'][number];
 
-	let loading = $state(true);
-	let periods = $state<AcademicPeriod[]>([]);
-	let academicYears = $state<LookupItem[]>([]);
-	let selectedYearId = $state('');
-
-	let showPeriodDialog = $state(false);
-	let showDeleteDialog = $state(false);
-	let submitting = $state(false);
-
-	let editingPeriod = $state<AcademicPeriod | null>(null);
-	let deleteTarget = $state<{ id: string; name: string } | null>(null);
-
-	let formYearId = $state('');
-
-	// Drag-and-drop state
-	let draggedPeriod = $state<AcademicPeriod | null>(null);
-	let isDirty = $state(false);
+	const academicContext = getAcademicContextStore();
+	const academicYearId = $derived($academicContext.selected.academicYearId);
+	let schedules = $state<BellSchedule[]>([]);
+	let selectedScheduleId = $state('');
+	let periods = $state<PeriodDraft[]>([]);
+	let loading = $state(false);
+	let saving = $state(false);
+	let dirty = $state(false);
+	let errorMessage = $state('');
+	let revision = 0;
 
 	const canReadAcademicPeriods = $derived(
-		$can.hasAny(PERMISSIONS.ACADEMIC_TERM_READ_SCHOOL, PERMISSIONS.ACADEMIC_TERM_MANAGE_SCHOOL)
+		$can.hasAny(PERMISSIONS.ACADEMIC_YEAR_READ_SCHOOL, PERMISSIONS.ACADEMIC_YEAR_MANAGE_SCHOOL)
 	);
-	const canManageAcademicPeriods = $derived($can.has(PERMISSIONS.ACADEMIC_TERM_MANAGE_SCHOOL));
+	const canManageAcademicPeriods = $derived($can.has(PERMISSIONS.ACADEMIC_YEAR_MANAGE_SCHOOL));
+	const selectedSchedule = $derived(
+		schedules.find((schedule) => schedule.id === selectedScheduleId) ?? null
+	);
 
-	async function loadData() {
-		if (!canReadAcademicPeriods) {
-			academicYears = [];
-			periods = [];
-			loading = false;
-			return;
-		}
-
-		try {
-			loading = true;
-			const yearsRes = await lookupAcademicYears(false);
-			academicYears = yearsRes.data;
-
-			if (academicYears.length > 0 && !selectedYearId) {
-				const activeYear = academicYears.find((y) => y.is_current) || academicYears[0];
-				selectedYearId = activeYear.id;
-			}
-
-			if (selectedYearId) {
-				await loadPeriods();
-			}
-		} catch {
-			toast.error('โหลดข้อมูลไม่สำเร็จ');
-		} finally {
-			loading = false;
-		}
-	}
-
-	async function loadPeriods() {
-		if (!canReadAcademicPeriods || !selectedYearId) return;
-		try {
-			const res = await listPeriods({ academic_year_id: selectedYearId });
-			periods = res.data.sort((a, b) => a.order_index - b.order_index);
-			isDirty = false;
-		} catch {
-			toast.error('โหลดคาบเวลาไม่สำเร็จ');
-		}
-	}
-
-	async function handleSavePeriod(e: SubmitEvent) {
-		e.preventDefault();
-
-		if (!canManageAcademicPeriods) {
-			toast.error('ไม่มีสิทธิ์จัดการคาบเวลา');
-			return;
-		}
-
-		const form = e.target as HTMLFormElement;
-		const formData = new FormData(form);
-
-		const payload = {
-			academic_year_id: formData.get('academic_year_id') as string,
-			name: formData.get('name') as string,
-			start_time: formData.get('start_time') as string,
-			end_time: formData.get('end_time') as string
-			// order_index ไม่ส่ง — backend จะ auto MAX+1 ตอน create
-			// edit ก็ไม่แตะ order_index (ใช้ drag-drop แทน)
+	function periodDraft(
+		period: Awaited<ReturnType<typeof listBellSchedulePeriods>>[number]
+	): PeriodDraft {
+		return {
+			name: period.name ?? null,
+			startTime: period.startTime.slice(0, 5),
+			endTime: period.endTime.slice(0, 5),
+			orderIndex: period.orderIndex,
+			applicableDays: period.applicableDays
+				? period.applicableDays
+						.split(',')
+						.map((day) => day.trim())
+						.filter(Boolean)
+				: [],
+			isActive: period.isActive
 		};
+	}
 
-		submitting = true;
+	async function loadPeriods(scheduleId: string): Promise<void> {
+		const rows = await listBellSchedulePeriods(scheduleId);
+		periods = rows.sort((a, b) => a.orderIndex - b.orderIndex).map(periodDraft);
+		dirty = false;
+	}
+
+	async function loadWorkspace(yearId: string): Promise<void> {
+		const current = ++revision;
+		loading = true;
+		errorMessage = '';
 		try {
-			if (editingPeriod) {
-				await updatePeriod(editingPeriod.id, payload);
-				toast.success('บันทึกข้อมูลสำเร็จ');
-			} else {
-				await createPeriod(payload);
-				toast.success('เพิ่มคาบเวลาสำเร็จ');
+			const rows = await listBellSchedules(yearId);
+			if (current !== revision) return;
+			schedules = rows;
+			const preferred = rows.find((schedule) => schedule.isDefault) ?? rows[0] ?? null;
+			selectedScheduleId = preferred?.id ?? '';
+			periods = [];
+			if (preferred) await loadPeriods(preferred.id);
+		} catch (error) {
+			if (current === revision) {
+				errorMessage = error instanceof Error ? error.message : 'โหลดตารางคาบไม่สำเร็จ';
 			}
-			showPeriodDialog = false;
-			await loadPeriods();
-		} catch (e) {
-			toast.error(e instanceof Error ? e.message : 'บันทึกไม่สำเร็จ');
 		} finally {
-			submitting = false;
+			if (current === revision) loading = false;
 		}
 	}
 
-	async function handleDelete() {
-		if (!canManageAcademicPeriods) {
-			toast.error('ไม่มีสิทธิ์ลบคาบเวลา');
+	async function selectSchedule(event: Event): Promise<void> {
+		const nextId = (event.currentTarget as HTMLSelectElement).value;
+		if (nextId === selectedScheduleId) return;
+		if (dirty) {
+			(event.currentTarget as HTMLSelectElement).value = selectedScheduleId;
+			toast.warning('กรุณาบันทึกคาบที่แก้ไขก่อนเปลี่ยนตารางเวลา');
 			return;
 		}
-		if (!deleteTarget) return;
-		submitting = true;
+		selectedScheduleId = nextId;
+		loading = true;
 		try {
-			await deletePeriod(deleteTarget.id);
-			toast.success('ลบคาบเวลาสำเร็จ');
-			showDeleteDialog = false;
-			await loadPeriods();
-		} catch (e) {
-			toast.error(e instanceof Error ? e.message : 'ลบไม่สำเร็จ (อาจมีข้อมูลตารางสอนเชื่อมโยง)');
+			await loadPeriods(nextId);
+		} catch (error) {
+			errorMessage = error instanceof Error ? error.message : 'โหลดคาบไม่สำเร็จ';
 		} finally {
-			submitting = false;
+			loading = false;
 		}
 	}
 
-	function openAddPeriod() {
-		if (!canManageAcademicPeriods) {
-			toast.error('ไม่มีสิทธิ์เพิ่มคาบเวลา');
-			return;
-		}
-
-		editingPeriod = null;
-		formYearId = selectedYearId;
-		showPeriodDialog = true;
+	function addPeriod(): void {
+		periods.push({
+			name: `คาบ ${periods.length + 1}`,
+			startTime: '08:00',
+			endTime: '09:00',
+			orderIndex: periods.length + 1,
+			applicableDays: [],
+			isActive: true
+		});
+		dirty = true;
 	}
 
-	function openEditPeriod(p: AcademicPeriod) {
-		if (!canManageAcademicPeriods) {
-			toast.error('ไม่มีสิทธิ์แก้ไขคาบเวลา');
-			return;
-		}
-
-		editingPeriod = p;
-		formYearId = p.academic_year_id;
-		showPeriodDialog = true;
+	function removePeriod(index: number): void {
+		periods.splice(index, 1);
+		dirty = true;
 	}
 
-	function confirmDelete(p: AcademicPeriod) {
-		if (!canManageAcademicPeriods) {
-			toast.error('ไม่มีสิทธิ์ลบคาบเวลา');
-			return;
-		}
-
-		const label = p.name || `${formatTime(p.start_time)} – ${formatTime(p.end_time)}`;
-		deleteTarget = { id: p.id, name: label };
-		showDeleteDialog = true;
+	function movePeriod(index: number, direction: -1 | 1): void {
+		const target = index + direction;
+		if (target < 0 || target >= periods.length) return;
+		const [period] = periods.splice(index, 1);
+		periods.splice(target, 0, period);
+		dirty = true;
 	}
 
-	function formatTime(time: string): string {
-		return time.substring(0, 5);
-	}
-
-	// =========================================
-	// Drag & Drop
-	// =========================================
-
-	function handleDragStart(e: DragEvent, p: AcademicPeriod) {
-		if (!canManageAcademicPeriods) return;
-		e.dataTransfer!.effectAllowed = 'move';
-		draggedPeriod = p;
-	}
-
-	function handleDragOver(e: DragEvent) {
-		if (!canManageAcademicPeriods) return;
-		e.preventDefault();
-		e.dataTransfer!.dropEffect = 'move';
-	}
-
-	function handleDragEnter(_e: DragEvent, target: AcademicPeriod) {
-		if (!canManageAcademicPeriods) return;
-		if (!draggedPeriod || draggedPeriod.id === target.id) return;
-
-		const oldIndex = periods.findIndex((p) => p.id === draggedPeriod!.id);
-		const newIndex = periods.findIndex((p) => p.id === target.id);
-		if (oldIndex === -1 || newIndex === -1) return;
-
-		const next = [...periods];
-		const [removed] = next.splice(oldIndex, 1);
-		next.splice(newIndex, 0, removed);
-		periods = next;
-		isDirty = true;
-	}
-
-	async function handleDragEnd() {
-		const dragged = draggedPeriod;
-		draggedPeriod = null;
-		if (!canManageAcademicPeriods || !isDirty || !dragged || !selectedYearId) return;
-
-		const items = periods.map((p, i) => ({ id: p.id, order_index: i + 1 }));
+	async function savePeriods(): Promise<void> {
+		const schedule = selectedSchedule;
+		if (!selectedScheduleId || !schedule || !canManageAcademicPeriods) return;
+		saving = true;
+		errorMessage = '';
 		try {
-			await reorderPeriods(selectedYearId, items);
-			// Update local order_index ให้ตรง backend (จะ reload เพื่อความ accurate)
-			await loadPeriods();
-			toast.success('บันทึกลำดับสำเร็จ');
-		} catch (e) {
-			toast.error(e instanceof Error ? e.message : 'บันทึกลำดับไม่สำเร็จ');
-			await loadPeriods(); // revert
+			const saved = await replaceBellSchedulePeriods(selectedScheduleId, {
+				rowVersion: schedule.rowVersion,
+				periods: periods.map((period, index) => ({
+					...period,
+					name: period.name?.trim() || null,
+					orderIndex: index + 1
+				}))
+			});
+			schedules = schedules.map((item) =>
+				item.id === schedule.id ? { ...item, rowVersion: item.rowVersion + 1 } : item
+			);
+			periods = saved.sort((a, b) => a.orderIndex - b.orderIndex).map(periodDraft);
+			dirty = false;
+			toast.success('บันทึกคาบเรียนแล้ว');
+		} catch (error) {
+			errorMessage = error instanceof Error ? error.message : 'บันทึกคาบเรียนไม่สำเร็จ';
+			toast.error(errorMessage);
+		} finally {
+			saving = false;
 		}
 	}
 
-	$effect(() => {
-		if (selectedYearId) {
-			loadPeriods();
-		}
+	onMount(() => {
+		let loadedYearId: string | null = null;
+		const unregisterDirty = registerAcademicContextDirtySource(
+			'bell-schedule-periods',
+			() => dirty
+		);
+		const unsubscribe = academicContext.subscribe((state) => {
+			const yearId = state.selected.academicYearId;
+			if (yearId && yearId !== loadedYearId) {
+				loadedYearId = yearId;
+				void loadWorkspace(yearId);
+			}
+		});
+		return () => {
+			unsubscribe();
+			unregisterDirty();
+		};
 	});
-
-	onMount(loadData);
 </script>
-
-<MobileDragDropPolyfill />
 
 <PageShell
 	title="ตั้งค่าคาบเวลา"
-	description="กำหนดคาบเรียนมาตรฐานของโรงเรียนในแต่ละปีการศึกษา (ใช้สำหรับจัดตารางสอน)"
+	description="กำหนดคาบของตารางเวลาแต่ละชุดในปีการศึกษาที่เลือก แล้วนำไปใช้กับทุกภาคเรียนของปีนั้น"
 >
-	<div class="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-3 sm:p-4">
-		<div class="w-[250px]">
-			<Select.Root type="single" bind:value={selectedYearId}>
-				<Select.Trigger class="w-full">
-					<Calendar class="mr-2 h-4 w-4" />
-					{academicYears.find((y) => y.id === selectedYearId)?.name || 'เลือกปีการศึกษา'}
-				</Select.Trigger>
-				<Select.Content>
-					{#each academicYears as year (year.id)}
-						<Select.Item value={year.id}>{year.name}</Select.Item>
-					{/each}
-				</Select.Content>
-			</Select.Root>
-		</div>
-		{#if canManageAcademicPeriods}
-			<div class="ml-auto">
-				<Button onclick={openAddPeriod} disabled={!selectedYearId}>
-					<Plus class="mr-2 h-4 w-4" /> เพิ่มคาบเวลา
-				</Button>
-			</div>
-		{/if}
-	</div>
-
 	{#if !canReadAcademicPeriods}
 		<PageState
 			variant="permission"
 			title="ไม่มีสิทธิ์ดูคาบเวลา"
-			description="บัญชีนี้เข้า module โครงสร้างวิชาการได้ แต่ยังไม่มีสิทธิ์อ่านข้อมูลคาบเวลา"
+			description="ต้องมีสิทธิ์อ่านหรือจัดการปีการศึกษาระดับโรงเรียน"
 		/>
-	{:else if canManageAcademicPeriods}
-		<div
-			class="bg-muted/40 text-muted-foreground flex items-start gap-2 rounded-md border p-3 text-sm"
-		>
-			<Info class="mt-0.5 h-4 w-4 shrink-0" />
-			<span>
-				ลากที่ <GripVertical class="inline h-3.5 w-3.5" /> เพื่อจัดลำดับคาบ — ตารางสอนที่จัดไปแล้วจะไม่ได้รับผลกระทบ
-				(เปลี่ยนแค่ลำดับการแสดงผล)
-			</span>
-		</div>
-	{/if}
-
-	{#if canReadAcademicPeriods}
-		{#if loading}
-			<PageSkeleton variant="cards" rows={3} />
-		{:else if periods.length === 0}
-			<PageState
-				title={selectedYearId ? 'ยังไม่มีคาบเวลา' : 'ยังไม่ได้เลือกปีการศึกษา'}
-				description={selectedYearId
-					? 'กดปุ่มเพิ่มคาบเวลาเพื่อเริ่มต้นกำหนดคาบเรียน'
-					: 'กรุณาเลือกปีการศึกษาเพื่อดูคาบเวลา'}
-				actionLabel={selectedYearId && canManageAcademicPeriods ? 'เพิ่มคาบเวลา' : undefined}
-				onaction={selectedYearId && canManageAcademicPeriods ? openAddPeriod : undefined}
-			/>
-		{:else}
-			<Card.Root>
-				<div class="divide-border divide-y" role="list">
-					{#each periods as p, i (p.id)}
-						<div
-							role="listitem"
-							draggable={canManageAcademicPeriods}
-							ondragstart={(e) => handleDragStart(e, p)}
-							ondragover={handleDragOver}
-							ondragenter={(e) => handleDragEnter(e, p)}
-							ondragend={handleDragEnd}
-							class="hover:bg-muted/30 flex items-center gap-3 px-4 py-3 transition-colors {draggedPeriod?.id ===
-							p.id
-								? 'opacity-40'
-								: ''}"
-							style="touch-action: none;"
+	{:else if !academicYearId}
+		<PageState
+			variant="empty"
+			title="เลือกปีการศึกษาก่อน"
+			description="ใช้ตัวเลือกปีการศึกษาบนแถบด้านบน"
+		/>
+	{:else if loading}
+		<PageSkeleton variant="cards" rows={4} />
+	{:else if errorMessage && schedules.length === 0}
+		<PageState
+			variant="error"
+			title="โหลดคาบเวลาไม่สำเร็จ"
+			description={errorMessage}
+			actionLabel="ลองอีกครั้ง"
+			onaction={() => loadWorkspace(academicYearId)}
+		/>
+	{:else if schedules.length === 0}
+		<PageState
+			title="ยังไม่มีตารางเวลาสำหรับปีนี้"
+			description="สร้างตารางเวลาในหน้าตั้งค่าปีและภาคเรียนก่อน แล้วจึงกลับมากำหนดคาบ"
+		/>
+	{:else}
+		<div class="space-y-5">
+			<Card.Root class="gap-0 py-0">
+				<Card.Content class="flex flex-wrap items-center justify-between gap-4 pt-6">
+					<div class="min-w-64 space-y-2">
+						<Label for="bell-schedule">ตารางเวลา</Label>
+						<select
+							id="bell-schedule"
+							class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+							value={selectedScheduleId}
+							onchange={selectSchedule}
 						>
-							{#if canManageAcademicPeriods}
+							{#each schedules as schedule (schedule.id)}
+								<option value={schedule.id}>{schedule.code} · {schedule.name}</option>
+							{/each}
+						</select>
+					</div>
+					<div class="flex items-center gap-2">
+						{#if selectedSchedule?.isDefault}<Badge variant="secondary">ค่าเริ่มต้นของปี</Badge
+							>{/if}
+						{#if canManageAcademicPeriods}
+							<Button variant="outline" disabled={saving || !dirty} onclick={savePeriods}>
+								{#if saving}<Loader2 class="animate-spin" />{:else}<Save />{/if}
+								บันทึกทั้งหมด
+							</Button>
+						{/if}
+					</div>
+				</Card.Content>
+			</Card.Root>
+
+			{#if dirty}
+				<p class="text-amber-700 dark:text-amber-300 text-sm">
+					มีการแก้ไขที่ยังไม่บันทึก — ต้องบันทึกก่อนเปลี่ยนปีการศึกษาหรือตารางเวลา
+				</p>
+			{/if}
+			{#if errorMessage}
+				<div
+					class="border-destructive/30 bg-destructive/5 text-destructive rounded-lg border p-3 text-sm"
+				>
+					{errorMessage}
+				</div>
+			{/if}
+
+			<Card.Root>
+				<Card.Header>
+					<Card.Title class="flex items-center gap-2"><Clock3 /> คาบเรียน</Card.Title>
+					<Card.Description>
+						ลำดับและช่วงเวลานี้เป็น snapshot ที่ตารางสอนของภาคเรียนในปีนี้ใช้อ้างอิง
+					</Card.Description>
+				</Card.Header>
+				<Card.Content class="space-y-3">
+					{#each periods as period, index (index)}
+						<div
+							class="grid items-end gap-3 rounded-lg border p-3 md:grid-cols-[4rem_minmax(10rem,1fr)_9rem_9rem_auto]"
+						>
+							<div class="space-y-2">
+								<Label>ลำดับ</Label>
 								<div
-									class="text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing"
+									class="flex h-9 items-center justify-center rounded-md border text-sm font-medium"
 								>
-									<GripVertical class="h-5 w-5" />
+									{index + 1}
 								</div>
-							{/if}
-
-							<Badge variant="outline" class="font-mono">#{i + 1}</Badge>
-
-							<div class="min-w-0 flex-1">
-								{#if p.name}
-									<p class="text-foreground truncate font-medium">{p.name}</p>
-									<p class="text-muted-foreground text-sm">
-										{formatTime(p.start_time)} – {formatTime(p.end_time)}
-									</p>
-								{:else}
-									<p class="text-foreground font-medium">
-										{formatTime(p.start_time)} – {formatTime(p.end_time)}
-									</p>
-								{/if}
 							</div>
-
-							<Badge variant={p.is_active ? 'default' : 'outline'}>
-								{p.is_active ? 'ใช้งาน' : 'ไม่ใช้งาน'}
-							</Badge>
-
+							<div class="space-y-2">
+								<Label for={`period-name-${index}`}>ชื่อคาบ</Label>
+								<Input
+									id={`period-name-${index}`}
+									bind:value={period.name}
+									disabled={!canManageAcademicPeriods}
+									oninput={() => (dirty = true)}
+								/>
+							</div>
+							<div class="space-y-2">
+								<Label for={`period-start-${index}`}>เริ่ม</Label>
+								<Input
+									id={`period-start-${index}`}
+									type="time"
+									bind:value={period.startTime}
+									disabled={!canManageAcademicPeriods}
+									oninput={() => (dirty = true)}
+								/>
+							</div>
+							<div class="space-y-2">
+								<Label for={`period-end-${index}`}>สิ้นสุด</Label>
+								<Input
+									id={`period-end-${index}`}
+									type="time"
+									bind:value={period.endTime}
+									disabled={!canManageAcademicPeriods}
+									oninput={() => (dirty = true)}
+								/>
+							</div>
 							{#if canManageAcademicPeriods}
-								<div class="flex items-center gap-1">
-									<Button variant="ghost" size="icon" onclick={() => openEditPeriod(p)}>
-										<Settings class="h-4 w-4" />
-									</Button>
+								<div class="flex justify-end gap-1">
 									<Button
 										variant="ghost"
 										size="icon"
-										class="text-destructive"
-										onclick={() => confirmDelete(p)}
+										disabled={index === 0}
+										title="เลื่อนขึ้น"
+										onclick={() => movePeriod(index, -1)}>↑</Button
 									>
-										<Trash2 class="h-4 w-4" />
-									</Button>
+									<Button
+										variant="ghost"
+										size="icon"
+										disabled={index === periods.length - 1}
+										title="เลื่อนลง"
+										onclick={() => movePeriod(index, 1)}>↓</Button
+									>
+									<Button
+										variant="ghost"
+										size="icon"
+										title="ลบคาบ"
+										onclick={() => removePeriod(index)}><Trash2 /></Button
+									>
 								</div>
 							{/if}
 						</div>
 					{/each}
-				</div>
-			</Card.Root>
-		{/if}
-	{/if}
-
-	<!-- Period Dialog -->
-	{#if canManageAcademicPeriods}
-		<Dialog.Root bind:open={showPeriodDialog}>
-			<Dialog.Content>
-				<Dialog.Header>
-					<Dialog.Title>{editingPeriod ? 'แก้ไขคาบเวลา' : 'เพิ่มคาบเวลาใหม่'}</Dialog.Title>
-				</Dialog.Header>
-				<form onsubmit={handleSavePeriod} class="space-y-4 py-4">
-					<input type="hidden" name="academic_year_id" value={formYearId} />
-
-					<div class="space-y-2">
-						<Label>ชื่อคาบ <span class="text-muted-foreground text-xs">(ไม่บังคับ)</span></Label>
-						<Input
-							name="name"
-							value={editingPeriod?.name || ''}
-							placeholder="เช่น พักเที่ยง, โฮมรูม (เว้นว่างถ้าเป็นคาบเรียนปกติ)"
-						/>
-					</div>
-
-					<div class="grid grid-cols-2 gap-4">
-						<div class="space-y-2">
-							<Label>เวลาเริ่ม <span class="text-red-500">*</span></Label>
-							<Input
-								type="time"
-								name="start_time"
-								value={editingPeriod?.start_time ? formatTime(editingPeriod.start_time) : ''}
-								required
-							/>
+					{#if periods.length === 0}
+						<div class="border-border rounded-lg border border-dashed p-8 text-center text-sm">
+							ยังไม่มีคาบในตารางเวลานี้
 						</div>
-						<div class="space-y-2">
-							<Label>เวลาจบ <span class="text-red-500">*</span></Label>
-							<Input
-								type="time"
-								name="end_time"
-								value={editingPeriod?.end_time ? formatTime(editingPeriod.end_time) : ''}
-								required
-							/>
-						</div>
-					</div>
-
-					{#if !editingPeriod}
-						<p class="text-muted-foreground text-xs">
-							ลำดับคาบจะถูกกำหนดเป็นตัวสุดท้ายอัตโนมัติ — ลากเพื่อจัดลำดับใหม่หลังเพิ่ม
-						</p>
 					{/if}
-
-					<Dialog.Footer>
-						<Button variant="outline" type="button" onclick={() => (showPeriodDialog = false)}
-							>ยกเลิก</Button
-						>
-						<Button type="submit" disabled={submitting}>บันทึก</Button>
-					</Dialog.Footer>
-				</form>
-			</Dialog.Content>
-		</Dialog.Root>
-	{/if}
-
-	<!-- Delete Confirm -->
-	{#if canManageAcademicPeriods}
-		<Dialog.Root bind:open={showDeleteDialog}>
-			<Dialog.Content>
-				<Dialog.Header>
-					<Dialog.Title>ยืนยันการลบ</Dialog.Title>
-					<Dialog.Description>
-						คุณต้องการลบคาบ "{deleteTarget?.name}" ใช่หรือไม่?
-						หากมีตารางสอนที่ใช้คาบนี้จะไม่สามารถลบได้
-					</Dialog.Description>
-				</Dialog.Header>
-				<Dialog.Footer>
-					<Button variant="outline" onclick={() => (showDeleteDialog = false)}>ยกเลิก</Button>
-					<Button variant="destructive" onclick={handleDelete} disabled={submitting}
-						>ยืนยันลบ</Button
-					>
-				</Dialog.Footer>
-			</Dialog.Content>
-		</Dialog.Root>
+					{#if canManageAcademicPeriods}
+						<Button variant="outline" class="w-full border-dashed" onclick={addPeriod}>
+							<CirclePlus /> เพิ่มคาบ
+						</Button>
+					{/if}
+				</Card.Content>
+			</Card.Root>
+		</div>
 	{/if}
 </PageShell>

@@ -284,7 +284,7 @@ test('generated lookup, menu, and feature contracts own read transport DTOs', as
 	}
 
 	for (const source of [lookupApi, staffApi, menuApi, menuAdminApi, featureApi]) {
-		assert.match(source, /import\s+type\s+\{\s*components\s*\}/);
+		assert.match(source, /import\s+type\s+\{[^}]*\bcomponents\b[^}]*\}/);
 	}
 	assert.match(menuAdminApi, /MenuWorkspace\s*=\s*Schemas\['MenuWorkspace'\]/);
 	assert.match(
@@ -293,7 +293,7 @@ test('generated lookup, menu, and feature contracts own read transport DTOs', as
 	);
 	assert.doesNotMatch(
 		lookupApi,
-		/export\s+interface\s+(?:LookupItem|StaffLookupItem|RoleLookupItem|OrganizationUnitLookupItem|GradeLevelLookupItem|ClassroomLookupItem|AcademicYearLookupItem|StudentLookupItem|RoomLookupItem)\b/
+		/export\s+interface\s+(?:LookupItem|StaffLookupItem|RoleLookupItem|OrganizationUnitLookupItem|GradeLevelLookupItem|HomeroomLookupItem|AcademicYearLookupItem|StudentLookupItem|RoomLookupItem)\b/
 	);
 	assert.match(
 		staffApi,
@@ -327,7 +327,7 @@ test('generated staff, student, and parent profile contracts own read transport 
 	}
 	assert.doesNotMatch(
 		staffApi,
-		/export\s+interface\s+(?:StaffListItem|StaffDashboardOverview|RoleResponse|OrganizationUnitResponse|TeachingCourseItem|AdvisorClassroomItem|StaffInfoResponse|StaffProfileResponse|PublicStaffRoleResponse|PublicStaffOrganizationUnitResponse|PublicStaffProfileResponse)\b/
+		/export\s+interface\s+(?:StaffListItem|StaffDashboardOverview|RoleResponse|OrganizationUnitResponse|TeachingAssignmentItem|AdvisorHomeroomItem|StaffInfoResponse|StaffProfileResponse|PublicStaffRoleResponse|PublicStaffOrganizationUnitResponse|PublicStaffProfileResponse)\b/
 	);
 	assert.doesNotMatch(studentApi, /export\s+interface\s+(?:StudentParent|Student)\b/);
 	assert.doesNotMatch(parentApi, /export\s+interface\s+(?:ChildDto|ParentProfile)\b/);
@@ -353,8 +353,7 @@ test('generated self-service schedule contracts own timetable, exam, and calenda
 		assert.equal(contract.paths?.[route]?.[method]?.operationId, operationId, `${method} ${route}`);
 	}
 
-	assert.match(timetableApi, /export\s+type\s+TimetableEntryDto\s*=\s*Schemas\['TimetableEntry'\]/);
-	assert.match(timetableApi, /export\s+type\s+TimetableEntry\s*=\s*Omit<TimetableEntryDto,/);
+	assert.match(timetableApi, /export\s+type\s+TimetableEntry\s*=\s*Schemas\['TimetableEntry'\]/);
 	assert.doesNotMatch(timetableApi, /export\s+interface\s+TimetableEntry\b/);
 
 	for (const schemaName of ['PersonalExamScheduleRound', 'PersonalExamSessionView']) {
@@ -610,7 +609,13 @@ test('daily teaching overview API uses typed response contracts', async () => {
 	for (const field of ['learningGroupId', 'offeringId', 'subjectId', 'activityId']) {
 		assert.match(dailyEntrySchema, new RegExp(`${field}\\?:\\s*string \\| null`));
 	}
-	assert.doesNotMatch(dailyEntrySchema, /activitySlotId|classroomCourseId|semesterId/);
+	for (const retiredField of [
+		['activity', 'SlotId'].join(''),
+		['classroom', 'CourseId'].join(''),
+		['semester', 'Id'].join('')
+	]) {
+		assert.doesNotMatch(dailyEntrySchema, new RegExp(retiredField));
+	}
 
 	assert.doesNotMatch(frontendTimetableApi, /interface\s+DailyTeachingOverview/);
 	assert.doesNotMatch(frontendTimetableApi, /interface\s+DailyTeachingTeacher/);
@@ -786,17 +791,17 @@ test('parent self-service API uses typed student and timetable responses', async
 	assert.match(parentsApi, /import type \{ Student \} from '\.\/students'/);
 	assert.match(parentsApi, /getChildProfile[\s\S]*Promise<LoadedApiResponse<Student>>/);
 	assert.match(parentsApi, /apiClient\.get<Student>/);
-	assert.match(
-		parentsApi,
-		/getChildTimetable[\s\S]*Promise<LoadedApiResponse<TimetableEntry\[\]>>/
-	);
+	assert.match(parentsApi, /getChildTimetable[\s\S]*Promise<TimetableEntry\[\]>/);
+	assert.match(parentsApi, /requireApiData\(/);
+	assert.match(parentsApi, /academicTermId=\$\{encodeURIComponent\(academicTermId\)\}/);
 	assert.doesNotMatch(parentsApi, /apiClient\.get<unknown>/);
 	assert.doesNotMatch(parentsApi, /return response as/);
 
 	assert.match(childPage, /import type \{ Student \} from '\$lib\/api\/students'/);
 	assert.match(childPage, /student = response\.data/);
 	assert.doesNotMatch(childPage, /response\.data as/);
-	assert.match(timetablePage, /child = childRes\.data/);
+	assert.match(timetablePage, /child = \(await getChildProfile\(studentId\)\)\.data/);
+	assert.match(timetablePage, /const loaded = await getChildTimetable\(studentId, termId\)/);
 	assert.doesNotMatch(timetablePage, /childData as/);
 });
 
@@ -898,12 +903,12 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.doesNotMatch(supervisionWorkspace, /saveMySupervisionEvaluation/);
 	assert.match(supervisionWorkspace, /acknowledgeSupervisionObservation/);
 	assert.match(supervisionWorkspace, /getMyTimetable/);
-	assert.match(supervisionWorkspace, /academic_semester_id:\s*cycle\?\.academicSemesterId/);
-	assert.match(supervisionWorkspace, /getSchoolDays/);
+	assert.match(supervisionWorkspace, /getMyTimetable\(\{ academicTermId:\s*termId \}\)/);
+	assert.match(supervisionWorkspace, /entry\.academicTermId === termId/);
 	assert.match(supervisionWorkspace, /timetableGridDays/);
 	assert.match(supervisionWorkspace, /timetablePeriodRows/);
 	assert.match(supervisionWorkspace, /selectTimetableEntry/);
-	assert.match(supervisionWorkspace, /entry\.period_order_index/);
+	assert.match(supervisionWorkspace, /entry\.periodName/);
 	assert.doesNotMatch(supervisionWorkspace, /period_name\?\.match\(/);
 	assert.match(supervisionWorkspace, /class="overflow-x-auto rounded-md border"/);
 	assert.match(
@@ -950,7 +955,7 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.doesNotMatch(supervisionWorkspace, /lg:grid-cols-\[120px_1fr_auto\]/);
 	assert.doesNotMatch(supervisionWorkspace, /md:grid-cols-\[1fr_220px\]/);
 	assert.doesNotMatch(supervisionWorkspace, /ratingLabel/);
-	assert.doesNotMatch(supervisionWorkspace, /textLabel/);
+	assert.doesNotMatch(supervisionWorkspace, /\btextLabel\b/);
 	assert.match(supervisionWorkspace, /canManageSchool/);
 	assert.match(supervisionWorkspace, /canManageRequests/);
 	assert.match(supervisionWorkspace, /canReadObservations/);
@@ -963,12 +968,13 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.match(supervisionWorkspace, /SUPERVISION_MANAGE_ORGANIZATION_TREE/);
 	assert.match(
 		supervisionWorkspace,
-		/shouldLoadObservations[\s\S]*await\s+listSupervisionObservations\(\)[\s\S]*:\s*\[\]/
+		/shouldLoadObservations[\s\S]*await\s+listSupervisionObservations\(\{[\s\S]*academicYearId:\s*yearId[\s\S]*academicTermId:\s*termId[\s\S]*:\s*\[\]/
 	);
 	assert.match(supervisionWorkspace, /getSupervisionEvaluatorAvailability/);
 	assert.match(supervisionWorkspace, /requestEvaluatorAvailability/);
 	assert.doesNotMatch(supervisionWorkspace, /lookupStaff/);
-	assert.match(supervisionWorkspace, /getAcademicStructure/);
+	assert.match(supervisionWorkspace, /getAcademicContextStore/);
+	assert.match(supervisionWorkspace, /academicContextOptions/);
 	assert.match(supervisionWorkspace, /\* as Select/);
 	assert.match(supervisionWorkspace, /\* as Dialog/);
 	assert.match(supervisionWorkspace, /\* as Table/);
@@ -997,18 +1003,15 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.doesNotMatch(supervisionWorkspace, /\bfetch\s*\(/);
 });
 
-test('timetable template API keeps typed empty responses after scheduler removal', async () => {
-	const schedulingApi = await readRepoFile('frontend-school/src/lib/api/scheduling.ts');
+test('canonical timetable API keeps generated response types after scheduler removal', async () => {
+	const timetableApi = await readRepoFile('frontend-school/src/lib/api/timetable.ts');
+	assert.match(timetableApi, /updateTimetableTemplate[\s\S]*apiClient\.put<TimetableTemplate>/);
 	assert.match(
-		schedulingApi,
-		/updateTimetableTemplate[\s\S]*apiClient\.put<Record<string, never>>/
-	);
-	assert.match(
-		schedulingApi,
-		/deleteTimetableTemplate[\s\S]*apiClient\.delete<Record<string, never>>/
+		timetableApi,
+		/deleteTimetableTemplate[\s\S]*apiClient\.delete<Schemas\['EmptyData'\]>/
 	);
 	assert.doesNotMatch(
-		schedulingApi,
+		timetableApi,
 		/autoScheduleTimetable|SchedulingJobResponse|saveSchedulingConfiguration/
 	);
 });
@@ -1158,22 +1161,22 @@ test('timetable API exposes typed loaded responses and conflict unions without r
 		'frontend-school/src/routes/(app)/staff/academic/timetable/+page.svelte'
 	);
 
-	assert.match(timetableApi, /type\s+LoadedApiResponse<T>/);
-	assert.match(timetableApi, /Promise<LoadedApiResponse<T>>/);
-	assert.match(timetableApi, /interface\s+TimetableConflictResponse/);
-	assert.match(timetableApi, /type\s+TimetableMutationResponse/);
-	assert.match(timetableApi, /apiClient\.post<TimetableEntryDto \| ConflictPayload>/);
-	assert.match(timetableApi, /apiClient\.put<TimetableEntryDto \| ConflictPayload>/);
-	assert.match(timetableApi, /timetableEntryFromDto\(entry\)/);
-	assert.match(timetableApi, /fetchApi<AcademicPeriod\[\]>/);
+	assert.match(timetableApi, /TimetableEntry\s*=\s*Schemas\['TimetableEntry'\]/);
+	assert.match(timetableApi, /TimetableFilters\s*=\s*operations\['listTimetableEntries'\]/);
+	assert.match(timetableApi, /MyTimetableFilters\s*=\s*operations\['getMyTimetable'\]/);
+	assert.match(timetableApi, /async function timetableData<T>/);
+	assert.match(timetableApi, /response\.status === 409/);
+	assert.match(timetableApi, /requireApiData\(response, fallback\)/);
+	assert.match(timetableApi, /academicTermId:\s*requiredTerm\(filters\.academicTermId\)/);
+	assert.match(timetableApi, /apiClient\.post<TimetableEntry>/);
+	assert.match(timetableApi, /apiClient\.put<TimetableEntry>/);
+	assert.match(timetableApi, /periodsFromTimetableEntries/);
 	assert.match(
 		extractGeneratedSchemaBlock(generated, 'TimetableEntry'),
 		/bellSchedulePeriodId:\s*string/
 	);
-	assert.match(timetableApi, /fetchApi<MoveValidityCell\[\]>/);
-	assert.match(timetableApi, /fetchApi<OccupancyEntry\[\]>/);
-	assert.match(timetableApi, /interface\s+MyActivityForEntry/);
-	assert.match(timetableApi, /fetchApi<MyActivityForEntry \| null>/);
+	assert.match(timetableApi, /apiClient\.post<MoveValidityCell\[\]>/);
+	assert.match(timetableApi, /apiClient\.get<TimetableOccupancyCell\[\]>/);
 	assert.doesNotMatch(timetableApi, /return response as T/);
 	assert.doesNotMatch(timetableApi, /ApiResponse<unknown>/);
 	assert.doesNotMatch(timetableApi, /response\.data as/);
@@ -1200,21 +1203,11 @@ test('academic core and delivery APIs consume generated DTOs without response ca
 	}
 });
 
-test('academic course instructor batch API sends ids in POST body', async () => {
-	const academicApi = await readRepoFile('frontend-school/src/lib/api/academic.ts');
-	const batchWrapper = academicApi.slice(
-		academicApi.indexOf('export const batchListCourseInstructors = async'),
-		academicApi.indexOf('export const batchListCourseInstructorsFromQuery = async')
-	);
-
-	assert.match(
-		batchWrapper,
-		/const data: BatchListCourseInstructorsRequest = \{ course_ids: courseIds \}[\s\S]*?fetchApi<Record<string,\s*CourseInstructor\[\]>>\(\s*['"]\/api\/academic\/planning\/courses\/instructors\/batch['"][\s\S]*?method:\s*['"]POST['"][\s\S]*?body:\s*JSON\.stringify\(data\)/
-	);
-	assert.doesNotMatch(
-		batchWrapper,
-		/new URLSearchParams\(\{\s*course_ids:\s*courseIds\.join\(['"],['"]\)\s*\}\)/
-	);
+test('legacy academic batch wrapper is absent after the hard cutover', async () => {
+	await assert.rejects(readRepoFile('frontend-school/src/lib/api/academic.ts'));
+	const deliveryApi = await readRepoFile('frontend-school/src/lib/api/learning-delivery.ts');
+	assert.match(deliveryApi, /generated\/school-api/);
+	assert.match(deliveryApi, /TeacherAssignment\s*=\s*Schemas\['TeacherAssignmentInput'\]/);
 });
 
 test('frontend API contracts use named dynamic JSON types instead of raw Record unknown', async () => {
@@ -1240,10 +1233,7 @@ test('frontend API contracts use named dynamic JSON types instead of raw Record 
 
 	assert.match(rules, /named contract/);
 	assert.match(rules, /Record<string,\s*unknown>/);
-	assert.ok(
-		checkedApiFiles.includes('frontend-school/src/lib/api/academic.ts'),
-		'frontend API contract guard should scan academic.ts'
-	);
+	assert.ok(!checkedApiFiles.includes('frontend-school/src/lib/api/academic.ts'));
 	assert.ok(
 		checkedApiFiles.includes('frontend-school/src/lib/api/admission.ts'),
 		'frontend API contract guard should scan admission.ts'

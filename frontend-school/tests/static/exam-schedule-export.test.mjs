@@ -7,11 +7,13 @@ const baseSession = {
 	examScheduleItemId: 'item-1',
 	examRoundId: 'round-1',
 	examDayId: 'day-1',
-	academicSemesterId: 'semester-1',
+	academicTermId: 'term-1',
+	academicYearId: 'year-1',
 	assessmentCategoryId: 'category-1',
-	assessmentPlanId: 'plan-1',
-	classroomCourseId: 'course-1',
-	classroomId: 'classroom-1',
+	courseAssessmentPlanId: 'plan-1',
+	learningOfferingId: 'offering-1',
+	learningGroupId: 'group-1',
+	homeroomId: 'homeroom-1',
 	subjectId: 'subject-1',
 	gradeLevelId: 'grade-1',
 	durationMinutes: 60,
@@ -28,9 +30,9 @@ const roomAssignments = [
 	{
 		id: 'room-m1-1',
 		examDayId: 'day-1',
-		classroomId: 'classroom-m1-1',
+		homeroomId: 'homeroom-m1-1',
 		roomId: 'exam-room-1',
-		classroomName: 'ม.1/1',
+		homeroomName: 'ม.1/1',
 		roomName: '313',
 		roomCapacity: 40,
 		invigilators: []
@@ -38,9 +40,9 @@ const roomAssignments = [
 	{
 		id: 'room-m1-2',
 		examDayId: 'day-1',
-		classroomId: 'classroom-m1-2',
+		homeroomId: 'homeroom-m1-2',
 		roomId: 'exam-room-2',
-		classroomName: 'ม.1/2',
+		homeroomName: 'ม.1/2',
 		roomName: '314',
 		roomCapacity: 40,
 		invigilators: []
@@ -48,9 +50,9 @@ const roomAssignments = [
 	{
 		id: 'room-m4-1',
 		examDayId: 'day-1',
-		classroomId: 'classroom-m4-1',
+		homeroomId: 'homeroom-m4-1',
 		roomId: 'exam-room-3',
-		classroomName: 'ม.4/1',
+		homeroomName: 'ม.4/1',
 		roomName: '411',
 		roomCapacity: 40,
 		invigilators: []
@@ -58,9 +60,9 @@ const roomAssignments = [
 	{
 		id: 'room-m4-2',
 		examDayId: 'day-1',
-		classroomId: 'classroom-m4-2',
+		homeroomId: 'homeroom-m4-2',
 		roomId: 'exam-room-4',
-		classroomName: 'ม.4/2',
+		homeroomName: 'ม.4/2',
 		roomName: '412',
 		roomCapacity: 40,
 		invigilators: []
@@ -68,21 +70,21 @@ const roomAssignments = [
 	{
 		id: 'room-m4-3',
 		examDayId: 'day-1',
-		classroomId: 'classroom-m4-3',
+		homeroomId: 'homeroom-m4-3',
 		roomId: 'exam-room-5',
-		classroomName: 'ม.4/3',
+		homeroomName: 'ม.4/3',
 		roomName: '413',
 		roomCapacity: 40,
 		invigilators: []
 	}
 ];
 
-const classroomCatalog = [
-	{ id: 'classroom-m1-1', name: 'ม.1/1', grade_level_id: 'grade-1', is_active: true },
-	{ id: 'classroom-m1-2', name: 'ม.1/2', grade_level_id: 'grade-1', is_active: true },
-	{ id: 'classroom-m4-1', name: 'ม.4/1', grade_level_id: 'grade-4', is_active: true },
-	{ id: 'classroom-m4-2', name: 'ม.4/2', grade_level_id: 'grade-4', is_active: true },
-	{ id: 'classroom-m4-3', name: 'ม.4/3', grade_level_id: 'grade-4', is_active: true }
+const homeroomCatalog = [
+	{ id: 'homeroom-m1-1', name: 'ม.1/1', gradeLevelId: 'grade-1', isActive: true },
+	{ id: 'homeroom-m1-2', name: 'ม.1/2', gradeLevelId: 'grade-1', isActive: true },
+	{ id: 'homeroom-m4-1', name: 'ม.4/1', gradeLevelId: 'grade-4', isActive: true },
+	{ id: 'homeroom-m4-2', name: 'ม.4/2', gradeLevelId: 'grade-4', isActive: true },
+	{ id: 'homeroom-m4-3', name: 'ม.4/3', gradeLevelId: 'grade-4', isActive: true }
 ];
 
 function scheduledSession(overrides) {
@@ -96,7 +98,7 @@ function exportWorkspace(scheduledSessions, extraDays = []) {
 	return {
 		round: {
 			id: 'round-1',
-			academicSemesterId: 'semester-1',
+			academicTermId: 'term-1',
 			name: 'วัดผลกลางภาคเรียนที่ 2 ปีการศึกษา 2568',
 			examKind: 'midterm',
 			status: 'draft',
@@ -131,8 +133,8 @@ const invigilatorWorkspace = {
 		{
 			assignmentId: 'assignment-m1-1',
 			examDayId: 'day-1',
-			classroomId: 'classroom-m1-1',
-			classroomName: 'ม.1/1',
+			homeroomId: 'homeroom-m1-1',
+			homeroomName: 'ม.1/1',
 			roomId: 'exam-room-1',
 			roomName: '313',
 			sessionMinutes: 180,
@@ -145,8 +147,8 @@ const invigilatorWorkspace = {
 		{
 			assignmentId: 'assignment-m1-2',
 			examDayId: 'day-1',
-			classroomId: 'classroom-m1-2',
-			classroomName: 'ม.1/2',
+			homeroomId: 'homeroom-m1-2',
+			homeroomName: 'ม.1/2',
 			roomId: 'exam-room-2',
 			roomName: '314',
 			sessionMinutes: 180,
@@ -174,7 +176,7 @@ const invigilatorWorkspace = {
 };
 
 describe('exam schedule export helpers', () => {
-	it('builds report sheets with full-grade and partial-classroom labels', () => {
+	it('builds report sheets with full-grade and partial-homeroom labels', () => {
 		const workbook = buildExamScheduleExportWorkbook(
 			exportWorkspace([
 				scheduledSession({
@@ -182,8 +184,8 @@ describe('exam schedule export helpers', () => {
 					startsAt: '09:00:00',
 					endsAt: '10:00:00',
 					durationMinutes: 60,
-					classroomName: 'ม.1/1',
-					classroomId: 'classroom-m1-1',
+					homeroomName: 'ม.1/1',
+					homeroomId: 'homeroom-m1-1',
 					gradeLevelName: 'ม.1',
 					gradeLevelYear: 1,
 					subjectNameTh: 'คณิตศาสตร์พื้นฐาน',
@@ -194,8 +196,8 @@ describe('exam schedule export helpers', () => {
 					startsAt: '09:00:00',
 					endsAt: '10:00:00',
 					durationMinutes: 60,
-					classroomName: 'ม.1/2',
-					classroomId: 'classroom-m1-2',
+					homeroomName: 'ม.1/2',
+					homeroomId: 'homeroom-m1-2',
 					gradeLevelName: 'ม.1',
 					gradeLevelYear: 1,
 					subjectNameTh: 'คณิตศาสตร์พื้นฐาน',
@@ -206,8 +208,8 @@ describe('exam schedule export helpers', () => {
 					startsAt: '09:00:00',
 					endsAt: '10:00:00',
 					durationMinutes: 60,
-					classroomId: 'classroom-m4-1',
-					classroomName: 'ม.4/1',
+					homeroomId: 'homeroom-m4-1',
+					homeroomName: 'ม.4/1',
 					gradeLevelId: 'grade-4',
 					gradeLevelName: 'ม.4',
 					gradeLevelYear: 4,
@@ -220,8 +222,8 @@ describe('exam schedule export helpers', () => {
 					startsAt: '10:00:00',
 					endsAt: '11:00:00',
 					durationMinutes: 60,
-					classroomId: 'classroom-m4-2',
-					classroomName: 'ม.4/2',
+					homeroomId: 'homeroom-m4-2',
+					homeroomName: 'ม.4/2',
 					gradeLevelId: 'grade-4',
 					gradeLevelName: 'ม.4',
 					gradeLevelYear: 4,
@@ -234,8 +236,8 @@ describe('exam schedule export helpers', () => {
 					startsAt: '10:00:00',
 					endsAt: '11:00:00',
 					durationMinutes: 60,
-					classroomId: 'classroom-m4-3',
-					classroomName: 'ม.4/3',
+					homeroomId: 'homeroom-m4-3',
+					homeroomName: 'ม.4/3',
 					gradeLevelId: 'grade-4',
 					gradeLevelName: 'ม.4',
 					gradeLevelYear: 4,
@@ -245,7 +247,7 @@ describe('exam schedule export helpers', () => {
 				})
 			]),
 			null,
-			{ classrooms: classroomCatalog }
+			{ homerooms: homeroomCatalog }
 		);
 
 		assert.deepEqual(
@@ -286,7 +288,7 @@ describe('exam schedule export helpers', () => {
 			workbook.upperSecondaryReport?.rows.some((row) => row.includes('ฟิสิกส์')),
 			true
 		);
-		assert.deepEqual(workbook.lowerSecondaryClassroomReport?.rows[3], [
+		assert.deepEqual(workbook.lowerSecondaryHomeroomReport?.rows[3], [
 			'ห้องเรียน',
 			'วันเดือนปี',
 			'เวลา',
@@ -295,17 +297,17 @@ describe('exam schedule export helpers', () => {
 			'รหัสวิชา',
 			'ห้องสอบ'
 		]);
-		assert.equal(workbook.lowerSecondaryClassroomReport?.rows[4][0], 'ม.1/1');
-		assert.equal(workbook.lowerSecondaryClassroomReport?.rows[4][1], 'วันพุธที่ 4 มีนาคม 2569');
-		assert.equal(workbook.lowerSecondaryClassroomReport?.rows[4][4], 'คณิตศาสตร์พื้นฐาน');
-		assert.equal(workbook.lowerSecondaryClassroomReport?.rows[5][0], 'ม.1/2');
-		assert.equal(workbook.upperSecondaryClassroomReport?.rows[4][0], 'ม.4/1');
-		assert.equal(workbook.upperSecondaryClassroomReport?.rows[4][4], 'ฟิสิกส์');
-		assert.equal(workbook.upperSecondaryClassroomReport?.rows[5][0], 'ม.4/2');
-		assert.equal(workbook.upperSecondaryClassroomReport?.rows[5][4], 'เคมี');
-		assert.equal(workbook.upperSecondaryClassroomReport?.rows[6][0], 'ม.4/3');
+		assert.equal(workbook.lowerSecondaryHomeroomReport?.rows[4][0], 'ม.1/1');
+		assert.equal(workbook.lowerSecondaryHomeroomReport?.rows[4][1], 'วันพุธที่ 4 มีนาคม 2569');
+		assert.equal(workbook.lowerSecondaryHomeroomReport?.rows[4][4], 'คณิตศาสตร์พื้นฐาน');
+		assert.equal(workbook.lowerSecondaryHomeroomReport?.rows[5][0], 'ม.1/2');
+		assert.equal(workbook.upperSecondaryHomeroomReport?.rows[4][0], 'ม.4/1');
+		assert.equal(workbook.upperSecondaryHomeroomReport?.rows[4][4], 'ฟิสิกส์');
+		assert.equal(workbook.upperSecondaryHomeroomReport?.rows[5][0], 'ม.4/2');
+		assert.equal(workbook.upperSecondaryHomeroomReport?.rows[5][4], 'เคมี');
+		assert.equal(workbook.upperSecondaryHomeroomReport?.rows[6][0], 'ม.4/3');
 		assert.equal(workbook.report['!printTitlesRow'], '1:4');
-		assert.equal(workbook.lowerSecondaryClassroomReport?.['!printTitlesRow'], '1:4');
+		assert.equal(workbook.lowerSecondaryHomeroomReport?.['!printTitlesRow'], '1:4');
 		assert.equal(workbook.report['!cols']?.length, 6);
 		assert.deepEqual(workbook.report['!merges'], [
 			{ s: { r: 0, c: 0 }, e: { r: 0, c: 5 } },
@@ -318,15 +320,15 @@ describe('exam schedule export helpers', () => {
 		assert.ok((workbook.schedule['!cols']?.length ?? 0) > 6);
 	});
 
-	it('does not collapse single-classroom subjects to the full grade label', () => {
+	it('does not collapse single-homeroom subjects to the full grade label', () => {
 		const workspace = exportWorkspace([
 			scheduledSession({
 				id: 'session-additional-math-m4-1',
 				startsAt: '09:00:00',
 				endsAt: '10:00:00',
 				durationMinutes: 60,
-				classroomId: 'classroom-m4-1',
-				classroomName: 'ม.4/1',
+				homeroomId: 'homeroom-m4-1',
+				homeroomName: 'ม.4/1',
 				gradeLevelId: 'grade-4',
 				gradeLevelName: 'ม.4',
 				gradeLevelYear: 4,
@@ -337,11 +339,11 @@ describe('exam schedule export helpers', () => {
 			})
 		]);
 		workspace.days[0].roomAssignments = roomAssignments.filter(
-			(assignment) => assignment.classroomId === 'classroom-m4-1'
+			(assignment) => assignment.homeroomId === 'homeroom-m4-1'
 		);
 
 		const workbook = buildExamScheduleExportWorkbook(workspace, null, {
-			classrooms: classroomCatalog
+			homerooms: homeroomCatalog
 		});
 
 		assert.equal(workbook.report.rows[4][3], 'คณิตศาสตร์เพิ่มเติม');
@@ -393,7 +395,7 @@ describe('exam schedule export helpers', () => {
 		]);
 	});
 
-	it('builds exam paper transfer sheet for invigilator signatures by subject and classroom', () => {
+	it('builds exam paper transfer sheet for invigilator signatures by subject and homeroom', () => {
 		const workbook = buildExamScheduleExportWorkbook(
 			exportWorkspace([
 				scheduledSession({
@@ -401,8 +403,8 @@ describe('exam schedule export helpers', () => {
 					startsAt: '09:00:00',
 					endsAt: '10:00:00',
 					durationMinutes: 60,
-					classroomName: 'ม.1/1',
-					classroomId: 'classroom-m1-1',
+					homeroomName: 'ม.1/1',
+					homeroomId: 'homeroom-m1-1',
 					gradeLevelName: 'ม.1',
 					gradeLevelYear: 1,
 					subjectNameTh: 'คณิตศาสตร์พื้นฐาน',
@@ -457,8 +459,8 @@ describe('exam schedule export helpers', () => {
 					startsAt: '09:00:00',
 					endsAt: '10:00:00',
 					durationMinutes: 60,
-					classroomName: 'ม.1/1',
-					classroomId: 'classroom-m1-1',
+					homeroomName: 'ม.1/1',
+					homeroomId: 'homeroom-m1-1',
 					gradeLevelName: 'ม.1',
 					gradeLevelYear: 1,
 					subjectNameTh: 'ภาษาอังกฤษ',
@@ -469,8 +471,8 @@ describe('exam schedule export helpers', () => {
 					startsAt: '09:00:00',
 					endsAt: '10:00:00',
 					durationMinutes: 60,
-					classroomName: 'ม.1/2',
-					classroomId: 'classroom-m1-2',
+					homeroomName: 'ม.1/2',
+					homeroomId: 'homeroom-m1-2',
 					gradeLevelName: 'ม.1',
 					gradeLevelYear: 1,
 					subjectNameTh: 'ภาษาอังกฤษ',
@@ -513,8 +515,8 @@ describe('exam schedule export helpers', () => {
 						startsAt: '09:00:00',
 						endsAt: '10:00:00',
 						durationMinutes: 60,
-						classroomName: 'ม.1/1',
-						classroomId: 'classroom-m1-1',
+						homeroomName: 'ม.1/1',
+						homeroomId: 'homeroom-m1-1',
 						gradeLevelName: 'ม.1',
 						gradeLevelYear: 1,
 						subjectNameTh: 'คณิตศาสตร์พื้นฐาน',
@@ -527,8 +529,8 @@ describe('exam schedule export helpers', () => {
 						startsAt: '09:00:00',
 						endsAt: '10:00:00',
 						durationMinutes: 60,
-						classroomName: 'ม.1/1',
-						classroomId: 'classroom-m1-1',
+						homeroomName: 'ม.1/1',
+						homeroomId: 'homeroom-m1-1',
 						gradeLevelName: 'ม.1',
 						gradeLevelYear: 1,
 						subjectNameTh: 'ภาษาไทยพื้นฐาน',
@@ -581,8 +583,8 @@ describe('exam schedule export helpers', () => {
 						startsAt: '09:00:00',
 						endsAt: '10:00:00',
 						durationMinutes: 60,
-						classroomName: `ม.1/${index + 1}`,
-						classroomId: `classroom-m1-${index + 1}`,
+						homeroomName: `ม.1/${index + 1}`,
+						homeroomId: `homeroom-m1-${index + 1}`,
 						gradeLevelName: 'ม.1',
 						gradeLevelYear: 1,
 						subjectNameTh: `วิทยาศาสตร์พื้นฐาน ${index + 1}`,
@@ -623,8 +625,8 @@ describe('exam schedule export helpers', () => {
 						startsAt: `${String(8 + index).padStart(2, '0')}:00:00`,
 						endsAt: `${String(8 + index).padStart(2, '0')}:45:00`,
 						durationMinutes: 45,
-						classroomName: `ม.1/${index + 1}`,
-						classroomId: `classroom-m1-${index + 1}`,
+						homeroomName: `ม.1/${index + 1}`,
+						homeroomId: `homeroom-m1-${index + 1}`,
 						gradeLevelName: 'ม.1',
 						gradeLevelYear: 1,
 						subjectNameTh: `วิชาช่วงที่ ${index + 1}`,

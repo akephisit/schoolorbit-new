@@ -3,11 +3,12 @@
 	import type { Alignment, Borders, Fill, Workbook, Worksheet } from 'exceljs';
 	import type { PageProps } from './$types';
 	import {
-		getAcademicStructure,
-		listClassrooms,
-		type AcademicStructureData,
-		type Classroom
-	} from '$lib/api/academic';
+		listGradeLevelOptions,
+		listHomerooms,
+		type GradeLevelOption,
+		type Homeroom
+	} from '$lib/api/academic-core';
+	import { getAcademicContextStore } from '$lib/academic-context/store';
 	import {
 		assignExamAssignmentInvigilator,
 		clearMismatchedExamItems,
@@ -64,13 +65,14 @@
 
 	let { data }: PageProps = $props();
 
+	const academicContext = getAcademicContextStore();
 	let loading = $state(true);
 	let refreshing = $state(false);
 	let error = $state('');
 	let activeTab = $state<'setup' | 'rooms' | 'schedule' | 'invigilators'>('setup');
 	let workspace = $state<ExamScheduleWorkspace | null>(null);
-	let structure = $state<AcademicStructureData | null>(null);
-	let classrooms = $state<Classroom[]>([]);
+	let gradeLevels = $state<GradeLevelOption[]>([]);
+	let homerooms = $state<Homeroom[]>([]);
 	let rooms = $state<Room[]>([]);
 	let staff = $state<ExamInvigilatorStaffOption[]>([]);
 	let invigilatorWorkspace = $state<ExamInvigilatorWorkspace | null>(null);
@@ -108,10 +110,10 @@
 		$can.has(PERMISSIONS.ACADEMIC_EXAM_SCHEDULE_PUBLISH_SCHOOL)
 	);
 	const pageTitle = $derived(workspace?.round.name ?? data.title);
-	const semester = $derived(
-		structure?.semesters.find((item) => item.id === workspace?.round.academicSemesterId) ?? null
+	const termLabel = $derived(
+		$academicContext.options?.terms.find((item) => item.id === workspace?.round.academicTermId)
+			?.name ?? null
 	);
-	const gradeLevels = $derived(structure?.levels ?? []);
 	const configuredGradeLevelIds = $derived(
 		Array.from(new Set(workspace?.days.flatMap((day) => day.gradeLevelIds) ?? []))
 	);
@@ -132,8 +134,8 @@
 		error = '';
 		activeTab = 'setup';
 		workspace = null;
-		structure = null;
-		classrooms = [];
+		gradeLevels = [];
+		homerooms = [];
 		rooms = [];
 		staff = [];
 		invigilatorWorkspace = null;
@@ -173,14 +175,12 @@
 		error = '';
 
 		try {
-			const [workspaceData, academic] = await Promise.all([
-				getExamScheduleWorkspace(roundId),
-				getAcademicStructure()
-			]);
+			const workspaceData = await getExamScheduleWorkspace(roundId);
+			const loadedGradeLevels = await listGradeLevelOptions(workspaceData.round.academicYearId);
 			if (requestToken !== workspaceRequestToken) return;
 
 			workspace = workspaceData;
-			structure = academic.data;
+			gradeLevels = loadedGradeLevels;
 			loadedRoundId = roundId;
 		} catch (loadError) {
 			if (requestToken !== workspaceRequestToken) return;
@@ -211,11 +211,13 @@
 		return {
 			id: session.examScheduleItemId,
 			examRoundId: session.examRoundId,
-			academicSemesterId: session.academicSemesterId,
+			academicTermId: session.academicTermId,
+			academicYearId: session.academicYearId,
 			assessmentCategoryId: session.assessmentCategoryId,
-			assessmentPlanId: session.assessmentPlanId,
-			classroomCourseId: session.classroomCourseId,
-			classroomId: session.classroomId,
+			courseAssessmentPlanId: session.courseAssessmentPlanId,
+			learningOfferingId: session.learningOfferingId,
+			learningGroupId: session.learningGroupId,
+			homeroomId: session.homeroomId,
 			subjectId: session.subjectId,
 			gradeLevelId: session.gradeLevelId,
 			durationMinutes: session.durationMinutes,
@@ -224,11 +226,12 @@
 			subjectCode: session.subjectCode,
 			subjectNameTh: session.subjectNameTh,
 			subjectNameEn: session.subjectNameEn,
+			subjectVersionDisplayLabel: session.subjectVersionDisplayLabel,
 			subjectGroupId: session.subjectGroupId,
 			subjectGroupName: session.subjectGroupName,
 			subjectGroupDisplayOrder: session.subjectGroupDisplayOrder,
 			subjectType: session.subjectType,
-			classroomName: session.classroomName,
+			homeroomName: session.homeroomName,
 			gradeLevelName: session.gradeLevelName,
 			gradeLevelType: session.gradeLevelType,
 			gradeLevelYear: session.gradeLevelYear
@@ -255,8 +258,8 @@
 		unschedulingSessionIds = unschedulingSessionIds.filter((id) => id !== sessionId);
 	}
 
-	function assignmentForDayClassroom(day: ExamDayDetail, classroomId: string) {
-		return day.roomAssignments.find((item) => item.classroomId === classroomId) ?? null;
+	function assignmentForDayHomeroom(day: ExamDayDetail, homeroomId: string) {
+		return day.roomAssignments.find((item) => item.homeroomId === homeroomId) ?? null;
 	}
 
 	function applyPendingExamSession(input: PlaceExamSessionInput): PendingPlacementRollback | null {
@@ -272,7 +275,7 @@
 		const source = previousSession ?? restoredItem;
 		if (!day || !source) return null;
 
-		const assignment = assignmentForDayClassroom(day, source.classroomId);
+		const assignment = assignmentForDayHomeroom(day, source.homeroomId);
 		const pendingSession: ExamSession = {
 			id: previousSession?.id ?? `pending-${input.examScheduleItemId}`,
 			examScheduleItemId: input.examScheduleItemId,
@@ -280,11 +283,13 @@
 			examDayId: day.id,
 			startsAt: input.startsAt,
 			endsAt: addMinutes(input.startsAt, source.durationMinutes),
-			academicSemesterId: source.academicSemesterId,
+			academicTermId: source.academicTermId,
+			academicYearId: source.academicYearId,
 			assessmentCategoryId: source.assessmentCategoryId,
-			assessmentPlanId: source.assessmentPlanId,
-			classroomCourseId: source.classroomCourseId,
-			classroomId: source.classroomId,
+			courseAssessmentPlanId: source.courseAssessmentPlanId,
+			learningOfferingId: source.learningOfferingId,
+			learningGroupId: source.learningGroupId,
+			homeroomId: source.homeroomId,
 			subjectId: source.subjectId,
 			gradeLevelId: source.gradeLevelId,
 			durationMinutes: source.durationMinutes,
@@ -294,11 +299,12 @@
 			subjectCode: source.subjectCode,
 			subjectNameTh: source.subjectNameTh,
 			subjectNameEn: source.subjectNameEn,
+			subjectVersionDisplayLabel: source.subjectVersionDisplayLabel,
 			subjectGroupId: source.subjectGroupId,
 			subjectGroupName: source.subjectGroupName,
 			subjectGroupDisplayOrder: source.subjectGroupDisplayOrder,
 			subjectType: source.subjectType,
-			classroomName: source.classroomName,
+			homeroomName: source.homeroomName,
 			gradeLevelName: source.gradeLevelName,
 			gradeLevelType: source.gradeLevelType,
 			gradeLevelYear: source.gradeLevelYear,
@@ -407,17 +413,14 @@
 	function isCurrentManagementOptionsRequest(
 		requestToken: number,
 		roundId: string,
-		semesterId: string,
-		yearId: string | undefined
+		termId: string,
+		yearId: string
 	): boolean {
-		const currentSemester =
-			structure?.semesters.find((item) => item.id === workspace?.round.academicSemesterId) ?? null;
-
 		return (
 			requestToken === managementOptionsRequestToken &&
 			workspace?.round.id === roundId &&
-			workspace.round.academicSemesterId === semesterId &&
-			currentSemester?.academic_year_id === yearId
+			workspace.round.academicTermId === termId &&
+			workspace.round.academicYearId === yearId
 		);
 	}
 
@@ -426,31 +429,27 @@
 
 		const requestToken = ++managementOptionsRequestToken;
 		const roundId = workspace.round.id;
-		const semesterId = workspace.round.academicSemesterId;
-		const currentSemester =
-			structure?.semesters.find((item) => item.id === workspace?.round.academicSemesterId) ?? null;
-		const yearId = currentSemester?.academic_year_id;
+		const termId = workspace.round.academicTermId;
+		const yearId = workspace.round.academicYearId;
 
 		optionsRequested = true;
 		optionsLoading = true;
 		try {
-			const [classroomResponse, roomResponse] = await Promise.all([
-				listClassrooms(yearId ? { year_id: yearId } : undefined),
-				listRooms()
-			]);
-			if (!isCurrentManagementOptionsRequest(requestToken, roundId, semesterId, yearId)) return;
+			const loadedHomerooms = await listHomerooms(yearId);
+			const roomResponse = await listRooms();
+			if (!isCurrentManagementOptionsRequest(requestToken, roundId, termId, yearId)) return;
 
-			classrooms = classroomResponse.data;
+			homerooms = loadedHomerooms;
 			rooms = roomResponse.data;
 		} catch (loadError) {
-			if (!isCurrentManagementOptionsRequest(requestToken, roundId, semesterId, yearId)) return;
+			if (!isCurrentManagementOptionsRequest(requestToken, roundId, termId, yearId)) return;
 
 			optionsRequested = false;
 			toast.error(
 				loadError instanceof Error ? loadError.message : 'โหลดตัวเลือกสำหรับจัดห้องสอบไม่สำเร็จ'
 			);
 		} finally {
-			if (isCurrentManagementOptionsRequest(requestToken, roundId, semesterId, yearId)) {
+			if (isCurrentManagementOptionsRequest(requestToken, roundId, termId, yearId)) {
 				optionsLoading = false;
 			}
 		}
@@ -801,7 +800,7 @@
 			const ExcelJSModule = await import('exceljs');
 			const ExcelJS = ExcelJSModule.default;
 			const exportWorkbook = buildExamScheduleExportWorkbook(workspace, invigilatorData, {
-				classrooms
+				homerooms
 			});
 			const workbook = new ExcelJS.Workbook();
 			workbook.creator = 'SchoolOrbit';
@@ -1111,7 +1110,7 @@
 	}
 
 	$effect(() => {
-		if (canManageExamSchedules && workspace && structure && !optionsRequested && !optionsLoading) {
+		if (canManageExamSchedules && workspace && !optionsRequested && !optionsLoading) {
 			loadManagementOptions();
 		}
 	});
@@ -1155,7 +1154,7 @@
 
 <PageShell
 	title={pageTitle}
-	description={workspace?.round.description ?? semester?.name ?? 'จัดตารางสอบประจำภาคเรียน'}
+	description={workspace?.round.description ?? termLabel ?? 'จัดตารางสอบประจำภาคเรียน'}
 	backHref="/staff/academic/exam-schedules"
 	class="flex h-full min-h-0 flex-col"
 	contentClass="flex min-h-0 flex-1 flex-col"
@@ -1274,7 +1273,7 @@
 				<Tabs.Content value="rooms" class="min-h-0 flex-1">
 					<ExamRoomAssignmentPanel
 						days={workspace.days}
-						{classrooms}
+						{homerooms}
 						{rooms}
 						readonly={!canManageExamSchedules || workspace.round.status === 'published'}
 						saving={savingAssignment}

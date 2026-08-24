@@ -20,7 +20,8 @@ use super::{
         LearningOfferingStatus, LearningTeacherRole, OfferingTargetInput, OfferingTargetKind,
         PreviewCurriculumOfferingsRequest, PublishLearningOfferingRequest, PublishRosterRequest,
         ReplaceLearningGroupHomeroomsRequest, ReplaceLearningGroupTeachersRequest,
-        RosterOverrideAction, RosterOverrideInput, TeacherAssignmentInput,
+        RosterOverrideAction, RosterOverrideInput, StudentActivityRegistrationQuery,
+        TeacherAssignmentInput,
     },
     services::{activities, groups, offerings},
 };
@@ -1238,4 +1239,214 @@ async fn self_registration_activity_uses_common_delivery_and_reads_migrated_pass
         migrated_result.outcome.as_deref(),
         Some("pass" | "fail")
     ));
+}
+
+#[tokio::test]
+async fn student_activity_registration_is_term_scoped_eligible_and_revisioned() {
+    let pool =
+        prepare_delivery_runtime_fixture("academic_delivery_student_activity_registration").await;
+    let context = planning_runtime_context(&pool).await;
+    let student_id = Uuid::parse_str("50000000-0000-0000-0000-000000000001").unwrap();
+    let (activity_version_id, scheduling_mode): (Uuid, ActivitySchedulingMode) = sqlx::query_as(
+        r#"SELECT version.id, version.scheduling_mode
+           FROM activity_versions version
+           JOIN academic_terms term ON term.id = $1
+           WHERE version.status = 'published'
+             AND version.effective_from <= term.start_date
+             AND (version.effective_until IS NULL OR version.effective_until > term.start_date)
+           ORDER BY version.id
+           LIMIT 1"#,
+    )
+    .bind(context.term_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let offering = offerings::create(
+        &pool,
+        context.teacher_id,
+        CreateLearningOfferingRequest::Activity(CreateActivityOfferingRequest {
+            academic_term_id: context.term_id,
+            activity_version_id,
+            curriculum_activity_requirement_id: None,
+            owning_organization_unit_id: context.owner_id,
+            targets: vec![OfferingTargetInput {
+                target_kind: OfferingTargetKind::Homeroom,
+                homeroom_id: Some(context.homeroom_id),
+                grade_level_id: context.grade_level_id,
+                study_program_id: context.study_program_id,
+            }],
+            registration_type: ActivityRegistrationType::SelfRegistration,
+            scheduling_mode,
+            capacity: Some(2),
+            attendance_requirement: ActivityAttendanceRequirement {
+                minimum_percent: Some("80.00".to_string()),
+                required_sessions: None,
+            },
+            pass_criteria: ActivityPassCriteria {
+                require_attendance: true,
+                require_teacher_confirmation: true,
+                outcomes: vec!["pass".to_string(), "fail".to_string()],
+            },
+        }),
+    )
+    .await
+    .unwrap();
+    let first_group = groups::create(
+        &pool,
+        context.teacher_id,
+        offering.id,
+        CreateLearningGroupRequest {
+            code: "ACT-STUDENT-A".to_string(),
+            name: "ชุมนุมดาราศาสตร์".to_string(),
+            description: Some("เรียนรู้ท้องฟ้าผ่านการสังเกตจริง".to_string()),
+            capacity: Some(1),
+            preferred_room_ids: Vec::new(),
+        },
+    )
+    .await
+    .unwrap();
+    let first_group = groups::replace_teachers(
+        &pool,
+        context.teacher_id,
+        first_group.id,
+        ReplaceLearningGroupTeachersRequest {
+            row_version: first_group.row_version,
+            teachers: vec![TeacherAssignmentInput {
+                teacher_id: context.teacher_id,
+                role: LearningTeacherRole::Primary,
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    let first_group = groups::replace_homerooms(
+        &pool,
+        context.teacher_id,
+        first_group.id,
+        ReplaceLearningGroupHomeroomsRequest {
+            row_version: first_group.row_version,
+            homeroom_ids: vec![context.homeroom_id],
+        },
+    )
+    .await
+    .unwrap();
+    let second_group = groups::create(
+        &pool,
+        context.teacher_id,
+        offering.id,
+        CreateLearningGroupRequest {
+            code: "ACT-STUDENT-B".to_string(),
+            name: "ชุมนุมหุ่นยนต์".to_string(),
+            description: None,
+            capacity: Some(2),
+            preferred_room_ids: Vec::new(),
+        },
+    )
+    .await
+    .unwrap();
+    let second_group = groups::replace_teachers(
+        &pool,
+        context.teacher_id,
+        second_group.id,
+        ReplaceLearningGroupTeachersRequest {
+            row_version: second_group.row_version,
+            teachers: vec![TeacherAssignmentInput {
+                teacher_id: context.teacher_id,
+                role: LearningTeacherRole::Primary,
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    let second_group = groups::replace_homerooms(
+        &pool,
+        context.teacher_id,
+        second_group.id,
+        ReplaceLearningGroupHomeroomsRequest {
+            row_version: second_group.row_version,
+            homeroom_ids: vec![context.homeroom_id],
+        },
+    )
+    .await
+    .unwrap();
+
+    let query = StudentActivityRegistrationQuery {
+        academic_term_id: context.term_id,
+    };
+    assert!(
+        activities::list_registration_options(&pool, student_id, query.clone())
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    offerings::publish(
+        &pool,
+        context.teacher_id,
+        offering.id,
+        PublishLearningOfferingRequest {
+            row_version: offering.row_version,
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap();
+
+    let available = activities::list_registration_options(&pool, student_id, query.clone())
+        .await
+        .unwrap();
+    assert_eq!(available.len(), 1);
+    assert_eq!(available[0].id, offering.id);
+    assert_eq!(available[0].groups.len(), 2);
+    assert_eq!(available[0].groups[0].capacity, Some(1));
+    assert_eq!(available[0].groups[0].member_count, 0);
+    assert!(available[0].groups[0].registration_open);
+    assert!(!available[0].groups[0].teacher_names.is_empty());
+    assert_eq!(available[0].enrolled_group_id, None);
+
+    let enrolled = activities::enroll(&pool, student_id, first_group.id, query.clone())
+        .await
+        .unwrap();
+    assert!(enrolled.enrolled);
+    assert_eq!(enrolled.learning_offering_id, offering.id);
+    assert_eq!(enrolled.learning_group_id, first_group.id);
+
+    let duplicate = activities::enroll(&pool, student_id, second_group.id, query.clone()).await;
+    assert!(matches!(duplicate, Err(AppError::Conflict(_))));
+
+    let after_enroll = activities::list_registration_options(&pool, student_id, query.clone())
+        .await
+        .unwrap();
+    assert_eq!(after_enroll[0].enrolled_group_id, Some(first_group.id));
+    assert_eq!(after_enroll[0].groups[0].member_count, 1);
+
+    let removed = activities::unenroll(&pool, student_id, first_group.id, query.clone())
+        .await
+        .unwrap();
+    assert!(!removed.enrolled);
+
+    let after_remove = activities::list_registration_options(&pool, student_id, query)
+        .await
+        .unwrap();
+    assert_eq!(after_remove[0].enrolled_group_id, None);
+    assert_eq!(after_remove[0].groups[0].member_count, 0);
+
+    let audit_events: Vec<String> = sqlx::query_scalar(
+        r#"SELECT event_code
+           FROM academic_audit_events
+           WHERE actor_user_id = $1
+             AND event_code IN ('activity.self_registered', 'activity.self_unregistered')
+           ORDER BY event_code"#,
+    )
+    .bind(student_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        audit_events,
+        vec![
+            "activity.self_registered".to_string(),
+            "activity.self_unregistered".to_string()
+        ]
+    );
 }

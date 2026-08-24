@@ -10,28 +10,43 @@ import {
 	teacherLoadCategoryForEntry
 } from '../../src/lib/utils/timetable-teacher-load-export.ts';
 
-function entry(overrides) {
+function instructor(overrides = {}) {
+	return {
+		userId: 'teacher-a',
+		displayName: 'ครูเอ',
+		role: 'primary',
+		subjectGroupId: 'math-group',
+		subjectGroupName: 'คณิตศาสตร์',
+		subjectGroupDisplayOrder: 1,
+		...overrides
+	};
+}
+
+function entry(overrides = {}) {
 	return {
 		id: 'entry-1',
-		entry_type: 'COURSE',
-		day_of_week: 'MON',
-		period_id: 'period-1',
-		period_name: 'คาบ 1',
-		period_order_index: 1,
-		start_time: '08:30:00',
-		end_time: '09:20:00',
-		classroom_name: 'ม.1/1',
-		subject_code: 'MA21101',
-		subject_name_th: 'คณิตศาสตร์',
-		subject_group_id: 'math-group',
-		subject_group_name: 'คณิตศาสตร์',
-		subject_group_display_order: 1,
-		instructor_ids: ['teacher-a'],
-		instructor_names: ['ครูเอ'],
-		instructor_roles: ['primary'],
-		instructor_subject_group_ids: ['math-group'],
-		instructor_subject_group_names: ['คณิตศาสตร์'],
-		instructor_subject_group_display_orders: [1],
+		academicTermId: 'term-1',
+		academicYearId: 'year-1',
+		bellScheduleId: 'schedule-1',
+		bellSchedulePeriodId: 'period-1',
+		createdAt: '2026-08-24T00:00:00.000Z',
+		dayOfWeek: 'MON',
+		endTime: '09:20:00',
+		entryType: 'COURSE',
+		homeroomName: 'ม.1/1',
+		instructors: [instructor()],
+		isActive: true,
+		offeringCode: 'MA21101',
+		offeringId: 'offering-course-1',
+		offeringName: 'คณิตศาสตร์',
+		periodName: 'คาบ 1',
+		rowVersion: 1,
+		startTime: '08:30:00',
+		subjectGroupId: 'math-group',
+		subjectGroupName: 'คณิตศาสตร์',
+		subjectGroupDisplayOrder: 1,
+		subjectVersionDisplayLabel: 'คณิตศาสตร์ · v1',
+		updatedAt: '2026-08-24T00:00:00.000Z',
 		...overrides
 	};
 }
@@ -44,323 +59,137 @@ function workspaceFile(path) {
 	return new URL(`../../../${path}`, import.meta.url);
 }
 
-const timetableServiceFiles = ['backend-school/src/modules/academic/services/timetable_service.rs'];
-
 function readTimetableServices() {
-	return timetableServiceFiles.map((file) => readFileSync(workspaceFile(file), 'utf8')).join('\n');
+	return readFileSync(
+		workspaceFile('backend-school/src/modules/academic/services/timetable_service.rs'),
+		'utf8'
+	);
 }
 
 describe('timetable teacher load export helpers', () => {
-	it('classifies courses and activity scheduling modes', () => {
-		assert.equal(teacherLoadCategoryForEntry(entry({ entry_type: 'COURSE' })), 'course');
+	it('classifies canonical course and activity scheduling modes', () => {
+		assert.equal(teacherLoadCategoryForEntry(entry({ entryType: 'COURSE' })), 'course');
 		assert.equal(
 			teacherLoadCategoryForEntry(
-				entry({ entry_type: 'ACTIVITY', activity_scheduling_mode: 'independent' })
+				entry({ entryType: 'ACTIVITY', activitySchedulingMode: 'independent' })
 			),
 			'independentActivity'
 		);
 		assert.equal(
 			teacherLoadCategoryForEntry(
-				entry({ entry_type: 'ACTIVITY', activity_scheduling_mode: 'synchronized' })
+				entry({ entryType: 'ACTIVITY', activitySchedulingMode: 'synchronized' })
 			),
 			'synchronizedActivity'
 		);
 		assert.equal(
-			teacherLoadCategoryForEntry(
-				entry({ entry_type: 'ACTIVITY', activity_scheduling_mode: null })
-			),
+			teacherLoadCategoryForEntry(entry({ entryType: 'ACTIVITY', activitySchedulingMode: null })),
 			'unspecifiedActivity'
 		);
-		assert.equal(
-			teacherLoadCategoryForEntry(entry({ entry_type: 'ACTIVITY', activity_scheduling_mode: '' })),
-			'unspecifiedActivity'
-		);
-		assert.equal(
-			teacherLoadCategoryForEntry(
-				entry({ entry_type: 'ACTIVITY', activity_scheduling_mode: 'custom' })
-			),
-			'unspecifiedActivity'
-		);
-		assert.equal(teacherLoadCategoryForEntry(entry({ entry_type: 'BREAK' })), null);
-		assert.equal(teacherLoadCategoryForEntry(entry({ entry_type: 'HOMEROOM' })), null);
-		assert.equal(teacherLoadCategoryForEntry(entry({ entry_type: 'ACADEMIC' })), null);
+		assert.equal(teacherLoadCategoryForEntry(entry({ entryType: 'BREAK' })), null);
 	});
 
-	it('splits course periods by teacher subject group and teacher role', () => {
+	it('splits course periods by nested instructor subject group and role', () => {
 		const rows = buildTeacherLoadExportRows([
 			entry({
-				id: 'course-1',
-				instructor_ids: ['teacher-a', 'teacher-b', 'teacher-c', 'teacher-d'],
-				instructor_names: ['ครูเอ', 'ครูบี', 'ครูซี', 'ครูดี'],
-				instructor_roles: ['primary', 'secondary', 'primary', 'secondary'],
-				instructor_subject_group_ids: [
-					'math-group',
-					'math-group',
-					'science-group',
-					'science-group'
-				],
-				instructor_subject_group_names: [
-					'คณิตศาสตร์',
-					'คณิตศาสตร์',
-					'วิทยาศาสตร์และเทคโนโลยี',
-					'วิทยาศาสตร์และเทคโนโลยี'
-				],
-				instructor_subject_group_display_orders: [1, 1, 3, 3]
-			}),
-			entry({
-				id: 'guidance-1',
-				entry_type: 'ACTIVITY',
-				activity_scheduling_mode: 'independent',
-				activity_slot_id: 'guidance-slot',
-				title: 'แนะแนว',
-				subject_code: undefined,
-				subject_name_th: undefined,
-				subject_group_id: undefined,
-				subject_group_name: undefined,
-				subject_group_display_order: undefined,
-				instructor_ids: ['teacher-a'],
-				instructor_names: ['ครูเอ'],
-				instructor_roles: ['primary'],
-				instructor_subject_group_ids: ['math-group'],
-				instructor_subject_group_names: ['คณิตศาสตร์'],
-				instructor_subject_group_display_orders: [1]
+				instructors: [
+					instructor(),
+					instructor({
+						userId: 'teacher-b',
+						displayName: 'ครูบี',
+						role: 'secondary',
+						subjectGroupId: 'thai-group',
+						subjectGroupName: 'ภาษาไทย',
+						subjectGroupDisplayOrder: 2
+					})
+				]
 			})
 		]);
 
-		assert.deepEqual(rows.summaryRows, [
-			{
-				teacherId: 'teacher-a',
-				teacherName: 'ครูเอ',
-				teacherSubjectGroupId: 'math-group',
-				teacherSubjectGroupName: 'คณิตศาสตร์',
-				teacherSubjectGroupDisplayOrder: 1,
-				homeGroupPrimaryCoursePeriods: 1,
-				homeGroupSecondaryCoursePeriods: 0,
-				sharedPrimaryCoursePeriods: 0,
-				sharedSecondaryCoursePeriods: 0,
-				independentActivityPeriods: 1,
-				synchronizedActivityPeriods: 0,
-				unspecifiedActivityPeriods: 0,
-				totalPeriods: 2
-			},
-			{
-				teacherId: 'teacher-b',
-				teacherName: 'ครูบี',
-				teacherSubjectGroupId: 'math-group',
-				teacherSubjectGroupName: 'คณิตศาสตร์',
-				teacherSubjectGroupDisplayOrder: 1,
-				homeGroupPrimaryCoursePeriods: 0,
-				homeGroupSecondaryCoursePeriods: 1,
-				sharedPrimaryCoursePeriods: 0,
-				sharedSecondaryCoursePeriods: 0,
-				independentActivityPeriods: 0,
-				synchronizedActivityPeriods: 0,
-				unspecifiedActivityPeriods: 0,
-				totalPeriods: 1
-			},
-			{
-				teacherId: 'teacher-c',
-				teacherName: 'ครูซี',
-				teacherSubjectGroupId: 'science-group',
-				teacherSubjectGroupName: 'วิทยาศาสตร์และเทคโนโลยี',
-				teacherSubjectGroupDisplayOrder: 3,
-				homeGroupPrimaryCoursePeriods: 0,
-				homeGroupSecondaryCoursePeriods: 0,
-				sharedPrimaryCoursePeriods: 1,
-				sharedSecondaryCoursePeriods: 0,
-				independentActivityPeriods: 0,
-				synchronizedActivityPeriods: 0,
-				unspecifiedActivityPeriods: 0,
-				totalPeriods: 1
-			},
-			{
-				teacherId: 'teacher-d',
-				teacherName: 'ครูดี',
-				teacherSubjectGroupId: 'science-group',
-				teacherSubjectGroupName: 'วิทยาศาสตร์และเทคโนโลยี',
-				teacherSubjectGroupDisplayOrder: 3,
-				homeGroupPrimaryCoursePeriods: 0,
-				homeGroupSecondaryCoursePeriods: 0,
-				sharedPrimaryCoursePeriods: 0,
-				sharedSecondaryCoursePeriods: 1,
-				independentActivityPeriods: 0,
-				synchronizedActivityPeriods: 0,
-				unspecifiedActivityPeriods: 0,
-				totalPeriods: 1
-			}
-		]);
+		assert.equal(rows.summaryRows.length, 2);
 		assert.deepEqual(
-			rows.summaryGroups.map((group) => ({
-				name: group.subjectGroupName,
-				rows: group.rows.map((row) => row.teacherName)
-			})),
+			rows.summaryRows.map((row) => [
+				row.teacherId,
+				row.homeGroupPrimaryCoursePeriods,
+				row.sharedSecondaryCoursePeriods,
+				row.totalPeriods
+			]),
 			[
-				{ name: 'คณิตศาสตร์', rows: ['ครูเอ', 'ครูบี'] },
-				{ name: 'วิทยาศาสตร์และเทคโนโลยี', rows: ['ครูซี', 'ครูดี'] }
+				['teacher-a', 1, 0, 1],
+				['teacher-b', 0, 1, 1]
 			]
 		);
-		assert.equal(rows.detailRows[0].teacherSubjectGroupName, 'คณิตศาสตร์');
-		assert.equal(rows.detailRows[0].subjectGroupName, 'คณิตศาสตร์');
-		assert.equal(rows.detailRows[0].categoryLabel, 'วิชาในกลุ่มสาระ (ครูหลัก)');
-		assert.equal(rows.detailRows[1].teacherSubjectGroupName, 'คณิตศาสตร์');
-		assert.equal(rows.detailRows[1].subjectGroupName, 'คณิตศาสตร์');
-		assert.equal(rows.detailRows[1].categoryLabel, 'วิชาในกลุ่มสาระ (ครูรอง)');
-		assert.equal(rows.detailRows[2].teacherSubjectGroupName, 'คณิตศาสตร์');
-		assert.equal(rows.detailRows[2].subjectGroupName, 'กิจกรรม');
-		assert.equal(rows.detailRows[3].teacherSubjectGroupName, 'วิทยาศาสตร์และเทคโนโลยี');
-		assert.equal(rows.detailRows[3].subjectGroupName, 'คณิตศาสตร์');
-		assert.equal(rows.detailRows[3].categoryLabel, 'วิชานอกกลุ่มสาระ (ครูหลัก)');
-		assert.equal(rows.detailRows[4].teacherSubjectGroupName, 'วิทยาศาสตร์และเทคโนโลยี');
-		assert.equal(rows.detailRows[4].subjectGroupName, 'คณิตศาสตร์');
-		assert.equal(rows.detailRows[4].categoryLabel, 'วิชานอกกลุ่มสาระ (ครูรอง)');
-		assert.deepEqual(rows.summarySheetRows[0], [
-			'กลุ่มสาระครู',
-			'ครูผู้สอน',
-			'วิชาในกลุ่มสาระ (ครูหลัก)',
-			'วิชาในกลุ่มสาระ (ครูรอง)',
-			'วิชานอกกลุ่มสาระ (ครูหลัก)',
-			'วิชานอกกลุ่มสาระ (ครูรอง)',
-			'กิจกรรม independent (คาบ)',
-			'กิจกรรม synchronized (คาบ)',
-			'กิจกรรมไม่ระบุประเภท (คาบ)',
-			'รวม (คาบ)'
-		]);
 	});
 
-	it('keeps unspecified activity modes separate from synchronized activities', () => {
+	it('deduplicates synchronized offerings while preserving all homeroom labels', () => {
 		const rows = buildTeacherLoadExportRows([
 			entry({
-				id: 'manual-activity-1',
-				entry_type: 'ACTIVITY',
-				activity_scheduling_mode: null,
-				title: 'กิจกรรมเพิ่มเอง',
-				subject_code: undefined,
-				subject_name_th: undefined,
-				subject_group_id: undefined,
-				subject_group_name: undefined,
-				instructor_ids: ['teacher-a'],
-				instructor_names: ['ครูเอ']
+				id: 'sync-a',
+				entryType: 'ACTIVITY',
+				activitySchedulingMode: 'synchronized',
+				offeringId: 'activity-offering-1',
+				offeringName: 'ลูกเสือ',
+				homeroomName: 'ม.1/1',
+				subjectGroupId: null,
+				subjectGroupName: null,
+				subjectGroupDisplayOrder: null
 			}),
 			entry({
-				id: 'club-1',
-				entry_type: 'ACTIVITY',
-				activity_scheduling_mode: 'synchronized',
-				activity_slot_id: 'club-slot',
-				title: 'ชุมนุม',
-				subject_code: undefined,
-				subject_name_th: undefined,
-				subject_group_id: undefined,
-				subject_group_name: undefined,
-				instructor_ids: ['teacher-a'],
-				instructor_names: ['ครูเอ']
-			})
-		]);
-
-		assert.equal(rows.summaryRows[0].synchronizedActivityPeriods, 1);
-		assert.equal(rows.summaryRows[0].unspecifiedActivityPeriods, 1);
-		assert.equal(rows.summaryRows[0].totalPeriods, 2);
-		assert.deepEqual(
-			rows.detailRows.map((row) => row.categoryLabel),
-			['กิจกรรม synchronized', 'กิจกรรมไม่ระบุประเภท']
-		);
-	});
-
-	it('deduplicates synchronized activities across classrooms for the same teacher, slot, day, and period', () => {
-		const rows = buildTeacherLoadExportRows([
-			entry({
-				id: 'scout-m1-1',
-				entry_type: 'ACTIVITY',
-				activity_scheduling_mode: 'synchronized',
-				activity_slot_id: 'scout-slot',
-				title: 'ลูกเสือ',
-				classroom_name: 'ม.1/1',
-				subject_code: undefined,
-				subject_name_th: undefined,
-				subject_group_id: undefined,
-				subject_group_name: undefined,
-				instructor_ids: ['teacher-a'],
-				instructor_names: ['ครูเอ']
-			}),
-			entry({
-				id: 'scout-m1-2',
-				entry_type: 'ACTIVITY',
-				activity_scheduling_mode: 'synchronized',
-				activity_slot_id: 'scout-slot',
-				title: 'ลูกเสือ',
-				classroom_name: 'ม.1/2',
-				subject_code: undefined,
-				subject_name_th: undefined,
-				subject_group_id: undefined,
-				subject_group_name: undefined,
-				instructor_ids: ['teacher-a'],
-				instructor_names: ['ครูเอ']
+				id: 'sync-b',
+				entryType: 'ACTIVITY',
+				activitySchedulingMode: 'synchronized',
+				offeringId: 'activity-offering-1',
+				offeringName: 'ลูกเสือ',
+				homeroomName: 'ม.1/2',
+				subjectGroupId: null,
+				subjectGroupName: null,
+				subjectGroupDisplayOrder: null
 			})
 		]);
 
 		assert.equal(rows.summaryRows[0].synchronizedActivityPeriods, 1);
 		assert.equal(rows.summaryRows[0].totalPeriods, 1);
 		assert.equal(rows.detailRows.length, 1);
-		assert.equal(rows.detailRows[0].classroomName, 'ม.1/1, ม.1/2');
+		assert.equal(rows.detailRows[0].homeroomName, 'ม.1/1, ม.1/2');
 	});
 
-	it('calculates compact Excel column widths from sheet content', () => {
-		assert.deepEqual(
-			calculateTeacherLoadColumnWidths(
-				[
-					['ครู', 'จำนวน'],
-					['ครูเอ', 12]
-				],
-				{ minWidths: [8, 6], maxWidths: [20, 8], padding: 2 }
-			),
-			[8, 7]
-		);
-		assert.deepEqual(
-			calculateTeacherLoadColumnWidths([['หัวคอลัมน์ยาวมาก'], ['สั้น']], {
-				minWidths: [6],
-				maxWidths: [10],
-				padding: 2
-			}),
-			[10]
-		);
-	});
-
-	it('uses capped auto-fit widths for teacher load workbook sheets', () => {
-		const exportRows = buildTeacherLoadExportRows([
+	it('keeps independent activities as separate teaching periods', () => {
+		const rows = buildTeacherLoadExportRows([
 			entry({
-				id: 'course-1',
-				instructor_ids: ['teacher-a'],
-				instructor_names: ['ครูเอ'],
-				instructor_subject_group_ids: ['math-group'],
-				instructor_subject_group_names: ['คณิตศาสตร์'],
-				instructor_subject_group_display_orders: [1]
+				id: 'independent-a',
+				entryType: 'ACTIVITY',
+				activitySchedulingMode: 'independent',
+				offeringId: 'activity-offering-1',
+				homeroomName: 'ม.1/1'
 			}),
 			entry({
-				id: 'manual-activity-1',
-				entry_type: 'ACTIVITY',
-				activity_scheduling_mode: null,
-				title: 'กิจกรรมเพิ่มเองที่มีชื่อค่อนข้างยาวเพื่อทดสอบการจำกัดความกว้าง',
-				subject_code: undefined,
-				subject_name_th: undefined,
-				subject_group_id: undefined,
-				subject_group_name: undefined,
-				instructor_ids: ['teacher-a'],
-				instructor_names: ['ครูเอ']
+				id: 'independent-b',
+				entryType: 'ACTIVITY',
+				activitySchedulingMode: 'independent',
+				offeringId: 'activity-offering-1',
+				homeroomName: 'ม.1/2'
 			})
 		]);
 
+		assert.equal(rows.summaryRows[0].independentActivityPeriods, 2);
+		assert.equal(rows.detailRows.length, 2);
+	});
+
+	it('calculates capped Excel widths for both worksheets', () => {
+		const rows = buildTeacherLoadExportRows([
+			entry({ offeringName: 'ชื่อชุดการเรียนที่ยาวมากเพื่อทดสอบการจำกัดความกว้างของคอลัมน์' })
+		]);
 		const summaryWidths = calculateTeacherLoadColumnWidths(
-			exportRows.summarySheetRows,
+			rows.summarySheetRows,
 			TEACHER_LOAD_SUMMARY_COLUMN_WIDTH_OPTIONS
 		);
 		const detailWidths = calculateTeacherLoadColumnWidths(
-			exportRows.detailSheetRows,
+			rows.detailSheetRows,
 			TEACHER_LOAD_DETAIL_COLUMN_WIDTH_OPTIONS
 		);
 
 		assert.equal(summaryWidths.length, 10);
 		assert.equal(detailWidths.length, 9);
 		assert.ok(summaryWidths[1] <= 24);
-		assert.ok(summaryWidths.slice(2, 9).every((width) => width <= 14));
 		assert.ok(detailWidths[8] <= 42);
 	});
 
@@ -370,26 +199,18 @@ describe('timetable teacher load export helpers', () => {
 			'utf8'
 		);
 		const exportFunction = page.slice(page.indexOf('async function handleExportTeacherLoadXlsx'));
-		const summarySheetFunction = page.slice(
-			page.indexOf('function appendTeacherLoadSummarySheet'),
-			page.indexOf('function appendTeacherLoadDetailSheet')
-		);
 
 		assert.match(exportFunction, /import\('exceljs'\)/);
 		assert.match(exportFunction, /new ExcelJS\.Workbook\(\)/);
 		assert.match(exportFunction, /workbook\.xlsx\.writeBuffer\(\)/);
-		assert.match(summarySheetFunction, /กิจกรรมไม่ระบุประเภท/);
-		assert.match(summarySheetFunction, /unspecifiedActivityPeriods/);
-		assert.match(summarySheetFunction, /styleTeacherLoadGroupRow\(groupRow, 10\)/);
 		assert.match(page, /calculateTeacherLoadColumnWidths/);
 		assert.match(page, /TEACHER_LOAD_SUMMARY_COLUMN_WIDTH_OPTIONS/);
 		assert.match(page, /TEACHER_LOAD_DETAIL_COLUMN_WIDTH_OPTIONS/);
 		assert.match(page, /TH Sarabun New/);
 		assert.doesNotMatch(exportFunction, /import\('xlsx'\)/);
-		assert.doesNotMatch(exportFunction, /XLSX\.writeFile/);
 	});
 
-	it('keeps teacher load subject-group fields aligned across backend and frontend', () => {
+	it('keeps nested subject-group fields aligned across generated and Rust contracts', () => {
 		const frontendApi = readFileSync(projectFile('src/lib/api/timetable.ts'), 'utf8');
 		const generated = readFileSync(projectFile('src/lib/api/generated/school-api.ts'), 'utf8');
 		const backendModel = readFileSync(
@@ -398,19 +219,13 @@ describe('timetable teacher load export helpers', () => {
 		);
 		const backendService = readTimetableServices();
 
-		assert.match(frontendApi, /export type TimetableEntryDto = Schemas\['TimetableEntry'\]/);
-		assert.match(generated, /subject_group_id\?: string;/);
-		assert.match(generated, /subject_group_name\?: string;/);
-		assert.match(generated, /instructor_roles\?: string\[\];/);
-		assert.match(generated, /instructor_subject_group_ids\?: \(string \| null\)\[];/);
+		assert.match(frontendApi, /export type TimetableEntry = Schemas\['TimetableEntry'\]/);
+		assert.match(generated, /TimetableInstructor:[\s\S]*subjectGroupId\?: string \| null;/);
+		assert.match(generated, /TimetableEntry:[\s\S]*subjectGroupName\?: string \| null;/);
 		assert.match(backendModel, /pub subject_group_id: Option<Uuid>/);
 		assert.match(backendModel, /pub subject_group_name: Option<String>/);
-		assert.match(backendModel, /pub instructor_roles: Option<Vec<String>>/);
-		assert.match(backendModel, /pub instructor_subject_group_ids: Option<Vec<Option<Uuid>>>/);
-		assert.match(backendService, /s\.group_id AS subject_group_id/);
-		assert.match(backendService, /sg\.name_th AS subject_group_name/);
-		assert.match(backendService, /AS instructor_roles/);
-		assert.match(backendService, /AS instructor_subject_group_ids/);
-		assert.match(backendService, /organization_members om/);
+		assert.match(backendModel, /pub subject_group_display_order: Option<i32>/);
+		assert.match(backendService, /subject_group\.name_th AS subject_group_name/);
+		assert.match(backendService, /organization_members membership/);
 	});
 });

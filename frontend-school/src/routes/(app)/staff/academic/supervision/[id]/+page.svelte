@@ -10,6 +10,7 @@
 		UserCheck
 	} from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
+	import { getAcademicContextStore } from '$lib/academic-context/store';
 	import {
 		approveSupervisionObservation,
 		cancelRequestedSupervisionObservation,
@@ -77,6 +78,8 @@
 	};
 
 	let { data }: { data: PageData } = $props();
+	const academicContext = getAcademicContextStore();
+	const academicContextOptions = $derived($academicContext.options);
 
 	let loading = $state(true);
 	let savingAction = $state<string | null>(null);
@@ -444,16 +447,8 @@
 	}
 
 	function editTimetableDayValues(): string[] {
-		const order: TimetableEntry['day_of_week'][] = [
-			'MON',
-			'TUE',
-			'WED',
-			'THU',
-			'FRI',
-			'SAT',
-			'SUN'
-		];
-		const days = new Set(editTimetableEntries.map((entry) => entry.day_of_week));
+		const order: TimetableEntry['dayOfWeek'][] = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+		const days = new Set(editTimetableEntries.map((entry) => entry.dayOfWeek));
 		return order.filter((day) => days.has(day));
 	}
 
@@ -493,7 +488,7 @@
 	}
 
 	function editTimetableObservedAt(entry: TimetableEntry, observedDate: string): string {
-		const startTime = entry.start_time?.slice(0, 5) || '08:00';
+		const startTime = entry.startTime?.slice(0, 5) || '08:00';
 		return toIsoDateTime(observedDate, startTime);
 	}
 
@@ -504,24 +499,23 @@
 
 	function editTimetablePeriodKey(entry: TimetableEntry): string {
 		return (
-			entry.period_id ||
-			`${entry.start_time ?? ''}-${entry.end_time ?? ''}-${entry.period_name ?? ''}`
+			entry.bellSchedulePeriodId ||
+			`${entry.startTime ?? ''}-${entry.endTime ?? ''}-${entry.periodName ?? ''}`
 		);
 	}
 
 	function editTimetablePeriodLabel(entry: TimetableEntry): string {
-		return entry.period_name || entry.title || 'ไม่ระบุคาบ';
+		return entry.periodName || entry.title || 'ไม่ระบุคาบ';
 	}
 
 	function editTimetableTimeLabel(entry: TimetableEntry): string {
-		if (!entry.start_time && !entry.end_time) return '';
-		return `${entry.start_time?.slice(0, 5) ?? ''}-${entry.end_time?.slice(0, 5) ?? ''}`;
+		if (!entry.startTime && !entry.endTime) return '';
+		return `${entry.startTime?.slice(0, 5) ?? ''}-${entry.endTime?.slice(0, 5) ?? ''}`;
 	}
 
 	function editTimetablePeriodSort(entry: TimetableEntry): number {
-		if (typeof entry.period_order_index === 'number') return entry.period_order_index;
-		if (entry.start_time) {
-			const [hour = '0', minute = '0'] = entry.start_time.split(':');
+		if (entry.startTime) {
+			const [hour = '0', minute = '0'] = entry.startTime.split(':');
 			return Number(hour) * 60 + Number(minute);
 		}
 		return 9999;
@@ -548,18 +542,18 @@
 	function editTimetableEntryFor(day: string, row: { key: string }): TimetableEntry | null {
 		return (
 			editTimetableEntries.find(
-				(entry) => entry.day_of_week === day && editTimetablePeriodKey(entry) === row.key
+				(entry) => entry.dayOfWeek === day && editTimetablePeriodKey(entry) === row.key
 			) ?? null
 		);
 	}
 
 	function editTimetableEntryTitle(entry: TimetableEntry): string {
-		return entry.subject_name_th || entry.title || entry.subject_code || 'คาบสอน';
+		return entry.offeringName || entry.title || entry.offeringCode || 'คาบสอน';
 	}
 
 	function editTimetableEntryMeta(entry: TimetableEntry): string {
-		const classroom = entry.classroom_name ?? '';
-		const room = entry.room_code ? `ห้อง ${entry.room_code}` : '';
+		const classroom = entry.learningGroupName ?? entry.homeroomName ?? '';
+		const room = entry.roomCode ? `ห้อง ${entry.roomCode}` : '';
 		return [classroom, room].filter(Boolean).join(' · ') || 'ไม่มีรายละเอียดเพิ่มเติม';
 	}
 
@@ -568,11 +562,11 @@
 		selectedEditTimetableEntryId = entry.id;
 		selectedEditTimetableDate = observedDate;
 		lessonForm.subjectName = editTimetableEntryTitle(entry);
-		lessonForm.classroomLabel = entry.classroom_name ?? '';
-		lessonForm.roomLabel = entry.room_code ?? '';
-		lessonForm.periodLabel = entry.period_name ?? entry.title ?? '';
+		lessonForm.classroomLabel = entry.learningGroupName ?? entry.homeroomName ?? '';
+		lessonForm.roomLabel = entry.roomCode ?? '';
+		lessonForm.periodLabel = entry.periodName ?? entry.title ?? '';
 		lessonForm.observedDate = observedDate;
-		lessonForm.observedTime = entry.start_time?.slice(0, 5) || '08:00';
+		lessonForm.observedTime = entry.startTime?.slice(0, 5) || '08:00';
 	}
 
 	function observationSubjectLabel(item: SupervisionObservation): string {
@@ -624,10 +618,11 @@
 		try {
 			const loadedObservation = await getSupervisionObservation(data.observationId);
 			observation = loadedObservation;
-			const [cycleItems, loadedTemplate] = await Promise.all([
-				listSupervisionCycles(),
-				getSupervisionTemplate(loadedObservation.templateId)
-			]);
+			const cycleItems = await listSupervisionCycles(
+				loadedObservation.academicYearId,
+				loadedObservation.academicTermId
+			);
+			const loadedTemplate = await getSupervisionTemplate(loadedObservation.templateId);
 			cycles = cycleItems;
 			template = loadedTemplate;
 			if (
@@ -642,6 +637,12 @@
 		} finally {
 			loading = false;
 		}
+	}
+
+	function observationContextLabel(item: SupervisionObservation): string {
+		const year = academicContextOptions?.years.find((option) => option.id === item.academicYearId);
+		const term = academicContextOptions?.terms.find((option) => option.id === item.academicTermId);
+		return `${term?.name ?? 'ไม่พบภาคเรียน'} / ${year?.name ?? 'ไม่พบปีการศึกษา'}`;
 	}
 
 	async function loadReviewDetail(id = observation?.id) {
@@ -1281,9 +1282,7 @@
 						</div>
 						<div>
 							<p class="text-xs text-muted-foreground">ภาคเรียน/ปีการศึกษา</p>
-							<p class="font-medium">
-								{cycle ? `${cycle.semester}/${cycle.academicYear}` : '-'}
-							</p>
+							<p class="font-medium">{observationContextLabel(observation)}</p>
 						</div>
 					</Card.Content>
 				</Card.Root>

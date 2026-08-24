@@ -15,7 +15,7 @@ use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 
 use super::models::*;
-use super::services::{groups, offerings};
+use super::services::{activities, groups, offerings};
 
 fn ok<T: serde::Serialize>(data: T) -> Response {
     Json(ApiResponse::ok(data)).into_response()
@@ -42,6 +42,118 @@ fn signal_delivery_changed(
         learning_group_id,
         revision,
     );
+}
+
+fn require_student_session(session: &AuthenticatedSession) -> Result<(), AppError> {
+    if session.user_type == "student" {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden(
+            "เฉพาะนักเรียนเท่านั้นที่จัดการการลงทะเบียนกิจกรรมของตนเองได้".to_string(),
+        ))
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/me/activity-registrations",
+    operation_id = "listMyActivityRegistrations",
+    tag = "academic",
+    params(StudentActivityRegistrationQuery),
+    responses(
+        (status = 200, description = "Self-registration activity options for the selected learner term", body = ApiResponse<Vec<StudentActivityOfferingOption>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Student activity access denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_my_activity_registrations(
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<StudentActivityRegistrationQuery>,
+) -> Result<Response, AppError> {
+    require_student_session(&session)?;
+    Ok(ok(activities::list_registration_options(
+        &session.tenant.pool,
+        session.user_id,
+        query,
+    )
+    .await?))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/me/activity-registrations/{group_id}",
+    operation_id = "enrollMyActivityRegistration",
+    tag = "academic",
+    params(
+        ("group_id" = Uuid, Path, description = "Learning group ID"),
+        StudentActivityRegistrationQuery
+    ),
+    responses(
+        (status = 200, description = "Student enrolled in the selected activity group", body = ApiResponse<StudentActivityRegistrationResult>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Student is not eligible for the selected activity", body = ApiErrorResponse),
+        (status = 404, description = "Activity group not found", body = ApiErrorResponse),
+        (status = 409, description = "Activity registration conflict", body = ApiErrorResponse),
+        (status = 422, description = "Academic term context mismatch", body = ApiErrorResponse)
+    )
+)]
+pub async fn enroll_my_activity_registration(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(group_id): Path<Uuid>,
+    Query(query): Query<StudentActivityRegistrationQuery>,
+) -> Result<Response, AppError> {
+    require_student_session(&session)?;
+    let academic_term_id = query.academic_term_id;
+    let result = activities::enroll(&session.tenant.pool, session.user_id, group_id, query).await?;
+    state.websocket_manager.broadcast_learning_delivery_changed(
+        session.tenant.subdomain.clone(),
+        session.user_id,
+        academic_term_id,
+        result.learning_offering_id,
+        Some(result.learning_group_id),
+        result.revision,
+    );
+    Ok(ok(result))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/me/activity-registrations/{group_id}",
+    operation_id = "unenrollMyActivityRegistration",
+    tag = "academic",
+    params(
+        ("group_id" = Uuid, Path, description = "Learning group ID"),
+        StudentActivityRegistrationQuery
+    ),
+    responses(
+        (status = 200, description = "Student removed from the selected activity group", body = ApiResponse<StudentActivityRegistrationResult>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Student activity access denied", body = ApiErrorResponse),
+        (status = 404, description = "Active activity registration not found", body = ApiErrorResponse),
+        (status = 409, description = "Activity registration window is closed", body = ApiErrorResponse),
+        (status = 422, description = "Academic term context mismatch", body = ApiErrorResponse)
+    )
+)]
+pub async fn unenroll_my_activity_registration(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(group_id): Path<Uuid>,
+    Query(query): Query<StudentActivityRegistrationQuery>,
+) -> Result<Response, AppError> {
+    require_student_session(&session)?;
+    let academic_term_id = query.academic_term_id;
+    let result =
+        activities::unenroll(&session.tenant.pool, session.user_id, group_id, query).await?;
+    state.websocket_manager.broadcast_learning_delivery_changed(
+        session.tenant.subdomain.clone(),
+        session.user_id,
+        academic_term_id,
+        result.learning_offering_id,
+        Some(result.learning_group_id),
+        result.revision,
+    );
+    Ok(ok(result))
 }
 
 #[utoipa::path(

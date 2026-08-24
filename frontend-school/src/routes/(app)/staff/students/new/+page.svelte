@@ -199,10 +199,10 @@
 					<div class="p-4 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 text-sm">
 						<strong>หมายเหตุ:</strong> หลังจากสร้างข้อมูลนักเรียนเสร็จแล้ว กรุณาไปที่เมนู
 						<a
-							href={resolve('/staff/academic/enrollments')}
-							class="underline font-semibold hover:text-blue-900">จัดห้องเรียน (Enrollment)</a
+							href={resolve('/staff/academic/student-years')}
+							class="underline font-semibold hover:text-blue-900">ทะเบียนปีการศึกษาของนักเรียน</a
 						>
-						เพื่อเพิ่มนักเรียนเข้าห้องเรียนในปีการศึกษาปัจจุบัน
+						เพื่อเปิดทะเบียนในปีการศึกษาที่ต้องการและกำหนดห้องประจำ
 					</div>
 				</div>
 			</Card>

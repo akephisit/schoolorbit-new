@@ -38,6 +38,10 @@ fn public_routes() -> Router<AppState> {
             get(modules::calendar::handlers::list_public_calendar_events),
         )
         .route(
+            "/api/public/academic-context/options",
+            get(modules::academic::core::handlers::list_public_context_options),
+        )
+        .route(
             "/api/auth/login",
             post(modules::auth::session_handlers::login)
                 .layer(DefaultBodyLimit::max(AUTH_JSON_BODY_LIMIT)),
@@ -378,6 +382,10 @@ fn protected_routes() -> Router<AppState> {
             get(modules::parents::handlers::get_child_timetable),
         )
         .route(
+            "/api/parent/students/{student_id}/academic-context/options",
+            get(modules::parents::handlers::get_child_academic_context_options),
+        )
+        .route(
             "/api/parent/students/{student_id}/exam-schedules",
             get(modules::parents::handlers::get_child_exam_schedule),
         )
@@ -388,6 +396,19 @@ fn protected_routes() -> Router<AppState> {
         .route(
             "/api/me/timetable",
             get(modules::academic::handlers::timetable::get_my_timetable),
+        )
+        .route(
+            "/api/me/academic-context/options",
+            get(modules::academic::core::handlers::list_my_context_options),
+        )
+        .route(
+            "/api/me/activity-registrations",
+            get(modules::academic::delivery::handlers::list_my_activity_registrations),
+        )
+        .route(
+            "/api/me/activity-registrations/{group_id}",
+            post(modules::academic::delivery::handlers::enroll_my_activity_registration)
+                .delete(modules::academic::delivery::handlers::unenroll_my_activity_registration),
         )
         .route(
             "/api/me/exam-schedules",

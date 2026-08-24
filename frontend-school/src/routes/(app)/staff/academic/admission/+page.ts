@@ -5,6 +5,7 @@
 import { PERMISSION_MODULES } from '$lib/permissions/registry';
 
 export const _meta = {
+	academicContext: 'year_required' as const,
 	menu: {
 		title: 'รับสมัครนักเรียน',
 		icon: 'ClipboardList',

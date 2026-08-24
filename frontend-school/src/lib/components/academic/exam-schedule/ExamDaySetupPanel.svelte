@@ -1,5 +1,6 @@
 <script lang="ts">
-	import type { GradeLevel } from '$lib/api/academic';
+	import { untrack } from 'svelte';
+	import type { GradeLevelOption } from '$lib/api/academic-core';
 	import type {
 		BlockedWindowInput,
 		ExamDayDetail,
@@ -36,7 +37,7 @@
 		onDeleteDay
 	}: {
 		days: ExamDayDetail[];
-		gradeLevels: GradeLevel[];
+		gradeLevels: GradeLevelOption[];
 		readonly?: boolean;
 		saving?: boolean;
 		deletingDayId?: string | null;
@@ -182,7 +183,7 @@
 
 	$effect(() => {
 		if (selectedDayId && !days.some((day) => day.id === selectedDayId)) {
-			resetForm();
+			untrack(resetForm);
 		}
 	});
 </script>

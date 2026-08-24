@@ -4,19 +4,13 @@
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
 	import type { PageProps } from './$types';
-	import {
-		getAcademicStructure,
-		type AcademicStructureData,
-		type AcademicYear,
-		type Semester
-	} from '$lib/api/academic';
+	import { getAcademicContextStore } from '$lib/academic-context/store';
 	import {
 		createExamRound,
 		listExamRounds,
 		type CreateExamRoundInput,
 		type ExamRound,
-		type ExamRoundKind,
-		type ExamRoundStatus
+		type ExamRoundKind
 	} from '$lib/api/examSchedule';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { PageShell } from '$lib/components/app-layout';
@@ -24,7 +18,6 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
-	import * as Select from '$lib/components/ui/select';
 	import {
 		Table,
 		TableBody,
@@ -39,57 +32,23 @@
 
 	let { data }: PageProps = $props();
 
-	let loading = $state(true);
+	const academicContext = getAcademicContextStore();
+	const academicTermId = $derived($academicContext.selected.academicTermId);
+	const selectedTermLabel = $derived(
+		$academicContext.options?.terms.find((term) => term.id === academicTermId)?.name ??
+			'ภาคเรียนที่เลือก'
+	);
 	let roundsLoading = $state(false);
 	let error = $state('');
-	let structure = $state<AcademicStructureData | null>(null);
 	let rounds = $state<ExamRound[]>([]);
-	let selectedYearId = $state('');
-	let selectedSemesterId = $state('');
 	let createDialogOpen = $state(false);
 	let creatingRound = $state(false);
 
 	const canManageExamSchedules = $derived(
 		$can.has(PERMISSIONS.ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL)
 	);
-	const years = $derived<AcademicYear[]>(structure?.years ?? []);
-	const semesters = $derived<Semester[]>(structure?.semesters ?? []);
-	const filteredSemesters = $derived(
-		semesters.filter((semester) => semester.academic_year_id === selectedYearId)
-	);
-	const selectedYearLabel = $derived(
-		years.find((year) => year.id === selectedYearId)?.name ?? 'เลือกปีการศึกษา'
-	);
-	const selectedSemesterLabel = $derived(
-		semesters.find((semester) => semester.id === selectedSemesterId)?.name ?? 'เลือกภาคเรียน'
-	);
-
-	function semesterYearId(semesterId: string): string {
-		return semesters.find((semester) => semester.id === semesterId)?.academic_year_id ?? '';
-	}
-
-	function selectYear(yearId: string) {
-		selectedYearId = yearId;
-		const semester =
-			semesters.find((item) => item.academic_year_id === yearId && item.is_active) ??
-			semesters.find((item) => item.academic_year_id === yearId);
-		selectedSemesterId = semester?.id ?? '';
-		if (selectedSemesterId) {
-			loadRounds();
-		} else {
-			rounds = [];
-		}
-	}
-
-	function selectSemester(semesterId: string) {
-		selectedSemesterId = semesterId;
-		const yearId = semesterYearId(semesterId);
-		if (yearId) selectedYearId = yearId;
-		loadRounds();
-	}
-
-	async function loadRounds() {
-		if (!selectedSemesterId) {
+	async function loadRounds(termId: string | null = academicTermId) {
+		if (!termId) {
 			rounds = [];
 			return;
 		}
@@ -97,7 +56,7 @@
 		roundsLoading = true;
 		error = '';
 		try {
-			rounds = await listExamRounds({ academicSemesterId: selectedSemesterId });
+			rounds = await listExamRounds(termId);
 		} catch (loadError) {
 			error = loadError instanceof Error ? loadError.message : 'ไม่สามารถโหลดรายการรอบตารางสอบได้';
 			rounds = [];
@@ -106,39 +65,11 @@
 		}
 	}
 
-	async function loadInitialData() {
-		loading = true;
-		error = '';
-		try {
-			const academic = await getAcademicStructure();
-			structure = academic.data;
-
-			const activeYear =
-				academic.data.years.find((year) => year.is_active) ?? academic.data.years[0];
-			const yearSemesters = activeYear
-				? academic.data.semesters.filter((semester) => semester.academic_year_id === activeYear.id)
-				: academic.data.semesters;
-			const activeSemester =
-				yearSemesters.find((semester) => semester.is_active) ??
-				yearSemesters[0] ??
-				academic.data.semesters[0];
-
-			selectedYearId = activeSemester?.academic_year_id ?? activeYear?.id ?? '';
-			selectedSemesterId = activeSemester?.id ?? '';
-			await loadRounds();
-		} catch (loadError) {
-			error = loadError instanceof Error ? loadError.message : 'ไม่สามารถโหลดข้อมูลตารางสอบได้';
-			rounds = [];
-		} finally {
-			loading = false;
-		}
-	}
-
 	async function handleCreateRound(input: CreateExamRoundInput): Promise<boolean> {
 		creatingRound = true;
 		try {
 			const round = await createExamRound(input);
-			if (input.academicSemesterId === selectedSemesterId) {
+			if (input.academicTermId === academicTermId) {
 				rounds = [round, ...rounds.filter((item) => item.id !== round.id)];
 			}
 			toast.success('สร้างรอบตารางสอบแล้ว');
@@ -153,11 +84,11 @@
 		}
 	}
 
-	function statusLabel(status: ExamRoundStatus): string {
+	function statusLabel(status: string): string {
 		return status === 'published' ? 'เผยแพร่แล้ว' : 'ฉบับร่าง';
 	}
 
-	function statusVariant(status: ExamRoundStatus): 'default' | 'secondary' | 'outline' {
+	function statusVariant(status: string): 'default' | 'secondary' | 'outline' {
 		return status === 'published' ? 'default' : 'secondary';
 	}
 
@@ -174,7 +105,16 @@
 		});
 	}
 
-	onMount(loadInitialData);
+	onMount(() => {
+		let loadedTermId: string | null = null;
+		return academicContext.subscribe((state) => {
+			const termId = state.selected.academicTermId;
+			if (termId && termId !== loadedTermId) {
+				loadedTermId = termId;
+				void loadRounds(termId);
+			}
+		});
+	});
 </script>
 
 <PageShell title={data.title} description="จัดการรอบสอบประจำภาคเรียน">
@@ -183,18 +123,14 @@
 			<Button
 				variant="outline"
 				size="sm"
-				onclick={loadRounds}
-				disabled={loading || roundsLoading || !selectedSemesterId}
+				onclick={() => loadRounds()}
+				disabled={roundsLoading || !academicTermId}
 			>
 				<RefreshCw class="h-4 w-4" />
 				รีเฟรช
 			</Button>
 			{#if canManageExamSchedules}
-				<Button
-					size="sm"
-					onclick={() => (createDialogOpen = true)}
-					disabled={!selectedSemesterId || semesters.length === 0}
-				>
+				<Button size="sm" onclick={() => (createDialogOpen = true)} disabled={!academicTermId}>
 					<Plus class="h-4 w-4" />
 					สร้างรอบสอบ
 				</Button>
@@ -202,47 +138,17 @@
 		</div>
 	{/snippet}
 
-	<div
-		class="flex flex-col gap-3 rounded-xl border bg-card p-3 sm:p-4 md:flex-row md:items-end md:justify-between"
-	>
-		<div class="grid gap-3 sm:grid-cols-2">
-			<div class="grid gap-2">
-				<span class="text-xs font-medium text-muted-foreground">ปีการศึกษา</span>
-				<Select.Root
-					type="single"
-					value={selectedYearId}
-					onValueChange={(value) => value && selectYear(value)}
-				>
-					<Select.Trigger class="w-full sm:w-56">{selectedYearLabel}</Select.Trigger>
-					<Select.Content>
-						{#each years as year (year.id)}
-							<Select.Item value={year.id}>{year.name}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-			</div>
-			<div class="grid gap-2">
-				<span class="text-xs font-medium text-muted-foreground">ภาคเรียน</span>
-				<Select.Root
-					type="single"
-					value={selectedSemesterId}
-					onValueChange={(value) => value && selectSemester(value)}
-				>
-					<Select.Trigger class="w-full sm:w-56">{selectedSemesterLabel}</Select.Trigger>
-					<Select.Content>
-						{#each filteredSemesters as semester (semester.id)}
-							<Select.Item value={semester.id}>{semester.name}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-			</div>
-		</div>
-		<div class="text-sm text-muted-foreground">
-			{rounds.length} รอบสอบ
-		</div>
+	<div class="flex items-center justify-between rounded-xl border bg-card p-4 text-sm">
+		<div><span class="text-muted-foreground">ภาคเรียน:</span> {selectedTermLabel}</div>
+		<div class="text-muted-foreground">{rounds.length} รอบสอบ</div>
 	</div>
 
-	{#if loading}
+	{#if !academicTermId}
+		<PageState
+			title="เลือกภาคเรียนก่อน"
+			description="ใช้ตัวเลือกปีการศึกษาและภาคเรียนบนแถบด้านบน"
+		/>
+	{:else if roundsLoading}
 		<PageSkeleton variant="table" rows={6} columns={5} />
 	{:else if error}
 		<PageState
@@ -250,13 +156,13 @@
 			title="โหลดตารางสอบไม่สำเร็จ"
 			description={error}
 			actionLabel="ลองอีกครั้ง"
-			onaction={loadInitialData}
+			onaction={() => loadRounds()}
 		/>
 	{:else if rounds.length === 0}
 		<PageState title="ยังไม่มีรอบตารางสอบ" description="ไม่พบรอบสอบในภาคเรียนที่เลือก">
 			{#snippet action()}
 				{#if canManageExamSchedules}
-					<Button onclick={() => (createDialogOpen = true)} disabled={!selectedSemesterId}>
+					<Button onclick={() => (createDialogOpen = true)} disabled={!academicTermId}>
 						<Plus class="h-4 w-4" />
 						สร้างรอบสอบ
 					</Button>
@@ -307,8 +213,7 @@
 									<Badge variant={statusVariant(round.status)}>{statusLabel(round.status)}</Badge>
 								</TableCell>
 								<TableCell class="text-sm text-muted-foreground">
-									{semesters.find((semester) => semester.id === round.academicSemesterId)?.name ??
-										'-'}
+									{selectedTermLabel}
 								</TableCell>
 								<TableCell class="text-sm text-muted-foreground">
 									{formatDate(round.publishedAt)}
@@ -335,8 +240,8 @@
 
 	<ExamRoundDialog
 		bind:open={createDialogOpen}
-		semesters={filteredSemesters}
-		defaultSemesterId={selectedSemesterId}
+		academicTermId={academicTermId ?? ''}
+		termLabel={selectedTermLabel}
 		saving={creatingRound}
 		onCreate={handleCreateRound}
 	/>

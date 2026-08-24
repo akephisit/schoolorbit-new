@@ -3,6 +3,13 @@
 	import { addMonths } from 'date-fns';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
+	import { getAcademicContextStore } from '$lib/academic-context/store';
+	import {
+		listGradeLevelOptions,
+		listHomerooms,
+		type GradeLevelOption,
+		type Homeroom
+	} from '$lib/api/academic-core';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
@@ -38,7 +45,6 @@
 		updateCalendarEvent,
 		updateCalendarTag
 	} from '$lib/api/calendar';
-	import { getAcademicStructure, listClassrooms } from '$lib/api/academic';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import {
@@ -62,12 +68,13 @@
 		SlidersHorizontal
 	} from 'lucide-svelte';
 
-	type GradeLevelOption = { id: string; name: string };
-	type ClassroomOption = { id: string; name: string; grade_level_id?: string };
 	type VisibilityFilter = '' | 'public' | 'private';
 	type AudienceFilter = '' | CalendarAudienceType;
 
 	const todayDate = toIsoDate(new Date());
+	const academicContext = getAcademicContextStore();
+	const academicYearId = $derived($academicContext.selected.academicYearId);
+	const academicTermId = $derived($academicContext.selected.academicTermId);
 
 	let events = $state.raw<CalendarEvent[]>([]);
 	let categories = $state.raw<CalendarCategory[]>([]);
@@ -88,10 +95,11 @@
 	let saving = $state(false);
 	let error = $state('');
 	let gradeLevels = $state.raw<GradeLevelOption[]>([]);
-	let classrooms = $state.raw<ClassroomOption[]>([]);
+	let homerooms = $state.raw<Homeroom[]>([]);
 	let manageOptionsLoaded = $state(false);
 	let manageOptionsLoading = $state(false);
 	let manageOptionsPromise = $state<Promise<boolean> | null>(null);
+	let manageOptionsRevision = 0;
 	let deleteDialogOpen = $state(false);
 	let deletingEvent = $state<CalendarEvent | null>(null);
 	let deleting = $state(false);
@@ -157,18 +165,19 @@
 
 		try {
 			const range = calendarGridRange(selectedMonth);
-			const [nextEvents, nextCategories, nextTags] = await Promise.all([
-				listCalendarEvents({
-					...range,
-					categoryId: categoryId || undefined,
-					tagId: tagId || undefined,
-					audience: audience || undefined,
-					visibility: visibility || undefined,
-					q: search.trim() || undefined
-				}),
-				listCalendarCategories(),
-				listCalendarTags()
-			]);
+			if (!academicYearId) throw new Error('กรุณาเลือกปีการศึกษาก่อน');
+			const nextEvents = await listCalendarEvents({
+				academicYearId,
+				academicTermId,
+				...range,
+				categoryId: categoryId || undefined,
+				tagId: tagId || undefined,
+				audience: audience || undefined,
+				visibility: visibility || undefined,
+				q: search.trim() || undefined
+			});
+			const nextCategories = await listCalendarCategories();
+			const nextTags = await listCalendarTags();
 
 			if (requestSequence !== calendarLoadSequence) return;
 			events = nextEvents;
@@ -416,28 +425,21 @@
 	async function ensureManageOptions(): Promise<boolean> {
 		if (manageOptionsLoaded) return true;
 		if (manageOptionsPromise) return manageOptionsPromise;
+		if (!academicYearId) {
+			toast.error('กรุณาเลือกปีการศึกษาก่อน');
+			return false;
+		}
 
+		const yearId = academicYearId;
+		const requestRevision = ++manageOptionsRevision;
 		manageOptionsLoading = true;
 		manageOptionsPromise = (async () => {
 			try {
-				const structure = await getAcademicStructure();
-				const activeYear =
-					structure.data.years.find((year) => year.is_active) ?? structure.data.years[0];
-				const classroomsResponse = activeYear
-					? await listClassrooms({ year_id: activeYear.id })
-					: null;
-
-				gradeLevels = structure.data.levels
-					.filter((level) => level.is_active)
-					.map((level) => ({ id: level.id, name: level.short_name || level.name }));
-				classrooms =
-					classroomsResponse?.data
-						.filter((classroom) => classroom.is_active)
-						.map((classroom) => ({
-							id: classroom.id,
-							name: classroom.name,
-							grade_level_id: classroom.grade_level_id
-						})) ?? [];
+				const nextGradeLevels = await listGradeLevelOptions(yearId);
+				const nextHomerooms = await listHomerooms(yearId);
+				if (requestRevision !== manageOptionsRevision || yearId !== academicYearId) return false;
+				gradeLevels = nextGradeLevels;
+				homerooms = nextHomerooms;
 				manageOptionsLoaded = true;
 				return true;
 			} catch (loadError: unknown) {
@@ -447,8 +449,10 @@
 				);
 				return false;
 			} finally {
-				manageOptionsLoading = false;
-				manageOptionsPromise = null;
+				if (requestRevision === manageOptionsRevision) {
+					manageOptionsLoading = false;
+					manageOptionsPromise = null;
+				}
 			}
 		})();
 
@@ -506,7 +510,21 @@
 	}
 
 	onMount(() => {
-		void loadCalendar();
+		let loadedContext = '';
+		return academicContext.subscribe((state) => {
+			const yearId = state.selected.academicYearId;
+			const termId = state.selected.academicTermId;
+			const contextKey = `${yearId ?? ''}:${termId ?? ''}`;
+			if (!yearId || contextKey === loadedContext) return;
+			loadedContext = contextKey;
+			manageOptionsRevision += 1;
+			manageOptionsLoaded = false;
+			manageOptionsLoading = false;
+			manageOptionsPromise = null;
+			gradeLevels = [];
+			homerooms = [];
+			void loadCalendar();
+		});
 	});
 </script>
 
@@ -731,7 +749,9 @@
 			{categories}
 			{tags}
 			{gradeLevels}
-			{classrooms}
+			{homerooms}
+			academicYearId={academicYearId ?? ''}
+			{academicTermId}
 			event={editingEvent}
 			{saving}
 			onsave={saveEvent}

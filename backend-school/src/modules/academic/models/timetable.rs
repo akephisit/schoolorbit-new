@@ -3,12 +3,17 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
+use crate::modules::academic::delivery::models::ActivitySchedulingMode;
+
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TimetableInstructor {
     pub user_id: Uuid,
     pub display_name: String,
     pub role: String,
+    pub subject_group_id: Option<Uuid>,
+    pub subject_group_name: Option<String>,
+    pub subject_group_display_order: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
@@ -36,9 +41,13 @@ pub struct TimetableEntry {
     pub learning_group_name: Option<String>,
     /// Stable catalog identity. A selected version is represented by its display label only.
     pub subject_id: Option<Uuid>,
+    pub subject_group_id: Option<Uuid>,
+    pub subject_group_name: Option<String>,
+    pub subject_group_display_order: Option<i32>,
     pub subject_version_display_label: Option<String>,
     pub activity_id: Option<Uuid>,
     pub activity_version_display_label: Option<String>,
+    pub activity_scheduling_mode: Option<ActivitySchedulingMode>,
     pub homeroom_name: Option<String>,
     pub room_code: Option<String>,
     pub period_name: Option<String>,

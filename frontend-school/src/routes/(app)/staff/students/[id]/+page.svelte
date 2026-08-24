@@ -190,7 +190,7 @@
 				<div>
 					<Label>ห้อง</Label>
 					<div class="px-3 py-2 bg-muted/50 rounded-md">
-						{student.class_room || '-'}
+						{student.homeroom || '-'}
 					</div>
 				</div>
 

@@ -76,7 +76,7 @@
 		error = '';
 		try {
 			years = await lookupAcademicYears({ activeOnly: false });
-			const activeYear = years.find((y) => y.is_current) ?? years[0];
+			const activeYear = years.find((year) => year.status === 'active') ?? years[0];
 			if (activeYear) {
 				form.academicYearId = activeYear.id;
 				await loadGradeLevels(activeYear.id);
@@ -174,7 +174,7 @@
 								<Select.Content>
 									{#each years as y (y.id)}
 										<Select.Item value={y.id}>
-											{y.name}{y.is_current ? ' (ปัจจุบัน)' : ''}
+											{y.name}{y.status === 'active' ? ' (กำลังใช้งาน)' : ''}
 										</Select.Item>
 									{/each}
 								</Select.Content>

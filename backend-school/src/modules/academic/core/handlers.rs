@@ -1,6 +1,6 @@
 use axum::{
     extract::{Extension, Path, Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
@@ -17,6 +17,7 @@ use crate::policies::{
     academic_curriculum_access_policy::{self, CurriculumAction},
 };
 use crate::utils::request_context::actor_tenant_context_from_session;
+use crate::utils::tenant::tenant_context;
 use crate::AppState;
 
 use super::models::*;
@@ -78,6 +79,50 @@ pub async fn list_context_options(
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_CONTEXT_READ_SCHOOL)?;
     Ok(ok(context::list_options(&pool).await?))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/public/academic-context/options",
+    operation_id = "listPublicAcademicContextOptions",
+    tag = "academic",
+    responses(
+        (status = 200, description = "Published academic years and terms available to the public calendar", body = ApiResponse<AcademicContextOptions>),
+        (status = 404, description = "School tenant not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_public_context_options(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    let tenant = tenant_context(&state, &headers).await?;
+    Ok(ok(context::list_public_options(&tenant.pool).await?))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/me/academic-context/options",
+    operation_id = "listMyAcademicContextOptions",
+    tag = "academic",
+    responses(
+        (status = 200, description = "Academic years and terms available to the current student", body = ApiResponse<AcademicContextOptions>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Student context access denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_my_context_options(
+    Extension(session): Extension<AuthenticatedSession>,
+) -> Result<Response, AppError> {
+    if session.user_type != "student" {
+        return Err(AppError::Forbidden(
+            "เฉพาะนักเรียนเท่านั้นที่ดูประวัติบริบทของตนเองได้".to_string(),
+        ));
+    }
+    Ok(ok(context::list_options_for_student(
+        &session.tenant.pool,
+        session.user_id,
+    )
+    .await?))
 }
 
 #[utoipa::path(

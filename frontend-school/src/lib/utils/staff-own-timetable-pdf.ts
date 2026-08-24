@@ -3,8 +3,8 @@ import type { GeneratePdfOptions, TimetablePage } from '$lib/utils/pdf';
 
 export interface StaffOwnTimetablePdfInput {
 	teacherName: string;
-	semesterName?: string | null;
-	semesterTerm?: string | null;
+	termName?: string | null;
+	termCode?: string | null;
 	academicYearName?: string | null;
 	entries: TimetableEntry[];
 	dayValues: string[];
@@ -20,8 +20,8 @@ export interface StaffOwnTimetablePdfReadiness {
 	loading: boolean;
 	isExporting: boolean;
 	selectedYearId: string;
-	selectedSemesterId: string;
-	selectedSemesterYearId?: string;
+	selectedAcademicTermId: string;
+	selectedTermYearId?: string;
 	loadedSelectionKey: string;
 	entryCount: number;
 	periodCount: number;
@@ -38,21 +38,21 @@ export interface StaffOwnTimetablePdfDependencies {
 	onError: (error: unknown) => void;
 }
 
-export function staffOwnTimetableSelectionKey(yearId: string, semesterId: string): string {
-	return yearId && semesterId ? `${yearId}:${semesterId}` : '';
+export function staffOwnTimetableSelectionKey(yearId: string, academicTermId: string): string {
+	return yearId && academicTermId ? `${yearId}:${academicTermId}` : '';
 }
 
 export function canDownloadStaffOwnTimetablePdf(state: StaffOwnTimetablePdfReadiness): boolean {
 	const selectedSelectionKey = staffOwnTimetableSelectionKey(
 		state.selectedYearId,
-		state.selectedSemesterId
+		state.selectedAcademicTermId
 	);
 
 	return Boolean(
 		!state.loading &&
 		!state.isExporting &&
 		selectedSelectionKey &&
-		state.selectedSemesterYearId === state.selectedYearId &&
+		state.selectedTermYearId === state.selectedYearId &&
 		state.loadedSelectionKey === selectedSelectionKey &&
 		state.entryCount > 0 &&
 		state.periodCount > 0
@@ -83,11 +83,11 @@ export function buildStaffOwnTimetablePdfDownload(
 			? normalizedTeacherName
 			: `ครู${normalizedTeacherName}`
 		: 'ครู';
-	const semesterName = input.semesterName?.trim();
-	const semesterTerm = input.semesterTerm?.trim();
-	const semesterLabel = semesterName || (semesterTerm ? `ภาคเรียนที่ ${semesterTerm}` : 'ภาคเรียน');
+	const termName = input.termName?.trim();
+	const termCode = input.termCode?.trim();
+	const termLabel = termName || (termCode ? `ภาคเรียนที่ ${termCode}` : 'ภาคเรียน');
 	const academicYearLabel = input.academicYearName?.trim() || 'ปีการศึกษา';
-	const subTitle = `${semesterLabel} ${academicYearLabel}`;
+	const subTitle = `${termLabel} ${academicYearLabel}`;
 	const title = `ตารางสอน ${teacherLabel}`;
 
 	return {
@@ -101,8 +101,8 @@ export function buildStaffOwnTimetablePdfDownload(
 					id: period.id,
 					order_index: orderIndex,
 					name: period.name,
-					start_time: period.start_time ?? '',
-					end_time: period.end_time ?? ''
+					start_time: period.startTime ?? '',
+					end_time: period.endTime ?? ''
 				})),
 				timetableEntries: input.entries,
 				viewMode: 'INSTRUCTOR'
