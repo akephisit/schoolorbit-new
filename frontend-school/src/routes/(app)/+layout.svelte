@@ -4,7 +4,8 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
+	import { createAcademicContextStore, setAcademicContextStore } from '$lib/academic-context/store';
 	import { authAPI } from '$lib/api/auth';
 	import type { AuthRefreshResult } from '$lib/auth/auth-refresh-policy';
 	import { userCanAccessRoute } from '$lib/auth/route-access';
@@ -22,6 +23,10 @@
 	let sidebarRef = $state<{ toggleMobileSidebar?: () => void }>();
 	let isSidebarCollapsed = $state($uiPreferences.sidebarCollapsed);
 	let authStatus = $state<AuthStatus>('checking');
+	const academicContext = createAcademicContextStore({
+		navigate: goto
+	});
+	setAcademicContextStore(academicContext);
 
 	function handleMenuClick() {
 		if (sidebarRef?.toggleMobileSidebar) {
@@ -98,6 +103,10 @@
 		await authenticate(true);
 	});
 
+	onDestroy(() => {
+		academicContext.reset();
+	});
+
 	$effect(() => {
 		const routeId = page.route.id;
 		const permissions = $userPermissions;
@@ -111,6 +120,21 @@
 		if (userCanAccessRoute(user, permissions, routeId)) return;
 
 		void redirectToForbidden();
+	});
+
+	$effect(() => {
+		const routeId = page.route.id;
+		const url = page.url;
+		const permissions = $userPermissions;
+		const user = $authStore.user;
+
+		if (authStatus !== 'authenticated' || !user) {
+			academicContext.reset();
+			return;
+		}
+		if (!userCanAccessRoute(user, permissions, routeId)) return;
+
+		void academicContext.sync(routeId, url);
 	});
 </script>
 

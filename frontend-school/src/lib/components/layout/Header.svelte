@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Search, Menu, Sun, Moon } from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
+	import AcademicContextSwitcher from './AcademicContextSwitcher.svelte';
 	import ProfileMenu from './ProfileMenu.svelte';
 	import NotificationBell from './NotificationBell.svelte';
 	import { uiPreferences } from '$lib/stores/ui-preferences';
@@ -51,9 +52,9 @@
 	class="sticky top-0 h-16 bg-card border-b border-border z-30 transition-[margin] duration-300 ease-in-out
 	{sidebarCollapsed ? 'lg:ml-0' : 'lg:ml-0'}"
 >
-	<div class="h-full px-4 lg:px-6 flex items-center justify-between gap-4">
+	<div class="flex h-full items-center gap-2 px-3 sm:gap-3 sm:px-4 lg:px-6">
 		<!-- Left Section -->
-		<div class="flex items-center gap-4">
+		<div class="flex shrink-0 items-center gap-3">
 			<!-- Mobile Menu Button -->
 			<Button
 				variant="ghost"
@@ -66,7 +67,9 @@
 			</Button>
 
 			<!-- Search -->
-			<div class="hidden md:flex items-center gap-2 bg-accent rounded-lg px-3 py-2 min-w-[300px]">
+			<div
+				class="hidden min-w-64 max-w-80 items-center gap-2 rounded-lg bg-accent px-3 py-2 2xl:flex"
+			>
 				<Search class="w-4 h-4 text-muted-foreground" />
 				<input
 					type="text"
@@ -76,10 +79,14 @@
 			</div>
 		</div>
 
+		<div class="ml-auto min-w-0">
+			<AcademicContextSwitcher />
+		</div>
+
 		<!-- Right Section -->
-		<div class="flex items-center gap-2">
+		<div class="flex shrink-0 items-center gap-1 sm:gap-2">
 			<!-- Search Button - Mobile Only -->
-			<Button variant="ghost" size="icon" class="md:hidden" aria-label="Search">
+			<Button variant="ghost" size="icon" class="2xl:hidden" aria-label="Search">
 				<Search class="w-5 h-5" />
 			</Button>
 
@@ -98,7 +105,7 @@
 			</div>
 
 			<!-- User Menu -->
-			<div class="flex items-center pl-3 border-l border-border">
+			<div class="flex items-center border-l border-border pl-1 sm:pl-3">
 				<ProfileMenu />
 			</div>
 		</div>
