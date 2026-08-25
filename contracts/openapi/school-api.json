@@ -6303,6 +6303,45 @@
         ],
         "type": "object"
       },
+      "ApiResponse_StudentListResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "items": {
+                "items": {
+                  "$ref": "#/components/schemas/StudentListItem"
+                },
+                "type": "array"
+              },
+              "page": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "page_size": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "items",
+              "page",
+              "page_size"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_StudentProfile": {
         "properties": {
           "data": {
@@ -13040,6 +13079,15 @@
         ],
         "type": "object"
       },
+      "CalendarAudienceType": {
+        "enum": [
+          "all",
+          "staff",
+          "student",
+          "parent"
+        ],
+        "type": "string"
+      },
       "CalendarCategory": {
         "properties": {
           "color": {
@@ -13554,6 +13602,13 @@
           "updatedAt"
         ],
         "type": "object"
+      },
+      "CalendarVisibility": {
+        "enum": [
+          "public",
+          "private"
+        ],
+        "type": "string"
       },
       "CandidateMatchStatus": {
         "enum": [
@@ -24857,6 +24912,82 @@
           "status",
           "grade_level",
           "homeroom"
+        ],
+        "type": "object"
+      },
+      "StudentListItem": {
+        "properties": {
+          "first_name": {
+            "type": "string"
+          },
+          "grade_level": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "homeroom": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "last_name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "student_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "first_name",
+          "last_name",
+          "status"
+        ],
+        "type": "object"
+      },
+      "StudentListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StudentListItem"
+            },
+            "type": "array"
+          },
+          "page": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "page_size": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "page_size"
         ],
         "type": "object"
       },
@@ -39349,7 +39480,24 @@
         "operationId": "listCalendarEvents",
         "parameters": [
           {
-            "description": "Inclusive range start",
+            "in": "query",
+            "name": "academicYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
             "in": "query",
             "name": "from",
             "required": false,
@@ -39359,7 +39507,6 @@
             }
           },
           {
-            "description": "Inclusive range end",
             "in": "query",
             "name": "to",
             "required": false,
@@ -39369,9 +39516,8 @@
             }
           },
           {
-            "description": "Calendar category ID",
             "in": "query",
-            "name": "category_id",
+            "name": "categoryId",
             "required": false,
             "schema": {
               "format": "uuid",
@@ -39379,9 +39525,8 @@
             }
           },
           {
-            "description": "Calendar tag ID",
             "in": "query",
-            "name": "tag_id",
+            "name": "tagId",
             "required": false,
             "schema": {
               "format": "uuid",
@@ -39389,25 +39534,22 @@
             }
           },
           {
-            "description": "Audience: all, staff, student, or parent",
             "in": "query",
             "name": "audience",
             "required": false,
             "schema": {
-              "type": "string"
+              "$ref": "#/components/schemas/CalendarAudienceType"
             }
           },
           {
-            "description": "Visibility: public or private",
             "in": "query",
             "name": "visibility",
             "required": false,
             "schema": {
-              "type": "string"
+              "$ref": "#/components/schemas/CalendarVisibility"
             }
           },
           {
-            "description": "Title or description search",
             "in": "query",
             "name": "q",
             "required": false,
@@ -44267,7 +44409,24 @@
         "operationId": "listMyCalendarEvents",
         "parameters": [
           {
-            "description": "Inclusive range start",
+            "in": "query",
+            "name": "academicYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
             "in": "query",
             "name": "from",
             "required": false,
@@ -44277,7 +44436,6 @@
             }
           },
           {
-            "description": "Inclusive range end",
             "in": "query",
             "name": "to",
             "required": false,
@@ -44287,9 +44445,8 @@
             }
           },
           {
-            "description": "Calendar category ID",
             "in": "query",
-            "name": "category_id",
+            "name": "categoryId",
             "required": false,
             "schema": {
               "format": "uuid",
@@ -44297,9 +44454,8 @@
             }
           },
           {
-            "description": "Calendar tag ID",
             "in": "query",
-            "name": "tag_id",
+            "name": "tagId",
             "required": false,
             "schema": {
               "format": "uuid",
@@ -44307,25 +44463,22 @@
             }
           },
           {
-            "description": "Audience: all, staff, student, or parent",
             "in": "query",
             "name": "audience",
             "required": false,
             "schema": {
-              "type": "string"
+              "$ref": "#/components/schemas/CalendarAudienceType"
             }
           },
           {
-            "description": "Visibility: public or private",
             "in": "query",
             "name": "visibility",
             "required": false,
             "schema": {
-              "type": "string"
+              "$ref": "#/components/schemas/CalendarVisibility"
             }
           },
           {
-            "description": "Title or description search",
             "in": "query",
             "name": "q",
             "required": false,
@@ -45770,9 +45923,60 @@
         ]
       }
     },
+    "/api/parent/academic-context/options": {
+      "get": {
+        "operationId": "listParentAcademicContextOptions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AcademicContextOptions"
+                }
+              }
+            },
+            "description": "Academic years and terms available across linked active students"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Parent account required"
+          }
+        },
+        "tags": [
+          "parent"
+        ]
+      }
+    },
     "/api/parent/profile": {
       "get": {
         "operationId": "getParentProfile",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -45829,6 +46033,15 @@
             "description": "Linked student user ID",
             "in": "path",
             "name": "student_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "academicYearId",
             "required": true,
             "schema": {
               "format": "uuid",
@@ -45951,7 +46164,24 @@
             }
           },
           {
-            "description": "Inclusive range start",
+            "in": "query",
+            "name": "academicYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
             "in": "query",
             "name": "from",
             "required": false,
@@ -45961,7 +46191,6 @@
             }
           },
           {
-            "description": "Inclusive range end",
             "in": "query",
             "name": "to",
             "required": false,
@@ -45971,9 +46200,8 @@
             }
           },
           {
-            "description": "Calendar category ID",
             "in": "query",
-            "name": "category_id",
+            "name": "categoryId",
             "required": false,
             "schema": {
               "format": "uuid",
@@ -45981,9 +46209,8 @@
             }
           },
           {
-            "description": "Calendar tag ID",
             "in": "query",
-            "name": "tag_id",
+            "name": "tagId",
             "required": false,
             "schema": {
               "format": "uuid",
@@ -45991,25 +46218,22 @@
             }
           },
           {
-            "description": "Audience: all, staff, student, or parent",
             "in": "query",
             "name": "audience",
             "required": false,
             "schema": {
-              "type": "string"
+              "$ref": "#/components/schemas/CalendarAudienceType"
             }
           },
           {
-            "description": "Visibility: public or private",
             "in": "query",
             "name": "visibility",
             "required": false,
             "schema": {
-              "type": "string"
+              "$ref": "#/components/schemas/CalendarVisibility"
             }
           },
           {
-            "description": "Title or description search",
             "in": "query",
             "name": "q",
             "required": false,
@@ -46305,7 +46529,24 @@
         "operationId": "listPublicCalendarEvents",
         "parameters": [
           {
-            "description": "Inclusive range start",
+            "in": "query",
+            "name": "academicYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
             "in": "query",
             "name": "from",
             "required": false,
@@ -46315,7 +46556,6 @@
             }
           },
           {
-            "description": "Inclusive range end",
             "in": "query",
             "name": "to",
             "required": false,
@@ -46325,9 +46565,8 @@
             }
           },
           {
-            "description": "Calendar category ID",
             "in": "query",
-            "name": "category_id",
+            "name": "categoryId",
             "required": false,
             "schema": {
               "format": "uuid",
@@ -46335,9 +46574,8 @@
             }
           },
           {
-            "description": "Calendar tag ID",
             "in": "query",
-            "name": "tag_id",
+            "name": "tagId",
             "required": false,
             "schema": {
               "format": "uuid",
@@ -46345,25 +46583,22 @@
             }
           },
           {
-            "description": "Accepted for compatibility; public visibility is always enforced",
             "in": "query",
             "name": "audience",
             "required": false,
             "schema": {
-              "type": "string"
+              "$ref": "#/components/schemas/CalendarAudienceType"
             }
           },
           {
-            "description": "Accepted for compatibility; public visibility is always enforced",
             "in": "query",
             "name": "visibility",
             "required": false,
             "schema": {
-              "type": "string"
+              "$ref": "#/components/schemas/CalendarVisibility"
             }
           },
           {
-            "description": "Title or description search",
             "in": "query",
             "name": "q",
             "required": false,
@@ -47821,6 +48056,17 @@
     "/api/student/profile": {
       "get": {
         "operationId": "getStudentProfile",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -47919,6 +48165,90 @@
       }
     },
     "/api/students": {
+      "get": {
+        "operationId": "listStudents",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_StudentListResponse"
+                }
+              }
+            },
+            "description": "Students in the selected academic year"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Student list access denied"
+          }
+        },
+        "summary": "GET /api/students - รายชื่อนักเรียนทั้งหมด",
+        "tags": [
+          "student"
+        ]
+      },
       "post": {
         "operationId": "createStudent",
         "requestBody": {
@@ -48037,6 +48367,76 @@
           }
         },
         "summary": "DELETE /api/students/:id - ลบนักเรียน (soft delete)",
+        "tags": [
+          "student"
+        ]
+      },
+      "get": {
+        "operationId": "getStudent",
+        "parameters": [
+          {
+            "description": "Student user ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "academicYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_StudentProfile"
+                }
+              }
+            },
+            "description": "Student profile in the selected academic year"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Student profile access denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Student profile not found"
+          }
+        },
+        "summary": "GET /api/students/:id - ดูข้อมูลนักเรียน",
         "tags": [
           "student"
         ]

@@ -49,3 +49,51 @@ test('appendApiQuery rejects non-scalar query values', async () => {
 	const { appendApiQuery } = await importTypescript('src/lib/api/query.ts');
 	assert.throws(() => appendApiQuery('/api/students', { filter: { status: 'active' } }));
 });
+
+test('generated API exposes repaired academic query operations', async () => {
+	const generated = await readFile(
+		path.join(projectRoot, 'src/lib/api/generated/school-api.ts'),
+		'utf8'
+	);
+	for (const operationId of [
+		'listStudents',
+		'getStudent',
+		'getStudentProfile',
+		'getParentProfile',
+		'getParentChildProfile',
+		'listParentAcademicContextOptions',
+		'listCalendarEvents',
+		'listMyCalendarEvents',
+		'getParentChildCalendarEvents',
+		'listPublicCalendarEvents'
+	]) {
+		assert.match(generated, new RegExp(`\\b${operationId}: \\{`));
+	}
+
+	const listStudents = generated.match(/\n\tlistStudents: \{[\s\S]*?\n\t\};/)?.[0];
+	assert.ok(listStudents, 'listStudents operation block must exist');
+	assert.match(listStudents, /academicYearId:\s*string/);
+	assert.match(listStudents, /pageSize\?:\s*number/);
+	assert.doesNotMatch(listStudents, /academic_year_id|page_size/);
+
+	for (const operationId of [
+		'getStudent',
+		'getStudentProfile',
+		'getParentProfile',
+		'getParentChildProfile',
+		'listCalendarEvents',
+		'listMyCalendarEvents',
+		'getParentChildCalendarEvents',
+		'listPublicCalendarEvents'
+	]) {
+		const operation = generated.match(
+			new RegExp(`\\n\\t${operationId}: \\{[\\s\\S]*?\\n\\t\\};`)
+		)?.[0];
+		assert.ok(operation, `${operationId} operation block must exist`);
+		assert.match(operation, /academicYearId:\s*string/);
+		assert.doesNotMatch(operation, /academic_year_id|category_id|tag_id/);
+	}
+
+	assert.match(generated, /StudentListResponse:/);
+	assert.match(generated, /homeroom:/);
+});

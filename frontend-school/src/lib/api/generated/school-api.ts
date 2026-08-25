@@ -2933,6 +2933,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/parent/academic-context/options': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listParentAcademicContextOptions'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/parent/profile': {
 		parameters: {
 			query?: never;
@@ -3424,7 +3440,8 @@ export interface paths {
 			path?: never;
 			cookie?: never;
 		};
-		get?: never;
+		/** GET /api/students - รายชื่อนักเรียนทั้งหมด */
+		get: operations['listStudents'];
 		put?: never;
 		/** POST /api/students - เพิ่มนักเรียนใหม่ */
 		post: operations['createStudent'];
@@ -3441,7 +3458,8 @@ export interface paths {
 			path?: never;
 			cookie?: never;
 		};
-		get?: never;
+		/** GET /api/students/:id - ดูข้อมูลนักเรียน */
+		get: operations['getStudent'];
 		/** PUT /api/students/:id - แก้ไขข้อมูลนักเรียน */
 		put: operations['updateStudent'];
 		post?: never;
@@ -5251,6 +5269,17 @@ export interface components {
 				revision: number;
 				/** Format: uuid */
 				studentAcademicYearId: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_StudentListResponse: {
+			data: {
+				items: components['schemas']['StudentListItem'][];
+				/** Format: int64 */
+				page: number;
+				/** Format: int64 */
+				page_size: number;
 			};
 			message?: string;
 			success: boolean;
@@ -7087,6 +7116,8 @@ export interface components {
 			label: string;
 			startTime: string;
 		};
+		/** @enum {string} */
+		CalendarAudienceType: 'all' | 'staff' | 'student' | 'parent';
 		CalendarCategory: {
 			color: string;
 			/** Format: date-time */
@@ -7223,6 +7254,8 @@ export interface components {
 			/** Format: date-time */
 			updatedAt: string;
 		};
+		/** @enum {string} */
+		CalendarVisibility: 'public' | 'private';
 		/** @enum {string} */
 		CandidateMatchStatus:
 			| 'matched'
@@ -10298,6 +10331,25 @@ export interface components {
 			student_number: number | null;
 			title: string | null;
 			username: string;
+		};
+		StudentListItem: {
+			first_name: string;
+			grade_level?: string | null;
+			homeroom?: string | null;
+			/** Format: uuid */
+			id: string;
+			last_name: string;
+			status: string;
+			student_id?: string | null;
+			title?: string | null;
+			username: string;
+		};
+		StudentListResponse: {
+			items: components['schemas']['StudentListItem'][];
+			/** Format: int64 */
+			page: number;
+			/** Format: int64 */
+			page_size: number;
 		};
 		/** @description Student lookup item with the placement in the caller-selected academic year. */
 		StudentLookupItem: {
@@ -20414,21 +20466,16 @@ export interface operations {
 	};
 	listCalendarEvents: {
 		parameters: {
-			query?: {
-				/** @description Audience: all, staff, student, or parent */
-				audience?: string;
-				/** @description Calendar category ID */
-				category_id?: string;
-				/** @description Inclusive range start */
+			query: {
+				academicTermId?: string;
+				academicYearId: string;
+				audience?: components['schemas']['CalendarAudienceType'];
+				categoryId?: string;
 				from?: string;
-				/** @description Title or description search */
 				q?: string;
-				/** @description Calendar tag ID */
-				tag_id?: string;
-				/** @description Inclusive range end */
+				tagId?: string;
 				to?: string;
-				/** @description Visibility: public or private */
-				visibility?: string;
+				visibility?: components['schemas']['CalendarVisibility'];
 			};
 			header?: never;
 			path?: never;
@@ -24075,21 +24122,16 @@ export interface operations {
 	};
 	listMyCalendarEvents: {
 		parameters: {
-			query?: {
-				/** @description Audience: all, staff, student, or parent */
-				audience?: string;
-				/** @description Calendar category ID */
-				category_id?: string;
-				/** @description Inclusive range start */
+			query: {
+				academicTermId?: string;
+				academicYearId: string;
+				audience?: components['schemas']['CalendarAudienceType'];
+				categoryId?: string;
 				from?: string;
-				/** @description Title or description search */
 				q?: string;
-				/** @description Calendar tag ID */
-				tag_id?: string;
-				/** @description Inclusive range end */
+				tagId?: string;
 				to?: string;
-				/** @description Visibility: public or private */
-				visibility?: string;
+				visibility?: components['schemas']['CalendarVisibility'];
 			};
 			header?: never;
 			path?: never;
@@ -25189,9 +25231,49 @@ export interface operations {
 			};
 		};
 	};
-	getParentProfile: {
+	listParentAcademicContextOptions: {
 		parameters: {
 			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Academic years and terms available across linked active students */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AcademicContextOptions'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Parent account required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getParentProfile: {
+		parameters: {
+			query: {
+				academicYearId: string;
+			};
 			header?: never;
 			path?: never;
 			cookie?: never;
@@ -25238,7 +25320,9 @@ export interface operations {
 	};
 	getParentChildProfile: {
 		parameters: {
-			query?: never;
+			query: {
+				academicYearId: string;
+			};
 			header?: never;
 			path: {
 				/** @description Linked student user ID */
@@ -25329,21 +25413,16 @@ export interface operations {
 	};
 	getParentChildCalendarEvents: {
 		parameters: {
-			query?: {
-				/** @description Audience: all, staff, student, or parent */
-				audience?: string;
-				/** @description Calendar category ID */
-				category_id?: string;
-				/** @description Inclusive range start */
+			query: {
+				academicTermId?: string;
+				academicYearId: string;
+				audience?: components['schemas']['CalendarAudienceType'];
+				categoryId?: string;
 				from?: string;
-				/** @description Title or description search */
 				q?: string;
-				/** @description Calendar tag ID */
-				tag_id?: string;
-				/** @description Inclusive range end */
+				tagId?: string;
 				to?: string;
-				/** @description Visibility: public or private */
-				visibility?: string;
+				visibility?: components['schemas']['CalendarVisibility'];
 			};
 			header?: never;
 			path: {
@@ -25585,21 +25664,16 @@ export interface operations {
 	};
 	listPublicCalendarEvents: {
 		parameters: {
-			query?: {
-				/** @description Accepted for compatibility; public visibility is always enforced */
-				audience?: string;
-				/** @description Calendar category ID */
-				category_id?: string;
-				/** @description Inclusive range start */
+			query: {
+				academicTermId?: string;
+				academicYearId: string;
+				audience?: components['schemas']['CalendarAudienceType'];
+				categoryId?: string;
 				from?: string;
-				/** @description Title or description search */
 				q?: string;
-				/** @description Calendar tag ID */
-				tag_id?: string;
-				/** @description Inclusive range end */
+				tagId?: string;
 				to?: string;
-				/** @description Accepted for compatibility; public visibility is always enforced */
-				visibility?: string;
+				visibility?: components['schemas']['CalendarVisibility'];
 			};
 			header?: never;
 			path?: never;
@@ -26772,7 +26846,9 @@ export interface operations {
 	};
 	getStudentProfile: {
 		parameters: {
-			query?: never;
+			query: {
+				academicYearId: string;
+			};
 			header?: never;
 			path?: never;
 			cookie?: never;
@@ -26859,6 +26935,50 @@ export interface operations {
 			};
 		};
 	};
+	listStudents: {
+		parameters: {
+			query: {
+				academicYearId: string;
+				page?: number;
+				pageSize?: number;
+				search?: string;
+				status?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Students in the selected academic year */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_StudentListResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student list access denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	createStudent: {
 		parameters: {
 			query?: never;
@@ -26901,6 +27021,58 @@ export interface operations {
 			};
 			/** @description Student creation permission denied */
 			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getStudent: {
+		parameters: {
+			query: {
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				/** @description Student user ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Student profile in the selected academic year */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_StudentProfile'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student profile access denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student profile not found */
+			404: {
 				headers: {
 					[name: string]: unknown;
 				};

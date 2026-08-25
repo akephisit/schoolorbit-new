@@ -33,8 +33,8 @@ use crate::modules::auth::models::{
     SessionListData, SessionResponse, UpdateProfileRequest,
 };
 use crate::modules::calendar::models::{
-    CalendarCategory, CalendarEvent, CalendarEventReminder, CalendarEventTag, CalendarEventTarget,
-    CalendarPublicEvent, CalendarTag, CalendarViewerEvent,
+    CalendarAudienceType, CalendarCategory, CalendarEvent, CalendarEventReminder, CalendarEventTag,
+    CalendarEventTarget, CalendarPublicEvent, CalendarTag, CalendarViewerEvent, CalendarVisibility,
 };
 use crate::modules::certificates::models::{
     AttachCertificateAssetRequest, AttachCertificateBackgroundRequest, CandidateMatchStatus,
@@ -979,6 +979,8 @@ use utoipa::OpenApi;
         StaffPublishedExamRoomAssignment,
         StaffPublishedExamInvigilator,
         ApiResponse<Vec<StaffPublishedExamScheduleRound>>,
+        CalendarAudienceType,
+        CalendarVisibility,
         CalendarEventTag,
         CalendarViewerEvent,
         ApiResponse<Vec<CalendarViewerEvent>>,
@@ -2163,6 +2165,16 @@ mod tests {
                 && parameter["in"] == "path"
                 && parameter["required"] == true
         }));
+
+        let schemas = &document["components"]["schemas"];
+        assert_eq!(
+            schemas["CalendarAudienceType"]["enum"],
+            serde_json::json!(["all", "staff", "student", "parent"])
+        );
+        assert_eq!(
+            schemas["CalendarVisibility"]["enum"],
+            serde_json::json!(["public", "private"])
+        );
     }
 
     #[test]
