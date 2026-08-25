@@ -12,9 +12,7 @@ export type StudentParent = Schemas['ParentDto'];
 export type Student = Schemas['StudentProfile'];
 export type StudentListItem = Schemas['StudentListItem'];
 export type StudentListResponse = Schemas['StudentListResponse'];
-export type ListStudentsQuery = NonNullable<
-	operations['listStudents']['parameters']['query']
->;
+export type ListStudentsQuery = NonNullable<operations['listStudents']['parameters']['query']>;
 
 export type CreateStudentRequest = Schemas['CreateStudentRequest'];
 export type CreateParentRequest = Schemas['CreateParentRequest'];
@@ -81,10 +79,14 @@ export async function deleteStudent(id: string): Promise<{ success: boolean }> {
 /**
  * Get own profile (Student self-service)
  */
-export async function getOwnProfile(): Promise<{ success: boolean; data: Student }> {
-	const response = await apiClient.get<Student>('/api/student/profile');
-	const data = requireApiData(response, 'Failed to get profile');
-	return { success: true, data };
+export async function getOwnProfile(academicYearId: string): Promise<Student> {
+	const query = { academicYearId } satisfies NonNullable<
+		operations['getStudentProfile']['parameters']['query']
+	>;
+	return requireApiData(
+		await apiClient.get<Student>('/api/student/profile', { query }),
+		'Failed to get profile'
+	);
 }
 
 /**

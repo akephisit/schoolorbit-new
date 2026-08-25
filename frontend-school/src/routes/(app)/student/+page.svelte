@@ -1,35 +1,130 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import { onMount } from 'svelte';
+	import {
+		listMyAcademicContextOptions,
+		type AcademicContextOptionsResponse
+	} from '$lib/api/academic-context';
 	import { Card } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { Label } from '$lib/components/ui/label';
+	import ScopedAcademicYearSelect from '$lib/components/academic-context/ScopedAcademicYearSelect.svelte';
+	import {
+		resolveScopedAcademicYearUrl,
+		urlWithAcademicYear
+	} from '$lib/academic-context/scoped-year';
 	import { User, Calendar, BookOpen, Award } from 'lucide-svelte';
 	import { getOwnProfile, type Student } from '$lib/api/students';
 	import { toast } from 'svelte-sonner';
 
+	let contextOptions = $state<AcademicContextOptionsResponse | null>(null);
+	let selectedYearId = $state('');
 	let student = $state<Student | null>(null);
 	let loading = $state(true);
 	let error = $state('');
+	let revision = 0;
+
+	const academicYearQuery = $derived(
+		selectedYearId ? `?academicYearId=${encodeURIComponent(selectedYearId)}` : ''
+	);
+	const profileHref = $derived(`${resolve('/student/profile')}${academicYearQuery}`);
+	const timetableHref = $derived(`${resolve('/student/timetable')}${academicYearQuery}`);
 
 	async function loadProfile() {
+		const current = ++revision;
+		if (!selectedYearId) {
+			student = null;
+			loading = false;
+			return;
+		}
 		loading = true;
 		error = '';
 		try {
-			const response = await getOwnProfile();
-			student = response.data;
+			const loaded = await getOwnProfile(selectedYearId);
+			if (current !== revision) return;
+			student = loaded;
 		} catch (loadError) {
+			if (current !== revision) return;
 			console.error('Failed to load profile:', loadError);
 			const message = loadError instanceof Error ? loadError.message : 'เกิดข้อผิดพลาด';
 			error = message;
 			toast.error(message);
 		} finally {
+			if (current === revision) loading = false;
+		}
+	}
+
+	async function initialize(): Promise<void> {
+		const current = ++revision;
+		loading = true;
+		error = '';
+		try {
+			const options = await listMyAcademicContextOptions();
+			if (current !== revision) return;
+			contextOptions = options;
+			const selection = resolveScopedAcademicYearUrl(options, page.url);
+			selectedYearId = selection.academicYearId ?? '';
+
+			if (selection.replaceUrl) {
+				await goto(resolve(`/student${selection.replaceUrl.search}${selection.replaceUrl.hash}`), {
+					replaceState: true,
+					noScroll: true,
+					keepFocus: true
+				});
+				if (current !== revision) return;
+			}
+
+			if (!selectedYearId) {
+				student = null;
+				loading = false;
+				return;
+			}
+			await loadProfile();
+		} catch (loadError) {
+			if (current !== revision) return;
+			const message =
+				loadError instanceof Error ? loadError.message : 'โหลดประวัติปีการศึกษาไม่สำเร็จ';
+			error = message;
+			toast.error(message);
 			loading = false;
 		}
 	}
 
+	async function changeAcademicYear(academicYearId: string): Promise<void> {
+		if (academicYearId === selectedYearId) return;
+		const current = ++revision;
+		selectedYearId = academicYearId;
+		loading = true;
+		error = '';
+		try {
+			const nextUrl = urlWithAcademicYear(page.url, academicYearId);
+			await goto(resolve(`/student${nextUrl.search}${nextUrl.hash}`), {
+				replaceState: true,
+				noScroll: true,
+				keepFocus: true
+			});
+			if (current !== revision) return;
+			await loadProfile();
+		} catch (loadError) {
+			if (current !== revision) return;
+			const message = loadError instanceof Error ? loadError.message : 'เปลี่ยนปีการศึกษาไม่สำเร็จ';
+			error = message;
+			toast.error(message);
+			loading = false;
+		}
+	}
+
+	function retry(): void {
+		if (contextOptions && selectedYearId) void loadProfile();
+		else void initialize();
+	}
+
 	onMount(() => {
-		loadProfile();
+		void initialize();
 	});
 </script>
 
@@ -39,6 +134,19 @@
 		? `สวัสดี, ${student.first_name} ${student.last_name}`
 		: 'ภาพรวมข้อมูลนักเรียน'}
 >
+	{#if contextOptions && contextOptions.years.length > 0}
+		<div class="flex max-w-sm flex-col gap-2 rounded-xl border bg-card p-4">
+			<Label for="student-dashboard-year">ปีการศึกษา</Label>
+			<ScopedAcademicYearSelect
+				id="student-dashboard-year"
+				years={contextOptions.years}
+				value={selectedYearId}
+				disabled={loading}
+				onchange={changeAcademicYear}
+			/>
+		</div>
+	{/if}
+
 	{#if loading}
 		<PageSkeleton variant="cards" rows={3} />
 	{:else if error}
@@ -47,7 +155,12 @@
 			title="โหลดแดชบอร์ดไม่สำเร็จ"
 			description={error}
 			actionLabel="ลองอีกครั้ง"
-			onaction={loadProfile}
+			onaction={retry}
+		/>
+	{:else if contextOptions && contextOptions.years.length === 0}
+		<PageState
+			title="ยังไม่มีประวัติปีการศึกษาสำหรับบัญชีนี้"
+			description="กรุณาติดต่อผู้ดูแลระบบเพื่อตรวจสอบการลงทะเบียนนักเรียน"
 		/>
 	{:else if student}
 		<!-- Student Info Cards -->
@@ -105,12 +218,12 @@
 		<Card class="p-6">
 			<h2 class="text-xl font-semibold mb-4">เมนูด่วน</h2>
 			<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-				<Button variant="outline" class="h-auto py-4 flex-col gap-2" href="/student/profile">
+				<Button variant="outline" class="h-auto py-4 flex-col gap-2" href={profileHref}>
 					<User class="w-6 h-6" />
 					<span>ข้อมูลส่วนตัว</span>
 				</Button>
 
-				<Button variant="outline" class="h-auto py-4 flex-col gap-2" href="/student/timetable">
+				<Button variant="outline" class="h-auto py-4 flex-col gap-2" href={timetableHref}>
 					<BookOpen class="w-6 h-6" />
 					<span>ตารางเรียน</span>
 				</Button>

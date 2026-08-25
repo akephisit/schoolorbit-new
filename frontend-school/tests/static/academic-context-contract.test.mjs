@@ -40,6 +40,20 @@ async function importRouteContext() {
 	return import(moduleUrl);
 }
 
+async function importScopedYear() {
+	const source = await readProjectFile('src/lib/academic-context/scoped-year.ts');
+	const compiled = ts.transpileModule(source, {
+		compilerOptions: {
+			module: ts.ModuleKind.ESNext,
+			target: ts.ScriptTarget.ES2022,
+			verbatimModuleSyntax: true
+		},
+		fileName: 'scoped-year.ts'
+	}).outputText;
+	const moduleUrl = `data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`;
+	return import(moduleUrl);
+}
+
 function contextOptions() {
 	return {
 		activeAcademicYearId: 'year-active',
@@ -92,6 +106,29 @@ function contextOptions() {
 		]
 	};
 }
+
+test('scoped academic year resolver repairs missing and unauthorized URLs', async () => {
+	const { resolveScopedAcademicYearUrl } = await importScopedYear();
+	const options = contextOptions();
+
+	const missing = resolveScopedAcademicYearUrl(options, new URL('https://school.test/student'));
+	assert.equal(missing.academicYearId, 'year-active');
+	assert.equal(missing.replaceUrl?.searchParams.get('academicYearId'), 'year-active');
+
+	const unauthorized = resolveScopedAcademicYearUrl(
+		options,
+		new URL('https://school.test/student?academicYearId=year-other&academicTermId=term-other')
+	);
+	assert.equal(unauthorized.academicYearId, 'year-active');
+	assert.equal(unauthorized.replaceUrl?.searchParams.get('academicYearId'), 'year-active');
+	assert.equal(unauthorized.replaceUrl?.searchParams.has('academicTermId'), false);
+
+	const empty = resolveScopedAcademicYearUrl(
+		{ ...options, activeAcademicYearId: null, activeAcademicTermId: null, years: [], terms: [] },
+		new URL('https://school.test/student')
+	);
+	assert.deepEqual(empty, { academicYearId: null, replaceUrl: null });
+});
 
 test('academic context files own the typed read-only contract', async () => {
 	const api = await readProjectFile('src/lib/api/academic-context.ts');
@@ -266,6 +303,24 @@ test('staff student views consume the selected academic year without legacy pagi
 	assert.doesNotMatch(listPage, /page_size\s*:|total_pages|class_room/);
 	assert.match(listPage, /result\.page_size/);
 	assert.match(listPage, /homeroom/);
+});
+
+test('student dashboard and profile select only authorized academic years', async () => {
+	const dashboard = await readProjectFile('src/routes/(app)/student/+page.svelte');
+	const profile = await readProjectFile('src/routes/(app)/student/profile/+page.svelte');
+	const selector = await readProjectFile(
+		'src/lib/components/academic-context/ScopedAcademicYearSelect.svelte'
+	);
+
+	for (const source of [dashboard, profile]) {
+		assert.match(source, /listMyAcademicContextOptions/);
+		assert.match(source, /resolveScopedAcademicYearUrl/);
+		assert.match(source, /getOwnProfile\(selectedYearId\)/);
+		assert.match(source, /ScopedAcademicYearSelect/);
+		assert.match(source, /ยังไม่มีประวัติปีการศึกษาสำหรับบัญชีนี้/);
+	}
+	assert.match(selector, /years:\s*AcademicYearOption\[\]/);
+	assert.match(selector, /onchange:\s*\(academicYearId:\s*string\)\s*=>\s*void/);
 });
 
 test('student and parent history selectors use learner-scoped academic context endpoints', async () => {

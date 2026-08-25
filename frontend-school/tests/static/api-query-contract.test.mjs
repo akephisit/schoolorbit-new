@@ -40,9 +40,10 @@ async function importApiWrapper(relativePath) {
 		}
 	`;
 	const clientUrl = `data:text/javascript;base64,${Buffer.from(clientModule).toString('base64')}`;
-	const source = (
-		await readFile(path.join(projectRoot, relativePath), 'utf8')
-	).replace(/(['"])\$lib\/api\/client\1/g, `'${clientUrl}'`);
+	const source = (await readFile(path.join(projectRoot, relativePath), 'utf8')).replace(
+		/(['"])\$lib\/api\/client\1/g,
+		`'${clientUrl}'`
+	);
 	const output = ts.transpileModule(source, {
 		compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 		fileName: relativePath
@@ -222,6 +223,18 @@ test('staff student wrappers send generated academic-year queries', async () => 
 	assert.deepEqual(globalThis.__schoolOrbitApiCalls.pop(), {
 		method: 'get',
 		endpoint: '/api/students/student%2F1',
+		options: { query: { academicYearId: 'year-1' } }
+	});
+});
+
+test('student own-profile wrapper sends the authorized academic year', async () => {
+	const students = await importApiWrapper('src/lib/api/students.ts');
+	globalThis.__schoolOrbitApiResponseData = { id: 'student-1' };
+
+	assert.deepEqual(await students.getOwnProfile('year-1'), { id: 'student-1' });
+	assert.deepEqual(globalThis.__schoolOrbitApiCalls.pop(), {
+		method: 'get',
+		endpoint: '/api/student/profile',
 		options: { query: { academicYearId: 'year-1' } }
 	});
 });
