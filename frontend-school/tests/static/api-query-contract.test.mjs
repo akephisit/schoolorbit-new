@@ -102,7 +102,13 @@ test('generated API exposes repaired academic query operations', async () => {
 		'listCalendarEvents',
 		'listMyCalendarEvents',
 		'getParentChildCalendarEvents',
-		'listPublicCalendarEvents'
+		'listPublicCalendarEvents',
+		'listLearningGroupsForTerm',
+		'listPlacementsForAcademicYear',
+		'listHomeroomAdvisorsForAcademicYear',
+		'listStudyProgramOptionsForAcademicYear',
+		'getCurriculumProgramWorkspace',
+		'getAcademicSetupWorkspace'
 	]) {
 		assert.match(generated, new RegExp(`\\b${operationId}: \\{`));
 	}
@@ -133,6 +139,76 @@ test('generated API exposes repaired academic query operations', async () => {
 
 	assert.match(generated, /StudentListResponse:/);
 	assert.match(generated, /homeroom:/);
+
+	for (const [operationId, queryName] of [
+		['listLearningGroupsForTerm', 'academicTermId'],
+		['listPlacementsForAcademicYear', 'academicYearId'],
+		['listHomeroomAdvisorsForAcademicYear', 'academicYearId'],
+		['listStudyProgramOptionsForAcademicYear', 'academicYearId']
+	]) {
+		const operation = generated.match(
+			new RegExp(`\\n\\t${operationId}: \\{[\\s\\S]*?\\n\\t\\};`)
+		)?.[0];
+		assert.ok(operation, `${operationId} operation block must exist`);
+		assert.match(operation, new RegExp(`${queryName}:\\s*string`));
+		assert.doesNotMatch(operation, /academic_year_id|academic_term_id/);
+	}
+});
+
+test('academic batch wrappers send generated camelCase queries and preserve abort signals', async () => {
+	const controller = new AbortController();
+	const options = { signal: controller.signal };
+	const academicCore = await importApiWrapper('src/lib/api/academic-core.ts');
+	const delivery = await importApiWrapper('src/lib/api/learning-delivery.ts');
+
+	for (const [call, endpoint, query] of [
+		[
+			() => delivery.listLearningGroupsForTerm('term-1', options),
+			'/api/academic/learning-groups',
+			{ academicTermId: 'term-1' }
+		],
+		[
+			() => academicCore.listPlacementsForAcademicYear('year-1', options),
+			'/api/academic/placements',
+			{ academicYearId: 'year-1' }
+		],
+		[
+			() => academicCore.listHomeroomAdvisorsForAcademicYear('year-1', options),
+			'/api/academic/homeroom-advisors',
+			{ academicYearId: 'year-1' }
+		],
+		[
+			() => academicCore.listStudyProgramOptionsForAcademicYear('year-1', options),
+			'/api/academic/study-program-options',
+			{ academicYearId: 'year-1' }
+		]
+	]) {
+		globalThis.__schoolOrbitApiResponseData = [];
+		await call();
+		assert.deepEqual(globalThis.__schoolOrbitApiCalls.pop(), {
+			method: 'get',
+			endpoint,
+			options: { signal: controller.signal, query }
+		});
+	}
+
+	globalThis.__schoolOrbitApiResponseData = {};
+	await academicCore.getCurriculumProgramWorkspace('version/1', options);
+	assert.deepEqual(globalThis.__schoolOrbitApiCalls.pop(), {
+		method: 'get',
+		endpoint: '/api/academic/curriculum-versions/version%2F1/program-workspace',
+		options
+	});
+	await academicCore.getAcademicSetupWorkspace(options);
+	assert.deepEqual(globalThis.__schoolOrbitApiCalls.pop(), {
+		method: 'get',
+		endpoint: '/api/academic/setup/workspace',
+		options
+	});
+
+	const wrapperSource = `${await readFile(path.join(projectRoot, 'src/lib/api/academic-core.ts'), 'utf8')}\n${await readFile(path.join(projectRoot, 'src/lib/api/learning-delivery.ts'), 'utf8')}`;
+	assert.doesNotMatch(wrapperSource, /academic_year_id|academic_term_id/);
+	assert.doesNotMatch(wrapperSource, /listStudyProgramOptionsForYear/);
 });
 
 test('grade-level wrapper sends a generated camelCase query object', async () => {

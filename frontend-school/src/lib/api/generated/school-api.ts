@@ -421,6 +421,22 @@ export interface paths {
 		patch: operations['updateCurriculumVersion'];
 		trace?: never;
 	};
+	'/api/academic/curriculum-versions/{id}/program-workspace': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getCurriculumProgramWorkspace'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/curriculum-versions/{id}/programs': {
 		parameters: {
 			query?: never;
@@ -729,6 +745,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/homeroom-advisors': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listHomeroomAdvisorsForAcademicYear'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/homerooms': {
 		parameters: {
 			query?: never;
@@ -770,6 +802,22 @@ export interface paths {
 		};
 		get: operations['listHomeroomAdvisors'];
 		put: operations['replaceHomeroomAdvisors'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/learning-groups': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listLearningGroupsForTerm'];
+		put?: never;
 		post?: never;
 		delete?: never;
 		options?: never;
@@ -953,6 +1001,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/placements': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listPlacementsForAcademicYear'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/placements/{id}/transfer': {
 		parameters: {
 			query?: never;
@@ -963,6 +1027,22 @@ export interface paths {
 		get?: never;
 		put?: never;
 		post: operations['transferHomeroomPlacement'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/setup/workspace': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getAcademicSetupWorkspace'];
+		put?: never;
+		post?: never;
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -1011,6 +1091,22 @@ export interface paths {
 		get: operations['listHomeroomPlacements'];
 		put?: never;
 		post: operations['createHomeroomPlacement'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/study-program-options': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listStudyProgramOptionsForAcademicYear'];
+		put?: never;
+		post?: never;
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -3564,6 +3660,11 @@ export interface components {
 			terms: components['schemas']['AcademicTermOption'][];
 			years: components['schemas']['AcademicYearOption'][];
 		};
+		AcademicSetupWorkspace: {
+			bellSchedules: components['schemas']['BellSchedule'][];
+			terms: components['schemas']['AcademicTerm'][];
+			years: components['schemas']['AcademicYear'][];
+		};
 		AcademicTerm: {
 			/** Format: uuid */
 			academicYearId: string;
@@ -3817,6 +3918,15 @@ export interface components {
 				activeAcademicYearId?: string | null;
 				terms: components['schemas']['AcademicTermOption'][];
 				years: components['schemas']['AcademicYearOption'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_AcademicSetupWorkspace: {
+			data: {
+				bellSchedules: components['schemas']['BellSchedule'][];
+				terms: components['schemas']['AcademicTerm'][];
+				years: components['schemas']['AcademicYear'][];
 			};
 			message?: string;
 			success: boolean;
@@ -4367,6 +4477,14 @@ export interface components {
 				academicTermId: string;
 				items: components['schemas']['CurriculumOfferingPreviewItem'][];
 				sourceHash: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CurriculumProgramWorkspace: {
+			data: {
+				programs: components['schemas']['StudyProgram'][];
+				requirements: components['schemas']['StudyProgramRequirement'][];
 			};
 			message?: string;
 			success: boolean;
@@ -6202,6 +6320,19 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Vec_HomeroomAdvisorAssignment: {
+			data: {
+				/** Format: uuid */
+				homeroomId: string;
+				/** Format: uuid */
+				id: string;
+				role: string;
+				/** Format: uuid */
+				userId: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Vec_HomeroomLookupItem: {
 			data: {
 				gradeLevel?: string;
@@ -6733,6 +6864,19 @@ export interface components {
 				status: components['schemas']['VersionStatus'];
 				/** Format: date-time */
 				updatedAt: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_StudyProgramOption: {
+			data: {
+				code: string;
+				/** Format: uuid */
+				curriculumId: string;
+				curriculumName: string;
+				/** Format: uuid */
+				id: string;
+				name: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -8452,6 +8596,10 @@ export interface components {
 		};
 		/** @enum {string} */
 		CurriculumPreviewAction: 'create' | 'retain' | 'conflict';
+		CurriculumProgramWorkspace: {
+			programs: components['schemas']['StudyProgram'][];
+			requirements: components['schemas']['StudyProgramRequirement'][];
+		};
 		CurriculumVersion: {
 			/** Format: date-time */
 			createdAt: string;
@@ -9046,6 +9194,15 @@ export interface components {
 			/** Format: uuid */
 			userId: string;
 		};
+		HomeroomAdvisorAssignment: {
+			/** Format: uuid */
+			homeroomId: string;
+			/** Format: uuid */
+			id: string;
+			role: string;
+			/** Format: uuid */
+			userId: string;
+		};
 		HomeroomAdvisorInput: {
 			role: string;
 			/** Format: uuid */
@@ -9268,6 +9425,10 @@ export interface components {
 			studentAcademicYearId: string;
 			/** Format: uuid */
 			studentId: string;
+		};
+		LearningGroupTermQuery: {
+			/** Format: uuid */
+			academicTermId: string;
 		};
 		LearningOffering: {
 			/** Format: uuid */
@@ -10381,6 +10542,19 @@ export interface components {
 			status: components['schemas']['VersionStatus'];
 			/** Format: date-time */
 			updatedAt: string;
+		};
+		StudyProgramOption: {
+			code: string;
+			/** Format: uuid */
+			curriculumId: string;
+			curriculumName: string;
+			/** Format: uuid */
+			id: string;
+			name: string;
+		};
+		StudyProgramRequirement: components['schemas']['ProgramRequirement'] & {
+			/** Format: uuid */
+			studyProgramId: string;
 		};
 		SubjectGroup: {
 			code: string;
@@ -13857,6 +14031,65 @@ export interface operations {
 			};
 		};
 	};
+	getCurriculumProgramWorkspace: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Curriculum version ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Programs and requirements for the curriculum version */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CurriculumProgramWorkspace'];
+				};
+			};
+			/** @description Curriculum program workspace exceeds the supported size */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic curriculum read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Curriculum version not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	listStudyPrograms: {
 		parameters: {
 			query?: never;
@@ -15158,6 +15391,64 @@ export interface operations {
 			};
 		};
 	};
+	listHomeroomAdvisorsForAcademicYear: {
+		parameters: {
+			query: {
+				academicYearId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Homeroom advisor assignments in the selected year */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_HomeroomAdvisorAssignment'];
+				};
+			};
+			/** @description Invalid academic year query or workspace exceeds the supported size */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Homeroom read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic year not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	listHomerooms: {
 		parameters: {
 			query: {
@@ -15493,6 +15784,55 @@ export interface operations {
 			};
 			/** @description Homeroom row version conflict */
 			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listLearningGroupsForTerm: {
+		parameters: {
+			query: {
+				academicTermId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Learning groups in the selected term */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_LearningGroup'];
+				};
+			};
+			/** @description Invalid academic term query or oversized workspace */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning offering read permission denied */
+			403: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -16607,6 +16947,64 @@ export interface operations {
 			};
 		};
 	};
+	listPlacementsForAcademicYear: {
+		parameters: {
+			query: {
+				academicYearId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Homeroom placements in the selected year */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_HomeroomPlacement'];
+				};
+			};
+			/** @description Invalid academic year query or workspace exceeds the supported size */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student academic year read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic year not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	transferHomeroomPlacement: {
 		parameters: {
 			query?: never;
@@ -16670,6 +17068,53 @@ export interface operations {
 			};
 			/** @description Homeroom placement transfer conflict */
 			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getAcademicSetupWorkspace: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Academic years, terms, and bell schedules for setup */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AcademicSetupWorkspace'];
+				};
+			};
+			/** @description Academic setup workspace exceeds the supported size */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic setup read permissions denied */
+			403: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -17019,6 +17464,64 @@ export interface operations {
 			};
 			/** @description Homeroom placement conflict */
 			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listStudyProgramOptionsForAcademicYear: {
+		parameters: {
+			query: {
+				academicYearId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Published study programs effective in the selected year */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_StudyProgramOption'];
+				};
+			};
+			/** @description Invalid academic year query or workspace exceeds the supported size */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic curriculum read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic year not found */
+			404: {
 				headers: {
 					[name: string]: unknown;
 				};

@@ -1,5 +1,11 @@
-import { ApiClientError, apiClient, requireApiData, type ApiResponse } from '$lib/api/client';
-import type { components } from '$lib/api/generated/school-api';
+import {
+	ApiClientError,
+	apiClient,
+	requireApiData,
+	type ApiRequestOptions,
+	type ApiResponse
+} from '$lib/api/client';
+import type { components, operations } from '$lib/api/generated/school-api';
 
 type Schemas = components['schemas'];
 
@@ -36,16 +42,25 @@ async function deliveryData<T>(request: Promise<ApiResponse<T>>, fallback: strin
 function selectedTerm(academicTermId: string): string {
 	const value = academicTermId.trim();
 	if (!value) throw new Error('กรุณาเลือกภาคเรียนก่อน');
-	return encodeURIComponent(value);
+	return value;
 }
 
-export const listLearningOfferings = (academicTermId: string) =>
-	deliveryData(
-		apiClient.get<LearningOffering[]>(
-			`/api/academic/offerings?academicTermId=${selectedTerm(academicTermId)}`
-		),
+type ListLearningOfferingsQuery = NonNullable<
+	operations['listLearningOfferings']['parameters']['query']
+>;
+type ListLearningGroupsForTermQuery = NonNullable<
+	operations['listLearningGroupsForTerm']['parameters']['query']
+>;
+
+export const listLearningOfferings = (academicTermId: string, options: ApiRequestOptions = {}) => {
+	const query = {
+		academicTermId: selectedTerm(academicTermId)
+	} satisfies ListLearningOfferingsQuery;
+	return deliveryData(
+		apiClient.get<LearningOffering[]>('/api/academic/offerings', { ...options, query }),
 		'ไม่สามารถโหลดชุดการเรียนได้'
 	);
+};
 export const createLearningOffering = (body: CreateLearningOfferingRequest) =>
 	deliveryData(
 		apiClient.post<LearningOffering>('/api/academic/offerings', body),
@@ -83,6 +98,18 @@ export const listLearningGroups = (offeringId: string) =>
 		apiClient.get<LearningGroup[]>(`/api/academic/offerings/${offeringId}/groups`),
 		'ไม่สามารถโหลดกลุ่มเรียนได้'
 	);
+export const listLearningGroupsForTerm = (
+	academicTermId: string,
+	options: ApiRequestOptions = {}
+) => {
+	const query = {
+		academicTermId: selectedTerm(academicTermId)
+	} satisfies ListLearningGroupsForTermQuery;
+	return deliveryData(
+		apiClient.get<LearningGroup[]>('/api/academic/learning-groups', { ...options, query }),
+		'ไม่สามารถโหลดกลุ่มเรียนของภาคเรียนได้'
+	);
+};
 export const createLearningGroup = (offeringId: string, body: CreateLearningGroupRequest) =>
 	deliveryData(
 		apiClient.post<LearningGroup>(`/api/academic/offerings/${offeringId}/groups`, body),

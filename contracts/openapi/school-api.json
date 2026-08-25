@@ -36,6 +36,34 @@
         ],
         "type": "object"
       },
+      "AcademicSetupWorkspace": {
+        "properties": {
+          "bellSchedules": {
+            "items": {
+              "$ref": "#/components/schemas/BellSchedule"
+            },
+            "type": "array"
+          },
+          "terms": {
+            "items": {
+              "$ref": "#/components/schemas/AcademicTerm"
+            },
+            "type": "array"
+          },
+          "years": {
+            "items": {
+              "$ref": "#/components/schemas/AcademicYear"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "years",
+          "terms",
+          "bellSchedules"
+        ],
+        "type": "object"
+      },
       "AcademicTerm": {
         "properties": {
           "academicYearId": {
@@ -916,6 +944,49 @@
             "required": [
               "years",
               "terms"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_AcademicSetupWorkspace": {
+        "properties": {
+          "data": {
+            "properties": {
+              "bellSchedules": {
+                "items": {
+                  "$ref": "#/components/schemas/BellSchedule"
+                },
+                "type": "array"
+              },
+              "terms": {
+                "items": {
+                  "$ref": "#/components/schemas/AcademicTerm"
+                },
+                "type": "array"
+              },
+              "years": {
+                "items": {
+                  "$ref": "#/components/schemas/AcademicYear"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "years",
+              "terms",
+              "bellSchedules"
             ],
             "type": "object"
           },
@@ -2911,6 +2982,42 @@
               "academicTermId",
               "sourceHash",
               "items"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_CurriculumProgramWorkspace": {
+        "properties": {
+          "data": {
+            "properties": {
+              "programs": {
+                "items": {
+                  "$ref": "#/components/schemas/StudyProgram"
+                },
+                "type": "array"
+              },
+              "requirements": {
+                "items": {
+                  "$ref": "#/components/schemas/StudyProgramRequirement"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "programs",
+              "requirements"
             ],
             "type": "object"
           },
@@ -9701,6 +9808,50 @@
         ],
         "type": "object"
       },
+      "ApiResponse_Vec_HomeroomAdvisorAssignment": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "homeroomId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "role": {
+                  "type": "string"
+                },
+                "userId": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "homeroomId",
+                "userId",
+                "role"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Vec_HomeroomLookupItem": {
         "properties": {
           "data": {
@@ -11677,6 +11828,53 @@
                 "rowVersion",
                 "createdAt",
                 "updatedAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_StudyProgramOption": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "curriculumId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "curriculumName": {
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "code",
+                "name",
+                "curriculumId",
+                "curriculumName"
               ],
               "type": "object"
             },
@@ -18124,6 +18322,27 @@
         ],
         "type": "string"
       },
+      "CurriculumProgramWorkspace": {
+        "properties": {
+          "programs": {
+            "items": {
+              "$ref": "#/components/schemas/StudyProgram"
+            },
+            "type": "array"
+          },
+          "requirements": {
+            "items": {
+              "$ref": "#/components/schemas/StudyProgramRequirement"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "programs",
+          "requirements"
+        ],
+        "type": "object"
+      },
       "CurriculumVersion": {
         "properties": {
           "createdAt": {
@@ -20121,6 +20340,32 @@
         ],
         "type": "object"
       },
+      "HomeroomAdvisorAssignment": {
+        "properties": {
+          "homeroomId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "userId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "homeroomId",
+          "userId",
+          "role"
+        ],
+        "type": "object"
+      },
       "HomeroomAdvisorInput": {
         "additionalProperties": false,
         "properties": {
@@ -20888,6 +21133,19 @@
           "rosterSource",
           "joinedAt",
           "rowVersion"
+        ],
+        "type": "object"
+      },
+      "LearningGroupTermQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "academicTermId"
         ],
         "type": "object"
       },
@@ -25098,6 +25356,54 @@
           "updatedAt"
         ],
         "type": "object"
+      },
+      "StudyProgramOption": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "curriculumId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "curriculumName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "curriculumId",
+          "curriculumName"
+        ],
+        "type": "object"
+      },
+      "StudyProgramRequirement": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProgramRequirement"
+          },
+          {
+            "properties": {
+              "studyProgramId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "studyProgramId"
+            ],
+            "type": "object"
+          }
+        ]
       },
       "SubjectGroup": {
         "properties": {
@@ -31222,6 +31528,78 @@
         ]
       }
     },
+    "/api/academic/curriculum-versions/{id}/program-workspace": {
+      "get": {
+        "operationId": "getCurriculumProgramWorkspace",
+        "parameters": [
+          {
+            "description": "Curriculum version ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CurriculumProgramWorkspace"
+                }
+              }
+            },
+            "description": "Programs and requirements for the curriculum version"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Curriculum program workspace exceeds the supported size"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic curriculum read permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Curriculum version not found"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
     "/api/academic/curriculum-versions/{id}/programs": {
       "get": {
         "operationId": "listStudyPrograms",
@@ -32896,6 +33274,77 @@
         ]
       }
     },
+    "/api/academic/homeroom-advisors": {
+      "get": {
+        "operationId": "listHomeroomAdvisorsForAcademicYear",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_HomeroomAdvisorAssignment"
+                }
+              }
+            },
+            "description": "Homeroom advisor assignments in the selected year"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid academic year query or workspace exceeds the supported size"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Homeroom read permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year not found"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
     "/api/academic/homerooms": {
       "get": {
         "operationId": "listHomerooms",
@@ -33312,6 +33761,67 @@
               }
             },
             "description": "Homeroom row version conflict"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/learning-groups": {
+      "get": {
+        "operationId": "listLearningGroupsForTerm",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_LearningGroup"
+                }
+              }
+            },
+            "description": "Learning groups in the selected term"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid academic term query or oversized workspace"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Learning offering read permission denied"
           }
         },
         "tags": [
@@ -34684,6 +35194,77 @@
         ]
       }
     },
+    "/api/academic/placements": {
+      "get": {
+        "operationId": "listPlacementsForAcademicYear",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_HomeroomPlacement"
+                }
+              }
+            },
+            "description": "Homeroom placements in the selected year"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid academic year query or workspace exceeds the supported size"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Student academic year read permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year not found"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
     "/api/academic/placements/{id}/transfer": {
       "post": {
         "operationId": "transferHomeroomPlacement",
@@ -34769,6 +35350,56 @@
               }
             },
             "description": "Homeroom placement transfer conflict"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/setup/workspace": {
+      "get": {
+        "operationId": "getAcademicSetupWorkspace",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AcademicSetupWorkspace"
+                }
+              }
+            },
+            "description": "Academic years, terms, and bell schedules for setup"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic setup workspace exceeds the supported size"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic setup read permissions denied"
           }
         },
         "tags": [
@@ -35236,6 +35867,77 @@
               }
             },
             "description": "Homeroom placement conflict"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/study-program-options": {
+      "get": {
+        "operationId": "listStudyProgramOptionsForAcademicYear",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_StudyProgramOption"
+                }
+              }
+            },
+            "description": "Published study programs effective in the selected year"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid academic year query or workspace exceeds the supported size"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic curriculum read permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year not found"
           }
         },
         "tags": [

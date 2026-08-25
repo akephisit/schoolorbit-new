@@ -1,4 +1,10 @@
-import { ApiClientError, apiClient, requireApiData, type ApiResponse } from '$lib/api/client';
+import {
+	ApiClientError,
+	apiClient,
+	requireApiData,
+	type ApiRequestOptions,
+	type ApiResponse
+} from '$lib/api/client';
 import type { components, operations } from '$lib/api/generated/school-api';
 
 type Schemas = components['schemas'];
@@ -17,14 +23,18 @@ export type Curriculum = Schemas['Curriculum'];
 export type CurriculumVersion = Schemas['CurriculumVersion'];
 export type StudyProgram = Schemas['StudyProgram'];
 export type ProgramRequirement = Schemas['ProgramRequirement'];
+export type CurriculumProgramWorkspace = Schemas['CurriculumProgramWorkspace'];
+export type AcademicSetupWorkspace = Schemas['AcademicSetupWorkspace'];
 export type Homeroom = Schemas['Homeroom'];
 export type HomeroomAdvisor = Schemas['HomeroomAdvisor'];
+export type HomeroomAdvisorAssignment = Schemas['HomeroomAdvisorAssignment'];
 export type StudentAcademicYear = Schemas['StudentAcademicYear'];
 export type HomeroomPlacement = Schemas['HomeroomPlacement'];
 export type HomeroomPlacementTransfer = Schemas['HomeroomPlacementTransfer'];
 export type GradeLevelOption = Schemas['GradeLevelLookupItem'];
 export type StudentOption = Schemas['StudentLookupItem'];
 export type StaffOption = Schemas['StaffLookupItem'];
+export type StudyProgramOption = Schemas['StudyProgramOption'];
 
 export type CreateAcademicYearRequest = Schemas['CreateAcademicYearRequest'];
 export type UpdateAcademicYearRequest = Schemas['UpdateAcademicYearRequest'];
@@ -319,13 +329,29 @@ export const replaceProgramRequirements = (
 		'บันทึกข้อกำหนดหลักสูตรไม่สำเร็จ'
 	);
 
-export const listHomerooms = (academicYearId: string) =>
+export const getCurriculumProgramWorkspace = (
+	curriculumVersionId: string,
+	options: ApiRequestOptions = {}
+) =>
 	academicData(
-		apiClient.get<Homeroom[]>(
-			`/api/academic/homerooms?academicYearId=${requiredContext(academicYearId, 'ปีการศึกษา')}`
+		apiClient.get<CurriculumProgramWorkspace>(
+			`/api/academic/curriculum-versions/${requiredContext(curriculumVersionId, 'รุ่นหลักสูตร')}/program-workspace`,
+			options
 		),
+		'ไม่สามารถโหลดแผนการเรียนและข้อกำหนดหลักสูตรได้'
+	);
+
+type ListHomeroomsQuery = NonNullable<operations['listHomerooms']['parameters']['query']>;
+
+export const listHomerooms = (academicYearId: string, options: ApiRequestOptions = {}) => {
+	const query = {
+		academicYearId: requiredContextValue(academicYearId, 'ปีการศึกษา')
+	} satisfies ListHomeroomsQuery;
+	return academicData(
+		apiClient.get<Homeroom[]>('/api/academic/homerooms', { ...options, query }),
 		'ไม่สามารถโหลดห้องประจำชั้นได้'
 	);
+};
 export const createHomeroom = (body: CreateHomeroomRequest) =>
 	academicData(
 		apiClient.post<Homeroom>('/api/academic/homerooms', body),
@@ -360,20 +386,21 @@ export interface StudentYearFilters {
 	status?: Schemas['StudentAcademicYearStatus'];
 }
 
+type ListStudentAcademicYearsQuery = NonNullable<
+	operations['listStudentAcademicYears']['parameters']['query']
+>;
+
 export const listStudentAcademicYears = (
 	academicYearId: string,
-	filters: StudentYearFilters = {}
+	filters: StudentYearFilters = {},
+	options: ApiRequestOptions = {}
 ) => {
-	const selectedYear = academicYearId.trim();
-	if (!selectedYear) throw new Error('กรุณาเลือกปีการศึกษาก่อน');
-	const query = new URLSearchParams({ academicYearId: selectedYear });
-	if (filters.studentId) query.set('studentId', filters.studentId);
-	if (filters.gradeLevelId) query.set('gradeLevelId', filters.gradeLevelId);
-	if (filters.studyProgramId) query.set('studyProgramId', filters.studyProgramId);
-	if (filters.homeroomId) query.set('homeroomId', filters.homeroomId);
-	if (filters.status) query.set('status', filters.status);
+	const query = {
+		academicYearId: requiredContextValue(academicYearId, 'ปีการศึกษา'),
+		...filters
+	} satisfies ListStudentAcademicYearsQuery;
 	return academicData(
-		apiClient.get<StudentAcademicYear[]>(`/api/academic/student-years?${query}`),
+		apiClient.get<StudentAcademicYear[]>('/api/academic/student-years', { ...options, query }),
 		'ไม่สามารถโหลดข้อมูลนักเรียนประจำปีได้'
 	);
 };
@@ -415,60 +442,98 @@ export const transferHomeroomPlacement = (
 		'ย้ายห้องนักเรียนไม่สำเร็จ'
 	);
 
+type ListPlacementsForAcademicYearQuery = NonNullable<
+	operations['listPlacementsForAcademicYear']['parameters']['query']
+>;
+type ListHomeroomAdvisorsForAcademicYearQuery = NonNullable<
+	operations['listHomeroomAdvisorsForAcademicYear']['parameters']['query']
+>;
+type ListStudyProgramOptionsForAcademicYearQuery = NonNullable<
+	operations['listStudyProgramOptionsForAcademicYear']['parameters']['query']
+>;
 type LookupGradeLevelsQuery = NonNullable<operations['lookupGradeLevels']['parameters']['query']>;
+type LookupStudentsQuery = NonNullable<operations['lookupStudents']['parameters']['query']>;
+type LookupStaffQuery = NonNullable<operations['lookupStaff']['parameters']['query']>;
 
-export const listGradeLevelOptions = (academicYearId: string) => {
+export const listPlacementsForAcademicYear = (
+	academicYearId: string,
+	options: ApiRequestOptions = {}
+) => {
+	const query = {
+		academicYearId: requiredContextValue(academicYearId, 'ปีการศึกษา')
+	} satisfies ListPlacementsForAcademicYearQuery;
+	return academicData(
+		apiClient.get<HomeroomPlacement[]>('/api/academic/placements', { ...options, query }),
+		'ไม่สามารถโหลดประวัติการจัดห้องของปีการศึกษาได้'
+	);
+};
+
+export const listHomeroomAdvisorsForAcademicYear = (
+	academicYearId: string,
+	options: ApiRequestOptions = {}
+) => {
+	const query = {
+		academicYearId: requiredContextValue(academicYearId, 'ปีการศึกษา')
+	} satisfies ListHomeroomAdvisorsForAcademicYearQuery;
+	return academicData(
+		apiClient.get<HomeroomAdvisorAssignment[]>('/api/academic/homeroom-advisors', {
+			...options,
+			query
+		}),
+		'ไม่สามารถโหลดครูที่ปรึกษาของปีการศึกษาได้'
+	);
+};
+
+export const listStudyProgramOptionsForAcademicYear = (
+	academicYearId: string,
+	options: ApiRequestOptions = {}
+) => {
+	const query = {
+		academicYearId: requiredContextValue(academicYearId, 'ปีการศึกษา')
+	} satisfies ListStudyProgramOptionsForAcademicYearQuery;
+	return academicData(
+		apiClient.get<StudyProgramOption[]>('/api/academic/study-program-options', {
+			...options,
+			query
+		}),
+		'ไม่สามารถโหลดแผนการเรียนของปีการศึกษาได้'
+	);
+};
+
+export const listGradeLevelOptions = (academicYearId: string, options: ApiRequestOptions = {}) => {
 	const query = {
 		academicYearId: requiredContextValue(academicYearId, 'ปีการศึกษา')
 	} satisfies LookupGradeLevelsQuery;
 	return academicData(
-		apiClient.get<GradeLevelOption[]>('/api/lookup/grade-levels', { query }),
+		apiClient.get<GradeLevelOption[]>('/api/lookup/grade-levels', { ...options, query }),
 		'ไม่สามารถโหลดระดับชั้นได้'
 	);
 };
-export const listStudentOptions = (search = '') => {
-	const query = new URLSearchParams();
-	if (search.trim()) query.set('search', search.trim());
-	query.set('limit', '200');
+export const listStudentOptions = (
+	academicYearId: string,
+	search = '',
+	options: ApiRequestOptions = {}
+) => {
+	const query = {
+		academicYearId: requiredContextValue(academicYearId, 'ปีการศึกษา'),
+		limit: 200,
+		...(search.trim() ? { search: search.trim() } : {})
+	} satisfies LookupStudentsQuery;
 	return academicData(
-		apiClient.get<StudentOption[]>(`/api/lookup/students?${query}`),
+		apiClient.get<StudentOption[]>('/api/lookup/students', { ...options, query }),
 		'ไม่สามารถโหลดนักเรียนได้'
 	);
 };
-export const listStaffOptions = () =>
-	academicData(
-		apiClient.get<StaffOption[]>('/api/lookup/staff?limit=300'),
+export const listStaffOptions = (options: ApiRequestOptions = {}) => {
+	const query = { limit: 300 } satisfies LookupStaffQuery;
+	return academicData(
+		apiClient.get<StaffOption[]>('/api/lookup/staff', { ...options, query }),
 		'ไม่สามารถโหลดรายชื่อครูได้'
 	);
+};
 
-export type StudyProgramOption = { id: string; name: string; curriculumName: string };
-
-export async function listStudyProgramOptionsForYear(
-	academicYearId: string
-): Promise<StudyProgramOption[]> {
-	const years = await listAcademicYears();
-	const selectedYear = years.find((year) => year.id === academicYearId);
-	if (!selectedYear) throw new Error('ไม่พบปีการศึกษาที่เลือก');
-	const options: StudyProgramOption[] = [];
-	const curricula = await listCurricula();
-	for (const curriculum of curricula) {
-		const versions = await listCurriculumVersions(curriculum.id);
-		for (const version of versions) {
-			if (version.status !== 'published') continue;
-			const start = years.find((year) => year.id === version.startAcademicYearId)?.year;
-			const end = version.endAcademicYearId
-				? years.find((year) => year.id === version.endAcademicYearId)?.year
-				: undefined;
-			if (
-				start === undefined ||
-				selectedYear.year < start ||
-				(end !== undefined && selectedYear.year > end)
-			)
-				continue;
-			const programs = await listStudyPrograms(version.id);
-			for (const program of programs)
-				options.push({ id: program.id, name: program.nameTh, curriculumName: curriculum.nameTh });
-		}
-	}
-	return options;
-}
+export const getAcademicSetupWorkspace = (options: ApiRequestOptions = {}) =>
+	academicData(
+		apiClient.get<AcademicSetupWorkspace>('/api/academic/setup/workspace', options),
+		'ไม่สามารถโหลดการตั้งค่าปีการศึกษาได้'
+	);

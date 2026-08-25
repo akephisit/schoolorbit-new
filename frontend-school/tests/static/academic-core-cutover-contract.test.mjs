@@ -18,6 +18,7 @@ async function readContractArtifacts() {
 
 const operations = [
 	['/api/academic/context/options', 'get', 'listAcademicContextOptions'],
+	['/api/academic/setup/workspace', 'get', 'getAcademicSetupWorkspace'],
 	['/api/academic/years', 'get', 'listAcademicYears'],
 	['/api/academic/years', 'post', 'createAcademicYear'],
 	['/api/academic/years/{id}', 'get', 'getAcademicYear'],
@@ -75,6 +76,12 @@ const operations = [
 	['/api/academic/curriculum-versions/{id}', 'get', 'getCurriculumVersion'],
 	['/api/academic/curriculum-versions/{id}', 'patch', 'updateCurriculumVersion'],
 	['/api/academic/curriculum-versions/{id}/publish', 'post', 'publishCurriculumVersion'],
+	[
+		'/api/academic/curriculum-versions/{id}/program-workspace',
+		'get',
+		'getCurriculumProgramWorkspace'
+	],
+	['/api/academic/study-program-options', 'get', 'listStudyProgramOptionsForAcademicYear'],
 	['/api/academic/curriculum-versions/{id}/programs', 'get', 'listStudyPrograms'],
 	['/api/academic/curriculum-versions/{id}/programs', 'post', 'createStudyProgram'],
 	['/api/academic/study-programs/{id}', 'get', 'getStudyProgram'],
@@ -87,12 +94,14 @@ const operations = [
 	['/api/academic/homerooms/{id}', 'patch', 'updateHomeroom'],
 	['/api/academic/homerooms/{id}/advisors', 'get', 'listHomeroomAdvisors'],
 	['/api/academic/homerooms/{id}/advisors', 'put', 'replaceHomeroomAdvisors'],
+	['/api/academic/homeroom-advisors', 'get', 'listHomeroomAdvisorsForAcademicYear'],
 	['/api/academic/student-years', 'get', 'listStudentAcademicYears'],
 	['/api/academic/student-years', 'post', 'createStudentAcademicYear'],
 	['/api/academic/student-years/{id}', 'get', 'getStudentAcademicYear'],
 	['/api/academic/student-years/{id}', 'patch', 'updateStudentAcademicYear'],
 	['/api/academic/student-years/{id}/placements', 'get', 'listHomeroomPlacements'],
 	['/api/academic/student-years/{id}/placements', 'post', 'createHomeroomPlacement'],
+	['/api/academic/placements', 'get', 'listPlacementsForAcademicYear'],
 	['/api/academic/placements/{id}/transfer', 'post', 'transferHomeroomPlacement'],
 	['/api/academic/offerings', 'get', 'listLearningOfferings'],
 	['/api/academic/offerings', 'post', 'createLearningOffering'],
@@ -107,6 +116,7 @@ const operations = [
 	['/api/academic/offerings/{id}/publish', 'post', 'publishLearningOffering'],
 	['/api/academic/offerings/{id}/groups', 'get', 'listLearningGroups'],
 	['/api/academic/offerings/{id}/groups', 'post', 'createLearningGroup'],
+	['/api/academic/learning-groups', 'get', 'listLearningGroupsForTerm'],
 	['/api/academic/learning-groups/{id}', 'get', 'getLearningGroup'],
 	['/api/academic/learning-groups/{id}', 'patch', 'updateLearningGroup'],
 	['/api/academic/learning-groups/{id}/homerooms', 'get', 'listLearningGroupHomerooms'],
@@ -139,7 +149,11 @@ test('scoped academic collection reads require an explicit context identifier', 
 		['/api/academic/bell-schedules', 'academicYearId'],
 		['/api/academic/homerooms', 'academicYearId'],
 		['/api/academic/student-years', 'academicYearId'],
-		['/api/academic/offerings', 'academicTermId']
+		['/api/academic/offerings', 'academicTermId'],
+		['/api/academic/learning-groups', 'academicTermId'],
+		['/api/academic/placements', 'academicYearId'],
+		['/api/academic/homeroom-advisors', 'academicYearId'],
+		['/api/academic/study-program-options', 'academicYearId']
 	];
 
 	for (const [route, parameterName] of scopedReads) {
