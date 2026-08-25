@@ -8,6 +8,10 @@
 		listChildAcademicContextOptions,
 		type AcademicContextOptionsResponse
 	} from '$lib/api/academic-context';
+	import {
+		resolveScopedAcademicYearUrl,
+		urlWithAcademicYear
+	} from '$lib/academic-context/scoped-year';
 	import { getChildProfile, getChildTimetable } from '$lib/api/parents';
 	import type { Student } from '$lib/api/students';
 	import {
@@ -17,6 +21,7 @@
 	} from '$lib/api/timetable';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import ScopedAcademicYearSelect from '$lib/components/academic-context/ScopedAcademicYearSelect.svelte';
 	import { Label } from '$lib/components/ui/label';
 	import { MapPin, School } from 'lucide-svelte';
 
@@ -55,17 +60,19 @@
 	const childName = $derived(
 		child ? `${child.title ?? ''}${child.first_name} ${child.last_name}`.trim() : ''
 	);
+	const childDetailHref = $derived(
+		`${resolve(`/parent/student/${studentId}`)}${selectedYearId ? `?academicYearId=${encodeURIComponent(selectedYearId)}` : ''}`
+	);
 
 	function authorizedSelection(options: AcademicContextOptionsResponse): {
 		yearId: string;
 		termId: string;
+		replaceUrl: URL | null;
 	} {
-		const queryYearId = page.url.searchParams.get('academicYearId');
-		const yearId =
-			options.years.find((year) => year.id === queryYearId)?.id ??
-			options.years.find((year) => year.id === options.activeAcademicYearId)?.id ??
-			options.years[0]?.id ??
-			'';
+		const yearResolution = resolveScopedAcademicYearUrl(options, page.url);
+		const yearId = yearResolution.academicYearId ?? '';
+		if (!yearId) return { yearId: '', termId: '', replaceUrl: null };
+
 		const terms = options.terms.filter((term) => term.academicYearId === yearId);
 		const queryTermId = page.url.searchParams.get('academicTermId');
 		const termId =
@@ -73,55 +80,74 @@
 			terms.find((term) => term.id === options.activeAcademicTermId)?.id ??
 			terms[0]?.id ??
 			'';
-		return { yearId, termId };
+
+		const nextUrl = yearResolution.replaceUrl ?? new URL(page.url);
+		if (termId) nextUrl.searchParams.set('academicTermId', termId);
+		else nextUrl.searchParams.delete('academicTermId');
+		return {
+			yearId,
+			termId,
+			replaceUrl: nextUrl.href === page.url.href ? null : nextUrl
+		};
 	}
 
 	async function loadHistory(): Promise<void> {
-		loading = true;
-		errorMessage = '';
-		try {
-			contextOptions = await listChildAcademicContextOptions(studentId);
-			child = (await getChildProfile(studentId)).data;
-			const selection = authorizedSelection(contextOptions);
-			selectedYearId = selection.yearId;
-			selectedTermId = selection.termId;
-			if (selectedTermId) await loadTimetable(selectedTermId);
-		} catch (error) {
-			errorMessage = error instanceof Error ? error.message : 'โหลดข้อมูลตารางเรียนไม่สำเร็จ';
-		} finally {
-			loading = false;
-		}
-	}
-
-	async function loadTimetable(termId: string): Promise<void> {
 		const current = ++revision;
 		loading = true;
 		errorMessage = '';
 		try {
-			const loaded = await getChildTimetable(studentId, termId);
+			const options = await listChildAcademicContextOptions(studentId);
 			if (current !== revision) return;
-			periods = periodsFromTimetableEntries(loaded);
-			entries = loaded;
+			contextOptions = options;
+			const selection = authorizedSelection(options);
+			selectedYearId = selection.yearId;
+			selectedTermId = selection.termId;
+			periods = [];
+			entries = [];
+
+			if (selection.replaceUrl) {
+				await updateUrl(selection.replaceUrl);
+				if (current !== revision) return;
+			}
+
+			if (!selectedYearId) {
+				child = null;
+				return;
+			}
+
+			const loadedChild = await getChildProfile(studentId, selectedYearId);
+			if (current !== revision) return;
+			child = loadedChild;
+			if (selectedTermId) await loadTimetable(selectedTermId, current);
 		} catch (error) {
 			if (current === revision) {
-				errorMessage = error instanceof Error ? error.message : 'โหลดตารางเรียนไม่สำเร็จ';
+				errorMessage = error instanceof Error ? error.message : 'โหลดข้อมูลตารางเรียนไม่สำเร็จ';
 			}
 		} finally {
 			if (current === revision) loading = false;
 		}
 	}
 
-	async function updateUrl(yearId: string, termId: string): Promise<void> {
-		await goto(
-			resolve(
-				`/parent/student/${studentId}/timetable?academicYearId=${encodeURIComponent(yearId)}&academicTermId=${encodeURIComponent(termId)}`
-			),
-			{ noScroll: true, keepFocus: true }
-		);
+	async function loadTimetable(termId: string, current = ++revision): Promise<void> {
+		const loaded = await getChildTimetable(studentId, termId);
+		if (current !== revision) return;
+		periods = periodsFromTimetableEntries(loaded);
+		entries = loaded;
 	}
 
-	async function changeYear(event: Event): Promise<void> {
-		const yearId = (event.currentTarget as HTMLSelectElement).value;
+	async function updateUrl(url: URL): Promise<void> {
+		await goto(resolve(`/parent/student/${studentId}/timetable${url.search}${url.hash}`), {
+			replaceState: true,
+			noScroll: true,
+			keepFocus: true
+		});
+	}
+
+	async function changeYear(yearId: string): Promise<void> {
+		if (yearId === selectedYearId) return;
+		const current = ++revision;
+		loading = true;
+		errorMessage = '';
 		const availableTerms =
 			contextOptions?.terms.filter((term) => term.academicYearId === yearId) ?? [];
 		const nextTerm =
@@ -131,15 +157,45 @@
 		selectedTermId = nextTerm?.id ?? '';
 		periods = [];
 		entries = [];
-		if (!selectedTermId) return;
-		await updateUrl(selectedYearId, selectedTermId);
-		await loadTimetable(selectedTermId);
+		try {
+			const nextUrl = urlWithAcademicYear(page.url, selectedYearId);
+			if (selectedTermId) nextUrl.searchParams.set('academicTermId', selectedTermId);
+			await updateUrl(nextUrl);
+			if (current !== revision) return;
+			const loadedChild = await getChildProfile(studentId, selectedYearId);
+			if (current !== revision) return;
+			child = loadedChild;
+			if (selectedTermId) await loadTimetable(selectedTermId, current);
+		} catch (error) {
+			if (current === revision) {
+				errorMessage = error instanceof Error ? error.message : 'เปลี่ยนปีการศึกษาไม่สำเร็จ';
+			}
+		} finally {
+			if (current === revision) loading = false;
+		}
 	}
 
 	async function changeTerm(event: Event): Promise<void> {
+		const current = ++revision;
 		selectedTermId = (event.currentTarget as HTMLSelectElement).value;
-		await updateUrl(selectedYearId, selectedTermId);
-		await loadTimetable(selectedTermId);
+		periods = [];
+		entries = [];
+		loading = true;
+		errorMessage = '';
+		try {
+			const nextUrl = new URL(page.url);
+			nextUrl.searchParams.set('academicYearId', selectedYearId);
+			nextUrl.searchParams.set('academicTermId', selectedTermId);
+			await updateUrl(nextUrl);
+			if (current !== revision) return;
+			await loadTimetable(selectedTermId, current);
+		} catch (error) {
+			if (current === revision) {
+				errorMessage = error instanceof Error ? error.message : 'โหลดตารางเรียนไม่สำเร็จ';
+			}
+		} finally {
+			if (current === revision) loading = false;
+		}
 	}
 
 	function entriesForCell(day: string, periodId: string): TimetableEntry[] {
@@ -174,38 +230,36 @@
 <PageShell
 	title="ตารางเรียน"
 	description={childName ? `ตารางเรียนของ ${childName}` : 'ดูตารางเรียนย้อนหลังของนักเรียน'}
-	backHref={`/parent/student/${studentId}`}
+	backHref={childDetailHref}
 >
-	<div class="flex flex-wrap gap-3 rounded-xl border bg-card p-4">
-		<div class="min-w-52 space-y-2">
-			<Label for="parent-child-year">ปีการศึกษา</Label>
-			<select
-				id="parent-child-year"
-				class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
-				value={selectedYearId}
-				disabled={loading}
-				onchange={changeYear}
-			>
-				{#each contextOptions?.years ?? [] as year (year.id)}
-					<option value={year.id}>{year.name}</option>
-				{/each}
-			</select>
+	{#if contextOptions && contextOptions.years.length > 0}
+		<div class="flex flex-wrap gap-3 rounded-xl border bg-card p-4">
+			<div class="min-w-52 space-y-2">
+				<Label for="parent-child-year">ปีการศึกษา</Label>
+				<ScopedAcademicYearSelect
+					id="parent-child-year"
+					years={contextOptions.years}
+					value={selectedYearId}
+					disabled={loading}
+					onchange={changeYear}
+				/>
+			</div>
+			<div class="min-w-52 space-y-2">
+				<Label for="parent-child-term">ภาคเรียน</Label>
+				<select
+					id="parent-child-term"
+					class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+					value={selectedTermId}
+					disabled={loading || termOptions.length === 0}
+					onchange={changeTerm}
+				>
+					{#each termOptions as term (term.id)}
+						<option value={term.id}>{term.name}</option>
+					{/each}
+				</select>
+			</div>
 		</div>
-		<div class="min-w-52 space-y-2">
-			<Label for="parent-child-term">ภาคเรียน</Label>
-			<select
-				id="parent-child-term"
-				class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
-				value={selectedTermId}
-				disabled={loading || termOptions.length === 0}
-				onchange={changeTerm}
-			>
-				{#each termOptions as term (term.id)}
-					<option value={term.id}>{term.name}</option>
-				{/each}
-			</select>
-		</div>
-	</div>
+	{/if}
 
 	{#if loading}
 		<PageSkeleton variant="table" rows={6} columns={Math.max(periods.length + 1, 4)} />
@@ -221,6 +275,11 @@
 		<PageState
 			title="ยังไม่มีประวัติปีการศึกษา"
 			description="เมื่อโรงเรียนสร้างข้อมูลนักเรียนประจำปีแล้ว ประวัติจะปรากฏที่นี่"
+		/>
+	{:else if termOptions.length === 0}
+		<PageState
+			title="ยังไม่มีภาคเรียนในปีที่เลือก"
+			description="โรงเรียนยังไม่ได้ตั้งค่าภาคเรียนสำหรับปีการศึกษานี้"
 		/>
 	{:else if entries.length === 0}
 		<PageState

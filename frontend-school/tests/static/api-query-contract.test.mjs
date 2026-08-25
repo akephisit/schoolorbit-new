@@ -238,3 +238,33 @@ test('student own-profile wrapper sends the authorized academic year', async () 
 		options: { query: { academicYearId: 'year-1' } }
 	});
 });
+
+test('parent wrappers send generated linked-year and term queries', async () => {
+	const parents = await importApiWrapper('src/lib/api/parents.ts');
+
+	globalThis.__schoolOrbitApiResponseData = { id: 'parent-1' };
+	assert.deepEqual(await parents.getOwnParentProfile('year-1'), { id: 'parent-1' });
+	assert.deepEqual(globalThis.__schoolOrbitApiCalls.pop(), {
+		method: 'get',
+		endpoint: '/api/parent/profile',
+		options: { query: { academicYearId: 'year-1' } }
+	});
+
+	globalThis.__schoolOrbitApiResponseData = { id: 'student-1' };
+	assert.deepEqual(await parents.getChildProfile('student/1', 'year-1'), {
+		id: 'student-1'
+	});
+	assert.deepEqual(globalThis.__schoolOrbitApiCalls.pop(), {
+		method: 'get',
+		endpoint: '/api/parent/students/student%2F1',
+		options: { query: { academicYearId: 'year-1' } }
+	});
+
+	globalThis.__schoolOrbitApiResponseData = [];
+	assert.deepEqual(await parents.getChildTimetable('student/1', ' term-1 '), []);
+	assert.deepEqual(globalThis.__schoolOrbitApiCalls.pop(), {
+		method: 'get',
+		endpoint: '/api/parent/students/student%2F1/timetable',
+		options: { query: { academicTermId: 'term-1' } }
+	});
+});

@@ -323,6 +323,28 @@ test('student dashboard and profile select only authorized academic years', asyn
 	assert.match(selector, /onchange:\s*\(academicYearId:\s*string\)\s*=>\s*void/);
 });
 
+test('parent and child pages select only linked academic years', async () => {
+	const parentHome = await readProjectFile('src/routes/(app)/parent/+page.svelte');
+	const childDetail = await readProjectFile('src/routes/(app)/parent/student/[id]/+page.svelte');
+	const childTimetable = await readProjectFile(
+		'src/routes/(app)/parent/student/[id]/timetable/+page.svelte'
+	);
+
+	assert.match(parentHome, /listParentAcademicContextOptions/);
+	assert.match(parentHome, /resolveScopedAcademicYearUrl/);
+	assert.match(parentHome, /getOwnParentProfile\(selectedYearId\)/);
+	assert.match(parentHome, /ScopedAcademicYearSelect/);
+
+	for (const source of [childDetail, childTimetable]) {
+		assert.match(source, /listChildAcademicContextOptions\(studentId\)/);
+		assert.match(source, /getChildProfile\(studentId, selectedYearId\)/);
+		assert.match(source, /academicYearId/);
+	}
+	assert.match(childDetail, /resolveScopedAcademicYearUrl/);
+	assert.match(childDetail, /ScopedAcademicYearSelect/);
+	assert.match(childTimetable, /loadTimetable\(selectedTermId, current\)/);
+});
+
 test('student and parent history selectors use learner-scoped academic context endpoints', async () => {
 	const api = await readProjectFile('src/lib/api/academic-context.ts');
 	const parentsApi = await readProjectFile('src/lib/api/parents.ts');
@@ -359,8 +381,10 @@ test('student and parent history selectors use learner-scoped academic context e
 	assert.match(coreService, /pub async fn list_options_for_parent/);
 	assert.match(coreService, /student_academic_years/);
 	assert.match(coreService, /student_id\s*=\s*\$1/);
-	assert.match(parentsApi, /academicTermId:\s*string/);
-	assert.match(parentsApi, /academicTermId=\$\{encodeURIComponent\(academicTermId\)\}/);
+	assert.match(parentsApi, /operations\['getParentChildTimetable'\]\['parameters'\]\['query'\]/);
+	assert.match(parentsApi, /const query = \{ academicTermId:/);
+	assert.match(parentsApi, /\{ query \}/);
+	assert.doesNotMatch(parentsApi, /\?academicTermId=/);
 	assert.doesNotMatch(parentsApi, /academicSemesterId|academic_semester_id|TimetableEntryDto/);
 });
 
