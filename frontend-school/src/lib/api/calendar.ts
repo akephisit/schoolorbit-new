@@ -1,9 +1,9 @@
 import { apiClient, requireApiData } from '$lib/api/client';
-import type { components } from '$lib/api/generated/school-api';
+import type { components, operations } from '$lib/api/generated/school-api';
 
 type Schemas = components['schemas'];
 
-export type CalendarAudienceType = 'all' | 'staff' | 'student' | 'parent';
+export type CalendarAudienceType = Schemas['CalendarAudienceType'];
 
 export type CalendarCategory = Schemas['CalendarCategory'];
 export type CalendarTag = Schemas['CalendarTag'];
@@ -46,22 +46,22 @@ function calendarEventFromDto(dto: CalendarEventDto): CalendarEvent {
 	return { ...dto, targets };
 }
 
-interface CalendarEventBaseFilters {
-	academicYearId: string;
-	academicTermId?: string | null;
-	from?: string;
-	to?: string;
-	categoryId?: string;
-	tagId?: string;
-	q?: string;
-}
-
-export interface CalendarEventFilters extends CalendarEventBaseFilters {
-	audience?: CalendarAudienceType;
-	visibility?: 'public' | 'private';
-}
-
-export type CalendarPublicEventFilters = CalendarEventBaseFilters;
+export type CalendarEventFilters = NonNullable<
+	operations['listCalendarEvents']['parameters']['query']
+>;
+type MyCalendarQuery = NonNullable<
+	operations['listMyCalendarEvents']['parameters']['query']
+>;
+type ChildCalendarQuery = NonNullable<
+	operations['getParentChildCalendarEvents']['parameters']['query']
+>;
+type GeneratedPublicCalendarQuery = NonNullable<
+	operations['listPublicCalendarEvents']['parameters']['query']
+>;
+export type CalendarPublicEventFilters = Omit<
+	GeneratedPublicCalendarQuery,
+	'audience' | 'visibility'
+>;
 
 export interface CreateCalendarEventRequest {
 	academicYearId: string;
@@ -95,56 +95,32 @@ export interface UpsertCalendarTagRequest {
 	name: string;
 }
 
-function calendarQuery(filters: CalendarEventFilters) {
-	if (!filters.academicYearId.trim()) throw new Error('กรุณาเลือกปีการศึกษาก่อน');
-	const params = new URLSearchParams({ academicYearId: filters.academicYearId });
-	if (filters.academicTermId) params.set('academicTermId', filters.academicTermId);
-	if (filters.from) params.set('from', filters.from);
-	if (filters.to) params.set('to', filters.to);
-	if (filters.categoryId) params.set('categoryId', filters.categoryId);
-	if (filters.tagId) params.set('tagId', filters.tagId);
-	if (filters.audience) params.set('audience', filters.audience);
-	if (filters.visibility) params.set('visibility', filters.visibility);
-	if (filters.q) params.set('q', filters.q);
-	const query = params.toString();
-	return query ? `?${query}` : '';
-}
-
-function publicCalendarQuery(filters: CalendarPublicEventFilters) {
-	if (!filters.academicYearId.trim()) throw new Error('กรุณาเลือกปีการศึกษาก่อน');
-	const params = new URLSearchParams({ academicYearId: filters.academicYearId });
-	if (filters.academicTermId) params.set('academicTermId', filters.academicTermId);
-	if (filters.from) params.set('from', filters.from);
-	if (filters.to) params.set('to', filters.to);
-	if (filters.categoryId) params.set('categoryId', filters.categoryId);
-	if (filters.tagId) params.set('tagId', filters.tagId);
-	if (filters.q) params.set('q', filters.q);
-	const query = params.toString();
-	return query ? `?${query}` : '';
-}
-
 export async function listCalendarEvents(filters: CalendarEventFilters): Promise<CalendarEvent[]> {
-	const response = await apiClient.get<CalendarEventDto[]>(
-		`/api/calendar/events${calendarQuery(filters)}`
-	);
+	if (!filters.academicYearId.trim()) throw new Error('กรุณาเลือกปีการศึกษาก่อน');
+	const response = await apiClient.get<CalendarEventDto[]>('/api/calendar/events', {
+		query: { ...filters }
+	});
 	return requireApiData(response, 'ไม่สามารถโหลดกิจกรรมปฏิทินได้').map(calendarEventFromDto);
 }
 
 export async function listMyCalendarEvents(
-	filters: CalendarEventFilters
+	filters: MyCalendarQuery
 ): Promise<CalendarViewerEvent[]> {
-	const response = await apiClient.get<CalendarViewerEvent[]>(
-		`/api/me/calendar/events${calendarQuery(filters)}`
-	);
+	if (!filters.academicYearId.trim()) throw new Error('กรุณาเลือกปีการศึกษาก่อน');
+	const response = await apiClient.get<CalendarViewerEvent[]>('/api/me/calendar/events', {
+		query: { ...filters } satisfies MyCalendarQuery
+	});
 	return requireApiData(response, 'ไม่สามารถโหลดปฏิทินของฉันได้');
 }
 
 export async function listChildCalendarEvents(
 	studentId: string,
-	filters: CalendarEventFilters
+	filters: ChildCalendarQuery
 ): Promise<CalendarViewerEvent[]> {
+	if (!filters.academicYearId.trim()) throw new Error('กรุณาเลือกปีการศึกษาก่อน');
 	const response = await apiClient.get<CalendarViewerEvent[]>(
-		`/api/parent/students/${encodeURIComponent(studentId)}/calendar/events${calendarQuery(filters)}`
+		`/api/parent/students/${encodeURIComponent(studentId)}/calendar/events`,
+		{ query: { ...filters } satisfies ChildCalendarQuery }
 	);
 	return requireApiData(response, 'ไม่สามารถโหลดปฏิทินนักเรียนได้');
 }
@@ -152,9 +128,10 @@ export async function listChildCalendarEvents(
 export async function listPublicCalendarEvents(
 	filters: CalendarPublicEventFilters
 ): Promise<CalendarPublicEvent[]> {
-	const response = await apiClient.get<CalendarPublicEvent[]>(
-		`/api/public/calendar/events${publicCalendarQuery(filters)}`
-	);
+	if (!filters.academicYearId.trim()) throw new Error('กรุณาเลือกปีการศึกษาก่อน');
+	const response = await apiClient.get<CalendarPublicEvent[]>('/api/public/calendar/events', {
+		query: { ...filters } satisfies GeneratedPublicCalendarQuery
+	});
 	return requireApiData(response, 'ไม่สามารถโหลดปฏิทินสาธารณะได้');
 }
 

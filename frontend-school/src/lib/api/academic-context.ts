@@ -37,6 +37,16 @@ export async function listMyAcademicContextOptions(
 	return requireApiData(response, 'ไม่สามารถโหลดประวัติปีและภาคเรียนได้');
 }
 
+export async function listParentAcademicContextOptions(
+	signal?: AbortSignal
+): Promise<AcademicContextOptionsResponse> {
+	const response = await apiClient.get<AcademicContextOptionsResponse>(
+		'/api/parent/academic-context/options',
+		{ signal }
+	);
+	return requireApiData(response, 'ไม่สามารถโหลดประวัติปีและภาคเรียนของบุตรหลานได้');
+}
+
 export async function listChildAcademicContextOptions(
 	studentId: string,
 	signal?: AbortSignal

@@ -1,5 +1,5 @@
 import { ApiClientError, apiClient, requireApiData, type ApiResponse } from '$lib/api/client';
-import type { components } from '$lib/api/generated/school-api';
+import type { components, operations } from '$lib/api/generated/school-api';
 
 type Schemas = components['schemas'];
 
@@ -75,6 +75,12 @@ function requiredContext(value: string, label: string): string {
 	const selected = value.trim();
 	if (!selected) throw new Error(`กรุณาเลือก${label}ก่อน`);
 	return encodeURIComponent(selected);
+}
+
+function requiredContextValue(value: string, label: string): string {
+	const selected = value.trim();
+	if (!selected) throw new Error(`กรุณาเลือก${label}ก่อน`);
+	return selected;
 }
 
 export const listAcademicYears = () =>
@@ -409,13 +415,19 @@ export const transferHomeroomPlacement = (
 		'ย้ายห้องนักเรียนไม่สำเร็จ'
 	);
 
-export const listGradeLevelOptions = (academicYearId: string) =>
-	academicData(
-		apiClient.get<GradeLevelOption[]>(
-			`/api/lookup/grade-levels?academic_year_id=${requiredContext(academicYearId, 'ปีการศึกษา')}`
-		),
+type LookupGradeLevelsQuery = NonNullable<
+	operations['lookupGradeLevels']['parameters']['query']
+>;
+
+export const listGradeLevelOptions = (academicYearId: string) => {
+	const query = {
+		academicYearId: requiredContextValue(academicYearId, 'ปีการศึกษา')
+	} satisfies LookupGradeLevelsQuery;
+	return academicData(
+		apiClient.get<GradeLevelOption[]>('/api/lookup/grade-levels', { query }),
 		'ไม่สามารถโหลดระดับชั้นได้'
 	);
+};
 export const listStudentOptions = (search = '') => {
 	const query = new URLSearchParams();
 	if (search.trim()) query.set('search', search.trim());

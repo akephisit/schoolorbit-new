@@ -68,7 +68,7 @@
 			}
 			const nextEvents = await listPublicCalendarEvents({
 				academicYearId: selectedYearId,
-				academicTermId: selectedTermId || null,
+				academicTermId: selectedTermId || undefined,
 				...calendarGridRange(selectedMonth)
 			});
 			if (currentRequest === requestToken) events = nextEvents;
@@ -102,7 +102,7 @@
 			}
 			const nextEvents = await listPublicCalendarEvents({
 				academicYearId: selectedYearId,
-				academicTermId: null,
+				academicTermId: undefined,
 				...calendarGridRange(selectedMonth)
 			});
 			if (currentRequest === requestToken) events = nextEvents;

@@ -168,7 +168,7 @@
 			if (!academicYearId) throw new Error('กรุณาเลือกปีการศึกษาก่อน');
 			const nextEvents = await listCalendarEvents({
 				academicYearId,
-				academicTermId,
+				academicTermId: academicTermId ?? undefined,
 				...range,
 				categoryId: categoryId || undefined,
 				tagId: tagId || undefined,

@@ -72,7 +72,7 @@
 			}
 			const nextEvents = await listMyCalendarEvents({
 				academicYearId: selectedYearId,
-				academicTermId: selectedTermId || null,
+				academicTermId: selectedTermId || undefined,
 				...calendarGridRange(selectedMonth)
 			});
 			if (currentRequest === requestToken) events = nextEvents;
@@ -105,7 +105,7 @@
 			}
 			const nextEvents = await listMyCalendarEvents({
 				academicYearId: selectedYearId,
-				academicTermId: selectedTermId || null,
+				academicTermId: selectedTermId || undefined,
 				...calendarGridRange(selectedMonth)
 			});
 			if (currentRequest === requestToken) events = nextEvents;

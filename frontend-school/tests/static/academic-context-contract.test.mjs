@@ -272,16 +272,21 @@ test('student and parent history selectors use learner-scoped academic context e
 
 	assert.match(api, /listMyAcademicContextOptions/);
 	assert.match(api, /\/api\/me\/academic-context\/options/);
+	assert.match(api, /listParentAcademicContextOptions/);
+	assert.match(api, /\/api\/parent\/academic-context\/options/);
 	assert.match(api, /listChildAcademicContextOptions/);
 	assert.match(
 		api,
 		/\/api\/parent\/students\/\$\{encodeURIComponent\(studentId\)\}\/academic-context\/options/
 	);
 	assert.match(app, /"\/api\/me\/academic-context\/options"/);
+	assert.match(app, /"\/api\/parent\/academic-context\/options"/);
 	assert.match(app, /"\/api\/parent\/students\/\{student_id\}\/academic-context\/options"/);
 	assert.match(coreHandlers, /pub async fn list_my_context_options/);
 	assert.match(parentHandlers, /pub async fn get_child_academic_context_options/);
+	assert.match(parentHandlers, /pub async fn get_parent_academic_context_options/);
 	assert.match(coreService, /pub async fn list_options_for_student/);
+	assert.match(coreService, /pub async fn list_options_for_parent/);
 	assert.match(coreService, /student_academic_years/);
 	assert.match(coreService, /student_id\s*=\s*\$1/);
 	assert.match(parentsApi, /academicTermId:\s*string/);
@@ -309,6 +314,7 @@ test('admission round listing is scoped by the selected academic year', async ()
 
 test('calendar consumers use explicit year and optional term contexts', async () => {
 	const api = await readProjectFile('src/lib/api/calendar.ts');
+	const academicCoreApi = await readProjectFile('src/lib/api/academic-core.ts');
 	const staffMetadata = await readProjectFile('src/routes/(app)/staff/calendar/+page.ts');
 	const staffPage = await readProjectFile('src/routes/(app)/staff/calendar/+page.svelte');
 	const studentPage = await readProjectFile('src/routes/(app)/student/calendar/+page.svelte');
@@ -317,10 +323,19 @@ test('calendar consumers use explicit year and optional term contexts', async ()
 	);
 
 	assert.match(staffMetadata, /academicContext:\s*['"]term_optional['"]/);
-	assert.match(api, /academicYearId:\s*string/);
-	assert.match(api, /academicTermId\?:\s*string\s*\|\s*null/);
-	assert.match(api, /params\.set\(['"]academicTermId['"]/);
-	assert.doesNotMatch(api, /classRoomId|category_id|tag_id/);
+	for (const operationId of [
+		'listCalendarEvents',
+		'listMyCalendarEvents',
+		'getParentChildCalendarEvents',
+		'listPublicCalendarEvents'
+	]) {
+		assert.match(api, new RegExp(`operations\\['${operationId}'\\]`));
+	}
+	assert.match(api, /apiClient\.get<CalendarEventDto\[]>\('\/api\/calendar\/events',\s*\{/);
+	assert.match(api, /query:\s*\{\s*\.\.\.filters\s*\}/);
+	assert.doesNotMatch(api, /URLSearchParams|params\.set|calendarQuery|publicCalendarQuery/);
+	assert.doesNotMatch(`${academicCoreApi}\n${api}`, /academic_year_id|category_id|tag_id/);
+	assert.doesNotMatch(api, /classRoomId/);
 	assert.match(staffPage, /getAcademicContextStore/);
 	assert.match(studentPage, /listMyAcademicContextOptions/);
 	assert.match(studentPage, /academicYearId:\s*selectedYearId/);
