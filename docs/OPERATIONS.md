@@ -292,7 +292,9 @@ Perform the cutover in this order:
    operations cannot wait for the full lifecycle release, record a no-go instead of introducing a
    manual status workaround.
 3. Enter global maintenance and stop academic writes, background workers, and realtime mutations.
-   Keep traffic closed throughout both artifacts.
+   Set the repository variable `SCHOOL_API_KEEP_MAINTENANCE=true` before either artifact is deployed.
+   Keep traffic closed throughout both artifacts. Scheduled tenant work must obtain a non-migrating
+   pool so only the centralized deployment gate can advance tenant schemas.
 4. While every tenant is still on 040, run `preflight_academic_core` separately against every tenant
    through the authorized secret-backed connection inventory. Aggregate only schema label, status,
    finding codes, and counts; resolve every blocker and never obtain a pool through a path that can
@@ -303,7 +305,8 @@ Perform the cutover in this order:
    tenant to report exactly 044 with no pending, failed, or outdated status.
 7. Deploy the matching Phase A backend and frontend while traffic remains closed; do not run an old
    application against the new schema.
-8. Call the service-authenticated `POST /internal/academic-core/reconcile-all`. Require all aggregate
+8. Dispatch the reviewed Phase A commit with `academic_core_phase_a_reconcile=true`; the deployment
+   calls the service-authenticated `POST /internal/academic-core/reconcile-all`. Require all aggregate
    checks and one current version-44 success marker for every tenant; responses and retained evidence
    must contain no row data, database URL, secret, or learner identity.
 9. On selected tenants, run read-only and authenticated workflows in multiple year and term contexts,
@@ -313,8 +316,9 @@ Perform the cutover in this order:
     deploy that image and apply 045 through the same centralized migration runner.
 11. Verify every tenant's latest version and cleanup manifest, generated contracts, permissions,
     `/ready`, and the selected authenticated workflows again.
-12. Explicitly record the go/no-go decision. Open traffic only on `go`, then record the first accepted
-    write as the snapshot rollback boundary.
+12. Explicitly record the go/no-go decision. On `go`, set
+    `SCHOOL_API_KEEP_MAINTENANCE=false` and dispatch the reviewed Phase B commit again to open traffic,
+    then record the first accepted write as the snapshot rollback boundary.
 
 Any preflight, reconciliation, migration, readiness, or smoke failure keeps maintenance active.
 Before the first accepted write, restore the snapshot and previous release together if rollback is

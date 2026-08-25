@@ -131,7 +131,7 @@ impl PoolManager {
         subdomain: &str,
     ) -> Result<(PgPool, bool), String> {
         let pool = self
-            .get_pool_for_read_only_status(database_url, subdomain)
+            .get_pool_without_migrations(database_url, subdomain)
             .await?;
 
         // Run migrations (lazy - only once per school per session)
@@ -151,8 +151,8 @@ impl PoolManager {
     }
 
     /// Get or create a tenant pool without running migrations or permission synchronization.
-    /// This is reserved for read-only operational status checks.
-    pub async fn get_pool_for_read_only_status(
+    /// Scheduled work uses this only after the centralized deployment migration gate.
+    pub async fn get_pool_without_migrations(
         &self,
         database_url: &str,
         subdomain: &str,
@@ -181,6 +181,16 @@ impl PoolManager {
             .await?;
 
         Ok(pool)
+    }
+
+    /// Get a non-migrating tenant pool for read-only operational status checks.
+    pub async fn get_pool_for_read_only_status(
+        &self,
+        database_url: &str,
+        subdomain: &str,
+    ) -> Result<PgPool, String> {
+        self.get_pool_without_migrations(database_url, subdomain)
+            .await
     }
 
     /// Get migration tracker for manual operations

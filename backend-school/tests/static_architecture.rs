@@ -4746,6 +4746,40 @@ fn scheduled_jobs_use_explicit_bangkok_timezone() {
 }
 
 #[test]
+fn scheduled_jobs_never_trigger_lazy_tenant_migrations() {
+    let main = read_source(repo_root().join("backend-school/src/main.rs"));
+    let reminders =
+        read_source(repo_root().join("backend-school/src/modules/calendar/services/reminders.rs"));
+
+    let non_migrating_call = ".get_pool_without_migrations(&db_url, &school.subdomain)";
+    assert!(main.contains(non_migrating_call));
+    assert!(reminders.contains(non_migrating_call));
+    assert!(!main.contains(".get_pool(&db_url, &school.subdomain)"));
+    assert!(!reminders.contains(".get_pool(&db_url, &school.subdomain)"));
+}
+
+#[test]
+fn backend_school_deploy_can_finish_in_maintenance_mode() {
+    let deploy = read_source(repo_root().join(".github/workflows/deploy-backend-school.yml"));
+
+    assert!(deploy.contains(
+        "SCHOOL_API_KEEP_MAINTENANCE: ${{ vars.SCHOOL_API_KEEP_MAINTENANCE || 'false' }}"
+    ));
+    assert!(deploy.contains("envs: ACADEMIC_CORE_PHASE_A_RECONCILE,SCHOOL_API_KEEP_MAINTENANCE"));
+    assert!(deploy.contains("keep_school_api_maintenance=${SCHOOL_API_KEEP_MAINTENANCE:-false}"));
+    assert!(deploy.contains(r#"if [ "$keep_school_api_maintenance" = "true" ]; then"#));
+    assert!(deploy.contains("School API remains in maintenance mode by deployment request"));
+    assert!(deploy.contains("academic_core_phase_a_reconcile:"));
+    assert!(deploy.contains(
+        "ACADEMIC_CORE_PHASE_A_RECONCILE: ${{ inputs.academic_core_phase_a_reconcile || 'false' }}"
+    ));
+    assert!(deploy.contains("/internal/academic-core/reconcile-all"));
+    assert!(
+        deploy.contains("Academic Core Phase A reconciliation failed; maintenance remains enabled")
+    );
+}
+
+#[test]
 fn learning_group_teacher_endpoint_accepts_a_typed_put_body() {
     let routes = read_source(manifest_dir().join("src/modules/academic/delivery.rs"));
     let handlers = read_source(manifest_dir().join("src/modules/academic/delivery/handlers.rs"));

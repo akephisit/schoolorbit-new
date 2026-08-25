@@ -17,6 +17,11 @@ on:
         description: "Installer run identifier"
         required: false
         type: string
+      academic_core_phase_a_reconcile:
+        description: "Run the exact-version-44 Academic Core reconciliation gate"
+        required: false
+        default: false
+        type: boolean
 
 env:
   REGISTRY: ghcr.io
@@ -101,14 +106,34 @@ jobs:
 
       - name: Deploy to Server via SSH
         uses: appleboy/ssh-action@v1.2.5
+        env:
+          ACADEMIC_CORE_PHASE_A_RECONCILE: ${{ inputs.academic_core_phase_a_reconcile || 'false' }}
+          SCHOOL_API_KEEP_MAINTENANCE: ${{ vars.SCHOOL_API_KEEP_MAINTENANCE || 'false' }}
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           port: ${{ secrets.SERVER_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           command_timeout: 30m
+          envs: ACADEMIC_CORE_PHASE_A_RECONCILE,SCHOOL_API_KEEP_MAINTENANCE
           script: |
             set -eu
+            academic_core_phase_a_reconcile=${ACADEMIC_CORE_PHASE_A_RECONCILE:-false}
+            keep_school_api_maintenance=${SCHOOL_API_KEEP_MAINTENANCE:-false}
+            case "$academic_core_phase_a_reconcile" in
+              true | false) ;;
+              *)
+                echo "ACADEMIC_CORE_PHASE_A_RECONCILE must be true or false"
+                exit 1
+                ;;
+            esac
+            case "$keep_school_api_maintenance" in
+              true | false) ;;
+              *)
+                echo "SCHOOL_API_KEEP_MAINTENANCE must be true or false"
+                exit 1
+                ;;
+            esac
             echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u ${{ github.actor }} --password-stdin
             cd /opt/stack
 
@@ -515,8 +540,6 @@ jobs:
               echo "Tenant migration status request failed; maintenance remains enabled"
               exit 1
             fi
-            unset internal_api_secret
-
             if ! podman run --rm -i "$jq_image" -e '
                 .latest_version as $latest
                 | $latest >= 32
@@ -534,50 +557,92 @@ jobs:
               echo "Tenant migration status verification failed; maintenance remains enabled"
               exit 1
             fi
+
+            if [ "$academic_core_phase_a_reconcile" = "true" ]; then
+              if ! curl \
+                --fail \
+                --silent \
+                --show-error \
+                --connect-timeout 10 \
+                --max-time 900 \
+                -X POST \
+                -H "X-Internal-Secret: ${internal_api_secret}" \
+                -o "$migration_response" \
+                http://127.0.0.1:8081/internal/academic-core/reconcile-all
+              then
+                echo "Academic Core Phase A reconciliation failed; maintenance remains enabled"
+                exit 1
+              fi
+              if ! podman run --rm -i "$jq_image" -e '
+                  .success == true
+                  and .data.expectedMigrationVersion == 44
+                  and .data.total > 0
+                  and .data.failed == 0
+                  and .data.success == .data.total
+                  and all(
+                    .data.results[];
+                    .migrationVersion == 44
+                    and .status == "passed"
+                    and .passed == true
+                    and (.errorCode == null)
+                    and all(.checks[]; .passed == true)
+                  )
+                ' < "$migration_response" >/dev/null
+              then
+                echo "Academic Core Phase A reconciliation failed; maintenance remains enabled"
+                exit 1
+              fi
+            fi
+            unset internal_api_secret
             rm -f "$migration_response"
             trap - EXIT
 
-            cp "$proxy_source" "$proxy_target"
-            if ! validate_nginx_config_with_retry; then
-              cp "$maintenance_proxy_source" "$proxy_target"
-              validate_nginx_config_with_retry
-              podman exec schoolorbit-nginx nginx -s reload || true
+            if [ "$keep_school_api_maintenance" = "true" ]; then
               [ -z "$proxy_backup" ] || rm -f "$proxy_backup"
-              echo "Normal school API proxy configuration is invalid after migration"
-              exit 1
-            fi
-            if ! podman exec schoolorbit-nginx nginx -s reload; then
-              cp "$maintenance_proxy_source" "$proxy_target"
-              validate_nginx_config_with_retry
-              podman exec schoolorbit-nginx nginx -s reload || true
+              echo "School API remains in maintenance mode by deployment request"
+            else
+              cp "$proxy_source" "$proxy_target"
+              if ! validate_nginx_config_with_retry; then
+                cp "$maintenance_proxy_source" "$proxy_target"
+                validate_nginx_config_with_retry
+                podman exec schoolorbit-nginx nginx -s reload || true
+                [ -z "$proxy_backup" ] || rm -f "$proxy_backup"
+                echo "Normal school API proxy configuration is invalid after migration"
+                exit 1
+              fi
+              if ! podman exec schoolorbit-nginx nginx -s reload; then
+                cp "$maintenance_proxy_source" "$proxy_target"
+                validate_nginx_config_with_retry
+                podman exec schoolorbit-nginx nginx -s reload || true
+                [ -z "$proxy_backup" ] || rm -f "$proxy_backup"
+                exit 1
+              fi
               [ -z "$proxy_backup" ] || rm -f "$proxy_backup"
-              exit 1
-            fi
-            [ -z "$proxy_backup" ] || rm -f "$proxy_backup"
 
-            school_host="school-api.${base_domain}"
-            direct_ready_ok=false
-            for attempt in $(seq 1 12); do
-              if direct_ready="$(
-                curl --fail --silent --show-error --max-time 15 \
-                  --cacert "$origin_root" \
-                  --resolve "${school_host}:443:127.0.0.1" \
-                  "https://${school_host}/ready"
-              )" && printf '%s' "$direct_ready" | jq -e \
-                '.status == "ready" and .controlPlane == "connected" and .filePlatform == "ready"' >/dev/null
-              then
-                direct_ready_ok=true
-                break
+              school_host="school-api.${base_domain}"
+              direct_ready_ok=false
+              for attempt in $(seq 1 12); do
+                if direct_ready="$(
+                  curl --fail --silent --show-error --max-time 15 \
+                    --cacert "$origin_root" \
+                    --resolve "${school_host}:443:127.0.0.1" \
+                    "https://${school_host}/ready"
+                )" && printf '%s' "$direct_ready" | jq -e \
+                  '.status == "ready" and .controlPlane == "connected" and .filePlatform == "ready"' >/dev/null
+                then
+                  direct_ready_ok=true
+                  break
+                fi
+                if [ "$attempt" -lt 12 ]; then
+                  sleep 2
+                fi
+              done
+              if [ "$direct_ready_ok" != true ]; then
+                cp "$maintenance_proxy_source" "$proxy_target"
+                validate_nginx_config_with_retry
+                podman exec schoolorbit-nginx nginx -s reload || true
+                echo "Direct school API readiness verification failed; maintenance remains enabled"
+                exit 1
               fi
-              if [ "$attempt" -lt 12 ]; then
-                sleep 2
-              fi
-            done
-            if [ "$direct_ready_ok" != true ]; then
-              cp "$maintenance_proxy_source" "$proxy_target"
-              validate_nginx_config_with_retry
-              podman exec schoolorbit-nginx nginx -s reload || true
-              echo "Direct school API readiness verification failed; maintenance remains enabled"
-              exit 1
             fi
             podman tag "${backend_image}:${{ github.sha }}" "${backend_image}:rollback"

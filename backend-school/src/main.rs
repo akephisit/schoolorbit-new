@@ -279,7 +279,10 @@ async fn main() {
                     };
 
                     tracing::info!("Reconciling File Platform operations for tenant");
-                    match pool_manager.get_pool(&db_url, &school.subdomain).await {
+                    match pool_manager
+                        .get_pool_without_migrations(&db_url, &school.subdomain)
+                        .await
+                    {
                         Ok(pool) => {
                             let cleaner = services::cleaner::FileCleaner::new(
                                 pool,

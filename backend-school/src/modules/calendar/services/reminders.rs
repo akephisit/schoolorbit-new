@@ -278,7 +278,10 @@ pub async fn process_due_calendar_reminders_for_all_tenants(
             continue;
         };
 
-        match pool_manager.get_pool(&db_url, &school.subdomain).await {
+        match pool_manager
+            .get_pool_without_migrations(&db_url, &school.subdomain)
+            .await
+        {
             Ok(pool) => {
                 if let Err(error) = process_due_reminders(
                     &pool,
