@@ -690,6 +690,29 @@ pub struct ProgramRequirement {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct StudyProgramRequirement {
+    pub study_program_id: Uuid,
+    #[serde(flatten)]
+    pub requirement: ProgramRequirement,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CurriculumProgramWorkspace {
+    pub programs: Vec<StudyProgram>,
+    pub requirements: Vec<StudyProgramRequirement>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AcademicSetupWorkspace {
+    pub years: Vec<AcademicYear>,
+    pub terms: Vec<AcademicTerm>,
+    pub bell_schedules: Vec<BellSchedule>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProgramRequirementInput {
     pub resource_kind: RequirementResourceKind,

@@ -316,6 +316,7 @@ use utoipa::OpenApi;
         crate::modules::academic::handlers::exam_schedule::list_staff_exam_schedule,
         crate::modules::academic::core::handlers::list_context_options,
 		crate::modules::academic::core::handlers::list_public_context_options,
+        crate::modules::academic::core::handlers::get_academic_setup_workspace,
         crate::modules::academic::core::handlers::list_years,
         crate::modules::academic::core::handlers::create_year,
         crate::modules::academic::core::handlers::get_year,
@@ -370,6 +371,7 @@ use utoipa::OpenApi;
         crate::modules::academic::core::handlers::get_curriculum_version,
         crate::modules::academic::core::handlers::update_curriculum_version,
         crate::modules::academic::core::handlers::publish_curriculum_version,
+        crate::modules::academic::core::handlers::get_curriculum_program_workspace,
         crate::modules::academic::core::handlers::list_study_programs,
         crate::modules::academic::core::handlers::create_study_program,
         crate::modules::academic::core::handlers::get_study_program,
@@ -770,6 +772,9 @@ use utoipa::OpenApi;
         RequirementKind,
         RequirementResourceKind,
         ProgramRequirement,
+        StudyProgramRequirement,
+        CurriculumProgramWorkspace,
+        AcademicSetupWorkspace,
         ProgramRequirementInput,
         ReplaceProgramRequirementsRequest,
         PublishVersionRequest,
@@ -817,6 +822,8 @@ use utoipa::OpenApi;
         ApiResponse<Vec<StudyProgramOption>>,
         ApiResponse<StudyProgram>,
         ApiResponse<Vec<ProgramRequirement>>,
+        ApiResponse<CurriculumProgramWorkspace>,
+        ApiResponse<AcademicSetupWorkspace>,
         ApiResponse<Vec<Homeroom>>,
         ApiResponse<Homeroom>,
         ApiResponse<Vec<HomeroomAdvisor>>,
@@ -2238,6 +2245,61 @@ mod tests {
                 operation["responses"]["400"]["content"]["application/json"]["schema"]["$ref"],
                 "#/components/schemas/ApiErrorResponse",
                 "path {path}"
+            );
+        }
+    }
+
+    #[test]
+    fn academic_workspace_reads_are_documented() {
+        let document = school_api_value().expect("document should serialize");
+        for (path, operation_id, response_schema) in [
+            (
+                "/api/academic/curriculum-versions/{id}/program-workspace",
+                "getCurriculumProgramWorkspace",
+                "#/components/schemas/ApiResponse_CurriculumProgramWorkspace",
+            ),
+            (
+                "/api/academic/setup/workspace",
+                "getAcademicSetupWorkspace",
+                "#/components/schemas/ApiResponse_AcademicSetupWorkspace",
+            ),
+        ] {
+            let operation = &document["paths"][path]["get"];
+            assert_eq!(operation["operationId"], operation_id, "path {path}");
+            assert_eq!(
+                operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+                response_schema,
+                "path {path}"
+            );
+            assert_eq!(
+                operation["responses"]["401"]["content"]["application/json"]["schema"]["$ref"],
+                "#/components/schemas/ApiErrorResponse",
+                "path {path}"
+            );
+            assert_eq!(
+                operation["responses"]["400"]["content"]["application/json"]["schema"]["$ref"],
+                "#/components/schemas/ApiErrorResponse",
+                "path {path}"
+            );
+            assert_eq!(
+                operation["responses"]["403"]["content"]["application/json"]["schema"]["$ref"],
+                "#/components/schemas/ApiErrorResponse",
+                "path {path}"
+            );
+        }
+        assert_eq!(
+            document["paths"]["/api/academic/curriculum-versions/{id}/program-workspace"]["get"]
+                ["responses"]["404"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiErrorResponse"
+        );
+        for schema in [
+            "StudyProgramRequirement",
+            "CurriculumProgramWorkspace",
+            "AcademicSetupWorkspace",
+        ] {
+            assert!(
+                !document["components"]["schemas"][schema].is_null(),
+                "missing schema {schema}"
             );
         }
     }

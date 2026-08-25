@@ -239,6 +239,18 @@ pub async fn list_terms(
     Ok(rows.into_iter().map(Into::into).collect())
 }
 
+pub(super) async fn list_all_terms(pool: &PgPool) -> Result<Vec<AcademicTerm>, AppError> {
+    let sql = format!(
+        "SELECT term.* FROM (SELECT {TERM_COLUMNS} FROM academic_terms) term \
+         JOIN academic_years year ON year.id = term.academic_year_id \
+         ORDER BY year.year DESC, year.id, term.sequence, term.start_date, term.id"
+    );
+    let rows = sqlx::query_as::<_, AcademicTermRow>(&sql)
+        .fetch_all(pool)
+        .await?;
+    Ok(rows.into_iter().map(Into::into).collect())
+}
+
 pub async fn get_term(pool: &PgPool, id: Uuid) -> Result<AcademicTerm, AppError> {
     let sql = format!("SELECT {TERM_COLUMNS} FROM academic_terms WHERE id = $1");
     sqlx::query_as::<_, AcademicTermRow>(&sql)

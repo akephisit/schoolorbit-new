@@ -10,6 +10,10 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/context/options", get(handlers::list_context_options))
         .route(
+            "/setup/workspace",
+            get(handlers::get_academic_setup_workspace),
+        )
+        .route(
             "/years",
             get(handlers::list_years).post(handlers::create_year),
         )
@@ -126,6 +130,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/curriculum-versions/{id}/publish",
             post(handlers::publish_curriculum_version),
+        )
+        .route(
+            "/curriculum-versions/{id}/program-workspace",
+            get(handlers::get_curriculum_program_workspace),
         )
         .route(
             "/curriculum-versions/{id}/programs",

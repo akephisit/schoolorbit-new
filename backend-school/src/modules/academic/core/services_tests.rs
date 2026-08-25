@@ -15,14 +15,16 @@ use super::models::{
 use super::services::{
     bell_schedules, catalog, context, curriculum, ensure_draft_version, ensure_planning_delete,
     parse_row_version, progressions, student_years, validate_canonical_decimal,
-    validate_date_containment, validate_term_definitions, years_terms,
+    validate_date_containment, validate_term_definitions, workspaces, years_terms,
 };
 use crate::policies::resource_access_policy::AcademicResourceListFilter;
 use crate::{
+    middleware::permission::ActorContext,
     modules::academic::cutover_test_support::{
         apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
         CutoverFixture,
     },
+    permissions::registry::codes,
     test_helpers::create_named_test_pool,
 };
 use chrono::{NaiveDate, NaiveTime};
@@ -1431,6 +1433,337 @@ async fn activity_catalog_versions_round_trip_exact_hours_and_archive_stably() {
     .await
     .unwrap();
     assert!(archived.archived_at.is_some());
+}
+
+#[tokio::test]
+async fn workspace_reads_return_complete_ordered_collections() {
+    let pool = prepare_core_fixture("academic_core_workspace_reads").await;
+    let actor_user_id = fixture_actor(&pool).await;
+    let grade_level_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM grade_levels ORDER BY level_type, year, id LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let subject_version_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM subject_versions WHERE status = 'published' ORDER BY id LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let activity_version_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM activity_versions WHERE status = 'published' ORDER BY id LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let curriculum_row = curriculum::create(
+        &pool,
+        CreateCurriculumRequest {
+            code: "WORKSPACE".to_string(),
+            name_th: "หลักสูตรทดสอบ workspace".to_string(),
+            name_en: None,
+            description: None,
+            grade_level_ids: vec![grade_level_id],
+            owning_organization_unit_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    let version = curriculum::create_version(
+        &pool,
+        curriculum_row.id,
+        CreateCurriculumVersionRequest {
+            version_name: "ฉบับ workspace".to_string(),
+            start_academic_year_id: CURRENT_YEAR_ID,
+            end_academic_year_id: None,
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+    let default_program = curriculum::create_program(
+        &pool,
+        version.id,
+        CreateStudyProgramRequest {
+            code: "DEFAULT".to_string(),
+            name_th: "แผนหลัก".to_string(),
+            name_en: None,
+            is_default: true,
+            owning_organization_unit_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    let alternative_program = curriculum::create_program(
+        &pool,
+        version.id,
+        CreateStudyProgramRequest {
+            code: "ALTERNATIVE".to_string(),
+            name_th: "แผนทางเลือก".to_string(),
+            name_en: None,
+            is_default: false,
+            owning_organization_unit_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    curriculum::replace_requirements(
+        &pool,
+        default_program.id,
+        ReplaceProgramRequirementsRequest {
+            requirements: vec![
+                ProgramRequirementInput {
+                    resource_kind: RequirementResourceKind::Activity,
+                    catalog_version_id: activity_version_id,
+                    grade_level_id,
+                    recommended_term_code: Some("T2".to_string()),
+                    requirement_kind: RequirementKind::Required,
+                    credit: None,
+                    hours: Some("20.00".to_string()),
+                    display_order: 2,
+                },
+                ProgramRequirementInput {
+                    resource_kind: RequirementResourceKind::Course,
+                    catalog_version_id: subject_version_id,
+                    grade_level_id,
+                    recommended_term_code: Some("T1".to_string()),
+                    requirement_kind: RequirementKind::Required,
+                    credit: Some("1.00".to_string()),
+                    hours: Some("40.00".to_string()),
+                    display_order: 1,
+                },
+            ],
+            row_version: default_program.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    curriculum::replace_requirements(
+        &pool,
+        alternative_program.id,
+        ReplaceProgramRequirementsRequest {
+            requirements: vec![ProgramRequirementInput {
+                resource_kind: RequirementResourceKind::Course,
+                catalog_version_id: subject_version_id,
+                grade_level_id,
+                recommended_term_code: Some("T1".to_string()),
+                requirement_kind: RequirementKind::Elective,
+                credit: Some("1.50".to_string()),
+                hours: Some("60.00".to_string()),
+                display_order: 1,
+            }],
+            row_version: alternative_program.row_version,
+        },
+    )
+    .await
+    .unwrap();
+
+    let other_curriculum = curriculum::create(
+        &pool,
+        CreateCurriculumRequest {
+            code: "WORKSPACE-OTHER".to_string(),
+            name_th: "หลักสูตรอื่น".to_string(),
+            name_en: None,
+            description: None,
+            grade_level_ids: vec![grade_level_id],
+            owning_organization_unit_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    let other_version = curriculum::create_version(
+        &pool,
+        other_curriculum.id,
+        CreateCurriculumVersionRequest {
+            version_name: "ฉบับอื่น".to_string(),
+            start_academic_year_id: CURRENT_YEAR_ID,
+            end_academic_year_id: None,
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+    let other_program = curriculum::create_program(
+        &pool,
+        other_version.id,
+        CreateStudyProgramRequest {
+            code: "OTHER".to_string(),
+            name_th: "แผนอื่น".to_string(),
+            name_en: None,
+            is_default: true,
+            owning_organization_unit_id: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    let program_workspace = workspaces::program_workspace(
+        &pool,
+        version.id,
+        &AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..AcademicResourceListFilter::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        program_workspace
+            .programs
+            .iter()
+            .map(|program| program.id)
+            .collect::<Vec<_>>(),
+        vec![default_program.id, alternative_program.id]
+    );
+    assert_eq!(program_workspace.requirements.len(), 3);
+    assert_eq!(
+        program_workspace
+            .requirements
+            .iter()
+            .map(|tagged| tagged.study_program_id)
+            .collect::<Vec<_>>(),
+        vec![
+            default_program.id,
+            default_program.id,
+            alternative_program.id
+        ]
+    );
+    assert_eq!(
+        program_workspace.requirements[0].requirement.display_order,
+        1
+    );
+    assert_eq!(
+        program_workspace.requirements[1].requirement.display_order,
+        2
+    );
+    assert!(program_workspace
+        .programs
+        .iter()
+        .all(|program| program.id != other_program.id));
+    assert!(program_workspace
+        .requirements
+        .iter()
+        .all(|tagged| tagged.study_program_id != other_program.id));
+    let serialized_program_workspace = serde_json::to_value(&program_workspace).unwrap();
+    let serialized_requirement = &serialized_program_workspace["requirements"][0];
+    assert_eq!(
+        serialized_requirement["studyProgramId"],
+        default_program.id.to_string()
+    );
+    assert!(serialized_requirement.get("displayOrder").is_some());
+    assert!(serialized_requirement.get("requirement").is_none());
+    assert!(matches!(
+        workspaces::program_workspace(&pool, version.id, &AcademicResourceListFilter::default(),)
+            .await,
+        Err(crate::error::AppError::Forbidden(_))
+    ));
+
+    let extra_schedule = bell_schedules::create(
+        &pool,
+        actor_user_id,
+        CreateBellScheduleRequest {
+            academic_year_id: FUTURE_YEAR_ID,
+            code: "WORKSPACE".to_string(),
+            name: "ตารางคาบ workspace".to_string(),
+            is_default: false,
+            owning_organization_unit_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    bell_schedules::replace_periods(
+        &pool,
+        actor_user_id,
+        extra_schedule.id,
+        ReplaceBellSchedulePeriodsRequest {
+            periods: vec![BellSchedulePeriodInput {
+                name: Some("คาบ workspace".to_string()),
+                start_time: NaiveTime::from_hms_opt(7, 30, 0).unwrap(),
+                end_time: NaiveTime::from_hms_opt(8, 20, 0).unwrap(),
+                order_index: 1,
+                applicable_days: vec!["MON".to_string()],
+                is_active: true,
+            }],
+            row_version: extra_schedule.row_version,
+        },
+    )
+    .await
+    .unwrap();
+
+    let full_access = ActorContext {
+        user_id: actor_user_id,
+        permissions: vec![
+            codes::ACADEMIC_YEAR_READ_SCHOOL.to_string(),
+            codes::ACADEMIC_TERM_READ_SCHOOL.to_string(),
+        ],
+    };
+    let setup_workspace = workspaces::setup_workspace(&pool, &full_access)
+        .await
+        .unwrap();
+    let expected_years = years_terms::list_years(&pool).await.unwrap();
+    let mut expected_terms = Vec::new();
+    let mut expected_schedules = Vec::new();
+    for year in &expected_years {
+        expected_terms.extend(years_terms::list_terms(&pool, year.id).await.unwrap());
+        expected_schedules.extend(bell_schedules::list(&pool, year.id).await.unwrap());
+    }
+    assert_eq!(
+        setup_workspace
+            .years
+            .iter()
+            .map(|year| year.id)
+            .collect::<Vec<_>>(),
+        expected_years
+            .iter()
+            .map(|year| year.id)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        setup_workspace
+            .terms
+            .iter()
+            .map(|term| term.id)
+            .collect::<Vec<_>>(),
+        expected_terms
+            .iter()
+            .map(|term| term.id)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        setup_workspace
+            .bell_schedules
+            .iter()
+            .map(|schedule| schedule.id)
+            .collect::<Vec<_>>(),
+        expected_schedules
+            .iter()
+            .map(|schedule| schedule.id)
+            .collect::<Vec<_>>()
+    );
+    assert!(setup_workspace
+        .bell_schedules
+        .iter()
+        .any(|schedule| schedule.id == extra_schedule.id));
+    let serialized_setup = serde_json::to_value(&setup_workspace).unwrap();
+    assert!(serialized_setup["bellSchedules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|schedule| schedule.get("periods").is_none()));
+
+    for permissions in [
+        vec![codes::ACADEMIC_YEAR_READ_SCHOOL.to_string()],
+        vec![codes::ACADEMIC_TERM_READ_SCHOOL.to_string()],
+    ] {
+        let incomplete_actor = ActorContext {
+            user_id: actor_user_id,
+            permissions,
+        };
+        assert!(matches!(
+            workspaces::setup_workspace(&pool, &incomplete_actor).await,
+            Err(crate::error::AppError::Forbidden(_))
+        ));
+    }
 }
 
 #[tokio::test]

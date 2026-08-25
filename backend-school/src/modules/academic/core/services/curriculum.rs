@@ -8,8 +8,8 @@ use super::super::models::{
     CreateCurriculumRequest, CreateCurriculumVersionRequest, CreateStudyProgramRequest, Curriculum,
     CurriculumVersion, ProgramRequirement, ProgramRequirementInput, PublishVersionRequest,
     ReplaceProgramRequirementsRequest, RequirementResourceKind, StudyProgram, StudyProgramOption,
-    UpdateCurriculumRequest, UpdateCurriculumVersionRequest, UpdateStudyProgramRequest,
-    VersionStatus,
+    StudyProgramRequirement, UpdateCurriculumRequest, UpdateCurriculumVersionRequest,
+    UpdateStudyProgramRequest, VersionStatus,
 };
 use super::{ensure_draft_version, parse_row_version, validate_canonical_decimal};
 
@@ -271,6 +271,13 @@ pub async fn publish_version(
 
 pub async fn list_programs(pool: &PgPool, version_id: Uuid) -> Result<Vec<StudyProgram>, AppError> {
     get_version(pool, version_id).await?;
+    list_programs_for_version(pool, version_id).await
+}
+
+pub(super) async fn list_programs_for_version(
+    pool: &PgPool,
+    version_id: Uuid,
+) -> Result<Vec<StudyProgram>, AppError> {
     let sql = format!(
         "SELECT {PROGRAM_COLUMNS} FROM study_programs WHERE curriculum_version_id = $1 \
          ORDER BY is_default DESC, code, id"
@@ -279,6 +286,90 @@ pub async fn list_programs(pool: &PgPool, version_id: Uuid) -> Result<Vec<StudyP
         .bind(version_id)
         .fetch_all(pool)
         .await?)
+}
+
+#[derive(sqlx::FromRow)]
+struct StudyProgramRequirementRow {
+    study_program_id: Uuid,
+    id: Uuid,
+    resource_kind: RequirementResourceKind,
+    catalog_version_id: Uuid,
+    grade_level_id: Uuid,
+    recommended_term_code: Option<String>,
+    requirement_kind: super::super::models::RequirementKind,
+    credit: Option<String>,
+    hours: Option<String>,
+    display_order: i32,
+    row_version: i64,
+}
+
+impl From<StudyProgramRequirementRow> for StudyProgramRequirement {
+    fn from(row: StudyProgramRequirementRow) -> Self {
+        Self {
+            study_program_id: row.study_program_id,
+            requirement: ProgramRequirement {
+                id: row.id,
+                resource_kind: row.resource_kind,
+                catalog_version_id: row.catalog_version_id,
+                grade_level_id: row.grade_level_id,
+                recommended_term_code: row.recommended_term_code,
+                requirement_kind: row.requirement_kind,
+                credit: row.credit,
+                hours: row.hours,
+                display_order: row.display_order,
+                row_version: row.row_version,
+            },
+        }
+    }
+}
+
+pub(super) async fn list_requirements_for_programs(
+    pool: &PgPool,
+    program_ids: &[Uuid],
+) -> Result<Vec<StudyProgramRequirement>, AppError> {
+    if program_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows: Vec<StudyProgramRequirementRow> = sqlx::query_as(
+        r#"
+        WITH requirement_rows AS (
+            SELECT requirement.study_program_id, requirement.id,
+                   'course'::text AS resource_kind,
+                   requirement.subject_version_id AS catalog_version_id,
+                   requirement.grade_level_id, requirement.recommended_term_code,
+                   requirement.requirement_kind, requirement.credit::text AS credit,
+                   requirement.hours::text AS hours,
+                   COALESCE(requirement.display_order, 0) AS display_order,
+                   requirement.row_version
+            FROM curriculum_course_requirements requirement
+            WHERE requirement.study_program_id = ANY($1)
+            UNION ALL
+            SELECT requirement.study_program_id, requirement.id,
+                   'activity'::text AS resource_kind,
+                   requirement.activity_version_id AS catalog_version_id,
+                   requirement.grade_level_id, requirement.recommended_term_code,
+                   requirement.requirement_kind, NULL::text AS credit,
+                   requirement.hours::text AS hours,
+                   requirement.display_order, requirement.row_version
+            FROM curriculum_activity_requirements requirement
+            WHERE requirement.study_program_id = ANY($1)
+        )
+        SELECT requirement.study_program_id, requirement.id, requirement.resource_kind,
+               requirement.catalog_version_id, requirement.grade_level_id,
+               requirement.recommended_term_code, requirement.requirement_kind,
+               requirement.credit, requirement.hours, requirement.display_order,
+               requirement.row_version
+        FROM requirement_rows requirement
+        JOIN study_programs program ON program.id = requirement.study_program_id
+        ORDER BY program.is_default DESC, program.code, program.id,
+                 requirement.display_order, requirement.resource_kind,
+                 requirement.catalog_version_id, requirement.id
+        "#,
+    )
+    .bind(program_ids)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(Into::into).collect())
 }
 
 pub async fn list_study_program_options_for_year(

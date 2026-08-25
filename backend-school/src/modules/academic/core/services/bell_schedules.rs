@@ -26,6 +26,15 @@ pub async fn list(pool: &PgPool, academic_year_id: Uuid) -> Result<Vec<BellSched
         .await?)
 }
 
+pub(super) async fn list_all(pool: &PgPool) -> Result<Vec<BellSchedule>, AppError> {
+    let sql = format!(
+        "SELECT schedule.* FROM (SELECT {SCHEDULE_COLUMNS} FROM bell_schedules) schedule \
+         JOIN academic_years year ON year.id = schedule.academic_year_id \
+         ORDER BY year.year DESC, year.id, schedule.is_default DESC, schedule.code, schedule.id"
+    );
+    Ok(sqlx::query_as(&sql).fetch_all(pool).await?)
+}
+
 pub async fn get(pool: &PgPool, id: Uuid) -> Result<BellSchedule, AppError> {
     let sql = format!("SELECT {SCHEDULE_COLUMNS} FROM bell_schedules WHERE id = $1");
     sqlx::query_as(&sql)

@@ -22,7 +22,8 @@ use crate::AppState;
 
 use super::models::*;
 use super::services::{
-    bell_schedules, catalog, context, curriculum, progressions, student_years, years_terms,
+    bell_schedules, catalog, context, curriculum, progressions, student_years, workspaces,
+    years_terms,
 };
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
@@ -79,6 +80,30 @@ pub async fn list_context_options(
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_CONTEXT_READ_SCHOOL)?;
     Ok(ok(context::list_options(&pool).await?))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/setup/workspace",
+    operation_id = "getAcademicSetupWorkspace",
+    tag = "academic",
+    responses(
+        (status = 200, description = "Academic years, terms, and bell schedules for setup", body = ApiResponse<AcademicSetupWorkspace>),
+        (status = 400, description = "Academic setup workspace exceeds the supported size", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic setup read permissions denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_academic_setup_workspace(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    Ok(ok(workspaces::setup_workspace(
+        &context.tenant.pool,
+        &context.actor,
+    )
+    .await?))
 }
 
 #[utoipa::path(
@@ -2122,6 +2147,36 @@ pub async fn publish_curriculum_version(
         None,
     );
     Ok(ok(value))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/curriculum-versions/{id}/program-workspace",
+    operation_id = "getCurriculumProgramWorkspace",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Curriculum version ID")),
+    responses(
+        (status = 200, description = "Programs and requirements for the curriculum version", body = ApiResponse<CurriculumProgramWorkspace>),
+        (status = 400, description = "Curriculum program workspace exceeds the supported size", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic curriculum read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Curriculum version not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_curriculum_program_workspace(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let pool = context.tenant.pool;
+    let filter = academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &pool,
+        &context.actor,
+        CurriculumAction::Read,
+    )
+    .await?;
+    Ok(ok(workspaces::program_workspace(&pool, id, &filter).await?))
 }
 
 #[utoipa::path(

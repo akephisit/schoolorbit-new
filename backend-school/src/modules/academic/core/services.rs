@@ -11,6 +11,7 @@ pub mod context;
 pub mod curriculum;
 pub mod progressions;
 pub mod student_years;
+pub mod workspaces;
 pub mod years_terms;
 
 pub fn validate_canonical_decimal(value: &str, max_scale: usize) -> Result<BigDecimal, AppError> {
