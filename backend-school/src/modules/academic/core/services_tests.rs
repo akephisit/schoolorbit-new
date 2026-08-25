@@ -19,7 +19,8 @@ use super::services::{
 };
 use crate::{
     modules::academic::cutover_test_support::{
-        apply_migrations_through, seed_academic_cutover_fixture, CutoverFixture,
+        apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
+        CutoverFixture,
     },
     test_helpers::create_named_test_pool,
 };
@@ -37,7 +38,7 @@ async fn prepare_core_fixture(name: &str) -> PgPool {
     seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
         .await
         .unwrap();
-    apply_migrations_through(&pool, 44).await.unwrap();
+    apply_phase_b_runtime_migrations(&pool).await.unwrap();
     pool
 }
 
@@ -446,15 +447,6 @@ async fn bell_schedule_period_replacement_is_atomic_and_rejects_stale_revisions(
     assert_eq!(periods[0].applicable_days.as_deref(), Some("MON,TUE"));
     let current = bell_schedules::get(&pool, schedule.id).await.unwrap();
     assert_eq!(current.row_version, schedule.row_version + 1);
-    let legacy_year_ids: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM bell_schedule_periods WHERE bell_schedule_id = $1 AND academic_year_id IS NOT NULL",
-    )
-    .bind(schedule.id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(legacy_year_ids, 0);
-
     let stale = bell_schedules::replace_periods(&pool, actor, schedule.id, request)
         .await
         .unwrap_err();

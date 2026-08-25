@@ -192,11 +192,13 @@ Tests continue to isolate their schema/data within the disposable database. The 
 
 Run the Academic Core chain against disposable local PostgreSQL from the repository root. These
 focused commands prove the read-only legacy preflight and each sequential transition through 041,
-042, 043, and 044; run them one at a time so failures remain attributable:
+042, 043, 044, and the separately gated cleanup at 045; run them one at a time so failures remain
+attributable. The preflight implementation retained here is test-only fixture validation; the
+one-time runtime CLI is retired after Phase B.
 
 ```bash
 ./scripts/test_backend_school.sh \
-  modules::academic::cutover_preflight_database_tests -- --nocapture --test-threads=1
+  modules::academic::cutover_test_preflight_database_tests -- --nocapture --test-threads=1
 ./scripts/test_backend_school.sh \
   modules::academic::core::schema_tests::migration_041_maps_core_fixture \
   -- --exact --nocapture --test-threads=1
@@ -208,6 +210,27 @@ focused commands prove the read-only legacy preflight and each sequential transi
   -- --exact --nocapture --test-threads=1
 ./scripts/test_backend_school.sh \
   modules::academic::core::schema_tests::migration_044_exposes_the_clean_academic_core_runtime_contract \
+  -- --exact --nocapture --test-threads=1
+./scripts/test_backend_school.sh \
+  modules::academic::core::schema_tests::migration_045_removes_legacy_schema \
+  -- --exact --nocapture --test-threads=1
+./scripts/test_backend_school.sh \
+  modules::academic::core::schema_tests::migration_045_fails_closed_without_current_reconciliation_evidence \
+  -- --exact --nocapture --test-threads=1
+./scripts/test_backend_school.sh \
+  modules::academic::core::schema_tests::migration_045_accepts_a_valid_marker_with_distinct_reconciliation_counts \
+  -- --exact --nocapture --test-threads=1
+./scripts/test_backend_school.sh \
+  modules::academic::core::schema_tests::migration_045_rejects_a_mapping_delete_committed_after_the_marker \
+  -- --exact --nocapture --test-threads=1
+./scripts/test_backend_school.sh \
+  modules::academic::core::schema_tests::migration_045_rejects_a_deleted_expanded_delivery_target \
+  -- --exact --nocapture --test-threads=1
+./scripts/test_backend_school.sh \
+  modules::academic::core::schema_tests::migration_045_rejects_a_deleted_legacy_mapping_source \
+  -- --exact --nocapture --test-threads=1
+./scripts/test_backend_school.sh \
+  modules::academic::core::schema_tests::migration_045_rejects_source_field_drift_committed_after_the_marker \
   -- --exact --nocapture --test-threads=1
 ./scripts/test_backend_school.sh \
   modules::system::handlers::migration::tests -- --nocapture --test-threads=1

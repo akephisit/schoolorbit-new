@@ -1781,7 +1781,8 @@ mod tests {
     use super::*;
     use crate::{
         modules::academic::cutover_test_support::{
-            apply_migrations_through, seed_academic_cutover_fixture, CutoverFixture,
+            apply_migrations_through, apply_phase_b_runtime_migrations,
+            seed_academic_cutover_fixture, CutoverFixture,
         },
         test_helpers::{create_named_test_pool, create_test_user},
     };
@@ -1876,7 +1877,7 @@ mod tests {
         seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
             .await
             .unwrap();
-        apply_migrations_through(&pool, 44).await.unwrap();
+        apply_phase_b_runtime_migrations(&pool).await.unwrap();
 
         let enroller_id = create_test_user(
             &pool,
@@ -1885,12 +1886,11 @@ mod tests {
         )
         .await
         .unwrap();
-        let (grade_level_id, study_program_id, curriculum_version_id): (Uuid, Uuid, Uuid) =
-            sqlx::query_as(
-                "SELECT grade.id, program.id, program.curriculum_version_id
+        let (grade_level_id, study_program_id): (Uuid, Uuid) = sqlx::query_as(
+            "SELECT grade.id, program.id
                  FROM grade_levels grade
                  CROSS JOIN LATERAL (
-                     SELECT id, curriculum_version_id
+                     SELECT id
                      FROM study_programs
                      WHERE status = 'published'
                      ORDER BY is_default DESC, id
@@ -1898,10 +1898,10 @@ mod tests {
                  ) program
                  ORDER BY grade.id
                  LIMIT 1",
-            )
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
         let academic_year_id: Uuid = sqlx::query_scalar(
             "INSERT INTO academic_years (
                  year, name, start_date, end_date, school_days, status
@@ -1925,13 +1925,12 @@ mod tests {
         let homeroom_id: Uuid = sqlx::query_scalar(
             "INSERT INTO homerooms (
                  code, name, academic_year_id, grade_level_id, room_number,
-                 legacy_curriculum_version_id, study_program_id, capacity
-             ) VALUES ('ADM-FUTURE-1', 'ห้องอนาคต 1', $1, $2, '1', $3, $4, 40)
+                 study_program_id, capacity
+             ) VALUES ('ADM-FUTURE-1', 'ห้องอนาคต 1', $1, $2, '1', $3, 40)
              RETURNING id",
         )
         .bind(academic_year_id)
         .bind(grade_level_id)
-        .bind(curriculum_version_id)
         .bind(study_program_id)
         .fetch_one(&pool)
         .await

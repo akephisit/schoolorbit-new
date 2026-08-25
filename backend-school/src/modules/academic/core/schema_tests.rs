@@ -1,12 +1,13 @@
 use crate::{
     modules::academic::{
-        cutover_preflight::run_academic_core_preflight,
+        cutover_test_preflight::run_academic_core_preflight,
         cutover_test_support::{
-            apply_cutover_fixture_fault, apply_migrations_through, seed_academic_cutover_fixture,
+            apply_cutover_fixture_fault, apply_migrations_through,
+            record_passing_phase_a_reconciliation_marker, seed_academic_cutover_fixture,
             CutoverFixture, CutoverFixtureFault,
         },
     },
-    test_helpers::create_named_test_pool,
+    test_helpers::{create_named_test_pool, create_named_test_pool_with_max_connections},
 };
 use chrono::NaiveDate;
 use serde_json::Value;
@@ -22,9 +23,9 @@ fn stable_uuid(name: &str) -> Uuid {
 async fn migration_chain_supports_an_empty_new_tenant() {
     let pool = create_named_test_pool("academic_core_empty_tenant").await;
 
-    apply_migrations_through(&pool, 44)
+    apply_migrations_through(&pool, 45)
         .await
-        .expect("an empty newly provisioned tenant must migrate through Phase A");
+        .expect("an empty newly provisioned tenant must migrate through Phase B");
 
     let (year_count, term_count): (i64, i64) = sqlx::query_as(
         r#"SELECT (SELECT COUNT(*) FROM academic_years),
@@ -40,7 +41,7 @@ async fn migration_chain_supports_an_empty_new_tenant() {
             .fetch_one(&pool)
             .await
             .expect("migration history must be queryable");
-    assert_eq!(latest_version, 44);
+    assert_eq!(latest_version, 45);
 }
 
 #[tokio::test]
@@ -1051,16 +1052,20 @@ async fn migration_043_rejects_ambiguous_consumer_and_permission_data() {
 }
 
 #[tokio::test]
-async fn migration_runner_preserves_permission_cutover_evidence_and_active_contract() {
+async fn migration_runner_applies_authorized_cleanup_and_preserves_active_permission_contract() {
     let pool = create_named_test_pool("academic_core_043_runner_permissions").await;
     apply_migrations_through(&pool, 40).await.unwrap();
     seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
         .await
         .unwrap();
+    apply_migrations_through(&pool, 44).await.unwrap();
+    record_passing_phase_a_reconciliation_marker(&pool)
+        .await
+        .unwrap();
 
     crate::db::migration::run_tenant_migrations(&pool)
         .await
-        .expect("the centralized runner must preserve the cutover permission contract");
+        .expect("the centralized runner must apply authorized cleanup and sync permissions");
 
     let active_target_permissions: i64 = sqlx::query_scalar(
         r#"SELECT COUNT(*)
@@ -1101,18 +1106,16 @@ async fn migration_runner_preserves_permission_cutover_evidence_and_active_contr
     .unwrap();
     assert_eq!(active_target_permissions, 27);
 
-    let legacy_definition_and_grant: (bool, i64) = sqlx::query_as(
-        r#"SELECT permission.is_active,
-                  (SELECT COUNT(*)
-                   FROM role_permissions grant_row
-                   WHERE grant_row.permission_id = permission.id)
+    let legacy_definition_and_grant_count: i64 = sqlx::query_scalar(
+        r#"SELECT COUNT(*)
            FROM permissions permission
+           LEFT JOIN role_permissions grant_row ON grant_row.permission_id = permission.id
            WHERE permission.code = 'academic_structure.read.all'"#,
     )
     .fetch_one(&pool)
     .await
-    .expect("inactive legacy permission evidence must remain queryable");
-    assert_eq!(legacy_definition_and_grant, (false, 1));
+    .unwrap();
+    assert_eq!(legacy_definition_and_grant_count, 0);
 
     let target_role_grant_count: i64 = sqlx::query_scalar(
         r#"SELECT COUNT(*)
@@ -1215,4 +1218,410 @@ async fn migration_044_exposes_the_clean_academic_core_runtime_contract() {
     .await
     .unwrap();
     assert_eq!(audit_delete_action, "n");
+}
+
+async fn phase_a_fixture(name: &str) -> sqlx::PgPool {
+    phase_a_fixture_with_connections(name, 1).await
+}
+
+async fn phase_a_fixture_with_connections(name: &str, max_connections: u32) -> sqlx::PgPool {
+    let pool = create_named_test_pool_with_max_connections(name, max_connections).await;
+    apply_migrations_through(&pool, 40).await.unwrap();
+    seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
+        .await
+        .unwrap();
+
+    let preflight = run_academic_core_preflight(
+        &pool,
+        name,
+        NaiveDate::from_ymd_opt(2025, 8, 23).expect("test cutover date must be valid"),
+    )
+    .await
+    .expect("the complete fixture preflight must run");
+    assert!(preflight.can_cut_over);
+
+    apply_migrations_through(&pool, 44)
+        .await
+        .expect("the complete fixture must migrate through Phase A");
+    pool
+}
+
+#[tokio::test]
+async fn migration_045_removes_legacy_schema() {
+    let pool = phase_a_fixture("academic_core_045_cleanup_manifest").await;
+    record_passing_phase_a_reconciliation_marker(&pool)
+        .await
+        .expect("Phase A reconciliation marker must exist before cleanup");
+
+    let retained_counts_before: (i64, i64, i64, i64, i64, i64, i64, i64) = sqlx::query_as(
+        r#"SELECT
+               (SELECT COUNT(*) FROM academic_terms),
+               (SELECT COUNT(*) FROM subject_versions),
+               (SELECT COUNT(*) FROM activity_versions),
+               (SELECT COUNT(*) FROM curricula),
+               (SELECT COUNT(*) FROM curriculum_versions),
+               (SELECT COUNT(*) FROM homerooms),
+               (SELECT COUNT(*) FROM learning_offerings),
+               (SELECT COUNT(*) FROM course_assessment_plans)"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    apply_migrations_through(&pool, 45)
+        .await
+        .expect("migration 045 must remove only reconciled legacy schema");
+
+    let legacy_relations: Vec<String> = sqlx::query_scalar(
+        r#"SELECT relname::text
+           FROM pg_class
+           WHERE relnamespace = current_schema()::regnamespace
+             AND relname = ANY($1)
+           ORDER BY relname"#,
+    )
+    .bind(vec![
+        "student_class_enrollments",
+        "classroom_courses",
+        "classroom_course_instructors",
+        "classroom_course_preferred_rooms",
+        "activity_slots",
+        "activity_slot_classrooms",
+        "activity_slot_classroom_assignments",
+        "activity_slot_instructors",
+        "activity_groups",
+        "activity_group_instructors",
+        "activity_group_members",
+        "academic_core_entity_map",
+    ])
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert!(legacy_relations.is_empty());
+
+    let legacy_columns: Vec<(String, String)> = sqlx::query_as(
+        r#"SELECT table_name::text, column_name::text
+           FROM information_schema.columns
+           WHERE table_schema = current_schema()
+             AND (table_name, column_name) IN (
+                 ('academic_years', 'is_active'),
+                 ('academic_terms', 'is_active'),
+                 ('academic_terms', 'legacy_term'),
+                 ('grade_levels', 'next_grade_level_id'),
+                 ('homerooms', 'legacy_curriculum_version_id'),
+                 ('bell_schedule_periods', 'academic_year_id'),
+                 ('admission_tracks', 'study_plan_id'),
+                 ('admission_tracks', 'curriculum_version_id'),
+                 ('admission_room_assignments', 'class_room_id'),
+                 ('academic_timetable_entries', 'academic_semester_id'),
+                 ('academic_timetable_entries', 'legacy_classroom_course_id'),
+                 ('academic_timetable_entries', 'legacy_activity_slot_id'),
+                 ('academic_exam_schedule_items', 'academic_semester_id'),
+                 ('academic_exam_schedule_items', 'legacy_classroom_course_id'),
+                 ('supervision_cycles', 'academic_year'),
+                 ('supervision_cycles', 'semester'),
+                 ('supervision_cycles', 'academic_semester_id'),
+                 ('supervision_observations', 'academic_semester_id')
+             )
+           ORDER BY table_name, column_name"#,
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert!(legacy_columns.is_empty());
+
+    let retained_counts_after: (i64, i64, i64, i64, i64, i64, i64, i64) = sqlx::query_as(
+        r#"SELECT
+               (SELECT COUNT(*) FROM academic_terms),
+               (SELECT COUNT(*) FROM subject_versions),
+               (SELECT COUNT(*) FROM activity_versions),
+               (SELECT COUNT(*) FROM curricula),
+               (SELECT COUNT(*) FROM curriculum_versions),
+               (SELECT COUNT(*) FROM homerooms),
+               (SELECT COUNT(*) FROM learning_offerings),
+               (SELECT COUNT(*) FROM course_assessment_plans)"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(retained_counts_after, retained_counts_before);
+
+    let legacy_permission_count: i64 = sqlx::query_scalar(
+        r#"SELECT COUNT(*)
+           FROM permissions
+           WHERE code LIKE 'academic_structure.%'
+              OR code LIKE 'academic_classroom.%'
+              OR code LIKE 'academic_enrollment.%'
+              OR code LIKE 'academic_course_plan.%'
+              OR code IN (
+                  'academic_curriculum.read.all',
+                  'academic_curriculum.create.all',
+                  'academic_curriculum.update.all',
+                  'academic_curriculum.delete.all',
+                  'activity.read.all',
+                  'activity.manage.all',
+                  'activity.manage_members.all',
+                  'activity.manage.own',
+                  'academic_promotion.read.all',
+                  'academic_promotion.execute.all'
+              )"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(legacy_permission_count, 0);
+
+    let cleanup_audit: (String, bool) = sqlx::query_as(
+        r#"SELECT mapping_algorithm_version,
+                  source_counts = target_counts
+           FROM academic_core_cutover_audits
+           WHERE migration_version = 45"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("cleanup completion audit must remain queryable");
+    assert_eq!(
+        cleanup_audit,
+        ("academic-core-v1-cleanup".to_string(), true)
+    );
+}
+
+#[tokio::test]
+async fn migration_045_fails_closed_without_current_reconciliation_evidence() {
+    let missing = phase_a_fixture("academic_core_045_marker_missing").await;
+    let error = apply_migrations_through(&missing, 45)
+        .await
+        .expect_err("a populated tenant without a reconciliation marker must not be cleaned");
+    assert!(error
+        .to_string()
+        .contains("ACADEMIC_CORE_045_RECONCILIATION_MARKER_MISSING"));
+
+    let checksum = phase_a_fixture("academic_core_045_checksum_mismatch").await;
+    record_passing_phase_a_reconciliation_marker(&checksum)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE academic_core_cutover_audits SET source_checksum = repeat('0', 64) WHERE migration_version = 44",
+    )
+    .execute(&checksum)
+    .await
+    .unwrap();
+    let error = apply_migrations_through(&checksum, 45)
+        .await
+        .expect_err("a marker with a mismatched checksum must not authorize cleanup");
+    assert!(error
+        .to_string()
+        .contains("ACADEMIC_CORE_045_MARKER_CHECKSUM_MISMATCH"));
+
+    let stale = phase_a_fixture("academic_core_045_stale_marker").await;
+    record_passing_phase_a_reconciliation_marker(&stale)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE learning_offerings SET row_version = row_version + 1, updated_at = clock_timestamp() WHERE id = (SELECT id FROM learning_offerings ORDER BY id LIMIT 1)",
+    )
+    .execute(&stale)
+    .await
+    .unwrap();
+    let error = apply_migrations_through(&stale, 45)
+        .await
+        .expect_err("academic writes after reconciliation must make the marker stale");
+    assert!(error
+        .to_string()
+        .contains("ACADEMIC_CORE_045_RECONCILIATION_STALE"));
+
+    let failed = phase_a_fixture("academic_core_045_reconciliation_failed").await;
+    record_passing_phase_a_reconciliation_marker(&failed)
+        .await
+        .unwrap();
+    sqlx::query(
+        "DELETE FROM academic_core_entity_map WHERE ctid = (SELECT ctid FROM academic_core_entity_map WHERE migration_version = 43 LIMIT 1)",
+    )
+    .execute(&failed)
+    .await
+    .unwrap();
+    let error = apply_migrations_through(&failed, 45)
+        .await
+        .expect_err("cleanup must revalidate reconciliation immediately before dropping schema");
+    assert!(error
+        .to_string()
+        .contains("ACADEMIC_CORE_045_RECONCILIATION_FAILED"));
+}
+
+#[tokio::test]
+async fn migration_045_accepts_a_valid_marker_with_distinct_reconciliation_counts() {
+    let pool = phase_a_fixture("academic_core_045_distinct_marker_counts").await;
+    sqlx::query("UPDATE academic_terms SET status = 'closed' WHERE status = 'active'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE academic_years SET status = 'closed' WHERE status = 'active'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    record_passing_phase_a_reconciliation_marker(&pool)
+        .await
+        .unwrap();
+
+    let marker_counts_are_distinct: bool = sqlx::query_scalar(
+        "SELECT source_counts <> target_counts FROM academic_core_cutover_audits WHERE migration_version = 44",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(marker_counts_are_distinct);
+
+    apply_migrations_through(&pool, 45)
+        .await
+        .expect("a valid reconciliation marker may contain distinct source and target counts");
+}
+
+#[tokio::test]
+async fn migration_045_rejects_a_deleted_phase_a_mapping_target() {
+    let pool = phase_a_fixture("academic_core_045_deleted_mapping_target").await;
+    record_passing_phase_a_reconciliation_marker(&pool)
+        .await
+        .unwrap();
+    let deleted = sqlx::query(
+        "DELETE FROM learning_group_teachers WHERE id = (SELECT target_id FROM academic_core_entity_map WHERE migration_version = 42 AND target_table = 'learning_group_teachers' ORDER BY target_id LIMIT 1)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        deleted.rows_affected(),
+        1,
+        "the fixture must include a mapped teacher"
+    );
+
+    let error = apply_migrations_through(&pool, 45)
+        .await
+        .expect_err("cleanup must reject a deleted canonical mapping target");
+    assert!(error
+        .to_string()
+        .contains("ACADEMIC_CORE_045_RECONCILIATION_FAILED"));
+}
+
+#[tokio::test]
+async fn migration_045_rejects_a_mapping_delete_committed_after_the_marker() {
+    let pool =
+        phase_a_fixture_with_connections("academic_core_045_overlapping_mapping_delete", 2).await;
+    let mut transaction = pool.begin().await.unwrap();
+    let deleted = sqlx::query(
+        "DELETE FROM learning_group_teachers WHERE id = (SELECT target_id FROM academic_core_entity_map WHERE migration_version = 42 AND target_table = 'learning_group_teachers' ORDER BY target_id LIMIT 1)",
+    )
+    .execute(&mut *transaction)
+    .await
+    .unwrap();
+    assert_eq!(
+        deleted.rows_affected(),
+        1,
+        "the fixture must include a mapped teacher"
+    );
+
+    record_passing_phase_a_reconciliation_marker(&pool)
+        .await
+        .unwrap();
+    transaction.commit().await.unwrap();
+
+    let error = apply_migrations_through(&pool, 45)
+        .await
+        .expect_err("cleanup must reject a pre-marker transaction committed after the marker");
+    assert!(error
+        .to_string()
+        .contains("ACADEMIC_CORE_045_RECONCILIATION_FAILED"));
+}
+
+#[tokio::test]
+async fn migration_045_rejects_a_deleted_expanded_delivery_target() {
+    let pool = phase_a_fixture("academic_core_045_deleted_expanded_target").await;
+    record_passing_phase_a_reconciliation_marker(&pool)
+        .await
+        .unwrap();
+    let deleted = sqlx::query(
+        r#"DELETE FROM learning_group_teachers
+           WHERE id = (
+               SELECT target.id
+               FROM learning_group_teachers target
+               JOIN activity_groups source
+                 ON source.id = target.learning_group_id
+                AND source.instructor_id = target.teacher_id
+               WHERE source.instructor_id IS NOT NULL
+               ORDER BY target.id
+               LIMIT 1
+           )"#,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        deleted.rows_affected(),
+        1,
+        "the fixture must include an expanded activity-group teacher"
+    );
+
+    let error = apply_migrations_through(&pool, 45)
+        .await
+        .expect_err("cleanup must reject deletion of a source-expanded canonical target");
+    assert!(error
+        .to_string()
+        .contains("ACADEMIC_CORE_045_RECONCILIATION_FAILED"));
+}
+
+#[tokio::test]
+async fn migration_045_rejects_a_deleted_legacy_mapping_source() {
+    let pool =
+        phase_a_fixture_with_connections("academic_core_045_deleted_mapping_source", 2).await;
+    let mut transaction = pool.begin().await.unwrap();
+    let deleted = sqlx::query(
+        "DELETE FROM classroom_course_instructors WHERE id = (SELECT source_id FROM academic_core_entity_map WHERE migration_version = 42 AND source_table = 'classroom_course_instructors' ORDER BY source_id LIMIT 1)",
+    )
+    .execute(&mut *transaction)
+    .await
+    .unwrap();
+    assert_eq!(
+        deleted.rows_affected(),
+        1,
+        "the fixture must include a mapped legacy instructor"
+    );
+
+    record_passing_phase_a_reconciliation_marker(&pool)
+        .await
+        .unwrap();
+    transaction.commit().await.unwrap();
+
+    let error = apply_migrations_through(&pool, 45)
+        .await
+        .expect_err("cleanup must reject a pre-marker source delete committed after the marker");
+    assert!(error
+        .to_string()
+        .contains("ACADEMIC_CORE_045_RECONCILIATION_FAILED"));
+}
+
+#[tokio::test]
+async fn migration_045_rejects_source_field_drift_committed_after_the_marker() {
+    let pool = phase_a_fixture_with_connections("academic_core_045_source_field_drift", 2).await;
+    let mut transaction = pool.begin().await.unwrap();
+    let updated = sqlx::query(
+        "UPDATE activity_groups SET name = name || ' changed after reconciliation' WHERE id = (SELECT id FROM activity_groups ORDER BY id LIMIT 1)",
+    )
+    .execute(&mut *transaction)
+    .await
+    .unwrap();
+    assert_eq!(
+        updated.rows_affected(),
+        1,
+        "the fixture must include a legacy activity group"
+    );
+
+    record_passing_phase_a_reconciliation_marker(&pool)
+        .await
+        .unwrap();
+    transaction.commit().await.unwrap();
+
+    let error = apply_migrations_through(&pool, 45)
+        .await
+        .expect_err("cleanup must reject source field drift committed after the marker");
+    assert!(error
+        .to_string()
+        .contains("ACADEMIC_CORE_045_RECONCILIATION_FAILED"));
 }

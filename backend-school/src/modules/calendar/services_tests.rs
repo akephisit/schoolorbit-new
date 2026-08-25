@@ -7,7 +7,8 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::modules::academic::cutover_test_support::{
-    apply_migrations_through, seed_academic_cutover_fixture, CutoverFixture,
+    apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
+    CutoverFixture,
 };
 use crate::modules::calendar::models::{
     CalendarAudienceType, CalendarEventQuery, CalendarEventTargetInput,
@@ -38,7 +39,7 @@ async fn migrated_pool(name: &str) -> PgPool {
     seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
         .await
         .expect("academic cutover fixture should seed");
-    apply_migrations_through(&pool, 44)
+    apply_phase_b_runtime_migrations(&pool)
         .await
         .expect("canonical calendar fixture migrations should run");
     pool
@@ -72,12 +73,11 @@ async fn insert_fixture(pool: &PgPool) -> CalendarFixture {
             .fetch_one(pool)
             .await
             .expect("baseline grade level should exist");
-    let (study_program_id, curriculum_version_id): (Uuid, Uuid) = sqlx::query_as(
-        "SELECT id, curriculum_version_id FROM study_programs ORDER BY created_at, id LIMIT 1",
-    )
-    .fetch_one(pool)
-    .await
-    .expect("cutover fixture study program should exist");
+    let study_program_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM study_programs ORDER BY created_at, id LIMIT 1")
+            .fetch_one(pool)
+            .await
+            .expect("cutover fixture study program should exist");
     let today = calendar_today();
 
     sqlx::query(
@@ -96,14 +96,13 @@ async fn insert_fixture(pool: &PgPool) -> CalendarFixture {
     sqlx::query(
         "INSERT INTO homerooms (
             id, code, name, academic_year_id, grade_level_id,
-            legacy_curriculum_version_id, study_program_id
-         ) VALUES ($1, $2, 'Calendar Homeroom', $3, $4, $5, $6)",
+            study_program_id
+         ) VALUES ($1, $2, 'Calendar Homeroom', $3, $4, $5)",
     )
     .bind(homeroom_id)
     .bind(format!("CAL-{}", &homeroom_id.to_string()[..8]))
     .bind(academic_year_id)
     .bind(grade_level_id)
-    .bind(curriculum_version_id)
     .bind(study_program_id)
     .execute(pool)
     .await

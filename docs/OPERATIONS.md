@@ -272,65 +272,47 @@ Active tenant migrations begin at `backend-school/migrations/001_baseline.sql`. 
 
 New tenant provisioning calls the centralized runner in [`backend-school/src/db/migration.rs`](../backend-school/src/db/migration.rs), applies every pending active migration, and synchronizes the permission contract before creating the tenant administrator.
 
-Backend-school deployment keeps the school API in maintenance mode while it calls `/internal/migrate-all`. It then verifies `/internal/migration-status` reports every tenant at the repository's latest migration with no pending, failed, or outdated tenant before restoring the normal proxy.
+Backend-school deployment keeps the school API in maintenance mode while it calls `/internal/migrate-all`. It then verifies `/internal/migration-status` reports every tenant at the repository's latest migration with no pending, failed, or outdated tenant. The normal proxy opens only after the authenticated read-only smoke succeeds; an absent `SCHOOL_API_KEEP_MAINTENANCE` variable defaults to maintenance.
 
 The one-time legacy rebaseline is complete and its operational scripts are retired. If a tenant with legacy `_sqlx_migrations` history is discovered, stop the rollout and prepare a new reviewed recovery plan. Never point the current release at that database, copy migration history, or edit SQLx checksum records.
 
-### Academic Core two-artifact maintenance cutover
+### Academic Core Phase B cleanup and rollback boundary
 
-Academic Core is a two-artifact maintenance cutover. Phase A contains migrations 041-044 and the
-new runtime; it does not contain 045. Phase B is a separately reviewed and explicitly authorized
-cleanup image containing migration 045. Never combine the artifacts, allow lazy tenant migration,
-or open traffic between incompatible application/schema versions.
+Migration `045_academic_core_legacy_cleanup.sql` is the destructive Academic Core cleanup boundary.
+It runs only through the centralized tenant migration runner while the school API is in maintenance.
+The migration locks the affected schema, verifies the Phase A audit and current version-44
+reconciliation marker, rechecks retained data and equivalent permission grants, and fails before any
+drop when evidence is missing, stale, or inconsistent. It then removes the exact legacy manifest and
+records the bounded `academic-core-v1-cleanup` audit. The one-time preflight command and mutable
+Phase A reconciliation endpoint are retired and must not be restored.
 
-Perform the cutover in this order:
+For the Phase B deployment:
 
-1. Inspect the exact Phase A commit with `git ls-tree` and confirm it contains migrations 041-044,
-   does not contain `045_academic_core_legacy_cleanup.sql`, and matches the reviewed generated API
-   and permission contracts.
-2. Confirm the approved Release 3 timing is before the next operational term transition. If term
-   operations cannot wait for the full lifecycle release, record a no-go instead of introducing a
-   manual status workaround.
-3. Enter global maintenance and stop academic writes, background workers, and realtime mutations.
-   Set the repository variable `SCHOOL_API_KEEP_MAINTENANCE=true` before either artifact is deployed.
-   Keep traffic closed throughout both artifacts. Scheduled tenant work must obtain a non-migrating
-   pool so only the centralized deployment gate can advance tenant schemas.
-4. While every tenant is still on 040, run `preflight_academic_core` separately against every tenant
-   through the authorized secret-backed connection inventory. Aggregate only schema label, status,
-   finding codes, and counts; resolve every blocker and never obtain a pool through a path that can
-   run lazy migrations.
-5. Confirm the source counts remain stable, then take and verify a recoverable snapshot under the
-   retention policy. Record its protected identifier only in the operational system.
-6. Deploy the Phase A image and apply 041-044 through `/internal/migrate-all`. Require every active
-   tenant to report exactly 044 with no pending, failed, or outdated status.
-7. Deploy the matching Phase A backend and frontend while traffic remains closed; do not run an old
-   application against the new schema.
-8. Dispatch the reviewed Phase A commit with `academic_core_phase_a_reconcile=true`; the deployment
-   calls the service-authenticated `POST /internal/academic-core/reconcile-all`. Require all aggregate
-   checks and one current version-44 success marker for every tenant; responses and retained evidence
-   must contain no row data, database URL, secret, or learner identity.
-9. On selected tenants, run read-only and authenticated workflows in multiple year and term contexts,
-   including Topbar context changes, offerings/groups, assessment, timetable, exams, supervision,
-   admission, and student/parent history views. While the public proxy is intentionally returning
-   maintenance responses, dispatch the reviewed Phase A commit with
-   `academic_core_phase_a_reconcile=true`, `academic_core_phase_a_smoke=true`, and the selected
-   `academic_core_smoke_subdomain`. The workflow requires `SMOKE_USERNAME` and `SMOKE_PASSWORD`,
-   reaches backend-school only through VPS loopback, and performs authenticated read-only context
-   checks without exposing a public bypass. A failed login, context, permission, or read keeps the
-   workflow red and maintenance active.
-10. Only after the separately reviewed Phase B artifact and explicit cleanup authorization exist,
-    deploy that image and apply 045 through the same centralized migration runner.
-11. Verify every tenant's latest version and cleanup manifest, generated contracts, permissions,
-    `/ready`, and the selected authenticated workflows again.
-12. Explicitly record the go/no-go decision. On `go`, set
-    `SCHOOL_API_KEEP_MAINTENANCE=false` and dispatch the reviewed Phase B commit again to open traffic,
-    then record the first accepted write as the snapshot rollback boundary.
+1. Keep `SCHOOL_API_KEEP_MAINTENANCE=true`. Confirm the protected pre-045 database snapshot still
+   exists, and do not delete it during deployment.
+2. Deploy the reviewed Phase B image. `/internal/migrate-all` applies every pending migration,
+   including 045; do not invoke tenant migrations through another path.
+3. Require `/internal/migration-status` to report every tenant at the repository's latest version
+   with no pending, failed, or outdated tenant. Each tenant's `academicCoreCutover` must report
+   migration version 45, `cleanupCompleted`, `passed: true`, and only passing bounded checks.
+4. Verify generated API and permission contracts, `/ready`, and selected authenticated read-only
+   workflows in multiple year and term contexts. To run the private smoke while keeping maintenance,
+   dispatch the
+   reviewed commit with `academic_core_cleanup_smoke=true` and the selected
+   `academic_core_smoke_subdomain`. Credentials come only from `SMOKE_USERNAME` and
+   `SMOKE_PASSWORD`; the workflow reaches backend-school through VPS loopback and exposes no public
+   maintenance bypass.
+5. Keep maintenance active after a successful cleanup deployment until a separate go/no-go review.
+   On `go`, set `SCHOOL_API_KEEP_MAINTENANCE=false` and deploy the same reviewed Phase B commit.
+   The workflow reruns the authenticated smoke automatically, leaves maintenance in place on any
+   failure, and opens the normal proxy only in the following successful step. Record the first accepted
+   write as the snapshot rollback boundary.
 
-Any preflight, reconciliation, migration, readiness, or smoke failure keeps maintenance active.
-Before the first accepted write, restore the snapshot and previous release together if rollback is
-chosen. After the first write, do not deploy the old app against the new schema; keep traffic closed
-and repair forward with a reviewed migration/application artifact. Do not edit `_sqlx_migrations`,
-an applied migration, reconciliation marker, or tenant source data to force a green result.
+Any migration, cleanup-audit, readiness, contract, or smoke failure keeps maintenance active. Before
+the first accepted write, rollback means restoring the protected snapshot and the matching pre-045
+release together. After the first write, do not deploy the old app against the new schema; keep
+traffic closed and repair forward with a reviewed migration/application artifact. Never edit
+`_sqlx_migrations`, an applied migration, cleanup audit, or tenant data to force a green result.
 
 ### School font library cutover
 

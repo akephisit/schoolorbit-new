@@ -1,8 +1,9 @@
 use crate::{
     modules::academic::{
-        cutover_preflight::run_academic_core_preflight,
+        cutover_test_preflight::run_academic_core_preflight,
         cutover_test_support::{
-            apply_migrations_through, seed_academic_cutover_fixture, CutoverFixture,
+            apply_migrations_through, apply_phase_b_runtime_migrations,
+            seed_academic_cutover_fixture, CutoverFixture,
         },
     },
     test_helpers::create_named_test_pool,
@@ -559,7 +560,7 @@ async fn prepare_delivery_runtime_fixture(name: &str) -> PgPool {
     seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
         .await
         .unwrap();
-    apply_migrations_through(&pool, 44).await.unwrap();
+    apply_phase_b_runtime_migrations(&pool).await.unwrap();
     pool
 }
 
@@ -1456,7 +1457,7 @@ async fn student_activity_registration_is_term_scoped_eligible_and_revisioned() 
 #[tokio::test]
 async fn offering_list_batch_hydrates_mixed_snapshots_and_targets() {
     let pool = prepare_delivery_fixture("academic_delivery_batch_list", false).await;
-    apply_migrations_through(&pool, 44).await.unwrap();
+    apply_phase_b_runtime_migrations(&pool).await.unwrap();
     let academic_term_id: Uuid = sqlx::query_scalar(
         r#"SELECT academic_term_id
            FROM learning_offerings

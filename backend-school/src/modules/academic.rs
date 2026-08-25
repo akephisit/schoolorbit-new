@@ -1,8 +1,8 @@
 pub mod core;
 #[cfg(test)]
-pub mod cutover_preflight;
+pub mod cutover_test_preflight;
 #[cfg(test)]
-mod cutover_preflight_database_tests;
+mod cutover_test_preflight_database_tests;
 #[cfg(test)]
 pub mod cutover_test_support;
 pub mod delivery;

@@ -4763,38 +4763,43 @@ fn backend_school_deploy_can_finish_in_maintenance_mode() {
     let deploy = read_source(repo_root().join(".github/workflows/deploy-backend-school.yml"));
 
     assert!(deploy.contains(
-        "SCHOOL_API_KEEP_MAINTENANCE: ${{ vars.SCHOOL_API_KEEP_MAINTENANCE || 'false' }}"
+        "SCHOOL_API_KEEP_MAINTENANCE: ${{ vars.SCHOOL_API_KEEP_MAINTENANCE || 'true' }}"
     ));
-    assert!(deploy.contains("envs: ACADEMIC_CORE_PHASE_A_RECONCILE,SCHOOL_API_KEEP_MAINTENANCE"));
-    assert!(deploy.contains("keep_school_api_maintenance=${SCHOOL_API_KEEP_MAINTENANCE:-false}"));
-    assert!(deploy.contains(r#"if [ "$keep_school_api_maintenance" = "true" ]; then"#));
-    assert!(deploy.contains("School API remains in maintenance mode by deployment request"));
-    assert!(deploy.contains("academic_core_phase_a_reconcile:"));
-    assert!(deploy.contains(
-        "ACADEMIC_CORE_PHASE_A_RECONCILE: ${{ inputs.academic_core_phase_a_reconcile || 'false' }}"
-    ));
-    assert!(deploy.contains("/internal/academic-core/reconcile-all"));
-    assert!(
-        deploy.contains("Academic Core Phase A reconciliation failed; maintenance remains enabled")
-    );
+    assert!(deploy.contains("envs: SCHOOL_API_KEEP_MAINTENANCE"));
+    assert!(deploy.contains("keep_school_api_maintenance=${SCHOOL_API_KEEP_MAINTENANCE:-true}"));
+    assert!(deploy
+        .contains("School API remains in maintenance until the authenticated smoke completes"));
+    assert!(deploy.contains(".academicCoreCutover.migrationVersion == 45"));
+    assert!(deploy.contains(".academicCoreCutover.status == \"cleanupCompleted\""));
+    assert!(deploy.contains(".academicCoreCutover.passed == true"));
+    assert!(deploy.contains("all(.academicCoreCutover.checks[]; .passed == true)"));
+    assert!(!deploy.contains("academic_core_phase_a_reconcile"));
+    assert!(!deploy.contains("ACADEMIC_CORE_PHASE_A_RECONCILE"));
+    assert!(!deploy.contains("/internal/academic-core/reconcile-all"));
 }
 
 #[test]
-fn academic_core_maintenance_smoke_is_private_authenticated_and_read_only() {
+fn academic_core_smoke_is_private_authenticated_read_only_and_precedes_go_live() {
     let deploy = read_source(repo_root().join(".github/workflows/deploy-backend-school.yml"));
     let smoke = read_source(repo_root().join("scripts/smoke_test.sh"));
 
-    assert!(deploy.contains("academic_core_phase_a_smoke:"));
+    assert!(deploy.contains("academic_core_cleanup_smoke:"));
     assert!(deploy.contains("academic_core_smoke_subdomain:"));
-    assert!(deploy.contains("Validate Academic Core maintenance smoke inputs"));
-    assert!(deploy.contains("Run Academic Core maintenance smoke"));
+    assert!(deploy.contains("Validate Academic Core authenticated smoke inputs"));
+    assert!(deploy.contains("Run Academic Core authenticated smoke"));
+    assert!(deploy.contains("Open School API after authenticated smoke"));
     assert!(deploy.contains("SMOKE_USERNAME: ${{ secrets.SMOKE_USERNAME }}"));
     assert!(deploy.contains("SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}"));
     assert!(deploy.contains("SMOKE_API_URL=http://localhost:8081"));
     assert!(deploy.contains("SMOKE_ACADEMIC_CONTEXT=true"));
     assert!(deploy.contains("SMOKE_DIRECT_BACKEND=true"));
-    assert!(deploy.contains("academic_core_phase_a_reconcile must be true"));
-    assert!(deploy.contains("SCHOOL_API_KEEP_MAINTENANCE must be true"));
+    assert!(deploy.contains("vars.SCHOOL_API_KEEP_MAINTENANCE || 'true'"));
+    assert!(deploy.contains("restore_maintenance"));
+    assert!(
+        deploy.find("Run Academic Core authenticated smoke")
+            < deploy.find("Open School API after authenticated smoke"),
+        "the normal proxy may open only after authenticated smoke"
+    );
     assert!(smoke.contains("SMOKE_DIRECT_BACKEND"));
     assert!(smoke.contains("expect_cors_header"));
     assert!(smoke.contains(r#"if [[ $SMOKE_DIRECT_BACKEND == false ]]; then"#));
@@ -5475,29 +5480,26 @@ fn file_platform_derivatives_require_the_validated_payload_boundary() {
 }
 
 #[test]
-fn academic_core_preflight_is_read_only_and_keeps_sensitive_values_out_of_output() {
-    let library_path = manifest_dir().join("src/modules/academic/cutover_preflight.rs");
-    let library = strip_comments(&read_source(&library_path));
-    let cli = strip_comments(&read_source(
-        manifest_dir().join("src/bin/preflight_academic_core.rs"),
+fn academic_core_one_time_cutover_tools_are_retired_after_cleanup() {
+    assert!(!manifest_dir()
+        .join("src/bin/preflight_academic_core.rs")
+        .exists());
+    assert!(!manifest_dir()
+        .join("src/modules/academic/cutover_preflight.rs")
+        .exists());
+
+    let academic = read_source(manifest_dir().join("src/modules/academic.rs"));
+    assert!(academic.contains("#[cfg(test)]\npub mod cutover_test_preflight;"));
+    assert!(academic.contains("#[cfg(test)]\npub mod cutover_test_support;"));
+
+    let app = read_source(manifest_dir().join("src/app.rs"));
+    let reconciliation = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/reconciliation.rs"),
     ));
-
-    assert!(library.contains("SET TRANSACTION READ ONLY"));
-    assert!(library.contains("resource_ids.truncate(20)"));
-    assert!(!library.contains("println!"));
-    assert!(!library.contains("eprintln!"));
-    assert!(!library.contains("national_id"));
-    assert!(!library.contains("PgConnectOptions"));
-    assert!(!library.contains("database_url"));
-
-    assert!(cli.contains("PREFLIGHT_SCHEMA_DATABASE_URL"));
-    assert!(cli.contains("PREFLIGHT_SCHEMA_NAME"));
-    assert!(cli.contains("std::io::stdout().lock()"));
-    assert!(cli.contains("std::io::stderr().lock()"));
-    assert!(!cli.contains("println!"));
-    assert!(!cli.contains("eprintln!"));
-    assert!(!cli.contains("PgConnectOptions"));
-    assert!(!cli.contains("{error:?}"));
+    assert!(!app.contains("/internal/academic-core/reconcile-all"));
+    assert!(reconciliation.contains("read_academic_core_cleanup_audit"));
+    assert!(reconciliation.contains("academic-core-v1-cleanup"));
+    assert!(!reconciliation.contains("academic_core_entity_map"));
 }
 
 #[test]
@@ -5622,6 +5624,109 @@ fn academic_core_044_exposes_the_clean_runtime_contract_and_removes_compatibilit
     assert!(!migration.contains("DROP TABLE"));
     assert!(!migration.contains("REAL"));
     assert!(!migration.contains("DOUBLE PRECISION"));
+}
+
+#[test]
+fn academic_core_045_fails_closed_then_removes_the_exact_legacy_manifest() {
+    let migration = strip_comments(&read_source(
+        manifest_dir().join("migrations/045_academic_core_legacy_cleanup.sql"),
+    ));
+
+    for required in [
+        "IN ACCESS EXCLUSIVE MODE",
+        "ACADEMIC_CORE_045_RECONCILIATION_MARKER_MISSING",
+        "ACADEMIC_CORE_045_RECONCILIATION_MARKER_INVALID",
+        "ACADEMIC_CORE_045_MARKER_CHECKSUM_MISMATCH",
+        "ACADEMIC_CORE_045_RECONCILIATION_STALE",
+        "ACADEMIC_CORE_045_RECONCILIATION_FAILED",
+        "ACADEMIC_CORE_045_PERMISSION_RECONCILIATION_FAILED",
+        "DELETE FROM role_permissions",
+        "DELETE FROM organization_permission_grants",
+        "DELETE FROM organization_permission_delegations",
+        "DELETE FROM permissions",
+        "DROP TABLE activity_group_members",
+        "DROP TABLE activity_group_instructors",
+        "DROP TABLE activity_groups",
+        "DROP TABLE activity_slot_classroom_assignments",
+        "DROP TABLE activity_slot_classrooms",
+        "DROP TABLE activity_slot_instructors",
+        "DROP TABLE activity_slots",
+        "DROP TABLE classroom_course_instructors",
+        "DROP TABLE classroom_courses",
+        "DROP TABLE student_class_enrollments",
+        "DROP TABLE IF EXISTS classroom_course_preferred_rooms",
+        "DROP TABLE academic_core_entity_map",
+        "ALTER TABLE academic_years DROP COLUMN is_active",
+        "ALTER TABLE academic_terms DROP COLUMN is_active, DROP COLUMN legacy_term",
+        "ALTER TABLE grade_levels DROP COLUMN next_grade_level_id",
+        "ALTER TABLE homerooms DROP COLUMN legacy_curriculum_version_id",
+        "ALTER TABLE bell_schedule_periods DROP COLUMN academic_year_id",
+        "ACADEMIC_CORE_045_CLEANUP_MANIFEST_REMAINS",
+        "ACADEMIC_CORE_045_TARGET_MANIFEST_MISSING",
+        "academic-core-v1-cleanup",
+    ] {
+        assert!(
+            migration.contains(required),
+            "migration 045 must retain the cleanup invariant: {required}"
+        );
+    }
+
+    assert!(
+        migration.find("ACADEMIC_CORE_045_PERMISSION_RECONCILIATION_FAILED")
+            < migration.find("DELETE FROM role_permissions"),
+        "legacy permission equivalence must be proven before grants are deleted"
+    );
+    assert!(!migration.contains("national_id"));
+    assert!(!migration.contains("CREATE EXTENSION"));
+    assert!(!migration.contains("REAL"));
+    assert!(!migration.contains("DOUBLE PRECISION"));
+    assert!(!migration.contains("DROP TABLE CASCADE"));
+}
+
+#[test]
+fn academic_runtime_cannot_query_phase_b_legacy_schema() {
+    let allowed_test_only_files = BTreeSet::from([
+        "src/modules/academic/cutover_test_preflight.rs",
+        "src/modules/academic/cutover_test_support.rs",
+    ]);
+    let forbidden = [
+        "student_class_enrollments",
+        "classroom_courses",
+        "classroom_course_instructors",
+        "classroom_course_preferred_rooms",
+        "activity_slots",
+        "activity_slot_classrooms",
+        "activity_slot_classroom_assignments",
+        "activity_slot_instructors",
+        "activity_groups",
+        "activity_group_instructors",
+        "activity_group_members",
+        "academic_core_entity_map",
+        "next_grade_level_id",
+        "legacy_curriculum_version_id",
+        "legacy_term",
+        "academic_semester_id",
+        "legacy_classroom_course_id",
+        "legacy_activity_slot_id",
+        "study_plan_id",
+        "class_room_id",
+    ];
+
+    let mut violations = Vec::new();
+    for path in backend_rs_files() {
+        let relative_path = relative(&path);
+        if allowed_test_only_files.contains(relative_path.as_str()) {
+            continue;
+        }
+        let source = strip_comments(&read_source(&path));
+        for token in forbidden {
+            if source.contains(token) {
+                violations.push(format!("{relative_path}: legacy runtime token `{token}`"));
+            }
+        }
+    }
+
+    assert_eq!(violations, Vec::<String>::new());
 }
 
 #[test]

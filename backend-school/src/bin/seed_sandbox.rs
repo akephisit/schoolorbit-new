@@ -23,8 +23,8 @@ pub mod utils {
 pub mod migration;
 
 #[cfg(test)]
-#[path = "../modules/academic/cutover_preflight.rs"]
-mod cutover_preflight;
+#[path = "../modules/academic/cutover_test_preflight.rs"]
+mod cutover_test_preflight;
 
 #[cfg(test)]
 #[path = "../modules/academic/cutover_test_support.rs"]
@@ -274,7 +274,6 @@ async fn seed_database(pool: &PgPool, config: &SeedConfig) -> SeedResult<SeedSum
         &mut tx,
         academic_year_id,
         grade_level_id,
-        curriculum_version_id,
         study_program_id,
         config.academic_year,
     )
@@ -843,7 +842,6 @@ async fn upsert_homeroom(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     academic_year_id: Uuid,
     grade_level_id: Uuid,
-    curriculum_version_id: Uuid,
     study_program_id: Uuid,
     academic_year: i32,
 ) -> SeedResult<Uuid> {
@@ -852,14 +850,13 @@ async fn upsert_homeroom(
         r#"
         INSERT INTO homerooms (
             code, name, academic_year_id, grade_level_id, room_number,
-            legacy_curriculum_version_id, study_program_id, capacity, is_active, metadata
+            study_program_id, capacity, is_active, metadata
         )
-        VALUES ($1, 'ม.1/1', $2, $3, '1', $4, $5, 40, true,
+        VALUES ($1, 'ม.1/1', $2, $3, '1', $4, 40, true,
                 jsonb_build_object('seed', 'sandbox', 'managed_by', 'seed_sandbox'))
         ON CONFLICT (academic_year_id, grade_level_id, room_number) DO UPDATE SET
             code = EXCLUDED.code,
             name = EXCLUDED.name,
-            legacy_curriculum_version_id = EXCLUDED.legacy_curriculum_version_id,
             study_program_id = EXCLUDED.study_program_id,
             capacity = EXCLUDED.capacity,
             is_active = true,
@@ -872,7 +869,6 @@ async fn upsert_homeroom(
     .bind(format!("{}-M1-1", short_year))
     .bind(academic_year_id)
     .bind(grade_level_id)
-    .bind(curriculum_version_id)
     .bind(study_program_id)
     .fetch_one(&mut **tx)
     .await?;
@@ -1050,7 +1046,7 @@ mod tests {
         )
         .await
         .expect("seed passing cutover fixture");
-        cutover_test_support::apply_migrations_through(&pool, 44)
+        cutover_test_support::apply_phase_b_runtime_migrations(&pool)
             .await
             .expect("apply academic cutover migrations");
 

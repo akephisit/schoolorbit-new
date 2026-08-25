@@ -175,7 +175,8 @@ fn offering_permissions(action: OfferingAction) -> AcademicResourcePermissions {
 mod tests {
     use super::*;
     use crate::modules::academic::cutover_test_support::{
-        apply_migrations_through, seed_academic_cutover_fixture, CutoverFixture,
+        apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
+        CutoverFixture,
     };
     use crate::modules::academic::delivery::models::LearningOfferingQuery;
     use crate::modules::academic::delivery::services::offerings;
@@ -239,7 +240,7 @@ mod tests {
         .await
         .unwrap();
 
-        apply_migrations_through(&pool, 44).await.unwrap();
+        apply_phase_b_runtime_migrations(&pool).await.unwrap();
 
         sqlx::raw_sql(
             r#"

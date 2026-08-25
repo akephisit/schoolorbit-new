@@ -1,5 +1,6 @@
+// Database coverage for the test-only Phase A fixture validator retained after cleanup.
 use super::{
-    cutover_preflight::{run_academic_core_preflight, AcademicCorePreflightCode},
+    cutover_test_preflight::{run_academic_core_preflight, AcademicCorePreflightCode},
     cutover_test_support::{
         all_cutover_fixture_faults, apply_cutover_fixture_fault, apply_migrations_through,
         repair_cutover_fixture_fault, seed_academic_cutover_fixture, CutoverFixture,

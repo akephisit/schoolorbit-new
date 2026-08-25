@@ -199,7 +199,8 @@ mod tests {
     use super::*;
     use crate::{
         modules::academic::cutover_test_support::{
-            apply_migrations_through, seed_academic_cutover_fixture, CutoverFixture,
+            apply_migrations_through, record_passing_phase_a_reconciliation_marker,
+            seed_academic_cutover_fixture, CutoverFixture,
         },
         test_helpers::create_named_test_pool,
     };
@@ -285,10 +286,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn effective_permissions_exclude_inactive_cutover_evidence() {
+    async fn effective_permissions_exclude_removed_legacy_cutover_permissions() {
         let pool = create_named_test_pool("permission_cutover_effective").await;
         apply_migrations_through(&pool, 40).await.unwrap();
         seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
+            .await
+            .unwrap();
+        apply_migrations_through(&pool, 44).await.unwrap();
+        record_passing_phase_a_reconciliation_marker(&pool)
             .await
             .unwrap();
         crate::db::migration::run_tenant_migrations(&pool)

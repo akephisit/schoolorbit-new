@@ -1,7 +1,8 @@
+use sha2::{Digest, Sha256};
 use sqlx::{migrate::Migrator, PgPool};
-use std::{borrow::Cow, error::Error, io};
+use std::{borrow::Cow, collections::BTreeMap, error::Error, io};
 
-use super::cutover_preflight::AcademicCorePreflightCode;
+use super::cutover_test_preflight::AcademicCorePreflightCode;
 
 type TestSupportResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
@@ -50,6 +51,83 @@ pub async fn apply_migrations_through(pool: &PgPool, version: i64) -> TestSuppor
     };
 
     migrator.run(pool).await?;
+    Ok(())
+}
+
+pub async fn apply_phase_b_runtime_migrations(pool: &PgPool) -> TestSupportResult<()> {
+    apply_migrations_through(pool, 44).await?;
+    record_passing_phase_a_reconciliation_marker(pool).await?;
+    apply_migrations_through(pool, 45).await
+}
+
+pub async fn record_passing_phase_a_reconciliation_marker(pool: &PgPool) -> TestSupportResult<()> {
+    let source_target_count: i64 = sqlx::query_scalar(
+        r#"SELECT COALESCE(SUM(value::bigint), 0)::bigint
+           FROM academic_core_cutover_audits audit,
+                jsonb_each_text(audit.source_counts)
+           WHERE audit.migration_version = 43"#,
+    )
+    .fetch_one(pool)
+    .await?;
+    let active_state_count: i64 = sqlx::query_scalar(
+        r#"SELECT (SELECT COUNT(*) FROM academic_years WHERE status = 'active')
+                + (SELECT COUNT(*) FROM academic_terms WHERE status = 'active')"#,
+    )
+    .fetch_one(pool)
+    .await?;
+    let permission_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM permissions WHERE is_active AND module IN ('academic_context', 'academic_year', 'academic_term', 'academic_catalog', 'academic_curriculum', 'homeroom', 'student_academic_year', 'learning_offering')",
+    )
+    .fetch_one(pool)
+    .await?;
+
+    let source_counts = BTreeMap::from([
+        ("ACADEMIC_CORE_RECON_ACTIVE_STATE_UNIQUENESS".to_string(), 2),
+        ("ACADEMIC_CORE_RECON_CROSS_CONTEXT_COUNTS".to_string(), 0),
+        ("ACADEMIC_CORE_RECON_ORPHAN_COUNTS".to_string(), 0),
+        (
+            "ACADEMIC_CORE_RECON_PERMISSION_PRINCIPAL_COUNTS".to_string(),
+            permission_count,
+        ),
+        ("ACADEMIC_CORE_RECON_SORTED_ID_CHECKSUMS".to_string(), 1),
+        (
+            "ACADEMIC_CORE_RECON_SOURCE_TARGET_COUNTS".to_string(),
+            source_target_count,
+        ),
+    ]);
+    let target_counts = BTreeMap::from([
+        (
+            "ACADEMIC_CORE_RECON_ACTIVE_STATE_UNIQUENESS".to_string(),
+            active_state_count,
+        ),
+        ("ACADEMIC_CORE_RECON_CROSS_CONTEXT_COUNTS".to_string(), 0),
+        ("ACADEMIC_CORE_RECON_ORPHAN_COUNTS".to_string(), 0),
+        (
+            "ACADEMIC_CORE_RECON_PERMISSION_PRINCIPAL_COUNTS".to_string(),
+            permission_count,
+        ),
+        ("ACADEMIC_CORE_RECON_SORTED_ID_CHECKSUMS".to_string(), 1),
+        (
+            "ACADEMIC_CORE_RECON_SOURCE_TARGET_COUNTS".to_string(),
+            source_target_count,
+        ),
+    ]);
+    let source_counts = serde_json::to_value(source_counts)?;
+    let target_counts = serde_json::to_value(target_counts)?;
+    let source_checksum = hex::encode(Sha256::digest(source_counts.to_string().as_bytes()));
+    let target_checksum = hex::encode(Sha256::digest(target_counts.to_string().as_bytes()));
+    sqlx::query(
+        r#"INSERT INTO academic_core_cutover_audits (
+               migration_version, mapping_algorithm_version, source_counts, target_counts,
+               source_checksum, target_checksum
+           ) VALUES (44, 'academic-core-v1-reconciliation', $1, $2, $3, $4)"#,
+    )
+    .bind(source_counts)
+    .bind(target_counts)
+    .bind(source_checksum)
+    .bind(target_checksum)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 

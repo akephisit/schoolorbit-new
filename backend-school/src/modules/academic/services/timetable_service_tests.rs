@@ -4,7 +4,8 @@ use uuid::Uuid;
 use super::{daily_teaching_service, timetable_service};
 use crate::error::AppError;
 use crate::modules::academic::cutover_test_support::{
-    apply_migrations_through, seed_academic_cutover_fixture, CutoverFixture,
+    apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
+    CutoverFixture,
 };
 use crate::modules::academic::models::timetable::{
     CreateTimetableEntryRequest, SwapTimetableEntriesRequest, TimetableQuery,
@@ -18,13 +19,13 @@ async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
     seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
         .await
         .unwrap();
-    apply_migrations_through(&pool, 44).await.unwrap();
+    apply_phase_b_runtime_migrations(&pool).await.unwrap();
     sqlx::query(
         r#"INSERT INTO bell_schedule_periods (
-               id, academic_year_id, bell_schedule_id, name,
+               id, bell_schedule_id, name,
                start_time, end_time, order_index, applicable_days
            )
-           SELECT gen_random_uuid(), schedule.academic_year_id, schedule.id,
+           SELECT gen_random_uuid(), schedule.id,
                   'คาบทดสอบ 2', TIME '10:00', TIME '10:50', 2, 'MON-FRI'
            FROM bell_schedules schedule
            WHERE schedule.is_default

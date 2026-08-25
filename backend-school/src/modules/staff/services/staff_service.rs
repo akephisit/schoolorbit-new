@@ -1224,7 +1224,8 @@ mod tests {
     use super::*;
     use crate::{
         modules::academic::cutover_test_support::{
-            apply_migrations_through, seed_academic_cutover_fixture, CutoverFixture,
+            apply_migrations_through, apply_phase_b_runtime_migrations,
+            seed_academic_cutover_fixture, CutoverFixture,
         },
         test_helpers::create_named_test_pool_with_max_connections,
     };
@@ -1252,7 +1253,7 @@ mod tests {
         seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
             .await
             .unwrap();
-        apply_migrations_through(&pool, 44).await.unwrap();
+        apply_phase_b_runtime_migrations(&pool).await.unwrap();
 
         let staff_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
         let homeroom_id: Uuid = sqlx::query_scalar(

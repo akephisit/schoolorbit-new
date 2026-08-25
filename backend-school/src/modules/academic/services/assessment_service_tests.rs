@@ -3,7 +3,8 @@ use uuid::Uuid;
 use super::assessment_service;
 use crate::error::AppError;
 use crate::modules::academic::cutover_test_support::{
-    apply_migrations_through, seed_academic_cutover_fixture, CutoverFixture,
+    apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
+    CutoverFixture,
 };
 use crate::modules::academic::models::assessment::{
     AssessmentPlanListQuery, SaveAssessmentCategoryRequest, SaveAssessmentPlanRequest,
@@ -17,7 +18,7 @@ async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
     seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
         .await
         .unwrap();
-    apply_migrations_through(&pool, 44).await.unwrap();
+    apply_phase_b_runtime_migrations(&pool).await.unwrap();
     pool
 }
 

@@ -59,7 +59,7 @@ pub async fn create_homeroom(
 ) -> Result<Homeroom, AppError> {
     validate_homeroom_fields(&request.code, &request.name, request.capacity)?;
     let mut transaction = pool.begin().await?;
-    let curriculum_version_id = validate_homeroom_context(
+    validate_homeroom_context(
         &mut transaction,
         request.academic_year_id,
         request.grade_level_id,
@@ -71,8 +71,8 @@ pub async fn create_homeroom(
         r#"
         INSERT INTO homerooms (
             id, code, name, academic_year_id, grade_level_id, room_number,
-            is_active, legacy_curriculum_version_id, study_program_id, capacity
-        ) VALUES ($1, $2, $3, $4, $5, $6, true, $7, $8, $9)
+            is_active, study_program_id, capacity
+        ) VALUES ($1, $2, $3, $4, $5, $6, true, $7, $8)
         "#,
     )
     .bind(id)
@@ -81,7 +81,6 @@ pub async fn create_homeroom(
     .bind(request.academic_year_id)
     .bind(request.grade_level_id)
     .bind(request.room_number)
-    .bind(curriculum_version_id)
     .bind(request.study_program_id)
     .bind(request.capacity)
     .execute(&mut *transaction)
@@ -105,7 +104,7 @@ pub async fn update_homeroom(
             .fetch_optional(&mut *transaction)
             .await?
             .ok_or_else(|| AppError::NotFound("ไม่พบห้องเรียนประจำชั้น".to_string()))?;
-    let curriculum_version_id = validate_homeroom_context(
+    validate_homeroom_context(
         &mut transaction,
         academic_year_id,
         request.grade_level_id,
@@ -115,16 +114,15 @@ pub async fn update_homeroom(
     let result = sqlx::query(
         r#"
         UPDATE homerooms SET code = $1, name = $2, grade_level_id = $3,
-            room_number = $4, legacy_curriculum_version_id = $5, study_program_id = $6,
-            capacity = $7, row_version = row_version + 1, updated_at = now()
-        WHERE id = $8 AND row_version = $9
+            room_number = $4, study_program_id = $5,
+            capacity = $6, row_version = row_version + 1, updated_at = now()
+        WHERE id = $7 AND row_version = $8
         "#,
     )
     .bind(request.code.trim().to_uppercase())
     .bind(request.name.trim())
     .bind(request.grade_level_id)
     .bind(request.room_number)
-    .bind(curriculum_version_id)
     .bind(request.study_program_id)
     .bind(request.capacity)
     .bind(id)
@@ -642,7 +640,7 @@ async fn validate_homeroom_context(
     academic_year_id: Uuid,
     grade_level_id: Uuid,
     study_program_id: Uuid,
-) -> Result<Uuid, AppError> {
+) -> Result<(), AppError> {
     let year_status: Option<String> =
         sqlx::query_scalar("SELECT status FROM academic_years WHERE id = $1 FOR SHARE")
             .bind(academic_year_id)
@@ -661,9 +659,9 @@ async fn validate_homeroom_context(
     if !grade_exists {
         return Err(AppError::ValidationError("ระดับชั้นไม่ถูกต้อง".to_string()));
     }
-    sqlx::query_scalar(
+    let valid_program: Option<i32> = sqlx::query_scalar(
         r#"
-        SELECT program.curriculum_version_id
+        SELECT 1
         FROM study_programs program
         JOIN curriculum_versions version ON version.id = program.curriculum_version_id
         JOIN academic_years starts ON starts.id = version.start_academic_year_id
@@ -677,8 +675,10 @@ async fn validate_homeroom_context(
     .bind(academic_year_id)
     .bind(study_program_id)
     .fetch_optional(&mut **transaction)
-    .await?
-    .ok_or_else(|| AppError::ValidationError("แผนการเรียนใช้ไม่ได้กับปีที่เลือก".to_string()))
+    .await?;
+    valid_program
+        .map(|_| ())
+        .ok_or_else(|| AppError::ValidationError("แผนการเรียนใช้ไม่ได้กับปีที่เลือก".to_string()))
 }
 
 async fn validate_student_year_context(
@@ -694,7 +694,6 @@ async fn validate_student_year_context(
         study_program_id,
     )
     .await
-    .map(|_| ())
 }
 
 async fn validate_target_homeroom(

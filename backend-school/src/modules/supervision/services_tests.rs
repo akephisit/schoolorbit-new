@@ -2,7 +2,8 @@ use super::models::*;
 use super::services;
 use crate::error::AppError;
 use crate::modules::academic::cutover_test_support::{
-    apply_migrations_through, seed_academic_cutover_fixture, CutoverFixture,
+    apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
+    CutoverFixture,
 };
 use crate::test_helpers::{create_named_test_pool, create_test_user};
 use chrono::{DateTime, Duration, Utc};
@@ -28,7 +29,7 @@ async fn migrated_pool(name: &str) -> PgPool {
     seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
         .await
         .expect("academic cutover fixture should seed");
-    apply_migrations_through(&pool, 44)
+    apply_phase_b_runtime_migrations(&pool)
         .await
         .expect("canonical supervision fixture migrations should run");
     pool

@@ -18,13 +18,8 @@ on:
         description: "Installer run identifier"
         required: false
         type: string
-      academic_core_phase_a_reconcile:
-        description: "Run the exact-version-44 Academic Core reconciliation gate"
-        required: false
-        default: false
-        type: boolean
-      academic_core_phase_a_smoke:
-        description: "Run authenticated read-only Academic Core smoke through the VPS loopback"
+      academic_core_cleanup_smoke:
+        description: "Run authenticated read-only Academic Core smoke after migration 045 cleanup"
         required: false
         default: false
         type: boolean
@@ -105,21 +100,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Validate Academic Core maintenance smoke inputs
-        if: ${{ inputs.academic_core_phase_a_smoke == true }}
+      - name: Validate Academic Core authenticated smoke inputs
+        if: ${{ inputs.academic_core_cleanup_smoke == true || (vars.SCHOOL_API_KEEP_MAINTENANCE || 'true') == 'false' }}
         env:
-          ACADEMIC_CORE_PHASE_A_RECONCILE: ${{ inputs.academic_core_phase_a_reconcile || 'false' }}
           ACADEMIC_CORE_SMOKE_SUBDOMAIN: ${{ inputs.academic_core_smoke_subdomain || 'snwsb' }}
-          SCHOOL_API_KEEP_MAINTENANCE: ${{ vars.SCHOOL_API_KEEP_MAINTENANCE || 'false' }}
+          SCHOOL_API_KEEP_MAINTENANCE: ${{ vars.SCHOOL_API_KEEP_MAINTENANCE || 'true' }}
         run: |
-          if [ "$ACADEMIC_CORE_PHASE_A_RECONCILE" != "true" ]; then
-            echo "academic_core_phase_a_reconcile must be true for maintenance smoke"
-            exit 1
-          fi
-          if [ "$SCHOOL_API_KEEP_MAINTENANCE" != "true" ]; then
-            echo "SCHOOL_API_KEEP_MAINTENANCE must be true for maintenance smoke"
-            exit 1
-          fi
+          case "$SCHOOL_API_KEEP_MAINTENANCE" in
+            true | false) ;;
+            *) echo "SCHOOL_API_KEEP_MAINTENANCE must be true or false"; exit 1 ;;
+          esac
           if ! printf '%s' "$ACADEMIC_CORE_SMOKE_SUBDOMAIN" | grep -Eq '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'; then
             echo "academic_core_smoke_subdomain must be one canonical DNS label"
             exit 1
@@ -138,26 +128,17 @@ jobs:
       - name: Deploy to Server via SSH
         uses: appleboy/ssh-action@v1.2.5
         env:
-          ACADEMIC_CORE_PHASE_A_RECONCILE: ${{ inputs.academic_core_phase_a_reconcile || 'false' }}
-          SCHOOL_API_KEEP_MAINTENANCE: ${{ vars.SCHOOL_API_KEEP_MAINTENANCE || 'false' }}
+          SCHOOL_API_KEEP_MAINTENANCE: ${{ vars.SCHOOL_API_KEEP_MAINTENANCE || 'true' }}
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           port: ${{ secrets.SERVER_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           command_timeout: 30m
-          envs: ACADEMIC_CORE_PHASE_A_RECONCILE,SCHOOL_API_KEEP_MAINTENANCE
+          envs: SCHOOL_API_KEEP_MAINTENANCE
           script: |
             set -eu
-            academic_core_phase_a_reconcile=${ACADEMIC_CORE_PHASE_A_RECONCILE:-false}
-            keep_school_api_maintenance=${SCHOOL_API_KEEP_MAINTENANCE:-false}
-            case "$academic_core_phase_a_reconcile" in
-              true | false) ;;
-              *)
-                echo "ACADEMIC_CORE_PHASE_A_RECONCILE must be true or false"
-                exit 1
-                ;;
-            esac
+            keep_school_api_maintenance=${SCHOOL_API_KEEP_MAINTENANCE:-true}
             case "$keep_school_api_maintenance" in
               true | false) ;;
               *)
@@ -574,7 +555,7 @@ jobs:
             fi
             if ! podman run --rm -i "$jq_image" -e '
                 .latest_version as $latest
-                | $latest >= 32
+                | $latest >= 45
                 and .total_schools > 0
                 and .migrated == .total_schools
                 and .pending == 0 and .failed == 0 and .outdated == 0
@@ -583,104 +564,26 @@ jobs:
                   .migration_version == $latest
                   and .migration_status == "migrated"
                   and .migration_error == null
+                  and .academicCoreCutover.migrationVersion == 45
+                  and .academicCoreCutover.status == "cleanupCompleted"
+                  and .academicCoreCutover.passed == true
+                  and all(.academicCoreCutover.checks[]; .passed == true)
                 )
               ' < "$migration_response" >/dev/null
             then
-              echo "Tenant migration status verification failed; maintenance remains enabled"
+              echo "Tenant migration or Academic Core cleanup audit verification failed; maintenance remains enabled"
               exit 1
-            fi
-
-            if [ "$academic_core_phase_a_reconcile" = "true" ]; then
-              if ! curl \
-                --fail \
-                --silent \
-                --show-error \
-                --connect-timeout 10 \
-                --max-time 900 \
-                -X POST \
-                -H "X-Internal-Secret: ${internal_api_secret}" \
-                -o "$migration_response" \
-                http://127.0.0.1:8081/internal/academic-core/reconcile-all
-              then
-                echo "Academic Core Phase A reconciliation failed; maintenance remains enabled"
-                exit 1
-              fi
-              if ! podman run --rm -i "$jq_image" -e '
-                  .success == true
-                  and .data.expectedMigrationVersion == 44
-                  and .data.total > 0
-                  and .data.failed == 0
-                  and .data.success == .data.total
-                  and all(
-                    .data.results[];
-                    .migrationVersion == 44
-                    and .status == "passed"
-                    and .passed == true
-                    and (.errorCode == null)
-                    and all(.checks[]; .passed == true)
-                  )
-                ' < "$migration_response" >/dev/null
-              then
-                echo "Academic Core Phase A reconciliation failed; maintenance remains enabled"
-                exit 1
-              fi
             fi
             unset internal_api_secret
             rm -f "$migration_response"
             trap - EXIT
 
-            if [ "$keep_school_api_maintenance" = "true" ]; then
-              [ -z "$proxy_backup" ] || rm -f "$proxy_backup"
-              echo "School API remains in maintenance mode by deployment request"
-            else
-              cp "$proxy_source" "$proxy_target"
-              if ! validate_nginx_config_with_retry; then
-                cp "$maintenance_proxy_source" "$proxy_target"
-                validate_nginx_config_with_retry
-                podman exec schoolorbit-nginx nginx -s reload || true
-                [ -z "$proxy_backup" ] || rm -f "$proxy_backup"
-                echo "Normal school API proxy configuration is invalid after migration"
-                exit 1
-              fi
-              if ! podman exec schoolorbit-nginx nginx -s reload; then
-                cp "$maintenance_proxy_source" "$proxy_target"
-                validate_nginx_config_with_retry
-                podman exec schoolorbit-nginx nginx -s reload || true
-                [ -z "$proxy_backup" ] || rm -f "$proxy_backup"
-                exit 1
-              fi
-              [ -z "$proxy_backup" ] || rm -f "$proxy_backup"
-
-              school_host="school-api.${base_domain}"
-              direct_ready_ok=false
-              for attempt in $(seq 1 12); do
-                if direct_ready="$(
-                  curl --fail --silent --show-error --max-time 15 \
-                    --cacert "$origin_root" \
-                    --resolve "${school_host}:443:127.0.0.1" \
-                    "https://${school_host}/ready"
-                )" && printf '%s' "$direct_ready" | jq -e \
-                  '.status == "ready" and .controlPlane == "connected" and .filePlatform == "ready"' >/dev/null
-                then
-                  direct_ready_ok=true
-                  break
-                fi
-                if [ "$attempt" -lt 12 ]; then
-                  sleep 2
-                fi
-              done
-              if [ "$direct_ready_ok" != true ]; then
-                cp "$maintenance_proxy_source" "$proxy_target"
-                validate_nginx_config_with_retry
-                podman exec schoolorbit-nginx nginx -s reload || true
-                echo "Direct school API readiness verification failed; maintenance remains enabled"
-                exit 1
-              fi
-            fi
+            [ -z "$proxy_backup" ] || rm -f "$proxy_backup"
+            echo "School API remains in maintenance until the authenticated smoke completes"
             podman tag "${backend_image}:${{ github.sha }}" "${backend_image}:rollback"
 
-      - name: Run Academic Core maintenance smoke
-        if: ${{ inputs.academic_core_phase_a_smoke == true }}
+      - name: Run Academic Core authenticated smoke
+        if: ${{ inputs.academic_core_cleanup_smoke == true || (vars.SCHOOL_API_KEEP_MAINTENANCE || 'true') == 'false' }}
         uses: appleboy/ssh-action@v1.2.5
         env:
           ACADEMIC_CORE_SMOKE_SUBDOMAIN: ${{ inputs.academic_core_smoke_subdomain || 'snwsb' }}
@@ -730,3 +633,66 @@ jobs:
             SMOKE_PASSWORD="$SMOKE_PASSWORD" \
             bash "$smoke_script"
             unset SMOKE_USERNAME SMOKE_PASSWORD
+
+      - name: Open School API after authenticated smoke
+        if: ${{ (vars.SCHOOL_API_KEEP_MAINTENANCE || 'true') == 'false' }}
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 5m
+          script: |
+            set -eu
+            base_domain="${{ vars.BASE_DOMAIN || 'schoolorbit.app' }}"
+            proxy_source=/opt/stack/deployment/school-api.conf
+            maintenance_proxy_source=/opt/stack/deployment/school-api.maintenance.conf
+            proxy_target=/opt/stack/nginx/conf.d/school-api.conf
+            origin_root=/opt/stack/nginx/ssl/cloudflare-origin-rsa-root.pem
+            test -f "$proxy_source"
+            test -f "$maintenance_proxy_source"
+            test -f "$origin_root"
+
+            restore_maintenance() {
+              cp "$maintenance_proxy_source" "$proxy_target"
+              podman exec schoolorbit-nginx nginx -t
+              podman exec schoolorbit-nginx nginx -s reload || true
+            }
+
+            cp "$proxy_source" "$proxy_target"
+            if ! podman exec schoolorbit-nginx nginx -t; then
+              restore_maintenance
+              echo "Normal school API proxy configuration is invalid; maintenance remains enabled"
+              exit 1
+            fi
+            if ! podman exec schoolorbit-nginx nginx -s reload; then
+              restore_maintenance
+              echo "Normal school API proxy reload failed; maintenance remains enabled"
+              exit 1
+            fi
+
+            school_host="school-api.${base_domain}"
+            direct_ready_ok=false
+            for attempt in $(seq 1 12); do
+              if direct_ready="$(
+                curl --fail --silent --show-error --max-time 15 \
+                  --cacert "$origin_root" \
+                  --resolve "${school_host}:443:127.0.0.1" \
+                  "https://${school_host}/ready"
+              )" && printf '%s' "$direct_ready" | jq -e \
+                '.status == "ready" and .controlPlane == "connected" and .filePlatform == "ready"' >/dev/null
+              then
+                direct_ready_ok=true
+                break
+              fi
+              if [ "$attempt" -lt 12 ]; then
+                sleep 2
+              fi
+            done
+            if [ "$direct_ready_ok" != true ]; then
+              restore_maintenance
+              echo "Direct school API readiness failed after authenticated smoke; maintenance restored"
+              exit 1
+            fi
+            echo "School API opened after migration verification and authenticated smoke"

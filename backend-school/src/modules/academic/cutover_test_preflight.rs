@@ -1,3 +1,4 @@
+// Test-only copy of the retired Phase A preflight mapping rules.
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::Serialize;
 use sqlx::{PgConnection, PgPool};

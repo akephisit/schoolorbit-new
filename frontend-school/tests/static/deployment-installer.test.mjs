@@ -325,10 +325,11 @@ test('backend workflows deploy the canonical target and verify the selected orig
 		/91a8a5567efa6bf941162aa806b3ba476aaddf7867640e53053b35fb225a5dae/
 	);
 
-	for (const file of [
-		'.github/workflows/deploy-backend-admin.yml',
-		'.github/workflows/deploy-backend-school.yml'
-	]) {
+	const workflowPortCounts = new Map([
+		['.github/workflows/deploy-backend-admin.yml', 2],
+		['.github/workflows/deploy-backend-school.yml', 4]
+	]);
+	for (const [file, expectedPortCount] of workflowPortCounts) {
 		const workflow = await readRepo(file);
 		assert.match(workflow, /podman-compose\.yml/);
 		assert.match(workflow, /scripts\/render_nginx_config\.sh/);
@@ -362,7 +363,10 @@ test('backend workflows deploy the canonical target and verify the selected orig
 		assert.match(workflow, /timeout 180 bash/);
 		assert.match(workflow, /grep -lF "server_name/);
 		assert.match(workflow, /group: deploy-schoolorbit-runtime/);
-		assert.equal((workflow.match(/port: \$\{\{ secrets\.SERVER_PORT \}\}/g) ?? []).length, 2);
+		assert.equal(
+			(workflow.match(/port: \$\{\{ secrets\.SERVER_PORT \}\}/g) ?? []).length,
+			expectedPortCount
+		);
 		assert.doesNotMatch(workflow, /backend-(?:admin|school)\/docker-compose\.yml/);
 		assert.doesNotMatch(workflow, /file-platform-runtime/);
 		assert.doesNotMatch(workflow, /"\$\{runtime_compose\}\.next" config/);

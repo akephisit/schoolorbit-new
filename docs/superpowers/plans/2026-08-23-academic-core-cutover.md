@@ -2488,18 +2488,19 @@ the cleanup. Local Phase A completion alone does not satisfy this precondition.
 `cutover_test_support.rs` and migration fixture tests remain under `#[cfg(test)]` so clean-database
 CI continues to prove the full 040 -> 045 transformation. They are not compiled runtime code.
 
-- [ ] **Step 1: Start a separate Phase B branch/worktree from the exact Phase A release commit**
+- [x] **Step 1: Start a separate Phase B branch/worktree from the exact Phase A release commit**
 
 Use `superpowers:using-git-worktrees`. Reconfirm production reconciliation evidence through the
 authorized operational channel without copying tenant data into Git or chat. If any tenant is not
 green or traffic is open for writes, stop.
 
-- [ ] **Step 2: Add RED cleanup-manifest tests**
+- [x] **Step 2: Add RED cleanup-manifest tests**
 
 Apply 040, seed the complete fixture, run preflight, apply 041-044, record a successful reconciliation
 marker, then apply 045. Assert all final target rows remain and every legacy relation/column is absent.
 Also assert 045 fails when the marker is missing, stale, has a mismatched checksum, or reconciliation
-currently fails.
+currently fails. Include adversarial coverage for a mapped legacy child row deleted after the marker
+and for a non-ID source-field update committed by a transaction that began before the marker.
 
 The cleanup manifest includes:
 
@@ -2517,6 +2518,8 @@ activity_group_instructors
 activity_group_members
 legacy academic year/term is_active columns
 grade_levels.next_grade_level_id
+homerooms.legacy_curriculum_version_id
+bell_schedule_periods.academic_year_id
 legacy admission track/room-assignment columns
 legacy timetable/exam/supervision foreign-key and free-text semester columns
 academic_core_entity_map
@@ -2533,13 +2536,17 @@ Renamed authoritative relations such as `academic_terms`, `subject_versions`, `a
 
 Expected: FAIL because migration 045 does not exist.
 
-- [ ] **Step 3: Write migration 045 with fail-closed prerequisites**
+- [x] **Step 3: Write migration 045 with fail-closed prerequisites**
 
 At the beginning, lock the tenant audit records and verify the version-43 mapping snapshot uses
 `academic-core-v1`, the current version-44 reconciliation marker uses
 `academic-core-v1-reconciliation`, both carry the expected checksums/check codes, and no writes have
 occurred since the recorded maintenance reconciliation. Raise a stable bounded error before any drop
-if a prerequisite differs.
+if a prerequisite differs. Because an ID checksum and xmin scan cannot observe a deleted row, resolve
+every version-42 entity-map row against both its physical source and target. Recompute the complete
+source-derived student-year, placement, course, activity, coverage, teacher, roster, and result
+projections under the same `ACCESS EXCLUSIVE` lock, and compare both directions before deleting the
+legacy source relations.
 
 Drop dependencies in foreign-key order, then old tables/columns/functions. Deactivate/delete legacy
 permissions only after asserting no active database permission contract row or unmatched grant
@@ -2547,14 +2554,14 @@ remains; static/generated-contract tests separately prove the source contract ha
 with catalog queries asserting the cleanup manifest is absent and target manifest present, then
 append a `cleanup_completed` aggregate audit record.
 
-- [ ] **Step 4: Remove one-time Phase A runtime tools**
+- [x] **Step 4: Remove one-time Phase A runtime tools**
 
 Delete the one-time preflight CLI/library. Replace reconcile-all with a read-only completed-audit
 status in the existing migration-status response; remove code that queries the deleted entity map.
 Keep migration fixture helpers test-only. Tighten static guards so legacy tokens are allowed only in
 immutable migrations 001-044 and exact test-support files.
 
-- [ ] **Step 5: Run the full migration chain and final schema guard**
+- [x] **Step 5: Run the full migration chain and final schema guard**
 
 ```bash
 ./scripts/test_backend_school.sh \
@@ -2570,7 +2577,7 @@ cargo check
 
 Expected: PASS with contiguous migrations 001-045 and zero final runtime legacy-query hits.
 
-- [ ] **Step 6: Run all generated-contract and frontend checks again**
+- [x] **Step 6: Run all generated-contract and frontend checks again**
 
 ```bash
 cd frontend-school
@@ -2585,7 +2592,7 @@ npm run test:static
 npm run check:docs
 ```
 
-- [ ] **Step 7: Request Phase B code review and verify completion evidence**
+- [x] **Step 7: Request Phase B code review and verify completion evidence**
 
 Use `superpowers:requesting-code-review` for cleanup safety, migration ordering, retained-data counts,
 permissions, one-time tool removal, rollback boundary, and documentation. Apply accepted findings and
@@ -2597,7 +2604,7 @@ git diff --stat
 git status --short
 ```
 
-- [ ] **Step 8: Commit the Phase B cleanup artifact**
+- [x] **Step 8: Commit the Phase B cleanup artifact**
 
 ```bash
 git add -A backend-school/migrations/045_academic_core_legacy_cleanup.sql \
