@@ -14,6 +14,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { getAcademicContextStore } from '$lib/academic-context/store';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { Plus, Search, Pencil, Trash2, Eye } from 'lucide-svelte';
@@ -29,8 +30,11 @@
 	const canCreateStudent = $derived($can.has(PERMISSIONS.STUDENT_CREATE_ALL));
 	const canUpdateStudent = $derived($can.has(PERMISSIONS.STUDENT_UPDATE_ALL));
 	const canDeleteStudent = $derived($can.has(PERMISSIONS.STUDENT_DELETE_ALL));
+	const academicContext = getAcademicContextStore();
+	const academicYearId = $derived($academicContext.selected.academicYearId);
+	const PAGE_SIZE = 20;
 
-	let students: StudentListItem[] = $state([]);
+	let students = $state.raw<StudentListItem[]>([]);
 	let loading = $state(true);
 	let deleting = $state(false);
 	let showDeleteDialog = $state(false);
@@ -39,11 +43,10 @@
 
 	let statusFilter = $state('active');
 	let currentPage = $state(1);
-	let totalPages = $state(1);
+	let hasNextPage = $state(false);
+	let revision = 0;
 
-	let total = $state(0);
-
-	function formatFullClassRoom(name: string, gradeLevel?: string) {
+	function formatFullClassRoom(name: string, gradeLevel?: string | null) {
 		if (!name) return '-';
 
 		// If name has prefix/format
@@ -73,33 +76,54 @@
 		return name;
 	}
 
-	async function loadStudents() {
+	async function loadStudents(yearId: string) {
+		const current = ++revision;
 		if (!canReadStudents) {
-			students = [];
-			total = 0;
-			totalPages = 1;
-			loading = false;
+			if (current === revision) {
+				students = [];
+				hasNextPage = false;
+				loading = false;
+			}
 			return;
 		}
 		try {
 			loading = true;
-			const response = await listStudents({
+			const result = await listStudents({
+				academicYearId: yearId,
 				search: searchQuery || undefined,
 				status: statusFilter === 'all' ? undefined : statusFilter,
 				page: currentPage,
-				page_size: 20
+				pageSize: PAGE_SIZE
 			});
 
-			students = response.data;
-			total = response.total || 0;
-			totalPages = response.total_pages || 1;
+			if (current !== revision) return;
+			students = result.items;
+			currentPage = result.page;
+			hasNextPage = result.items.length === result.page_size;
 		} catch (e) {
+			if (current !== revision) return;
 			const message = e instanceof Error ? e.message : 'เกิดข้อผิดพลาด';
 			toast.error(message);
 			console.error('Failed to load students:', e);
 		} finally {
-			loading = false;
+			if (current === revision) loading = false;
 		}
+	}
+
+	function reloadCurrentYear() {
+		if (!academicYearId) return;
+		void loadStudents(academicYearId);
+	}
+
+	function studentHref(studentId: string, suffix = ''): string {
+		const path = `/staff/students/${encodeURIComponent(studentId)}${suffix}`;
+		return academicYearId ? `${path}?academicYearId=${encodeURIComponent(academicYearId)}` : path;
+	}
+
+	function changePage(nextPage: number) {
+		if (!academicYearId || nextPage < 1) return;
+		currentPage = nextPage;
+		void loadStudents(academicYearId);
 	}
 
 	function openDeleteDialog(student: StudentListItem) {
@@ -118,7 +142,7 @@
 			toast.success('ลบนักเรียนสำเร็จ');
 			showDeleteDialog = false;
 			studentToDelete = null;
-			await loadStudents();
+			reloadCurrentYear();
 		} catch (e) {
 			const message = e instanceof Error ? e.message : 'เกิดข้อผิดพลาด';
 			toast.error(message);
@@ -130,7 +154,7 @@
 	function handleSearch() {
 		if (!canReadStudents) return;
 		currentPage = 1;
-		loadStudents();
+		reloadCurrentYear();
 	}
 
 	function handleReset() {
@@ -138,11 +162,18 @@
 		searchQuery = '';
 		statusFilter = 'active';
 		currentPage = 1;
-		loadStudents();
+		reloadCurrentYear();
 	}
 
 	onMount(() => {
-		loadStudents();
+		let loadedYearId = '';
+		return academicContext.subscribe((state) => {
+			const yearId = state.selected.academicYearId;
+			if (!yearId || yearId === loadedYearId) return;
+			loadedYearId = yearId;
+			currentPage = 1;
+			void loadStudents(yearId);
+		});
 	});
 </script>
 
@@ -248,16 +279,16 @@
 
 								<!-- Grade/Class -->
 								<div class="col-span-2">
-									{#if student.class_room}
+									{#if student.homeroom}
 										<span class="text-sm md:hidden">
-											{#if student.class_room.includes('/') || student.class_room.startsWith('อ.') || student.class_room.startsWith('ป.') || student.class_room.startsWith('ม.')}
-												{student.class_room}
+											{#if student.homeroom.includes('/') || student.homeroom.startsWith('อ.') || student.homeroom.startsWith('ป.') || student.homeroom.startsWith('ม.')}
+												{student.homeroom}
 											{:else}
-												{student.grade_level}/{student.class_room}
+												{student.grade_level}/{student.homeroom}
 											{/if}
 										</span>
 										<span class="hidden md:inline text-sm"
-											>{formatFullClassRoom(student.class_room, student.grade_level)}</span
+											>{formatFullClassRoom(student.homeroom, student.grade_level)}</span
 										>
 									{:else}
 										<span class="text-sm text-muted-foreground">-</span>
@@ -285,11 +316,11 @@
 
 								<!-- Actions -->
 								<div class="col-span-2 flex justify-end gap-2">
-									<Button href="/staff/students/{student.id}" variant="ghost" size="sm">
+									<Button href={studentHref(student.id)} variant="ghost" size="sm">
 										<Eye class="w-4 h-4" />
 									</Button>
 									{#if canUpdateStudent}
-										<Button href="/staff/students/{student.id}/edit" variant="ghost" size="sm">
+										<Button href={studentHref(student.id, '/edit')} variant="ghost" size="sm">
 											<Pencil class="w-4 h-4" />
 										</Button>
 									{/if}
@@ -305,18 +336,15 @@
 				</div>
 
 				<!-- Pagination -->
-				{#if totalPages > 1}
+				{#if currentPage > 1 || hasNextPage}
 					<div class="bg-muted/30 px-6 py-4 border-t border-border">
 						<div class="flex items-center justify-between">
 							<p class="text-sm text-muted-foreground">
-								แสดง {students.length} จาก {total} รายการ
+								แสดง {students.length} รายการในหน้านี้
 							</p>
 							<div class="flex gap-2">
 								<Button
-									onclick={() => {
-										currentPage--;
-										loadStudents();
-									}}
+									onclick={() => changePage(currentPage - 1)}
 									disabled={currentPage === 1}
 									variant="outline"
 									size="sm"
@@ -324,14 +352,11 @@
 									← ก่อนหน้า
 								</Button>
 								<span class="px-4 py-2 text-sm">
-									หน้า {currentPage} / {totalPages}
+									หน้า {currentPage}
 								</span>
 								<Button
-									onclick={() => {
-										currentPage++;
-										loadStudents();
-									}}
-									disabled={currentPage >= totalPages}
+									onclick={() => changePage(currentPage + 1)}
+									disabled={!hasNextPage}
 									variant="outline"
 									size="sm"
 								>

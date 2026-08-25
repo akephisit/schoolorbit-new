@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import type { PageProps } from './$types';
 	import { resolve } from '$app/paths';
+	import type { PageProps } from './$types';
 	import { Button } from '$lib/components/ui/button';
 	import { PageShell } from '$lib/components/app-layout';
 	import { Input } from '$lib/components/ui/input';
@@ -10,6 +10,7 @@
 	import { Card } from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { getAcademicContextStore } from '$lib/academic-context/store';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { toast } from 'svelte-sonner';
@@ -33,6 +34,13 @@
 	let editing = $state(false);
 	let saving = $state(false);
 	let deleting = $state(false);
+	let revision = 0;
+	const academicContext = getAcademicContextStore();
+	const academicYearId = $derived($academicContext.selected.academicYearId);
+	const academicYearQuery = $derived(
+		academicYearId ? `?academicYearId=${encodeURIComponent(academicYearId)}` : ''
+	);
+	const listHref = $derived(`${resolve('/staff/students')}${academicYearQuery}`);
 
 	const canReadStudent = $derived(
 		$can.hasAny(
@@ -78,21 +86,31 @@
 
 	let parentErrors = $state<Record<string, string>>({});
 
-	onMount(async () => {
-		await loadStudent();
+	onMount(() => {
+		let loadedYearId = '';
+		return academicContext.subscribe((state) => {
+			const yearId = state.selected.academicYearId;
+			if (!yearId || yearId === loadedYearId) return;
+			loadedYearId = yearId;
+			void loadStudent(yearId);
+		});
 	});
 
-	async function loadStudent() {
+	async function loadStudent(yearId: string) {
+		const current = ++revision;
 		if (!canReadStudent) {
-			student = null;
-			loading = false;
+			if (current === revision) {
+				student = null;
+				loading = false;
+			}
 			return;
 		}
 		loading = true;
 		loadError = '';
 		try {
-			const response = await getStudent(studentId);
-			student = response.data;
+			const loaded = await getStudent(studentId, yearId);
+			if (current !== revision) return;
+			student = loaded;
 
 			// Initialize form data
 			formData = {
@@ -106,13 +124,19 @@
 				student_number: student.student_number || null
 			};
 		} catch (error) {
+			if (current !== revision) return;
 			console.error('Failed to load student:', error);
 			const message = error instanceof Error ? error.message : 'ไม่พบนักเรียน';
 			loadError = message;
 			toast.error(message);
 		} finally {
-			loading = false;
+			if (current === revision) loading = false;
 		}
+	}
+
+	async function reloadCurrentYear() {
+		if (!academicYearId) return;
+		await loadStudent(academicYearId);
 	}
 
 	async function handleSave() {
@@ -127,7 +151,7 @@
 			});
 			toast.success('บันทึกข้อมูลสำเร็จ');
 			editing = false;
-			await loadStudent();
+			await reloadCurrentYear();
 		} catch (error) {
 			console.error('Failed to save:', error);
 			const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
@@ -164,7 +188,7 @@
 		try {
 			await deleteStudent(studentId);
 			toast.success('ลบนักเรียนสำเร็จ');
-			goto(resolve('/staff/students'));
+			goto(resolve('/staff/students') + academicYearQuery);
 		} catch (error) {
 			console.error('Failed to delete:', error);
 			const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
@@ -205,7 +229,7 @@
 				national_id: '',
 				email: ''
 			};
-			await loadStudent();
+			await reloadCurrentYear();
 		} catch (error) {
 			console.error('Failed to add parent:', error);
 			const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
@@ -222,7 +246,7 @@
 		try {
 			await removeParentFromStudent(studentId, parentId);
 			toast.success('ลบผู้ปกครองสำเร็จ');
-			await loadStudent();
+			await reloadCurrentYear();
 		} catch (error) {
 			console.error('Failed to remove parent:', error);
 			const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
@@ -234,7 +258,7 @@
 <PageShell
 	title={student ? `${student.first_name} ${student.last_name}` : 'นักเรียน'}
 	description="รายละเอียดและจัดการข้อมูลนักเรียน"
-	backHref="/staff/students"
+	backHref={listHref}
 >
 	{#snippet actions()}
 		{#if !editing && !loading && (canUpdateStudent || canDeleteStudent)}
@@ -281,7 +305,7 @@
 			title="โหลดข้อมูลนักเรียนไม่สำเร็จ"
 			description={loadError}
 			actionLabel="ลองอีกครั้ง"
-			onaction={loadStudent}
+			onaction={reloadCurrentYear}
 		/>
 	{:else if student}
 		<!-- Student ID & Status -->
@@ -584,7 +608,7 @@
 			title="ไม่พบข้อมูลนักเรียน"
 			description="ไม่พบข้อมูลนักเรียนสำหรับรายการนี้"
 			actionLabel="กลับหน้ารายชื่อนักเรียน"
-			href="/staff/students"
+			href={listHref}
 		/>
 	{/if}
 </PageShell>

@@ -195,3 +195,33 @@ test('calendar wrappers send generated query objects through the central transpo
 		options: { query: publicFilters }
 	});
 });
+
+test('staff student wrappers send generated academic-year queries', async () => {
+	const students = await importApiWrapper('src/lib/api/students.ts');
+	const query = {
+		academicYearId: 'year-1',
+		page: 2,
+		pageSize: 20,
+		search: 'สมชาย',
+		status: 'active'
+	};
+	globalThis.__schoolOrbitApiResponseData = { items: [], page: 2, page_size: 20 };
+	assert.deepEqual(await students.listStudents(query), {
+		items: [],
+		page: 2,
+		page_size: 20
+	});
+	assert.deepEqual(globalThis.__schoolOrbitApiCalls.pop(), {
+		method: 'get',
+		endpoint: '/api/students',
+		options: { query }
+	});
+
+	globalThis.__schoolOrbitApiResponseData = {};
+	await students.getStudent('student/1', 'year-1');
+	assert.deepEqual(globalThis.__schoolOrbitApiCalls.pop(), {
+		method: 'get',
+		endpoint: '/api/students/student%2F1',
+		options: { query: { academicYearId: 'year-1' } }
+	});
+});

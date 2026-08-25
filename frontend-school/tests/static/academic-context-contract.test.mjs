@@ -232,6 +232,7 @@ test('route discovery, layout initialization, and responsive topbar remain expli
 test('existing staff academic consumers declare their exact context requirement', async () => {
 	const routes = [
 		['staff', 'year_required'],
+		['staff/students', 'year_required'],
 		['staff/academic/assessments', 'term_required'],
 		['staff/academic/timetable', 'term_required'],
 		['staff/academic/periods', 'year_required'],
@@ -251,6 +252,20 @@ test('existing staff academic consumers declare their exact context requirement'
 			`${route} must declare ${requirement}`
 		);
 	}
+});
+
+test('staff student views consume the selected academic year without legacy paging fields', async () => {
+	const listPage = await readProjectFile('src/routes/(app)/staff/students/+page.svelte');
+	const detailPage = await readProjectFile('src/routes/(app)/staff/students/[id]/+page.svelte');
+	const editPage = await readProjectFile('src/routes/(app)/staff/students/[id]/edit/+page.svelte');
+
+	for (const source of [listPage, detailPage, editPage]) {
+		assert.match(source, /getAcademicContextStore/);
+		assert.match(source, /academicYearId/);
+	}
+	assert.doesNotMatch(listPage, /page_size\s*:|total_pages|class_room/);
+	assert.match(listPage, /result\.page_size/);
+	assert.match(listPage, /homeroom/);
 });
 
 test('student and parent history selectors use learner-scoped academic context endpoints', async () => {

@@ -4,41 +4,17 @@
  */
 
 import { apiClient, requireApiData } from '$lib/api/client';
-import type { components } from '$lib/api/generated/school-api';
+import type { components, operations } from '$lib/api/generated/school-api';
 
 type Schemas = components['schemas'];
 
 export type StudentParent = Schemas['ParentDto'];
 export type Student = Schemas['StudentProfile'];
-
-export interface StudentListItem {
-	id: string;
-	title?: string;
-	first_name: string;
-	last_name: string;
-	student_id?: string;
-	grade_level?: string;
-	class_room?: string;
-	status: string;
-}
-
-export interface ListStudentsParams {
-	page?: number;
-	page_size?: number;
-	grade_level?: string;
-	class_room?: string;
-	search?: string;
-	status?: string;
-}
-
-export interface ListStudentsResponse {
-	success: boolean;
-	data: StudentListItem[];
-	page: number;
-	page_size: number;
-	total?: number;
-	total_pages?: number;
-}
+export type StudentListItem = Schemas['StudentListItem'];
+export type StudentListResponse = Schemas['StudentListResponse'];
+export type ListStudentsQuery = NonNullable<
+	operations['listStudents']['parameters']['query']
+>;
 
 export type CreateStudentRequest = Schemas['CreateStudentRequest'];
 export type CreateParentRequest = Schemas['CreateParentRequest'];
@@ -50,40 +26,24 @@ type EmptyData = Schemas['EmptyData'];
 /**
  * List all students (Admin)
  */
-export async function listStudents(params?: ListStudentsParams): Promise<ListStudentsResponse> {
-	const queryParams = new URLSearchParams();
-	if (params?.page) queryParams.append('page', params.page.toString());
-	if (params?.page_size) queryParams.append('page_size', params.page_size.toString());
-	if (params?.grade_level) queryParams.append('grade_level', params.grade_level);
-	if (params?.class_room) queryParams.append('class_room', params.class_room);
-	if (params?.search) queryParams.append('search', params.search);
-	if (params?.status) queryParams.append('status', params.status);
-
-	const response = await apiClient.get<{
-		items: StudentListItem[];
-		page: number;
-		page_size: number;
-		total?: number;
-		total_pages?: number;
-	}>(`/api/students?${queryParams.toString()}`);
-	const data = requireApiData(response, 'Failed to list students');
-	return {
-		success: true,
-		data: data.items,
-		page: data.page,
-		page_size: data.page_size,
-		total: data.total,
-		total_pages: data.total_pages
-	};
+export async function listStudents(query: ListStudentsQuery): Promise<StudentListResponse> {
+	return requireApiData(
+		await apiClient.get<StudentListResponse>('/api/students', { query: { ...query } }),
+		'Failed to list students'
+	);
 }
 
 /**
  * Get student by ID (Admin)
  */
-export async function getStudent(id: string): Promise<{ success: boolean; data: Student }> {
-	const response = await apiClient.get<Student>(`/api/students/${id}`);
-	const data = requireApiData(response, 'Failed to get student');
-	return { success: true, data };
+export async function getStudent(id: string, academicYearId: string): Promise<Student> {
+	const query = { academicYearId } satisfies NonNullable<
+		operations['getStudent']['parameters']['query']
+	>;
+	return requireApiData(
+		await apiClient.get<Student>(`/api/students/${encodeURIComponent(id)}`, { query }),
+		'Failed to get student'
+	);
 }
 
 /**

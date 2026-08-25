@@ -7,6 +7,7 @@
 	import { Card } from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { getAcademicContextStore } from '$lib/academic-context/store';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { toast } from 'svelte-sonner';
@@ -18,6 +19,16 @@
 	let student = $state<Student | null>(null);
 	let loading = $state(true);
 	let error = $state('');
+	let revision = 0;
+	const academicContext = getAcademicContextStore();
+	const academicYearId = $derived($academicContext.selected.academicYearId);
+	const academicYearQuery = $derived(
+		academicYearId ? `?academicYearId=${encodeURIComponent(academicYearId)}` : ''
+	);
+	const listHref = $derived(`/staff/students${academicYearQuery}`);
+	const editHref = $derived(
+		`/staff/students/${encodeURIComponent(studentId)}/edit${academicYearQuery}`
+	);
 
 	const canReadStudent = $derived(
 		$can.hasAny(
@@ -35,40 +46,56 @@
 		)
 	);
 
-	onMount(async () => {
-		await loadStudent();
+	onMount(() => {
+		let loadedYearId = '';
+		return academicContext.subscribe((state) => {
+			const yearId = state.selected.academicYearId;
+			if (!yearId || yearId === loadedYearId) return;
+			loadedYearId = yearId;
+			void loadStudent(yearId);
+		});
 	});
 
-	async function loadStudent() {
+	async function loadStudent(yearId: string) {
+		const current = ++revision;
 		if (!canReadStudent) {
-			student = null;
-			loading = false;
+			if (current === revision) {
+				student = null;
+				loading = false;
+			}
 			return;
 		}
 		loading = true;
 		error = '';
 		try {
-			const response = await getStudent(studentId);
-			student = response.data;
+			const loaded = await getStudent(studentId, yearId);
+			if (current !== revision) return;
+			student = loaded;
 		} catch (loadError) {
+			if (current !== revision) return;
 			console.error('Failed to load student:', loadError);
 			const message = loadError instanceof Error ? loadError.message : 'ไม่พบนักเรียน';
 			error = message;
 			toast.error(message);
 		} finally {
-			loading = false;
+			if (current === revision) loading = false;
 		}
+	}
+
+	function reloadCurrentYear() {
+		if (!academicYearId) return;
+		void loadStudent(academicYearId);
 	}
 </script>
 
 <PageShell
 	title={student ? `${student.first_name} ${student.last_name}` : 'นักเรียน'}
 	description="รายละเอียดข้อมูลนักเรียน"
-	backHref="/staff/students"
+	backHref={listHref}
 >
 	{#snippet actions()}
 		{#if student && canUpdateStudent}
-			<Button href="/staff/students/{studentId}/edit">
+			<Button href={editHref}>
 				<Edit class="w-4 h-4 mr-2" />
 				แก้ไข
 			</Button>
@@ -89,7 +116,7 @@
 			title="โหลดข้อมูลนักเรียนไม่สำเร็จ"
 			description={error}
 			actionLabel="ลองอีกครั้ง"
-			onaction={loadStudent}
+			onaction={reloadCurrentYear}
 		/>
 	{:else if student}
 		<!-- Student ID & Status -->
@@ -243,7 +270,7 @@
 			title="ไม่พบนักเรียน"
 			description="ข้อมูลนักเรียนนี้อาจถูกลบหรือคุณอาจไม่มีสิทธิ์เข้าถึง"
 			actionLabel="กลับหน้ารายชื่อนักเรียน"
-			href="/staff/students"
+			href={listHref}
 		/>
 	{/if}
 </PageShell>
