@@ -450,6 +450,39 @@ pub async fn publish_offering(
 
 #[utoipa::path(
     get,
+    path = "/api/academic/learning-groups",
+    operation_id = "listLearningGroupsForTerm",
+    tag = "academic",
+    params(LearningGroupTermQuery),
+    responses(
+        (status = 200, description = "Learning groups in the selected term", body = ApiResponse<Vec<LearningGroup>>),
+        (status = 400, description = "Invalid academic term query or oversized workspace", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning offering read permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_groups_for_term(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<LearningGroupTermQuery>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let filter = learning_offering_access_policy::require_learning_offering_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        OfferingAction::Read,
+    )
+    .await?;
+    Ok(ok(groups::list_for_term(
+        &context.tenant.pool,
+        query.academic_term_id,
+        &filter,
+    )
+    .await?))
+}
+
+#[utoipa::path(
+    get,
     path = "/api/academic/offerings/{id}/groups",
     operation_id = "listLearningGroups",
     tag = "academic",

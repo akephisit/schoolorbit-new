@@ -395,6 +395,7 @@ use utoipa::OpenApi;
         crate::modules::academic::delivery::handlers::get_offering,
         crate::modules::academic::delivery::handlers::update_offering,
         crate::modules::academic::delivery::handlers::publish_offering,
+        crate::modules::academic::delivery::handlers::list_groups_for_term,
         crate::modules::academic::delivery::handlers::list_groups,
         crate::modules::academic::delivery::handlers::create_group,
         crate::modules::academic::delivery::handlers::get_group,
@@ -850,6 +851,7 @@ use utoipa::OpenApi;
         UpdateLearningOfferingRequest,
         PublishLearningOfferingRequest,
         LearningOfferingQuery,
+        LearningGroupTermQuery,
         PreviewCurriculumOfferingsRequest,
         ApplyCurriculumOfferingsRequest,
         LearningOfferingTarget,
@@ -2174,6 +2176,31 @@ mod tests {
         assert_eq!(
             schemas["CalendarVisibility"]["enum"],
             serde_json::json!(["public", "private"])
+        );
+    }
+
+    #[test]
+    fn academic_batch_read_queries_are_camel_case() {
+        let document = school_api_value().expect("document should serialize");
+        let operation = &document["paths"]["/api/academic/learning-groups"]["get"];
+
+        assert_eq!(operation["operationId"], "listLearningGroupsForTerm");
+        assert_eq!(
+            query_contract(&document, "/api/academic/learning-groups", "get"),
+            BTreeSet::from([("academicTermId".to_string(), true)])
+        );
+        assert!(operation["parameters"]
+            .as_array()
+            .expect("learning-group query parameters must be an array")
+            .iter()
+            .all(|parameter| parameter["name"] != "academic_term_id"));
+        assert_eq!(
+            operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_Vec_LearningGroup"
+        );
+        assert_eq!(
+            operation["responses"]["400"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiErrorResponse"
         );
     }
 

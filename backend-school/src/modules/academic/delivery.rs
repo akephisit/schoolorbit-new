@@ -30,6 +30,7 @@ pub fn routes() -> Router<AppState> {
             "/offerings/{id}/groups",
             get(handlers::list_groups).post(handlers::create_group),
         )
+        .route("/learning-groups", get(handlers::list_groups_for_term))
         .route(
             "/learning-groups/{id}",
             get(handlers::get_group).patch(handlers::update_group),

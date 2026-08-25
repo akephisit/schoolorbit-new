@@ -6111,3 +6111,25 @@ fn academic_list_hydration_does_not_issue_one_query_per_response_item() {
         "timetable list hydration must fetch instructors in batches"
     );
 }
+
+#[test]
+fn learning_group_collection_hydrators_are_set_based() {
+    let groups = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/delivery/services/groups.rs"),
+    ));
+    let list_n_plus_one =
+        Regex::new(r"(?s)for\s+row\s+in\s+rows\s*\{.{0,240}hydrate\(pool,\s*row\)\.await").unwrap();
+
+    assert!(
+        !list_n_plus_one.is_match(&groups),
+        "learning-group collection reads must not call the single-row hydrator in a row loop"
+    );
+    assert!(
+        groups.matches("hydrate_many(pool, rows).await").count() >= 2,
+        "nested and term-scoped learning-group lists must share the bulk hydrator"
+    );
+    assert!(
+        groups.matches("learning_group_id = ANY($1)").count() >= 3,
+        "learning-group teachers, homerooms, and preferred rooms must load by the parent ID set"
+    );
+}

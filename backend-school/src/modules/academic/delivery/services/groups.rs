@@ -5,6 +5,7 @@ use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::error::AppError;
+use crate::policies::resource_access_policy::AcademicResourceListFilter;
 
 use super::super::models::{
     ActivityRegistrationType, ApplyRosterRequest, CreateLearningGroupRequest, LearningGroup,
@@ -19,6 +20,17 @@ const GROUP_COLUMNS: &str = r#"
     id, learning_offering_id, academic_term_id, academic_year_id, code, name,
     description, capacity, status, roster_status, roster_published_at, row_version,
     migration_provenance <> '{}'::jsonb AS migrated, created_at, updated_at
+"#;
+const MAX_TERM_GROUPS: usize = 2_000;
+
+const QUALIFIED_GROUP_COLUMNS: &str = r#"
+    learning_group.id, learning_group.learning_offering_id,
+    learning_group.academic_term_id, learning_group.academic_year_id,
+    learning_group.code, learning_group.name, learning_group.description,
+    learning_group.capacity, learning_group.status, learning_group.roster_status,
+    learning_group.roster_published_at, learning_group.row_version,
+    learning_group.migration_provenance <> '{}'::jsonb AS migrated,
+    learning_group.created_at, learning_group.updated_at
 "#;
 
 #[derive(Debug, sqlx::FromRow)]
@@ -67,11 +79,44 @@ pub async fn list(pool: &PgPool, offering_id: Uuid) -> Result<Vec<LearningGroup>
         .bind(offering_id)
         .fetch_all(pool)
         .await?;
-    let mut values = Vec::with_capacity(rows.len());
-    for row in rows {
-        values.push(hydrate(pool, row).await?);
+    hydrate_many(pool, rows).await
+}
+
+pub async fn list_for_term(
+    pool: &PgPool,
+    academic_term_id: Uuid,
+    filter: &AcademicResourceListFilter,
+) -> Result<Vec<LearningGroup>, AppError> {
+    let owner_ids = filter.allowed_organization_unit_ids();
+    let sql = format!(
+        "SELECT {QUALIFIED_GROUP_COLUMNS} \
+         FROM learning_groups learning_group \
+         JOIN learning_offerings offering ON offering.id = learning_group.learning_offering_id \
+         WHERE learning_group.academic_term_id = $1 \
+           AND ($2 OR offering.owning_organization_unit_id = ANY($3) OR EXISTS (\
+               SELECT 1 FROM learning_groups assigned_group \
+               JOIN learning_group_teachers teacher \
+                 ON teacher.learning_group_id = assigned_group.id \
+               WHERE assigned_group.learning_offering_id = offering.id \
+                 AND teacher.teacher_id = $4\
+           )) \
+         ORDER BY learning_group.code, learning_group.id \
+         LIMIT $5"
+    );
+    let rows: Vec<LearningGroupRow> = sqlx::query_as(&sql)
+        .bind(academic_term_id)
+        .bind(filter.includes_school_owned)
+        .bind(owner_ids)
+        .bind(filter.assigned_actor_id)
+        .bind((MAX_TERM_GROUPS + 1) as i64)
+        .fetch_all(pool)
+        .await?;
+    if rows.len() > MAX_TERM_GROUPS {
+        return Err(AppError::ValidationError(
+            "จำนวนกลุ่มเรียนในภาคเรียนเกิน 2000 กลุ่ม กรุณาแบ่งข้อมูลก่อนเปิดพื้นที่ทำงาน".to_string(),
+        ));
     }
-    Ok(values)
+    hydrate_many(pool, rows).await
 }
 
 pub async fn get(pool: &PgPool, id: Uuid) -> Result<LearningGroup, AppError> {
@@ -517,65 +562,119 @@ pub async fn publish_roster(
 }
 
 async fn hydrate(pool: &PgPool, row: LearningGroupRow) -> Result<LearningGroup, AppError> {
-    let teacher_assignments: Vec<TeacherAssignmentInput> = sqlx::query_as::<_, TeacherRow>(
-        "SELECT teacher_id, role FROM learning_group_teachers \
-         WHERE learning_group_id = $1 ORDER BY role, teacher_id",
+    hydrate_many(pool, vec![row])
+        .await?
+        .pop()
+        .ok_or_else(|| AppError::InternalServerError("ไม่สามารถประกอบข้อมูลกลุ่มเรียนได้".to_string()))
+}
+
+async fn hydrate_many(
+    pool: &PgPool,
+    rows: Vec<LearningGroupRow>,
+) -> Result<Vec<LearningGroup>, AppError> {
+    if rows.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let group_ids: Vec<Uuid> = rows.iter().map(|row| row.id).collect();
+    let teacher_rows: Vec<GroupTeacherRow> = sqlx::query_as(
+        "SELECT learning_group_id, teacher_id, role FROM learning_group_teachers \
+         WHERE learning_group_id = ANY($1) \
+         ORDER BY learning_group_id, role, teacher_id",
     )
-    .bind(row.id)
-    .fetch_all(pool)
-    .await?
-    .into_iter()
-    .map(Into::into)
-    .collect();
-    let homeroom_ids: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT homeroom_id FROM learning_group_homerooms \
-         WHERE learning_group_id = $1 ORDER BY homeroom_id",
-    )
-    .bind(row.id)
+    .bind(&group_ids)
     .fetch_all(pool)
     .await?;
-    let preferred_room_ids: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT room_id FROM learning_group_preferred_rooms \
-         WHERE learning_group_id = $1 ORDER BY rank, room_id",
+    let homeroom_rows: Vec<GroupHomeroomRow> = sqlx::query_as(
+        "SELECT learning_group_id, homeroom_id FROM learning_group_homerooms \
+         WHERE learning_group_id = ANY($1) \
+         ORDER BY learning_group_id, homeroom_id",
     )
-    .bind(row.id)
+    .bind(&group_ids)
     .fetch_all(pool)
     .await?;
-    Ok(LearningGroup {
-        id: row.id,
-        learning_offering_id: row.learning_offering_id,
-        academic_term_id: row.academic_term_id,
-        academic_year_id: row.academic_year_id,
-        code: row.code,
-        name: row.name,
-        description: row.description,
-        capacity: row.capacity,
-        status: row.status,
-        roster_status: row.roster_status,
-        roster_published_at: row.roster_published_at,
-        row_version: row.row_version,
-        migrated: row.migrated,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-        teacher_assignments,
-        homeroom_ids,
-        preferred_room_ids,
-    })
+    let preferred_room_rows: Vec<GroupPreferredRoomRow> = sqlx::query_as(
+        "SELECT learning_group_id, room_id FROM learning_group_preferred_rooms \
+         WHERE learning_group_id = ANY($1) \
+         ORDER BY learning_group_id, rank, room_id",
+    )
+    .bind(&group_ids)
+    .fetch_all(pool)
+    .await?;
+
+    let mut teachers_by_group: HashMap<Uuid, Vec<TeacherAssignmentInput>> = HashMap::new();
+    for teacher in teacher_rows {
+        teachers_by_group
+            .entry(teacher.learning_group_id)
+            .or_default()
+            .push(teacher.into());
+    }
+    let mut homerooms_by_group: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
+    for homeroom in homeroom_rows {
+        homerooms_by_group
+            .entry(homeroom.learning_group_id)
+            .or_default()
+            .push(homeroom.homeroom_id);
+    }
+    let mut preferred_rooms_by_group: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
+    for room in preferred_room_rows {
+        preferred_rooms_by_group
+            .entry(room.learning_group_id)
+            .or_default()
+            .push(room.room_id);
+    }
+
+    Ok(rows
+        .into_iter()
+        .map(|row| LearningGroup {
+            id: row.id,
+            learning_offering_id: row.learning_offering_id,
+            academic_term_id: row.academic_term_id,
+            academic_year_id: row.academic_year_id,
+            code: row.code,
+            name: row.name,
+            description: row.description,
+            capacity: row.capacity,
+            status: row.status,
+            roster_status: row.roster_status,
+            roster_published_at: row.roster_published_at,
+            row_version: row.row_version,
+            migrated: row.migrated,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            teacher_assignments: teachers_by_group.remove(&row.id).unwrap_or_default(),
+            homeroom_ids: homerooms_by_group.remove(&row.id).unwrap_or_default(),
+            preferred_room_ids: preferred_rooms_by_group.remove(&row.id).unwrap_or_default(),
+        })
+        .collect())
 }
 
 #[derive(sqlx::FromRow)]
-struct TeacherRow {
+struct GroupTeacherRow {
+    learning_group_id: Uuid,
     teacher_id: Uuid,
     role: super::super::models::LearningTeacherRole,
 }
 
-impl From<TeacherRow> for TeacherAssignmentInput {
-    fn from(row: TeacherRow) -> Self {
+impl From<GroupTeacherRow> for TeacherAssignmentInput {
+    fn from(row: GroupTeacherRow) -> Self {
         Self {
             teacher_id: row.teacher_id,
             role: row.role,
         }
     }
+}
+
+#[derive(sqlx::FromRow)]
+struct GroupHomeroomRow {
+    learning_group_id: Uuid,
+    homeroom_id: Uuid,
+}
+
+#[derive(sqlx::FromRow)]
+struct GroupPreferredRoomRow {
+    learning_group_id: Uuid,
+    room_id: Uuid,
 }
 
 async fn lock_group(

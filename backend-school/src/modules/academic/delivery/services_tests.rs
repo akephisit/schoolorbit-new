@@ -1499,3 +1499,355 @@ async fn offering_list_batch_hydrates_mixed_snapshots_and_targets() {
         )
     )));
 }
+
+#[tokio::test]
+async fn list_groups_for_term_preserves_access_union_and_relations() {
+    let pool = prepare_delivery_runtime_fixture("academic_delivery_term_group_list").await;
+    let context = planning_runtime_context(&pool).await;
+    let secondary_owner_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM organization_units WHERE is_active AND id <> $1 ORDER BY id LIMIT 1",
+    )
+    .bind(context.owner_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let secondary_teacher_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM users WHERE user_type = 'staff' AND status = 'active' AND id <> $1 \
+         ORDER BY id LIMIT 1",
+    )
+    .bind(context.teacher_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let existing_room_id: Uuid = sqlx::query_scalar("SELECT id FROM rooms ORDER BY id LIMIT 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let secondary_room_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO rooms (id, name_th, code, room_type, capacity, status) \
+         VALUES ($1, 'ห้องทดสอบการโหลดแบบชุด', 'BATCH-ROOM', 'GENERAL', 40, 'ACTIVE')",
+    )
+    .bind(secondary_room_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let room_ids = vec![existing_room_id, secondary_room_id];
+
+    let course_offering = offerings::create(&pool, context.teacher_id, course_request(&context))
+        .await
+        .unwrap();
+    let (activity_version_id, scheduling_mode): (Uuid, ActivitySchedulingMode) = sqlx::query_as(
+        r#"SELECT version.id, version.scheduling_mode
+           FROM activity_versions version
+           JOIN academic_terms term ON term.id = $1
+           WHERE version.status = 'published'
+             AND version.effective_from <= term.start_date
+             AND (version.effective_until IS NULL OR version.effective_until > term.start_date)
+           ORDER BY version.id
+           LIMIT 1"#,
+    )
+    .bind(context.term_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let activity_offering = offerings::create(
+        &pool,
+        context.teacher_id,
+        CreateLearningOfferingRequest::Activity(CreateActivityOfferingRequest {
+            academic_term_id: context.term_id,
+            activity_version_id,
+            curriculum_activity_requirement_id: None,
+            owning_organization_unit_id: secondary_owner_id,
+            targets: vec![OfferingTargetInput {
+                target_kind: OfferingTargetKind::Homeroom,
+                homeroom_id: Some(context.homeroom_id),
+                grade_level_id: context.grade_level_id,
+                study_program_id: context.study_program_id,
+            }],
+            registration_type: ActivityRegistrationType::Assigned,
+            scheduling_mode,
+            capacity: Some(40),
+            attendance_requirement: ActivityAttendanceRequirement {
+                minimum_percent: Some("80.00".to_string()),
+                required_sessions: None,
+            },
+            pass_criteria: ActivityPassCriteria {
+                require_attendance: true,
+                require_teacher_confirmation: true,
+                outcomes: vec!["pass".to_string(), "fail".to_string()],
+            },
+        }),
+    )
+    .await
+    .unwrap();
+
+    let course_group_a = groups::create(
+        &pool,
+        context.teacher_id,
+        course_offering.id,
+        CreateLearningGroupRequest {
+            code: "BATCH-A".to_string(),
+            name: "กลุ่มชุดที่หนึ่ง".to_string(),
+            description: None,
+            capacity: Some(40),
+            preferred_room_ids: vec![room_ids[0]],
+        },
+    )
+    .await
+    .unwrap();
+    let course_group_a = groups::replace_teachers(
+        &pool,
+        context.teacher_id,
+        course_group_a.id,
+        ReplaceLearningGroupTeachersRequest {
+            row_version: course_group_a.row_version,
+            teachers: vec![TeacherAssignmentInput {
+                teacher_id: context.teacher_id,
+                role: LearningTeacherRole::Primary,
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    let course_group_a = groups::replace_homerooms(
+        &pool,
+        context.teacher_id,
+        course_group_a.id,
+        ReplaceLearningGroupHomeroomsRequest {
+            row_version: course_group_a.row_version,
+            homeroom_ids: vec![context.homeroom_id],
+        },
+    )
+    .await
+    .unwrap();
+    let course_group_b = groups::create(
+        &pool,
+        context.teacher_id,
+        course_offering.id,
+        CreateLearningGroupRequest {
+            code: "BATCH-B".to_string(),
+            name: "กลุ่มชุดที่สอง".to_string(),
+            description: None,
+            capacity: Some(40),
+            preferred_room_ids: vec![room_ids[1]],
+        },
+    )
+    .await
+    .unwrap();
+    let activity_group = groups::create(
+        &pool,
+        context.teacher_id,
+        activity_offering.id,
+        CreateLearningGroupRequest {
+            code: "BATCH-C".to_string(),
+            name: "กลุ่มกิจกรรม".to_string(),
+            description: None,
+            capacity: Some(40),
+            preferred_room_ids: vec![room_ids[1]],
+        },
+    )
+    .await
+    .unwrap();
+    let activity_group = groups::replace_teachers(
+        &pool,
+        context.teacher_id,
+        activity_group.id,
+        ReplaceLearningGroupTeachersRequest {
+            row_version: activity_group.row_version,
+            teachers: vec![TeacherAssignmentInput {
+                teacher_id: secondary_teacher_id,
+                role: LearningTeacherRole::Primary,
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    let activity_group = groups::replace_homerooms(
+        &pool,
+        context.teacher_id,
+        activity_group.id,
+        ReplaceLearningGroupHomeroomsRequest {
+            row_version: activity_group.row_version,
+            homeroom_ids: vec![context.homeroom_id],
+        },
+    )
+    .await
+    .unwrap();
+
+    let assigned = groups::list_for_term(
+        &pool,
+        context.term_id,
+        &AcademicResourceListFilter {
+            assigned_actor_id: Some(context.teacher_id),
+            ..AcademicResourceListFilter::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert!(assigned.iter().any(|group| group.id == course_group_a.id));
+    assert!(assigned.iter().any(|group| group.id == course_group_b.id));
+    assert!(!assigned.iter().any(|group| group.id == activity_group.id));
+
+    let organization_unit = groups::list_for_term(
+        &pool,
+        context.term_id,
+        &AcademicResourceListFilter {
+            organization_unit_ids: vec![secondary_owner_id],
+            ..AcademicResourceListFilter::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert!(!organization_unit
+        .iter()
+        .any(|group| group.id == course_group_a.id));
+    assert!(organization_unit
+        .iter()
+        .any(|group| group.id == activity_group.id));
+
+    let organization_tree = groups::list_for_term(
+        &pool,
+        context.term_id,
+        &AcademicResourceListFilter {
+            organization_tree_unit_ids: vec![secondary_owner_id],
+            ..AcademicResourceListFilter::default()
+        },
+    )
+    .await
+    .unwrap();
+    let organization_unit_ids: Vec<Uuid> = organization_unit.iter().map(|group| group.id).collect();
+    let organization_tree_ids: Vec<Uuid> = organization_tree.iter().map(|group| group.id).collect();
+    assert_eq!(organization_tree_ids, organization_unit_ids);
+
+    let union = groups::list_for_term(
+        &pool,
+        context.term_id,
+        &AcademicResourceListFilter {
+            assigned_actor_id: Some(context.teacher_id),
+            organization_unit_ids: vec![secondary_owner_id],
+            ..AcademicResourceListFilter::default()
+        },
+    )
+    .await
+    .unwrap();
+    let mut expected_union_ids: Vec<Uuid> = assigned
+        .iter()
+        .chain(organization_unit.iter())
+        .map(|group| group.id)
+        .collect();
+    expected_union_ids.sort_unstable();
+    expected_union_ids.dedup();
+    let mut union_ids: Vec<Uuid> = union.iter().map(|group| group.id).collect();
+    union_ids.sort_unstable();
+    assert_eq!(union_ids, expected_union_ids);
+
+    let no_access = groups::list_for_term(
+        &pool,
+        context.term_id,
+        &AcademicResourceListFilter::default(),
+    )
+    .await
+    .unwrap();
+    assert!(no_access.is_empty());
+
+    let school = groups::list_for_term(
+        &pool,
+        context.term_id,
+        &AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..AcademicResourceListFilter::default()
+        },
+    )
+    .await
+    .unwrap();
+    let expected_school_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM learning_groups WHERE academic_term_id = $1")
+            .bind(context.term_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(school.len() as i64, expected_school_count);
+
+    let hydrated_course_group = school
+        .iter()
+        .find(|group| group.id == course_group_a.id)
+        .unwrap();
+    assert_eq!(hydrated_course_group.teacher_assignments.len(), 1);
+    assert_eq!(
+        hydrated_course_group.teacher_assignments[0].teacher_id,
+        context.teacher_id
+    );
+    assert_eq!(
+        hydrated_course_group.homeroom_ids,
+        vec![context.homeroom_id]
+    );
+    assert_eq!(hydrated_course_group.preferred_room_ids, vec![room_ids[0]]);
+
+    let hydrated_activity_group = school
+        .iter()
+        .find(|group| group.id == activity_group.id)
+        .unwrap();
+    assert_eq!(hydrated_activity_group.teacher_assignments.len(), 1);
+    assert_eq!(
+        hydrated_activity_group.teacher_assignments[0].teacher_id,
+        secondary_teacher_id
+    );
+    assert_eq!(
+        hydrated_activity_group.homeroom_ids,
+        vec![context.homeroom_id]
+    );
+    assert_eq!(
+        hydrated_activity_group.preferred_room_ids,
+        vec![room_ids[1]]
+    );
+
+    let nested = groups::list(&pool, course_offering.id).await.unwrap();
+    assert!(nested.iter().any(|group| group.id == course_group_a.id));
+    assert!(nested.iter().any(|group| group.id == course_group_b.id));
+    assert!(nested.iter().all(|group| {
+        group.learning_offering_id == course_offering.id
+            && group.academic_term_id == context.term_id
+    }));
+}
+
+#[tokio::test]
+async fn list_groups_for_term_rejects_unbounded_workspace() {
+    let pool = prepare_delivery_runtime_fixture("academic_delivery_term_group_limit").await;
+    let context = planning_runtime_context(&pool).await;
+    let offering_id = offerings::create(&pool, context.teacher_id, course_request(&context))
+        .await
+        .unwrap()
+        .id;
+
+    sqlx::query(
+        r#"INSERT INTO learning_groups (
+               id, learning_offering_id, academic_term_id, academic_year_id,
+               code, name, status, roster_status
+           )
+           SELECT gen_random_uuid(), $1, $2, $3,
+                  'LIMIT-' || to_char(sequence, 'FM00000'),
+                  'กลุ่มทดสอบขีดจำกัด ' || sequence::text,
+                  'draft', 'draft'
+           FROM generate_series(1, 2001) AS sequence"#,
+    )
+    .bind(offering_id)
+    .bind(context.term_id)
+    .bind(context.year_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let error = groups::list_for_term(
+        &pool,
+        context.term_id,
+        &AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..AcademicResourceListFilter::default()
+        },
+    )
+    .await
+    .expect_err("an oversized term workspace must fail instead of truncating");
+
+    assert!(matches!(error, AppError::ValidationError(message) if message.contains("2000")));
+}

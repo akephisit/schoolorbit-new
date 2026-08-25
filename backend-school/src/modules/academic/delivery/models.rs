@@ -210,6 +210,13 @@ pub struct LearningOfferingQuery {
 #[derive(Clone, Debug, Deserialize, IntoParams, ToSchema)]
 #[into_params(parameter_in = Query)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LearningGroupTermQuery {
+    pub academic_term_id: Uuid,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct StudentActivityRegistrationQuery {
     pub academic_term_id: Uuid,
 }
