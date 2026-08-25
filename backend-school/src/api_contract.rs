@@ -361,6 +361,7 @@ use utoipa::OpenApi;
         crate::modules::academic::core::handlers::list_activity_default_teachers,
         crate::modules::academic::core::handlers::replace_activity_default_teachers,
         crate::modules::academic::core::handlers::list_curricula,
+        crate::modules::academic::core::handlers::list_study_program_options_for_year,
         crate::modules::academic::core::handlers::create_curriculum,
         crate::modules::academic::core::handlers::get_curriculum,
         crate::modules::academic::core::handlers::update_curriculum,
@@ -380,12 +381,14 @@ use utoipa::OpenApi;
         crate::modules::academic::core::handlers::get_homeroom,
         crate::modules::academic::core::handlers::update_homeroom,
         crate::modules::academic::core::handlers::list_homeroom_advisors,
+        crate::modules::academic::core::handlers::list_homeroom_advisors_for_year,
         crate::modules::academic::core::handlers::replace_homeroom_advisors,
         crate::modules::academic::core::handlers::list_student_years,
         crate::modules::academic::core::handlers::create_student_year,
         crate::modules::academic::core::handlers::get_student_year,
         crate::modules::academic::core::handlers::update_student_year,
         crate::modules::academic::core::handlers::list_placements,
+        crate::modules::academic::core::handlers::list_placements_for_year,
         crate::modules::academic::core::handlers::create_placement,
         crate::modules::academic::core::handlers::transfer_placement,
         crate::modules::academic::delivery::handlers::list_offerings,
@@ -761,6 +764,7 @@ use utoipa::OpenApi;
         CreateCurriculumVersionRequest,
         UpdateCurriculumVersionRequest,
         StudyProgram,
+        StudyProgramOption,
         CreateStudyProgramRequest,
         UpdateStudyProgramRequest,
         RequirementKind,
@@ -773,6 +777,7 @@ use utoipa::OpenApi;
         CreateHomeroomRequest,
         UpdateHomeroomRequest,
         HomeroomAdvisor,
+        HomeroomAdvisorAssignment,
         HomeroomAdvisorInput,
         ReplaceHomeroomAdvisorsRequest,
         StudentAcademicYear,
@@ -809,11 +814,13 @@ use utoipa::OpenApi;
         ApiResponse<Vec<CurriculumVersion>>,
         ApiResponse<CurriculumVersion>,
         ApiResponse<Vec<StudyProgram>>,
+        ApiResponse<Vec<StudyProgramOption>>,
         ApiResponse<StudyProgram>,
         ApiResponse<Vec<ProgramRequirement>>,
         ApiResponse<Vec<Homeroom>>,
         ApiResponse<Homeroom>,
         ApiResponse<Vec<HomeroomAdvisor>>,
+        ApiResponse<Vec<HomeroomAdvisorAssignment>>,
         ApiResponse<Vec<StudentAcademicYear>>,
         ApiResponse<StudentAcademicYear>,
         ApiResponse<Vec<HomeroomPlacement>>,
@@ -2182,26 +2189,57 @@ mod tests {
     #[test]
     fn academic_batch_read_queries_are_camel_case() {
         let document = school_api_value().expect("document should serialize");
-        let operation = &document["paths"]["/api/academic/learning-groups"]["get"];
-
-        assert_eq!(operation["operationId"], "listLearningGroupsForTerm");
-        assert_eq!(
-            query_contract(&document, "/api/academic/learning-groups", "get"),
-            BTreeSet::from([("academicTermId".to_string(), true)])
-        );
-        assert!(operation["parameters"]
-            .as_array()
-            .expect("learning-group query parameters must be an array")
-            .iter()
-            .all(|parameter| parameter["name"] != "academic_term_id"));
-        assert_eq!(
-            operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
-            "#/components/schemas/ApiResponse_Vec_LearningGroup"
-        );
-        assert_eq!(
-            operation["responses"]["400"]["content"]["application/json"]["schema"]["$ref"],
-            "#/components/schemas/ApiErrorResponse"
-        );
+        for (path, operation_id, query_name, response_schema) in [
+            (
+                "/api/academic/learning-groups",
+                "listLearningGroupsForTerm",
+                "academicTermId",
+                "#/components/schemas/ApiResponse_Vec_LearningGroup",
+            ),
+            (
+                "/api/academic/placements",
+                "listPlacementsForAcademicYear",
+                "academicYearId",
+                "#/components/schemas/ApiResponse_Vec_HomeroomPlacement",
+            ),
+            (
+                "/api/academic/homeroom-advisors",
+                "listHomeroomAdvisorsForAcademicYear",
+                "academicYearId",
+                "#/components/schemas/ApiResponse_Vec_HomeroomAdvisorAssignment",
+            ),
+            (
+                "/api/academic/study-program-options",
+                "listStudyProgramOptionsForAcademicYear",
+                "academicYearId",
+                "#/components/schemas/ApiResponse_Vec_StudyProgramOption",
+            ),
+        ] {
+            let operation = &document["paths"][path]["get"];
+            assert_eq!(operation["operationId"], operation_id, "path {path}");
+            assert_eq!(
+                query_contract(&document, path, "get"),
+                BTreeSet::from([(query_name.to_string(), true)]),
+                "path {path}"
+            );
+            assert!(operation["parameters"]
+                .as_array()
+                .unwrap_or_else(|| panic!("{path} query parameters must be an array"))
+                .iter()
+                .all(|parameter| !parameter["name"]
+                    .as_str()
+                    .is_some_and(|name| name.contains('_'))));
+            assert_eq!(
+                operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+                response_schema,
+                "path {path}"
+            );
+            assert_eq!(
+                operation["responses"]["400"]["content"]["application/json"]["schema"]["$ref"],
+                "#/components/schemas/ApiErrorResponse",
+                "path {path}"
+            );
+        }
     }
 
     #[test]

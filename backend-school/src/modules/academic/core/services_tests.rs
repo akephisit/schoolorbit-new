@@ -17,6 +17,7 @@ use super::services::{
     parse_row_version, progressions, student_years, validate_canonical_decimal,
     validate_date_containment, validate_term_definitions, years_terms,
 };
+use crate::policies::resource_access_policy::AcademicResourceListFilter;
 use crate::{
     modules::academic::cutover_test_support::{
         apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
@@ -47,6 +48,93 @@ async fn fixture_actor(pool: &PgPool) -> Uuid {
         .fetch_one(pool)
         .await
         .unwrap()
+}
+
+async fn create_published_program_option_fixture(
+    pool: &PgPool,
+    owner_id: Uuid,
+    start_academic_year_id: Uuid,
+    end_academic_year_id: Option<Uuid>,
+    code: &str,
+) -> (Uuid, Uuid) {
+    let grade_level_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM grade_levels ORDER BY level_type, year, id LIMIT 1")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    let subject_version_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM subject_versions WHERE status = 'published' ORDER BY id LIMIT 1",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let curriculum_row = curriculum::create(
+        pool,
+        CreateCurriculumRequest {
+            code: format!("OPTION-{code}"),
+            name_th: format!("หลักสูตรตัวเลือก {code}"),
+            name_en: None,
+            description: None,
+            grade_level_ids: vec![grade_level_id],
+            owning_organization_unit_id: Some(owner_id),
+        },
+    )
+    .await
+    .unwrap();
+    let version = curriculum::create_version(
+        pool,
+        curriculum_row.id,
+        CreateCurriculumVersionRequest {
+            version_name: format!("ฉบับ {code}"),
+            start_academic_year_id,
+            end_academic_year_id,
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+    let program = curriculum::create_program(
+        pool,
+        version.id,
+        CreateStudyProgramRequest {
+            code: format!("PROGRAM-{code}"),
+            name_th: format!("แผนการเรียน {code}"),
+            name_en: None,
+            is_default: true,
+            owning_organization_unit_id: Some(owner_id),
+        },
+    )
+    .await
+    .unwrap();
+    curriculum::replace_requirements(
+        pool,
+        program.id,
+        ReplaceProgramRequirementsRequest {
+            requirements: vec![ProgramRequirementInput {
+                resource_kind: RequirementResourceKind::Course,
+                catalog_version_id: subject_version_id,
+                grade_level_id,
+                recommended_term_code: Some("T1".to_string()),
+                requirement_kind: RequirementKind::Required,
+                credit: Some("1.00".to_string()),
+                hours: Some("40.00".to_string()),
+                display_order: 1,
+            }],
+            row_version: program.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    curriculum::publish_version(
+        pool,
+        version.id,
+        PublishVersionRequest {
+            row_version: version.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    (curriculum_row.id, program.id)
 }
 
 #[test]
@@ -723,6 +811,451 @@ async fn future_student_year_and_transfer_do_not_mutate_current_year_and_retries
     .await
     .unwrap();
     assert_eq!(audit_reason, "ปรับห้องให้เหมาะกับแผนการเรียน");
+}
+
+#[tokio::test]
+async fn year_relationship_collections_do_not_leak_across_years() {
+    let pool = prepare_core_fixture("academic_core_year_relationship_collections").await;
+    let (grade_level_id, study_program_id, current_homeroom_id): (Uuid, Uuid, Uuid) =
+        sqlx::query_as(
+            "SELECT grade_level_id, study_program_id, id FROM homerooms \
+             WHERE academic_year_id = $1 ORDER BY id LIMIT 1",
+        )
+        .bind(CURRENT_YEAR_ID)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let future_homeroom_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM homerooms WHERE academic_year_id = $1 ORDER BY id LIMIT 1",
+    )
+    .bind(FUTURE_YEAR_ID)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let staff_ids: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM users WHERE user_type = 'staff' AND status = 'active' ORDER BY id LIMIT 2",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(staff_ids.len(), 2, "fixture must provide two active staff");
+
+    let second_current_homeroom_id = Uuid::new_v4();
+    sqlx::query(
+        r#"INSERT INTO homerooms (
+               id, code, name, academic_year_id, grade_level_id, room_number,
+               study_program_id, capacity, is_active
+           ) VALUES ($1, 'BATCH-ADVISOR', 'ห้องทดสอบครูที่ปรึกษา', $2, $3, 'BATCH', $4, 40, true)"#,
+    )
+    .bind(second_current_homeroom_id)
+    .bind(CURRENT_YEAR_ID)
+    .bind(grade_level_id)
+    .bind(study_program_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let advisor_ids = [Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4()];
+    sqlx::query(
+        r#"INSERT INTO homeroom_advisors (id, homeroom_id, user_id, role)
+           VALUES ($1, $2, $3, 'primary'),
+                  ($4, $5, $6, 'secondary'),
+                  ($7, $8, $3, 'primary')"#,
+    )
+    .bind(advisor_ids[0])
+    .bind(current_homeroom_id)
+    .bind(staff_ids[0])
+    .bind(advisor_ids[1])
+    .bind(second_current_homeroom_id)
+    .bind(staff_ids[1])
+    .bind(advisor_ids[2])
+    .bind(future_homeroom_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let student_id = Uuid::new_v4();
+    sqlx::query(
+        r#"INSERT INTO users (
+               id, email, username, password_hash, first_name, last_name, user_type, status
+           ) VALUES ($1, $2, $2, 'fixture-not-a-login', 'นักเรียน', 'ชุดข้อมูล', 'student', 'active')"#,
+    )
+    .bind(student_id)
+    .bind(format!("batch-year-{student_id}@example.invalid"))
+    .execute(&pool)
+    .await
+    .unwrap();
+    let student_year_id = Uuid::new_v4();
+    let placement_id = Uuid::new_v4();
+    sqlx::query(
+        r#"INSERT INTO student_academic_years (
+               id, student_id, academic_year_id, grade_level_id, study_program_id, status
+           ) VALUES ($1, $2, $3, $4, $5, 'active')"#,
+    )
+    .bind(student_year_id)
+    .bind(student_id)
+    .bind(CURRENT_YEAR_ID)
+    .bind(grade_level_id)
+    .bind(study_program_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"INSERT INTO homeroom_placements (
+               id, student_academic_year_id, academic_year_id, homeroom_id,
+               start_date, status, enrollment_type, class_number
+           ) VALUES ($1, $2, $3, $4, '2025-05-01', 'current', 'regular', 98)"#,
+    )
+    .bind(placement_id)
+    .bind(student_year_id)
+    .bind(CURRENT_YEAR_ID)
+    .bind(second_current_homeroom_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let placements = student_years::list_placements_for_year(&pool, CURRENT_YEAR_ID)
+        .await
+        .unwrap();
+    let expected_placement_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM homeroom_placements WHERE academic_year_id = $1")
+            .bind(CURRENT_YEAR_ID)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(placements.len() as i64, expected_placement_count);
+    assert!(placements.len() >= 2);
+    assert!(placements
+        .iter()
+        .all(|placement| placement.academic_year_id == CURRENT_YEAR_ID));
+    assert!(placements
+        .iter()
+        .any(|placement| placement.id == placement_id));
+
+    let future_placements = student_years::list_placements_for_year(&pool, FUTURE_YEAR_ID)
+        .await
+        .unwrap();
+    assert!(future_placements
+        .iter()
+        .all(|placement| placement.academic_year_id == FUTURE_YEAR_ID));
+    assert!(future_placements
+        .iter()
+        .all(|future| { placements.iter().all(|current| current.id != future.id) }));
+
+    let advisors = student_years::list_advisors_for_year(&pool, CURRENT_YEAR_ID)
+        .await
+        .unwrap();
+    assert!(advisors.iter().any(|advisor| advisor.id == advisor_ids[0]));
+    assert!(advisors.iter().any(|advisor| advisor.id == advisor_ids[1]));
+    assert!(!advisors.iter().any(|advisor| advisor.id == advisor_ids[2]));
+    let current_homeroom_ids: Vec<Uuid> =
+        sqlx::query_scalar("SELECT id FROM homerooms WHERE academic_year_id = $1")
+            .bind(CURRENT_YEAR_ID)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert!(advisors
+        .iter()
+        .all(|advisor| current_homeroom_ids.contains(&advisor.homeroom_id)));
+
+    let unknown_year_id = Uuid::new_v4();
+    assert!(matches!(
+        student_years::list_placements_for_year(&pool, unknown_year_id).await,
+        Err(crate::error::AppError::NotFound(_))
+    ));
+    assert!(matches!(
+        student_years::list_advisors_for_year(&pool, unknown_year_id).await,
+        Err(crate::error::AppError::NotFound(_))
+    ));
+}
+
+#[tokio::test]
+async fn year_relationship_collections_reject_oversized_workspaces() {
+    let pool = prepare_core_fixture("academic_core_year_relationship_limits").await;
+    let (homeroom_id, grade_level_id, study_program_id): (Uuid, Uuid, Uuid) = sqlx::query_as(
+        "SELECT id, grade_level_id, study_program_id FROM homerooms \
+         WHERE academic_year_id = $1 ORDER BY id LIMIT 1",
+    )
+    .bind(CURRENT_YEAR_ID)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        r#"INSERT INTO users (
+               id, email, username, password_hash, first_name, last_name, user_type, status
+           )
+           SELECT gen_random_uuid(),
+                  'batch-limit-staff-' || sequence || '@example.invalid',
+                  'batch-limit-staff-' || sequence,
+                  'fixture-not-a-login', 'ครู', sequence::text, 'staff', 'active'
+           FROM generate_series(1, 2001) sequence"#,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"INSERT INTO homeroom_advisors (id, homeroom_id, user_id, role)
+           SELECT gen_random_uuid(), $1, id, 'secondary'
+           FROM users WHERE username LIKE 'batch-limit-staff-%'"#,
+    )
+    .bind(homeroom_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        r#"INSERT INTO users (
+               id, email, username, password_hash, first_name, last_name, user_type, status
+           )
+           SELECT gen_random_uuid(),
+                  'batch-limit-student-' || sequence || '@example.invalid',
+                  'batch-limit-student-' || sequence,
+                  'fixture-not-a-login', 'นักเรียน', sequence::text, 'student', 'active'
+           FROM generate_series(1, 2001) sequence"#,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"INSERT INTO student_academic_years (
+               id, student_id, academic_year_id, grade_level_id, study_program_id, status
+           )
+           SELECT gen_random_uuid(), id, $1, $2, $3, 'active'
+           FROM users WHERE username LIKE 'batch-limit-student-%'"#,
+    )
+    .bind(CURRENT_YEAR_ID)
+    .bind(grade_level_id)
+    .bind(study_program_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"INSERT INTO homeroom_placements (
+               id, student_academic_year_id, academic_year_id, homeroom_id,
+               start_date, status, enrollment_type
+           )
+           SELECT gen_random_uuid(), student_year.id, $1, $2,
+                  '2025-05-01', 'current', 'regular'
+           FROM student_academic_years student_year
+           JOIN users student ON student.id = student_year.student_id
+           WHERE student.username LIKE 'batch-limit-student-%'"#,
+    )
+    .bind(CURRENT_YEAR_ID)
+    .bind(homeroom_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let advisors = student_years::list_advisors_for_year(&pool, CURRENT_YEAR_ID).await;
+    let placements = student_years::list_placements_for_year(&pool, CURRENT_YEAR_ID).await;
+    assert!(matches!(
+        advisors,
+        Err(crate::error::AppError::ValidationError(_))
+    ));
+    assert!(matches!(
+        placements,
+        Err(crate::error::AppError::ValidationError(_))
+    ));
+}
+
+#[tokio::test]
+async fn study_program_options_are_published_effective_and_authorized() {
+    let pool = prepare_core_fixture("academic_core_program_options").await;
+    let owner_ids: Vec<Uuid> =
+        sqlx::query_scalar("SELECT id FROM organization_units WHERE is_active ORDER BY id LIMIT 2")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        owner_ids.len(),
+        2,
+        "fixture must provide two active organization units"
+    );
+    let owner_one_id = owner_ids[0];
+    let owner_two_id = owner_ids[1];
+
+    let (current_curriculum_id, current_program_id) = create_published_program_option_fixture(
+        &pool,
+        owner_two_id,
+        CURRENT_YEAR_ID,
+        None,
+        "CURRENT",
+    )
+    .await;
+    let (_, future_program_id) = create_published_program_option_fixture(
+        &pool,
+        owner_two_id,
+        FUTURE_YEAR_ID,
+        None,
+        "FUTURE",
+    )
+    .await;
+    let (_, expired_program_id) = create_published_program_option_fixture(
+        &pool,
+        owner_two_id,
+        CURRENT_YEAR_ID,
+        Some(CURRENT_YEAR_ID),
+        "EXPIRED",
+    )
+    .await;
+
+    let grade_level_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM grade_levels ORDER BY level_type, year, id LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let draft_curriculum = curriculum::create(
+        &pool,
+        CreateCurriculumRequest {
+            code: "OPTION-DRAFT".to_string(),
+            name_th: "หลักสูตรตัวเลือกร่าง".to_string(),
+            name_en: None,
+            description: None,
+            grade_level_ids: vec![grade_level_id],
+            owning_organization_unit_id: Some(owner_two_id),
+        },
+    )
+    .await
+    .unwrap();
+    let draft_version = curriculum::create_version(
+        &pool,
+        draft_curriculum.id,
+        CreateCurriculumVersionRequest {
+            version_name: "ฉบับร่าง".to_string(),
+            start_academic_year_id: CURRENT_YEAR_ID,
+            end_academic_year_id: None,
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+    let draft_program = curriculum::create_program(
+        &pool,
+        draft_version.id,
+        CreateStudyProgramRequest {
+            code: "PROGRAM-DRAFT".to_string(),
+            name_th: "แผนการเรียนร่าง".to_string(),
+            name_en: None,
+            is_default: true,
+            owning_organization_unit_id: Some(owner_two_id),
+        },
+    )
+    .await
+    .unwrap();
+
+    let school_options = curriculum::list_study_program_options_for_year(
+        &pool,
+        CURRENT_YEAR_ID,
+        &AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..AcademicResourceListFilter::default()
+        },
+    )
+    .await
+    .unwrap();
+    let current_option = school_options
+        .iter()
+        .find(|option| option.id == current_program_id)
+        .expect("current published program must be selectable");
+    assert_eq!(current_option.code, "PROGRAM-CURRENT");
+    assert_eq!(current_option.name, "แผนการเรียน CURRENT");
+    assert_eq!(current_option.curriculum_id, current_curriculum_id);
+    assert_eq!(current_option.curriculum_name, "หลักสูตรตัวเลือก CURRENT");
+    assert!(!school_options
+        .iter()
+        .any(|option| option.id == future_program_id));
+    assert!(!school_options
+        .iter()
+        .any(|option| option.id == draft_program.id));
+
+    let no_access = curriculum::list_study_program_options_for_year(
+        &pool,
+        CURRENT_YEAR_ID,
+        &AcademicResourceListFilter::default(),
+    )
+    .await
+    .unwrap();
+    assert!(no_access.is_empty());
+
+    let unrelated_unit = curriculum::list_study_program_options_for_year(
+        &pool,
+        CURRENT_YEAR_ID,
+        &AcademicResourceListFilter {
+            organization_unit_ids: vec![owner_one_id],
+            ..AcademicResourceListFilter::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert!(!unrelated_unit
+        .iter()
+        .any(|option| option.id == current_program_id));
+
+    let owner_tree = curriculum::list_study_program_options_for_year(
+        &pool,
+        CURRENT_YEAR_ID,
+        &AcademicResourceListFilter {
+            organization_tree_unit_ids: vec![owner_two_id],
+            ..AcademicResourceListFilter::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert!(owner_tree
+        .iter()
+        .any(|option| option.id == current_program_id));
+    assert!(!owner_tree
+        .iter()
+        .any(|option| option.id == future_program_id));
+    assert!(!owner_tree
+        .iter()
+        .any(|option| option.id == draft_program.id));
+
+    let future_options = curriculum::list_study_program_options_for_year(
+        &pool,
+        FUTURE_YEAR_ID,
+        &AcademicResourceListFilter {
+            organization_tree_unit_ids: vec![owner_two_id],
+            ..AcademicResourceListFilter::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert!(future_options
+        .iter()
+        .any(|option| option.id == future_program_id));
+    assert!(!future_options
+        .iter()
+        .any(|option| option.id == expired_program_id));
+
+    let union = curriculum::list_study_program_options_for_year(
+        &pool,
+        CURRENT_YEAR_ID,
+        &AcademicResourceListFilter {
+            organization_unit_ids: vec![owner_one_id],
+            organization_tree_unit_ids: vec![owner_two_id],
+            ..AcademicResourceListFilter::default()
+        },
+    )
+    .await
+    .unwrap();
+    let owner_tree_ids: Vec<Uuid> = owner_tree.iter().map(|option| option.id).collect();
+    let union_ids: Vec<Uuid> = union.iter().map(|option| option.id).collect();
+    assert_eq!(union_ids, owner_tree_ids);
+
+    let unknown_year_id = Uuid::new_v4();
+    assert!(matches!(
+        curriculum::list_study_program_options_for_year(
+            &pool,
+            unknown_year_id,
+            &AcademicResourceListFilter {
+                includes_school_owned: true,
+                ..AcademicResourceListFilter::default()
+            },
+        )
+        .await,
+        Err(crate::error::AppError::NotFound(_))
+    ));
 }
 
 #[tokio::test]

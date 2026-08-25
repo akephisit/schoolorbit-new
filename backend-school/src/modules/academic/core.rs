@@ -108,6 +108,10 @@ pub fn routes() -> Router<AppState> {
             get(handlers::list_curricula).post(handlers::create_curriculum),
         )
         .route(
+            "/study-program-options",
+            get(handlers::list_study_program_options_for_year),
+        )
+        .route(
             "/curricula/{id}",
             get(handlers::get_curriculum).patch(handlers::update_curriculum),
         )
@@ -148,6 +152,10 @@ pub fn routes() -> Router<AppState> {
             get(handlers::list_homeroom_advisors).put(handlers::replace_homeroom_advisors),
         )
         .route(
+            "/homeroom-advisors",
+            get(handlers::list_homeroom_advisors_for_year),
+        )
+        .route(
             "/student-years",
             get(handlers::list_student_years).post(handlers::create_student_year),
         )
@@ -159,6 +167,7 @@ pub fn routes() -> Router<AppState> {
             "/student-years/{id}/placements",
             get(handlers::list_placements).post(handlers::create_placement),
         )
+        .route("/placements", get(handlers::list_placements_for_year))
         .route(
             "/placements/{id}/transfer",
             post(handlers::transfer_placement),

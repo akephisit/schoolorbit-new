@@ -626,6 +626,16 @@ pub struct StudyProgram {
     pub updated_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct StudyProgramOption {
+    pub id: Uuid,
+    pub code: String,
+    pub name: String,
+    pub curriculum_id: Uuid,
+    pub curriculum_name: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateStudyProgramRequest {
@@ -753,6 +763,15 @@ pub struct UpdateHomeroomRequest {
 #[serde(rename_all = "camelCase")]
 pub struct HomeroomAdvisor {
     pub id: Uuid,
+    pub user_id: Uuid,
+    pub role: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct HomeroomAdvisorAssignment {
+    pub id: Uuid,
+    pub homeroom_id: Uuid,
     pub user_id: Uuid,
     pub role: String,
 }

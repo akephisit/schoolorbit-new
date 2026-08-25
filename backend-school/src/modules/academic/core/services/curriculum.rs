@@ -7,7 +7,7 @@ use crate::policies::resource_access_policy::AcademicResourceListFilter;
 use super::super::models::{
     CreateCurriculumRequest, CreateCurriculumVersionRequest, CreateStudyProgramRequest, Curriculum,
     CurriculumVersion, ProgramRequirement, ProgramRequirementInput, PublishVersionRequest,
-    ReplaceProgramRequirementsRequest, RequirementResourceKind, StudyProgram,
+    ReplaceProgramRequirementsRequest, RequirementResourceKind, StudyProgram, StudyProgramOption,
     UpdateCurriculumRequest, UpdateCurriculumVersionRequest, UpdateStudyProgramRequest,
     VersionStatus,
 };
@@ -22,6 +22,7 @@ const PROGRAM_COLUMNS: &str = r#"
     id, curriculum_version_id, code, name_th, name_en, is_default, status,
     owning_organization_unit_id, row_version, created_at, updated_at
 "#;
+const MAX_STUDY_PROGRAM_OPTIONS: usize = 2_000;
 
 pub async fn list(
     pool: &PgPool,
@@ -278,6 +279,52 @@ pub async fn list_programs(pool: &PgPool, version_id: Uuid) -> Result<Vec<StudyP
         .bind(version_id)
         .fetch_all(pool)
         .await?)
+}
+
+pub async fn list_study_program_options_for_year(
+    pool: &PgPool,
+    academic_year_id: Uuid,
+    filter: &AcademicResourceListFilter,
+) -> Result<Vec<StudyProgramOption>, AppError> {
+    let target_year: (chrono::NaiveDate, chrono::NaiveDate) =
+        sqlx::query_as("SELECT start_date, end_date FROM academic_years WHERE id = $1")
+            .bind(academic_year_id)
+            .fetch_optional(pool)
+            .await?
+            .ok_or_else(|| AppError::NotFound("ไม่พบปีการศึกษา".to_string()))?;
+    let owner_ids = filter.allowed_organization_unit_ids();
+    let options: Vec<StudyProgramOption> = sqlx::query_as(
+        r#"
+        SELECT program.id, program.code, program.name_th AS name,
+               curriculum.id AS curriculum_id, curriculum.name_th AS curriculum_name
+        FROM study_programs program
+        JOIN curriculum_versions version ON version.id = program.curriculum_version_id
+        JOIN curricula curriculum ON curriculum.id = version.curriculum_id
+        JOIN academic_years starts ON starts.id = version.start_academic_year_id
+        LEFT JOIN academic_years ends ON ends.id = version.end_academic_year_id
+        WHERE program.status = 'published'
+          AND version.status = 'published'
+          AND curriculum.is_active IS TRUE
+          AND starts.start_date <= $1
+          AND (ends.end_date IS NULL OR ends.end_date >= $2)
+          AND ($3 OR curriculum.owning_organization_unit_id = ANY($4))
+        ORDER BY curriculum.code, curriculum.id, program.is_default DESC, program.code, program.id
+        LIMIT $5
+        "#,
+    )
+    .bind(target_year.0)
+    .bind(target_year.1)
+    .bind(filter.includes_school_owned)
+    .bind(owner_ids)
+    .bind((MAX_STUDY_PROGRAM_OPTIONS + 1) as i64)
+    .fetch_all(pool)
+    .await?;
+    if options.len() > MAX_STUDY_PROGRAM_OPTIONS {
+        return Err(AppError::ValidationError(
+            "จำนวนตัวเลือกแผนการเรียนในปีการศึกษามากเกิน 2,000 รายการ".to_string(),
+        ));
+    }
+    Ok(options)
 }
 
 pub async fn get_program(pool: &PgPool, id: Uuid) -> Result<StudyProgram, AppError> {

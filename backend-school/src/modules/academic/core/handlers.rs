@@ -1763,6 +1763,42 @@ pub async fn list_curricula(
 }
 
 #[utoipa::path(
+    get,
+    path = "/api/academic/study-program-options",
+    operation_id = "listStudyProgramOptionsForAcademicYear",
+    tag = "academic",
+    params(AcademicYearQuery),
+    responses(
+        (status = 200, description = "Published study programs effective in the selected year", body = ApiResponse<Vec<StudyProgramOption>>),
+        (status = 400, description = "Invalid academic year query or workspace exceeds the supported size", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic curriculum read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Academic year not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_study_program_options_for_year(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<AcademicYearQuery>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    let filter = academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &pool,
+        &actor,
+        CurriculumAction::Read,
+    )
+    .await?;
+    Ok(ok(curriculum::list_study_program_options_for_year(
+        &pool,
+        query.academic_year_id,
+        &filter,
+    )
+    .await?))
+}
+
+#[utoipa::path(
     post,
     path = "/api/academic/curricula",
     operation_id = "createCurriculum",
@@ -2492,6 +2528,36 @@ pub async fn list_homeroom_advisors(
 }
 
 #[utoipa::path(
+    get,
+    path = "/api/academic/homeroom-advisors",
+    operation_id = "listHomeroomAdvisorsForAcademicYear",
+    tag = "academic",
+    params(AcademicYearQuery),
+    responses(
+        (status = 200, description = "Homeroom advisor assignments in the selected year", body = ApiResponse<Vec<HomeroomAdvisorAssignment>>),
+        (status = 400, description = "Invalid academic year query or workspace exceeds the supported size", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Homeroom read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Academic year not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_homeroom_advisors_for_year(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<AcademicYearQuery>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_any_permission(&[codes::HOMEROOM_READ_SCHOOL, codes::HOMEROOM_MANAGE_SCHOOL])?;
+    Ok(ok(student_years::list_advisors_for_year(
+        &pool,
+        query.academic_year_id,
+    )
+    .await?))
+}
+
+#[utoipa::path(
     put,
     path = "/api/academic/homerooms/{id}/advisors",
     operation_id = "replaceHomeroomAdvisors",
@@ -2686,6 +2752,36 @@ pub async fn list_placements(
     Ok(ok(
         student_years::list_placements(&pool, student_year_id).await?
     ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/placements",
+    operation_id = "listPlacementsForAcademicYear",
+    tag = "academic",
+    params(AcademicYearQuery),
+    responses(
+        (status = 200, description = "Homeroom placements in the selected year", body = ApiResponse<Vec<HomeroomPlacement>>),
+        (status = 400, description = "Invalid academic year query or workspace exceeds the supported size", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Student academic year read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Academic year not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_placements_for_year(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<AcademicYearQuery>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::STUDENT_ACADEMIC_YEAR_READ_SCHOOL)?;
+    Ok(ok(student_years::list_placements_for_year(
+        &pool,
+        query.academic_year_id,
+    )
+    .await?))
 }
 
 #[utoipa::path(

@@ -6,10 +6,10 @@ use crate::error::AppError;
 
 use super::super::models::{
     CreateHomeroomPlacementRequest, CreateHomeroomRequest, CreateStudentAcademicYearRequest,
-    Homeroom, HomeroomAdvisor, HomeroomPlacement, HomeroomPlacementStatus,
-    HomeroomPlacementTransfer, ReplaceHomeroomAdvisorsRequest, StudentAcademicYear,
-    StudentAcademicYearFilter, StudentAcademicYearStatus, TransferHomeroomPlacementRequest,
-    UpdateHomeroomRequest, UpdateStudentAcademicYearRequest,
+    Homeroom, HomeroomAdvisor, HomeroomAdvisorAssignment, HomeroomPlacement,
+    HomeroomPlacementStatus, HomeroomPlacementTransfer, ReplaceHomeroomAdvisorsRequest,
+    StudentAcademicYear, StudentAcademicYearFilter, StudentAcademicYearStatus,
+    TransferHomeroomPlacementRequest, UpdateHomeroomRequest, UpdateStudentAcademicYearRequest,
 };
 use super::parse_row_version;
 use super::years_terms::append_audit;
@@ -29,6 +29,7 @@ const PLACEMENT_COLUMNS: &str = r#"
     end_date, status, enrollment_type, class_number, row_version,
     migration_provenance <> '{}'::jsonb AS migrated, created_at, updated_at
 "#;
+const MAX_YEAR_RELATIONSHIP_ROWS: usize = 2_000;
 
 pub async fn list_homerooms(
     pool: &PgPool,
@@ -149,6 +150,32 @@ pub async fn list_advisors(
     .bind(homeroom_id)
     .fetch_all(pool)
     .await?)
+}
+
+pub async fn list_advisors_for_year(
+    pool: &PgPool,
+    academic_year_id: Uuid,
+) -> Result<Vec<HomeroomAdvisorAssignment>, AppError> {
+    require_academic_year(pool, academic_year_id).await?;
+    let advisors = sqlx::query_as(
+        r#"SELECT advisor.id, advisor.homeroom_id, advisor.user_id, advisor.role
+           FROM homeroom_advisors advisor
+           JOIN homerooms homeroom ON homeroom.id = advisor.homeroom_id
+           WHERE homeroom.academic_year_id = $1
+           ORDER BY homeroom.grade_level_id, homeroom.code, homeroom.id,
+                    advisor.role, advisor.user_id, advisor.id
+           LIMIT $2"#,
+    )
+    .bind(academic_year_id)
+    .bind((MAX_YEAR_RELATIONSHIP_ROWS + 1) as i64)
+    .fetch_all(pool)
+    .await?;
+    if advisors.len() > MAX_YEAR_RELATIONSHIP_ROWS {
+        return Err(AppError::ValidationError(
+            "จำนวนรายการครูที่ปรึกษาในปีการศึกษามากเกิน 2,000 รายการ".to_string(),
+        ));
+    }
+    Ok(advisors)
 }
 
 pub async fn replace_advisors(
@@ -566,6 +593,42 @@ pub async fn list_placements(
         .bind(student_year_id)
         .fetch_all(pool)
         .await?)
+}
+
+pub async fn list_placements_for_year(
+    pool: &PgPool,
+    academic_year_id: Uuid,
+) -> Result<Vec<HomeroomPlacement>, AppError> {
+    require_academic_year(pool, academic_year_id).await?;
+    let sql = format!(
+        "SELECT {PLACEMENT_COLUMNS} FROM homeroom_placements \
+         WHERE academic_year_id = $1 \
+         ORDER BY student_academic_year_id, start_date, created_at, id LIMIT $2"
+    );
+    let placements = sqlx::query_as(&sql)
+        .bind(academic_year_id)
+        .bind((MAX_YEAR_RELATIONSHIP_ROWS + 1) as i64)
+        .fetch_all(pool)
+        .await?;
+    if placements.len() > MAX_YEAR_RELATIONSHIP_ROWS {
+        return Err(AppError::ValidationError(
+            "จำนวนรายการจัดห้องในปีการศึกษามากเกิน 2,000 รายการ".to_string(),
+        ));
+    }
+    Ok(placements)
+}
+
+async fn require_academic_year(pool: &PgPool, academic_year_id: Uuid) -> Result<(), AppError> {
+    let exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM academic_years WHERE id = $1)")
+            .bind(academic_year_id)
+            .fetch_one(pool)
+            .await?;
+    if exists {
+        Ok(())
+    } else {
+        Err(AppError::NotFound("ไม่พบปีการศึกษา".to_string()))
+    }
 }
 
 async fn get_placement(pool: &PgPool, id: Uuid) -> Result<HomeroomPlacement, AppError> {
