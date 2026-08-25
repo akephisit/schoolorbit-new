@@ -26,7 +26,11 @@
 		type ReportConfig,
 		roundStatusLabel
 	} from '$lib/api/admission';
-	import { listStudyProgramOptionsForYear, type StudyProgramOption } from '$lib/api/academic-core';
+	import {
+		listStudyProgramOptionsForAcademicYear,
+		type StudyProgramOption
+	} from '$lib/api/academic-core';
+	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
 	import SchoolCombobox from '$lib/components/ui/SchoolCombobox.svelte';
 
 	import { Button } from '$lib/components/ui/button';
@@ -75,6 +79,7 @@
 	let studyPrograms = $state<StudyProgramOption[]>([]);
 	let loading = $state(true);
 	let error = $state('');
+	const request = new LatestRequest();
 
 	let showDeleteDialog = $state(false);
 	let deletingRound = $state(false);
@@ -192,34 +197,43 @@
 
 	async function load() {
 		if (!canReadAdmission) {
+			request.abort();
 			loading = false;
 			return;
 		}
 		if (!id) return;
+		const { revision, signal } = request.begin();
 		loading = true;
 		error = '';
 		try {
-			const r = await getRound(id);
-			const t = await listTracks(id);
-			const s = await listSubjects(id);
-			const allR = await listRounds(r.academicYearId);
+			const r = await getRound(id, { signal });
+			const [t, s, allR, programs] = await Promise.all([
+				listTracks(id, { signal }),
+				listSubjects(id, { signal }),
+				listRounds(r.academicYearId, { signal }),
+				canManageAdmission
+					? listStudyProgramOptionsForAcademicYear(r.academicYearId, { signal })
+					: Promise.resolve([])
+			]);
+			if (!request.isCurrent(revision)) return;
 			round = r;
 			tracks = t;
 			subjects = s;
 			allRounds = allR;
+			studyPrograms = programs;
 			reportConfig = {
 				reportMode: r.reportConfig?.reportMode ?? null,
 				zone: { schools: r.reportConfig?.zone?.schools ?? [] },
 				institution: { ownSchool: r.reportConfig?.institution?.ownSchool ?? '' }
 			};
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'โหลดข้อมูลไม่สำเร็จ';
-			toast.error(error);
+			if (isAbortError(e)) return;
+			if (request.isCurrent(revision)) {
+				error = e instanceof Error ? e.message : 'โหลดข้อมูลไม่สำเร็จ';
+				toast.error(error);
+			}
 		} finally {
-			loading = false;
-		}
-		if (canManageAdmission && round) {
-			studyPrograms = await listStudyProgramOptionsForYear(round.academicYearId);
+			if (request.isCurrent(revision)) loading = false;
 		}
 	}
 
@@ -476,7 +490,10 @@
 		});
 	}
 
-	onMount(load);
+	onMount(() => {
+		void load();
+		return () => request.abort();
+	});
 </script>
 
 <PageShell

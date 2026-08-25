@@ -5,23 +5,25 @@
 		createHomeroomPlacement,
 		createStudentAcademicYear,
 		listGradeLevelOptions,
-		listHomeroomPlacements,
 		listHomerooms,
+		listPlacementsForAcademicYear,
 		listStudentAcademicYears,
 		listStudentOptions,
-		listStudyProgramOptionsForYear,
+		listStudyProgramOptionsForAcademicYear,
 		transferHomeroomPlacement,
 		type Homeroom,
 		type HomeroomPlacement,
 		type StudentAcademicYear
 	} from '$lib/api/academic-core';
 	import { getAcademicContextStore } from '$lib/academic-context/store';
+	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
 	import StudentYearPlacementEditor from '$lib/components/academic-core/StudentYearPlacementEditor.svelte';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Button } from '$lib/components/ui/button';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
+	import { loadStudentYearCollections } from '$lib/workspaces/academic-batch';
 	import { Plus } from 'lucide-svelte';
 
 	const academicContext = getAcademicContextStore();
@@ -35,40 +37,52 @@
 	let draft = $state({ studentId: '', gradeLevelId: '', studyProgramId: '' });
 	let loading = $state(false);
 	let errorMessage = $state('');
-	let revision = 0;
+	const request = new LatestRequest();
 	const canManage = $derived($can.has(PERMISSIONS.STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL));
 
 	async function loadWorkspace(yearId: string) {
-		const current = ++revision;
+		const { revision, signal } = request.begin();
 		loading = true;
 		errorMessage = '';
 		try {
-			const records = await listStudentAcademicYears(yearId);
-			const nextPlacements = new SvelteMap<string, HomeroomPlacement[]>();
-			for (const record of records)
-				nextPlacements.set(record.id, await listHomeroomPlacements(record.id));
-			const rooms = await listHomerooms(yearId);
-			const students = await listStudentOptions();
-			const levels = await listGradeLevelOptions(yearId);
-			const programs = await listStudyProgramOptionsForYear(yearId);
-			if (current !== revision) return;
-			studentYears = records;
+			const workspace = await loadStudentYearCollections(
+				{
+					listStudentAcademicYears: (selectedYearId, options) =>
+						listStudentAcademicYears(selectedYearId, {}, options),
+					listPlacementsForAcademicYear,
+					listHomerooms,
+					listStudentOptions: (search, options) => listStudentOptions(yearId, search, options),
+					listGradeLevelOptions,
+					listStudyProgramOptionsForAcademicYear
+				},
+				yearId,
+				signal
+			);
+			if (!request.isCurrent(revision)) return;
+			studentYears = workspace.studentYears;
 			placementsByStudentYear.clear();
-			for (const [recordId, placements] of nextPlacements)
+			for (const [recordId, placements] of workspace.placementsByStudentYearId)
 				placementsByStudentYear.set(recordId, placements);
-			homerooms = rooms;
-			studentOptions = students.map((student) => ({ id: student.id, name: student.name }));
-			gradeLevelOptions = levels.map((level) => ({ id: level.id, name: level.name }));
-			programOptions = programs.map((program) => ({
+			homerooms = workspace.homerooms;
+			studentOptions = workspace.students.map((student) => ({
+				id: student.id,
+				name: student.name
+			}));
+			gradeLevelOptions = workspace.gradeLevels.map((level) => ({
+				id: level.id,
+				name: level.name
+			}));
+			programOptions = workspace.programs.map((program) => ({
 				id: program.id,
 				name: `${program.curriculumName} · ${program.name}`
 			}));
 		} catch (error) {
-			if (current === revision)
+			if (isAbortError(error)) return;
+			if (request.isCurrent(revision))
 				errorMessage =
 					error instanceof Error ? error.message : 'โหลดข้อมูลนักเรียนประจำปีไม่สำเร็จ';
 		} finally {
-			if (current === revision) loading = false;
+			if (request.isCurrent(revision)) loading = false;
 		}
 	}
 
@@ -117,13 +131,22 @@
 
 	onMount(() => {
 		let loadedYearId: string | null = null;
-		return academicContext.subscribe((state) => {
+		const unsubscribe = academicContext.subscribe((state) => {
 			const yearId = state.selected.academicYearId;
+			if (!yearId) {
+				loadedYearId = null;
+				request.abort();
+				return;
+			}
 			if (yearId && yearId !== loadedYearId) {
 				loadedYearId = yearId;
 				void loadWorkspace(yearId);
 			}
 		});
+		return () => {
+			unsubscribe();
+			request.abort();
+		};
 	});
 </script>
 

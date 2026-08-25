@@ -6,17 +6,20 @@ import test from 'node:test';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
-test('timetable workspace loads canonical term delivery context and rejects stale responses', async () => {
+test('timetable workspace uses one cancellable term collection load', async () => {
 	const page = await readFile(
 		path.join(projectRoot, 'src/routes/(app)/staff/academic/timetable/+page.svelte'),
 		'utf8'
 	);
 
-	assert.match(page, /listLearningOfferings\(termId\)/);
-	assert.match(page, /listLearningGroups\(offering\.id\)/);
-	assert.match(page, /listTimetableEntries\(\{ academicTermId: termId \}\)/);
-	assert.match(page, /const current = \+\+revision/);
-	assert.match(page, /if \(current !== revision\) return/);
+	assert.match(page, /loadTimetableCollections/);
+	assert.match(page, /listLearningGroupsForTerm/);
+	assert.match(page, /LatestRequest/);
+	assert.match(page, /isAbortError/);
+	assert.match(page, /request\.begin\(\)/);
+	assert.match(page, /request\.isCurrent\(revision\)/);
+	assert.match(page, /request\.abort\(\)/);
+	assert.doesNotMatch(page, /listLearningGroups\(offering\.id\)/);
 	assert.doesNotMatch(page, /getActivitySlotTimetableContext/);
 	assert.doesNotMatch(page, /listSlotInstructors|listSlotClassroomAssignments/);
 });

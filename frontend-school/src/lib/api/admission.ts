@@ -1,4 +1,4 @@
-import { apiClient, requireApiData } from './client';
+import { apiClient, requireApiData, type ApiRequestOptions } from './client';
 import { downloadGrantedFile, type FileDownloadGrantResponse } from './files';
 import type { components } from '$lib/api/generated/school-api';
 
@@ -370,17 +370,18 @@ export interface CompleteEnrollmentResponse {
 // Rounds API
 // ==========================================
 
-export async function listRounds(academicYearId: string) {
+export async function listRounds(academicYearId: string, options: ApiRequestOptions = {}) {
 	if (!academicYearId.trim()) throw new Error('กรุณาเลือกปีการศึกษาก่อน');
 	const res = await apiClient.get<AdmissionRound[]>(
-		`/api/admission/rounds?academicYearId=${encodeURIComponent(academicYearId)}`
+		`/api/admission/rounds?academicYearId=${encodeURIComponent(academicYearId)}`,
+		options
 	);
 	if (!res.success) throw new Error(res.error || 'ไม่สามารถโหลดรอบรับสมัครได้');
 	return res.data ?? [];
 }
 
-export async function getRound(id: string) {
-	const res = await apiClient.get<AdmissionRound>(`/api/admission/rounds/${id}`);
+export async function getRound(id: string, options: ApiRequestOptions = {}) {
+	const res = await apiClient.get<AdmissionRound>(`/api/admission/rounds/${id}`, options);
 	if (!res.success) throw new Error(res.error || 'ไม่พบรอบรับสมัคร');
 	return res.data!;
 }
@@ -434,8 +435,11 @@ export async function deleteRound(id: string) {
 // Tracks API
 // ==========================================
 
-export async function listTracks(roundId: string) {
-	const res = await apiClient.get<AdmissionTrack[]>(`/api/admission/rounds/${roundId}/tracks`);
+export async function listTracks(roundId: string, options: ApiRequestOptions = {}) {
+	const res = await apiClient.get<AdmissionTrack[]>(
+		`/api/admission/rounds/${roundId}/tracks`,
+		options
+	);
 	if (!res.success) throw new Error(res.error);
 	return res.data ?? [];
 }
@@ -470,9 +474,10 @@ export async function getTrackCapacity(id: string) {
 // Exam Subjects API
 // ==========================================
 
-export async function listSubjects(roundId: string) {
+export async function listSubjects(roundId: string, options: ApiRequestOptions = {}) {
 	const res = await apiClient.get<AdmissionExamSubject[]>(
-		`/api/admission/rounds/${roundId}/subjects`
+		`/api/admission/rounds/${roundId}/subjects`,
+		options
 	);
 	if (!res.success) throw new Error(res.error);
 	return res.data ?? [];

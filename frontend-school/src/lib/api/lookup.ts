@@ -2,7 +2,7 @@
 // API for fetching minimal reference data for dropdowns.
 // Generic lookup responses must stay small; workflow-specific detail belongs in options endpoints.
 
-import { apiClient, requireApiData } from '$lib/api/client';
+import { apiClient, requireApiData, type ApiRequestOptions } from '$lib/api/client';
 import type { components, operations } from '$lib/api/generated/school-api';
 
 type Schemas = components['schemas'];
@@ -54,10 +54,11 @@ function buildQueryString(options?: LookupOptions | AcademicLookupOptions): stri
 
 async function fetchLookup<T>(
 	endpoint: string,
-	options?: LookupOptions | AcademicLookupOptions
+	options?: LookupOptions | AcademicLookupOptions,
+	requestOptions: ApiRequestOptions = {}
 ): Promise<T[]> {
 	const query = buildQueryString(options);
-	const response = await apiClient.get<T[]>(`/api/lookup/${endpoint}${query}`);
+	const response = await apiClient.get<T[]>(`/api/lookup/${endpoint}${query}`, requestOptions);
 	return requireApiData(response, `Failed to fetch ${endpoint}`);
 }
 
@@ -134,8 +135,11 @@ export async function lookupAcademicYears(
  * Fetch active rooms list for dropdowns
  * Returns active rooms with basic info
  */
-export async function lookupRooms(options?: LookupOptions): Promise<RoomLookupItem[]> {
-	return fetchLookup<RoomLookupItem>('rooms', options);
+export async function lookupRooms(
+	options?: LookupOptions,
+	requestOptions: ApiRequestOptions = {}
+): Promise<RoomLookupItem[]> {
+	return fetchLookup<RoomLookupItem>('rooms', options, requestOptions);
 }
 
 /**

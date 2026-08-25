@@ -93,8 +93,11 @@ function requiredContextValue(value: string, label: string): string {
 	return selected;
 }
 
-export const listAcademicYears = () =>
-	academicData(apiClient.get<AcademicYear[]>('/api/academic/years'), 'ไม่สามารถโหลดปีการศึกษาได้');
+export const listAcademicYears = (options: ApiRequestOptions = {}) =>
+	academicData(
+		apiClient.get<AcademicYear[]>('/api/academic/years', options),
+		'ไม่สามารถโหลดปีการศึกษาได้'
+	);
 export const createAcademicYear = (body: CreateAcademicYearRequest) =>
 	academicData(
 		apiClient.post<AcademicYear>('/api/academic/years', body),
@@ -106,13 +109,17 @@ export const updateAcademicYear = (id: string, body: UpdateAcademicYearRequest) 
 		'แก้ไขปีการศึกษาไม่สำเร็จ'
 	);
 
-export const listAcademicTerms = (academicYearId: string) =>
-	academicData(
-		apiClient.get<AcademicTerm[]>(
-			`/api/academic/terms?academicYearId=${requiredContext(academicYearId, 'ปีการศึกษา')}`
-		),
+type ListAcademicTermsQuery = NonNullable<operations['listAcademicTerms']['parameters']['query']>;
+
+export const listAcademicTerms = (academicYearId: string, options: ApiRequestOptions = {}) => {
+	const query = {
+		academicYearId: requiredContextValue(academicYearId, 'ปีการศึกษา')
+	} satisfies ListAcademicTermsQuery;
+	return academicData(
+		apiClient.get<AcademicTerm[]>('/api/academic/terms', { ...options, query }),
 		'ไม่สามารถโหลดภาคเรียนได้'
 	);
+};
 export const createAcademicTerm = (body: CreateAcademicTermRequest) =>
 	academicData(apiClient.post<AcademicTerm>('/api/academic/terms', body), 'สร้างภาคเรียนไม่สำเร็จ');
 export const updateAcademicTerm = (id: string, body: UpdateAcademicTermRequest) =>
@@ -126,13 +133,17 @@ export const deleteAcademicTerm = (id: string) =>
 		'ลบภาคเรียนไม่สำเร็จ'
 	);
 
-export const listBellSchedules = (academicYearId: string) =>
-	academicData(
-		apiClient.get<BellSchedule[]>(
-			`/api/academic/bell-schedules?academicYearId=${requiredContext(academicYearId, 'ปีการศึกษา')}`
-		),
+type ListBellSchedulesQuery = NonNullable<operations['listBellSchedules']['parameters']['query']>;
+
+export const listBellSchedules = (academicYearId: string, options: ApiRequestOptions = {}) => {
+	const query = {
+		academicYearId: requiredContextValue(academicYearId, 'ปีการศึกษา')
+	} satisfies ListBellSchedulesQuery;
+	return academicData(
+		apiClient.get<BellSchedule[]>('/api/academic/bell-schedules', { ...options, query }),
 		'ไม่สามารถโหลดตารางเวลาได้'
 	);
+};
 export const createBellSchedule = (body: CreateBellScheduleRequest) =>
 	academicData(
 		apiClient.post<BellSchedule>('/api/academic/bell-schedules', body),
@@ -143,9 +154,9 @@ export const updateBellSchedule = (id: string, body: UpdateBellScheduleRequest) 
 		apiClient.patch<BellSchedule>(`/api/academic/bell-schedules/${id}`, body),
 		'แก้ไขตารางเวลาไม่สำเร็จ'
 	);
-export const listBellSchedulePeriods = (id: string) =>
+export const listBellSchedulePeriods = (id: string, options: ApiRequestOptions = {}) =>
 	academicData(
-		apiClient.get<BellSchedulePeriod[]>(`/api/academic/bell-schedules/${id}/periods`),
+		apiClient.get<BellSchedulePeriod[]>(`/api/academic/bell-schedules/${id}/periods`, options),
 		'ไม่สามารถโหลดคาบเรียนได้'
 	);
 export const replaceBellSchedulePeriods = (id: string, body: ReplaceBellSchedulePeriodsRequest) =>
@@ -250,8 +261,11 @@ export const publishActivityVersion = (id: string, body: PublishVersionRequest) 
 		'เผยแพร่รุ่นกิจกรรมไม่สำเร็จ'
 	);
 
-export const listCurricula = () =>
-	academicData(apiClient.get<Curriculum[]>('/api/academic/curricula'), 'ไม่สามารถโหลดหลักสูตรได้');
+export const listCurricula = (options: ApiRequestOptions = {}) =>
+	academicData(
+		apiClient.get<Curriculum[]>('/api/academic/curricula', options),
+		'ไม่สามารถโหลดหลักสูตรได้'
+	);
 export const createCurriculum = (body: CreateCurriculumRequest) =>
 	academicData(
 		apiClient.post<Curriculum>('/api/academic/curricula', body),
@@ -262,9 +276,9 @@ export const updateCurriculum = (id: string, body: UpdateCurriculumRequest) =>
 		apiClient.patch<Curriculum>(`/api/academic/curricula/${id}`, body),
 		'แก้ไขหลักสูตรไม่สำเร็จ'
 	);
-export const listCurriculumVersions = (curriculumId: string) =>
+export const listCurriculumVersions = (curriculumId: string, options: ApiRequestOptions = {}) =>
 	academicData(
-		apiClient.get<CurriculumVersion[]>(`/api/academic/curricula/${curriculumId}/versions`),
+		apiClient.get<CurriculumVersion[]>(`/api/academic/curricula/${curriculumId}/versions`, options),
 		'ไม่สามารถโหลดรุ่นหลักสูตรได้'
 	);
 export const createCurriculumVersion = (

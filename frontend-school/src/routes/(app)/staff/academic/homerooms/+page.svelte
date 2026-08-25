@@ -5,20 +5,22 @@
 		createHomeroom,
 		getHomeroom,
 		listGradeLevelOptions,
-		listHomeroomAdvisors,
+		listHomeroomAdvisorsForAcademicYear,
 		listHomerooms,
 		listStaffOptions,
-		listStudyProgramOptionsForYear,
+		listStudyProgramOptionsForAcademicYear,
 		replaceHomeroomAdvisors,
 		type Homeroom,
 		type HomeroomAdvisor
 	} from '$lib/api/academic-core';
 	import { getAcademicContextStore } from '$lib/academic-context/store';
+	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
 	import HomeroomEditor from '$lib/components/academic-core/HomeroomEditor.svelte';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
+	import { loadHomeroomCollections } from '$lib/workspaces/academic-batch';
 
 	const academicContext = getAcademicContextStore();
 	const academicYearId = $derived($academicContext.selected.academicYearId);
@@ -29,35 +31,45 @@
 	let staffOptions = $state<Array<{ id: string; name: string }>>([]);
 	let loading = $state(false);
 	let errorMessage = $state('');
-	let revision = 0;
+	const request = new LatestRequest();
 	const canManage = $derived($can.has(PERMISSIONS.HOMEROOM_MANAGE_SCHOOL));
 
 	async function loadWorkspace(yearId: string) {
-		const current = ++revision;
+		const { revision, signal } = request.begin();
 		loading = true;
 		errorMessage = '';
 		try {
-			const rooms = await listHomerooms(yearId);
-			const nextAdvisors = new SvelteMap<string, HomeroomAdvisor[]>();
-			for (const room of rooms) nextAdvisors.set(room.id, await listHomeroomAdvisors(room.id));
-			const levels = await listGradeLevelOptions(yearId);
-			const programs = await listStudyProgramOptionsForYear(yearId);
-			const staff = await listStaffOptions();
-			if (current !== revision) return;
-			homerooms = rooms;
+			const workspace = await loadHomeroomCollections(
+				{
+					listHomerooms,
+					listHomeroomAdvisorsForAcademicYear,
+					listGradeLevelOptions,
+					listStudyProgramOptionsForAcademicYear,
+					listStaffOptions
+				},
+				yearId,
+				signal
+			);
+			if (!request.isCurrent(revision)) return;
+			homerooms = workspace.homerooms;
 			advisorsByHomeroom.clear();
-			for (const [roomId, advisors] of nextAdvisors) advisorsByHomeroom.set(roomId, advisors);
-			gradeLevelOptions = levels.map((level) => ({ id: level.id, name: level.name }));
-			programOptions = programs.map((program) => ({
+			for (const [roomId, advisors] of workspace.advisorsByHomeroomId)
+				advisorsByHomeroom.set(roomId, advisors);
+			gradeLevelOptions = workspace.gradeLevels.map((level) => ({
+				id: level.id,
+				name: level.name
+			}));
+			programOptions = workspace.programs.map((program) => ({
 				id: program.id,
 				name: `${program.curriculumName} · ${program.name}`
 			}));
-			staffOptions = staff.map((person) => ({ id: person.id, name: person.name }));
+			staffOptions = workspace.staff.map((person) => ({ id: person.id, name: person.name }));
 		} catch (error) {
-			if (current === revision)
+			if (isAbortError(error)) return;
+			if (request.isCurrent(revision))
 				errorMessage = error instanceof Error ? error.message : 'โหลดห้องประจำชั้นไม่สำเร็จ';
 		} finally {
-			if (current === revision) loading = false;
+			if (request.isCurrent(revision)) loading = false;
 		}
 	}
 
@@ -95,13 +107,22 @@
 
 	onMount(() => {
 		let loadedYearId: string | null = null;
-		return academicContext.subscribe((state) => {
+		const unsubscribe = academicContext.subscribe((state) => {
 			const yearId = state.selected.academicYearId;
+			if (!yearId) {
+				loadedYearId = null;
+				request.abort();
+				return;
+			}
 			if (yearId && yearId !== loadedYearId) {
 				loadedYearId = yearId;
 				void loadWorkspace(yearId);
 			}
 		});
+		return () => {
+			unsubscribe();
+			request.abort();
+		};
 	});
 </script>
 

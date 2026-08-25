@@ -5,8 +5,7 @@
 		createAcademicTerm,
 		createAcademicYear,
 		createBellSchedule,
-		listAcademicTerms,
-		listAcademicYears,
+		getAcademicSetupWorkspace,
 		listBellSchedulePeriods,
 		listBellSchedules,
 		replaceBellSchedulePeriods,
@@ -16,6 +15,7 @@
 		updateAcademicTerm,
 		updateAcademicYear
 	} from '$lib/api/academic-core';
+	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
 	import AcademicYearTermEditor from '$lib/components/academic-core/AcademicYearTermEditor.svelte';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
@@ -28,6 +28,7 @@
 	let loading = $state(true);
 	let busy = $state(false);
 	let errorMessage = $state('');
+	const request = new LatestRequest();
 	const canRead = $derived(
 		$can.hasAny(PERMISSIONS.ACADEMIC_YEAR_READ_SCHOOL, PERMISSIONS.ACADEMIC_YEAR_MANAGE_SCHOOL)
 	);
@@ -36,28 +37,26 @@
 	);
 
 	async function loadWorkspace() {
+		const { revision, signal } = request.begin();
 		loading = true;
 		errorMessage = '';
 		try {
-			years = (await listAcademicYears()).sort((a, b) => b.year - a.year);
-			const nextTerms = new SvelteMap<string, AcademicTerm[]>();
-			const nextBellSchedules: BellSchedule[] = [];
-			for (const year of years) {
-				const terms = await listAcademicTerms(year.id);
-				nextTerms.set(
-					year.id,
-					terms.sort((a, b) => a.sequence - b.sequence)
-				);
-				const schedules = await listBellSchedules(year.id);
-				for (const schedule of schedules) nextBellSchedules.push(schedule);
-			}
+			const workspace = await getAcademicSetupWorkspace({ signal });
+			if (!request.isCurrent(revision)) return;
+			const nextYears = workspace.years.toSorted((a, b) => b.year - a.year);
+			const nextTerms = new SvelteMap(nextYears.map((year) => [year.id, [] as AcademicTerm[]]));
+			for (const term of workspace.terms) nextTerms.get(term.academicYearId)?.push(term);
+			for (const terms of nextTerms.values()) terms.sort((a, b) => a.sequence - b.sequence);
+			years = nextYears;
 			termsByYear.clear();
 			for (const [yearId, terms] of nextTerms) termsByYear.set(yearId, terms);
-			bellSchedules = nextBellSchedules;
+			bellSchedules = workspace.bellSchedules;
 		} catch (error) {
-			errorMessage = error instanceof Error ? error.message : 'โหลดโครงสร้างปีการศึกษาไม่สำเร็จ';
+			if (isAbortError(error)) return;
+			if (request.isCurrent(revision))
+				errorMessage = error instanceof Error ? error.message : 'โหลดโครงสร้างปีการศึกษาไม่สำเร็จ';
 		} finally {
-			loading = false;
+			if (request.isCurrent(revision)) loading = false;
 		}
 	}
 
@@ -153,7 +152,10 @@
 		}
 	}
 
-	onMount(loadWorkspace);
+	onMount(() => {
+		void loadWorkspace();
+		return () => request.abort();
+	});
 </script>
 
 <PageShell

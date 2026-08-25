@@ -7,7 +7,6 @@
 		registerAcademicContextDirtySource
 	} from '$lib/academic-context/store';
 	import {
-		listAcademicYears,
 		listBellSchedulePeriods,
 		listBellSchedules,
 		listHomerooms,
@@ -16,12 +15,13 @@
 		type Homeroom
 	} from '$lib/api/academic-core';
 	import {
-		listLearningGroups,
+		listLearningGroupsForTerm,
 		listLearningOfferings,
 		type LearningGroup,
 		type LearningOffering
 	} from '$lib/api/learning-delivery';
 	import { lookupRooms, type RoomLookupItem } from '$lib/api/lookup';
+	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
 	import {
 		createTimetableEntry,
 		deleteTimetableEntry,
@@ -44,6 +44,7 @@
 		disconnectTimetableSocket,
 		refreshTrigger
 	} from '$lib/stores/timetable-socket';
+	import { loadTimetableCollections } from '$lib/workspaces/academic-batch';
 	import {
 		buildTeacherLoadExportRows,
 		calculateTeacherLoadColumnWidths,
@@ -106,7 +107,7 @@
 	let isTeacherLoadExporting = $state(false);
 	let dirty = $state(false);
 	let errorMessage = $state('');
-	let revision = 0;
+	const request = new LatestRequest();
 
 	const canRead = $derived(
 		$can.hasAny(
@@ -178,51 +179,67 @@
 		);
 	}
 
-	async function loadPeriods(scheduleId: string): Promise<void> {
-		periods = (await listBellSchedulePeriods(scheduleId)).sort(
+	async function loadPeriods(
+		scheduleId: string,
+		signal?: AbortSignal
+	): Promise<BellSchedulePeriod[]> {
+		return (await listBellSchedulePeriods(scheduleId, { signal })).sort(
 			(a, b) => a.orderIndex - b.orderIndex
 		);
-		formPeriodId = periods[0]?.id ?? '';
 	}
 
 	async function loadWorkspace(termId: string, yearId: string): Promise<void> {
-		const current = ++revision;
+		const { revision, signal } = request.begin();
 		loading = true;
 		errorMessage = '';
 		try {
-			const years = await listAcademicYears();
-			if (!years.some((year) => year.id === yearId)) throw new Error('ไม่พบปีการศึกษาที่เลือก');
-			schedules = await listBellSchedules(yearId);
-			const preferredSchedule = schedules.find((schedule) => schedule.isDefault) ?? schedules[0];
+			const [collections, loadedSchedules, loadedRooms, loadedEntries] = await Promise.all([
+				loadTimetableCollections(
+					{ listLearningOfferings, listLearningGroupsForTerm, listHomerooms },
+					termId,
+					yearId,
+					signal
+				),
+				listBellSchedules(yearId, { signal }),
+				lookupRooms({ activeOnly: true, limit: 500 }, { signal }),
+				listTimetableEntries({ academicTermId: termId }, { signal })
+			]);
+			const preferredSchedule =
+				loadedSchedules.find((schedule) => schedule.isDefault) ?? loadedSchedules[0];
+			const loadedPeriods = preferredSchedule
+				? await loadPeriods(preferredSchedule.id, signal)
+				: [];
+			if (!request.isCurrent(revision)) return;
+			schedules = loadedSchedules;
 			selectedScheduleId = preferredSchedule?.id ?? '';
-			periods = [];
-			if (preferredSchedule) await loadPeriods(preferredSchedule.id);
-			offerings = await listLearningOfferings(termId);
-			const loadedGroups: LearningGroup[] = [];
-			for (const offering of offerings) {
-				const offeringGroups = await listLearningGroups(offering.id);
-				loadedGroups.push(...offeringGroups);
-			}
-			groups = loadedGroups;
-			homerooms = await listHomerooms(yearId);
-			rooms = await lookupRooms({ activeOnly: true, limit: 500 });
-			entries = await listTimetableEntries({ academicTermId: termId });
-			if (current !== revision) return;
+			periods = loadedPeriods;
+			offerings = collections.offerings;
+			groups = collections.groups;
+			homerooms = collections.homerooms;
+			rooms = loadedRooms;
+			entries = loadedEntries;
 			viewKind = groups.length > 0 ? 'learning_group' : 'homeroom';
 			selectedTargetId = groups[0]?.id ?? homerooms[0]?.id ?? '';
 			resetForm();
 		} catch (error) {
-			if (current === revision) {
+			if (isAbortError(error)) return;
+			if (request.isCurrent(revision)) {
 				errorMessage = error instanceof Error ? error.message : 'โหลดพื้นที่จัดตารางสอนไม่สำเร็จ';
 			}
 		} finally {
-			if (current === revision) loading = false;
+			if (request.isCurrent(revision)) loading = false;
 		}
 	}
 
 	async function refreshEntries(): Promise<void> {
 		if (!academicTermId) return;
-		entries = await listTimetableEntries({ academicTermId });
+		const { revision, signal } = request.begin();
+		try {
+			const loadedEntries = await listTimetableEntries({ academicTermId }, { signal });
+			if (request.isCurrent(revision)) entries = loadedEntries;
+		} catch (error) {
+			if (!isAbortError(error)) throw error;
+		}
 	}
 
 	async function changeSchedule(event: Event): Promise<void> {
@@ -232,13 +249,20 @@
 			toast.warning('กรุณาบันทึกหรือยกเลิกแบบร่างก่อนเปลี่ยนตารางเวลา');
 			return;
 		}
-		selectedScheduleId = nextId;
+		const { revision, signal } = request.begin();
 		loading = true;
 		try {
-			await loadPeriods(nextId);
+			const loadedPeriods = await loadPeriods(nextId, signal);
+			if (!request.isCurrent(revision)) return;
+			selectedScheduleId = nextId;
+			periods = loadedPeriods;
 			resetForm();
+		} catch (error) {
+			if (isAbortError(error)) return;
+			if (request.isCurrent(revision))
+				errorMessage = error instanceof Error ? error.message : 'โหลดคาบเรียนไม่สำเร็จ';
 		} finally {
-			loading = false;
+			if (request.isCurrent(revision)) loading = false;
 		}
 	}
 
@@ -551,6 +575,7 @@
 			void loadWorkspace(selectedTermId, selectedYearId);
 		});
 		return () => {
+			request.abort();
 			unsubscribeRefresh();
 			unsubscribeAuth();
 			unsubscribeContext();

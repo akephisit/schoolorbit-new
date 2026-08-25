@@ -5,11 +5,10 @@
 		createCurriculum,
 		createCurriculumVersion,
 		createStudyProgram,
+		getCurriculumProgramWorkspace,
 		getStudyProgram,
 		listCurricula,
 		listCurriculumVersions,
-		listProgramRequirements,
-		listStudyPrograms,
 		publishCurriculumVersion,
 		replaceProgramRequirements,
 		type Curriculum,
@@ -17,6 +16,7 @@
 		type ProgramRequirement,
 		type StudyProgram
 	} from '$lib/api/academic-core';
+	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
 	import CurriculumProgramEditor from '$lib/components/academic-core/CurriculumProgramEditor.svelte';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
@@ -35,6 +35,7 @@
 	const requirementsByProgram = new SvelteMap<string, ProgramRequirement[]>();
 	let loading = $state(true);
 	let errorMessage = $state('');
+	const request = new LatestRequest();
 	let curriculumDraft = $state({ code: '', nameTh: '', gradeLevelIds: '' });
 	let versionDraft = $state({ versionName: '', startAcademicYearId: '', endAcademicYearId: '' });
 	const canManage = $derived(
@@ -45,36 +46,91 @@
 		)
 	);
 
-	async function loadWorkspace() {
-		loading = true;
-		errorMessage = '';
-		try {
-			curricula = await listCurricula();
-			if (curricula[0]) await selectCurriculum(curricula[0]);
-		} catch (error) {
-			errorMessage = error instanceof Error ? error.message : 'โหลดหลักสูตรไม่สำเร็จ';
-		} finally {
-			loading = false;
-		}
-	}
-	async function selectCurriculum(curriculum: Curriculum) {
-		selectedCurriculum = curriculum;
-		versions = await listCurriculumVersions(curriculum.id);
-		if (versions[0]) await selectVersion(versions[0]);
-		else {
-			selectedVersion = null;
-			programs = [];
-			requirementsByProgram.clear();
-		}
-	}
-	async function selectVersion(version: CurriculumVersion) {
-		selectedVersion = version;
-		programs = await listStudyPrograms(version.id);
-		const next = new SvelteMap<string, ProgramRequirement[]>();
-		for (const program of programs) next.set(program.id, await listProgramRequirements(program.id));
+	function applyProgramWorkspace(
+		loadedPrograms: StudyProgram[],
+		loadedRequirements: Array<ProgramRequirement & { studyProgramId: string }>
+	) {
+		const next = new SvelteMap(
+			loadedPrograms.map((program) => [program.id, [] as ProgramRequirement[]])
+		);
+		for (const requirement of loadedRequirements)
+			next.get(requirement.studyProgramId)?.push(requirement);
+		programs = loadedPrograms;
 		requirementsByProgram.clear();
 		for (const [programId, requirements] of next)
 			requirementsByProgram.set(programId, requirements);
+	}
+
+	async function loadCurriculumSelection(curriculum: Curriculum, signal: AbortSignal) {
+		const loadedVersions = await listCurriculumVersions(curriculum.id, { signal });
+		const version = loadedVersions[0] ?? null;
+		const workspace = version
+			? await getCurriculumProgramWorkspace(version.id, { signal })
+			: { programs: [], requirements: [] };
+		return { loadedVersions, version, workspace };
+	}
+
+	async function loadWorkspace() {
+		const { revision, signal } = request.begin();
+		loading = true;
+		errorMessage = '';
+		try {
+			const loadedCurricula = await listCurricula({ signal });
+			const curriculum = loadedCurricula[0] ?? null;
+			const selection = curriculum
+				? await loadCurriculumSelection(curriculum, signal)
+				: { loadedVersions: [], version: null, workspace: { programs: [], requirements: [] } };
+			if (!request.isCurrent(revision)) return;
+			curricula = loadedCurricula;
+			selectedCurriculum = curriculum;
+			versions = selection.loadedVersions;
+			selectedVersion = selection.version;
+			applyProgramWorkspace(selection.workspace.programs, selection.workspace.requirements);
+		} catch (error) {
+			if (isAbortError(error)) return;
+			if (request.isCurrent(revision))
+				errorMessage = error instanceof Error ? error.message : 'โหลดหลักสูตรไม่สำเร็จ';
+		} finally {
+			if (request.isCurrent(revision)) loading = false;
+		}
+	}
+
+	async function selectCurriculum(curriculum: Curriculum) {
+		const { revision, signal } = request.begin();
+		loading = true;
+		errorMessage = '';
+		try {
+			const selection = await loadCurriculumSelection(curriculum, signal);
+			if (!request.isCurrent(revision)) return;
+			selectedCurriculum = curriculum;
+			versions = selection.loadedVersions;
+			selectedVersion = selection.version;
+			applyProgramWorkspace(selection.workspace.programs, selection.workspace.requirements);
+		} catch (error) {
+			if (isAbortError(error)) return;
+			if (request.isCurrent(revision))
+				errorMessage = error instanceof Error ? error.message : 'โหลดรุ่นหลักสูตรไม่สำเร็จ';
+		} finally {
+			if (request.isCurrent(revision)) loading = false;
+		}
+	}
+
+	async function selectVersion(version: CurriculumVersion) {
+		const { revision, signal } = request.begin();
+		loading = true;
+		errorMessage = '';
+		try {
+			const workspace = await getCurriculumProgramWorkspace(version.id, { signal });
+			if (!request.isCurrent(revision)) return;
+			selectedVersion = version;
+			applyProgramWorkspace(workspace.programs, workspace.requirements);
+		} catch (error) {
+			if (isAbortError(error)) return;
+			if (request.isCurrent(revision))
+				errorMessage = error instanceof Error ? error.message : 'โหลดแผนการเรียนไม่สำเร็จ';
+		} finally {
+			if (request.isCurrent(revision)) loading = false;
+		}
 	}
 	async function addCurriculum(event: SubmitEvent) {
 		event.preventDefault();
@@ -167,7 +223,10 @@
 		versions = versions.map((version) => (version.id === id ? updated : version));
 		selectedVersion = updated;
 	}
-	onMount(loadWorkspace);
+	onMount(() => {
+		void loadWorkspace();
+		return () => request.abort();
+	});
 </script>
 
 <PageShell
