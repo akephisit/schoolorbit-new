@@ -415,9 +415,7 @@ export const transferHomeroomPlacement = (
 		'ย้ายห้องนักเรียนไม่สำเร็จ'
 	);
 
-type LookupGradeLevelsQuery = NonNullable<
-	operations['lookupGradeLevels']['parameters']['query']
->;
+type LookupGradeLevelsQuery = NonNullable<operations['lookupGradeLevels']['parameters']['query']>;
 
 export const listGradeLevelOptions = (academicYearId: string) => {
 	const query = {

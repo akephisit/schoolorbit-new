@@ -1543,8 +1543,11 @@ test('dashboard and self-view routes stay user-scoped with permission-filtered s
 	assert.doesNotMatch(parentTimetable, /getMyTimetable|getTimetableEntries|listPeriods/);
 	assert.match(
 		parentApi,
-		/\/api\/parent\/students\/\$\{encodeURIComponent\(studentId\)\}\/timetable\?academicTermId=/
+		/\/api\/parent\/students\/\$\{encodeURIComponent\(studentId\)\}\/timetable/
 	);
+	assert.match(parentApi, /operations\['getParentChildTimetable'\]\['parameters'\]\['query'\]/);
+	assert.match(parentApi, /\{ query \}/);
+	assert.doesNotMatch(parentApi, /\?academicTermId=/);
 	assert.doesNotMatch(parentApi, /\/api\/academic\/timetable/);
 });
 

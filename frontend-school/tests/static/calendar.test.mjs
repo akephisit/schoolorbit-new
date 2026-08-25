@@ -37,12 +37,6 @@ function generatedSchemaBody(source, name) {
 	assert.fail(`Expected balanced generated schema ${name}`);
 }
 
-function functionBody(source, name) {
-	const match = source.match(new RegExp(`function ${name}\\([^)]*\\)\\s*{([\\s\\S]*?)\\n}`));
-	assert.ok(match, `Expected function ${name}`);
-	return match[1];
-}
-
 function svelteFunctionBody(source, name) {
 	const startPattern = new RegExp(`function ${name}\\([^)]*\\)\\s*{`);
 	const match = startPattern.exec(source);
@@ -90,8 +84,7 @@ test('calendar API client uses current typed contracts', async () => {
 	const target = generatedSchemaBody(generated, 'CalendarEventTarget');
 	const targetInput = interfaceBody(api, 'CalendarEventTargetInput');
 	const viewerEvent = generatedSchemaBody(generated, 'CalendarViewerEvent');
-	const publicFilters = api;
-	const publicQuery = functionBody(api, 'publicCalendarQuery');
+	const publicOperation = generatedSchemaBody(generated, 'listPublicCalendarEvents');
 	const event = generatedSchemaBody(generated, 'CalendarEvent');
 	const createEvent = interfaceBody(api, 'CreateCalendarEventRequest');
 
@@ -125,14 +118,21 @@ test('calendar API client uses current typed contracts', async () => {
 	assert.match(api, /listChildCalendarEvents[\s\S]*Promise<CalendarViewerEvent\[]>/);
 	assert.match(api, /export\s+type\s+CalendarPublicEvent\s*=\s*Schemas\['CalendarPublicEvent'\]/);
 	assert.doesNotMatch(api, /CalendarPublicEvent\s*=\s*Omit/);
-	assert.match(publicFilters, /categoryId\?:\s*string;/);
-	assert.match(publicFilters, /tagId\?:\s*string;/);
-	assert.match(publicQuery, /params\.set\(['"]tagId['"], filters\.tagId\)/);
-	assert.match(publicFilters, /export type CalendarPublicEventFilters = CalendarEventBaseFilters;/);
-	assert.doesNotMatch(publicQuery, /\baudience\b/);
-	assert.doesNotMatch(publicQuery, /\bvisibility\b/);
+	assert.match(publicOperation, /categoryId\?:\s*string;/);
+	assert.match(publicOperation, /tagId\?:\s*string;/);
+	assert.match(publicOperation, /audience\?:\s*components\['schemas'\]\['CalendarAudienceType'\]/);
+	assert.match(publicOperation, /visibility\?:\s*components\['schemas'\]\['CalendarVisibility'\]/);
+	assert.match(api, /operations\['listPublicCalendarEvents'\]\['parameters'\]\['query'\]/);
+	assert.match(
+		api,
+		/export type CalendarPublicEventFilters = Omit<[\s\S]*'audience' \| 'visibility'[\s\S]*>;/
+	);
 	assert.match(api, /listPublicCalendarEvents[\s\S]*Promise<CalendarPublicEvent\[]>/);
-	assert.match(api, /listPublicCalendarEvents[\s\S]*publicCalendarQuery\(filters\)/);
+	assert.match(
+		api,
+		/listPublicCalendarEvents[\s\S]*query:\s*\{ \.\.\.filters \} satisfies GeneratedPublicCalendarQuery/
+	);
+	assert.doesNotMatch(api, /function publicCalendarQuery|new URLSearchParams/);
 });
 
 test('calendar shared components use shadcn primitives', async () => {

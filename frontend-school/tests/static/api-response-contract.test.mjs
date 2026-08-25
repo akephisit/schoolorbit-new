@@ -355,7 +355,7 @@ test('generated staff, student, and parent profile contracts own read transport 
 		assert.equal(contract.paths?.[route]?.[method]?.operationId, operationId, `${method} ${route}`);
 	}
 	for (const source of [staffApi, studentApi, parentApi]) {
-		assert.match(source, /import\s+type\s+\{\s*components\s*\}/);
+		assert.match(source, /import\s+type\s+\{[^}]*\bcomponents\b[^}]*\}/);
 	}
 	assert.doesNotMatch(
 		staffApi,
@@ -819,18 +819,22 @@ test('parent self-service API uses typed student and timetable responses', async
 	);
 
 	assert.match(parentsApi, /import type \{ Student \} from '\.\/students'/);
-	assert.match(parentsApi, /getChildProfile[\s\S]*Promise<LoadedApiResponse<Student>>/);
+	assert.match(parentsApi, /getChildProfile[\s\S]*Promise<Student>/);
+	assert.match(parentsApi, /operations\['getParentChildProfile'\]\['parameters'\]\['query'\]/);
 	assert.match(parentsApi, /apiClient\.get<Student>/);
 	assert.match(parentsApi, /getChildTimetable[\s\S]*Promise<TimetableEntry\[\]>/);
 	assert.match(parentsApi, /requireApiData\(/);
-	assert.match(parentsApi, /academicTermId=\$\{encodeURIComponent\(academicTermId\)\}/);
+	assert.match(parentsApi, /operations\['getParentChildTimetable'\]\['parameters'\]\['query'\]/);
+	assert.match(parentsApi, /\{ query \}/);
+	assert.doesNotMatch(parentsApi, /\?academicTermId=/);
 	assert.doesNotMatch(parentsApi, /apiClient\.get<unknown>/);
 	assert.doesNotMatch(parentsApi, /return response as/);
 
 	assert.match(childPage, /import type \{ Student \} from '\$lib\/api\/students'/);
-	assert.match(childPage, /student = response\.data/);
+	assert.match(childPage, /student = loaded/);
 	assert.doesNotMatch(childPage, /response\.data as/);
-	assert.match(timetablePage, /child = \(await getChildProfile\(studentId\)\)\.data/);
+	assert.match(timetablePage, /getChildProfile\(studentId, selectedYearId\)/);
+	assert.match(timetablePage, /child = loadedChild/);
 	assert.match(timetablePage, /const loaded = await getChildTimetable\(studentId, termId\)/);
 	assert.doesNotMatch(timetablePage, /childData as/);
 });

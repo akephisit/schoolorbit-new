@@ -7,10 +7,7 @@
 		listParentAcademicContextOptions,
 		type AcademicContextOptionsResponse
 	} from '$lib/api/academic-context';
-	import {
-		resolveScopedAcademicYearUrl,
-		urlWithAcademicYear
-	} from '$lib/academic-context/scoped-year';
+	import { resolveScopedAcademicYearUrl } from '$lib/academic-context/scoped-year';
 	import { getOwnParentProfile, type ParentProfile } from '$lib/api/parents';
 	import ScopedAcademicYearSelect from '$lib/components/academic-context/ScopedAcademicYearSelect.svelte';
 	import { Card } from '$lib/components/ui/card';
@@ -71,7 +68,7 @@
 			selectedYearId = selection.academicYearId ?? '';
 
 			if (selection.replaceUrl) {
-				await goto(resolve(`/parent${selection.replaceUrl.search}${selection.replaceUrl.hash}`), {
+				await goto(resolve(`/parent?academicYearId=${encodeURIComponent(selectedYearId)}`), {
 					replaceState: true,
 					noScroll: true,
 					keepFocus: true
@@ -99,8 +96,7 @@
 		loading = true;
 		error = null;
 		try {
-			const nextUrl = urlWithAcademicYear(page.url, academicYearId);
-			await goto(resolve(`/parent${nextUrl.search}${nextUrl.hash}`), {
+			await goto(resolve(`/parent?academicYearId=${encodeURIComponent(academicYearId)}`), {
 				replaceState: true,
 				noScroll: true,
 				keepFocus: true

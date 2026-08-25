@@ -49,9 +49,7 @@ function calendarEventFromDto(dto: CalendarEventDto): CalendarEvent {
 export type CalendarEventFilters = NonNullable<
 	operations['listCalendarEvents']['parameters']['query']
 >;
-type MyCalendarQuery = NonNullable<
-	operations['listMyCalendarEvents']['parameters']['query']
->;
+type MyCalendarQuery = NonNullable<operations['listMyCalendarEvents']['parameters']['query']>;
 type ChildCalendarQuery = NonNullable<
 	operations['getParentChildCalendarEvents']['parameters']['query']
 >;

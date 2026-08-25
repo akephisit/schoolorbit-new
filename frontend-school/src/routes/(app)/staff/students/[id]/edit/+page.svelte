@@ -188,7 +188,11 @@
 		try {
 			await deleteStudent(studentId);
 			toast.success('ลบนักเรียนสำเร็จ');
-			goto(resolve('/staff/students') + academicYearQuery);
+			if (academicYearId) {
+				goto(resolve(`/staff/students?academicYearId=${encodeURIComponent(academicYearId)}`));
+			} else {
+				goto(resolve('/staff/students'));
+			}
 		} catch (error) {
 			console.error('Failed to delete:', error);
 			const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';

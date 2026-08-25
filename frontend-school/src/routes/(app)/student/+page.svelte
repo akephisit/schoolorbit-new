@@ -13,10 +13,7 @@
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Label } from '$lib/components/ui/label';
 	import ScopedAcademicYearSelect from '$lib/components/academic-context/ScopedAcademicYearSelect.svelte';
-	import {
-		resolveScopedAcademicYearUrl,
-		urlWithAcademicYear
-	} from '$lib/academic-context/scoped-year';
+	import { resolveScopedAcademicYearUrl } from '$lib/academic-context/scoped-year';
 	import { User, Calendar, BookOpen, Award } from 'lucide-svelte';
 	import { getOwnProfile, type Student } from '$lib/api/students';
 	import { toast } from 'svelte-sonner';
@@ -70,7 +67,7 @@
 			selectedYearId = selection.academicYearId ?? '';
 
 			if (selection.replaceUrl) {
-				await goto(resolve(`/student${selection.replaceUrl.search}${selection.replaceUrl.hash}`), {
+				await goto(resolve(`/student?academicYearId=${encodeURIComponent(selectedYearId)}`), {
 					replaceState: true,
 					noScroll: true,
 					keepFocus: true
@@ -101,8 +98,7 @@
 		loading = true;
 		error = '';
 		try {
-			const nextUrl = urlWithAcademicYear(page.url, academicYearId);
-			await goto(resolve(`/student${nextUrl.search}${nextUrl.hash}`), {
+			await goto(resolve(`/student?academicYearId=${encodeURIComponent(academicYearId)}`), {
 				replaceState: true,
 				noScroll: true,
 				keepFocus: true
