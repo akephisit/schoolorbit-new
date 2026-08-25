@@ -167,7 +167,22 @@ async fn listing_occupancy_and_swaps_are_explicitly_term_and_group_scoped() {
     assert!(listed.iter().all(|entry| {
         entry.academic_term_id == term_id && entry.learning_group_id == Some(group_id)
     }));
-    assert!(listed.iter().any(|entry| entry.id == created.id));
+    let listed_created = listed
+        .iter()
+        .find(|entry| entry.id == created.id)
+        .expect("batch-hydrated list must retain the created entry");
+    assert_eq!(
+        listed_created
+            .instructors
+            .iter()
+            .map(|instructor| instructor.user_id)
+            .collect::<Vec<_>>(),
+        created
+            .instructors
+            .iter()
+            .map(|instructor| instructor.user_id)
+            .collect::<Vec<_>>()
+    );
 
     let occupancy = timetable_service::occupancy(&pool, term_id).await.unwrap();
     let created_cell = occupancy

@@ -1192,10 +1192,12 @@ async fn migration_044_exposes_the_clean_academic_core_runtime_contract() {
                EXISTS (
                    SELECT 1 FROM pg_constraint
                    WHERE conname = 'curriculum_course_requirements_program_resource_key'
+                     AND connamespace = current_schema()::regnamespace
                ),
                EXISTS (
                    SELECT 1 FROM pg_constraint
                    WHERE conname = 'curriculum_activity_requirements_program_resource_key'
+                     AND connamespace = current_schema()::regnamespace
                )"#,
     )
     .fetch_one(&pool)
@@ -1206,7 +1208,8 @@ async fn migration_044_exposes_the_clean_academic_core_runtime_contract() {
     let audit_delete_action: String = sqlx::query_scalar(
         r#"SELECT confdeltype::text
            FROM pg_constraint
-           WHERE conname = 'academic_audit_events_academic_term_id_fkey'"#,
+           WHERE conname = 'academic_audit_events_academic_term_id_fkey'
+             AND connamespace = current_schema()::regnamespace"#,
     )
     .fetch_one(&pool)
     .await

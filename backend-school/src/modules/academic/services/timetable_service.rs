@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 use chrono::{DateTime, NaiveTime, Utc};
 use sqlx::{FromRow, PgPool, Postgres, Transaction};
@@ -1375,89 +1375,155 @@ fn entry_select() -> &'static str {
 }
 
 async fn hydrate_rows(pool: &PgPool, rows: Vec<EntryRow>) -> Result<Vec<TimetableEntry>, AppError> {
-    let mut entries = Vec::with_capacity(rows.len());
-    for row in rows {
-        entries.push(hydrate_row(pool, row).await?);
+    if rows.is_empty() {
+        return Ok(Vec::new());
     }
-    Ok(entries)
+
+    let learning_group_ids: Vec<Uuid> = rows
+        .iter()
+        .filter_map(|row| row.learning_group_id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let entry_ids: Vec<Uuid> = rows
+        .iter()
+        .filter(|row| row.learning_group_id.is_none())
+        .map(|row| row.id)
+        .collect();
+    let group_instructor_rows: Vec<InstructorQueryRow> = sqlx::query_as(
+        r#"SELECT teacher.learning_group_id,
+                  teacher.teacher_id,
+                  concat_ws(' ', nullif(concat(coalesce(user_account.title, ''), user_account.first_name), ''), nullif(user_account.last_name, '')) AS display_name,
+                  teacher.role,
+                  teacher_subject_group.id AS subject_group_id,
+                  teacher_subject_group.name_th AS subject_group_name,
+                  teacher_subject_group.display_order AS subject_group_display_order
+           FROM learning_group_teachers teacher
+           JOIN users user_account ON user_account.id = teacher.teacher_id
+           LEFT JOIN LATERAL (
+               SELECT subject_group.id, subject_group.name_th, subject_group.display_order
+               FROM organization_members membership
+               JOIN organization_units unit
+                 ON unit.id = membership.organization_unit_id
+               JOIN subject_groups subject_group
+                 ON subject_group.id = unit.subject_group_id
+               WHERE membership.user_id = teacher.teacher_id
+                 AND membership.started_at <= CURRENT_DATE
+                 AND (membership.ended_at IS NULL OR membership.ended_at >= CURRENT_DATE)
+               ORDER BY membership.is_primary DESC,
+                        subject_group.display_order,
+                        membership.started_at,
+                        membership.id
+               LIMIT 1
+           ) teacher_subject_group ON true
+           WHERE teacher.learning_group_id = ANY($1)
+           ORDER BY teacher.learning_group_id,
+                    CASE teacher.role WHEN 'primary' THEN 1 WHEN 'secondary' THEN 2 ELSE 3 END,
+                    teacher.created_at, teacher.teacher_id"#,
+    )
+    .bind(&learning_group_ids)
+    .fetch_all(pool)
+    .await?;
+    let entry_instructor_rows: Vec<InstructorQueryRow> = sqlx::query_as(
+        r#"SELECT instructor.entry_id,
+                  instructor.instructor_id,
+                  concat_ws(' ', nullif(concat(coalesce(user_account.title, ''), user_account.first_name), ''), nullif(user_account.last_name, '')) AS display_name,
+                  instructor.role::text,
+                  teacher_subject_group.id AS subject_group_id,
+                  teacher_subject_group.name_th AS subject_group_name,
+                  teacher_subject_group.display_order AS subject_group_display_order
+           FROM timetable_entry_instructors instructor
+           JOIN users user_account ON user_account.id = instructor.instructor_id
+           LEFT JOIN LATERAL (
+               SELECT subject_group.id, subject_group.name_th, subject_group.display_order
+               FROM organization_members membership
+               JOIN organization_units unit
+                 ON unit.id = membership.organization_unit_id
+               JOIN subject_groups subject_group
+                 ON subject_group.id = unit.subject_group_id
+               WHERE membership.user_id = instructor.instructor_id
+                 AND membership.started_at <= CURRENT_DATE
+                 AND (membership.ended_at IS NULL OR membership.ended_at >= CURRENT_DATE)
+               ORDER BY membership.is_primary DESC,
+                        subject_group.display_order,
+                        membership.started_at,
+                        membership.id
+               LIMIT 1
+           ) teacher_subject_group ON true
+           WHERE instructor.entry_id = ANY($1)
+           ORDER BY instructor.entry_id,
+                    CASE instructor.role WHEN 'primary' THEN 1 ELSE 2 END,
+                    instructor.created_at, instructor.instructor_id"#,
+    )
+    .bind(&entry_ids)
+    .fetch_all(pool)
+    .await?;
+
+    let group_instructors = group_instructors_by_owner(group_instructor_rows);
+    let mut entry_instructors = group_instructors_by_owner(entry_instructor_rows);
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let instructors = match row.learning_group_id {
+                Some(group_id) => group_instructors
+                    .get(&group_id)
+                    .cloned()
+                    .unwrap_or_default(),
+                None => entry_instructors.remove(&row.id).unwrap_or_default(),
+            };
+            hydrate_entry(row, instructors)
+        })
+        .collect())
 }
 
 async fn hydrate_row(pool: &PgPool, row: EntryRow) -> Result<TimetableEntry, AppError> {
-    let instructors: Vec<(
-        Uuid,
-        String,
-        String,
-        Option<Uuid>,
-        Option<String>,
-        Option<i32>,
-    )> = if let Some(group_id) = row.learning_group_id {
-        sqlx::query_as(
-            r#"SELECT teacher.teacher_id,
-                      concat_ws(' ', nullif(concat(coalesce(user_account.title, ''), user_account.first_name), ''), nullif(user_account.last_name, '')) AS display_name,
-                      teacher.role,
-                      teacher_subject_group.id AS subject_group_id,
-                      teacher_subject_group.name_th AS subject_group_name,
-                      teacher_subject_group.display_order AS subject_group_display_order
-               FROM learning_group_teachers teacher
-               JOIN users user_account ON user_account.id = teacher.teacher_id
-               LEFT JOIN LATERAL (
-                   SELECT subject_group.id, subject_group.name_th, subject_group.display_order
-                   FROM organization_members membership
-                   JOIN organization_units unit
-                     ON unit.id = membership.organization_unit_id
-                   JOIN subject_groups subject_group
-                     ON subject_group.id = unit.subject_group_id
-                   WHERE membership.user_id = teacher.teacher_id
-                     AND membership.started_at <= CURRENT_DATE
-                     AND (membership.ended_at IS NULL OR membership.ended_at >= CURRENT_DATE)
-                   ORDER BY membership.is_primary DESC,
-                            subject_group.display_order,
-                            membership.started_at,
-                            membership.id
-                   LIMIT 1
-               ) teacher_subject_group ON true
-               WHERE teacher.learning_group_id = $1
-               ORDER BY CASE teacher.role WHEN 'primary' THEN 1 WHEN 'secondary' THEN 2 ELSE 3 END,
-                        teacher.created_at, teacher.teacher_id"#,
-        )
-        .bind(group_id)
-        .fetch_all(pool)
+    hydrate_rows(pool, vec![row])
         .await?
-    } else {
-        sqlx::query_as(
-            r#"SELECT instructor.instructor_id,
-                      concat_ws(' ', nullif(concat(coalesce(user_account.title, ''), user_account.first_name), ''), nullif(user_account.last_name, '')) AS display_name,
-                      instructor.role::text,
-                      teacher_subject_group.id AS subject_group_id,
-                      teacher_subject_group.name_th AS subject_group_name,
-                      teacher_subject_group.display_order AS subject_group_display_order
-               FROM timetable_entry_instructors instructor
-               JOIN users user_account ON user_account.id = instructor.instructor_id
-               LEFT JOIN LATERAL (
-                   SELECT subject_group.id, subject_group.name_th, subject_group.display_order
-                   FROM organization_members membership
-                   JOIN organization_units unit
-                     ON unit.id = membership.organization_unit_id
-                   JOIN subject_groups subject_group
-                     ON subject_group.id = unit.subject_group_id
-                   WHERE membership.user_id = instructor.instructor_id
-                     AND membership.started_at <= CURRENT_DATE
-                     AND (membership.ended_at IS NULL OR membership.ended_at >= CURRENT_DATE)
-                   ORDER BY membership.is_primary DESC,
-                            subject_group.display_order,
-                            membership.started_at,
-                            membership.id
-                   LIMIT 1
-               ) teacher_subject_group ON true
-               WHERE instructor.entry_id = $1
-               ORDER BY CASE instructor.role WHEN 'primary' THEN 1 ELSE 2 END,
-                        instructor.created_at, instructor.instructor_id"#,
-        )
-        .bind(row.id)
-        .fetch_all(pool)
-        .await?
-    };
-    Ok(TimetableEntry {
+        .pop()
+        .ok_or_else(|| AppError::InternalServerError("ไม่สามารถโหลดช่องตารางสอนได้".to_string()))
+}
+
+type InstructorQueryRow = (
+    Uuid,
+    Uuid,
+    String,
+    String,
+    Option<Uuid>,
+    Option<String>,
+    Option<i32>,
+);
+
+fn group_instructors_by_owner(
+    rows: Vec<InstructorQueryRow>,
+) -> HashMap<Uuid, Vec<TimetableInstructor>> {
+    let mut values: HashMap<Uuid, Vec<TimetableInstructor>> = HashMap::new();
+    for (
+        owner_id,
+        user_id,
+        display_name,
+        role,
+        subject_group_id,
+        subject_group_name,
+        subject_group_display_order,
+    ) in rows
+    {
+        values
+            .entry(owner_id)
+            .or_default()
+            .push(TimetableInstructor {
+                user_id,
+                display_name,
+                role,
+                subject_group_id,
+                subject_group_name,
+                subject_group_display_order,
+            });
+    }
+    values
+}
+
+fn hydrate_entry(row: EntryRow, instructors: Vec<TimetableInstructor>) -> TimetableEntry {
+    TimetableEntry {
         id: row.id,
         academic_term_id: row.academic_term_id,
         academic_year_id: row.academic_year_id,
@@ -1491,29 +1557,10 @@ async fn hydrate_row(pool: &PgPool, row: EntryRow) -> Result<TimetableEntry, App
         period_name: row.period_name,
         start_time: row.start_time,
         end_time: row.end_time,
-        instructors: instructors
-            .into_iter()
-            .map(
-                |(
-                    user_id,
-                    display_name,
-                    role,
-                    subject_group_id,
-                    subject_group_name,
-                    subject_group_display_order,
-                )| TimetableInstructor {
-                    user_id,
-                    display_name,
-                    role,
-                    subject_group_id,
-                    subject_group_name,
-                    subject_group_display_order,
-                },
-            )
-            .collect(),
+        instructors,
         created_at: row.created_at,
         updated_at: row.updated_at,
-    })
+    }
 }
 
 fn normalize_day(day: &str) -> Result<String, AppError> {

@@ -17,7 +17,8 @@ use super::{
         ActivitySchedulingMode, ApplyCurriculumOfferingsRequest, ApplyRosterRequest,
         CourseGradingPolicy, CreateActivityOfferingRequest, CreateCourseOfferingRequest,
         CreateLearningGroupRequest, CreateLearningOfferingRequest, LearningOfferingKind,
-        LearningOfferingStatus, LearningTeacherRole, OfferingTargetInput, OfferingTargetKind,
+        LearningOfferingQuery, LearningOfferingSnapshot, LearningOfferingStatus,
+        LearningTeacherRole, OfferingTargetInput, OfferingTargetKind,
         PreviewCurriculumOfferingsRequest, PublishLearningOfferingRequest, PublishRosterRequest,
         ReplaceLearningGroupHomeroomsRequest, ReplaceLearningGroupTeachersRequest,
         RosterOverrideAction, RosterOverrideInput, StudentActivityRegistrationQuery,
@@ -26,6 +27,7 @@ use super::{
     services::{activities, groups, offerings},
 };
 use crate::error::AppError;
+use crate::policies::resource_access_policy::AcademicResourceListFilter;
 
 const ACADEMIC_CORE_NAMESPACE: Uuid = Uuid::from_u128(0x5c33_b984_10df_58db_bf80_62db_c4a0_3d1b);
 
@@ -1449,4 +1451,50 @@ async fn student_activity_registration_is_term_scoped_eligible_and_revisioned() 
             "activity.self_unregistered".to_string()
         ]
     );
+}
+
+#[tokio::test]
+async fn offering_list_batch_hydrates_mixed_snapshots_and_targets() {
+    let pool = prepare_delivery_fixture("academic_delivery_batch_list", false).await;
+    apply_migrations_through(&pool, 44).await.unwrap();
+    let academic_term_id: Uuid = sqlx::query_scalar(
+        r#"SELECT academic_term_id
+           FROM learning_offerings
+           GROUP BY academic_term_id
+           ORDER BY COUNT(*) DESC, academic_term_id
+           LIMIT 1"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let values = offerings::list(
+        &pool,
+        LearningOfferingQuery { academic_term_id },
+        &AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    assert!(values.len() >= 2);
+    assert!(values.iter().all(|offering| !offering.targets.is_empty()));
+    assert!(values
+        .iter()
+        .any(|offering| matches!(&offering.snapshot, LearningOfferingSnapshot::Course(_))));
+    assert!(values
+        .iter()
+        .any(|offering| matches!(&offering.snapshot, LearningOfferingSnapshot::Activity(_))));
+    assert!(values.iter().all(|offering| matches!(
+        (offering.kind, &offering.snapshot),
+        (
+            LearningOfferingKind::Course,
+            LearningOfferingSnapshot::Course(_)
+        ) | (
+            LearningOfferingKind::Activity,
+            LearningOfferingSnapshot::Activity(_)
+        )
+    )));
 }

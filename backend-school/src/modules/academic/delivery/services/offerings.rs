@@ -60,6 +60,7 @@ struct ActivityVersionSource {
 
 #[derive(Debug, sqlx::FromRow)]
 struct CourseDetailRow {
+    learning_offering_id: Uuid,
     subject_version_id: Uuid,
     subject_id: Uuid,
     curriculum_course_requirement_id: Option<Uuid>,
@@ -70,6 +71,7 @@ struct CourseDetailRow {
 
 #[derive(Debug, sqlx::FromRow)]
 struct ActivityDetailRow {
+    learning_offering_id: Uuid,
     activity_version_id: Uuid,
     activity_id: Uuid,
     curriculum_activity_requirement_id: Option<Uuid>,
@@ -142,11 +144,7 @@ pub async fn list(
         .bind(filter.assigned_actor_id)
         .fetch_all(pool)
         .await?;
-    let mut values = Vec::with_capacity(rows.len());
-    for row in rows {
-        values.push(hydrate(pool, row).await?);
-    }
-    Ok(values)
+    hydrate_many(pool, rows).await
 }
 
 pub async fn get(pool: &PgPool, id: Uuid) -> Result<LearningOffering, AppError> {
@@ -450,82 +448,125 @@ pub async fn apply_from_curriculum(
 }
 
 async fn hydrate(pool: &PgPool, row: LearningOfferingRow) -> Result<LearningOffering, AppError> {
-    let targets: Vec<LearningOfferingTarget> = sqlx::query_as::<_, TargetRow>(
-        "SELECT id, target_kind, homeroom_id, grade_level_id, study_program_id \
-         FROM learning_offering_targets WHERE learning_offering_id = $1 \
-         ORDER BY target_kind, homeroom_id, grade_level_id, study_program_id",
+    hydrate_many(pool, vec![row])
+        .await?
+        .pop()
+        .ok_or_else(|| AppError::InternalServerError("ไม่สามารถโหลดรายการเปิดสอนได้".to_string()))
+}
+
+async fn hydrate_many(
+    pool: &PgPool,
+    rows: Vec<LearningOfferingRow>,
+) -> Result<Vec<LearningOffering>, AppError> {
+    if rows.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let offering_ids: Vec<Uuid> = rows.iter().map(|row| row.id).collect();
+    let target_rows: Vec<TargetRow> = sqlx::query_as(
+        "SELECT learning_offering_id, id, target_kind, homeroom_id, grade_level_id, \
+         study_program_id FROM learning_offering_targets \
+         WHERE learning_offering_id = ANY($1) \
+         ORDER BY learning_offering_id, target_kind, homeroom_id, grade_level_id, study_program_id",
     )
-    .bind(row.id)
+    .bind(&offering_ids)
     .fetch_all(pool)
-    .await?
-    .into_iter()
-    .map(Into::into)
-    .collect();
-    let snapshot = match row.kind {
-        LearningOfferingKind::Course => {
-            let detail: CourseDetailRow = sqlx::query_as(
-                "SELECT subject_version_id, subject_id, curriculum_course_requirement_id, \
-                 credit::text AS credit, hours::text AS hours, grading_policy \
-                 FROM course_offering_details WHERE learning_offering_id = $1",
-            )
-            .bind(row.id)
-            .fetch_one(pool)
-            .await?;
-            LearningOfferingSnapshot::Course(CourseOfferingSnapshot {
-                subject_version_id: detail.subject_version_id,
-                subject_id: detail.subject_id,
-                curriculum_course_requirement_id: detail.curriculum_course_requirement_id,
-                credit: detail.credit,
-                hours: detail.hours,
-                grading_policy: detail.grading_policy.0,
+    .await?;
+    let mut targets_by_offering: HashMap<Uuid, Vec<LearningOfferingTarget>> = HashMap::new();
+    for target in target_rows {
+        targets_by_offering
+            .entry(target.learning_offering_id)
+            .or_default()
+            .push(target.into());
+    }
+
+    let course_rows: Vec<CourseDetailRow> = sqlx::query_as(
+        "SELECT learning_offering_id, subject_version_id, subject_id, \
+         curriculum_course_requirement_id, credit::text AS credit, hours::text AS hours, \
+         grading_policy FROM course_offering_details WHERE learning_offering_id = ANY($1)",
+    )
+    .bind(&offering_ids)
+    .fetch_all(pool)
+    .await?;
+    let mut courses_by_offering: HashMap<Uuid, CourseDetailRow> = course_rows
+        .into_iter()
+        .map(|detail| (detail.learning_offering_id, detail))
+        .collect();
+
+    let activity_rows: Vec<ActivityDetailRow> = sqlx::query_as(
+        "SELECT learning_offering_id, activity_version_id, activity_id, \
+         curriculum_activity_requirement_id, registration_type, scheduling_mode, \
+         hours::text AS hours, capacity, attendance_requirement, pass_criteria \
+         FROM activity_offering_details WHERE learning_offering_id = ANY($1)",
+    )
+    .bind(&offering_ids)
+    .fetch_all(pool)
+    .await?;
+    let mut activities_by_offering: HashMap<Uuid, ActivityDetailRow> = activity_rows
+        .into_iter()
+        .map(|detail| (detail.learning_offering_id, detail))
+        .collect();
+
+    rows.into_iter()
+        .map(|row| {
+            let snapshot = match row.kind {
+                LearningOfferingKind::Course => {
+                    let detail = courses_by_offering.remove(&row.id).ok_or_else(|| {
+                        AppError::InternalServerError("ไม่พบ snapshot ของรายวิชาที่เปิดสอน".to_string())
+                    })?;
+                    LearningOfferingSnapshot::Course(CourseOfferingSnapshot {
+                        subject_version_id: detail.subject_version_id,
+                        subject_id: detail.subject_id,
+                        curriculum_course_requirement_id: detail.curriculum_course_requirement_id,
+                        credit: detail.credit,
+                        hours: detail.hours,
+                        grading_policy: detail.grading_policy.0,
+                    })
+                }
+                LearningOfferingKind::Activity => {
+                    let detail = activities_by_offering.remove(&row.id).ok_or_else(|| {
+                        AppError::InternalServerError("ไม่พบ snapshot ของกิจกรรมที่เปิดสอน".to_string())
+                    })?;
+                    LearningOfferingSnapshot::Activity(ActivityOfferingSnapshot {
+                        activity_version_id: detail.activity_version_id,
+                        activity_id: detail.activity_id,
+                        curriculum_activity_requirement_id: detail
+                            .curriculum_activity_requirement_id,
+                        registration_type: detail.registration_type,
+                        scheduling_mode: detail.scheduling_mode,
+                        hours: detail.hours,
+                        capacity: detail.capacity,
+                        attendance_requirement: detail.attendance_requirement.0,
+                        pass_criteria: detail.pass_criteria.0,
+                    })
+                }
+            };
+            Ok(LearningOffering {
+                id: row.id,
+                academic_term_id: row.academic_term_id,
+                academic_year_id: row.academic_year_id,
+                kind: row.kind,
+                code_snapshot: row.code_snapshot,
+                name_snapshot: row.name_snapshot,
+                source_requirement_kind: row.source_requirement_kind,
+                source_requirement_id: row.source_requirement_id,
+                status: row.status,
+                published_at: row.published_at,
+                owning_organization_unit_id: row.owning_organization_unit_id,
+                row_version: row.row_version,
+                migrated: row.migrated,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+                snapshot,
+                targets: targets_by_offering.remove(&row.id).unwrap_or_default(),
             })
-        }
-        LearningOfferingKind::Activity => {
-            let detail: ActivityDetailRow = sqlx::query_as(
-                "SELECT activity_version_id, activity_id, curriculum_activity_requirement_id, \
-                 registration_type, scheduling_mode, hours::text AS hours, capacity, \
-                 attendance_requirement, pass_criteria \
-                 FROM activity_offering_details WHERE learning_offering_id = $1",
-            )
-            .bind(row.id)
-            .fetch_one(pool)
-            .await?;
-            LearningOfferingSnapshot::Activity(ActivityOfferingSnapshot {
-                activity_version_id: detail.activity_version_id,
-                activity_id: detail.activity_id,
-                curriculum_activity_requirement_id: detail.curriculum_activity_requirement_id,
-                registration_type: detail.registration_type,
-                scheduling_mode: detail.scheduling_mode,
-                hours: detail.hours,
-                capacity: detail.capacity,
-                attendance_requirement: detail.attendance_requirement.0,
-                pass_criteria: detail.pass_criteria.0,
-            })
-        }
-    };
-    Ok(LearningOffering {
-        id: row.id,
-        academic_term_id: row.academic_term_id,
-        academic_year_id: row.academic_year_id,
-        kind: row.kind,
-        code_snapshot: row.code_snapshot,
-        name_snapshot: row.name_snapshot,
-        source_requirement_kind: row.source_requirement_kind,
-        source_requirement_id: row.source_requirement_id,
-        status: row.status,
-        published_at: row.published_at,
-        owning_organization_unit_id: row.owning_organization_unit_id,
-        row_version: row.row_version,
-        migrated: row.migrated,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-        snapshot,
-        targets,
-    })
+        })
+        .collect()
 }
 
 #[derive(Debug, sqlx::FromRow)]
 struct TargetRow {
+    learning_offering_id: Uuid,
     id: Uuid,
     target_kind: OfferingTargetKind,
     homeroom_id: Option<Uuid>,

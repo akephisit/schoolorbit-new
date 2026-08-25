@@ -5982,3 +5982,27 @@ fn cross_module_academic_consumers_use_only_canonical_runtime_identity() {
 
     assert_eq!(violations, Vec::<String>::new());
 }
+
+#[test]
+fn academic_list_hydration_does_not_issue_one_query_per_response_item() {
+    let offerings = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/delivery/services/offerings.rs"),
+    ));
+    let timetable = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/services/timetable_service.rs"),
+    ));
+    let offering_n_plus_one =
+        Regex::new(r"(?s)for\s+row\s+in\s+rows\s*\{.{0,200}hydrate\(pool,\s*row\)\.await").unwrap();
+    let timetable_n_plus_one =
+        Regex::new(r"(?s)for\s+row\s+in\s+rows\s*\{.{0,200}hydrate_row\(pool,\s*row\)\.await")
+            .unwrap();
+
+    assert!(
+        !offering_n_plus_one.is_match(&offerings),
+        "learning-offering list hydration must fetch related rows in batches"
+    );
+    assert!(
+        !timetable_n_plus_one.is_match(&timetable),
+        "timetable list hydration must fetch instructors in batches"
+    );
+}
