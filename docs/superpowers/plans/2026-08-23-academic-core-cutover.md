@@ -2677,7 +2677,7 @@ npm run check:api-contracts
 npm run test:api-contracts
 ```
 
-- [ ] **Step 5: Commit, push, deploy, and verify the production request**
+- [x] **Step 5: Commit, push, deploy, and verify the production request**
 
 ```bash
 git add frontend-school docs/superpowers/plans/2026-08-23-academic-core-cutover.md
