@@ -311,7 +311,13 @@ Perform the cutover in this order:
    must contain no row data, database URL, secret, or learner identity.
 9. On selected tenants, run read-only and authenticated workflows in multiple year and term contexts,
    including Topbar context changes, offerings/groups, assessment, timetable, exams, supervision,
-   admission, and student/parent history views.
+   admission, and student/parent history views. While the public proxy is intentionally returning
+   maintenance responses, dispatch the reviewed Phase A commit with
+   `academic_core_phase_a_reconcile=true`, `academic_core_phase_a_smoke=true`, and the selected
+   `academic_core_smoke_subdomain`. The workflow requires `SMOKE_USERNAME` and `SMOKE_PASSWORD`,
+   reaches backend-school only through VPS loopback, and performs authenticated read-only context
+   checks without exposing a public bypass. A failed login, context, permission, or read keeps the
+   workflow red and maintenance active.
 10. Only after the separately reviewed Phase B artifact and explicit cleanup authorization exist,
     deploy that image and apply 045 through the same centralized migration runner.
 11. Verify every tenant's latest version and cleanup manifest, generated contracts, permissions,

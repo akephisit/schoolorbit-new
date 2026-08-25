@@ -292,6 +292,14 @@ Alternatively, copy `.env.smoke.example` to the ignored `.env.smoke.local`. The 
 
 If credentials are absent, authenticated checks are skipped. Report that limitation rather than describing the smoke suite as fully passing.
 
+Set `SMOKE_ACADEMIC_CONTEXT=true` only for an explicitly selected cutover tenant. After login, the
+script reads the context options, selects at most two canonical year contexts and two canonical term
+contexts, and verifies the Academic Core, offerings, assessment, timetable, exams, supervision,
+admission, and staff-dashboard read paths. It stores response bodies only in its private temporary
+directory and removes them at exit. During the two-artifact Academic Core maintenance window, run
+this mode through the backend deployment workflow's VPS-loopback smoke input; never add a public
+maintenance bypass or open traffic temporarily for the test.
+
 The API-domain cookie is `__Host-schoolorbit_session`; it is opaque and unavailable to frontend JavaScript. Login and authenticated `/api/auth/me` responses expose `X-CSRF-Token`. The smoke script captures that value only in a shell variable, updates it after rotation-capable responses, and sends it on every authenticated `POST`, `PUT`, `PATCH`, or `DELETE`. Never print, export, persist, or enable trace output for the CSRF value. A manual flow should use private temporary files:
 
 ```bash

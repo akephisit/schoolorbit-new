@@ -16,6 +16,7 @@ if [[ -f "$smoke_env_file" ]]; then
         SMOKE_PASSWORD
         SMOKE_REMEMBER_ME
         SMOKE_REQUIRE_AUTH
+        SMOKE_ACADEMIC_CONTEXT
         SMOKE_RESOLVE_IP
         FILE_SMOKE_PNG
     )
@@ -47,6 +48,7 @@ SMOKE_USERNAME="${SMOKE_USERNAME:-}"
 SMOKE_PASSWORD="${SMOKE_PASSWORD:-}"
 SMOKE_REMEMBER_ME="${SMOKE_REMEMBER_ME:-true}"
 SMOKE_REQUIRE_AUTH="${SMOKE_REQUIRE_AUTH:-false}"
+SMOKE_ACADEMIC_CONTEXT="${SMOKE_ACADEMIC_CONTEXT:-false}"
 SMOKE_RESOLVE_IP="${SMOKE_RESOLVE_IP:-}"
 FILE_SMOKE_PNG="${FILE_SMOKE_PNG:-}"
 
@@ -54,6 +56,14 @@ SMOKE_API_URL="${SMOKE_API_URL%/}"
 SMOKE_ADMIN_API_URL="${SMOKE_ADMIN_API_URL%/}"
 SMOKE_TENANT_URL="${SMOKE_TENANT_URL%/}"
 SMOKE_ORIGIN="${SMOKE_ORIGIN%/}"
+
+case "$SMOKE_ACADEMIC_CONTEXT" in
+    true | false) ;;
+    *)
+        printf 'SMOKE_ACADEMIC_CONTEXT must be true or false.\n' >&2
+        exit 64
+        ;;
+esac
 
 admin_api_host=${SMOKE_ADMIN_API_URL#https://}
 admin_api_host=${admin_api_host%%/*}
@@ -317,6 +327,151 @@ PY
     fi
 }
 
+expect_json_success() {
+    local name="$1"
+    local body_file="$2"
+
+    if python3 - "$body_file" <<'PY'; then
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    payload = json.load(handle)
+
+raise SystemExit(0 if isinstance(payload, dict) and payload.get("success") is True else 1)
+PY
+        pass "$name success envelope"
+    else
+        fail "$name expected a successful API envelope"
+    fi
+}
+
+# Academic Core maintenance read-only smoke start
+academic_context_get() {
+    local key="$1"
+    local name="$2"
+    local path="$3"
+    local headers_file="$tmp_dir/academic-$key.headers"
+    local body_file="$tmp_dir/academic-$key.body"
+    local status
+
+    status="$(school_api_request "$name" GET "$SMOKE_API_URL$path" "$headers_file" "$body_file" \
+        -b "$cookie_jar" \
+        -c "$cookie_jar" \
+        -H "Origin: $SMOKE_ORIGIN" \
+        -H "X-School-Subdomain: $SMOKE_SUBDOMAIN")"
+    expect_status "$name" "$status" "200"
+    if [[ $status == 200 ]]; then
+        expect_json_success "$name" "$body_file"
+    fi
+    refresh_csrf_if_present "$headers_file"
+}
+
+run_academic_context_smoke() {
+    local context_body="$tmp_dir/academic-context.body"
+    local selected_years="$tmp_dir/academic-years"
+    local selected_terms="$tmp_dir/academic-terms"
+    local year_id
+    local term_id
+    local year_index=0
+    local term_index=0
+
+    academic_context_get "context" "academic context options" "/api/academic/context/options"
+    if ! python3 - "$context_body" "$selected_years" "$selected_terms" <<'PY'; then
+import json
+import sys
+import uuid
+
+context_path, years_path, terms_path = sys.argv[1:]
+with open(context_path, encoding="utf-8") as handle:
+    payload = json.load(handle)
+
+data = payload.get("data") if isinstance(payload, dict) else None
+if not isinstance(data, dict):
+    raise SystemExit(1)
+
+years = data.get("years")
+terms = data.get("terms")
+if not isinstance(years, list) or not isinstance(terms, list):
+    raise SystemExit(1)
+
+def canonical_uuid(value):
+    try:
+        parsed = uuid.UUID(value)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    return str(parsed) if str(parsed) == value.lower() else None
+
+year_rows = []
+for row in years:
+    if not isinstance(row, dict):
+        continue
+    year_id = canonical_uuid(row.get("id"))
+    if year_id:
+        year_rows.append(year_id)
+
+term_rows = []
+for row in terms:
+    if not isinstance(row, dict):
+        continue
+    year_id = canonical_uuid(row.get("academicYearId"))
+    term_id = canonical_uuid(row.get("id"))
+    if year_id and term_id:
+        term_rows.append((year_id, term_id))
+
+active_year_id = canonical_uuid(data.get("activeAcademicYearId"))
+active_term_id = canonical_uuid(data.get("activeAcademicTermId"))
+selected_year_ids = []
+for candidate in [active_year_id, *year_rows]:
+    if candidate and candidate in year_rows and candidate not in selected_year_ids:
+        selected_year_ids.append(candidate)
+    if len(selected_year_ids) == 2:
+        break
+
+selected_term_rows = []
+for candidate in term_rows:
+    if candidate[1] == active_term_id:
+        selected_term_rows.append(candidate)
+        break
+for candidate in term_rows:
+    if candidate not in selected_term_rows:
+        selected_term_rows.append(candidate)
+    if len(selected_term_rows) == 2:
+        break
+
+if not selected_year_ids or not selected_term_rows:
+    raise SystemExit(1)
+
+with open(years_path, "w", encoding="ascii") as handle:
+    handle.write("\n".join(selected_year_ids) + "\n")
+with open(terms_path, "w", encoding="ascii") as handle:
+    handle.writelines(f"{year_id}\t{term_id}\n" for year_id, term_id in selected_term_rows)
+PY
+        fail "academic context options contain canonical year and term contexts"
+        return
+    fi
+    pass "academic context options contain canonical year and term contexts"
+
+    academic_context_get "years" "academic years" "/api/academic/years"
+    while IFS= read -r year_id; do
+        year_index=$((year_index + 1))
+        academic_context_get "terms-$year_index" "academic terms context $year_index" "/api/academic/terms?academicYearId=$year_id"
+        academic_context_get "dashboard-$year_index" "staff dashboard context $year_index" "/api/staff/dashboard?academicYearId=$year_id"
+        academic_context_get "supervision-cycles-$year_index" "supervision cycles context $year_index" "/api/supervision/cycles?academicYearId=$year_id"
+        academic_context_get "admission-rounds-$year_index" "admission rounds context $year_index" "/api/admission/rounds?academicYearId=$year_id"
+    done <"$selected_years"
+
+    while IFS=$'\t' read -r year_id term_id; do
+        term_index=$((term_index + 1))
+        academic_context_get "offerings-$term_index" "academic offerings context $term_index" "/api/academic/offerings?academicTermId=$term_id"
+        academic_context_get "assessments-$term_index" "assessment plans context $term_index" "/api/academic/assessments/plans?academicTermId=$term_id"
+        academic_context_get "timetable-$term_index" "academic timetable context $term_index" "/api/academic/timetable?academicTermId=$term_id"
+        academic_context_get "exams-$term_index" "exam schedules context $term_index" "/api/academic/exam-schedules?academicTermId=$term_id"
+        academic_context_get "supervision-$term_index" "supervision observations context $term_index" "/api/supervision/observations?academicYearId=$year_id&academicTermId=$term_id"
+    done <"$selected_terms"
+}
+# Academic Core maintenance read-only smoke end
+
 print_section() {
     printf '\n== %s ==\n' "$1"
 }
@@ -463,6 +618,11 @@ PY
         pass "authenticated /me CSRF response header"
     else
         fail "authenticated /me CSRF response header missing"
+    fi
+
+    if [[ $SMOKE_ACADEMIC_CONTEXT == true ]]; then
+        print_section "Academic Core read-only context smoke"
+        run_academic_context_smoke
     fi
 
     sessions_headers="$tmp_dir/sessions.headers"

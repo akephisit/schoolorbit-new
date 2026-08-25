@@ -4780,6 +4780,56 @@ fn backend_school_deploy_can_finish_in_maintenance_mode() {
 }
 
 #[test]
+fn academic_core_maintenance_smoke_is_private_authenticated_and_read_only() {
+    let deploy = read_source(repo_root().join(".github/workflows/deploy-backend-school.yml"));
+    let smoke = read_source(repo_root().join("scripts/smoke_test.sh"));
+
+    assert!(deploy.contains("academic_core_phase_a_smoke:"));
+    assert!(deploy.contains("academic_core_smoke_subdomain:"));
+    assert!(deploy.contains("Validate Academic Core maintenance smoke inputs"));
+    assert!(deploy.contains("Run Academic Core maintenance smoke"));
+    assert!(deploy.contains("SMOKE_USERNAME: ${{ secrets.SMOKE_USERNAME }}"));
+    assert!(deploy.contains("SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}"));
+    assert!(deploy.contains("SMOKE_API_URL=http://localhost:8081"));
+    assert!(deploy.contains("SMOKE_ACADEMIC_CONTEXT=true"));
+    assert!(deploy.contains("academic_core_phase_a_reconcile must be true"));
+    assert!(deploy.contains("SCHOOL_API_KEEP_MAINTENANCE must be true"));
+
+    let academic_start = smoke
+        .find("# Academic Core maintenance read-only smoke start")
+        .expect("academic smoke start marker");
+    let academic_end = smoke
+        .find("# Academic Core maintenance read-only smoke end")
+        .expect("academic smoke end marker");
+    let academic_smoke = &smoke[academic_start..academic_end];
+
+    for path in [
+        "/api/academic/context/options",
+        "/api/academic/years",
+        "/api/academic/terms?academicYearId=",
+        "/api/academic/offerings?academicTermId=",
+        "/api/academic/assessments/plans?academicTermId=",
+        "/api/academic/timetable?academicTermId=",
+        "/api/academic/exam-schedules?academicTermId=",
+        "/api/supervision/cycles?academicYearId=",
+        "/api/supervision/observations?academicYearId=",
+        "/api/admission/rounds?academicYearId=",
+        "/api/staff/dashboard?academicYearId=",
+    ] {
+        assert!(
+            academic_smoke.contains(path),
+            "missing read-only smoke path: {path}"
+        );
+    }
+    for method in ["POST", "PUT", "PATCH", "DELETE"] {
+        assert!(
+            !academic_smoke.contains(&format!(" {method} ")),
+            "academic smoke must not use {method}"
+        );
+    }
+}
+
+#[test]
 fn learning_group_teacher_endpoint_accepts_a_typed_put_body() {
     let routes = read_source(manifest_dir().join("src/modules/academic/delivery.rs"));
     let handlers = read_source(manifest_dir().join("src/modules/academic/delivery/handlers.rs"));

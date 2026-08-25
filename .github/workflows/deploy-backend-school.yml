@@ -10,6 +10,7 @@ on:
       - "nginx-configs/school-api.conf.template"
       - "nginx-configs/school-api.maintenance.conf.template"
       - "scripts/render_nginx_config.sh"
+      - "scripts/smoke_test.sh"
       - ".github/workflows/deploy-backend-school.yml"
   workflow_dispatch:
     inputs:
@@ -22,6 +23,16 @@ on:
         required: false
         default: false
         type: boolean
+      academic_core_phase_a_smoke:
+        description: "Run authenticated read-only Academic Core smoke through the VPS loopback"
+        required: false
+        default: false
+        type: boolean
+      academic_core_smoke_subdomain:
+        description: "Tenant subdomain for the maintenance-only Academic Core smoke"
+        required: false
+        default: "snwsb"
+        type: string
 
 env:
   REGISTRY: ghcr.io
@@ -94,6 +105,26 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
+      - name: Validate Academic Core maintenance smoke inputs
+        if: ${{ inputs.academic_core_phase_a_smoke == true }}
+        env:
+          ACADEMIC_CORE_PHASE_A_RECONCILE: ${{ inputs.academic_core_phase_a_reconcile || 'false' }}
+          ACADEMIC_CORE_SMOKE_SUBDOMAIN: ${{ inputs.academic_core_smoke_subdomain || 'snwsb' }}
+          SCHOOL_API_KEEP_MAINTENANCE: ${{ vars.SCHOOL_API_KEEP_MAINTENANCE || 'false' }}
+        run: |
+          if [ "$ACADEMIC_CORE_PHASE_A_RECONCILE" != "true" ]; then
+            echo "academic_core_phase_a_reconcile must be true for maintenance smoke"
+            exit 1
+          fi
+          if [ "$SCHOOL_API_KEEP_MAINTENANCE" != "true" ]; then
+            echo "SCHOOL_API_KEEP_MAINTENANCE must be true for maintenance smoke"
+            exit 1
+          fi
+          if ! printf '%s' "$ACADEMIC_CORE_SMOKE_SUBDOMAIN" | grep -Eq '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'; then
+            echo "academic_core_smoke_subdomain must be one canonical DNS label"
+            exit 1
+          fi
+
       - name: Upload canonical runtime and proxy templates
         uses: appleboy/scp-action@v1.0.0
         with:
@@ -101,7 +132,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           port: ${{ secrets.SERVER_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: podman-compose.yml,scripts/render_nginx_config.sh,scripts/lib/schoolorbit-installer/remote/install_origin_root.sh,nginx-configs/admin-api.conf.template,nginx-configs/school-api.conf.template,nginx-configs/school-api.maintenance.conf.template
+          source: podman-compose.yml,scripts/render_nginx_config.sh,scripts/smoke_test.sh,scripts/lib/schoolorbit-installer/remote/install_origin_root.sh,nginx-configs/admin-api.conf.template,nginx-configs/school-api.conf.template,nginx-configs/school-api.maintenance.conf.template
           target: /opt/stack/deployment
 
       - name: Deploy to Server via SSH
@@ -212,6 +243,7 @@ jobs:
               echo "Required backend-school runtime value is unavailable: SESSION_HMAC_KEY"
               exit 1
             fi
+
             if ! school_rollback_jwt_secret="$(runtime_env_value SCHOOL_ROLLBACK_JWT_SECRET)"; then
               echo "Required backend-school runtime value is unavailable: SCHOOL_ROLLBACK_JWT_SECRET"
               exit 1
@@ -646,3 +678,54 @@ jobs:
               fi
             fi
             podman tag "${backend_image}:${{ github.sha }}" "${backend_image}:rollback"
+
+      - name: Run Academic Core maintenance smoke
+        if: ${{ inputs.academic_core_phase_a_smoke == true }}
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          ACADEMIC_CORE_SMOKE_SUBDOMAIN: ${{ inputs.academic_core_smoke_subdomain || 'snwsb' }}
+          SMOKE_USERNAME: ${{ secrets.SMOKE_USERNAME }}
+          SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 10m
+          envs: ACADEMIC_CORE_SMOKE_SUBDOMAIN,SMOKE_USERNAME,SMOKE_PASSWORD
+          script: |
+            set -eu
+            smoke_subdomain=${ACADEMIC_CORE_SMOKE_SUBDOMAIN:-}
+            case "$smoke_subdomain" in
+              '' | *[!a-z0-9-]* | -* | *-)
+                echo "Academic Core smoke subdomain is invalid"
+                exit 1
+                ;;
+            esac
+            if [ "${#smoke_subdomain}" -gt 63 ]; then
+              echo "Academic Core smoke subdomain is invalid"
+              exit 1
+            fi
+            if [ -z "${SMOKE_USERNAME:-}" ] || [ -z "${SMOKE_PASSWORD:-}" ]; then
+              echo "Academic Core maintenance smoke credentials are unavailable"
+              exit 1
+            fi
+
+            base_domain="${{ vars.BASE_DOMAIN || 'schoolorbit.app' }}"
+            smoke_script=/opt/stack/deployment/scripts/smoke_test.sh
+            test -f "$smoke_script" || {
+              echo "Academic Core maintenance smoke script is unavailable"
+              exit 1
+            }
+
+            SMOKE_SUBDOMAIN="$smoke_subdomain" \
+            SMOKE_API_URL=http://localhost:8081 \
+            SMOKE_ADMIN_API_URL="https://admin-api.${base_domain}" \
+            SMOKE_TENANT_URL="https://${smoke_subdomain}.${base_domain}" \
+            SMOKE_ORIGIN="https://${smoke_subdomain}.${base_domain}" \
+            SMOKE_REQUIRE_AUTH=true \
+            SMOKE_ACADEMIC_CONTEXT=true \
+            SMOKE_USERNAME="$SMOKE_USERNAME" \
+            SMOKE_PASSWORD="$SMOKE_PASSWORD" \
+            bash "$smoke_script"
+            unset SMOKE_USERNAME SMOKE_PASSWORD
