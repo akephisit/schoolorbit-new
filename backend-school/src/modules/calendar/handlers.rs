@@ -25,15 +25,7 @@ use uuid::Uuid;
     path = "/api/calendar/events",
     operation_id = "listCalendarEvents",
     tag = "calendar",
-    params(
-        ("from" = Option<chrono::NaiveDate>, Query, description = "Inclusive range start"),
-        ("to" = Option<chrono::NaiveDate>, Query, description = "Inclusive range end"),
-        ("category_id" = Option<Uuid>, Query, description = "Calendar category ID"),
-        ("tag_id" = Option<Uuid>, Query, description = "Calendar tag ID"),
-        ("audience" = Option<String>, Query, description = "Audience: all, staff, student, or parent"),
-        ("visibility" = Option<String>, Query, description = "Visibility: public or private"),
-        ("q" = Option<String>, Query, description = "Title or description search")
-    ),
+    params(CalendarEventQuery),
     responses(
         (status = 200, description = "School calendar events", body = ApiResponse<Vec<crate::modules::calendar::models::CalendarEvent>>),
         (status = 400, description = "Invalid date range", body = ApiErrorResponse),
@@ -269,15 +261,7 @@ pub async fn delete_calendar_tag(
     path = "/api/me/calendar/events",
     operation_id = "listMyCalendarEvents",
     tag = "calendar",
-    params(
-        ("from" = Option<chrono::NaiveDate>, Query, description = "Inclusive range start"),
-        ("to" = Option<chrono::NaiveDate>, Query, description = "Inclusive range end"),
-        ("category_id" = Option<Uuid>, Query, description = "Calendar category ID"),
-        ("tag_id" = Option<Uuid>, Query, description = "Calendar tag ID"),
-        ("audience" = Option<String>, Query, description = "Audience: all, staff, student, or parent"),
-        ("visibility" = Option<String>, Query, description = "Visibility: public or private"),
-        ("q" = Option<String>, Query, description = "Title or description search")
-    ),
+    params(CalendarEventQuery),
     responses(
         (status = 200, description = "Calendar events visible to the current student or staff member", body = ApiResponse<Vec<crate::modules::calendar::models::CalendarViewerEvent>>),
         (status = 400, description = "Invalid date range", body = ApiErrorResponse),
@@ -300,15 +284,7 @@ pub async fn list_my_calendar_events(
     path = "/api/public/calendar/events",
     operation_id = "listPublicCalendarEvents",
     tag = "calendar",
-    params(
-        ("from" = Option<chrono::NaiveDate>, Query, description = "Inclusive range start"),
-        ("to" = Option<chrono::NaiveDate>, Query, description = "Inclusive range end"),
-        ("category_id" = Option<Uuid>, Query, description = "Calendar category ID"),
-        ("tag_id" = Option<Uuid>, Query, description = "Calendar tag ID"),
-        ("audience" = Option<String>, Query, description = "Accepted for compatibility; public visibility is always enforced"),
-        ("visibility" = Option<String>, Query, description = "Accepted for compatibility; public visibility is always enforced"),
-        ("q" = Option<String>, Query, description = "Title or description search")
-    ),
+    params(CalendarEventQuery),
     responses(
         (status = 200, description = "Public calendar events", body = ApiResponse<Vec<crate::modules::calendar::models::CalendarPublicEvent>>),
         (status = 400, description = "Invalid date range", body = ApiErrorResponse)

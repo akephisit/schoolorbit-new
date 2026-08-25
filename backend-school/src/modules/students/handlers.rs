@@ -25,6 +25,7 @@ use crate::AppState;
     path = "/api/student/profile",
     operation_id = "getStudentProfile",
     tag = "student",
+    params(StudentAcademicYearQuery),
     responses(
         (status = 200, description = "Current student's scoped profile", body = ApiResponse<StudentProfile>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -80,6 +81,18 @@ pub async fn update_own_profile(
 }
 
 /// GET /api/students - รายชื่อนักเรียนทั้งหมด
+#[utoipa::path(
+    get,
+    path = "/api/students",
+    operation_id = "listStudents",
+    tag = "student",
+    params(ListStudentsQuery),
+    responses(
+        (status = 200, description = "Students in the selected academic year", body = ApiResponse<crate::modules::students::models::StudentListResponse>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Student list access denied", body = ApiErrorResponse)
+    )
+)]
 pub async fn list_students(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -128,6 +141,22 @@ pub async fn create_student(
 }
 
 /// GET /api/students/:id - ดูข้อมูลนักเรียน
+#[utoipa::path(
+    get,
+    path = "/api/students/{id}",
+    operation_id = "getStudent",
+    tag = "student",
+    params(
+        ("id" = Uuid, Path, description = "Student user ID"),
+        StudentAcademicYearQuery
+    ),
+    responses(
+        (status = 200, description = "Student profile in the selected academic year", body = ApiResponse<StudentProfile>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Student profile access denied", body = ApiErrorResponse),
+        (status = 404, description = "Student profile not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn get_student(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,

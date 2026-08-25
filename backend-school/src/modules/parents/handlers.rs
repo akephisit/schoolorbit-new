@@ -20,6 +20,7 @@ use uuid::Uuid;
     path = "/api/parent/profile",
     operation_id = "getParentProfile",
     tag = "parent",
+    params(StudentAcademicYearQuery),
     responses(
         (status = 200, description = "Current parent profile and linked children", body = ApiResponse<ParentProfile>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -48,7 +49,10 @@ pub async fn get_own_parent_profile(
     path = "/api/parent/students/{student_id}",
     operation_id = "getParentChildProfile",
     tag = "parent",
-    params(("student_id" = Uuid, Path, description = "Linked student user ID")),
+    params(
+        ("student_id" = Uuid, Path, description = "Linked student user ID"),
+        StudentAcademicYearQuery
+    ),
     responses(
         (status = 200, description = "Linked child's profile", body = ApiResponse<crate::modules::students::models::StudentProfile>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -195,13 +199,7 @@ pub async fn get_child_exam_schedule(
     tag = "parent",
     params(
         ("student_id" = Uuid, Path, description = "Linked student user ID"),
-        ("from" = Option<chrono::NaiveDate>, Query, description = "Inclusive range start"),
-        ("to" = Option<chrono::NaiveDate>, Query, description = "Inclusive range end"),
-        ("category_id" = Option<Uuid>, Query, description = "Calendar category ID"),
-        ("tag_id" = Option<Uuid>, Query, description = "Calendar tag ID"),
-        ("audience" = Option<String>, Query, description = "Audience: all, staff, student, or parent"),
-        ("visibility" = Option<String>, Query, description = "Visibility: public or private"),
-        ("q" = Option<String>, Query, description = "Title or description search")
+        crate::modules::calendar::models::CalendarEventQuery
     ),
     responses(
         (status = 200, description = "Calendar events visible for the linked child", body = ApiResponse<Vec<crate::modules::calendar::models::CalendarViewerEvent>>),

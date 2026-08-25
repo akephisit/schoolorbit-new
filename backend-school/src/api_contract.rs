@@ -123,7 +123,8 @@ use crate::modules::staff::services::staff_service::{
 };
 use crate::modules::students::models::{
     CreateParentRequest, CreateStudentRequest, CreateStudentResponse, ParentDto, StudentDbRow,
-    StudentProfile, UpdateOwnProfileRequest, UpdateStudentRequest,
+    StudentListItem, StudentListResponse, StudentProfile, UpdateOwnProfileRequest,
+    UpdateStudentRequest,
 };
 use crate::modules::system::handlers::feature_toggles::{
     FeatureListResponse, FeatureToggleResponse,
@@ -196,7 +197,9 @@ use utoipa::OpenApi;
         crate::modules::staff::handlers::staff::delete_staff,
         crate::modules::students::handlers::get_own_profile,
         crate::modules::students::handlers::update_own_profile,
+        crate::modules::students::handlers::list_students,
         crate::modules::students::handlers::create_student,
+        crate::modules::students::handlers::get_student,
         crate::modules::students::handlers::update_student,
         crate::modules::students::handlers::delete_student,
         crate::modules::students::handlers_parents::add_parent_to_student,
@@ -689,6 +692,8 @@ use utoipa::OpenApi;
         ParentDto,
         StudentDbRow,
         StudentProfile,
+        StudentListItem,
+        StudentListResponse,
         UpdateOwnProfileRequest,
         CreateStudentRequest,
         CreateParentRequest,
@@ -703,6 +708,7 @@ use utoipa::OpenApi;
         ChildDto,
         ParentProfile,
         ApiResponse<StudentProfile>,
+        ApiResponse<StudentListResponse>,
         ApiResponse<ParentProfile>,
         AcademicYearStatus,
         AcademicTermStatus,
@@ -1094,6 +1100,21 @@ mod tests {
                 "missing or incorrect {method} {path}"
             );
         }
+    }
+
+    fn query_contract(document: &Value, path: &str, method: &str) -> BTreeSet<(String, bool)> {
+        document["paths"][path][method]["parameters"]
+            .as_array()
+            .expect("operation parameters must be an array")
+            .iter()
+            .filter(|parameter| parameter["in"] == "query")
+            .map(|parameter| {
+                (
+                    parameter["name"].as_str().expect("query name").to_string(),
+                    parameter["required"].as_bool().unwrap_or(false),
+                )
+            })
+            .collect()
     }
 
     #[test]
@@ -2082,6 +2103,68 @@ mod tests {
     }
 
     #[test]
+    fn documents_academic_year_scoped_profile_and_calendar_queries() {
+        let document = school_api_value().expect("document should serialize");
+        assert_eq!(
+            query_contract(&document, "/api/students", "get"),
+            BTreeSet::from([
+                ("academicYearId".to_string(), true),
+                ("page".to_string(), false),
+                ("pageSize".to_string(), false),
+                ("search".to_string(), false),
+                ("status".to_string(), false),
+            ])
+        );
+
+        for path in [
+            "/api/students/{id}",
+            "/api/student/profile",
+            "/api/parent/profile",
+            "/api/parent/students/{student_id}",
+        ] {
+            assert_eq!(
+                query_contract(&document, path, "get"),
+                BTreeSet::from([("academicYearId".to_string(), true)]),
+                "incorrect academic-year query contract for {path}"
+            );
+        }
+
+        let calendar_query = BTreeSet::from([
+            ("academicTermId".to_string(), false),
+            ("academicYearId".to_string(), true),
+            ("audience".to_string(), false),
+            ("categoryId".to_string(), false),
+            ("from".to_string(), false),
+            ("q".to_string(), false),
+            ("tagId".to_string(), false),
+            ("to".to_string(), false),
+            ("visibility".to_string(), false),
+        ]);
+        for path in [
+            "/api/calendar/events",
+            "/api/me/calendar/events",
+            "/api/parent/students/{student_id}/calendar/events",
+            "/api/public/calendar/events",
+        ] {
+            assert_eq!(
+                query_contract(&document, path, "get"),
+                calendar_query,
+                "incorrect calendar query contract for {path}"
+            );
+        }
+
+        let parent_calendar_parameters = document["paths"]
+            ["/api/parent/students/{student_id}/calendar/events"]["get"]["parameters"]
+            .as_array()
+            .expect("parent calendar parameters must be an array");
+        assert!(parent_calendar_parameters.iter().any(|parameter| {
+            parameter["name"] == "student_id"
+                && parameter["in"] == "path"
+                && parameter["required"] == true
+        }));
+    }
+
+    #[test]
     fn documents_self_service_timetable_exam_and_calendar_reads() {
         let document = school_api_value().expect("document should serialize");
         assert_operations(
@@ -2131,10 +2214,12 @@ mod tests {
             .expect("parent calendar parameters must be an array");
         for (name, location) in [
             ("student_id", "path"),
+            ("academicYearId", "query"),
+            ("academicTermId", "query"),
             ("from", "query"),
             ("to", "query"),
-            ("category_id", "query"),
-            ("tag_id", "query"),
+            ("categoryId", "query"),
+            ("tagId", "query"),
             ("audience", "query"),
             ("visibility", "query"),
             ("q", "query"),
@@ -2263,10 +2348,12 @@ mod tests {
             .as_array()
             .expect("calendar parameters must be an array");
         for name in [
+            "academicYearId",
+            "academicTermId",
             "from",
             "to",
-            "category_id",
-            "tag_id",
+            "categoryId",
+            "tagId",
             "audience",
             "visibility",
             "q",

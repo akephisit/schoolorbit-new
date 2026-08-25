@@ -74,7 +74,7 @@ pub struct StudentProfile {
     pub parents: Vec<ParentDto>,
 }
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize, FromRow, ToSchema)]
 pub struct StudentListItem {
     pub id: Uuid,
     pub username: String,
@@ -87,7 +87,7 @@ pub struct StudentListItem {
     pub status: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct StudentListResponse {
     pub items: Vec<StudentListItem>,
     pub page: i64,
