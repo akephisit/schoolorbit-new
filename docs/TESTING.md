@@ -298,7 +298,9 @@ contexts, and verifies the Academic Core, offerings, assessment, timetable, exam
 admission, and staff-dashboard read paths. It stores response bodies only in its private temporary
 directory and removes them at exit. During the two-artifact Academic Core maintenance window, run
 this mode through the backend deployment workflow's VPS-loopback smoke input; never add a public
-maintenance bypass or open traffic temporarily for the test.
+maintenance bypass or open traffic temporarily for the test. The workflow alone sets
+`SMOKE_DIRECT_BACKEND=true`; that mode skips only Nginx-owned CORS/preflight assertions while login,
+session, CSRF, readiness, and every selected Academic Core read remain required.
 
 The API-domain cookie is `__Host-schoolorbit_session`; it is opaque and unavailable to frontend JavaScript. Login and authenticated `/api/auth/me` responses expose `X-CSRF-Token`. The smoke script captures that value only in a shell variable, updates it after rotation-capable responses, and sends it on every authenticated `POST`, `PUT`, `PATCH`, or `DELETE`. Never print, export, persist, or enable trace output for the CSRF value. A manual flow should use private temporary files:
 

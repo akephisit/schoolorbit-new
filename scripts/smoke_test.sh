@@ -17,6 +17,7 @@ if [[ -f "$smoke_env_file" ]]; then
         SMOKE_REMEMBER_ME
         SMOKE_REQUIRE_AUTH
         SMOKE_ACADEMIC_CONTEXT
+        SMOKE_DIRECT_BACKEND
         SMOKE_RESOLVE_IP
         FILE_SMOKE_PNG
     )
@@ -49,6 +50,7 @@ SMOKE_PASSWORD="${SMOKE_PASSWORD:-}"
 SMOKE_REMEMBER_ME="${SMOKE_REMEMBER_ME:-true}"
 SMOKE_REQUIRE_AUTH="${SMOKE_REQUIRE_AUTH:-false}"
 SMOKE_ACADEMIC_CONTEXT="${SMOKE_ACADEMIC_CONTEXT:-false}"
+SMOKE_DIRECT_BACKEND="${SMOKE_DIRECT_BACKEND:-false}"
 SMOKE_RESOLVE_IP="${SMOKE_RESOLVE_IP:-}"
 FILE_SMOKE_PNG="${FILE_SMOKE_PNG:-}"
 
@@ -61,6 +63,13 @@ case "$SMOKE_ACADEMIC_CONTEXT" in
     true | false) ;;
     *)
         printf 'SMOKE_ACADEMIC_CONTEXT must be true or false.\n' >&2
+        exit 64
+        ;;
+esac
+case "$SMOKE_DIRECT_BACKEND" in
+    true | false) ;;
+    *)
+        printf 'SMOKE_DIRECT_BACKEND must be true or false.\n' >&2
         exit 64
         ;;
 esac
@@ -260,6 +269,20 @@ expect_header_contains_ci() {
     else
         fail "$name expected $header_name to contain $expected_fragment, got ${actual:-<missing>}"
     fi
+}
+
+expect_cors_header() {
+    if [[ $SMOKE_DIRECT_BACKEND == true ]]; then
+        return
+    fi
+    expect_header "$@"
+}
+
+expect_cors_header_contains_ci() {
+    if [[ $SMOKE_DIRECT_BACKEND == true ]]; then
+        return
+    fi
+    expect_header_contains_ci "$@"
 }
 
 expect_body_contains() {
@@ -519,7 +542,7 @@ status="$(school_api_request "unauthenticated /me" GET "$SMOKE_API_URL/api/auth/
     -H "Origin: $SMOKE_ORIGIN" \
     -H "X-School-Subdomain: $SMOKE_SUBDOMAIN")"
 expect_status "unauthenticated /me" "$status" "401"
-expect_header "unauthenticated /me" "$me_unauth_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
+expect_cors_header "unauthenticated /me" "$me_unauth_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
 
 legacy_me_headers="$tmp_dir/me-legacy-cookie.headers"
 legacy_me_body="$tmp_dir/me-legacy-cookie.body"
@@ -528,19 +551,23 @@ status="$(school_api_request "legacy cookie /me" GET "$SMOKE_API_URL/api/auth/me
     -H "Origin: $SMOKE_ORIGIN" \
     -H "X-School-Subdomain: $SMOKE_SUBDOMAIN")"
 expect_status "legacy cookie /me" "$status" "401"
-expect_header "legacy cookie /me" "$legacy_me_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
+expect_cors_header "legacy cookie /me" "$legacy_me_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
 : >"$cookie_jar"
 
-preflight_headers="$tmp_dir/preflight.headers"
-preflight_body="$tmp_dir/preflight.body"
-status="$(school_api_request "login preflight" OPTIONS "$SMOKE_API_URL/api/auth/login" "$preflight_headers" "$preflight_body" \
-    -H "Origin: $SMOKE_ORIGIN" \
-    -H "Access-Control-Request-Method: POST" \
-    -H "Access-Control-Request-Headers: content-type,x-school-subdomain,x-csrf-token")"
-expect_status "login preflight" "$status" "204"
-expect_header "login preflight" "$preflight_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
-expect_header_contains_ci "login preflight" "$preflight_headers" "access-control-allow-headers" "x-school-subdomain"
-expect_header_contains_ci "login preflight" "$preflight_headers" "access-control-allow-headers" "x-csrf-token"
+if [[ $SMOKE_DIRECT_BACKEND == false ]]; then
+    preflight_headers="$tmp_dir/preflight.headers"
+    preflight_body="$tmp_dir/preflight.body"
+    status="$(school_api_request "login preflight" OPTIONS "$SMOKE_API_URL/api/auth/login" "$preflight_headers" "$preflight_body" \
+        -H "Origin: $SMOKE_ORIGIN" \
+        -H "Access-Control-Request-Method: POST" \
+        -H "Access-Control-Request-Headers: content-type,x-school-subdomain,x-csrf-token")"
+    expect_status "login preflight" "$status" "204"
+    expect_cors_header "login preflight" "$preflight_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
+    expect_cors_header_contains_ci "login preflight" "$preflight_headers" "access-control-allow-headers" "x-school-subdomain"
+    expect_cors_header_contains_ci "login preflight" "$preflight_headers" "access-control-allow-headers" "x-csrf-token"
+else
+    printf '\nSKIP proxy CORS preflight: direct backend maintenance smoke.\n'
+fi
 
 if [[ -z "$SMOKE_USERNAME" || -z "$SMOKE_PASSWORD" ]]; then
     login_validation_headers="$tmp_dir/login-validation.headers"
@@ -551,7 +578,7 @@ if [[ -z "$SMOKE_USERNAME" || -z "$SMOKE_PASSWORD" ]]; then
         -H "Content-Type: application/json" \
         --data '{}')"
     expect_status "login validation" "$status" "400"
-    expect_header "login validation" "$login_validation_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
+    expect_cors_header "login validation" "$login_validation_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
     if [[ $SMOKE_REQUIRE_AUTH == true ]]; then
         fail "authenticated checks are required but smoke credentials are missing"
     else
@@ -583,8 +610,8 @@ PY
         -H "Content-Type: application/json" \
         --data-binary "@$login_payload")"
     expect_status "login" "$status" "200"
-    expect_header "login" "$login_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
-    expect_header_contains_ci "login" "$login_headers" "access-control-expose-headers" "x-csrf-token"
+    expect_cors_header "login" "$login_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
+    expect_cors_header_contains_ci "login" "$login_headers" "access-control-expose-headers" "x-csrf-token"
     expect_json_username "login" "$login_body" "$SMOKE_USERNAME"
 
     if capture_csrf "$login_headers"; then
@@ -612,7 +639,7 @@ PY
         -H "Origin: $SMOKE_ORIGIN" \
         -H "X-School-Subdomain: $SMOKE_SUBDOMAIN")"
     expect_status "authenticated /me" "$status" "200"
-    expect_header "authenticated /me" "$me_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
+    expect_cors_header "authenticated /me" "$me_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
     expect_json_username "authenticated /me" "$me_body" "$SMOKE_USERNAME"
     if capture_csrf "$me_headers"; then
         pass "authenticated /me CSRF response header"
@@ -633,7 +660,7 @@ PY
         -H "Origin: $SMOKE_ORIGIN" \
         -H "X-School-Subdomain: $SMOKE_SUBDOMAIN")"
     expect_status "session list" "$status" "200"
-    expect_header "session list" "$sessions_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
+    expect_cors_header "session list" "$sessions_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
     expect_json_one_current_session "session list" "$sessions_body"
     refresh_csrf_if_present "$sessions_headers"
 
@@ -658,8 +685,8 @@ PY
         fail "notification SSE expected status 200 with a bounded stream"
     fi
     expect_header_contains_ci "notification SSE" "$sse_headers" "content-type" "text/event-stream"
-    expect_header "notification SSE" "$sse_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
-    expect_header "notification SSE" "$sse_headers" "access-control-allow-credentials" "true"
+    expect_cors_header "notification SSE" "$sse_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
+    expect_cors_header "notification SSE" "$sse_headers" "access-control-allow-credentials" "true"
     refresh_csrf_if_present "$sse_headers"
 
     if [[ -n $FILE_SMOKE_PNG ]]; then
@@ -677,7 +704,7 @@ PY
                 -F 'purpose=profile_image' \
                 -F "file=@$FILE_SMOKE_PNG;type=image/png")"
             expect_status "private file upload" "$status" "201"
-            expect_header "private file upload" "$upload_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
+            expect_cors_header "private file upload" "$upload_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
             refresh_csrf_if_present "$upload_headers"
 
             if file_smoke_id="$(
@@ -714,7 +741,7 @@ PY
                     -H "X-School-Subdomain: $SMOKE_SUBDOMAIN" \
                     -H "X-CSRF-Token: $csrf_token")"
                 expect_status "private file download grant" "$status" "200"
-                expect_header "private file download grant" "$grant_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
+                expect_cors_header "private file download grant" "$grant_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
                 refresh_csrf_if_present "$grant_headers"
 
                 downloaded_file="$tmp_dir/file-download.png"
@@ -779,7 +806,7 @@ PY
         -H "X-School-Subdomain: $SMOKE_SUBDOMAIN" \
         -H "X-CSRF-Token: $csrf_token")"
     expect_status "current session logout" "$status" "200"
-    expect_header "current session logout" "$logout_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
+    expect_cors_header "current session logout" "$logout_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
 fi
 
 if [[ "$failures" -eq 0 ]]; then

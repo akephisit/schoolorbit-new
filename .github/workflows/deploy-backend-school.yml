@@ -725,6 +725,7 @@ jobs:
             SMOKE_ORIGIN="https://${smoke_subdomain}.${base_domain}" \
             SMOKE_REQUIRE_AUTH=true \
             SMOKE_ACADEMIC_CONTEXT=true \
+            SMOKE_DIRECT_BACKEND=true \
             SMOKE_USERNAME="$SMOKE_USERNAME" \
             SMOKE_PASSWORD="$SMOKE_PASSWORD" \
             bash "$smoke_script"

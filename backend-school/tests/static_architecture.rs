@@ -4792,8 +4792,12 @@ fn academic_core_maintenance_smoke_is_private_authenticated_and_read_only() {
     assert!(deploy.contains("SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}"));
     assert!(deploy.contains("SMOKE_API_URL=http://localhost:8081"));
     assert!(deploy.contains("SMOKE_ACADEMIC_CONTEXT=true"));
+    assert!(deploy.contains("SMOKE_DIRECT_BACKEND=true"));
     assert!(deploy.contains("academic_core_phase_a_reconcile must be true"));
     assert!(deploy.contains("SCHOOL_API_KEEP_MAINTENANCE must be true"));
+    assert!(smoke.contains("SMOKE_DIRECT_BACKEND"));
+    assert!(smoke.contains("expect_cors_header"));
+    assert!(smoke.contains(r#"if [[ $SMOKE_DIRECT_BACKEND == false ]]; then"#));
 
     let academic_start = smoke
         .find("# Academic Core maintenance read-only smoke start")
