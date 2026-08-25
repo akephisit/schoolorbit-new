@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-25
 
-**Status:** Approved for written review
+**Status:** Approved
 
 **Scope:** `backend-school`, `frontend-school`, generated School API contracts, academic and
 supervision read paths, request cancellation, focused performance guards, and deployment smoke
