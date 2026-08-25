@@ -5802,8 +5802,14 @@ fn learning_delivery_handlers_are_thin_policy_owned_and_signal_after_mutation() 
     ] {
         let handler =
             extract_braced_block(&handlers, &format!("pub async fn {handler_name}"), false);
-        assert!(handler.contains("require_learning_offering_list_access"));
-        assert!(handler.contains(action));
+        assert!(
+            handler.contains("require_learning_offering_list_access"),
+            "{handler_name} must use list access"
+        );
+        assert!(
+            handler.contains(action),
+            "{handler_name} must require {action}"
+        );
     }
 
     for (handler_name, action) in [
@@ -5813,10 +5819,20 @@ fn learning_delivery_handlers_are_thin_policy_owned_and_signal_after_mutation() 
         ("list_groups", "OfferingAction::Read"),
         ("create_group", "OfferingAction::Manage"),
     ] {
-        let handler =
-            extract_braced_block(&handlers, &format!("pub async fn {handler_name}"), false);
-        assert!(handler.contains("require_learning_offering_access"));
-        assert!(handler.contains(action));
+        let signature = if handler_name == "list_groups" {
+            "pub async fn list_groups(".to_string()
+        } else {
+            format!("pub async fn {handler_name}")
+        };
+        let handler = extract_braced_block(&handlers, &signature, false);
+        assert!(
+            handler.contains("require_learning_offering_access"),
+            "{handler_name} must use resource access"
+        );
+        assert!(
+            handler.contains(action),
+            "{handler_name} must require {action}"
+        );
     }
 
     for (handler_name, action) in [
@@ -6131,5 +6147,72 @@ fn learning_group_collection_hydrators_are_set_based() {
     assert!(
         groups.matches("learning_group_id = ANY($1)").count() >= 3,
         "learning-group teachers, homerooms, and preferred rooms must load by the parent ID set"
+    );
+}
+
+#[test]
+fn academic_delivery_and_timetable_collection_reads_are_set_based() {
+    let offerings = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/delivery/services/offerings.rs"),
+    ));
+    let delivery_handlers = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/delivery/handlers.rs"),
+    ));
+    let timetable = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/services/timetable_service.rs"),
+    ));
+    let templates = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/services/timetable_template_service.rs"),
+    ));
+
+    let preview = extract_braced_block(&offerings, "async fn build_curriculum_preview", false);
+    assert!(
+        preview.contains("load_existing_preview_offerings"),
+        "curriculum preview must preload existing course and activity offerings once"
+    );
+    assert!(
+        !Regex::new(r"(?s)for\s+row\s+in\s+rows\s*\{.*?fetch_optional")
+            .unwrap()
+            .is_match(&preview),
+        "curriculum preview must not query an existing offering per requirement"
+    );
+
+    let apply_handler = extract_braced_block(
+        &delivery_handlers,
+        "pub async fn apply_offerings_from_curriculum",
+        false,
+    );
+    assert!(apply_handler.contains("signal_descriptors"));
+    assert!(!Regex::new(r"(?s)for\s+offering_id.*?offerings::get")
+        .unwrap()
+        .is_match(&apply_handler));
+
+    for function_name in ["pub async fn create_batch", "pub async fn deactivate_batch"] {
+        let body = extract_braced_block(&timetable, function_name, false);
+        assert!(body.contains("get_entries(pool"), "{function_name}");
+        assert!(!Regex::new(r"(?s)for\s+.*?get_entry\(pool")
+            .unwrap()
+            .is_match(&body));
+    }
+    let clear_timetable = extract_braced_block(&templates, "pub async fn clear_timetable", false);
+    assert!(clear_timetable.contains("get_entries(pool"));
+    assert!(!Regex::new(r"(?s)for\s+id\s+in\s+ids.*?get_entry\(pool")
+        .unwrap()
+        .is_match(&clear_timetable));
+
+    let occupancy = extract_braced_block(&timetable, "pub async fn occupancy", false);
+    assert!(occupancy.contains("load_relationship_indexes"));
+    assert!(
+        !Regex::new(r"(?s)for\s+entry\s+in\s+entries.*?effective_(?:homerooms|instructors)")
+            .unwrap()
+            .is_match(&occupancy)
+    );
+
+    let validate_moves = extract_braced_block(&timetable, "pub async fn validate_moves", false);
+    assert!(validate_moves.contains("load_relationship_indexes"));
+    assert!(
+        !Regex::new(r"(?s)for\s+day\s+in\s+VALID_DAYS.*?find_conflicts\(")
+            .unwrap()
+            .is_match(&validate_moves)
     );
 }

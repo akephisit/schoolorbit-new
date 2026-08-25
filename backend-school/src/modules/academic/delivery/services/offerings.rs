@@ -99,6 +99,21 @@ struct PreviewRequirementRow {
     effective_until: Option<chrono::NaiveDate>,
 }
 
+#[derive(Debug, sqlx::FromRow)]
+struct ExistingPreviewOfferingRow {
+    resource_kind: LearningOfferingKind,
+    catalog_version_id: Uuid,
+    offering_id: Uuid,
+    source_requirement_id: Option<Uuid>,
+}
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct LearningOfferingSignalDescriptor {
+    pub learning_offering_id: Uuid,
+    pub academic_term_id: Uuid,
+    pub row_version: i64,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PreviewHashInput<'a> {
@@ -445,6 +460,36 @@ pub async fn apply_from_curriculum(
         created_count,
         retained_count,
     })
+}
+
+pub async fn signal_descriptors(
+    pool: &PgPool,
+    offering_ids: &[Uuid],
+) -> Result<Vec<LearningOfferingSignalDescriptor>, AppError> {
+    if offering_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows: Vec<LearningOfferingSignalDescriptor> = sqlx::query_as(
+        r#"SELECT id AS learning_offering_id, academic_term_id, row_version
+           FROM learning_offerings
+           WHERE id = ANY($1)
+           ORDER BY id"#,
+    )
+    .bind(offering_ids)
+    .fetch_all(pool)
+    .await?;
+    let mut rows_by_id: HashMap<Uuid, LearningOfferingSignalDescriptor> = rows
+        .into_iter()
+        .map(|row| (row.learning_offering_id, row))
+        .collect();
+    offering_ids
+        .iter()
+        .map(|offering_id| {
+            rows_by_id.remove(offering_id).ok_or_else(|| {
+                AppError::InternalServerError("ไม่พบรายการเปิดสอนหลังนำโครงสร้างหลักสูตรมาใช้".to_string())
+            })
+        })
+        .collect()
 }
 
 async fn hydrate(pool: &PgPool, row: LearningOfferingRow) -> Result<LearningOffering, AppError> {
@@ -1147,6 +1192,8 @@ async fn build_curriculum_preview(
     .bind(&term.code)
     .fetch_all(&mut **transaction)
     .await?;
+    let existing_offerings =
+        load_existing_preview_offerings(transaction, academic_term_id, &rows).await?;
     let mut items = Vec::with_capacity(rows.len());
     for row in rows {
         validate_version_for_term(
@@ -1155,34 +1202,9 @@ async fn build_curriculum_preview(
             row.effective_until,
             &term,
         )?;
-        let existing: Option<(Uuid, Option<Uuid>)> = match row.resource_kind {
-            LearningOfferingKind::Course => {
-                sqlx::query_as(
-                    "SELECT offering.id, offering.source_requirement_id \
-                     FROM learning_offerings offering \
-                     JOIN course_offering_details detail ON detail.learning_offering_id = offering.id \
-                     WHERE offering.academic_term_id = $1 AND detail.subject_version_id = $2 \
-                     ORDER BY offering.id LIMIT 1",
-                )
-                .bind(academic_term_id)
-                .bind(row.catalog_version_id)
-                .fetch_optional(&mut **transaction)
-                .await?
-            }
-            LearningOfferingKind::Activity => {
-                sqlx::query_as(
-                    "SELECT offering.id, offering.source_requirement_id \
-                     FROM learning_offerings offering \
-                     JOIN activity_offering_details detail ON detail.learning_offering_id = offering.id \
-                     WHERE offering.academic_term_id = $1 AND detail.activity_version_id = $2 \
-                     ORDER BY offering.id LIMIT 1",
-                )
-                .bind(academic_term_id)
-                .bind(row.catalog_version_id)
-                .fetch_optional(&mut **transaction)
-                .await?
-            }
-        };
+        let existing = existing_offerings
+            .get(&(row.resource_kind, row.catalog_version_id))
+            .copied();
         let (action, existing_offering_id, conflict_reason) = match existing {
             None => (CurriculumPreviewAction::Create, None, None),
             Some((id, source_id)) if source_id == Some(row.requirement_id) => {
@@ -1222,6 +1244,57 @@ async fn build_curriculum_preview(
         source_hash,
         items,
     })
+}
+
+async fn load_existing_preview_offerings(
+    transaction: &mut Transaction<'_, Postgres>,
+    academic_term_id: Uuid,
+    requirements: &[PreviewRequirementRow],
+) -> Result<HashMap<(LearningOfferingKind, Uuid), (Uuid, Option<Uuid>)>, AppError> {
+    let course_version_ids: Vec<Uuid> = requirements
+        .iter()
+        .filter(|row| row.resource_kind == LearningOfferingKind::Course)
+        .map(|row| row.catalog_version_id)
+        .collect();
+    let activity_version_ids: Vec<Uuid> = requirements
+        .iter()
+        .filter(|row| row.resource_kind == LearningOfferingKind::Activity)
+        .map(|row| row.catalog_version_id)
+        .collect();
+    let rows: Vec<ExistingPreviewOfferingRow> = sqlx::query_as(
+        r#"SELECT 'course'::text AS resource_kind,
+                  detail.subject_version_id AS catalog_version_id,
+                  offering.id AS offering_id,
+                  offering.source_requirement_id
+           FROM learning_offerings offering
+           JOIN course_offering_details detail
+             ON detail.learning_offering_id = offering.id
+           WHERE offering.academic_term_id = $1
+             AND detail.subject_version_id = ANY($2)
+           UNION ALL
+           SELECT 'activity'::text AS resource_kind,
+                  detail.activity_version_id AS catalog_version_id,
+                  offering.id AS offering_id,
+                  offering.source_requirement_id
+           FROM learning_offerings offering
+           JOIN activity_offering_details detail
+             ON detail.learning_offering_id = offering.id
+           WHERE offering.academic_term_id = $1
+             AND detail.activity_version_id = ANY($3)
+           ORDER BY resource_kind, catalog_version_id, offering_id"#,
+    )
+    .bind(academic_term_id)
+    .bind(&course_version_ids)
+    .bind(&activity_version_ids)
+    .fetch_all(&mut **transaction)
+    .await?;
+    let mut existing = HashMap::new();
+    for row in rows {
+        existing
+            .entry((row.resource_kind, row.catalog_version_id))
+            .or_insert((row.offering_id, row.source_requirement_id));
+    }
+    Ok(existing)
 }
 
 async fn insert_generated_offering(

@@ -358,11 +358,7 @@ pub async fn clear_timetable(
     .execute(&mut *transaction)
     .await?;
     transaction.commit().await?;
-    let mut entries = Vec::with_capacity(ids.len());
-    for id in ids {
-        entries.push(timetable_service::get_entry(pool, id).await?);
-    }
-    Ok(entries)
+    timetable_service::get_entries(pool, &ids).await
 }
 
 async fn resolve_target_group(

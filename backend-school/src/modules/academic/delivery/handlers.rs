@@ -302,16 +302,17 @@ pub async fn apply_offerings_from_curriculum(
     let result =
         offerings::apply_from_curriculum(&context.tenant.pool, context.actor.user_id, request)
             .await?;
-    for offering_id in &result.offering_ids {
-        let offering = offerings::get(&context.tenant.pool, *offering_id).await?;
+    let signal_descriptors =
+        offerings::signal_descriptors(&context.tenant.pool, &result.offering_ids).await?;
+    for descriptor in signal_descriptors {
         signal_delivery_changed(
             &state,
             &session,
             &context.actor,
-            offering.academic_term_id,
-            offering.id,
+            descriptor.academic_term_id,
+            descriptor.learning_offering_id,
             None,
-            offering.row_version,
+            descriptor.row_version,
         );
     }
     Ok(ok(result))

@@ -1039,6 +1039,21 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     .await
     .unwrap();
     assert_eq!(retried.offering_ids, applied.offering_ids);
+    let mut descriptor_ids = applied.offering_ids.clone();
+    descriptor_ids.reverse();
+    let descriptors = offerings::signal_descriptors(&pool, &descriptor_ids)
+        .await
+        .unwrap();
+    assert_eq!(
+        descriptors
+            .iter()
+            .map(|descriptor| descriptor.learning_offering_id)
+            .collect::<Vec<_>>(),
+        descriptor_ids
+    );
+    assert!(descriptors.iter().all(|descriptor| {
+        descriptor.academic_term_id == context.term_id && descriptor.row_version > 0
+    }));
 
     let retained_preview = offerings::preview_from_curriculum(
         &pool,

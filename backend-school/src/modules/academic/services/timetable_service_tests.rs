@@ -8,7 +8,8 @@ use crate::modules::academic::cutover_test_support::{
     CutoverFixture,
 };
 use crate::modules::academic::models::timetable::{
-    CreateTimetableEntryRequest, SwapTimetableEntriesRequest, TimetableQuery,
+    CreateBatchTimetableEntriesRequest, CreateTimetableEntryRequest, SwapTimetableEntriesRequest,
+    TimetableQuery,
 };
 use crate::policies::resource_access_policy::AcademicResourceListFilter;
 use crate::test_helpers::create_named_test_pool;
@@ -208,6 +209,72 @@ async fn listing_occupancy_and_swaps_are_explicitly_term_and_group_scoped() {
     assert_eq!(swapped.entry_b.academic_term_id, term_id);
     assert!(swapped.entry_a.row_version > row_version);
     assert!(swapped.entry_b.row_version > created.row_version);
+}
+
+#[tokio::test]
+async fn batch_and_conflict_reads_preserve_results() {
+    let pool = migrated_pool("timetable_batch_conflict_bulk_reads").await;
+    let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
+    let (term_id, group_id, period_id): (Uuid, Uuid, Uuid) = sqlx::query_as(
+        r#"SELECT entry.academic_term_id, entry.learning_group_id, period.id
+           FROM academic_timetable_entries entry
+           JOIN academic_terms term ON term.id = entry.academic_term_id
+           JOIN bell_schedule_periods period
+             ON period.bell_schedule_id = term.bell_schedule_id
+            AND period.order_index = 2
+           WHERE entry.learning_group_id IS NOT NULL
+           ORDER BY entry.id
+           LIMIT 1"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let created = timetable_service::create_batch(
+        &pool,
+        actor_id,
+        CreateBatchTimetableEntriesRequest {
+            academic_term_id: term_id,
+            learning_group_ids: vec![group_id],
+            homeroom_ids: Vec::new(),
+            days_of_week: vec!["TUE".to_string(), "WED".to_string()],
+            bell_schedule_period_ids: vec![period_id],
+            entry_type: "course".to_string(),
+            title: Some("bulk".to_string()),
+            room_id: None,
+            note: None,
+            instructor_ids: Vec::new(),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(created.entries.len(), 2);
+    assert!(created
+        .entries
+        .iter()
+        .all(|entry| entry.learning_group_id == Some(group_id)));
+
+    let moves = timetable_service::validate_moves(&pool, term_id, created.entries[0].id)
+        .await
+        .unwrap();
+    assert_eq!(
+        moves.iter().filter(|cell| cell.state == "source").count(),
+        1
+    );
+    assert!(moves.len() >= 14);
+
+    let deactivated = timetable_service::deactivate_batch(&pool, created.batch_id, actor_id)
+        .await
+        .unwrap();
+    assert_eq!(
+        deactivated.iter().map(|entry| entry.id).collect::<Vec<_>>(),
+        created
+            .entries
+            .iter()
+            .map(|entry| entry.id)
+            .collect::<Vec<_>>()
+    );
+    assert!(deactivated.iter().all(|entry| !entry.is_active));
 }
 
 #[tokio::test]
