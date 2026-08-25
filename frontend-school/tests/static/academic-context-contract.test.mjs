@@ -231,6 +231,7 @@ test('route discovery, layout initialization, and responsive topbar remain expli
 
 test('existing staff academic consumers declare their exact context requirement', async () => {
 	const routes = [
+		['staff', 'year_required'],
 		['staff/academic/assessments', 'term_required'],
 		['staff/academic/timetable', 'term_required'],
 		['staff/academic/periods', 'year_required'],

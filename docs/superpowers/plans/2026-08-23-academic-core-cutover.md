@@ -2620,6 +2620,77 @@ maintenance remains active.
 
 ---
 
+### Task 16: Production hotfix — scope the staff dashboard by academic year
+
+**Goal:** The `/staff` dashboard must never call `/api/staff/dashboard` without the explicit
+`academicYearId` required by the Phase B API contract, and changing the Topbar year must reload the
+year-scoped dashboard aggregate.
+
+**Files:**
+
+- Modify: `frontend-school/src/lib/api/staff.ts`
+- Modify: `frontend-school/src/routes/(app)/staff/+page.ts`
+- Modify: `frontend-school/src/routes/(app)/staff/+page.svelte`
+- Test: `frontend-school/tests/static/api-response-contract.test.mjs`
+- Test: `frontend-school/tests/static/academic-context-contract.test.mjs`
+
+- [x] **Step 1: Add regression coverage and verify RED**
+
+The API boundary test records the real URL emitted by `getStaffDashboard`, while the route contract
+requires `/staff` to declare `year_required`.
+
+```bash
+cd frontend-school
+node --test tests/static/api-response-contract.test.mjs \
+  tests/static/academic-context-contract.test.mjs
+```
+
+Expected before implementation: FAIL because the request is `/api/staff/dashboard` without a query
+and `/staff/+page.ts` has no Academic Context requirement.
+
+- [x] **Step 2: Pass the selected year through the complete frontend flow**
+
+Declare `academicContext: 'year_required'`, change `getStaffDashboard` to require a nonblank
+`academicYearId`, emit it with `URLSearchParams`, and subscribe the dashboard page to ready Academic
+Context state. Use a request revision so a slower response for the previous year cannot overwrite the
+new selection.
+
+- [x] **Step 3: Verify focused behavior and Svelte analysis**
+
+```bash
+cd frontend-school
+node --test tests/static/api-response-contract.test.mjs \
+  tests/static/academic-context-contract.test.mjs
+npx @sveltejs/mcp svelte-autofixer 'src/routes/(app)/staff/+page.svelte' --svelte-version 5
+```
+
+Expected: 44 tests pass and the analyzer reports no issues or suggestions.
+
+- [x] **Step 4: Run the frontend release matrix**
+
+```bash
+cd frontend-school
+npm run lint
+PUBLIC_BACKEND_URL=http://localhost:3000 PUBLIC_VAPID_KEY=test npm run check
+npm run test:static
+npm run check:api-contracts
+npm run test:api-contracts
+```
+
+- [ ] **Step 5: Commit, push, deploy, and verify the production request**
+
+```bash
+git add frontend-school docs/superpowers/plans/2026-08-23-academic-core-cutover.md
+git commit -m "fix(staff): scope dashboard by academic year"
+git push origin main
+```
+
+Wait for the frontend, API contract, and documentation workflows. Confirm `/staff` resolves the active
+year into the URL and the browser request includes `academicYearId`; changing the Topbar year must
+issue a new scoped request without a 400 response.
+
+---
+
 ## Final Acceptance Checklist
 
 - [ ] Future and current student-year/placement records coexist without cross-year mutation.

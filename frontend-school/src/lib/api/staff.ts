@@ -56,8 +56,13 @@ interface StaffFilter {
 
 type StaffListData = Schemas['StaffListData'];
 
-export async function getStaffDashboard(): Promise<ApiResponse<StaffDashboardOverview>> {
-	return apiClient.get<StaffDashboardOverview>('/api/staff/dashboard');
+export async function getStaffDashboard(
+	academicYearId: string
+): Promise<ApiResponse<StaffDashboardOverview>> {
+	const selectedYearId = academicYearId.trim();
+	if (!selectedYearId) throw new Error('กรุณาเลือกปีการศึกษาก่อน');
+	const query = new URLSearchParams({ academicYearId: selectedYearId });
+	return apiClient.get<StaffDashboardOverview>(`/api/staff/dashboard?${query}`);
 }
 
 export async function listStaff(filter?: StaffFilter): Promise<StaffListResponse> {

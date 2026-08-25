@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { getAcademicContextStore } from '$lib/academic-context/store';
 	import { getUserMenu, type MenuGroup } from '$lib/api/menu';
 	import { getStaffDashboard, type StaffDashboardOverview } from '$lib/api/staff';
 	import { PageShell } from '$lib/components/app-layout';
@@ -28,12 +29,17 @@
 		Users
 	} from 'lucide-svelte';
 
+	const academicContext = getAcademicContextStore();
+	const academicYearId = $derived(
+		$academicContext.status === 'ready' ? ($academicContext.selected.academicYearId ?? '') : ''
+	);
 	let stats = $state<StaffDashboardOverview | null>(null);
 	let menuGroups = $state<MenuGroup[]>([]);
-	let loadingStats = $state(true);
+	let loadingStats = $state(false);
 	let loadingMenu = $state(true);
 	let statsError = $state('');
 	let menuError = $state('');
+	let statsRevision = 0;
 
 	const numberFormatter = new Intl.NumberFormat('th-TH');
 	const displayName = $derived(
@@ -66,19 +72,23 @@
 		)
 	);
 
-	async function loadDashboard() {
+	async function loadDashboard(yearId: string) {
+		const current = ++statsRevision;
 		loadingStats = true;
+		stats = null;
 		statsError = '';
 		try {
-			const response = await getStaffDashboard();
+			const response = await getStaffDashboard(yearId);
 			if (!response.success || !response.data) {
 				throw new Error(response.error || 'ไม่สามารถโหลดภาพรวมโรงเรียนได้');
 			}
-			stats = response.data;
+			if (current === statsRevision) stats = response.data;
 		} catch (error) {
-			statsError = error instanceof Error ? error.message : 'ไม่สามารถโหลดภาพรวมโรงเรียนได้';
+			if (current === statsRevision) {
+				statsError = error instanceof Error ? error.message : 'ไม่สามารถโหลดภาพรวมโรงเรียนได้';
+			}
 		} finally {
-			loadingStats = false;
+			if (current === statsRevision) loadingStats = false;
 		}
 	}
 
@@ -96,7 +106,15 @@
 	}
 
 	onMount(() => {
-		void Promise.all([loadDashboard(), loadMenu(), workStore.fetchCounts()]);
+		void Promise.all([loadMenu(), workStore.fetchCounts()]);
+		let loadedYearId: string | null = null;
+		return academicContext.subscribe((state) => {
+			const yearId = state.status === 'ready' ? state.selected.academicYearId : null;
+			if (yearId && yearId !== loadedYearId) {
+				loadedYearId = yearId;
+				void loadDashboard(yearId);
+			}
+		});
 	});
 </script>
 
@@ -259,15 +277,21 @@
 				variant="ghost"
 				size="sm"
 				class="gap-2"
-				onclick={loadDashboard}
-				disabled={loadingStats}
+				onclick={() => loadDashboard(academicYearId)}
+				disabled={loadingStats || !academicYearId}
 			>
 				<RefreshCw class={`h-4 w-4 ${loadingStats ? 'animate-spin' : ''}`} />
 				รีเฟรช
 			</Button>
 		</div>
 
-		{#if loadingStats}
+		{#if !academicYearId}
+			<PageState
+				variant="empty"
+				title="เลือกปีการศึกษาก่อน"
+				description="ใช้ตัวเลือกปีการศึกษาบนแถบด้านบน"
+			/>
+		{:else if loadingStats}
 			<PageSkeleton variant="cards" rows={3} />
 		{:else if statsError}
 			<PageState
@@ -275,7 +299,7 @@
 				title="โหลดภาพรวมโรงเรียนไม่สำเร็จ"
 				description={statsError}
 				actionLabel="ลองอีกครั้ง"
-				onaction={loadDashboard}
+				onaction={() => loadDashboard(academicYearId)}
 			/>
 		{:else if stats}
 			<div class="grid gap-3 md:grid-cols-3">

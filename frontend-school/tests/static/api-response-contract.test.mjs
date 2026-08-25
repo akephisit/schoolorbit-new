@@ -3,6 +3,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import ts from 'typescript';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -39,6 +40,37 @@ function extractGeneratedSchemaBlock(source, schemaName) {
 	const property = new RegExp(`^[\\t ]*${escapedName}:\\s*\\{`, 'm').exec(source);
 	assert.ok(property, `missing generated schema property: ${schemaName}`);
 	return extractObjectBlock(source, property[0]);
+}
+
+async function importStaffApiWithRequestRecorder(requests) {
+	const source = await readRepoFile('frontend-school/src/lib/api/staff.ts');
+	const compiled = ts.transpileModule(source, {
+		compilerOptions: {
+			module: ts.ModuleKind.ESNext,
+			target: ts.ScriptTarget.ES2022,
+			verbatimModuleSyntax: true
+		},
+		fileName: 'staff.ts'
+	}).outputText;
+	const recorderKey = `__staffApiRequests_${process.pid}_${Math.random()}`;
+	globalThis[recorderKey] = requests;
+	const clientModule = [
+		`const requests = globalThis[${JSON.stringify(recorderKey)}];`,
+		'export const apiClient = {',
+		'  async get(url) { requests.push(url); return { success: true, data: { totalStaff: 1, totalStudents: 2, activeHomerooms: 3 } }; }',
+		'};',
+		'export function requireApiData(response) { return response.data; }'
+	].join('\n');
+	const clientUrl = `data:text/javascript;base64,${Buffer.from(clientModule).toString('base64')}`;
+	const moduleUrl = `data:text/javascript;base64,${Buffer.from(
+		compiled.replace('$lib/api/client', clientUrl)
+	).toString('base64')}#${Date.now()}`;
+
+	try {
+		return await import(moduleUrl);
+	} finally {
+		delete globalThis[recorderKey];
+	}
 }
 
 test('project rules require a single JSON API response envelope', async () => {
@@ -557,7 +589,7 @@ test('user role assignment API contract stays aligned across backend and fronten
 	assert.match(publicStaffPage, /PublicStaffProfileResponse/);
 });
 
-test('staff dashboard API uses a typed aggregate-only response', async () => {
+test('staff dashboard API uses a typed aggregate response scoped to the selected year', async () => {
 	const frontendStaffApi = await readRepoFile('frontend-school/src/lib/api/staff.ts');
 	const generated = await readRepoFile('frontend-school/src/lib/api/generated/school-api.ts');
 	const backendService = await readRepoFile(
@@ -573,14 +605,12 @@ test('staff dashboard API uses a typed aggregate-only response', async () => {
 	assert.match(dashboardSchema, /totalStaff:\s*number/);
 	assert.match(dashboardSchema, /totalStudents:\s*number/);
 	assert.match(dashboardSchema, /activeHomerooms:\s*number/);
-	assert.match(
-		frontendStaffApi,
-		/getStaffDashboard\(\):\s*Promise<ApiResponse<StaffDashboardOverview>>/
-	);
-	assert.match(
-		frontendStaffApi,
-		/apiClient\.get<StaffDashboardOverview>\('\/api\/staff\/dashboard'\)/
-	);
+	const requests = [];
+	const staffApi = await importStaffApiWithRequestRecorder(requests);
+	await staffApi.getStaffDashboard('10000000-0000-4000-8000-000000000001');
+	assert.deepEqual(requests, [
+		'/api/staff/dashboard?academicYearId=10000000-0000-4000-8000-000000000001'
+	]);
 
 	assert.match(backendService, /struct\s+StaffDashboardOverview/);
 	assert.match(backendService, /#\[serde\(rename_all = "camelCase"\)\]/);

@@ -4,6 +4,7 @@
  */
 
 export const _meta = {
+	academicContext: 'year_required' as const,
 	menu: {
 		title: 'แดชบอร์ด',
 		icon: 'LayoutDashboard',
