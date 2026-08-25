@@ -137,6 +137,14 @@ pub async fn get_child_academic_context_options(
     academic_context_service::list_options_for_student(pool, student_id).await
 }
 
+pub async fn get_parent_academic_context_options(
+    pool: &PgPool,
+    parent_id: Uuid,
+) -> Result<AcademicContextOptions, AppError> {
+    ensure_parent_user(pool, parent_id).await?;
+    academic_context_service::list_options_for_parent(pool, parent_id).await
+}
+
 pub async fn get_child_exam_schedule(
     pool: &PgPool,
     parent_id: Uuid,
@@ -372,6 +380,73 @@ mod tests {
             planned.children[0].homeroom.as_deref(),
             Some("ม.1/1 ปี 2026")
         );
+    }
+
+    #[tokio::test]
+    async fn parent_academic_context_contains_only_linked_student_years() {
+        let pool = create_named_test_pool("parent_academic_context").await;
+        apply_migrations_through(&pool, 40).await.unwrap();
+        seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
+            .await
+            .unwrap();
+        apply_phase_b_runtime_migrations(&pool).await.unwrap();
+
+        let parent_id = create_test_user(&pool, "parent-context@example.test", "test-password")
+            .await
+            .unwrap();
+        sqlx::query("UPDATE users SET user_type = 'parent' WHERE id = $1")
+            .bind(parent_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let student_id = Uuid::parse_str("50000000-0000-0000-0000-000000000001").unwrap();
+        sqlx::query(
+            "INSERT INTO student_parents (
+                 student_user_id, parent_user_id, relationship, is_primary
+             ) VALUES ($1, $2, 'parent', true)",
+        )
+        .bind(student_id)
+        .bind(parent_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let options = get_parent_academic_context_options(&pool, parent_id)
+            .await
+            .unwrap();
+        let expected_years: Vec<i32> = sqlx::query_scalar(
+            r#"
+            SELECT year.year
+            FROM student_academic_years student_year
+            JOIN academic_years year ON year.id = student_year.academic_year_id
+            WHERE student_year.student_id = $1
+            ORDER BY year.year DESC
+            "#,
+        )
+        .bind(student_id)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            options
+                .years
+                .iter()
+                .map(|year| year.year)
+                .collect::<Vec<_>>(),
+            expected_years
+        );
+        assert!(options.terms.iter().all(|term| options
+            .years
+            .iter()
+            .any(|year| year.id == term.academic_year_id)));
+
+        let staff_id = create_test_user(&pool, "staff-context@example.test", "test-password")
+            .await
+            .unwrap();
+        assert!(matches!(
+            get_parent_academic_context_options(&pool, staff_id).await,
+            Err(AppError::Forbidden(_))
+        ));
     }
 
     #[test]

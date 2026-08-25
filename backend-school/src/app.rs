@@ -374,6 +374,10 @@ fn protected_routes() -> Router<AppState> {
             get(modules::parents::handlers::get_own_parent_profile),
         )
         .route(
+            "/api/parent/academic-context/options",
+            get(modules::parents::handlers::get_parent_academic_context_options),
+        )
+        .route(
             "/api/parent/students/{student_id}",
             get(modules::parents::handlers::get_child_profile),
         )

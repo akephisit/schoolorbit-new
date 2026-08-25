@@ -260,6 +260,7 @@ use utoipa::OpenApi;
         crate::modules::certificates::handlers::verify_certificate_by_qr,
         crate::modules::certificates::handlers::create_public_certificate_render_manifest,
         crate::modules::parents::handlers::get_own_parent_profile,
+        crate::modules::parents::handlers::get_parent_academic_context_options,
         crate::modules::parents::handlers::get_child_profile,
         crate::modules::parents::handlers::get_child_academic_context_options,
         crate::modules::parents::handlers::get_child_timetable,
@@ -2162,6 +2163,20 @@ mod tests {
                 && parameter["in"] == "path"
                 && parameter["required"] == true
         }));
+    }
+
+    #[test]
+    fn documents_parent_academic_context_options() {
+        let document = school_api_value().expect("document should serialize");
+        assert_eq!(
+            document["paths"]["/api/parent/academic-context/options"]["get"]["operationId"],
+            "listParentAcademicContextOptions"
+        );
+        assert_eq!(
+            document["paths"]["/api/parent/academic-context/options"]["get"]["responses"]["200"]
+                ["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_AcademicContextOptions"
+        );
     }
 
     #[test]

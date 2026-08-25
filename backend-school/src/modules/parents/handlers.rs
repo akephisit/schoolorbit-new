@@ -1,5 +1,6 @@
 use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
+use crate::modules::academic::core::models::AcademicContextOptions;
 use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::modules::parents::models::ParentProfile;
 use crate::modules::parents::services as parent_service;
@@ -88,6 +89,30 @@ pub struct ChildTimetableQuery {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ChildExamScheduleQuery {
     pub academic_term_id: Uuid,
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/parent/academic-context/options",
+    operation_id = "listParentAcademicContextOptions",
+    tag = "parent",
+    responses(
+        (status = 200, description = "Academic years and terms available across linked active students", body = ApiResponse<AcademicContextOptions>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Parent account required", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_parent_academic_context_options(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let options = parent_service::get_parent_academic_context_options(
+        &context.tenant.pool,
+        context.actor.user_id,
+    )
+    .await?;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(options))))
 }
 
 #[utoipa::path(
