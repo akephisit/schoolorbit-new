@@ -9,6 +9,7 @@ import {
 	retryAfterSeconds as parseRetryAfterSeconds,
 	withSessionSecurityHeaders
 } from '$lib/api/session-security';
+import { appendApiQuery, type ApiQuery } from '$lib/api/query';
 import { normalizeSchoolSubdomain } from '$lib/api/school-subdomain';
 import { authStore } from '$lib/stores/auth';
 
@@ -28,6 +29,7 @@ export interface ApiResponse<T, E = never> {
 
 export interface ApiRequestOptions {
 	signal?: AbortSignal;
+	query?: ApiQuery;
 }
 
 type ApiTransport = 'session' | 'public';
@@ -273,11 +275,14 @@ class APIClient {
 		endpoint: string,
 		options: ApiRequestOptions = {}
 	): Promise<ApiResponse<T, E>> {
-		return this.request<T, E>(endpoint, { method: 'GET', signal: options.signal });
+		return this.request<T, E>(appendApiQuery(endpoint, options.query), {
+			method: 'GET',
+			signal: options.signal
+		});
 	}
 
 	async getBlob(endpoint: string, options: ApiRequestOptions = {}): Promise<ApiResponse<Blob>> {
-		const response = await this.fetchBackend(endpoint, {
+		const response = await this.fetchBackend(appendApiQuery(endpoint, options.query), {
 			method: 'GET',
 			signal: options.signal
 		});
