@@ -157,7 +157,7 @@ jobs:
               container=$1
               service_alias=$2
               schoolorbit_ensure_container_network_aliases \
-                schoolorbit-web "$container" "$service_alias" "$container"
+                schoolorbit-web "$container" "$service_alias" "$container" schoolorbit-nginx
             }
 
             install -m 0755 "$renderer_source" "$renderer"

@@ -29,11 +29,23 @@ schoolorbit_network_has_aliases() {
             ' >/dev/null
 }
 
+schoolorbit_network_alias_resolves() {
+    local probe_container=${1:?DNS probe container is required}
+    local service_alias=${2:?Service alias is required}
+    podman exec "$probe_container" getent hosts "$service_alias" >/dev/null 2>&1
+}
+
+schoolorbit_network_probe_is_available() {
+    local probe_container=${1:?DNS probe container is required}
+    podman exec "$probe_container" true >/dev/null 2>&1
+}
+
 schoolorbit_ensure_container_network_aliases() {
     local network=${1:?Network name is required}
     local container=${2:?Container name is required}
     local service_alias=${3:?Service alias is required}
     local container_alias=${4:?Container alias is required}
+    local probe_container=${5:?DNS probe container is required}
     local network_state="" was_attached=false
     local -i attempt=1
 
@@ -46,7 +58,9 @@ schoolorbit_ensure_container_network_aliases() {
         return 1
     fi
     if schoolorbit_network_has_aliases \
-        "$network_state" "$network" "$service_alias" "$container_alias"; then
+        "$network_state" "$network" "$service_alias" "$container_alias" &&
+        schoolorbit_network_probe_is_available "$probe_container" &&
+        schoolorbit_network_alias_resolves "$probe_container" "$service_alias"; then
         return 0
     fi
 
@@ -66,7 +80,10 @@ schoolorbit_ensure_container_network_aliases() {
         if network_state=$(schoolorbit_container_network_state "$container"); then
             if schoolorbit_network_has_aliases \
                 "$network_state" "$network" "$service_alias" "$container_alias"; then
-                return 0
+                if ! schoolorbit_network_probe_is_available "$probe_container" ||
+                    schoolorbit_network_alias_resolves "$probe_container" "$service_alias"; then
+                    return 0
+                fi
             fi
             if schoolorbit_network_is_attached "$network_state" "$network"; then
                 podman network disconnect -f "$network" "$container" >/dev/null 2>&1 || break

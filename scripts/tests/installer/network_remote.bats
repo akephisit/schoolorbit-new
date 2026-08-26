@@ -9,6 +9,7 @@ setup() {
     export PODMAN_NETWORK_STATE="$TEST_ROOT/podman-network-state"
     export PODMAN_ALIAS_CONNECT_COUNT="$TEST_ROOT/podman-alias-connect-count"
     export PODMAN_ALIAS_CONNECT_FAILURES=0
+    export PODMAN_PROBE_AVAILABLE=true
     printf '%s\n' detached >"$PODMAN_NETWORK_STATE"
     printf '%s\n' 0 >"$PODMAN_ALIAS_CONNECT_COUNT"
 
@@ -27,7 +28,7 @@ case "$1" in
     inspect)
         case "$(cat "$PODMAN_NETWORK_STATE")" in
             detached) printf "%s\n" "{}" ;;
-            attached-good)
+            attached-good | attached-stale)
                 printf "%s\n" "{\"schoolorbit-web\":{\"Aliases\":[\"backend-admin\",\"schoolorbit-backend-admin\"]}}"
                 ;;
             attached-no-alias)
@@ -37,6 +38,14 @@ case "$1" in
                 printf "%s\n" "{\"schoolorbit-web\":{\"Aliases\":[]}}"
                 ;;
         esac
+        ;;
+    exec)
+        if [ "$3" = true ]; then
+            [ "$PODMAN_PROBE_AVAILABLE" = true ]
+            exit
+        fi
+        [ "$PODMAN_PROBE_AVAILABLE" = true ]
+        [ "$(cat "$PODMAN_NETWORK_STATE")" = attached-good ]
         ;;
     network)
         case "$2" in
@@ -76,10 +85,12 @@ run_network_repair() {
         PODMAN_NETWORK_STATE="$PODMAN_NETWORK_STATE" \
         PODMAN_ALIAS_CONNECT_COUNT="$PODMAN_ALIAS_CONNECT_COUNT" \
         PODMAN_ALIAS_CONNECT_FAILURES="$PODMAN_ALIAS_CONNECT_FAILURES" \
+        PODMAN_PROBE_AVAILABLE="$PODMAN_PROBE_AVAILABLE" \
         bash -c '
           source "$1"
           schoolorbit_ensure_container_network_aliases \
-            schoolorbit-web schoolorbit-backend-admin backend-admin schoolorbit-backend-admin
+            schoolorbit-web schoolorbit-backend-admin backend-admin \
+            schoolorbit-backend-admin schoolorbit-nginx
         ' _ "$NETWORK_SCRIPT"
 }
 
@@ -91,6 +102,29 @@ run_network_repair() {
     [ "$status" -eq 0 ]
     run ! grep -Fq 'podman network disconnect' "$FAKE_COMMAND_LOG"
     run ! grep -Fq 'podman network connect' "$FAKE_COMMAND_LOG"
+}
+
+@test "network alias repair re-registers aliases when the DNS probe container is unavailable" {
+    printf '%s\n' attached-good >"$PODMAN_NETWORK_STATE"
+    PODMAN_PROBE_AVAILABLE=false
+
+    run_network_repair
+
+    [ "$status" -eq 0 ]
+    [ "$(<"$PODMAN_ALIAS_CONNECT_COUNT")" -eq 1 ]
+    [ "$(<"$PODMAN_NETWORK_STATE")" = attached-good ]
+    [ "$(grep -c 'podman network disconnect' "$FAKE_COMMAND_LOG")" -eq 1 ]
+}
+
+@test "network alias repair reconnects metadata aliases when container DNS is stale" {
+    printf '%s\n' attached-stale >"$PODMAN_NETWORK_STATE"
+
+    run_network_repair
+
+    [ "$status" -eq 0 ]
+    [ "$(<"$PODMAN_ALIAS_CONNECT_COUNT")" -eq 1 ]
+    [ "$(<"$PODMAN_NETWORK_STATE")" = attached-good ]
+    [ "$(grep -c 'podman network disconnect' "$FAKE_COMMAND_LOG")" -eq 1 ]
 }
 
 @test "network alias repair retries a detached container with bounded alias connects" {

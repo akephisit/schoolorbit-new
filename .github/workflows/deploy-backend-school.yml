@@ -372,7 +372,7 @@ jobs:
               container=$1
               service_alias=$2
               schoolorbit_ensure_container_network_aliases \
-                schoolorbit-web "$container" "$service_alias" "$container"
+                schoolorbit-web "$container" "$service_alias" "$container" schoolorbit-nginx
             }
             recreate_nginx() {
               podman stop schoolorbit-nginx >/dev/null 2>&1 || true

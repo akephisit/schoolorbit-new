@@ -403,7 +403,7 @@ test('backend workflows deploy the canonical target and verify the selected orig
 		);
 		assert.match(
 			workflow,
-			/schoolorbit_ensure_container_network_aliases \\\n\s+schoolorbit-web "\$container" "\$service_alias" "\$container"/
+			/schoolorbit_ensure_container_network_aliases \\\n\s+schoolorbit-web "\$container" "\$service_alias" "\$container" schoolorbit-nginx/
 		);
 		assert.match(workflow, /podman rm schoolorbit-nginx >\/dev\/null 2>&1 \|\| true/);
 		assert.match(workflow, /timeout 180 bash/);
