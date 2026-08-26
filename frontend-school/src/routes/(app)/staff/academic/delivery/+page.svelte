@@ -7,7 +7,7 @@
 		applyLearningOfferingsFromCurriculum,
 		createLearningGroup,
 		createLearningOffering,
-		listLearningGroups,
+		listLearningGroupsForTerm,
 		listLearningOfferings,
 		previewLearningGroupRoster,
 		previewLearningOfferingsFromCurriculum,
@@ -35,6 +35,7 @@
 	const academicYearId = $derived($academicContext.selected.academicYearId);
 	let offerings = $state<LearningOffering[]>([]);
 	let selectedOffering = $state<LearningOffering | null>(null);
+	let allGroups = $state<LearningGroup[]>([]);
 	let groups = $state<LearningGroup[]>([]);
 	let selectedGroup = $state<LearningGroup | null>(null);
 	let rosterPreview = $state<RosterPreview | null>(null);
@@ -59,11 +60,15 @@
 		loading = true;
 		errorMessage = '';
 		try {
-			const rows = await listLearningOfferings(termId);
-			const rooms = await listHomerooms(yearId);
-			const staff = await listStaffOptions();
+			const [rows, termGroups, rooms, staff] = await Promise.all([
+				listLearningOfferings(termId),
+				listLearningGroupsForTerm(termId),
+				listHomerooms(yearId),
+				listStaffOptions()
+			]);
 			if (current !== revision) return;
 			offerings = rows;
+			allGroups = termGroups;
 			homeroomOptions = rooms.map((room) => ({ id: room.id, name: room.name }));
 			staffOptions = staff.map((person) => ({ id: person.id, name: person.name }));
 			selectedOffering = null;
@@ -78,11 +83,16 @@
 			if (current === revision) loading = false;
 		}
 	}
-	async function selectOffering(offering: LearningOffering) {
+	function selectOffering(offering: LearningOffering) {
 		selectedOffering = offering;
 		selectedGroup = null;
 		rosterPreview = null;
-		groups = await listLearningGroups(offering.id);
+		groups = allGroups.filter((group) => group.learningOfferingId === offering.id);
+	}
+	function replaceGroup(updated: LearningGroup) {
+		allGroups = allGroups.map((group) => (group.id === updated.id ? updated : group));
+		groups = groups.map((group) => (group.id === updated.id ? updated : group));
+		if (selectedGroup?.id === updated.id) selectedGroup = updated;
 	}
 	async function addOffering(draft: {
 		kind: 'course' | 'activity';
@@ -150,6 +160,7 @@
 			...draft,
 			description: draft.description || null
 		});
+		allGroups = [...allGroups, created];
 		groups = [...groups, created];
 	}
 	async function configureGroup(
@@ -180,8 +191,7 @@
 			rowVersion: withHomerooms.rowVersion,
 			teachers: [...teacherAssignments, { teacherId: draft.teacherId, role: draft.teacherRole }]
 		});
-		groups = groups.map((item) => (item.id === updated.id ? updated : item));
-		if (selectedGroup?.id === updated.id) selectedGroup = updated;
+		replaceGroup(updated);
 	}
 	async function refreshRoster() {
 		if (!selectedGroup) return;
@@ -199,8 +209,7 @@
 			rowVersion: selectedGroup.rowVersion,
 			overrides: []
 		});
-		selectedGroup = updated;
-		groups = groups.map((group) => (group.id === updated.id ? updated : group));
+		replaceGroup(updated);
 	}
 	async function publishRoster() {
 		if (!selectedGroup) return;
@@ -208,8 +217,7 @@
 			rowVersion: selectedGroup.rowVersion,
 			idempotencyKey: crypto.randomUUID()
 		});
-		selectedGroup = updated;
-		groups = groups.map((group) => (group.id === updated.id ? updated : group));
+		replaceGroup(updated);
 	}
 	async function buildCurriculumPreview(draft: {
 		studyProgramIds: string[];

@@ -24,6 +24,18 @@ test('timetable workspace uses one cancellable term collection load', async () =
 	assert.doesNotMatch(page, /listSlotInstructors|listSlotClassroomAssignments/);
 });
 
+test('academic delivery workspace loads learning groups once per term', async () => {
+	const page = await readFile(
+		path.join(projectRoot, 'src/routes/(app)/staff/academic/delivery/+page.svelte'),
+		'utf8'
+	);
+
+	assert.match(page, /listLearningGroupsForTerm/);
+	assert.match(page, /allGroups/);
+	assert.match(page, /groups = allGroups\.filter/);
+	assert.doesNotMatch(page, /listLearningGroups\(offering\.id\)/);
+});
+
 test('retired timetable activity context utility is removed after the hard cutover', async () => {
 	await assert.rejects(
 		readFile(path.join(projectRoot, 'src/lib/utils/timetable-activity-context.ts'), 'utf8'),
