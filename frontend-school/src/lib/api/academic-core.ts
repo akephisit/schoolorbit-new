@@ -16,8 +16,13 @@ export type BellSchedule = Schemas['BellSchedule'];
 export type BellSchedulePeriod = Schemas['BellSchedulePeriod'];
 export type SubjectGroup = Schemas['SubjectGroup'];
 export type CatalogSubject = Schemas['CatalogSubject'];
+export type CatalogSubjectOverview = Schemas['CatalogSubjectOverview'];
+export type CatalogSubjectOverviewItem = Schemas['CatalogSubjectOverviewItem'];
 export type SubjectVersion = Schemas['SubjectVersion'];
 export type CatalogActivity = Schemas['CatalogActivity'];
+export type CatalogActivityOverview = Schemas['CatalogActivityOverview'];
+export type CatalogActivityOverviewItem = Schemas['CatalogActivityOverviewItem'];
+export type CatalogDisplayState = Schemas['CatalogDisplayState'];
 export type ActivityVersion = Schemas['ActivityVersion'];
 export type Curriculum = Schemas['Curriculum'];
 export type CurriculumVersion = Schemas['CurriculumVersion'];
@@ -191,6 +196,14 @@ export const listCatalogSubjects = () =>
 		apiClient.get<CatalogSubject[]>('/api/academic/catalog/subjects'),
 		'ไม่สามารถโหลดรายวิชาได้'
 	);
+export const getCatalogSubjectOverview = (options: ApiRequestOptions = {}) =>
+	academicData(
+		apiClient.get<CatalogSubjectOverview>(
+			'/api/academic/catalog/subjects/overview',
+			options
+		),
+		'ไม่สามารถโหลดภาพรวมทะเบียนรายวิชาได้'
+	);
 export const createCatalogSubject = (body: CreateCatalogSubjectRequest) =>
 	academicData(
 		apiClient.post<CatalogSubject>('/api/academic/catalog/subjects', body),
@@ -226,6 +239,14 @@ export const listCatalogActivities = () =>
 	academicData(
 		apiClient.get<CatalogActivity[]>('/api/academic/catalog/activities'),
 		'ไม่สามารถโหลดกิจกรรมได้'
+	);
+export const getCatalogActivityOverview = (options: ApiRequestOptions = {}) =>
+	academicData(
+		apiClient.get<CatalogActivityOverview>(
+			'/api/academic/catalog/activities/overview',
+			options
+		),
+		'ไม่สามารถโหลดภาพรวมทะเบียนกิจกรรมได้'
 	);
 export const createCatalogActivity = (body: CreateCatalogActivityRequest) =>
 	academicData(

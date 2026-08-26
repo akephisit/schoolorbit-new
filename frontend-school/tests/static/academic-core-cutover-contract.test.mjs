@@ -38,6 +38,7 @@ const operations = [
 	['/api/academic/grade-progressions', 'put', 'replaceGradeProgressions'],
 	['/api/academic/catalog/subjects', 'get', 'listCatalogSubjects'],
 	['/api/academic/catalog/subjects', 'post', 'createCatalogSubject'],
+	['/api/academic/catalog/subjects/overview', 'get', 'getCatalogSubjectOverview'],
 	['/api/academic/catalog/subjects/{id}', 'get', 'getCatalogSubject'],
 	['/api/academic/catalog/subjects/{id}', 'patch', 'updateCatalogSubject'],
 	['/api/academic/catalog/subjects/{id}/versions', 'get', 'listSubjectVersions'],
@@ -54,6 +55,7 @@ const operations = [
 	['/api/academic/catalog/subject-groups/{id}', 'delete', 'deleteSubjectGroup'],
 	['/api/academic/catalog/activities', 'get', 'listCatalogActivities'],
 	['/api/academic/catalog/activities', 'post', 'createCatalogActivity'],
+	['/api/academic/catalog/activities/overview', 'get', 'getCatalogActivityOverview'],
 	['/api/academic/catalog/activities/{id}', 'get', 'getCatalogActivity'],
 	['/api/academic/catalog/activities/{id}', 'patch', 'updateCatalogActivity'],
 	['/api/academic/catalog/activities/{id}/versions', 'get', 'listActivityVersions'],
@@ -140,6 +142,20 @@ test('generated contract owns every academic core and learning delivery operatio
 		Object.values(pathItem).flatMap((operation) => operation.operationId ?? [])
 	);
 	assert.equal(new Set(operationIds).size, operationIds.length, 'operation IDs must be unique');
+});
+
+test('catalog overview schemas are generated from the backend contract', async () => {
+	const { contract, generated } = await readContractArtifacts();
+	const schemas = contract.components.schemas;
+
+	for (const schemaName of [
+		'CatalogSubjectOverview',
+		'CatalogActivityOverview',
+		'CatalogDisplayState'
+	]) {
+		assert.ok(schemas?.[schemaName], `${schemaName} must exist in OpenAPI`);
+		assert.match(generated, new RegExp(`\\b${schemaName}:\\s*`));
+	}
 });
 
 test('scoped academic collection reads require an explicit context identifier', async () => {

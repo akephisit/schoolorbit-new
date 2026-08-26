@@ -181,6 +181,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/catalog/activities/overview': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getCatalogActivityOverview'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/catalog/activity-versions/{id}': {
 		parameters: {
 			query?: never;
@@ -335,6 +351,22 @@ export interface paths {
 		get: operations['listSubjectVersions'];
 		put?: never;
 		post: operations['createSubjectVersion'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/catalog/subjects/overview': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getCatalogSubjectOverview'];
+		put?: never;
+		post?: never;
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -4563,6 +4595,14 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_CatalogActivityOverview: {
+			data: {
+				gradeLevelOptions: components['schemas']['GradeLevelLookupItem'][];
+				items: components['schemas']['CatalogActivityOverviewItem'][];
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_CatalogSubject: {
 			data: {
 				/** Format: date-time */
@@ -4578,6 +4618,14 @@ export interface components {
 				rowVersion: number;
 				/** Format: date-time */
 				updatedAt: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CatalogSubjectOverview: {
+			data: {
+				gradeLevelOptions: components['schemas']['GradeLevelLookupItem'][];
+				items: components['schemas']['CatalogSubjectOverviewItem'][];
 			};
 			message?: string;
 			success: boolean;
@@ -8262,6 +8310,20 @@ export interface components {
 			/** Format: date-time */
 			updatedAt: string;
 		};
+		CatalogActivityOverview: {
+			gradeLevelOptions: components['schemas']['GradeLevelLookupItem'][];
+			items: components['schemas']['CatalogActivityOverviewItem'][];
+		};
+		CatalogActivityOverviewItem: {
+			activity: components['schemas']['CatalogActivity'];
+			displayState: components['schemas']['CatalogDisplayState'];
+			displayVersion?: null | components['schemas']['ActivityVersion'];
+			/** Format: int64 */
+			draftCount: number;
+			gradeLevels: components['schemas']['GradeLevelLookupItem'][];
+		};
+		/** @enum {string} */
+		CatalogDisplayState: 'current' | 'upcoming' | 'expired' | 'unpublished';
 		CatalogSubject: {
 			/** Format: date-time */
 			archivedAt?: string | null;
@@ -8276,6 +8338,18 @@ export interface components {
 			rowVersion: number;
 			/** Format: date-time */
 			updatedAt: string;
+		};
+		CatalogSubjectOverview: {
+			gradeLevelOptions: components['schemas']['GradeLevelLookupItem'][];
+			items: components['schemas']['CatalogSubjectOverviewItem'][];
+		};
+		CatalogSubjectOverviewItem: {
+			displayState: components['schemas']['CatalogDisplayState'];
+			displayVersion?: null | components['schemas']['SubjectVersion'];
+			/** Format: int64 */
+			draftCount: number;
+			gradeLevels: components['schemas']['GradeLevelLookupItem'][];
+			subject: components['schemas']['CatalogSubject'];
 		};
 		CertificateAccountSearchQuery: {
 			recipientType: components['schemas']['RecipientType'];
@@ -14091,6 +14165,44 @@ export interface operations {
 			};
 		};
 	};
+	getCatalogActivityOverview: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Catalog activity overview */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CatalogActivityOverview'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic catalog read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	getActivityVersion: {
 		parameters: {
 			query?: never;
@@ -15222,6 +15334,44 @@ export interface operations {
 			};
 			/** @description Subject version conflict */
 			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getCatalogSubjectOverview: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Catalog subject overview */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CatalogSubjectOverview'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic catalog read permission denied */
+			403: {
 				headers: {
 					[name: string]: unknown;
 				};

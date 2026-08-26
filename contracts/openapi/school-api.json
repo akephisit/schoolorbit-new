@@ -1745,6 +1745,42 @@
         ],
         "type": "object"
       },
+      "ApiResponse_CatalogActivityOverview": {
+        "properties": {
+          "data": {
+            "properties": {
+              "gradeLevelOptions": {
+                "items": {
+                  "$ref": "#/components/schemas/GradeLevelLookupItem"
+                },
+                "type": "array"
+              },
+              "items": {
+                "items": {
+                  "$ref": "#/components/schemas/CatalogActivityOverviewItem"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "items",
+              "gradeLevelOptions"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_CatalogSubject": {
         "properties": {
           "data": {
@@ -1789,6 +1825,42 @@
               "rowVersion",
               "createdAt",
               "updatedAt"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_CatalogSubjectOverview": {
+        "properties": {
+          "data": {
+            "properties": {
+              "gradeLevelOptions": {
+                "items": {
+                  "$ref": "#/components/schemas/GradeLevelLookupItem"
+                },
+                "type": "array"
+              },
+              "items": {
+                "items": {
+                  "$ref": "#/components/schemas/CatalogSubjectOverviewItem"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "items",
+              "gradeLevelOptions"
             ],
             "type": "object"
           },
@@ -15386,6 +15458,73 @@
         ],
         "type": "object"
       },
+      "CatalogActivityOverview": {
+        "properties": {
+          "gradeLevelOptions": {
+            "items": {
+              "$ref": "#/components/schemas/GradeLevelLookupItem"
+            },
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogActivityOverviewItem"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "gradeLevelOptions"
+        ],
+        "type": "object"
+      },
+      "CatalogActivityOverviewItem": {
+        "properties": {
+          "activity": {
+            "$ref": "#/components/schemas/CatalogActivity"
+          },
+          "displayState": {
+            "$ref": "#/components/schemas/CatalogDisplayState"
+          },
+          "displayVersion": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ActivityVersion"
+              }
+            ]
+          },
+          "draftCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "gradeLevels": {
+            "items": {
+              "$ref": "#/components/schemas/GradeLevelLookupItem"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "activity",
+          "displayState",
+          "draftCount",
+          "gradeLevels"
+        ],
+        "type": "object"
+      },
+      "CatalogDisplayState": {
+        "enum": [
+          "current",
+          "upcoming",
+          "expired",
+          "unpublished"
+        ],
+        "type": "string"
+      },
       "CatalogSubject": {
         "properties": {
           "archivedAt": {
@@ -15428,6 +15567,64 @@
           "rowVersion",
           "createdAt",
           "updatedAt"
+        ],
+        "type": "object"
+      },
+      "CatalogSubjectOverview": {
+        "properties": {
+          "gradeLevelOptions": {
+            "items": {
+              "$ref": "#/components/schemas/GradeLevelLookupItem"
+            },
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogSubjectOverviewItem"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "gradeLevelOptions"
+        ],
+        "type": "object"
+      },
+      "CatalogSubjectOverviewItem": {
+        "properties": {
+          "displayState": {
+            "$ref": "#/components/schemas/CatalogDisplayState"
+          },
+          "displayVersion": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SubjectVersion"
+              }
+            ]
+          },
+          "draftCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "gradeLevels": {
+            "items": {
+              "$ref": "#/components/schemas/GradeLevelLookupItem"
+            },
+            "type": "array"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/CatalogSubject"
+          }
+        },
+        "required": [
+          "subject",
+          "displayState",
+          "draftCount",
+          "gradeLevels"
         ],
         "type": "object"
       },
@@ -34277,6 +34474,46 @@
         ]
       }
     },
+    "/api/academic/catalog/activities/overview": {
+      "get": {
+        "operationId": "getCatalogActivityOverview",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CatalogActivityOverview"
+                }
+              }
+            },
+            "description": "Catalog activity overview"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic catalog read permission denied"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
     "/api/academic/catalog/activity-versions/{id}": {
       "get": {
         "operationId": "getActivityVersion",
@@ -35662,6 +35899,46 @@
               }
             },
             "description": "Subject version conflict"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/catalog/subjects/overview": {
+      "get": {
+        "operationId": "getCatalogSubjectOverview",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CatalogSubjectOverview"
+                }
+              }
+            },
+            "description": "Catalog subject overview"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic catalog read permission denied"
           }
         },
         "tags": [

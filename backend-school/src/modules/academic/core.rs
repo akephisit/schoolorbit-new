@@ -52,6 +52,10 @@ pub fn routes() -> Router<AppState> {
             get(handlers::list_catalog_subjects).post(handlers::create_catalog_subject),
         )
         .route(
+            "/catalog/subjects/overview",
+            get(handlers::get_catalog_subject_overview),
+        )
+        .route(
             "/catalog/subjects/{id}",
             get(handlers::get_catalog_subject).patch(handlers::update_catalog_subject),
         )
@@ -85,6 +89,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/catalog/activities",
             get(handlers::list_catalog_activities).post(handlers::create_catalog_activity),
+        )
+        .route(
+            "/catalog/activities/overview",
+            get(handlers::get_catalog_activity_overview),
         )
         .route(
             "/catalog/activities/{id}",

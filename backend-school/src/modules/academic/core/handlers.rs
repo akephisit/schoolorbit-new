@@ -4,6 +4,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use chrono::Utc;
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -16,6 +17,7 @@ use crate::policies::{
     academic_catalog_access_policy::{self, CatalogAction, CatalogResourceRef},
     academic_curriculum_access_policy::{self, CurriculumAction},
 };
+use crate::scheduling::SCHOOL_TIMEZONE;
 use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::utils::tenant::tenant_context;
 use crate::AppState;
@@ -737,6 +739,36 @@ pub async fn list_catalog_subjects(
 }
 
 #[utoipa::path(
+    get,
+    path = "/api/academic/catalog/subjects/overview",
+    operation_id = "getCatalogSubjectOverview",
+    tag = "academic",
+    responses(
+        (status = 200, description = "Catalog subject overview", body = ApiResponse<CatalogSubjectOverview>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic catalog read permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_catalog_subject_overview(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    let filter = academic_catalog_access_policy::require_academic_catalog_list_access(
+        &pool,
+        &actor,
+        CatalogAction::Read,
+    )
+    .await?;
+    let today = Utc::now().with_timezone(&SCHOOL_TIMEZONE).date_naive();
+    Ok(ok(
+        catalog::list_subject_overview(&pool, &filter, today).await?
+    ))
+}
+
+#[utoipa::path(
     post,
     path = "/api/academic/catalog/subjects",
     operation_id = "createCatalogSubject",
@@ -1346,6 +1378,36 @@ pub async fn list_catalog_activities(
     )
     .await?;
     Ok(ok(catalog::list_activities(&pool, &filter).await?))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/catalog/activities/overview",
+    operation_id = "getCatalogActivityOverview",
+    tag = "academic",
+    responses(
+        (status = 200, description = "Catalog activity overview", body = ApiResponse<CatalogActivityOverview>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic catalog read permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_catalog_activity_overview(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    let filter = academic_catalog_access_policy::require_academic_catalog_list_access(
+        &pool,
+        &actor,
+        CatalogAction::Read,
+    )
+    .await?;
+    let today = Utc::now().with_timezone(&SCHOOL_TIMEZONE).date_naive();
+    Ok(ok(
+        catalog::list_activity_overview(&pool, &filter, today).await?
+    ))
 }
 
 #[utoipa::path(
