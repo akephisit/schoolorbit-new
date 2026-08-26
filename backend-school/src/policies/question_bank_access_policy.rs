@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -5,26 +7,26 @@ use crate::error::AppError;
 use crate::middleware::permission::ActorContext;
 use crate::modules::question_bank::models::QuestionScopeRow;
 use crate::permissions::registry::codes;
-use crate::policies::resource_access_policy::{self, UserResourceListAccess};
+use crate::policies::resource_access_policy;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QuestionBankAccess {
     pub read_school: bool,
     pub read_assigned_user_id: Option<Uuid>,
-    pub read_subject_group_ids: Vec<Uuid>,
+    pub read_organization_unit_ids: Vec<Uuid>,
     pub manage_school: bool,
     pub manage_assigned_user_id: Option<Uuid>,
-    pub manage_subject_group_ids: Vec<Uuid>,
+    pub manage_organization_unit_ids: Vec<Uuid>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PermissionFlags {
     read_school: bool,
     read_assigned: bool,
-    read_subject_group: bool,
+    read_organization_unit: bool,
     manage_school: bool,
     manage_assigned: bool,
-    manage_subject_group: bool,
+    manage_organization_unit: bool,
 }
 
 pub async fn resolve_access(
@@ -32,7 +34,7 @@ pub async fn resolve_access(
     actor: &ActorContext,
 ) -> Result<QuestionBankAccess, AppError> {
     let flags = permission_flags(actor);
-    if !flags.read_school && !flags.read_assigned && !flags.read_subject_group {
+    if !flags.read_school && !flags.read_assigned && !flags.read_organization_unit {
         actor.require_any_permission(&[
             codes::ACADEMIC_QUESTION_BANK_READ_ASSIGNED,
             codes::ACADEMIC_QUESTION_BANK_READ_ORGANIZATION_UNIT,
@@ -43,27 +45,37 @@ pub async fn resolve_access(
         ])?;
     }
 
-    let subject_group_ids = if flags.read_subject_group || flags.manage_subject_group {
-        actor_subject_group_ids(pool, actor.user_id).await?
-    } else {
-        Vec::new()
-    };
+    let mut read_organization_unit_ids = BTreeSet::new();
+    if actor.has_permission(codes::ACADEMIC_QUESTION_BANK_READ_ORGANIZATION_UNIT) {
+        read_organization_unit_ids.extend(
+            resource_access_policy::accessible_exact_units_for_permission(
+                pool,
+                actor.user_id,
+                codes::ACADEMIC_QUESTION_BANK_READ_ORGANIZATION_UNIT,
+            )
+            .await?,
+        );
+    }
+    let manage_organization_unit_ids =
+        if actor.has_permission(codes::ACADEMIC_QUESTION_BANK_MANAGE_ORGANIZATION_UNIT) {
+            resource_access_policy::accessible_exact_units_for_permission(
+                pool,
+                actor.user_id,
+                codes::ACADEMIC_QUESTION_BANK_MANAGE_ORGANIZATION_UNIT,
+            )
+            .await?
+        } else {
+            Vec::new()
+        };
+    read_organization_unit_ids.extend(manage_organization_unit_ids.iter().copied());
 
     Ok(QuestionBankAccess {
         read_school: flags.read_school,
         read_assigned_user_id: flags.read_assigned.then_some(actor.user_id),
-        read_subject_group_ids: if flags.read_subject_group {
-            subject_group_ids.clone()
-        } else {
-            Vec::new()
-        },
+        read_organization_unit_ids: read_organization_unit_ids.into_iter().collect(),
         manage_school: flags.manage_school,
         manage_assigned_user_id: flags.manage_assigned.then_some(actor.user_id),
-        manage_subject_group_ids: if flags.manage_subject_group {
-            subject_group_ids
-        } else {
-            Vec::new()
-        },
+        manage_organization_unit_ids,
     })
 }
 
@@ -72,18 +84,23 @@ pub async fn require_question_read_access(
     actor: &ActorContext,
     scope: &QuestionScopeRow,
 ) -> Result<(), AppError> {
-    let flags = permission_flags(actor);
-    if flags.read_school {
+    let access = resolve_access(pool, actor).await?;
+    if access.read_school {
         return Ok(());
     }
-    if flags.read_assigned
+    if access.read_assigned_user_id.is_some()
         && (scope.owner_user_id == actor.user_id
             || subject_is_assigned_to_actor(pool, scope.subject_id, actor.user_id).await?)
     {
         return Ok(());
     }
-    if flags.read_subject_group
-        && subject_group_is_accessible(pool, scope.subject_group_id, actor.user_id).await?
+    if scope
+        .owning_organization_unit_id
+        .is_some_and(|organization_unit_id| {
+            access
+                .read_organization_unit_ids
+                .contains(&organization_unit_id)
+        })
     {
         return Ok(());
     }
@@ -95,15 +112,20 @@ pub async fn require_question_manage_access(
     actor: &ActorContext,
     scope: &QuestionScopeRow,
 ) -> Result<(), AppError> {
-    let flags = permission_flags(actor);
-    if flags.manage_school {
+    let access = resolve_access(pool, actor).await?;
+    if access.manage_school {
         return Ok(());
     }
-    if flags.manage_assigned && scope.owner_user_id == actor.user_id {
+    if access.manage_assigned_user_id.is_some() && scope.owner_user_id == actor.user_id {
         return Ok(());
     }
-    if flags.manage_subject_group
-        && subject_group_is_accessible(pool, scope.subject_group_id, actor.user_id).await?
+    if scope
+        .owning_organization_unit_id
+        .is_some_and(|organization_unit_id| {
+            access
+                .manage_organization_unit_ids
+                .contains(&organization_unit_id)
+        })
     {
         return Ok(());
     }
@@ -115,22 +137,24 @@ pub async fn require_subject_create_access(
     actor: &ActorContext,
     subject_id: Uuid,
 ) -> Result<(), AppError> {
-    let flags = permission_flags(actor);
-    let subject_group_id = subject_group_id_for_subject(pool, subject_id)
+    let access = resolve_access(pool, actor).await?;
+    let owning_organization_unit_id = owning_organization_unit_id_for_subject(pool, subject_id)
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบรายวิชาในคลังวิชา".to_string()))?;
 
-    if flags.manage_school {
+    if access.manage_school {
         return Ok(());
     }
-    if flags.manage_assigned
+    if access.manage_assigned_user_id.is_some()
         && subject_is_assigned_to_actor(pool, Some(subject_id), actor.user_id).await?
     {
         return Ok(());
     }
-    if flags.manage_subject_group
-        && subject_group_is_accessible(pool, subject_group_id, actor.user_id).await?
-    {
+    if owning_organization_unit_id.is_some_and(|organization_unit_id| {
+        access
+            .manage_organization_unit_ids
+            .contains(&organization_unit_id)
+    }) {
         return Ok(());
     }
 
@@ -142,7 +166,7 @@ pub async fn require_subject_create_access(
 fn permission_flags(actor: &ActorContext) -> PermissionFlags {
     let manage_school = actor.has_permission(codes::ACADEMIC_QUESTION_BANK_MANAGE_SCHOOL);
     let manage_assigned = actor.has_permission(codes::ACADEMIC_QUESTION_BANK_MANAGE_ASSIGNED);
-    let manage_subject_group =
+    let manage_organization_unit =
         actor.has_permission(codes::ACADEMIC_QUESTION_BANK_MANAGE_ORGANIZATION_UNIT);
 
     PermissionFlags {
@@ -150,66 +174,19 @@ fn permission_flags(actor: &ActorContext) -> PermissionFlags {
             || actor.has_permission(codes::ACADEMIC_QUESTION_BANK_READ_SCHOOL),
         read_assigned: manage_assigned
             || actor.has_permission(codes::ACADEMIC_QUESTION_BANK_READ_ASSIGNED),
-        read_subject_group: manage_subject_group
+        read_organization_unit: manage_organization_unit
             || actor.has_permission(codes::ACADEMIC_QUESTION_BANK_READ_ORGANIZATION_UNIT),
         manage_school,
         manage_assigned,
-        manage_subject_group,
+        manage_organization_unit,
     }
 }
 
-async fn actor_subject_group_ids(pool: &PgPool, actor_id: Uuid) -> Result<Vec<Uuid>, AppError> {
-    let Some(organization_unit_ids) = resource_access_policy::accessible_organization_unit_ids(
-        pool,
-        UserResourceListAccess::OrganizationUnit(actor_id),
-    )
-    .await?
-    else {
-        return Ok(Vec::new());
-    };
-
-    if organization_unit_ids.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    sqlx::query_scalar(
-        r#"
-SELECT DISTINCT subject_group_id
-FROM organization_units
-WHERE id = ANY($1)
-  AND subject_group_id IS NOT NULL
-  AND is_active = true
-"#,
-    )
-    .bind(&organization_unit_ids)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!(
-            "Failed to fetch question bank subject group access: {}",
-            error
-        );
-        AppError::InternalServerError("ไม่สามารถตรวจสอบกลุ่มสาระได้".to_string())
-    })
-}
-
-async fn subject_group_is_accessible(
-    pool: &PgPool,
-    subject_group_id: Option<Uuid>,
-    actor_id: Uuid,
-) -> Result<bool, AppError> {
-    let Some(subject_group_id) = subject_group_id else {
-        return Ok(false);
-    };
-    let subject_group_ids = actor_subject_group_ids(pool, actor_id).await?;
-    Ok(subject_group_ids.contains(&subject_group_id))
-}
-
-async fn subject_group_id_for_subject(
+async fn owning_organization_unit_id_for_subject(
     pool: &PgPool,
     subject_id: Uuid,
 ) -> Result<Option<Option<Uuid>>, AppError> {
-    sqlx::query_scalar("SELECT group_id FROM subjects WHERE id = $1")
+    sqlx::query_scalar("SELECT owning_organization_unit_id FROM subjects WHERE id = $1")
         .bind(subject_id)
         .fetch_optional(pool)
         .await
@@ -279,6 +256,6 @@ mod tests {
         assert!(flags.manage_school);
         assert!(flags.read_school);
         assert!(!flags.read_assigned);
-        assert!(!flags.read_subject_group);
+        assert!(!flags.read_organization_unit);
     }
 }

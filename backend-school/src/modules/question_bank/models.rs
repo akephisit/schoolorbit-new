@@ -1,11 +1,12 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::types::Json;
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 pub const RICH_CONTENT_SCHEMA_VERSION: u16 = 1;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RichContent {
     pub schema_version: u16,
@@ -71,7 +72,7 @@ impl RichContent {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum RichDocument {
     Doc {
@@ -88,7 +89,7 @@ impl RichDocument {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum RichBlockNode {
     Paragraph {
@@ -129,7 +130,7 @@ impl RichBlockNode {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum RichInlineNode {
     Text {
@@ -180,14 +181,14 @@ impl RichInlineNode {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum RichTextMark {
     Bold,
     Italic,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MathNodeAttributes {
     pub latex: String,
@@ -202,7 +203,7 @@ impl MathNodeAttributes {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ImageNodeAttributes {
     pub file_id: Uuid,
@@ -235,7 +236,7 @@ impl ImageNodeAttributes {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ImageAlignment {
     Left,
@@ -243,8 +244,9 @@ pub enum ImageAlignment {
     Right,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Serialize, Deserialize, IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct QuestionBankListQuery {
     pub subject_id: Option<Uuid>,
     pub question_type: Option<String>,
@@ -256,7 +258,7 @@ pub struct QuestionBankListQuery {
     pub page_size: Option<i64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UpsertQuestionRequest {
     pub subject_id: Uuid,
@@ -271,7 +273,7 @@ pub struct UpsertQuestionRequest {
     pub choices: Vec<UpsertQuestionChoiceRequest>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UpsertQuestionChoiceRequest {
     pub id: Option<Uuid>,
@@ -281,7 +283,7 @@ pub struct UpsertQuestionChoiceRequest {
     pub sort_order: i32,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct QuestionChoice {
     pub id: Uuid,
@@ -292,7 +294,7 @@ pub struct QuestionChoice {
     pub sort_order: i32,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct QuestionSummary {
     pub id: Uuid,
@@ -319,7 +321,7 @@ pub struct QuestionSummary {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct QuestionDetail {
     #[serde(flatten)]
@@ -328,13 +330,13 @@ pub struct QuestionDetail {
     pub files: Vec<QuestionFile>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct QuestionFile {
     pub id: Uuid,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct QuestionBankSummary {
     pub total: i64,
@@ -343,7 +345,7 @@ pub struct QuestionBankSummary {
     pub ready: i64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct QuestionBankPage {
     pub items: Vec<QuestionSummary>,
@@ -354,7 +356,7 @@ pub struct QuestionBankPage {
     pub summary: QuestionBankSummary,
 }
 
-#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct QuestionBankSubjectOption {
     pub id: Uuid,
@@ -366,10 +368,17 @@ pub struct QuestionBankSubjectOption {
     pub can_create: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct QuestionBankOptions {
     pub subjects: Vec<QuestionBankSubjectOption>,
+}
+
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct QuestionBankExportDataRequest {
+    #[schema(min_items = 1, max_items = 200)]
+    pub question_ids: Vec<Uuid>,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -452,7 +461,7 @@ impl From<QuestionChoiceRow> for QuestionChoice {
 pub struct QuestionScopeRow {
     pub owner_user_id: Uuid,
     pub subject_id: Option<Uuid>,
-    pub subject_group_id: Option<Uuid>,
+    pub owning_organization_unit_id: Option<Uuid>,
 }
 
 #[derive(Debug, sqlx::FromRow)]

@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use sqlx::types::Json;
 use sqlx::{PgPool, Postgres, QueryBuilder};
@@ -21,6 +21,18 @@ const VALID_DIFFICULTIES: &[&str] = &["easy", "medium", "hard"];
 const VALID_STATUSES: &[&str] = &["draft", "ready", "archived"];
 const DEFAULT_PAGE_SIZE: i64 = 20;
 const MAX_PAGE_SIZE: i64 = 100;
+const MAX_EXPORT_QUESTION_IDS: usize = 200;
+const QUESTION_SUBJECT_VERSION_JOIN: &str = r#"
+LEFT JOIN LATERAL (
+    SELECT version.name_th, version.name_en, version.group_id
+    FROM subject_versions version
+    WHERE version.subject_id = s.id
+      AND version.status = 'published'
+    ORDER BY version.effective_from DESC, version.version_no DESC, version.id DESC
+    LIMIT 1
+) subject_version ON true
+LEFT JOIN subject_groups sg ON sg.id = subject_version.group_id
+"#;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum QuestionKind {
@@ -83,16 +95,16 @@ SELECT
     q.owner_user_id,
     q.question_type,
     q.difficulty,
-    q.points,
+    q.points::double precision AS points,
     q.stem_content,
     q.explanation_content,
     q.rubric_content,
     q.tags,
     q.status,
     s.code AS subject_code,
-    s.name_th AS subject_name_th,
-    s.name_en AS subject_name_en,
-    s.group_id AS subject_group_id,
+    subject_version.name_th AS subject_name_th,
+    subject_version.name_en AS subject_name_en,
+    subject_version.group_id AS subject_group_id,
     sg.name_th AS subject_group_name,
     COALESCE(choice_stats.choice_count, 0)::BIGINT AS choice_count,
     COALESCE(choice_stats.correct_choice_count, 0)::BIGINT AS correct_choice_count,
@@ -105,8 +117,11 @@ SELECT
     q.updated_at
 FROM academic_question_bank_questions q
 LEFT JOIN subjects s ON s.id = q.subject_id
-LEFT JOIN subject_groups sg ON sg.id = s.group_id
-LEFT JOIN LATERAL (
+"#,
+    );
+    builder.push(QUESTION_SUBJECT_VERSION_JOIN);
+    builder.push(
+        r#"LEFT JOIN LATERAL (
     SELECT
         COUNT(*) AS choice_count,
         COUNT(*) FILTER (WHERE c.is_correct = true) AS correct_choice_count
@@ -151,9 +166,9 @@ pub async fn list_options(
 SELECT
     s.id,
     s.code,
-    s.name_th,
-    s.name_en,
-    s.group_id AS subject_group_id,
+    subject_version.name_th,
+    subject_version.name_en,
+    subject_version.group_id AS subject_group_id,
     sg.name_th AS subject_group_name,
 "#,
     );
@@ -161,7 +176,15 @@ SELECT
     builder.push(
         r#" AS can_create
 FROM subjects s
-LEFT JOIN subject_groups sg ON sg.id = s.group_id
+JOIN LATERAL (
+    SELECT version.name_th, version.name_en, version.group_id
+    FROM subject_versions version
+    WHERE version.subject_id = s.id
+      AND version.status = 'published'
+    ORDER BY version.effective_from DESC, version.version_no DESC, version.id DESC
+    LIMIT 1
+) subject_version ON true
+LEFT JOIN subject_groups sg ON sg.id = subject_version.group_id
 WHERE (
 "#,
     );
@@ -169,7 +192,7 @@ WHERE (
     builder.push(
         r#"
 )
-ORDER BY s.code ASC, s.name_th ASC, s.start_academic_year_id DESC, s.id ASC
+ORDER BY s.code ASC, subject_version.name_th ASC, s.id ASC
 "#,
     );
 
@@ -194,6 +217,164 @@ pub async fn get_question(
     question_bank_access_policy::require_question_read_access(pool, actor, &scope).await?;
     let access = question_bank_access_policy::resolve_access(pool, actor).await?;
     fetch_question_detail(pool, question_id, &access).await
+}
+
+pub async fn export_question_data(
+    pool: &PgPool,
+    actor: &ActorContext,
+    question_ids: &[Uuid],
+) -> Result<Vec<QuestionDetail>, AppError> {
+    validate_export_question_ids(question_ids)?;
+    let access = question_bank_access_policy::resolve_access(pool, actor).await?;
+
+    let mut builder = QueryBuilder::<Postgres>::new(
+        r#"
+SELECT
+    q.id,
+    q.subject_id,
+    q.owner_user_id,
+    q.question_type,
+    q.difficulty,
+    q.points::double precision AS points,
+    q.stem_content,
+    q.explanation_content,
+    q.rubric_content,
+    q.tags,
+    q.status,
+    s.code AS subject_code,
+    subject_version.name_th AS subject_name_th,
+    subject_version.name_en AS subject_name_en,
+    subject_version.group_id AS subject_group_id,
+    sg.name_th AS subject_group_name,
+    COALESCE(choice_stats.choice_count, 0)::BIGINT AS choice_count,
+    COALESCE(choice_stats.correct_choice_count, 0)::BIGINT AS correct_choice_count,
+"#,
+    );
+    push_manage_expression(&mut builder, &access);
+    builder.push(
+        r#" AS can_manage,
+    q.created_at,
+    q.updated_at
+FROM academic_question_bank_questions q
+LEFT JOIN subjects s ON s.id = q.subject_id
+"#,
+    );
+    builder.push(QUESTION_SUBJECT_VERSION_JOIN);
+    builder.push(
+        r#"LEFT JOIN LATERAL (
+    SELECT
+        COUNT(*) AS choice_count,
+        COUNT(*) FILTER (WHERE c.is_correct = true) AS correct_choice_count
+    FROM academic_question_bank_choices c
+    WHERE c.question_id = q.id
+) choice_stats ON true
+WHERE q.id = ANY("#,
+    );
+    builder.push_bind(question_ids.to_vec());
+    builder.push(") AND q.deleted_at IS NULL");
+    if !access.read_school {
+        builder.push(" AND (");
+        push_read_expression(&mut builder, &access);
+        builder.push(")");
+    }
+
+    let rows = builder
+        .build_query_as::<QuestionRow>()
+        .fetch_all(pool)
+        .await
+        .map_err(|error| {
+            tracing::error!("Failed to fetch question export rows: {}", error);
+            AppError::InternalServerError("ไม่สามารถเตรียมข้อมูลส่งออกข้อสอบได้".to_string())
+        })?;
+    if rows.len() != question_ids.len() {
+        return Err(export_question_not_found());
+    }
+
+    let mut questions_by_id = rows
+        .into_iter()
+        .map(QuestionSummary::from)
+        .map(|question| (question.id, question))
+        .collect::<HashMap<_, _>>();
+    let choice_rows = sqlx::query_as::<_, QuestionChoiceRow>(
+        r#"
+SELECT id, question_id, label, content, is_correct, sort_order
+FROM academic_question_bank_choices
+WHERE question_id = ANY($1)
+ORDER BY question_id ASC, sort_order ASC, label ASC, id ASC
+"#,
+    )
+    .bind(question_ids)
+    .fetch_all(pool)
+    .await
+    .map_err(|error| {
+        tracing::error!("Failed to fetch question export choices: {}", error);
+        AppError::InternalServerError("ไม่สามารถเตรียมตัวเลือกข้อสอบได้".to_string())
+    })?;
+    let mut choices_by_question_id: HashMap<Uuid, Vec<QuestionChoice>> = HashMap::new();
+    for choice in choice_rows.into_iter().map(QuestionChoice::from) {
+        choices_by_question_id
+            .entry(choice.question_id)
+            .or_default()
+            .push(choice);
+    }
+
+    let mut parts = Vec::with_capacity(question_ids.len());
+    let mut all_file_ids = HashSet::new();
+    for question_id in question_ids {
+        let question = questions_by_id
+            .remove(question_id)
+            .ok_or_else(export_question_not_found)?;
+        let choices = choices_by_question_id
+            .remove(question_id)
+            .unwrap_or_default();
+        let mut file_ids = collect_question_file_ids(&question, &choices)
+            .into_iter()
+            .collect::<Vec<_>>();
+        file_ids.sort_unstable();
+        all_file_ids.extend(file_ids.iter().copied());
+        parts.push((question, choices, file_ids));
+    }
+
+    let available_file_ids = fetch_question_files(pool, &all_file_ids)
+        .await?
+        .into_iter()
+        .map(|file| file.id)
+        .collect::<HashSet<_>>();
+    Ok(parts
+        .into_iter()
+        .map(|(question, choices, file_ids)| QuestionDetail {
+            question,
+            choices,
+            files: file_ids
+                .into_iter()
+                .filter(|file_id| available_file_ids.contains(file_id))
+                .map(|id| QuestionFile { id })
+                .collect(),
+        })
+        .collect())
+}
+
+fn validate_export_question_ids(question_ids: &[Uuid]) -> Result<(), AppError> {
+    if question_ids.is_empty() {
+        return Err(AppError::BadRequest(
+            "กรุณาเลือกข้อสอบอย่างน้อย 1 ข้อ".to_string(),
+        ));
+    }
+    if question_ids.len() > MAX_EXPORT_QUESTION_IDS {
+        return Err(AppError::BadRequest(format!(
+            "ส่งออกข้อสอบได้ไม่เกิน {MAX_EXPORT_QUESTION_IDS} ข้อต่อครั้ง"
+        )));
+    }
+    if question_ids.iter().copied().collect::<HashSet<_>>().len() != question_ids.len() {
+        return Err(AppError::BadRequest(
+            "รายการข้อสอบที่เลือกต้องไม่ซ้ำกัน".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn export_question_not_found() -> AppError {
+    AppError::NotFound("ไม่พบข้อสอบที่เลือกบางรายการหรือไม่มีสิทธิ์เข้าถึง".to_string())
 }
 
 pub async fn create_question(
@@ -671,9 +852,10 @@ SELECT
     COUNT(*) FILTER (WHERE q.status = 'ready')::BIGINT AS ready
 FROM academic_question_bank_questions q
 LEFT JOIN subjects s ON s.id = q.subject_id
-WHERE q.deleted_at IS NULL
 "#,
     );
+    builder.push(QUESTION_SUBJECT_VERSION_JOIN);
+    builder.push("WHERE q.deleted_at IS NULL\n");
     push_list_filters(&mut builder, query, access);
 
     let row = builder
@@ -705,16 +887,16 @@ SELECT
     q.owner_user_id,
     q.question_type,
     q.difficulty,
-    q.points,
+    q.points::double precision AS points,
     q.stem_content,
     q.explanation_content,
     q.rubric_content,
     q.tags,
     q.status,
     s.code AS subject_code,
-    s.name_th AS subject_name_th,
-    s.name_en AS subject_name_en,
-    s.group_id AS subject_group_id,
+    subject_version.name_th AS subject_name_th,
+    subject_version.name_en AS subject_name_en,
+    subject_version.group_id AS subject_group_id,
     sg.name_th AS subject_group_name,
     COALESCE(choice_stats.choice_count, 0)::BIGINT AS choice_count,
     COALESCE(choice_stats.correct_choice_count, 0)::BIGINT AS correct_choice_count,
@@ -727,8 +909,11 @@ SELECT
     q.updated_at
 FROM academic_question_bank_questions q
 LEFT JOIN subjects s ON s.id = q.subject_id
-LEFT JOIN subject_groups sg ON sg.id = s.group_id
-LEFT JOIN LATERAL (
+"#,
+    );
+    builder.push(QUESTION_SUBJECT_VERSION_JOIN);
+    builder.push(
+        r#"LEFT JOIN LATERAL (
     SELECT
         COUNT(*) AS choice_count,
         COUNT(*) FILTER (WHERE c.is_correct = true) AS correct_choice_count
@@ -787,7 +972,7 @@ pub(crate) async fn fetch_question_scope(
 SELECT
     q.owner_user_id,
     q.subject_id,
-    s.group_id AS subject_group_id
+    s.owning_organization_unit_id
 FROM academic_question_bank_questions q
 LEFT JOIN subjects s ON s.id = q.subject_id
 WHERE q.id = $1
@@ -945,9 +1130,9 @@ fn push_list_filters(
         builder.push_bind(pattern.clone());
         builder.push(" OR s.code ILIKE ");
         builder.push_bind(pattern.clone());
-        builder.push(" OR s.name_th ILIKE ");
+        builder.push(" OR subject_version.name_th ILIKE ");
         builder.push_bind(pattern.clone());
-        builder.push(" OR s.name_en ILIKE ");
+        builder.push(" OR subject_version.name_en ILIKE ");
         builder.push_bind(pattern);
         builder.push(")");
     }
@@ -969,12 +1154,12 @@ fn push_read_expression(builder: &mut QueryBuilder<'_, Postgres>, access: &Quest
         builder.push("))");
         has_predicate = true;
     }
-    if !access.read_subject_group_ids.is_empty() {
+    if !access.read_organization_unit_ids.is_empty() {
         if has_predicate {
             builder.push(" OR ");
         }
-        builder.push("s.group_id = ANY(");
-        builder.push_bind(access.read_subject_group_ids.clone());
+        builder.push("s.owning_organization_unit_id = ANY(");
+        builder.push_bind(access.read_organization_unit_ids.clone());
         builder.push(")");
         has_predicate = true;
     }
@@ -996,12 +1181,12 @@ fn push_manage_expression(builder: &mut QueryBuilder<'_, Postgres>, access: &Que
         builder.push_bind(actor_id);
         has_predicate = true;
     }
-    if !access.manage_subject_group_ids.is_empty() {
+    if !access.manage_organization_unit_ids.is_empty() {
         if has_predicate {
             builder.push(" OR ");
         }
-        builder.push("s.group_id = ANY(");
-        builder.push_bind(access.manage_subject_group_ids.clone());
+        builder.push("s.owning_organization_unit_id = ANY(");
+        builder.push_bind(access.manage_organization_unit_ids.clone());
         builder.push(")");
         has_predicate = true;
     }
@@ -1029,12 +1214,12 @@ fn push_subject_read_expression(
         builder.push("))");
         has_predicate = true;
     }
-    if !access.read_subject_group_ids.is_empty() {
+    if !access.read_organization_unit_ids.is_empty() {
         if has_predicate {
             builder.push(" OR ");
         }
-        builder.push("s.group_id = ANY(");
-        builder.push_bind(access.read_subject_group_ids.clone());
+        builder.push("s.owning_organization_unit_id = ANY(");
+        builder.push_bind(access.read_organization_unit_ids.clone());
         builder.push(")");
         has_predicate = true;
     }
@@ -1060,12 +1245,12 @@ fn push_subject_manage_expression(
         builder.push(")");
         has_predicate = true;
     }
-    if !access.manage_subject_group_ids.is_empty() {
+    if !access.manage_organization_unit_ids.is_empty() {
         if has_predicate {
             builder.push(" OR ");
         }
-        builder.push("s.group_id = ANY(");
-        builder.push_bind(access.manage_subject_group_ids.clone());
+        builder.push("s.owning_organization_unit_id = ANY(");
+        builder.push_bind(access.manage_organization_unit_ids.clone());
         builder.push(")");
         has_predicate = true;
     }
@@ -1164,10 +1349,10 @@ mod tests {
         QuestionBankAccess {
             read_school: false,
             read_assigned_user_id: Some(actor_id),
-            read_subject_group_ids: Vec::new(),
+            read_organization_unit_ids: Vec::new(),
             manage_school: false,
             manage_assigned_user_id: Some(actor_id),
-            manage_subject_group_ids: Vec::new(),
+            manage_organization_unit_ids: Vec::new(),
         }
     }
 

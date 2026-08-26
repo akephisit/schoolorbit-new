@@ -2,8 +2,11 @@ pub mod handlers;
 pub mod models;
 pub mod services;
 
+#[cfg(test)]
+mod services_tests;
+
 use crate::AppState;
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::Router;
 
 pub fn question_bank_routes() -> Router<AppState> {
@@ -12,6 +15,10 @@ pub fn question_bank_routes() -> Router<AppState> {
         .route(
             "/questions",
             get(handlers::list_questions).post(handlers::create_question),
+        )
+        .route(
+            "/questions/export-data",
+            post(handlers::export_question_data),
         )
         .route(
             "/questions/{id}",

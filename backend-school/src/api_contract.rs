@@ -93,6 +93,13 @@ use crate::modules::menu::models::{
 };
 use crate::modules::notification::models::{ListNotificationsResponse, Notification};
 use crate::modules::parents::models::{ChildDto, ParentProfile};
+use crate::modules::question_bank::models::{
+    ImageAlignment, ImageNodeAttributes, MathNodeAttributes, QuestionBankExportDataRequest,
+    QuestionBankListQuery, QuestionBankOptions, QuestionBankPage, QuestionBankSubjectOption,
+    QuestionBankSummary, QuestionChoice, QuestionDetail, QuestionFile, QuestionSummary,
+    RichBlockNode, RichContent, RichDocument, RichInlineNode, RichTextMark,
+    UpsertQuestionChoiceRequest, UpsertQuestionRequest,
+};
 use crate::modules::school::handlers::PublicSchoolInfoData;
 use crate::modules::school::models::SchoolSettingsResponse;
 use crate::modules::school_fonts::models::{
@@ -443,6 +450,14 @@ use utoipa::OpenApi;
         crate::modules::supervision::handlers::acknowledge_observation,
         crate::modules::supervision::handlers::cycle_progress,
         crate::modules::supervision::handlers::teacher_status_overview,
+        crate::modules::question_bank::handlers::list_options,
+        crate::modules::question_bank::handlers::list_questions,
+        crate::modules::question_bank::handlers::create_question,
+        crate::modules::question_bank::handlers::export_question_data,
+        crate::modules::question_bank::handlers::get_question,
+        crate::modules::question_bank::handlers::update_question,
+        crate::modules::question_bank::handlers::delete_question,
+        crate::modules::question_bank::handlers::get_question_file,
         crate::modules::calendar::handlers::list_my_calendar_events,
         crate::modules::calendar::handlers::list_public_calendar_events,
         crate::modules::calendar::handlers::list_calendar_events,
@@ -1126,6 +1141,30 @@ use utoipa::OpenApi;
         ApiResponse<ItemsData<TimetableEntry>>,
         ApiResponse<SupervisionCycleProgress>,
         ApiResponse<ItemsData<SupervisionTeacherStatusRow>>,
+        RichContent,
+        RichDocument,
+        RichBlockNode,
+        RichInlineNode,
+        RichTextMark,
+        MathNodeAttributes,
+        ImageNodeAttributes,
+        ImageAlignment,
+        QuestionBankListQuery,
+        UpsertQuestionRequest,
+        UpsertQuestionChoiceRequest,
+        QuestionChoice,
+        QuestionSummary,
+        QuestionDetail,
+        QuestionFile,
+        QuestionBankSummary,
+        QuestionBankPage,
+        QuestionBankSubjectOption,
+        QuestionBankOptions,
+        QuestionBankExportDataRequest,
+        ApiResponse<QuestionBankOptions>,
+        ApiResponse<QuestionBankPage>,
+        ApiResponse<QuestionDetail>,
+        ApiResponse<Vec<QuestionDetail>>,
         Notification,
         ListNotificationsResponse,
         ApiResponse<ListNotificationsResponse>,
@@ -1145,6 +1184,7 @@ use utoipa::OpenApi;
         (name = "academic", description = "Academic structure administration and self-service reads"),
         (name = "calendar", description = "Calendar reads"),
         (name = "supervision", description = "Teaching supervision workflows and reports"),
+        (name = "question-bank", description = "Authorized question bank and export operations"),
         (name = "school", description = "School settings and public branding reads"),
         (name = "files", description = "Authorized provider-neutral file operations"),
         (name = "admission", description = "Admission document attachment operations"),
@@ -2551,6 +2591,77 @@ mod tests {
                     .is_some_and(|name| name.contains('_'))));
             }
         }
+    }
+
+    #[test]
+    fn question_bank_routes_are_fully_documented() {
+        let document = school_api_value().expect("document should serialize");
+        let expected = [
+            (
+                "/api/academic/question-bank/options",
+                "get",
+                "listQuestionBankOptions",
+            ),
+            (
+                "/api/academic/question-bank/questions",
+                "get",
+                "listQuestionBankQuestions",
+            ),
+            (
+                "/api/academic/question-bank/questions",
+                "post",
+                "createQuestionBankQuestion",
+            ),
+            (
+                "/api/academic/question-bank/questions/export-data",
+                "post",
+                "exportQuestionBankData",
+            ),
+            (
+                "/api/academic/question-bank/questions/{id}",
+                "get",
+                "getQuestionBankQuestion",
+            ),
+            (
+                "/api/academic/question-bank/questions/{id}",
+                "put",
+                "updateQuestionBankQuestion",
+            ),
+            (
+                "/api/academic/question-bank/questions/{id}",
+                "delete",
+                "deleteQuestionBankQuestion",
+            ),
+            (
+                "/api/academic/question-bank/questions/{question_id}/files/{file_id}",
+                "get",
+                "getQuestionBankQuestionFile",
+            ),
+        ];
+        assert_operations(&document, &expected);
+
+        assert_eq!(
+            query_contract(&document, "/api/academic/question-bank/questions", "get"),
+            BTreeSet::from([
+                ("difficulty".to_string(), false),
+                ("page".to_string(), false),
+                ("pageSize".to_string(), false),
+                ("questionType".to_string(), false),
+                ("search".to_string(), false),
+                ("status".to_string(), false),
+                ("subjectId".to_string(), false),
+                ("tag".to_string(), false),
+            ])
+        );
+        let export_schema = &document["components"]["schemas"]["QuestionBankExportDataRequest"]
+            ["properties"]["questionIds"];
+        assert_eq!(export_schema["minItems"], 1);
+        assert_eq!(export_schema["maxItems"], 200);
+        assert_eq!(
+            document["paths"]["/api/academic/question-bank/questions/export-data"]["post"]
+                ["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_Vec_QuestionDetail"
+        );
     }
 
     #[test]
