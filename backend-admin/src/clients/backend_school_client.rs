@@ -20,9 +20,17 @@ pub struct ProvisionRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProvisionResponse {
     pub success: bool,
-    pub message: String,
+    pub data: ProvisionResponseData,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProvisionResponseData {
+    #[serde(alias = "school_id")]
     pub school_id: String,
 }
 
@@ -110,5 +118,53 @@ impl BackendSchoolClient {
             Ok(response) => response.status().is_success(),
             Err(_) => false,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ProvisionResponse;
+
+    #[test]
+    fn provision_response_deserializes_backend_school_envelope() {
+        let response: ProvisionResponse = serde_json::from_str(
+            r#"{
+                "success": true,
+                "data": {
+                    "school_id": "c01ff666-f591-4a5e-ae6b-28f1a69054f0"
+                },
+                "message": "Tenant database provisioned successfully"
+            }"#,
+        )
+        .expect("backend-school success envelope should deserialize");
+
+        assert!(response.success);
+        assert_eq!(
+            response.data.school_id,
+            "c01ff666-f591-4a5e-ae6b-28f1a69054f0"
+        );
+        assert_eq!(
+            response.message.as_deref(),
+            Some("Tenant database provisioned successfully")
+        );
+    }
+
+    #[test]
+    fn provision_response_accepts_camel_case_school_id() {
+        let response: ProvisionResponse = serde_json::from_str(
+            r#"{
+                "success": true,
+                "data": {
+                    "schoolId": "b1365c77-5f09-48e9-b881-e713b3fe696f"
+                }
+            }"#,
+        )
+        .expect("camelCase success envelope should deserialize");
+
+        assert_eq!(
+            response.data.school_id,
+            "b1365c77-5f09-48e9-b881-e713b3fe696f"
+        );
+        assert_eq!(response.message, None);
     }
 }

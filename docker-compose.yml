@@ -34,7 +34,7 @@ services:
       # Neon (ใช้ในการ provision tenant DB — ใน local dev อาจละไว้ได้)
       - NEON_API_KEY=${NEON_API_KEY:-}
       - NEON_PROJECT_ID=${NEON_PROJECT_ID:-}
-      - NEON_BRANCH_ID=${NEON_BRANCH_ID:-main}
+      - NEON_BRANCH_ID=${NEON_BRANCH_ID:-}
       - NEON_HOST=${NEON_HOST:-}
       - NEON_DB_PASSWORD=${NEON_DB_PASSWORD:-}
       # Cloudflare (ใช้ในการ deploy worker — ใน local dev อาจละไว้ได้)

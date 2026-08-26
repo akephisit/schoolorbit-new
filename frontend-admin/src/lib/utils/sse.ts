@@ -154,6 +154,8 @@ export async function createSchoolSSE<T = unknown>(
 				}
 			}
 		}
+
+		callbacks.onError?.('Connection lost');
 	} finally {
 		reader.releaseLock();
 	}

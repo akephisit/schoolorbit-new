@@ -7,6 +7,7 @@
 	import { PUBLIC_API_URL } from '$env/static/public';
 	import { toast } from 'svelte-sonner';
 	import { resolve } from '$app/paths';
+	import { schoolCreationFailure } from '$lib/utils/school-provisioning';
 
 	interface SchoolWithLogs extends School {
 		logs?: LogMessage[];
@@ -34,6 +35,7 @@
 	});
 	let creating = $state(false);
 	let validationErrors = $state<Record<string, string>>({});
+	let createError = $state<string | null>(null);
 
 	// Zod Schema
 	const createSchoolSchema = z.object({
@@ -77,15 +79,18 @@
 		e.preventDefault();
 		creating = true;
 		validationErrors = {};
+		createError = null;
+		let tempSchoolId: string | null = null;
 
 		try {
 			// Validate with Zod
 			const validated = createSchoolSchema.parse(createData);
 
 			// Create temporary school entry with loading state
-			const tempSchoolId = crypto.randomUUID();
+			const pendingSchoolId = crypto.randomUUID();
+			tempSchoolId = pendingSchoolId;
 			const tempSchool: SchoolWithLogs = {
-				id: tempSchoolId,
+				id: pendingSchoolId,
 				name: validated.name,
 				subdomain: validated.subdomain,
 				status: 'provisioning',
@@ -105,7 +110,7 @@
 			await createSchoolSSE<School>(PUBLIC_API_URL, validated, {
 				onLog: (level, message) => {
 					schools = schools.map((s) =>
-						s.id === tempSchoolId
+						s.id === pendingSchoolId
 							? { ...s, logs: [...(s.logs || []), { level, message, timestamp: new Date() }] }
 							: s
 					);
@@ -113,14 +118,15 @@
 
 				onProgress: (step, total, message) => {
 					schools = schools.map((s) =>
-						s.id === tempSchoolId ? { ...s, progress: { step, total, message } } : s
+						s.id === pendingSchoolId ? { ...s, progress: { step, total, message } } : s
 					);
 				},
 
 				onComplete: (data) => {
 					schools = schools.map((s) =>
-						s.id === tempSchoolId ? { ...data, logs: undefined, isDeploying: false } : s
+						s.id === pendingSchoolId ? { ...data, logs: undefined, isDeploying: false } : s
 					);
+					createError = null;
 
 					// Show success toast
 					toast.success('สร้างโรงเรียนสำเร็จ');
@@ -139,20 +145,10 @@
 				},
 
 				onError: (errorMsg) => {
-					schools = schools.map((s) =>
-						s.id === tempSchoolId
-							? {
-									...s,
-									logs: [
-										...(s.logs || []),
-										{ level: 'error', message: errorMsg, timestamp: new Date() }
-									],
-									isDeploying: false
-								}
-							: s
-					);
-					errorMsg = errorMsg.includes('Subdomain') ? 'Subdomain นี้มีในระบบแล้ว' : errorMsg;
-					toast.error(errorMsg);
+					const failure = schoolCreationFailure(schools, pendingSchoolId, errorMsg);
+					schools = failure.schools;
+					createError = failure.message;
+					toast.error(failure.message);
 				}
 			});
 		} catch (error) {
@@ -165,7 +161,16 @@
 				});
 				toast.error('กรุณาตรวจสอบข้อมูลที่กรอก');
 			} else {
-				toast.error(error instanceof Error ? error.message : 'Failed to create school');
+				const rawError = error instanceof Error ? error.message : 'Failed to create school';
+				if (tempSchoolId) {
+					const failure = schoolCreationFailure(schools, tempSchoolId, rawError);
+					schools = failure.schools;
+					createError = failure.message;
+					toast.error(failure.message);
+				} else {
+					createError = 'ไม่สามารถเริ่มสร้างโรงเรียนได้ กรุณาลองอีกครั้ง';
+					toast.error(createError);
+				}
 			}
 		} finally {
 			creating = false;
@@ -273,6 +278,9 @@
 	{#if showCreateForm}
 		<div class="create-form-card">
 			<h2>สร้างโรงเรียนใหม่</h2>
+			{#if createError}
+				<div class="create-error" role="alert">{createError}</div>
+			{/if}
 			<form onsubmit={handleCreateSchool}>
 				<div class="form-group">
 					<label for="name">ชื่อโรงเรียน</label>
@@ -559,6 +567,17 @@
 	.create-form-card h2 {
 		margin-bottom: 1.5rem;
 		color: #2d3748;
+	}
+
+	.create-error {
+		margin-bottom: 1.5rem;
+		padding: 0.875rem 1rem;
+		border: 1px solid #feb2b2;
+		border-radius: 8px;
+		background: #fff5f5;
+		color: #c53030;
+		font-size: 0.875rem;
+		font-weight: 600;
 	}
 
 	.form-group {

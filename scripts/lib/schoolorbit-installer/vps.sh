@@ -273,7 +273,7 @@ render_runtime_env() {
     _dotenv_line API_URL "https://school-api.${SO_CONFIG[base_domain]}" || return
     _dotenv_line NEON_API_KEY "${SO_SECRETS[NEON_API_KEY]-}" || return
     _dotenv_line NEON_PROJECT_ID "${SO_CONFIG["runtime:NEON_PROJECT_ID"]-}" || return
-    _dotenv_line NEON_BRANCH_ID main || return
+    _dotenv_line NEON_BRANCH_ID "${SO_CONFIG["runtime:NEON_BRANCH_ID"]-}" || return
     _dotenv_line NEON_HOST "${SO_CONFIG["runtime:NEON_HOST"]-}" || return
     _dotenv_line NEON_DB_PASSWORD "${SO_SECRETS[NEON_DB_PASSWORD]-}" || return
     _dotenv_line CLOUDFLARE_API_TOKEN "${SO_SECRETS[SCHOOLORBIT_CLOUDFLARE_RUNTIME_TOKEN]-}" || return

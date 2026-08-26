@@ -31,6 +31,7 @@ declare -ga SO_REQUIRED_COCKPIT_SECRETS=(
 )
 declare -ga SO_REQUIRED_RUNTIME_VALUES=(
     NEON_PROJECT_ID
+    NEON_BRANCH_ID
     NEON_HOST
     R2_ACCOUNT_ID
     R2_PUBLIC_BUCKET_NAME
@@ -280,6 +281,9 @@ _validate_runtime_value() {
     case "$name" in
         NEON_PROJECT_ID)
             [[ $value =~ ^[A-Za-z0-9][A-Za-z0-9_-]{2,127}$ ]] || die 64 'Invalid Neon project ID'
+            ;;
+        NEON_BRANCH_ID)
+            [[ $value =~ ^br-[a-z0-9-]{1,57}$ ]] || die 64 'Invalid Neon branch ID'
             ;;
         NEON_HOST)
             _valid_domain "${value,,}" || die 64 'Invalid Neon host'

@@ -16,6 +16,7 @@ setup() {
     SO_CONFIG[server_user]=schoolorbit
     SO_CONFIG[ssh_port]=22
     SO_CONFIG[runtime:NEON_PROJECT_ID]=silent-moon-24680
+    SO_CONFIG[runtime:NEON_BRANCH_ID]=br-primary-abc123
     SO_CONFIG[runtime:NEON_HOST]=ep-silent-moon-24680.ap-southeast-1.aws.neon.tech
     SO_CONFIG[runtime:R2_ACCOUNT_ID]=9a8b7c6d5e4f32100123456789abcdef
     SO_CONFIG[runtime:R2_PUBLIC_BUCKET_NAME]=schoolorbit-public-assets
@@ -167,6 +168,7 @@ teardown() {
     grep -Fxq "BACKEND_ADMIN_URL='http://schoolorbit-backend-admin:8080'" "$TEST_ROOT/runtime.env"
     grep -Fxq "BACKEND_SCHOOL_URL='http://schoolorbit-backend-school:8081'" "$TEST_ROOT/runtime.env"
     grep -Fxq "API_URL='https://school-api.schoolorbit.app'" "$TEST_ROOT/runtime.env"
+    grep -Fxq "NEON_BRANCH_ID='br-primary-abc123'" "$TEST_ROOT/runtime.env"
     grep -Fxq "SESSION_HMAC_KEY='session-hmac-7Qp2Vm9Kx4Ld8Ns5Rc3Ty6Wz'" "$TEST_ROOT/runtime.env"
     grep -Fxq "SCHOOL_ROLLBACK_JWT_SECRET='school-rollback-jwt-8Fn3Qa6Uv1Jk5Pe9Xs2M'" "$TEST_ROOT/runtime.env"
     grep -Fxq "BASE_DOMAIN='schoolorbit.app'" "$TEST_ROOT/runtime.env"

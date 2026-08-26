@@ -102,7 +102,16 @@ teardown() {
     [ "${SO_SECRETS[SCHOOL_ROLLBACK_JWT_SECRET]}" = 'school-rollback-jwt-8Fn3Qa6Uv1Jk5Pe9Xs2M' ]
     [ "${SO_SECRETS[SMOKE_PASSWORD]}" = 'Smoke-Pass-7vK9nM3q' ]
     [ "${SO_CONFIG[runtime:NEON_PROJECT_ID]}" = 'silent-moon-24680' ]
+    [ "${SO_CONFIG[runtime:NEON_BRANCH_ID]}" = 'br-primary-abc123' ]
     [ "${SO_CONFIG[runtime:R2_PUBLIC_BUCKET_NAME]}" = 'schoolorbit-public-assets' ]
+}
+
+@test "Neon branch configuration requires an ID instead of a branch name" {
+    _validate_runtime_value NEON_BRANCH_ID br-primary-abc123
+
+    run _validate_runtime_value NEON_BRANCH_ID main
+
+    [ "$status" -eq 64 ]
 }
 
 @test "school session secrets require at least 32 characters" {

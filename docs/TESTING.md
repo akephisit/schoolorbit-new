@@ -103,6 +103,7 @@ From `frontend-admin`:
 ```bash
 npm run lint
 npm run check
+npm run test:unit
 npm run build
 ```
 

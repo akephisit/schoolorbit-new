@@ -196,6 +196,7 @@ chmod 600 .env
 ข้อกำหนดสำคัญ:
 
 - `INTERNAL_API_SECRET` ต้องตรงกันระหว่าง backend ทั้งสอง;
+- `NEON_BRANCH_ID` ต้องเป็น branch identifier จาก Neon ที่ขึ้นต้นด้วย `br-` ไม่ใช่ชื่อ branch เช่น `main`;
 - `SESSION_HMAC_KEY` ต้องสุ่มเฉพาะระบบนี้อย่างน้อย 32 ตัวอักษรและคงเดิมระหว่างทุก backend-school replica; การเปลี่ยนค่าจะทำให้ school session ปัจจุบันทั้งหมดใช้ต่อไม่ได้;
 - `SESSION_HMAC_KEY`, `SCHOOL_ROLLBACK_JWT_SECRET` และ backend-admin `JWT_SECRET` ต้องเป็นคนละค่า โดย Compose จะ map rollback key เข้า `JWT_SECRET` ของ process backend-school เพื่อรองรับการย้อนกลับเท่านั้น;
 - `BASE_DOMAIN` ต้องตรงกับ tenant domain จริง, `TRUSTED_PROXY_CIDRS` ต้องอนุญาตเฉพาะ proxy network ที่เชื่อถือได้ และ production ต้องตั้ง `SCHOOL_ALLOWED_DEV_ORIGINS=` เป็นค่าว่าง; local Compose จึงค่อย allowlist `http://localhost:5173,http://127.0.0.1:5173`;
