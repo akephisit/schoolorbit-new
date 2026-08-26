@@ -40,3 +40,18 @@ test('catalog presentation keeps one canonical set of human-readable choices', a
 	assert.match(presentation, /displayStateLabel/);
 	assert.match(presentation, /formatEffectiveRange/);
 });
+
+test('subject catalog uses the responsive overview information architecture', async () => {
+	const subjects = await readSource('src/routes/(app)/staff/academic/catalog/subjects/+page.svelte');
+
+	assert.match(subjects, /getCatalogSubjectOverview/);
+	assert.match(subjects, /\* as Table/);
+	assert.match(subjects, /\* as Sheet/);
+	assert.match(subjects, /\* as Select/);
+	assert.match(subjects, /subjectHistoryCache/);
+	assert.match(subjects, /md:hidden/);
+	assert.match(subjects, /hidden md:block/);
+	for (const label of ['ชื่อรายวิชา', 'ประเภท', 'ระดับชั้น', 'หน่วยกิต', 'สถานะ']) {
+		assert.match(subjects, new RegExp(label));
+	}
+});
