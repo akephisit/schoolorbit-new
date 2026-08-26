@@ -99,9 +99,9 @@ export const listTimetableEntries = (filters: TimetableFilters, options: ApiRequ
 		'ไม่สามารถโหลดตารางสอนได้'
 	);
 
-export const getMyTimetable = (filters: MyTimetableFilters) =>
+export const getMyTimetable = (filters: MyTimetableFilters, options: ApiRequestOptions = {}) =>
 	timetableData(
-		apiClient.get<TimetableEntry[]>(`/api/me/timetable${timetableQuery(filters)}`),
+		apiClient.get<TimetableEntry[]>(`/api/me/timetable${timetableQuery(filters)}`, options),
 		'ไม่สามารถโหลดตารางสอนของฉันได้'
 	);
 

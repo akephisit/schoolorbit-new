@@ -34,7 +34,10 @@ test('teaching supervision booking uses a weekly timetable grid with exact obser
 	const supervisionService = await readSupervisionServices();
 	const migration = await readRepoFile('backend-school/migrations/008_supervision_observed_at.sql');
 
-	assert.match(supervisionApi, /observedAt\?:\s*string\s*\|\s*null/);
+	assert.match(
+		supervisionApi,
+		/RequestSupervisionObservationRequest =[\s\S]*operations\['requestSupervisionObservation'\]/
+	);
 	assert.match(supervisionPage, /currentBookingCycle/);
 	assert.match(supervisionPage, /bookingWeekStartDate/);
 	assert.match(supervisionPage, /selectedBookingDate/);
@@ -78,13 +81,19 @@ test('teaching supervision request approval renders request rows with multiple e
 		'frontend-school/src/lib/components/supervision/SupervisionWorkspace.svelte'
 	);
 	const supervisionApi = await readRepoFile('frontend-school/src/lib/api/supervision.ts');
+	const generatedSchoolApi = await readRepoFile(
+		'frontend-school/src/lib/api/generated/school-api.ts'
+	);
 	const supervisionHandlers = await readRepoFile(
 		'backend-school/src/modules/supervision/handlers.rs'
 	);
 	const supervisionService = await readSupervisionServices();
 
 	assert.match(supervisionApi, /SupervisionEvaluatorAvailability/);
-	assert.match(supervisionApi, /conflictReason/);
+	assert.match(
+		generatedSchoolApi,
+		/SupervisionEvaluatorAvailability:\s*\{[\s\S]*?conflictReason\?: string \| null;/
+	);
 	assert.match(supervisionApi, /getSupervisionEvaluatorAvailability/);
 	assert.match(
 		supervisionApi,
@@ -244,8 +253,7 @@ test('teaching supervision observation detail supports safe edit actions', async
 	assert.match(supervisionApi, /getSupervisionEvaluatorAvailability/);
 	assert.match(supervisionApi, /getSupervisionObservationTimetableOptions/);
 	assert.match(supervisionApi, /cancelSupervisionObservation/);
-	assert.match(supervisionApi, /interface SupervisionAction/);
-	assert.match(supervisionApi, /actions:\s*SupervisionAction\[\]/);
+	assert.match(supervisionApi, /SupervisionAction = Schemas\['SupervisionAction'\]/);
 	assert.match(detailRoute, /_meta\s*=\s*\{\s*access:/);
 	assert.doesNotMatch(detailRoute, /menu:/);
 	assert.match(detailPage, /getSupervisionObservation/);

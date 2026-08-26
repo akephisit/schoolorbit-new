@@ -460,6 +460,17 @@
         },
         "type": "object"
       },
+      "AcknowledgeObservationRequest": {
+        "properties": {
+          "comment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "ActivityAttendanceRequirement": {
         "additionalProperties": false,
         "properties": {
@@ -4459,6 +4470,804 @@
         ],
         "type": "object"
       },
+      "ApiResponse_ItemsData_SupervisionCycle": {
+        "properties": {
+          "data": {
+            "properties": {
+              "items": {
+                "items": {
+                  "properties": {
+                    "academicTermId": {
+                      "format": "uuid",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "academicYearId": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "bookingClosesAt": {
+                      "format": "date-time",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "bookingOpensAt": {
+                      "format": "date-time",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "createdBy": {
+                      "format": "uuid",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "description": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "endsAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "id": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "startsAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "status": {
+                      "$ref": "#/components/schemas/SupervisionCycleStatus"
+                    },
+                    "targets": {
+                      "items": {
+                        "$ref": "#/components/schemas/SupervisionCycleTarget"
+                      },
+                      "type": "array"
+                    },
+                    "templateId": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "academicYearId",
+                    "title",
+                    "templateId",
+                    "startsAt",
+                    "endsAt",
+                    "status",
+                    "createdAt",
+                    "updatedAt",
+                    "targets"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "items"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_ItemsData_SupervisionEvaluatorAvailability": {
+        "properties": {
+          "data": {
+            "properties": {
+              "items": {
+                "items": {
+                  "properties": {
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "conflict": {
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "$ref": "#/components/schemas/SupervisionEvaluatorConflict"
+                        }
+                      ]
+                    },
+                    "conflictReason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "id": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "available"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "items"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_ItemsData_SupervisionObservation": {
+        "properties": {
+          "data": {
+            "properties": {
+              "items": {
+                "items": {
+                  "properties": {
+                    "academicTermId": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "academicYearId": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "actions": {
+                      "items": {
+                        "$ref": "#/components/schemas/SupervisionAction"
+                      },
+                      "type": "array"
+                    },
+                    "approvedAt": {
+                      "format": "date-time",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "approvedBy": {
+                      "format": "uuid",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "averageRating": {
+                      "format": "double",
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "cancelledAt": {
+                      "format": "date-time",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "cycleId": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "evaluators": {
+                      "items": {
+                        "$ref": "#/components/schemas/SupervisionEvaluator"
+                      },
+                      "type": "array"
+                    },
+                    "homeroomId": {
+                      "format": "uuid",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "id": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "learningGroupId": {
+                      "format": "uuid",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "lessonSnapshot": {
+                      "$ref": "#/components/schemas/LessonSnapshot"
+                    },
+                    "manualLesson": {
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "$ref": "#/components/schemas/ManualLesson"
+                        }
+                      ]
+                    },
+                    "observedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "observedDisplayName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "observedUserId": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "requestedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "requestedBy": {
+                      "format": "uuid",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "status": {
+                      "$ref": "#/components/schemas/SupervisionObservationStatus"
+                    },
+                    "templateId": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "timetableEntryId": {
+                      "format": "uuid",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "cycleId",
+                    "academicYearId",
+                    "academicTermId",
+                    "observedUserId",
+                    "templateId",
+                    "observedAt",
+                    "lessonSnapshot",
+                    "status",
+                    "requestedAt",
+                    "createdAt",
+                    "updatedAt",
+                    "evaluators",
+                    "actions"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "items"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_ItemsData_SupervisionTeacherStatusRow": {
+        "properties": {
+          "data": {
+            "properties": {
+              "items": {
+                "items": {
+                  "properties": {
+                    "averageRating": {
+                      "format": "double",
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "evaluatorNames": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "lessonTitle": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "nextStepLabel": {
+                      "type": "string"
+                    },
+                    "observationId": {
+                      "format": "uuid",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "observedAt": {
+                      "format": "date-time",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "organizationUnitNames": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "status": {
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "$ref": "#/components/schemas/SupervisionObservationStatus"
+                        }
+                      ]
+                    },
+                    "teacherDisplayName": {
+                      "type": "string"
+                    },
+                    "teacherId": {
+                      "format": "uuid",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "teacherId",
+                    "teacherDisplayName",
+                    "organizationUnitNames",
+                    "evaluatorNames",
+                    "nextStepLabel"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "items"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_ItemsData_SupervisionTemplate": {
+        "properties": {
+          "data": {
+            "properties": {
+              "items": {
+                "items": {
+                  "properties": {
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "createdBy": {
+                      "format": "uuid",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "description": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "id": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "ratingMax": {
+                      "format": "int32",
+                      "type": "integer"
+                    },
+                    "ratingMin": {
+                      "format": "int32",
+                      "type": "integer"
+                    },
+                    "sections": {
+                      "items": {
+                        "$ref": "#/components/schemas/SupervisionTemplateSection"
+                      },
+                      "type": "array"
+                    },
+                    "status": {
+                      "$ref": "#/components/schemas/SupervisionTemplateStatus"
+                    },
+                    "steps": {
+                      "items": {
+                        "$ref": "#/components/schemas/SupervisionTemplateStep"
+                      },
+                      "type": "array"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "title",
+                    "status",
+                    "ratingMin",
+                    "ratingMax",
+                    "createdAt",
+                    "updatedAt",
+                    "sections",
+                    "steps"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "items"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_ItemsData_TimetableEntry": {
+        "properties": {
+          "data": {
+            "properties": {
+              "items": {
+                "items": {
+                  "properties": {
+                    "academicTermId": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "academicYearId": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "activityId": {
+                      "format": "uuid",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "activitySchedulingMode": {
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "$ref": "#/components/schemas/ActivitySchedulingMode"
+                        }
+                      ]
+                    },
+                    "activityVersionDisplayLabel": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "batchId": {
+                      "format": "uuid",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "bellScheduleId": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "bellSchedulePeriodId": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "dayOfWeek": {
+                      "type": "string"
+                    },
+                    "endTime": {
+                      "type": "string"
+                    },
+                    "entryType": {
+                      "type": "string"
+                    },
+                    "homeroomId": {
+                      "format": "uuid",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "homeroomName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "id": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "instructors": {
+                      "items": {
+                        "$ref": "#/components/schemas/TimetableInstructor"
+                      },
+                      "type": "array"
+                    },
+                    "isActive": {
+                      "type": "boolean"
+                    },
+                    "learningGroupCode": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "learningGroupId": {
+                      "format": "uuid",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "learningGroupName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "note": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "offeringCode": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "offeringId": {
+                      "format": "uuid",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "offeringName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "periodName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "roomCode": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "roomId": {
+                      "format": "uuid",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "rowVersion": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "startTime": {
+                      "type": "string"
+                    },
+                    "subjectGroupDisplayOrder": {
+                      "format": "int32",
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "subjectGroupId": {
+                      "format": "uuid",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "subjectGroupName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "subjectId": {
+                      "description": "Stable catalog identity. A selected version is represented by its display label only.",
+                      "format": "uuid",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "subjectVersionDisplayLabel": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "title": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "academicTermId",
+                    "academicYearId",
+                    "bellScheduleId",
+                    "bellSchedulePeriodId",
+                    "dayOfWeek",
+                    "entryType",
+                    "rowVersion",
+                    "isActive",
+                    "startTime",
+                    "endTime",
+                    "instructors",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "items"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_LearningGroup": {
         "properties": {
           "data": {
@@ -6750,6 +7559,485 @@
               "migrated",
               "createdAt",
               "updatedAt"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_SupervisionCycle": {
+        "properties": {
+          "data": {
+            "properties": {
+              "academicTermId": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "academicYearId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "bookingClosesAt": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "bookingOpensAt": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "createdBy": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "endsAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "startsAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "status": {
+                "$ref": "#/components/schemas/SupervisionCycleStatus"
+              },
+              "targets": {
+                "items": {
+                  "$ref": "#/components/schemas/SupervisionCycleTarget"
+                },
+                "type": "array"
+              },
+              "templateId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "academicYearId",
+              "title",
+              "templateId",
+              "startsAt",
+              "endsAt",
+              "status",
+              "createdAt",
+              "updatedAt",
+              "targets"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_SupervisionCycleProgress": {
+        "properties": {
+          "data": {
+            "properties": {
+              "approvedCount": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "averageRating": {
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "cancelledCount": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "completedCount": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "cycleId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "plannedCount": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "publishedCount": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "requestedCount": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "totalObservations": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "underReviewCount": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "cycleId",
+              "totalObservations",
+              "requestedCount",
+              "plannedCount",
+              "underReviewCount",
+              "approvedCount",
+              "publishedCount",
+              "completedCount",
+              "cancelledCount"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_SupervisionObservation": {
+        "properties": {
+          "data": {
+            "properties": {
+              "academicTermId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "academicYearId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "actions": {
+                "items": {
+                  "$ref": "#/components/schemas/SupervisionAction"
+                },
+                "type": "array"
+              },
+              "approvedAt": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "approvedBy": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "averageRating": {
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "cancelledAt": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "cycleId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "evaluators": {
+                "items": {
+                  "$ref": "#/components/schemas/SupervisionEvaluator"
+                },
+                "type": "array"
+              },
+              "homeroomId": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "learningGroupId": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "lessonSnapshot": {
+                "$ref": "#/components/schemas/LessonSnapshot"
+              },
+              "manualLesson": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ManualLesson"
+                  }
+                ]
+              },
+              "observedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "observedDisplayName": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "observedUserId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "requestedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "requestedBy": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "$ref": "#/components/schemas/SupervisionObservationStatus"
+              },
+              "templateId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "timetableEntryId": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "cycleId",
+              "academicYearId",
+              "academicTermId",
+              "observedUserId",
+              "templateId",
+              "observedAt",
+              "lessonSnapshot",
+              "status",
+              "requestedAt",
+              "createdAt",
+              "updatedAt",
+              "evaluators",
+              "actions"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_SupervisionObservationReview": {
+        "properties": {
+          "data": {
+            "properties": {
+              "averageRating": {
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "evaluatorResults": {
+                "items": {
+                  "$ref": "#/components/schemas/SupervisionReviewEvaluatorResult"
+                },
+                "type": "array"
+              },
+              "itemSummaries": {
+                "items": {
+                  "$ref": "#/components/schemas/SupervisionReviewItemSummary"
+                },
+                "type": "array"
+              },
+              "observation": {
+                "$ref": "#/components/schemas/SupervisionObservation"
+              },
+              "template": {
+                "$ref": "#/components/schemas/SupervisionTemplate"
+              }
+            },
+            "required": [
+              "observation",
+              "template",
+              "evaluatorResults",
+              "itemSummaries"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_SupervisionTemplate": {
+        "properties": {
+          "data": {
+            "properties": {
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "createdBy": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "ratingMax": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "ratingMin": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "sections": {
+                "items": {
+                  "$ref": "#/components/schemas/SupervisionTemplateSection"
+                },
+                "type": "array"
+              },
+              "status": {
+                "$ref": "#/components/schemas/SupervisionTemplateStatus"
+              },
+              "steps": {
+                "items": {
+                  "$ref": "#/components/schemas/SupervisionTemplateStep"
+                },
+                "type": "array"
+              },
+              "title": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "status",
+              "ratingMin",
+              "ratingMax",
+              "createdAt",
+              "updatedAt",
+              "sections",
+              "steps"
             ],
             "type": "object"
           },
@@ -12695,6 +13983,17 @@
         ],
         "type": "object"
       },
+      "ApproveObservationRequest": {
+        "properties": {
+          "evaluators": {
+            "items": {
+              "$ref": "#/components/schemas/EvaluatorAssignmentInput"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "AssessmentCategory": {
         "properties": {
           "allocationStatus": {
@@ -13807,6 +15106,17 @@
           "private"
         ],
         "type": "string"
+      },
+      "CancelObservationRequest": {
+        "properties": {
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
       },
       "CandidateMatchStatus": {
         "enum": [
@@ -18018,6 +19328,251 @@
         ],
         "type": "object"
       },
+      "CreateSupervisionCycleRequest": {
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "academicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "bookingClosesAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bookingOpensAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "endsAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "startsAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SupervisionCycleStatus"
+              }
+            ]
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/CreateSupervisionCycleTargetRequest"
+            },
+            "type": "array"
+          },
+          "templateId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "academicYearId",
+          "title",
+          "templateId",
+          "startsAt",
+          "endsAt"
+        ],
+        "type": "object"
+      },
+      "CreateSupervisionCycleTargetRequest": {
+        "properties": {
+          "priority": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "requiredObservations": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "targetId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "targetType": {
+            "$ref": "#/components/schemas/SupervisionTargetType"
+          }
+        },
+        "required": [
+          "targetType"
+        ],
+        "type": "object"
+      },
+      "CreateSupervisionTemplateItemRequest": {
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "itemType": {
+            "$ref": "#/components/schemas/SupervisionTemplateItemType"
+          },
+          "label": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "sortOrder": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "label",
+          "itemType"
+        ],
+        "type": "object"
+      },
+      "CreateSupervisionTemplateRequest": {
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ratingMax": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "ratingMin": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/CreateSupervisionTemplateSectionRequest"
+            },
+            "type": "array"
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SupervisionTemplateStatus"
+              }
+            ]
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/CreateSupervisionTemplateStepRequest"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "type": "object"
+      },
+      "CreateSupervisionTemplateSectionRequest": {
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CreateSupervisionTemplateItemRequest"
+            },
+            "type": "array"
+          },
+          "sortOrder": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "type": "object"
+      },
+      "CreateSupervisionTemplateStepRequest": {
+        "properties": {
+          "actionKind": {
+            "$ref": "#/components/schemas/SupervisionTemplateStepActionKind"
+          },
+          "actorKind": {
+            "$ref": "#/components/schemas/SupervisionTemplateStepActorKind"
+          },
+          "actorPermission": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "label": {
+            "type": "string"
+          },
+          "organizationPositionCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "stepCode": {
+            "type": "string"
+          },
+          "stepOrder": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "stepOrder",
+          "stepCode",
+          "label",
+          "actorKind",
+          "actionKind"
+        ],
+        "type": "object"
+      },
       "CreateTemplateRequest": {
         "additionalProperties": false,
         "properties": {
@@ -18901,6 +20456,55 @@
         "type": "object"
       },
       "EmptyData": {
+        "type": "object"
+      },
+      "EvaluationResponseInput": {
+        "properties": {
+          "ratingScore": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "templateItemId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "textResponse": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "templateItemId"
+        ],
+        "type": "object"
+      },
+      "EvaluatorAssignmentInput": {
+        "properties": {
+          "evaluatorUserId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "isRequired": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "roleLabel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "evaluatorUserId"
+        ],
         "type": "object"
       },
       "ExamDay": {
@@ -20965,6 +22569,714 @@
         ],
         "type": "object"
       },
+      "ItemsData_SupervisionCycle": {
+        "properties": {
+          "items": {
+            "items": {
+              "properties": {
+                "academicTermId": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "academicYearId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "bookingClosesAt": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "bookingOpensAt": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "createdAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "createdBy": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "description": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "endsAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "startsAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "status": {
+                  "$ref": "#/components/schemas/SupervisionCycleStatus"
+                },
+                "targets": {
+                  "items": {
+                    "$ref": "#/components/schemas/SupervisionCycleTarget"
+                  },
+                  "type": "array"
+                },
+                "templateId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "academicYearId",
+                "title",
+                "templateId",
+                "startsAt",
+                "endsAt",
+                "status",
+                "createdAt",
+                "updatedAt",
+                "targets"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "ItemsData_SupervisionEvaluatorAvailability": {
+        "properties": {
+          "items": {
+            "items": {
+              "properties": {
+                "available": {
+                  "type": "boolean"
+                },
+                "conflict": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SupervisionEvaluatorConflict"
+                    }
+                  ]
+                },
+                "conflictReason": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "available"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "ItemsData_SupervisionObservation": {
+        "properties": {
+          "items": {
+            "items": {
+              "properties": {
+                "academicTermId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "academicYearId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "actions": {
+                  "items": {
+                    "$ref": "#/components/schemas/SupervisionAction"
+                  },
+                  "type": "array"
+                },
+                "approvedAt": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "approvedBy": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "averageRating": {
+                  "format": "double",
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "cancelledAt": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "createdAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "cycleId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "evaluators": {
+                  "items": {
+                    "$ref": "#/components/schemas/SupervisionEvaluator"
+                  },
+                  "type": "array"
+                },
+                "homeroomId": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "learningGroupId": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "lessonSnapshot": {
+                  "$ref": "#/components/schemas/LessonSnapshot"
+                },
+                "manualLesson": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ManualLesson"
+                    }
+                  ]
+                },
+                "observedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "observedDisplayName": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "observedUserId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "requestedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "requestedBy": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "status": {
+                  "$ref": "#/components/schemas/SupervisionObservationStatus"
+                },
+                "templateId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "timetableEntryId": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "updatedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "cycleId",
+                "academicYearId",
+                "academicTermId",
+                "observedUserId",
+                "templateId",
+                "observedAt",
+                "lessonSnapshot",
+                "status",
+                "requestedAt",
+                "createdAt",
+                "updatedAt",
+                "evaluators",
+                "actions"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "ItemsData_SupervisionTeacherStatusRow": {
+        "properties": {
+          "items": {
+            "items": {
+              "properties": {
+                "averageRating": {
+                  "format": "double",
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "evaluatorNames": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "lessonTitle": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "nextStepLabel": {
+                  "type": "string"
+                },
+                "observationId": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "observedAt": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "organizationUnitNames": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "status": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SupervisionObservationStatus"
+                    }
+                  ]
+                },
+                "teacherDisplayName": {
+                  "type": "string"
+                },
+                "teacherId": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "teacherId",
+                "teacherDisplayName",
+                "organizationUnitNames",
+                "evaluatorNames",
+                "nextStepLabel"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "ItemsData_SupervisionTemplate": {
+        "properties": {
+          "items": {
+            "items": {
+              "properties": {
+                "createdAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "createdBy": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "description": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "ratingMax": {
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "ratingMin": {
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "sections": {
+                  "items": {
+                    "$ref": "#/components/schemas/SupervisionTemplateSection"
+                  },
+                  "type": "array"
+                },
+                "status": {
+                  "$ref": "#/components/schemas/SupervisionTemplateStatus"
+                },
+                "steps": {
+                  "items": {
+                    "$ref": "#/components/schemas/SupervisionTemplateStep"
+                  },
+                  "type": "array"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "title",
+                "status",
+                "ratingMin",
+                "ratingMax",
+                "createdAt",
+                "updatedAt",
+                "sections",
+                "steps"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "ItemsData_TimetableEntry": {
+        "properties": {
+          "items": {
+            "items": {
+              "properties": {
+                "academicTermId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "academicYearId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "activityId": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "activitySchedulingMode": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ActivitySchedulingMode"
+                    }
+                  ]
+                },
+                "activityVersionDisplayLabel": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "batchId": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "bellScheduleId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "bellSchedulePeriodId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "createdAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "dayOfWeek": {
+                  "type": "string"
+                },
+                "endTime": {
+                  "type": "string"
+                },
+                "entryType": {
+                  "type": "string"
+                },
+                "homeroomId": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "homeroomName": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "instructors": {
+                  "items": {
+                    "$ref": "#/components/schemas/TimetableInstructor"
+                  },
+                  "type": "array"
+                },
+                "isActive": {
+                  "type": "boolean"
+                },
+                "learningGroupCode": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "learningGroupId": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "learningGroupName": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "note": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "offeringCode": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "offeringId": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "offeringName": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "periodName": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "roomCode": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "roomId": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "rowVersion": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "startTime": {
+                  "type": "string"
+                },
+                "subjectGroupDisplayOrder": {
+                  "format": "int32",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "subjectGroupId": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "subjectGroupName": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "subjectId": {
+                  "description": "Stable catalog identity. A selected version is represented by its display label only.",
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "subjectVersionDisplayLabel": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "title": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "updatedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "academicTermId",
+                "academicYearId",
+                "bellScheduleId",
+                "bellSchedulePeriodId",
+                "dayOfWeek",
+                "entryType",
+                "rowVersion",
+                "isActive",
+                "startTime",
+                "endTime",
+                "instructors",
+                "createdAt",
+                "updatedAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
       "LearningGroup": {
         "properties": {
           "academicTermId": {
@@ -21359,6 +23671,55 @@
         ],
         "type": "string"
       },
+      "LessonSnapshot": {
+        "properties": {
+          "classroomLabel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "observedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "periodLabel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "roomLabel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subjectName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timetableEntryId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "ListMembersQuery": {
         "properties": {
           "include_children": {
@@ -21396,6 +23757,42 @@
           "unread_count",
           "page",
           "limit"
+        ],
+        "type": "object"
+      },
+      "ListObservationsQuery": {
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "academicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "cycleId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SupervisionObservationStatus"
+              }
+            ]
+          }
+        },
+        "required": [
+          "academicYearId"
         ],
         "type": "object"
       },
@@ -21475,6 +23872,74 @@
           "certificateNumber",
           "firstName",
           "lastName"
+        ],
+        "type": "object"
+      },
+      "ManualLesson": {
+        "properties": {
+          "classroomLabel": {
+            "type": "string"
+          },
+          "observedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "periodLabel": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "roomLabel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subjectName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "subjectName",
+          "classroomLabel",
+          "observedAt",
+          "periodLabel",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "ManualLessonInput": {
+        "properties": {
+          "classroomLabel": {
+            "type": "string"
+          },
+          "observedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "periodLabel": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "roomLabel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subjectName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "subjectName",
+          "classroomLabel",
+          "observedAt",
+          "periodLabel",
+          "reason"
         ],
         "type": "object"
       },
@@ -23387,6 +25852,17 @@
         ],
         "type": "object"
       },
+      "ReplaceObservationEvaluatorsRequest": {
+        "properties": {
+          "evaluators": {
+            "items": {
+              "$ref": "#/components/schemas/EvaluatorAssignmentInput"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "ReplaceProgramRequirementsRequest": {
         "additionalProperties": false,
         "properties": {
@@ -23404,6 +25880,47 @@
         "required": [
           "requirements",
           "rowVersion"
+        ],
+        "type": "object"
+      },
+      "RequestSupervisionObservationRequest": {
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "cycleId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "manualLesson": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ManualLessonInput"
+              }
+            ]
+          },
+          "observedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timetableEntryId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "cycleId",
+          "academicTermId"
         ],
         "type": "object"
       },
@@ -23439,6 +25956,17 @@
           "issueCodes",
           "returnNote"
         ],
+        "type": "object"
+      },
+      "ReturnObservationRequest": {
+        "properties": {
+          "comment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       },
       "RevokeCertificateRequest": {
@@ -23911,6 +26439,17 @@
         "required": [
           "categories"
         ],
+        "type": "object"
+      },
+      "SaveEvaluationRequest": {
+        "properties": {
+          "responses": {
+            "items": {
+              "$ref": "#/components/schemas/EvaluationResponseInput"
+            },
+            "type": "array"
+          }
+        },
         "type": "object"
       },
       "SchoolFontDeleteConflict": {
@@ -25595,6 +28134,1087 @@
           "candidateIds"
         ],
         "type": "object"
+      },
+      "SupervisionAction": {
+        "properties": {
+          "actionKind": {
+            "type": "string"
+          },
+          "actorDisplayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "actorUserId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "comment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "fromStatus": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SupervisionObservationStatus"
+              }
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "observationId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "toStatus": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SupervisionObservationStatus"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "observationId",
+          "actionKind",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "SupervisionCycle": {
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "academicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "bookingClosesAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bookingOpensAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "createdBy": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "endsAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "startsAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SupervisionCycleStatus"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/SupervisionCycleTarget"
+            },
+            "type": "array"
+          },
+          "templateId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "academicYearId",
+          "title",
+          "templateId",
+          "startsAt",
+          "endsAt",
+          "status",
+          "createdAt",
+          "updatedAt",
+          "targets"
+        ],
+        "type": "object"
+      },
+      "SupervisionCycleProgress": {
+        "properties": {
+          "approvedCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "averageRating": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "cancelledCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "completedCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "cycleId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "plannedCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "publishedCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "requestedCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "totalObservations": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "underReviewCount": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cycleId",
+          "totalObservations",
+          "requestedCount",
+          "plannedCount",
+          "underReviewCount",
+          "approvedCount",
+          "publishedCount",
+          "completedCount",
+          "cancelledCount"
+        ],
+        "type": "object"
+      },
+      "SupervisionCycleQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "academicYearId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "academicYearId"
+        ],
+        "type": "object"
+      },
+      "SupervisionCycleStatus": {
+        "enum": [
+          "draft",
+          "open",
+          "closed",
+          "archived"
+        ],
+        "type": "string"
+      },
+      "SupervisionCycleTarget": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "cycleId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "priority": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "requiredObservations": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "targetId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "targetType": {
+            "$ref": "#/components/schemas/SupervisionTargetType"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "cycleId",
+          "targetType",
+          "requiredObservations",
+          "priority",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "SupervisionEvaluator": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "evaluatorDisplayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "evaluatorUserId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "isRequired": {
+            "type": "boolean"
+          },
+          "observationId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "roleLabel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/SupervisionEvaluatorStatus"
+          },
+          "submittedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "observationId",
+          "evaluatorUserId",
+          "isRequired",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "SupervisionEvaluatorAvailability": {
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "conflict": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SupervisionEvaluatorConflict"
+              }
+            ]
+          },
+          "conflictReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "available"
+        ],
+        "type": "object"
+      },
+      "SupervisionEvaluatorConflict": {
+        "properties": {
+          "lessonTitle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "observationId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "observedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "observedDisplayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "observationId",
+          "observedAt"
+        ],
+        "type": "object"
+      },
+      "SupervisionEvaluatorStatus": {
+        "enum": [
+          "assigned",
+          "draft",
+          "submitted"
+        ],
+        "type": "string"
+      },
+      "SupervisionObservation": {
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "academicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/SupervisionAction"
+            },
+            "type": "array"
+          },
+          "approvedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "approvedBy": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "averageRating": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "cancelledAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "cycleId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "evaluators": {
+            "items": {
+              "$ref": "#/components/schemas/SupervisionEvaluator"
+            },
+            "type": "array"
+          },
+          "homeroomId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "learningGroupId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lessonSnapshot": {
+            "$ref": "#/components/schemas/LessonSnapshot"
+          },
+          "manualLesson": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ManualLesson"
+              }
+            ]
+          },
+          "observedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "observedDisplayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "observedUserId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "requestedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "requestedBy": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/SupervisionObservationStatus"
+          },
+          "templateId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "timetableEntryId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "cycleId",
+          "academicYearId",
+          "academicTermId",
+          "observedUserId",
+          "templateId",
+          "observedAt",
+          "lessonSnapshot",
+          "status",
+          "requestedAt",
+          "createdAt",
+          "updatedAt",
+          "evaluators",
+          "actions"
+        ],
+        "type": "object"
+      },
+      "SupervisionObservationReview": {
+        "properties": {
+          "averageRating": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "evaluatorResults": {
+            "items": {
+              "$ref": "#/components/schemas/SupervisionReviewEvaluatorResult"
+            },
+            "type": "array"
+          },
+          "itemSummaries": {
+            "items": {
+              "$ref": "#/components/schemas/SupervisionReviewItemSummary"
+            },
+            "type": "array"
+          },
+          "observation": {
+            "$ref": "#/components/schemas/SupervisionObservation"
+          },
+          "template": {
+            "$ref": "#/components/schemas/SupervisionTemplate"
+          }
+        },
+        "required": [
+          "observation",
+          "template",
+          "evaluatorResults",
+          "itemSummaries"
+        ],
+        "type": "object"
+      },
+      "SupervisionObservationStatus": {
+        "enum": [
+          "requested",
+          "planned",
+          "in_progress",
+          "evaluators_submitted",
+          "under_review",
+          "returned",
+          "approved",
+          "published",
+          "acknowledged",
+          "completed",
+          "cancelled"
+        ],
+        "type": "string"
+      },
+      "SupervisionReviewEvaluatorResult": {
+        "properties": {
+          "averageRating": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "evaluatorDisplayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "evaluatorId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "evaluatorUserId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "responses": {
+            "items": {
+              "$ref": "#/components/schemas/SupervisionReviewResponse"
+            },
+            "type": "array"
+          },
+          "roleLabel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/SupervisionEvaluatorStatus"
+          },
+          "submittedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "evaluatorId",
+          "evaluatorUserId",
+          "status",
+          "responses"
+        ],
+        "type": "object"
+      },
+      "SupervisionReviewItemSummary": {
+        "properties": {
+          "averageRating": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "responseCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "templateItemId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "templateItemId",
+          "responseCount"
+        ],
+        "type": "object"
+      },
+      "SupervisionReviewResponse": {
+        "properties": {
+          "ratingScore": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "templateItemId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "textResponse": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "templateItemId"
+        ],
+        "type": "object"
+      },
+      "SupervisionTargetType": {
+        "enum": [
+          "school",
+          "organization_unit",
+          "subject_group",
+          "staff"
+        ],
+        "type": "string"
+      },
+      "SupervisionTeacherStatusRow": {
+        "properties": {
+          "averageRating": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "evaluatorNames": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "lessonTitle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "nextStepLabel": {
+            "type": "string"
+          },
+          "observationId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "observedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "organizationUnitNames": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SupervisionObservationStatus"
+              }
+            ]
+          },
+          "teacherDisplayName": {
+            "type": "string"
+          },
+          "teacherId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "teacherId",
+          "teacherDisplayName",
+          "organizationUnitNames",
+          "evaluatorNames",
+          "nextStepLabel"
+        ],
+        "type": "object"
+      },
+      "SupervisionTemplate": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "createdBy": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "ratingMax": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "ratingMin": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/SupervisionTemplateSection"
+            },
+            "type": "array"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SupervisionTemplateStatus"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/SupervisionTemplateStep"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "status",
+          "ratingMin",
+          "ratingMax",
+          "createdAt",
+          "updatedAt",
+          "sections",
+          "steps"
+        ],
+        "type": "object"
+      },
+      "SupervisionTemplateItem": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "itemType": {
+            "$ref": "#/components/schemas/SupervisionTemplateItemType"
+          },
+          "label": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "sectionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sortOrder": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "sectionId",
+          "label",
+          "itemType",
+          "required",
+          "sortOrder",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "SupervisionTemplateItemType": {
+        "enum": [
+          "rating",
+          "text"
+        ],
+        "type": "string"
+      },
+      "SupervisionTemplateSection": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SupervisionTemplateItem"
+            },
+            "type": "array"
+          },
+          "sortOrder": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "templateId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "templateId",
+          "title",
+          "sortOrder",
+          "createdAt",
+          "updatedAt",
+          "items"
+        ],
+        "type": "object"
+      },
+      "SupervisionTemplateStatus": {
+        "enum": [
+          "draft",
+          "active",
+          "archived"
+        ],
+        "type": "string"
+      },
+      "SupervisionTemplateStep": {
+        "properties": {
+          "actionKind": {
+            "$ref": "#/components/schemas/SupervisionTemplateStepActionKind"
+          },
+          "actorKind": {
+            "$ref": "#/components/schemas/SupervisionTemplateStepActorKind"
+          },
+          "actorPermission": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "organizationPositionCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "stepCode": {
+            "type": "string"
+          },
+          "stepOrder": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "templateId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "templateId",
+          "stepOrder",
+          "stepCode",
+          "label",
+          "actorKind",
+          "actionKind",
+          "required",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "SupervisionTemplateStepActionKind": {
+        "enum": [
+          "submit",
+          "approve",
+          "return_for_revision",
+          "publish",
+          "acknowledge",
+          "sign"
+        ],
+        "type": "string"
+      },
+      "SupervisionTemplateStepActorKind": {
+        "enum": [
+          "supervisor",
+          "observed_teacher",
+          "permission",
+          "organization_position"
+        ],
+        "type": "string"
       },
       "SwapTimetableEntriesRequest": {
         "additionalProperties": false,
@@ -27450,6 +31070,35 @@
         },
         "type": "object"
       },
+      "UpdateRequestedObservationRequest": {
+        "properties": {
+          "manualLesson": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ManualLessonInput"
+              }
+            ]
+          },
+          "observedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timetableEntryId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "UpdateRoleRequest": {
         "properties": {
           "description": {
@@ -27849,6 +31498,186 @@
           "gradeLevelIds",
           "rowVersion"
         ],
+        "type": "object"
+      },
+      "UpdateSupervisionCycleRequest": {
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "academicYearId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bookingClosesAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bookingOpensAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "endsAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "startsAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SupervisionCycleStatus"
+              }
+            ]
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/CreateSupervisionCycleTargetRequest"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "templateId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "UpdateSupervisionObservationRequest": {
+        "properties": {
+          "manualLesson": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ManualLessonInput"
+              }
+            ]
+          },
+          "observedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "templateId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timetableEntryId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "UpdateSupervisionTemplateRequest": {
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ratingMax": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "ratingMin": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/CreateSupervisionTemplateSectionRequest"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SupervisionTemplateStatus"
+              }
+            ]
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/CreateSupervisionTemplateStepRequest"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       },
       "UpdateTemplateRequest": {
@@ -49361,6 +53190,1903 @@
         ]
       }
     },
+    "/api/supervision/cycles": {
+      "get": {
+        "operationId": "listSupervisionCycles",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ItemsData_SupervisionCycle"
+                }
+              }
+            },
+            "description": "Supervision cycles"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid academic context"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision access denied"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      },
+      "post": {
+        "operationId": "createSupervisionCycle",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSupervisionCycleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SupervisionCycle"
+                }
+              }
+            },
+            "description": "Supervision cycle created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid supervision cycle"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision management denied"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      }
+    },
+    "/api/supervision/cycles/{id}": {
+      "patch": {
+        "operationId": "updateSupervisionCycle",
+        "parameters": [
+          {
+            "description": "Supervision cycle ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSupervisionCycleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SupervisionCycle"
+                }
+              }
+            },
+            "description": "Supervision cycle updated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid supervision cycle"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision management denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision cycle not found"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      }
+    },
+    "/api/supervision/observations": {
+      "get": {
+        "operationId": "listSupervisionObservations",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cycleId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/SupervisionObservationStatus"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ItemsData_SupervisionObservation"
+                }
+              }
+            },
+            "description": "Supervision observations"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid observation filter"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision access denied"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      }
+    },
+    "/api/supervision/observations/{id}": {
+      "get": {
+        "operationId": "getSupervisionObservation",
+        "parameters": [
+          {
+            "description": "Supervision observation ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SupervisionObservation"
+                }
+              }
+            },
+            "description": "Supervision observation"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Observation read access denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision observation not found"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      },
+      "patch": {
+        "operationId": "updateSupervisionObservation",
+        "parameters": [
+          {
+            "description": "Supervision observation ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSupervisionObservationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SupervisionObservation"
+                }
+              }
+            },
+            "description": "Supervision observation updated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Observation cannot be updated"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Observation management denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision observation not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision booking conflict"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      }
+    },
+    "/api/supervision/observations/{id}/acknowledge": {
+      "post": {
+        "operationId": "acknowledgeSupervisionObservation",
+        "parameters": [
+          {
+            "description": "Supervision observation ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcknowledgeObservationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SupervisionObservation"
+                }
+              }
+            },
+            "description": "Supervision observation acknowledged"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Observation cannot be acknowledged"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Acknowledgement denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision observation not found"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      }
+    },
+    "/api/supervision/observations/{id}/approve": {
+      "post": {
+        "operationId": "approveSupervisionObservation",
+        "parameters": [
+          {
+            "description": "Supervision observation ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SupervisionObservation"
+                }
+              }
+            },
+            "description": "Supervision observation approved"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Observation cannot be approved"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic approval denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision observation not found"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      }
+    },
+    "/api/supervision/observations/{id}/approve-request": {
+      "post": {
+        "operationId": "approveSupervisionObservationRequest",
+        "parameters": [
+          {
+            "description": "Supervision observation ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveObservationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SupervisionObservation"
+                }
+              }
+            },
+            "description": "Supervision request approved"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision request cannot be approved"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Observation management denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision observation not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Evaluator schedule conflict"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      }
+    },
+    "/api/supervision/observations/{id}/cancel": {
+      "post": {
+        "operationId": "cancelSupervisionObservation",
+        "parameters": [
+          {
+            "description": "Supervision observation ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelObservationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SupervisionObservation"
+                }
+              }
+            },
+            "description": "Supervision observation cancelled"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Observation cannot be cancelled"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Observation management denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision observation not found"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      }
+    },
+    "/api/supervision/observations/{id}/certify": {
+      "post": {
+        "operationId": "certifySupervisionObservation",
+        "parameters": [
+          {
+            "description": "Supervision observation ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SupervisionObservation"
+                }
+              }
+            },
+            "description": "Supervision observation certified"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Observation cannot be certified"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Observation management denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision observation not found"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      }
+    },
+    "/api/supervision/observations/{id}/evaluations/me/submit": {
+      "post": {
+        "operationId": "submitMySupervisionEvaluation",
+        "parameters": [
+          {
+            "description": "Supervision observation ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveEvaluationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SupervisionObservation"
+                }
+              }
+            },
+            "description": "Supervision evaluation submitted"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid supervision evaluation"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Evaluation submission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision observation not found"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      }
+    },
+    "/api/supervision/observations/{id}/evaluator-availability": {
+      "get": {
+        "operationId": "getSupervisionEvaluatorAvailability",
+        "parameters": [
+          {
+            "description": "Supervision observation ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ItemsData_SupervisionEvaluatorAvailability"
+                }
+              }
+            },
+            "description": "Available supervision evaluators"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Observation management denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision observation not found"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      }
+    },
+    "/api/supervision/observations/{id}/evaluators": {
+      "put": {
+        "operationId": "replaceSupervisionObservationEvaluators",
+        "parameters": [
+          {
+            "description": "Supervision observation ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceObservationEvaluatorsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SupervisionObservation"
+                }
+              }
+            },
+            "description": "Supervision evaluators replaced"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid evaluator assignment"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Observation management denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision observation not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Evaluator schedule conflict"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      }
+    },
+    "/api/supervision/observations/{id}/request": {
+      "delete": {
+        "operationId": "cancelRequestedSupervisionObservation",
+        "parameters": [
+          {
+            "description": "Supervision observation ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SupervisionObservation"
+                }
+              }
+            },
+            "description": "Requested observation cancelled"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Requested observation cannot be cancelled"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision request denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision observation not found"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      },
+      "patch": {
+        "operationId": "updateRequestedSupervisionObservation",
+        "parameters": [
+          {
+            "description": "Supervision observation ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRequestedObservationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SupervisionObservation"
+                }
+              }
+            },
+            "description": "Requested observation updated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Requested observation cannot be updated"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision request denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision observation not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision booking conflict"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      }
+    },
+    "/api/supervision/observations/{id}/return-request": {
+      "post": {
+        "operationId": "returnSupervisionObservationRequest",
+        "parameters": [
+          {
+            "description": "Supervision observation ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReturnObservationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SupervisionObservation"
+                }
+              }
+            },
+            "description": "Supervision request returned"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision request cannot be returned"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Observation management denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision observation not found"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      }
+    },
+    "/api/supervision/observations/{id}/review": {
+      "get": {
+        "operationId": "getSupervisionObservationReview",
+        "parameters": [
+          {
+            "description": "Supervision observation ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SupervisionObservationReview"
+                }
+              }
+            },
+            "description": "Supervision observation review"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Observation review access denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision observation not found"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      }
+    },
+    "/api/supervision/observations/{id}/timetable-options": {
+      "get": {
+        "operationId": "getSupervisionObservationTimetableOptions",
+        "parameters": [
+          {
+            "description": "Supervision observation ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ItemsData_TimetableEntry"
+                }
+              }
+            },
+            "description": "Timetable options for the observation"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Observation management denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision observation not found"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      }
+    },
+    "/api/supervision/observations/requests": {
+      "post": {
+        "operationId": "requestSupervisionObservation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestSupervisionObservationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SupervisionObservation"
+                }
+              }
+            },
+            "description": "Supervision observation requested"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid supervision request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision request denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision cycle or timetable entry not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision booking conflict"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      }
+    },
+    "/api/supervision/reports/cycles/{id}/progress": {
+      "get": {
+        "operationId": "getSupervisionCycleProgress",
+        "parameters": [
+          {
+            "description": "Supervision cycle ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SupervisionCycleProgress"
+                }
+              }
+            },
+            "description": "Supervision cycle progress"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision report access denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision cycle not found"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      }
+    },
+    "/api/supervision/reports/cycles/{id}/teacher-status": {
+      "get": {
+        "operationId": "getSupervisionTeacherStatusOverview",
+        "parameters": [
+          {
+            "description": "Supervision cycle ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ItemsData_SupervisionTeacherStatusRow"
+                }
+              }
+            },
+            "description": "Teacher supervision status overview"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision report access denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision cycle not found"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      }
+    },
+    "/api/supervision/templates": {
+      "get": {
+        "operationId": "listSupervisionTemplates",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ItemsData_SupervisionTemplate"
+                }
+              }
+            },
+            "description": "Supervision templates"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision access denied"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      },
+      "post": {
+        "operationId": "createSupervisionTemplate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSupervisionTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SupervisionTemplate"
+                }
+              }
+            },
+            "description": "Supervision template created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid supervision template"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision management denied"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      }
+    },
+    "/api/supervision/templates/{id}": {
+      "get": {
+        "operationId": "getSupervisionTemplate",
+        "parameters": [
+          {
+            "description": "Supervision template ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SupervisionTemplate"
+                }
+              }
+            },
+            "description": "Supervision template"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision access denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision template not found"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      },
+      "patch": {
+        "operationId": "updateSupervisionTemplate",
+        "parameters": [
+          {
+            "description": "Supervision template ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSupervisionTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SupervisionTemplate"
+                }
+              }
+            },
+            "description": "Supervision template updated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid supervision template"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision management denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision template not found"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      }
+    },
     "/api/users/{id}/permissions": {
       "get": {
         "operationId": "listUserEffectivePermissions",
@@ -49666,6 +55392,10 @@
     {
       "description": "Calendar reads",
       "name": "calendar"
+    },
+    {
+      "description": "Teaching supervision workflows and reports",
+      "name": "supervision"
     },
     {
       "description": "School settings and public branding reads",

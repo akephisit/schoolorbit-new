@@ -1,383 +1,91 @@
-import { apiClient, requireApiData, type ApiResponse } from '$lib/api/client';
-import type { TimetableEntry } from '$lib/api/timetable';
+import {
+	apiClient,
+	requireApiData,
+	type ApiRequestOptions,
+	type ApiResponse
+} from '$lib/api/client';
+import type { components, operations } from '$lib/api/generated/school-api';
 
-export type SupervisionCycleStatus = 'draft' | 'open' | 'closed' | 'archived';
-export type SupervisionTemplateStatus = 'draft' | 'active' | 'archived';
-export type SupervisionTargetType = 'school' | 'organization_unit' | 'subject_group' | 'staff';
-export type SupervisionTemplateItemType = 'rating' | 'text';
-export type SupervisionTemplateStepActorKind =
-	| 'supervisor'
-	| 'observed_teacher'
-	| 'permission'
-	| 'organization_position';
-export type SupervisionTemplateStepActionKind =
-	| 'submit'
-	| 'approve'
-	| 'return_for_revision'
-	| 'publish'
-	| 'acknowledge'
-	| 'sign';
-export type SupervisionObservationStatus =
-	| 'requested'
-	| 'planned'
-	| 'in_progress'
-	| 'evaluators_submitted'
-	| 'under_review'
-	| 'returned'
-	| 'approved'
-	| 'published'
-	| 'acknowledged'
-	| 'completed'
-	| 'cancelled';
-export type SupervisionEvaluatorStatus = 'assigned' | 'draft' | 'submitted';
+type Schemas = components['schemas'];
 
-export interface LessonSnapshot {
-	source?: string | null;
-	timetableEntryId?: string | null;
-	subjectName?: string | null;
-	classroomLabel?: string | null;
-	roomLabel?: string | null;
-	observedAt?: string | null;
-	periodLabel?: string | null;
-}
+export type SupervisionCycleStatus = Schemas['SupervisionCycleStatus'];
+export type SupervisionTemplateStatus = Schemas['SupervisionTemplateStatus'];
+export type SupervisionTargetType = Schemas['SupervisionTargetType'];
+export type SupervisionTemplateItemType = Schemas['SupervisionTemplateItemType'];
+export type SupervisionTemplateStepActorKind = Schemas['SupervisionTemplateStepActorKind'];
+export type SupervisionTemplateStepActionKind = Schemas['SupervisionTemplateStepActionKind'];
+export type SupervisionObservationStatus = Schemas['SupervisionObservationStatus'];
+export type SupervisionEvaluatorStatus = Schemas['SupervisionEvaluatorStatus'];
+export type LessonSnapshot = Schemas['LessonSnapshot'];
+export type SupervisionCycleTarget = Schemas['SupervisionCycleTarget'];
+export type SupervisionCycle = Schemas['SupervisionCycle'];
+export type SupervisionTemplateItem = Schemas['SupervisionTemplateItem'];
+export type SupervisionTemplateSection = Schemas['SupervisionTemplateSection'];
+export type SupervisionTemplateStep = Schemas['SupervisionTemplateStep'];
+export type SupervisionTemplate = Schemas['SupervisionTemplate'];
+export type ManualLesson = Schemas['ManualLesson'];
+export type SupervisionEvaluator = Schemas['SupervisionEvaluator'];
+export type SupervisionEvaluatorConflict = Schemas['SupervisionEvaluatorConflict'];
+export type SupervisionEvaluatorAvailability = Schemas['SupervisionEvaluatorAvailability'];
+export type SupervisionAction = Schemas['SupervisionAction'];
+export type SupervisionObservation = Schemas['SupervisionObservation'];
+export type SupervisionReviewResponse = Schemas['SupervisionReviewResponse'];
+export type SupervisionReviewEvaluatorResult = Schemas['SupervisionReviewEvaluatorResult'];
+export type SupervisionReviewItemSummary = Schemas['SupervisionReviewItemSummary'];
+export type SupervisionObservationReview = Schemas['SupervisionObservationReview'];
+export type SupervisionCycleProgress = Schemas['SupervisionCycleProgress'];
+export type SupervisionTeacherStatusRow = Schemas['SupervisionTeacherStatusRow'];
+export type EvaluatorAssignmentInput = Schemas['EvaluatorAssignmentInput'];
+export type EvaluationResponseInput = Schemas['EvaluationResponseInput'];
 
-export interface SupervisionCycleTarget {
-	id: string;
-	cycleId: string;
-	targetType: SupervisionTargetType;
-	targetId?: string | null;
-	requiredObservations: number;
-	priority: number;
-	createdAt: string;
-	updatedAt: string;
-}
+export type CreateSupervisionCycleTargetRequest = Schemas['CreateSupervisionCycleTargetRequest'];
+export type CreateSupervisionTemplateItemRequest = Schemas['CreateSupervisionTemplateItemRequest'];
+export type CreateSupervisionTemplateSectionRequest =
+	Schemas['CreateSupervisionTemplateSectionRequest'];
+export type CreateSupervisionTemplateStepRequest = Schemas['CreateSupervisionTemplateStepRequest'];
+export type CreateSupervisionCycleRequest =
+	operations['createSupervisionCycle']['requestBody']['content']['application/json'];
+export type UpdateSupervisionCycleRequest =
+	operations['updateSupervisionCycle']['requestBody']['content']['application/json'];
+export type CreateSupervisionTemplateRequest =
+	operations['createSupervisionTemplate']['requestBody']['content']['application/json'];
+export type UpdateSupervisionTemplateRequest =
+	operations['updateSupervisionTemplate']['requestBody']['content']['application/json'];
+export type RequestSupervisionObservationRequest =
+	operations['requestSupervisionObservation']['requestBody']['content']['application/json'];
+export type UpdateRequestedObservationRequest =
+	operations['updateRequestedSupervisionObservation']['requestBody']['content']['application/json'];
+export type UpdateSupervisionObservationRequest =
+	operations['updateSupervisionObservation']['requestBody']['content']['application/json'];
+export type ReplaceObservationEvaluatorsRequest =
+	operations['replaceSupervisionObservationEvaluators']['requestBody']['content']['application/json'];
+export type CancelObservationRequest =
+	operations['cancelSupervisionObservation']['requestBody']['content']['application/json'];
+export type ApproveObservationRequest =
+	operations['approveSupervisionObservationRequest']['requestBody']['content']['application/json'];
+export type ReturnObservationRequest =
+	operations['returnSupervisionObservationRequest']['requestBody']['content']['application/json'];
+export type SaveEvaluationRequest =
+	operations['submitMySupervisionEvaluation']['requestBody']['content']['application/json'];
+export type AcknowledgeObservationRequest =
+	operations['acknowledgeSupervisionObservation']['requestBody']['content']['application/json'];
 
-export interface SupervisionCycle {
-	id: string;
-	academicYearId: string;
-	academicTermId?: string | null;
-	title: string;
-	description?: string | null;
-	templateId: string;
-	bookingOpensAt?: string | null;
-	bookingClosesAt?: string | null;
-	startsAt: string;
-	endsAt: string;
-	status: SupervisionCycleStatus;
-	createdBy?: string | null;
-	createdAt: string;
-	updatedAt: string;
-	targets: SupervisionCycleTarget[];
-}
-
-export interface SupervisionTemplateItem {
-	id: string;
-	sectionId: string;
-	label: string;
-	description?: string | null;
-	itemType: SupervisionTemplateItemType;
-	required: boolean;
-	sortOrder: number;
-	createdAt: string;
-	updatedAt: string;
-}
-
-export interface SupervisionTemplateSection {
-	id: string;
-	templateId: string;
-	title: string;
-	description?: string | null;
-	sortOrder: number;
-	createdAt: string;
-	updatedAt: string;
-	items: SupervisionTemplateItem[];
-}
-
-export interface SupervisionTemplateStep {
-	id: string;
-	templateId: string;
-	stepOrder: number;
-	stepCode: string;
-	label: string;
-	actorKind: SupervisionTemplateStepActorKind;
-	actorPermission?: string | null;
-	organizationPositionCode?: string | null;
-	actionKind: SupervisionTemplateStepActionKind;
-	required: boolean;
-	createdAt: string;
-	updatedAt: string;
-}
-
-export interface SupervisionTemplate {
-	id: string;
-	title: string;
-	description?: string | null;
-	status: SupervisionTemplateStatus;
-	ratingMin: number;
-	ratingMax: number;
-	createdBy?: string | null;
-	createdAt: string;
-	updatedAt: string;
-	sections: SupervisionTemplateSection[];
-	steps: SupervisionTemplateStep[];
-}
-
-export interface ManualLesson {
-	subjectName: string;
-	classroomLabel: string;
-	roomLabel?: string | null;
-	observedAt: string;
-	periodLabel: string;
-	reason: string;
-}
-
-export interface SupervisionEvaluator {
-	id: string;
-	observationId: string;
-	evaluatorUserId: string;
-	evaluatorDisplayName?: string | null;
-	roleLabel?: string | null;
-	isRequired: boolean;
-	status: SupervisionEvaluatorStatus;
-	submittedAt?: string | null;
-	createdAt: string;
-	updatedAt: string;
-}
-
-export interface SupervisionEvaluatorConflict {
-	observationId: string;
-	observedDisplayName?: string | null;
-	observedAt: string;
-	lessonTitle?: string | null;
-}
-
-export interface SupervisionEvaluatorAvailability {
-	id: string;
-	name: string;
-	title?: string | null;
-	available: boolean;
-	conflictReason?: string | null;
-	conflict?: SupervisionEvaluatorConflict | null;
-}
-
-export interface SupervisionAction {
-	id: string;
-	observationId: string;
-	actorUserId?: string | null;
-	actorDisplayName?: string | null;
-	actionKind: string;
-	fromStatus?: SupervisionObservationStatus | null;
-	toStatus?: SupervisionObservationStatus | null;
-	comment?: string | null;
-	createdAt: string;
-}
-
-export interface SupervisionObservation {
-	id: string;
-	cycleId: string;
-	academicYearId: string;
-	academicTermId: string;
-	learningGroupId?: string | null;
-	homeroomId?: string | null;
-	observedUserId: string;
-	observedDisplayName?: string | null;
-	requestedBy?: string | null;
-	approvedBy?: string | null;
-	templateId: string;
-	timetableEntryId?: string | null;
-	observedAt: string;
-	manualLesson?: ManualLesson | null;
-	lessonSnapshot: LessonSnapshot;
-	status: SupervisionObservationStatus;
-	requestedAt: string;
-	approvedAt?: string | null;
-	cancelledAt?: string | null;
-	createdAt: string;
-	updatedAt: string;
-	evaluators: SupervisionEvaluator[];
-	actions: SupervisionAction[];
-	averageRating?: number | null;
-}
-
-export interface SupervisionReviewResponse {
-	templateItemId: string;
-	ratingScore?: number | null;
-	textResponse?: string | null;
-}
-
-export interface SupervisionReviewEvaluatorResult {
-	evaluatorId: string;
-	evaluatorUserId: string;
-	evaluatorDisplayName?: string | null;
-	roleLabel?: string | null;
-	status: SupervisionEvaluatorStatus;
-	submittedAt?: string | null;
-	averageRating?: number | null;
-	responses: SupervisionReviewResponse[];
-}
-
-export interface SupervisionReviewItemSummary {
-	templateItemId: string;
-	averageRating?: number | null;
-	responseCount: number;
-}
-
-export interface SupervisionObservationReview {
-	observation: SupervisionObservation;
-	template: SupervisionTemplate;
-	evaluatorResults: SupervisionReviewEvaluatorResult[];
-	itemSummaries: SupervisionReviewItemSummary[];
-	averageRating?: number | null;
-}
-
-export interface CreateSupervisionCycleTargetRequest {
-	targetType: SupervisionTargetType;
-	targetId?: string | null;
-	requiredObservations?: number;
-	priority?: number;
-}
-
-export interface CreateSupervisionCycleRequest {
-	academicYearId: string;
-	academicTermId?: string | null;
-	title: string;
-	description?: string | null;
-	templateId: string;
-	bookingOpensAt?: string | null;
-	bookingClosesAt?: string | null;
-	startsAt: string;
-	endsAt: string;
-	status?: SupervisionCycleStatus;
-	targets?: CreateSupervisionCycleTargetRequest[];
-}
-
-export type UpdateSupervisionCycleRequest = Partial<CreateSupervisionCycleRequest>;
-
-export interface CreateSupervisionTemplateItemRequest {
-	label: string;
-	description?: string | null;
-	itemType: SupervisionTemplateItemType;
-	required?: boolean;
-	sortOrder?: number;
-}
-
-export interface CreateSupervisionTemplateSectionRequest {
-	title: string;
-	description?: string | null;
-	sortOrder?: number;
-	items?: CreateSupervisionTemplateItemRequest[];
-}
-
-export interface CreateSupervisionTemplateStepRequest {
-	stepOrder: number;
-	stepCode: string;
-	label: string;
-	actorKind: SupervisionTemplateStepActorKind;
-	actorPermission?: string | null;
-	organizationPositionCode?: string | null;
-	actionKind: SupervisionTemplateStepActionKind;
-	required?: boolean;
-}
-
-export interface CreateSupervisionTemplateRequest {
-	title: string;
-	description?: string | null;
-	status?: SupervisionTemplateStatus;
-	ratingMin?: number;
-	ratingMax?: number;
-	sections?: CreateSupervisionTemplateSectionRequest[];
-	steps?: CreateSupervisionTemplateStepRequest[];
-}
-
-export type UpdateSupervisionTemplateRequest = Partial<CreateSupervisionTemplateRequest>;
-
-export interface RequestSupervisionObservationRequest {
-	cycleId: string;
-	academicTermId: string;
-	timetableEntryId?: string | null;
-	observedAt?: string | null;
-	manualLesson?: ManualLesson | null;
-}
-
-export type UpdateRequestedObservationRequest = Pick<
-	RequestSupervisionObservationRequest,
-	'timetableEntryId' | 'observedAt' | 'manualLesson'
+export type ListSupervisionObservationsParams = NonNullable<
+	operations['listSupervisionObservations']['parameters']['query']
 >;
 
-export type UpdateSupervisionObservationRequest = Partial<
-	Pick<RequestSupervisionObservationRequest, 'timetableEntryId' | 'observedAt' | 'manualLesson'> & {
-		templateId: string;
-	}
+type ListSupervisionCyclesQuery = NonNullable<
+	operations['listSupervisionCycles']['parameters']['query']
 >;
-
-export interface EvaluatorAssignmentInput {
-	evaluatorUserId: string;
-	roleLabel?: string | null;
-	isRequired?: boolean;
-}
-
-export interface ApproveObservationRequest {
-	evaluators: EvaluatorAssignmentInput[];
-}
-
-export interface ReplaceObservationEvaluatorsRequest {
-	evaluators: EvaluatorAssignmentInput[];
-}
-
-export interface ReturnObservationRequest {
-	comment?: string | null;
-}
-
-export interface CancelObservationRequest {
-	reason?: string | null;
-}
-
-export interface EvaluationResponseInput {
-	templateItemId: string;
-	ratingScore?: number | null;
-	textResponse?: string | null;
-}
-
-export interface SaveEvaluationRequest {
-	responses: EvaluationResponseInput[];
-}
-
-export interface AcknowledgeObservationRequest {
-	comment?: string | null;
-}
-
-export interface ListSupervisionObservationsParams {
-	academicYearId: string;
-	academicTermId?: string | null;
-	cycleId?: string;
-	status?: SupervisionObservationStatus;
-}
-
-export interface SupervisionCycleProgress {
-	cycleId: string;
-	totalObservations: number;
-	requestedCount: number;
-	plannedCount: number;
-	underReviewCount: number;
-	approvedCount: number;
-	publishedCount: number;
-	completedCount: number;
-	cancelledCount: number;
-	averageRating?: number | null;
-}
-
-export interface SupervisionTeacherStatusRow {
-	teacherId: string;
-	teacherDisplayName: string;
-	organizationUnitNames: string[];
-	observationId?: string | null;
-	status?: SupervisionObservationStatus | null;
-	observedAt?: string | null;
-	lessonTitle?: string | null;
-	evaluatorNames: string[];
-	averageRating?: number | null;
-	nextStepLabel: string;
-}
+type ObservationId = operations['getSupervisionObservation']['parameters']['path']['id'];
+type TemplateId = operations['getSupervisionTemplate']['parameters']['path']['id'];
+type CycleId = operations['getSupervisionCycleProgress']['parameters']['path']['id'];
+type SupervisionCycleItems = Schemas['ItemsData_SupervisionCycle'];
+type SupervisionTemplateItems = Schemas['ItemsData_SupervisionTemplate'];
+type SupervisionObservationItems = Schemas['ItemsData_SupervisionObservation'];
+type SupervisionEvaluatorAvailabilityItems = Schemas['ItemsData_SupervisionEvaluatorAvailability'];
+type SupervisionTimetableItems = Schemas['ItemsData_TimetableEntry'];
+type SupervisionTeacherStatusItems = Schemas['ItemsData_SupervisionTeacherStatusRow'];
 
 function requiredAcademicYearId(value: string): string {
 	const id = value.trim();
@@ -385,102 +93,121 @@ function requiredAcademicYearId(value: string): string {
 	return id;
 }
 
-function contextQuery(academicYearId: string, academicTermId?: string | null): URLSearchParams {
-	const search = new URLSearchParams({ academicYearId: requiredAcademicYearId(academicYearId) });
-	if (academicTermId) search.set('academicTermId', academicTermId);
-	return search;
-}
-
-function observationsQuery(params: ListSupervisionObservationsParams): string {
-	const search = contextQuery(params.academicYearId, params.academicTermId);
-	if (params.cycleId) search.set('cycleId', params.cycleId);
-	if (params.status) search.set('status', params.status);
-	const query = search.toString();
-	return query ? `?${query}` : '';
+function cycleQuery(
+	academicYearId: string,
+	academicTermId?: string | null
+): ListSupervisionCyclesQuery {
+	return {
+		academicYearId: requiredAcademicYearId(academicYearId),
+		...(academicTermId ? { academicTermId } : {})
+	};
 }
 
 export async function listSupervisionCycles(
 	academicYearId: string,
-	academicTermId?: string | null
+	academicTermId?: string | null,
+	options: ApiRequestOptions = {}
 ): Promise<SupervisionCycle[]> {
-	const query = contextQuery(academicYearId, academicTermId);
-	const response = await apiClient.get<{ items: SupervisionCycle[] }>(
-		`/api/supervision/cycles?${query.toString()}`
-	);
+	const query = cycleQuery(academicYearId, academicTermId);
+	const response = await apiClient.get<SupervisionCycleItems>('/api/supervision/cycles', {
+		...options,
+		query
+	});
 	return requireApiData(response, 'ไม่สามารถโหลดรอบนิเทศได้').items;
 }
 
-export async function createSupervisionCycle(
+export function createSupervisionCycle(
 	payload: CreateSupervisionCycleRequest
 ): Promise<ApiResponse<SupervisionCycle>> {
 	return apiClient.post<SupervisionCycle>('/api/supervision/cycles', payload);
 }
 
-export async function updateSupervisionCycle(
-	id: string,
+export function updateSupervisionCycle(
+	id: CycleId,
 	payload: UpdateSupervisionCycleRequest
 ): Promise<ApiResponse<SupervisionCycle>> {
 	return apiClient.patch<SupervisionCycle>(`/api/supervision/cycles/${id}`, payload);
 }
 
-export async function listSupervisionTemplates(): Promise<SupervisionTemplate[]> {
-	const response = await apiClient.get<{ items: SupervisionTemplate[] }>(
-		'/api/supervision/templates'
+export async function listSupervisionTemplates(
+	options: ApiRequestOptions = {}
+): Promise<SupervisionTemplate[]> {
+	const response = await apiClient.get<SupervisionTemplateItems>(
+		'/api/supervision/templates',
+		options
 	);
 	return requireApiData(response, 'ไม่สามารถโหลดแบบประเมินนิเทศได้').items;
 }
 
-export async function getSupervisionTemplate(id: string): Promise<SupervisionTemplate> {
-	const response = await apiClient.get<SupervisionTemplate>(`/api/supervision/templates/${id}`);
+export async function getSupervisionTemplate(
+	id: TemplateId,
+	options: ApiRequestOptions = {}
+): Promise<SupervisionTemplate> {
+	const response = await apiClient.get<SupervisionTemplate>(
+		`/api/supervision/templates/${id}`,
+		options
+	);
 	return requireApiData(response, 'ไม่สามารถโหลดแบบประเมินนิเทศได้');
 }
 
-export async function createSupervisionTemplate(
+export function createSupervisionTemplate(
 	payload: CreateSupervisionTemplateRequest
 ): Promise<ApiResponse<SupervisionTemplate>> {
 	return apiClient.post<SupervisionTemplate>('/api/supervision/templates', payload);
 }
 
-export async function updateSupervisionTemplate(
-	id: string,
+export function updateSupervisionTemplate(
+	id: TemplateId,
 	payload: UpdateSupervisionTemplateRequest
 ): Promise<ApiResponse<SupervisionTemplate>> {
 	return apiClient.patch<SupervisionTemplate>(`/api/supervision/templates/${id}`, payload);
 }
 
 export async function listSupervisionObservations(
-	params: ListSupervisionObservationsParams
+	params: ListSupervisionObservationsParams,
+	options: ApiRequestOptions = {}
 ): Promise<SupervisionObservation[]> {
-	const response = await apiClient.get<{ items: SupervisionObservation[] }>(
-		`/api/supervision/observations${observationsQuery(params)}`
+	const query = {
+		...params,
+		academicYearId: requiredAcademicYearId(params.academicYearId)
+	} satisfies ListSupervisionObservationsParams;
+	const response = await apiClient.get<SupervisionObservationItems>(
+		'/api/supervision/observations',
+		{ ...options, query }
 	);
 	return requireApiData(response, 'ไม่สามารถโหลดรายการนิเทศได้').items;
 }
 
-export async function getSupervisionObservation(id: string): Promise<SupervisionObservation> {
+export async function getSupervisionObservation(
+	id: ObservationId,
+	options: ApiRequestOptions = {}
+): Promise<SupervisionObservation> {
 	const response = await apiClient.get<SupervisionObservation>(
-		`/api/supervision/observations/${id}`
+		`/api/supervision/observations/${id}`,
+		options
 	);
 	return requireApiData(response, 'ไม่สามารถโหลดรายการนิเทศได้');
 }
 
 export async function getSupervisionObservationReview(
-	id: string
+	id: ObservationId,
+	options: ApiRequestOptions = {}
 ): Promise<SupervisionObservationReview> {
 	const response = await apiClient.get<SupervisionObservationReview>(
-		`/api/supervision/observations/${id}/review`
+		`/api/supervision/observations/${id}/review`,
+		options
 	);
 	return requireApiData(response, 'ไม่สามารถโหลดผลประเมินนิเทศได้');
 }
 
-export async function requestSupervisionObservation(
+export function requestSupervisionObservation(
 	payload: RequestSupervisionObservationRequest
 ): Promise<ApiResponse<SupervisionObservation>> {
 	return apiClient.post<SupervisionObservation>('/api/supervision/observations/requests', payload);
 }
 
-export async function updateRequestedSupervisionObservation(
-	id: string,
+export function updateRequestedSupervisionObservation(
+	id: ObservationId,
 	payload: UpdateRequestedObservationRequest
 ): Promise<ApiResponse<SupervisionObservation>> {
 	return apiClient.patch<SupervisionObservation>(
@@ -489,21 +216,21 @@ export async function updateRequestedSupervisionObservation(
 	);
 }
 
-export async function cancelRequestedSupervisionObservation(
-	id: string
+export function cancelRequestedSupervisionObservation(
+	id: ObservationId
 ): Promise<ApiResponse<SupervisionObservation>> {
 	return apiClient.delete<SupervisionObservation>(`/api/supervision/observations/${id}/request`);
 }
 
-export async function updateSupervisionObservation(
-	id: string,
+export function updateSupervisionObservation(
+	id: ObservationId,
 	payload: UpdateSupervisionObservationRequest
 ): Promise<ApiResponse<SupervisionObservation>> {
 	return apiClient.patch<SupervisionObservation>(`/api/supervision/observations/${id}`, payload);
 }
 
-export async function replaceSupervisionObservationEvaluators(
-	id: string,
+export function replaceSupervisionObservationEvaluators(
+	id: ObservationId,
 	payload: ReplaceObservationEvaluatorsRequest
 ): Promise<ApiResponse<SupervisionObservation>> {
 	return apiClient.put<SupervisionObservation>(
@@ -513,25 +240,29 @@ export async function replaceSupervisionObservationEvaluators(
 }
 
 export async function getSupervisionEvaluatorAvailability(
-	id: string
+	id: ObservationId,
+	options: ApiRequestOptions = {}
 ): Promise<SupervisionEvaluatorAvailability[]> {
-	const response = await apiClient.get<{ items: SupervisionEvaluatorAvailability[] }>(
-		`/api/supervision/observations/${id}/evaluator-availability`
+	const response = await apiClient.get<SupervisionEvaluatorAvailabilityItems>(
+		`/api/supervision/observations/${id}/evaluator-availability`,
+		options
 	);
 	return requireApiData(response, 'ไม่สามารถตรวจสอบผู้ประเมินที่ว่างได้').items;
 }
 
 export async function getSupervisionObservationTimetableOptions(
-	id: string
-): Promise<TimetableEntry[]> {
-	const response = await apiClient.get<{ items: TimetableEntry[] }>(
-		`/api/supervision/observations/${id}/timetable-options`
+	id: ObservationId,
+	options: ApiRequestOptions = {}
+): Promise<Schemas['TimetableEntry'][]> {
+	const response = await apiClient.get<SupervisionTimetableItems>(
+		`/api/supervision/observations/${id}/timetable-options`,
+		options
 	);
 	return requireApiData(response, 'ไม่สามารถโหลดคาบสอนสำหรับแก้ไขได้').items;
 }
 
-export async function cancelSupervisionObservation(
-	id: string,
+export function cancelSupervisionObservation(
+	id: ObservationId,
 	payload: CancelObservationRequest
 ): Promise<ApiResponse<SupervisionObservation>> {
 	return apiClient.post<SupervisionObservation>(
@@ -540,8 +271,8 @@ export async function cancelSupervisionObservation(
 	);
 }
 
-export async function approveSupervisionObservationRequest(
-	id: string,
+export function approveSupervisionObservationRequest(
+	id: ObservationId,
 	payload: ApproveObservationRequest
 ): Promise<ApiResponse<SupervisionObservation>> {
 	return apiClient.post<SupervisionObservation>(
@@ -550,8 +281,8 @@ export async function approveSupervisionObservationRequest(
 	);
 }
 
-export async function returnSupervisionObservationRequest(
-	id: string,
+export function returnSupervisionObservationRequest(
+	id: ObservationId,
 	payload: ReturnObservationRequest
 ): Promise<ApiResponse<SupervisionObservation>> {
 	return apiClient.post<SupervisionObservation>(
@@ -560,8 +291,8 @@ export async function returnSupervisionObservationRequest(
 	);
 }
 
-export async function submitMySupervisionEvaluation(
-	id: string,
+export function submitMySupervisionEvaluation(
+	id: ObservationId,
 	payload: SaveEvaluationRequest
 ): Promise<ApiResponse<SupervisionObservation>> {
 	return apiClient.post<SupervisionObservation>(
@@ -570,20 +301,20 @@ export async function submitMySupervisionEvaluation(
 	);
 }
 
-export async function certifySupervisionObservation(
-	id: string
+export function certifySupervisionObservation(
+	id: ObservationId
 ): Promise<ApiResponse<SupervisionObservation>> {
 	return apiClient.post<SupervisionObservation>(`/api/supervision/observations/${id}/certify`);
 }
 
-export async function approveSupervisionObservation(
-	id: string
+export function approveSupervisionObservation(
+	id: ObservationId
 ): Promise<ApiResponse<SupervisionObservation>> {
 	return apiClient.post<SupervisionObservation>(`/api/supervision/observations/${id}/approve`);
 }
 
-export async function acknowledgeSupervisionObservation(
-	id: string,
+export function acknowledgeSupervisionObservation(
+	id: ObservationId,
 	payload: AcknowledgeObservationRequest
 ): Promise<ApiResponse<SupervisionObservation>> {
 	return apiClient.post<SupervisionObservation>(
@@ -593,19 +324,23 @@ export async function acknowledgeSupervisionObservation(
 }
 
 export async function getSupervisionCycleProgress(
-	cycleId: string
+	cycleId: CycleId,
+	options: ApiRequestOptions = {}
 ): Promise<SupervisionCycleProgress> {
 	const response = await apiClient.get<SupervisionCycleProgress>(
-		`/api/supervision/reports/cycles/${cycleId}/progress`
+		`/api/supervision/reports/cycles/${cycleId}/progress`,
+		options
 	);
 	return requireApiData(response, 'ไม่สามารถโหลดรายงานรอบนิเทศได้');
 }
 
 export async function getSupervisionTeacherStatusOverview(
-	cycleId: string
+	cycleId: CycleId,
+	options: ApiRequestOptions = {}
 ): Promise<SupervisionTeacherStatusRow[]> {
-	const response = await apiClient.get<{ items: SupervisionTeacherStatusRow[] }>(
-		`/api/supervision/reports/cycles/${cycleId}/teacher-status`
+	const response = await apiClient.get<SupervisionTeacherStatusItems>(
+		`/api/supervision/reports/cycles/${cycleId}/teacher-status`,
+		options
 	);
 	return requireApiData(response, 'ไม่สามารถโหลดภาพรวมสถานะครูได้').items;
 }

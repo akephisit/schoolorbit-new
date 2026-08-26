@@ -399,7 +399,10 @@ test('admission round listing is scoped by the selected academic year', async ()
 		'utf8'
 	);
 
-	assert.match(api, /listRounds\(academicYearId:\s*string\)/);
+	assert.match(
+		api,
+		/listRounds\(academicYearId:\s*string,\s*options:\s*ApiRequestOptions\s*=\s*\{\}\)/
+	);
 	assert.match(api, /\/api\/admission\/rounds\?academicYearId=/);
 	assert.match(handlers, /struct AdmissionRoundQuery/);
 	assert.match(handlers, /Query\(query\): Query<AdmissionRoundQuery>/);

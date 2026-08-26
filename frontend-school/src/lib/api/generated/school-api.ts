@@ -3600,6 +3600,342 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/supervision/cycles': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listSupervisionCycles'];
+		put?: never;
+		post: operations['createSupervisionCycle'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/supervision/cycles/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch: operations['updateSupervisionCycle'];
+		trace?: never;
+	};
+	'/api/supervision/observations': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listSupervisionObservations'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/supervision/observations/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getSupervisionObservation'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch: operations['updateSupervisionObservation'];
+		trace?: never;
+	};
+	'/api/supervision/observations/{id}/acknowledge': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['acknowledgeSupervisionObservation'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/supervision/observations/{id}/approve': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['approveSupervisionObservation'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/supervision/observations/{id}/approve-request': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['approveSupervisionObservationRequest'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/supervision/observations/{id}/cancel': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['cancelSupervisionObservation'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/supervision/observations/{id}/certify': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['certifySupervisionObservation'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/supervision/observations/{id}/evaluations/me/submit': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['submitMySupervisionEvaluation'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/supervision/observations/{id}/evaluator-availability': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getSupervisionEvaluatorAvailability'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/supervision/observations/{id}/evaluators': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['replaceSupervisionObservationEvaluators'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/supervision/observations/{id}/request': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['cancelRequestedSupervisionObservation'];
+		options?: never;
+		head?: never;
+		patch: operations['updateRequestedSupervisionObservation'];
+		trace?: never;
+	};
+	'/api/supervision/observations/{id}/return-request': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['returnSupervisionObservationRequest'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/supervision/observations/{id}/review': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getSupervisionObservationReview'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/supervision/observations/{id}/timetable-options': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getSupervisionObservationTimetableOptions'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/supervision/observations/requests': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['requestSupervisionObservation'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/supervision/reports/cycles/{id}/progress': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getSupervisionCycleProgress'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/supervision/reports/cycles/{id}/teacher-status': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getSupervisionTeacherStatusOverview'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/supervision/templates': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listSupervisionTemplates'];
+		put?: never;
+		post: operations['createSupervisionTemplate'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/supervision/templates/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getSupervisionTemplate'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch: operations['updateSupervisionTemplate'];
+		trace?: never;
+	};
 	'/api/users/{id}/permissions': {
 		parameters: {
 			query?: never;
@@ -3786,6 +4122,9 @@ export interface components {
 			start_date?: string | null;
 			/** Format: uuid */
 			user_id?: string | null;
+		};
+		AcknowledgeObservationRequest: {
+			comment?: string | null;
 		};
 		ActivityAttendanceRequirement: {
 			minimumPercent?: string | null;
@@ -4891,6 +5230,216 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_ItemsData_SupervisionCycle: {
+			data: {
+				items: {
+					/** Format: uuid */
+					academicTermId?: string | null;
+					/** Format: uuid */
+					academicYearId: string;
+					/** Format: date-time */
+					bookingClosesAt?: string | null;
+					/** Format: date-time */
+					bookingOpensAt?: string | null;
+					/** Format: date-time */
+					createdAt: string;
+					/** Format: uuid */
+					createdBy?: string | null;
+					description?: string | null;
+					/** Format: date-time */
+					endsAt: string;
+					/** Format: uuid */
+					id: string;
+					/** Format: date-time */
+					startsAt: string;
+					status: components['schemas']['SupervisionCycleStatus'];
+					targets: components['schemas']['SupervisionCycleTarget'][];
+					/** Format: uuid */
+					templateId: string;
+					title: string;
+					/** Format: date-time */
+					updatedAt: string;
+				}[];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_ItemsData_SupervisionEvaluatorAvailability: {
+			data: {
+				items: {
+					available: boolean;
+					conflict?: null | components['schemas']['SupervisionEvaluatorConflict'];
+					conflictReason?: string | null;
+					/** Format: uuid */
+					id: string;
+					name: string;
+					title?: string | null;
+				}[];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_ItemsData_SupervisionObservation: {
+			data: {
+				items: {
+					/** Format: uuid */
+					academicTermId: string;
+					/** Format: uuid */
+					academicYearId: string;
+					actions: components['schemas']['SupervisionAction'][];
+					/** Format: date-time */
+					approvedAt?: string | null;
+					/** Format: uuid */
+					approvedBy?: string | null;
+					/** Format: double */
+					averageRating?: number | null;
+					/** Format: date-time */
+					cancelledAt?: string | null;
+					/** Format: date-time */
+					createdAt: string;
+					/** Format: uuid */
+					cycleId: string;
+					evaluators: components['schemas']['SupervisionEvaluator'][];
+					/** Format: uuid */
+					homeroomId?: string | null;
+					/** Format: uuid */
+					id: string;
+					/** Format: uuid */
+					learningGroupId?: string | null;
+					lessonSnapshot: components['schemas']['LessonSnapshot'];
+					manualLesson?: null | components['schemas']['ManualLesson'];
+					/** Format: date-time */
+					observedAt: string;
+					observedDisplayName?: string | null;
+					/** Format: uuid */
+					observedUserId: string;
+					/** Format: date-time */
+					requestedAt: string;
+					/** Format: uuid */
+					requestedBy?: string | null;
+					status: components['schemas']['SupervisionObservationStatus'];
+					/** Format: uuid */
+					templateId: string;
+					/** Format: uuid */
+					timetableEntryId?: string | null;
+					/** Format: date-time */
+					updatedAt: string;
+				}[];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_ItemsData_SupervisionTeacherStatusRow: {
+			data: {
+				items: {
+					/** Format: double */
+					averageRating?: number | null;
+					evaluatorNames: string[];
+					lessonTitle?: string | null;
+					nextStepLabel: string;
+					/** Format: uuid */
+					observationId?: string | null;
+					/** Format: date-time */
+					observedAt?: string | null;
+					organizationUnitNames: string[];
+					status?: null | components['schemas']['SupervisionObservationStatus'];
+					teacherDisplayName: string;
+					/** Format: uuid */
+					teacherId: string;
+				}[];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_ItemsData_SupervisionTemplate: {
+			data: {
+				items: {
+					/** Format: date-time */
+					createdAt: string;
+					/** Format: uuid */
+					createdBy?: string | null;
+					description?: string | null;
+					/** Format: uuid */
+					id: string;
+					/** Format: int32 */
+					ratingMax: number;
+					/** Format: int32 */
+					ratingMin: number;
+					sections: components['schemas']['SupervisionTemplateSection'][];
+					status: components['schemas']['SupervisionTemplateStatus'];
+					steps: components['schemas']['SupervisionTemplateStep'][];
+					title: string;
+					/** Format: date-time */
+					updatedAt: string;
+				}[];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_ItemsData_TimetableEntry: {
+			data: {
+				items: {
+					/** Format: uuid */
+					academicTermId: string;
+					/** Format: uuid */
+					academicYearId: string;
+					/** Format: uuid */
+					activityId?: string | null;
+					activitySchedulingMode?: null | components['schemas']['ActivitySchedulingMode'];
+					activityVersionDisplayLabel?: string | null;
+					/** Format: uuid */
+					batchId?: string | null;
+					/** Format: uuid */
+					bellScheduleId: string;
+					/** Format: uuid */
+					bellSchedulePeriodId: string;
+					/** Format: date-time */
+					createdAt: string;
+					dayOfWeek: string;
+					endTime: string;
+					entryType: string;
+					/** Format: uuid */
+					homeroomId?: string | null;
+					homeroomName?: string | null;
+					/** Format: uuid */
+					id: string;
+					instructors: components['schemas']['TimetableInstructor'][];
+					isActive: boolean;
+					learningGroupCode?: string | null;
+					/** Format: uuid */
+					learningGroupId?: string | null;
+					learningGroupName?: string | null;
+					note?: string | null;
+					offeringCode?: string | null;
+					/** Format: uuid */
+					offeringId?: string | null;
+					offeringName?: string | null;
+					periodName?: string | null;
+					roomCode?: string | null;
+					/** Format: uuid */
+					roomId?: string | null;
+					/** Format: int64 */
+					rowVersion: number;
+					startTime: string;
+					/** Format: int32 */
+					subjectGroupDisplayOrder?: number | null;
+					/** Format: uuid */
+					subjectGroupId?: string | null;
+					subjectGroupName?: string | null;
+					/**
+					 * Format: uuid
+					 * @description Stable catalog identity. A selected version is represented by its display label only.
+					 */
+					subjectId?: string | null;
+					subjectVersionDisplayLabel?: string | null;
+					title?: string | null;
+					/** Format: date-time */
+					updatedAt: string;
+				}[];
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_LearningGroup: {
 			data: {
 				/** Format: uuid */
@@ -5487,6 +6036,147 @@ export interface components {
 				updatedAt: string;
 				/** Format: int32 */
 				versionNo: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_SupervisionCycle: {
+			data: {
+				/** Format: uuid */
+				academicTermId?: string | null;
+				/** Format: uuid */
+				academicYearId: string;
+				/** Format: date-time */
+				bookingClosesAt?: string | null;
+				/** Format: date-time */
+				bookingOpensAt?: string | null;
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				createdBy?: string | null;
+				description?: string | null;
+				/** Format: date-time */
+				endsAt: string;
+				/** Format: uuid */
+				id: string;
+				/** Format: date-time */
+				startsAt: string;
+				status: components['schemas']['SupervisionCycleStatus'];
+				targets: components['schemas']['SupervisionCycleTarget'][];
+				/** Format: uuid */
+				templateId: string;
+				title: string;
+				/** Format: date-time */
+				updatedAt: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_SupervisionCycleProgress: {
+			data: {
+				/** Format: int64 */
+				approvedCount: number;
+				/** Format: double */
+				averageRating?: number | null;
+				/** Format: int64 */
+				cancelledCount: number;
+				/** Format: int64 */
+				completedCount: number;
+				/** Format: uuid */
+				cycleId: string;
+				/** Format: int64 */
+				plannedCount: number;
+				/** Format: int64 */
+				publishedCount: number;
+				/** Format: int64 */
+				requestedCount: number;
+				/** Format: int64 */
+				totalObservations: number;
+				/** Format: int64 */
+				underReviewCount: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_SupervisionObservation: {
+			data: {
+				/** Format: uuid */
+				academicTermId: string;
+				/** Format: uuid */
+				academicYearId: string;
+				actions: components['schemas']['SupervisionAction'][];
+				/** Format: date-time */
+				approvedAt?: string | null;
+				/** Format: uuid */
+				approvedBy?: string | null;
+				/** Format: double */
+				averageRating?: number | null;
+				/** Format: date-time */
+				cancelledAt?: string | null;
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				cycleId: string;
+				evaluators: components['schemas']['SupervisionEvaluator'][];
+				/** Format: uuid */
+				homeroomId?: string | null;
+				/** Format: uuid */
+				id: string;
+				/** Format: uuid */
+				learningGroupId?: string | null;
+				lessonSnapshot: components['schemas']['LessonSnapshot'];
+				manualLesson?: null | components['schemas']['ManualLesson'];
+				/** Format: date-time */
+				observedAt: string;
+				observedDisplayName?: string | null;
+				/** Format: uuid */
+				observedUserId: string;
+				/** Format: date-time */
+				requestedAt: string;
+				/** Format: uuid */
+				requestedBy?: string | null;
+				status: components['schemas']['SupervisionObservationStatus'];
+				/** Format: uuid */
+				templateId: string;
+				/** Format: uuid */
+				timetableEntryId?: string | null;
+				/** Format: date-time */
+				updatedAt: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_SupervisionObservationReview: {
+			data: {
+				/** Format: double */
+				averageRating?: number | null;
+				evaluatorResults: components['schemas']['SupervisionReviewEvaluatorResult'][];
+				itemSummaries: components['schemas']['SupervisionReviewItemSummary'][];
+				observation: components['schemas']['SupervisionObservation'];
+				template: components['schemas']['SupervisionTemplate'];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_SupervisionTemplate: {
+			data: {
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				createdBy?: string | null;
+				description?: string | null;
+				/** Format: uuid */
+				id: string;
+				/** Format: int32 */
+				ratingMax: number;
+				/** Format: int32 */
+				ratingMin: number;
+				sections: components['schemas']['SupervisionTemplateSection'][];
+				status: components['schemas']['SupervisionTemplateStatus'];
+				steps: components['schemas']['SupervisionTemplateStep'][];
+				title: string;
+				/** Format: date-time */
+				updatedAt: string;
 			};
 			message?: string;
 			success: boolean;
@@ -7097,6 +7787,9 @@ export interface components {
 			/** Format: uuid */
 			academicTermId: string;
 		};
+		ApproveObservationRequest: {
+			evaluators?: components['schemas']['EvaluatorAssignmentInput'][];
+		};
 		AssessmentCategory: {
 			allocationStatus: string;
 			code?: string | null;
@@ -7400,6 +8093,9 @@ export interface components {
 		};
 		/** @enum {string} */
 		CalendarVisibility: 'public' | 'private';
+		CancelObservationRequest: {
+			reason?: string | null;
+		};
 		/** @enum {string} */
 		CandidateMatchStatus:
 			| 'matched'
@@ -8517,6 +9213,72 @@ export interface components {
 			subjectType: string;
 			termCode?: string | null;
 		};
+		CreateSupervisionCycleRequest: {
+			/** Format: uuid */
+			academicTermId?: string | null;
+			/** Format: uuid */
+			academicYearId: string;
+			/** Format: date-time */
+			bookingClosesAt?: string | null;
+			/** Format: date-time */
+			bookingOpensAt?: string | null;
+			description?: string | null;
+			/** Format: date-time */
+			endsAt: string;
+			/** Format: date-time */
+			startsAt: string;
+			status?: null | components['schemas']['SupervisionCycleStatus'];
+			targets?: components['schemas']['CreateSupervisionCycleTargetRequest'][];
+			/** Format: uuid */
+			templateId: string;
+			title: string;
+		};
+		CreateSupervisionCycleTargetRequest: {
+			/** Format: int32 */
+			priority?: number;
+			/** Format: int32 */
+			requiredObservations?: number;
+			/** Format: uuid */
+			targetId?: string | null;
+			targetType: components['schemas']['SupervisionTargetType'];
+		};
+		CreateSupervisionTemplateItemRequest: {
+			description?: string | null;
+			itemType: components['schemas']['SupervisionTemplateItemType'];
+			label: string;
+			required?: boolean;
+			/** Format: int32 */
+			sortOrder?: number;
+		};
+		CreateSupervisionTemplateRequest: {
+			description?: string | null;
+			/** Format: int32 */
+			ratingMax?: number;
+			/** Format: int32 */
+			ratingMin?: number;
+			sections?: components['schemas']['CreateSupervisionTemplateSectionRequest'][];
+			status?: null | components['schemas']['SupervisionTemplateStatus'];
+			steps?: components['schemas']['CreateSupervisionTemplateStepRequest'][];
+			title: string;
+		};
+		CreateSupervisionTemplateSectionRequest: {
+			description?: string | null;
+			items?: components['schemas']['CreateSupervisionTemplateItemRequest'][];
+			/** Format: int32 */
+			sortOrder?: number;
+			title: string;
+		};
+		CreateSupervisionTemplateStepRequest: {
+			actionKind: components['schemas']['SupervisionTemplateStepActionKind'];
+			actorKind: components['schemas']['SupervisionTemplateStepActorKind'];
+			actorPermission?: string | null;
+			label: string;
+			organizationPositionCode?: string | null;
+			required?: boolean;
+			stepCode: string;
+			/** Format: int32 */
+			stepOrder: number;
+		};
 		CreateTemplateRequest: {
 			description?: string | null;
 			name: string;
@@ -8761,6 +9523,19 @@ export interface components {
 			y: number;
 		};
 		EmptyData: Record<string, never>;
+		EvaluationResponseInput: {
+			/** Format: double */
+			ratingScore?: number | null;
+			/** Format: uuid */
+			templateItemId: string;
+			textResponse?: string | null;
+		};
+		EvaluatorAssignmentInput: {
+			/** Format: uuid */
+			evaluatorUserId: string;
+			isRequired?: boolean | null;
+			roleLabel?: string | null;
+		};
 		ExamDay: {
 			endTime: string;
 			/** Format: date */
@@ -9376,6 +10151,192 @@ export interface components {
 			templateName: string;
 			title: string | null;
 		};
+		ItemsData_SupervisionCycle: {
+			items: {
+				/** Format: uuid */
+				academicTermId?: string | null;
+				/** Format: uuid */
+				academicYearId: string;
+				/** Format: date-time */
+				bookingClosesAt?: string | null;
+				/** Format: date-time */
+				bookingOpensAt?: string | null;
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				createdBy?: string | null;
+				description?: string | null;
+				/** Format: date-time */
+				endsAt: string;
+				/** Format: uuid */
+				id: string;
+				/** Format: date-time */
+				startsAt: string;
+				status: components['schemas']['SupervisionCycleStatus'];
+				targets: components['schemas']['SupervisionCycleTarget'][];
+				/** Format: uuid */
+				templateId: string;
+				title: string;
+				/** Format: date-time */
+				updatedAt: string;
+			}[];
+		};
+		ItemsData_SupervisionEvaluatorAvailability: {
+			items: {
+				available: boolean;
+				conflict?: null | components['schemas']['SupervisionEvaluatorConflict'];
+				conflictReason?: string | null;
+				/** Format: uuid */
+				id: string;
+				name: string;
+				title?: string | null;
+			}[];
+		};
+		ItemsData_SupervisionObservation: {
+			items: {
+				/** Format: uuid */
+				academicTermId: string;
+				/** Format: uuid */
+				academicYearId: string;
+				actions: components['schemas']['SupervisionAction'][];
+				/** Format: date-time */
+				approvedAt?: string | null;
+				/** Format: uuid */
+				approvedBy?: string | null;
+				/** Format: double */
+				averageRating?: number | null;
+				/** Format: date-time */
+				cancelledAt?: string | null;
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				cycleId: string;
+				evaluators: components['schemas']['SupervisionEvaluator'][];
+				/** Format: uuid */
+				homeroomId?: string | null;
+				/** Format: uuid */
+				id: string;
+				/** Format: uuid */
+				learningGroupId?: string | null;
+				lessonSnapshot: components['schemas']['LessonSnapshot'];
+				manualLesson?: null | components['schemas']['ManualLesson'];
+				/** Format: date-time */
+				observedAt: string;
+				observedDisplayName?: string | null;
+				/** Format: uuid */
+				observedUserId: string;
+				/** Format: date-time */
+				requestedAt: string;
+				/** Format: uuid */
+				requestedBy?: string | null;
+				status: components['schemas']['SupervisionObservationStatus'];
+				/** Format: uuid */
+				templateId: string;
+				/** Format: uuid */
+				timetableEntryId?: string | null;
+				/** Format: date-time */
+				updatedAt: string;
+			}[];
+		};
+		ItemsData_SupervisionTeacherStatusRow: {
+			items: {
+				/** Format: double */
+				averageRating?: number | null;
+				evaluatorNames: string[];
+				lessonTitle?: string | null;
+				nextStepLabel: string;
+				/** Format: uuid */
+				observationId?: string | null;
+				/** Format: date-time */
+				observedAt?: string | null;
+				organizationUnitNames: string[];
+				status?: null | components['schemas']['SupervisionObservationStatus'];
+				teacherDisplayName: string;
+				/** Format: uuid */
+				teacherId: string;
+			}[];
+		};
+		ItemsData_SupervisionTemplate: {
+			items: {
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				createdBy?: string | null;
+				description?: string | null;
+				/** Format: uuid */
+				id: string;
+				/** Format: int32 */
+				ratingMax: number;
+				/** Format: int32 */
+				ratingMin: number;
+				sections: components['schemas']['SupervisionTemplateSection'][];
+				status: components['schemas']['SupervisionTemplateStatus'];
+				steps: components['schemas']['SupervisionTemplateStep'][];
+				title: string;
+				/** Format: date-time */
+				updatedAt: string;
+			}[];
+		};
+		ItemsData_TimetableEntry: {
+			items: {
+				/** Format: uuid */
+				academicTermId: string;
+				/** Format: uuid */
+				academicYearId: string;
+				/** Format: uuid */
+				activityId?: string | null;
+				activitySchedulingMode?: null | components['schemas']['ActivitySchedulingMode'];
+				activityVersionDisplayLabel?: string | null;
+				/** Format: uuid */
+				batchId?: string | null;
+				/** Format: uuid */
+				bellScheduleId: string;
+				/** Format: uuid */
+				bellSchedulePeriodId: string;
+				/** Format: date-time */
+				createdAt: string;
+				dayOfWeek: string;
+				endTime: string;
+				entryType: string;
+				/** Format: uuid */
+				homeroomId?: string | null;
+				homeroomName?: string | null;
+				/** Format: uuid */
+				id: string;
+				instructors: components['schemas']['TimetableInstructor'][];
+				isActive: boolean;
+				learningGroupCode?: string | null;
+				/** Format: uuid */
+				learningGroupId?: string | null;
+				learningGroupName?: string | null;
+				note?: string | null;
+				offeringCode?: string | null;
+				/** Format: uuid */
+				offeringId?: string | null;
+				offeringName?: string | null;
+				periodName?: string | null;
+				roomCode?: string | null;
+				/** Format: uuid */
+				roomId?: string | null;
+				/** Format: int64 */
+				rowVersion: number;
+				startTime: string;
+				/** Format: int32 */
+				subjectGroupDisplayOrder?: number | null;
+				/** Format: uuid */
+				subjectGroupId?: string | null;
+				subjectGroupName?: string | null;
+				/**
+				 * Format: uuid
+				 * @description Stable catalog identity. A selected version is represented by its display label only.
+				 */
+				subjectId?: string | null;
+				subjectVersionDisplayLabel?: string | null;
+				title?: string | null;
+				/** Format: date-time */
+				updatedAt: string;
+			}[];
+		};
 		LearningGroup: {
 			/** Format: uuid */
 			academicTermId: string;
@@ -9488,6 +10449,17 @@ export interface components {
 		};
 		/** @enum {string} */
 		LearningTeacherRole: 'primary' | 'secondary' | 'assistant';
+		LessonSnapshot: {
+			classroomLabel?: string | null;
+			/** Format: date-time */
+			observedAt?: string | null;
+			periodLabel?: string | null;
+			roomLabel?: string | null;
+			source?: string | null;
+			subjectName?: string | null;
+			/** Format: uuid */
+			timetableEntryId?: string | null;
+		};
 		ListMembersQuery: {
 			include_children?: boolean | null;
 		};
@@ -9499,6 +10471,15 @@ export interface components {
 			page: number;
 			/** Format: int64 */
 			unread_count: number;
+		};
+		ListObservationsQuery: {
+			/** Format: uuid */
+			academicTermId?: string | null;
+			/** Format: uuid */
+			academicYearId: string;
+			/** Format: uuid */
+			cycleId?: string | null;
+			status?: null | components['schemas']['SupervisionObservationStatus'];
 		};
 		LoginData: {
 			user: components['schemas']['CurrentUserResponse'];
@@ -9520,6 +10501,24 @@ export interface components {
 			certificateNumber: string;
 			firstName: string;
 			lastName: string;
+		};
+		ManualLesson: {
+			classroomLabel: string;
+			/** Format: date-time */
+			observedAt: string;
+			periodLabel: string;
+			reason: string;
+			roomLabel?: string | null;
+			subjectName: string;
+		};
+		ManualLessonInput: {
+			classroomLabel: string;
+			/** Format: date-time */
+			observedAt: string;
+			periodLabel: string;
+			reason: string;
+			roomLabel?: string | null;
+			subjectName: string;
 		};
 		/** @enum {string} */
 		MembershipStatus: 'active' | 'ended' | 'removed';
@@ -10021,10 +11020,24 @@ export interface components {
 			rowVersion: number;
 			teachers: components['schemas']['TeacherAssignmentInput'][];
 		};
+		ReplaceObservationEvaluatorsRequest: {
+			evaluators?: components['schemas']['EvaluatorAssignmentInput'][];
+		};
 		ReplaceProgramRequirementsRequest: {
 			requirements: components['schemas']['ProgramRequirementInput'][];
 			/** Format: int64 */
 			rowVersion: number;
+		};
+		RequestSupervisionObservationRequest: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			cycleId: string;
+			manualLesson?: null | components['schemas']['ManualLessonInput'];
+			/** Format: date-time */
+			observedAt?: string | null;
+			/** Format: uuid */
+			timetableEntryId?: string | null;
 		};
 		/** @enum {string} */
 		RequirementKind: 'required' | 'elective' | 'optional';
@@ -10033,6 +11046,9 @@ export interface components {
 		ReturnCertificateIssueRequest: {
 			issueCodes: components['schemas']['CertificateIssueCode'][];
 			returnNote: string;
+		};
+		ReturnObservationRequest: {
+			comment?: string | null;
 		};
 		RevokeCertificateRequest: {
 			createReplacementCandidate: boolean;
@@ -10157,6 +11173,9 @@ export interface components {
 			 * @description Omit only when the offering does not have a persisted plan yet.
 			 */
 			rowVersion?: number | null;
+		};
+		SaveEvaluationRequest: {
+			responses?: components['schemas']['EvaluationResponseInput'][];
 		};
 		SchoolFontDeleteConflict: {
 			/** Format: int64 */
@@ -10610,6 +11629,332 @@ export interface components {
 		SubmitCertificateIssueRequest: {
 			candidateIds: string[];
 		};
+		SupervisionAction: {
+			actionKind: string;
+			actorDisplayName?: string | null;
+			/** Format: uuid */
+			actorUserId?: string | null;
+			comment?: string | null;
+			/** Format: date-time */
+			createdAt: string;
+			fromStatus?: null | components['schemas']['SupervisionObservationStatus'];
+			/** Format: uuid */
+			id: string;
+			/** Format: uuid */
+			observationId: string;
+			toStatus?: null | components['schemas']['SupervisionObservationStatus'];
+		};
+		SupervisionCycle: {
+			/** Format: uuid */
+			academicTermId?: string | null;
+			/** Format: uuid */
+			academicYearId: string;
+			/** Format: date-time */
+			bookingClosesAt?: string | null;
+			/** Format: date-time */
+			bookingOpensAt?: string | null;
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: uuid */
+			createdBy?: string | null;
+			description?: string | null;
+			/** Format: date-time */
+			endsAt: string;
+			/** Format: uuid */
+			id: string;
+			/** Format: date-time */
+			startsAt: string;
+			status: components['schemas']['SupervisionCycleStatus'];
+			targets: components['schemas']['SupervisionCycleTarget'][];
+			/** Format: uuid */
+			templateId: string;
+			title: string;
+			/** Format: date-time */
+			updatedAt: string;
+		};
+		SupervisionCycleProgress: {
+			/** Format: int64 */
+			approvedCount: number;
+			/** Format: double */
+			averageRating?: number | null;
+			/** Format: int64 */
+			cancelledCount: number;
+			/** Format: int64 */
+			completedCount: number;
+			/** Format: uuid */
+			cycleId: string;
+			/** Format: int64 */
+			plannedCount: number;
+			/** Format: int64 */
+			publishedCount: number;
+			/** Format: int64 */
+			requestedCount: number;
+			/** Format: int64 */
+			totalObservations: number;
+			/** Format: int64 */
+			underReviewCount: number;
+		};
+		SupervisionCycleQuery: {
+			/** Format: uuid */
+			academicTermId?: string | null;
+			/** Format: uuid */
+			academicYearId: string;
+		};
+		/** @enum {string} */
+		SupervisionCycleStatus: 'draft' | 'open' | 'closed' | 'archived';
+		SupervisionCycleTarget: {
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: uuid */
+			cycleId: string;
+			/** Format: uuid */
+			id: string;
+			/** Format: int32 */
+			priority: number;
+			/** Format: int32 */
+			requiredObservations: number;
+			/** Format: uuid */
+			targetId?: string | null;
+			targetType: components['schemas']['SupervisionTargetType'];
+			/** Format: date-time */
+			updatedAt: string;
+		};
+		SupervisionEvaluator: {
+			/** Format: date-time */
+			createdAt: string;
+			evaluatorDisplayName?: string | null;
+			/** Format: uuid */
+			evaluatorUserId: string;
+			/** Format: uuid */
+			id: string;
+			isRequired: boolean;
+			/** Format: uuid */
+			observationId: string;
+			roleLabel?: string | null;
+			status: components['schemas']['SupervisionEvaluatorStatus'];
+			/** Format: date-time */
+			submittedAt?: string | null;
+			/** Format: date-time */
+			updatedAt: string;
+		};
+		SupervisionEvaluatorAvailability: {
+			available: boolean;
+			conflict?: null | components['schemas']['SupervisionEvaluatorConflict'];
+			conflictReason?: string | null;
+			/** Format: uuid */
+			id: string;
+			name: string;
+			title?: string | null;
+		};
+		SupervisionEvaluatorConflict: {
+			lessonTitle?: string | null;
+			/** Format: uuid */
+			observationId: string;
+			/** Format: date-time */
+			observedAt: string;
+			observedDisplayName?: string | null;
+		};
+		/** @enum {string} */
+		SupervisionEvaluatorStatus: 'assigned' | 'draft' | 'submitted';
+		SupervisionObservation: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			academicYearId: string;
+			actions: components['schemas']['SupervisionAction'][];
+			/** Format: date-time */
+			approvedAt?: string | null;
+			/** Format: uuid */
+			approvedBy?: string | null;
+			/** Format: double */
+			averageRating?: number | null;
+			/** Format: date-time */
+			cancelledAt?: string | null;
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: uuid */
+			cycleId: string;
+			evaluators: components['schemas']['SupervisionEvaluator'][];
+			/** Format: uuid */
+			homeroomId?: string | null;
+			/** Format: uuid */
+			id: string;
+			/** Format: uuid */
+			learningGroupId?: string | null;
+			lessonSnapshot: components['schemas']['LessonSnapshot'];
+			manualLesson?: null | components['schemas']['ManualLesson'];
+			/** Format: date-time */
+			observedAt: string;
+			observedDisplayName?: string | null;
+			/** Format: uuid */
+			observedUserId: string;
+			/** Format: date-time */
+			requestedAt: string;
+			/** Format: uuid */
+			requestedBy?: string | null;
+			status: components['schemas']['SupervisionObservationStatus'];
+			/** Format: uuid */
+			templateId: string;
+			/** Format: uuid */
+			timetableEntryId?: string | null;
+			/** Format: date-time */
+			updatedAt: string;
+		};
+		SupervisionObservationReview: {
+			/** Format: double */
+			averageRating?: number | null;
+			evaluatorResults: components['schemas']['SupervisionReviewEvaluatorResult'][];
+			itemSummaries: components['schemas']['SupervisionReviewItemSummary'][];
+			observation: components['schemas']['SupervisionObservation'];
+			template: components['schemas']['SupervisionTemplate'];
+		};
+		/** @enum {string} */
+		SupervisionObservationStatus:
+			| 'requested'
+			| 'planned'
+			| 'in_progress'
+			| 'evaluators_submitted'
+			| 'under_review'
+			| 'returned'
+			| 'approved'
+			| 'published'
+			| 'acknowledged'
+			| 'completed'
+			| 'cancelled';
+		SupervisionReviewEvaluatorResult: {
+			/** Format: double */
+			averageRating?: number | null;
+			evaluatorDisplayName?: string | null;
+			/** Format: uuid */
+			evaluatorId: string;
+			/** Format: uuid */
+			evaluatorUserId: string;
+			responses: components['schemas']['SupervisionReviewResponse'][];
+			roleLabel?: string | null;
+			status: components['schemas']['SupervisionEvaluatorStatus'];
+			/** Format: date-time */
+			submittedAt?: string | null;
+		};
+		SupervisionReviewItemSummary: {
+			/** Format: double */
+			averageRating?: number | null;
+			/** Format: int64 */
+			responseCount: number;
+			/** Format: uuid */
+			templateItemId: string;
+		};
+		SupervisionReviewResponse: {
+			/** Format: double */
+			ratingScore?: number | null;
+			/** Format: uuid */
+			templateItemId: string;
+			textResponse?: string | null;
+		};
+		/** @enum {string} */
+		SupervisionTargetType: 'school' | 'organization_unit' | 'subject_group' | 'staff';
+		SupervisionTeacherStatusRow: {
+			/** Format: double */
+			averageRating?: number | null;
+			evaluatorNames: string[];
+			lessonTitle?: string | null;
+			nextStepLabel: string;
+			/** Format: uuid */
+			observationId?: string | null;
+			/** Format: date-time */
+			observedAt?: string | null;
+			organizationUnitNames: string[];
+			status?: null | components['schemas']['SupervisionObservationStatus'];
+			teacherDisplayName: string;
+			/** Format: uuid */
+			teacherId: string;
+		};
+		SupervisionTemplate: {
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: uuid */
+			createdBy?: string | null;
+			description?: string | null;
+			/** Format: uuid */
+			id: string;
+			/** Format: int32 */
+			ratingMax: number;
+			/** Format: int32 */
+			ratingMin: number;
+			sections: components['schemas']['SupervisionTemplateSection'][];
+			status: components['schemas']['SupervisionTemplateStatus'];
+			steps: components['schemas']['SupervisionTemplateStep'][];
+			title: string;
+			/** Format: date-time */
+			updatedAt: string;
+		};
+		SupervisionTemplateItem: {
+			/** Format: date-time */
+			createdAt: string;
+			description?: string | null;
+			/** Format: uuid */
+			id: string;
+			itemType: components['schemas']['SupervisionTemplateItemType'];
+			label: string;
+			required: boolean;
+			/** Format: uuid */
+			sectionId: string;
+			/** Format: int32 */
+			sortOrder: number;
+			/** Format: date-time */
+			updatedAt: string;
+		};
+		/** @enum {string} */
+		SupervisionTemplateItemType: 'rating' | 'text';
+		SupervisionTemplateSection: {
+			/** Format: date-time */
+			createdAt: string;
+			description?: string | null;
+			/** Format: uuid */
+			id: string;
+			items: components['schemas']['SupervisionTemplateItem'][];
+			/** Format: int32 */
+			sortOrder: number;
+			/** Format: uuid */
+			templateId: string;
+			title: string;
+			/** Format: date-time */
+			updatedAt: string;
+		};
+		/** @enum {string} */
+		SupervisionTemplateStatus: 'draft' | 'active' | 'archived';
+		SupervisionTemplateStep: {
+			actionKind: components['schemas']['SupervisionTemplateStepActionKind'];
+			actorKind: components['schemas']['SupervisionTemplateStepActorKind'];
+			actorPermission?: string | null;
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: uuid */
+			id: string;
+			label: string;
+			organizationPositionCode?: string | null;
+			required: boolean;
+			stepCode: string;
+			/** Format: int32 */
+			stepOrder: number;
+			/** Format: uuid */
+			templateId: string;
+			/** Format: date-time */
+			updatedAt: string;
+		};
+		/** @enum {string} */
+		SupervisionTemplateStepActionKind:
+			| 'submit'
+			| 'approve'
+			| 'return_for_revision'
+			| 'publish'
+			| 'acknowledge'
+			| 'sign';
+		/** @enum {string} */
+		SupervisionTemplateStepActorKind:
+			| 'supervisor'
+			| 'observed_teacher'
+			| 'permission'
+			| 'organization_position';
 		SwapTimetableEntriesRequest: {
 			/** Format: uuid */
 			entryAId: string;
@@ -11086,6 +12431,13 @@ export interface components {
 			profileImageFileId?: string | null;
 			title?: string | null;
 		};
+		UpdateRequestedObservationRequest: {
+			manualLesson?: null | components['schemas']['ManualLessonInput'];
+			/** Format: date-time */
+			observedAt?: string | null;
+			/** Format: uuid */
+			timetableEntryId?: string | null;
+		};
 		UpdateRoleRequest: {
 			description?: string | null;
 			is_active?: boolean | null;
@@ -11177,6 +12529,46 @@ export interface components {
 			rowVersion: number;
 			subjectType: string;
 			termCode?: string | null;
+		};
+		UpdateSupervisionCycleRequest: {
+			/** Format: uuid */
+			academicTermId?: string | null;
+			/** Format: uuid */
+			academicYearId?: string | null;
+			/** Format: date-time */
+			bookingClosesAt?: string | null;
+			/** Format: date-time */
+			bookingOpensAt?: string | null;
+			description?: string | null;
+			/** Format: date-time */
+			endsAt?: string | null;
+			/** Format: date-time */
+			startsAt?: string | null;
+			status?: null | components['schemas']['SupervisionCycleStatus'];
+			targets?: components['schemas']['CreateSupervisionCycleTargetRequest'][] | null;
+			/** Format: uuid */
+			templateId?: string | null;
+			title?: string | null;
+		};
+		UpdateSupervisionObservationRequest: {
+			manualLesson?: null | components['schemas']['ManualLessonInput'];
+			/** Format: date-time */
+			observedAt?: string | null;
+			/** Format: uuid */
+			templateId?: string | null;
+			/** Format: uuid */
+			timetableEntryId?: string | null;
+		};
+		UpdateSupervisionTemplateRequest: {
+			description?: string | null;
+			/** Format: int32 */
+			ratingMax?: number | null;
+			/** Format: int32 */
+			ratingMin?: number | null;
+			sections?: components['schemas']['CreateSupervisionTemplateSectionRequest'][] | null;
+			status?: null | components['schemas']['SupervisionTemplateStatus'];
+			steps?: components['schemas']['CreateSupervisionTemplateStepRequest'][] | null;
+			title?: string | null;
 		};
 		UpdateTemplateRequest: {
 			description?: string | null;
@@ -27785,6 +29177,1510 @@ export interface operations {
 				};
 			};
 			/** @description Parent relationship not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listSupervisionCycles: {
+		parameters: {
+			query: {
+				academicTermId?: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Supervision cycles */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ItemsData_SupervisionCycle'];
+				};
+			};
+			/** @description Invalid academic context */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision access denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createSupervisionCycle: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateSupervisionCycleRequest'];
+			};
+		};
+		responses: {
+			/** @description Supervision cycle created */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupervisionCycle'];
+				};
+			};
+			/** @description Invalid supervision cycle */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision management denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateSupervisionCycle: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Supervision cycle ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateSupervisionCycleRequest'];
+			};
+		};
+		responses: {
+			/** @description Supervision cycle updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupervisionCycle'];
+				};
+			};
+			/** @description Invalid supervision cycle */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision management denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision cycle not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listSupervisionObservations: {
+		parameters: {
+			query: {
+				academicTermId?: string;
+				academicYearId: string;
+				cycleId?: string;
+				status?: components['schemas']['SupervisionObservationStatus'];
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Supervision observations */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ItemsData_SupervisionObservation'];
+				};
+			};
+			/** @description Invalid observation filter */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision access denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getSupervisionObservation: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Supervision observation ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Supervision observation */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupervisionObservation'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Observation read access denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision observation not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateSupervisionObservation: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Supervision observation ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateSupervisionObservationRequest'];
+			};
+		};
+		responses: {
+			/** @description Supervision observation updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupervisionObservation'];
+				};
+			};
+			/** @description Observation cannot be updated */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Observation management denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision observation not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision booking conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	acknowledgeSupervisionObservation: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Supervision observation ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['AcknowledgeObservationRequest'];
+			};
+		};
+		responses: {
+			/** @description Supervision observation acknowledged */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupervisionObservation'];
+				};
+			};
+			/** @description Observation cannot be acknowledged */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Acknowledgement denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision observation not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	approveSupervisionObservation: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Supervision observation ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Supervision observation approved */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupervisionObservation'];
+				};
+			};
+			/** @description Observation cannot be approved */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic approval denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision observation not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	approveSupervisionObservationRequest: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Supervision observation ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ApproveObservationRequest'];
+			};
+		};
+		responses: {
+			/** @description Supervision request approved */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupervisionObservation'];
+				};
+			};
+			/** @description Supervision request cannot be approved */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Observation management denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision observation not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Evaluator schedule conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	cancelSupervisionObservation: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Supervision observation ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CancelObservationRequest'];
+			};
+		};
+		responses: {
+			/** @description Supervision observation cancelled */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupervisionObservation'];
+				};
+			};
+			/** @description Observation cannot be cancelled */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Observation management denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision observation not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	certifySupervisionObservation: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Supervision observation ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Supervision observation certified */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupervisionObservation'];
+				};
+			};
+			/** @description Observation cannot be certified */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Observation management denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision observation not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	submitMySupervisionEvaluation: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Supervision observation ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SaveEvaluationRequest'];
+			};
+		};
+		responses: {
+			/** @description Supervision evaluation submitted */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupervisionObservation'];
+				};
+			};
+			/** @description Invalid supervision evaluation */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Evaluation submission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision observation not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getSupervisionEvaluatorAvailability: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Supervision observation ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Available supervision evaluators */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ItemsData_SupervisionEvaluatorAvailability'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Observation management denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision observation not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	replaceSupervisionObservationEvaluators: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Supervision observation ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ReplaceObservationEvaluatorsRequest'];
+			};
+		};
+		responses: {
+			/** @description Supervision evaluators replaced */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupervisionObservation'];
+				};
+			};
+			/** @description Invalid evaluator assignment */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Observation management denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision observation not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Evaluator schedule conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	cancelRequestedSupervisionObservation: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Supervision observation ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Requested observation cancelled */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupervisionObservation'];
+				};
+			};
+			/** @description Requested observation cannot be cancelled */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision request denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision observation not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateRequestedSupervisionObservation: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Supervision observation ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateRequestedObservationRequest'];
+			};
+		};
+		responses: {
+			/** @description Requested observation updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupervisionObservation'];
+				};
+			};
+			/** @description Requested observation cannot be updated */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision request denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision observation not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision booking conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	returnSupervisionObservationRequest: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Supervision observation ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ReturnObservationRequest'];
+			};
+		};
+		responses: {
+			/** @description Supervision request returned */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupervisionObservation'];
+				};
+			};
+			/** @description Supervision request cannot be returned */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Observation management denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision observation not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getSupervisionObservationReview: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Supervision observation ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Supervision observation review */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupervisionObservationReview'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Observation review access denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision observation not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getSupervisionObservationTimetableOptions: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Supervision observation ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Timetable options for the observation */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ItemsData_TimetableEntry'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Observation management denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision observation not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	requestSupervisionObservation: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['RequestSupervisionObservationRequest'];
+			};
+		};
+		responses: {
+			/** @description Supervision observation requested */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupervisionObservation'];
+				};
+			};
+			/** @description Invalid supervision request */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision request denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision cycle or timetable entry not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision booking conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getSupervisionCycleProgress: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Supervision cycle ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Supervision cycle progress */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupervisionCycleProgress'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision report access denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision cycle not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getSupervisionTeacherStatusOverview: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Supervision cycle ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Teacher supervision status overview */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ItemsData_SupervisionTeacherStatusRow'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision report access denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision cycle not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listSupervisionTemplates: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Supervision templates */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ItemsData_SupervisionTemplate'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision access denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createSupervisionTemplate: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateSupervisionTemplateRequest'];
+			};
+		};
+		responses: {
+			/** @description Supervision template created */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupervisionTemplate'];
+				};
+			};
+			/** @description Invalid supervision template */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision management denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getSupervisionTemplate: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Supervision template ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Supervision template */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupervisionTemplate'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision access denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision template not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateSupervisionTemplate: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Supervision template ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateSupervisionTemplateRequest'];
+			};
+		};
+		responses: {
+			/** @description Supervision template updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupervisionTemplate'];
+				};
+			};
+			/** @description Invalid supervision template */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision management denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision template not found */
 			404: {
 				headers: {
 					[name: string]: unknown;

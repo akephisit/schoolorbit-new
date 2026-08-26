@@ -19,6 +19,7 @@
 	} from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { getAcademicContextStore } from '$lib/academic-context/store';
+	import { isAbortError, LatestRequest } from '$lib/async/latest-request';
 	import { getMyTimetable, type TimetableEntry } from '$lib/api/timetable';
 	import {
 		acknowledgeSupervisionObservation,
@@ -265,6 +266,7 @@
 	let progressCycleId = $state('');
 	let progress = $state<SupervisionCycleProgress | null>(null);
 	let teacherStatusRows = $state<SupervisionTeacherStatusRow[]>([]);
+	let loadingProgress = $state(false);
 	let loadingTeacherStatus = $state(false);
 	let createCycleDialogOpen = $state(false);
 	let createTemplateDialogOpen = $state(false);
@@ -287,7 +289,12 @@
 		endsTime: '16:30'
 	});
 	let templateForm = $state<TemplateFormState>(createDefaultTemplateForm());
-	let refreshRevision = 0;
+	const refreshRequest = new LatestRequest();
+	const timetableRequest = new LatestRequest();
+	const templateRequest = new LatestRequest();
+	const evaluatorAvailabilityRequest = new LatestRequest();
+	const progressRequest = new LatestRequest();
+	const teacherStatusRequest = new LatestRequest();
 
 	const currentUserId = $derived($authStore.user?.id ?? '');
 	const sectionConfig = $derived(sectionConfigByKey[section]);
@@ -752,24 +759,32 @@
 	}
 
 	async function refreshTimetableForCycle(cycleId: string) {
-		if (!cycleId || !canRequest) return;
+		if (!cycleId || !canRequest) {
+			timetableRequest.abort();
+			return;
+		}
 		const cycle = cycles.find((item) => item.id === cycleId);
 		const termId = cycle?.academicTermId ?? academicTermId;
 		const contextKey = `${cycleId}:${termId ?? ''}`;
 		if (loadedTimetableCycleId === contextKey) return;
+		const { revision, signal } = timetableRequest.begin();
 		if (!termId) {
 			timetableEntries = [];
 			loadedTimetableCycleId = contextKey;
+			loadingTimetable = false;
 			return;
 		}
 		loadingTimetable = true;
 		try {
-			timetableEntries = await getMyTimetable({ academicTermId: termId });
+			const entries = await getMyTimetable({ academicTermId: termId }, { signal });
+			if (!timetableRequest.isCurrent(revision)) return;
+			timetableEntries = entries;
 			loadedTimetableCycleId = contextKey;
 		} catch (error) {
+			if (isAbortError(error)) return;
 			toast.error(error instanceof Error ? error.message : 'ไม่สามารถโหลดตารางสอนได้');
 		} finally {
-			loadingTimetable = false;
+			if (timetableRequest.isCurrent(revision)) loadingTimetable = false;
 		}
 	}
 
@@ -868,42 +883,63 @@
 	async function refreshAll() {
 		const yearId = academicYearId;
 		const termId = academicTermId;
-		const currentRevision = ++refreshRevision;
+		const { revision, signal } = refreshRequest.begin();
+		timetableRequest.abort();
+		templateRequest.abort();
+		evaluatorAvailabilityRequest.abort();
+		progressRequest.abort();
+		teacherStatusRequest.abort();
+		loadingTimetable = false;
+		loadingProgress = false;
+		loadingTeacherStatus = false;
 		loading = true;
 		try {
 			if (!yearId) throw new Error('กรุณาเลือกปีการศึกษาก่อน');
-			const cycleItems = await listSupervisionCycles(yearId, termId);
-			const templateItems = shouldLoadTemplates() ? await listSupervisionTemplates() : [];
-			const observationItems = shouldLoadObservations()
-				? await listSupervisionObservations({
-						academicYearId: yearId,
-						academicTermId: termId
-					})
-				: [];
-			if (currentRevision !== refreshRevision) return;
+			const [cycleItems, templateItems, observationItems] = await Promise.all([
+				listSupervisionCycles(yearId, termId, { signal }),
+				shouldLoadTemplates() ? listSupervisionTemplates({ signal }) : [],
+				shouldLoadObservations()
+					? listSupervisionObservations(
+							{
+								academicYearId: yearId,
+								...(termId ? { academicTermId: termId } : {})
+							},
+							{ signal }
+						)
+					: []
+			]);
+			const nextProgressCycleId = cycleItems.some((cycle) => cycle.id === progressCycleId)
+				? progressCycleId
+				: (cycleItems[0]?.id ?? '');
+			let nextProgress = progress;
+			let nextTeacherStatusRows = teacherStatusRows;
+			if (section === 'overview' && canReport && nextProgressCycleId) {
+				[nextProgress, nextTeacherStatusRows] = await Promise.all([
+					getSupervisionCycleProgress(nextProgressCycleId, { signal }),
+					getSupervisionTeacherStatusOverview(nextProgressCycleId, { signal })
+				]);
+			}
+			if (!refreshRequest.isCurrent(revision)) return;
 			cycles = cycleItems;
 			templates = templateItems;
 			observations = observationItems;
+			progress = nextProgress;
+			teacherStatusRows = nextTeacherStatusRows;
 			requestEvaluatorAvailability = {};
 			requestEvaluatorAvailabilityLoading = {};
 			selectedCycleId = cycleItems.some((cycle) => cycle.id === selectedCycleId)
 				? selectedCycleId
 				: (cycleItems.find((cycle) => cycle.status === 'open')?.id ?? cycleItems[0]?.id ?? '');
 			loadedTimetableCycleId = '';
-			progressCycleId = cycleItems.some((cycle) => cycle.id === progressCycleId)
-				? progressCycleId
-				: (cycleItems[0]?.id ?? '');
+			progressCycleId = nextProgressCycleId;
 			cycleForm.templateId ||= templates[0]?.id ?? '';
-			if (section === 'overview' && canReport && progressCycleId) {
-				await loadProgress();
-				await loadTeacherStatusOverview();
-			}
 		} catch (error) {
-			if (currentRevision === refreshRevision) {
+			if (isAbortError(error)) return;
+			if (refreshRequest.isCurrent(revision)) {
 				toast.error(error instanceof Error ? error.message : 'ไม่สามารถโหลดข้อมูลนิเทศได้');
 			}
 		} finally {
-			if (currentRevision === refreshRevision) loading = false;
+			if (refreshRequest.isCurrent(revision)) loading = false;
 		}
 	}
 
@@ -916,8 +952,16 @@
 	}
 
 	async function refreshTemplates() {
-		templates = await listSupervisionTemplates();
-		cycleForm.templateId ||= templates[0]?.id ?? '';
+		const { revision, signal } = templateRequest.begin();
+		try {
+			const items = await listSupervisionTemplates({ signal });
+			if (!templateRequest.isCurrent(revision)) return;
+			templates = items;
+			cycleForm.templateId ||= templates[0]?.id ?? '';
+		} catch (error) {
+			if (isAbortError(error)) return;
+			throw error;
+		}
 	}
 
 	function replaceTemplate(template: SupervisionTemplate) {
@@ -1057,12 +1101,13 @@
 	async function loadRequestEvaluatorAvailability(observationId: string, force = false) {
 		if (!canManageRequests) return;
 		if (!force && requestEvaluatorAvailability[observationId]) return;
+		const { revision, signal } = evaluatorAvailabilityRequest.begin();
 		requestEvaluatorAvailabilityLoading = {
-			...requestEvaluatorAvailabilityLoading,
 			[observationId]: true
 		};
 		try {
-			const items = await getSupervisionEvaluatorAvailability(observationId);
+			const items = await getSupervisionEvaluatorAvailability(observationId, { signal });
+			if (!evaluatorAvailabilityRequest.isCurrent(revision)) return;
 			const availableIds = new Set(
 				items.filter((evaluator) => evaluator.available).map((evaluator) => evaluator.id)
 			);
@@ -1077,12 +1122,15 @@
 				)
 			};
 		} catch (error) {
+			if (isAbortError(error)) return;
 			toast.error(error instanceof Error ? error.message : 'ไม่สามารถตรวจสอบผู้ประเมินที่ว่างได้');
 		} finally {
-			requestEvaluatorAvailabilityLoading = {
-				...requestEvaluatorAvailabilityLoading,
-				[observationId]: false
-			};
+			if (evaluatorAvailabilityRequest.isCurrent(revision)) {
+				requestEvaluatorAvailabilityLoading = {
+					...requestEvaluatorAvailabilityLoading,
+					[observationId]: false
+				};
+			}
 		}
 	}
 
@@ -1638,13 +1686,17 @@
 			return;
 		}
 
-		saving = true;
+		const { revision, signal } = progressRequest.begin();
+		loadingProgress = true;
 		try {
-			progress = await getSupervisionCycleProgress(progressCycleId);
+			const nextProgress = await getSupervisionCycleProgress(progressCycleId, { signal });
+			if (!progressRequest.isCurrent(revision)) return;
+			progress = nextProgress;
 		} catch (error) {
+			if (isAbortError(error)) return;
 			toast.error(error instanceof Error ? error.message : 'โหลดรายงานไม่สำเร็จ');
 		} finally {
-			saving = false;
+			if (progressRequest.isCurrent(revision)) loadingProgress = false;
 		}
 	}
 
@@ -1655,19 +1707,23 @@
 			return;
 		}
 
+		const { revision, signal } = teacherStatusRequest.begin();
 		loadingTeacherStatus = true;
 		try {
-			teacherStatusRows = await getSupervisionTeacherStatusOverview(progressCycleId);
+			const rows = await getSupervisionTeacherStatusOverview(progressCycleId, { signal });
+			if (!teacherStatusRequest.isCurrent(revision)) return;
+			teacherStatusRows = rows;
 		} catch (error) {
+			if (isAbortError(error)) return;
 			toast.error(error instanceof Error ? error.message : 'โหลดภาพรวมสถานะครูไม่สำเร็จ');
 		} finally {
-			loadingTeacherStatus = false;
+			if (teacherStatusRequest.isCurrent(revision)) loadingTeacherStatus = false;
 		}
 	}
 
 	onMount(() => {
 		let loadedContext = '';
-		return academicContext.subscribe((state) => {
+		const unsubscribe = academicContext.subscribe((state) => {
 			const yearId = state.selected.academicYearId;
 			const termId = state.selected.academicTermId;
 			const contextKey = `${yearId ?? ''}:${termId ?? ''}`;
@@ -1675,6 +1731,15 @@
 			loadedContext = contextKey;
 			void refreshAll();
 		});
+		return () => {
+			unsubscribe();
+			refreshRequest.abort();
+			timetableRequest.abort();
+			templateRequest.abort();
+			evaluatorAvailabilityRequest.abort();
+			progressRequest.abort();
+			teacherStatusRequest.abort();
+		};
 	});
 </script>
 
@@ -2782,7 +2847,11 @@
 								{/each}
 							</Select.Content>
 						</Select.Root>
-						<LoadingButton onclick={loadProgress} loading={saving} loadingLabel="กำลังโหลด...">
+						<LoadingButton
+							onclick={loadProgress}
+							loading={loadingProgress}
+							loadingLabel="กำลังโหลด..."
+						>
 							โหลดรายงาน
 						</LoadingButton>
 					</div>

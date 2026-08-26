@@ -923,7 +923,11 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	);
 
 	assert.match(supervisionApi, /export\s+type\s+SupervisionObservationStatus/);
-	assert.match(supervisionApi, /apiClient\.get<\{\s*items:\s*SupervisionCycle\[\]\s*\}>/);
+	assert.match(
+		supervisionApi,
+		/type SupervisionCycleItems = Schemas\['ItemsData_SupervisionCycle'\]/
+	);
+	assert.match(supervisionApi, /apiClient\.get<SupervisionCycleItems>/);
 	assert.match(supervisionApi, /apiClient\.post<SupervisionObservation>/);
 	assert.doesNotMatch(supervisionApi, /ApiResponse<unknown>/);
 	assert.doesNotMatch(supervisionApi, /Record<string,\s*unknown>/);
@@ -937,7 +941,10 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.doesNotMatch(supervisionWorkspace, /saveMySupervisionEvaluation/);
 	assert.match(supervisionWorkspace, /acknowledgeSupervisionObservation/);
 	assert.match(supervisionWorkspace, /getMyTimetable/);
-	assert.match(supervisionWorkspace, /getMyTimetable\(\{ academicTermId:\s*termId \}\)/);
+	assert.match(
+		supervisionWorkspace,
+		/getMyTimetable\(\{ academicTermId:\s*termId \},\s*\{ signal \}\)/
+	);
 	assert.match(supervisionWorkspace, /entry\.academicTermId === termId/);
 	assert.match(supervisionWorkspace, /timetableGridDays/);
 	assert.match(supervisionWorkspace, /timetablePeriodRows/);
@@ -1002,7 +1009,7 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.match(supervisionWorkspace, /SUPERVISION_MANAGE_ORGANIZATION_TREE/);
 	assert.match(
 		supervisionWorkspace,
-		/shouldLoadObservations[\s\S]*await\s+listSupervisionObservations\(\{[\s\S]*academicYearId:\s*yearId[\s\S]*academicTermId:\s*termId[\s\S]*:\s*\[\]/
+		/shouldLoadObservations[\s\S]*listSupervisionObservations\([\s\S]*academicYearId:\s*yearId[\s\S]*\.\.\.\(termId \? \{ academicTermId:\s*termId \} : \{\}\)[\s\S]*\{ signal \}[\s\S]*:\s*\[\]/
 	);
 	assert.match(supervisionWorkspace, /getSupervisionEvaluatorAvailability/);
 	assert.match(supervisionWorkspace, /requestEvaluatorAvailability/);
