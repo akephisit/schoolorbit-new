@@ -103,11 +103,7 @@ pub async fn list_templates(pool: &PgPool) -> Result<Vec<SupervisionTemplate>, A
         AppError::InternalServerError("ไม่สามารถดึงแบบประเมินนิเทศได้".to_string())
     })?;
 
-    let mut templates = Vec::with_capacity(rows.len());
-    for row in rows {
-        templates.push(get_template(pool, row.id).await?);
-    }
-    Ok(templates)
+    hydrate_templates(pool, rows).await
 }
 
 pub async fn get_template(pool: &PgPool, id: Uuid) -> Result<SupervisionTemplate, AppError> {
@@ -128,15 +124,30 @@ pub async fn get_template(pool: &PgPool, id: Uuid) -> Result<SupervisionTemplate
     })?
     .ok_or_else(|| AppError::NotFound("ไม่พบแบบประเมินนิเทศ".to_string()))?;
 
+    hydrate_templates(pool, vec![template_row])
+        .await?
+        .pop()
+        .ok_or_else(|| AppError::NotFound("ไม่พบแบบประเมินนิเทศ".to_string()))
+}
+
+async fn hydrate_templates(
+    pool: &PgPool,
+    rows: Vec<SupervisionTemplateRow>,
+) -> Result<Vec<SupervisionTemplate>, AppError> {
+    if rows.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let template_ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
     let section_rows = sqlx::query_as::<_, SupervisionTemplateSectionRow>(
         r#"
         SELECT id, template_id, title, description, sort_order, created_at, updated_at
         FROM supervision_template_sections
-        WHERE template_id = $1
-        ORDER BY sort_order, created_at
+        WHERE template_id = ANY($1)
+        ORDER BY template_id, sort_order, created_at
         "#,
     )
-    .bind(id)
+    .bind(&template_ids)
     .fetch_all(pool)
     .await
     .map_err(|error| {
@@ -150,11 +161,11 @@ pub async fn get_template(pool: &PgPool, id: Uuid) -> Result<SupervisionTemplate
                i.required, i.sort_order, i.created_at, i.updated_at
         FROM supervision_template_items i
         JOIN supervision_template_sections s ON i.section_id = s.id
-        WHERE s.template_id = $1
-        ORDER BY s.sort_order, i.sort_order, i.created_at
+        WHERE s.template_id = ANY($1)
+        ORDER BY s.template_id, s.sort_order, i.sort_order, i.created_at
         "#,
     )
-    .bind(id)
+    .bind(&template_ids)
     .fetch_all(pool)
     .await
     .map_err(|error| {
@@ -168,11 +179,11 @@ pub async fn get_template(pool: &PgPool, id: Uuid) -> Result<SupervisionTemplate
                actor_permission, organization_position_code, action_kind,
                required, created_at, updated_at
         FROM supervision_template_steps
-        WHERE template_id = $1
-        ORDER BY step_order, created_at
+        WHERE template_id = ANY($1)
+        ORDER BY template_id, step_order, created_at
         "#,
     )
-    .bind(id)
+    .bind(&template_ids)
     .fetch_all(pool)
     .await
     .map_err(|error| {
@@ -180,7 +191,51 @@ pub async fn get_template(pool: &PgPool, id: Uuid) -> Result<SupervisionTemplate
         AppError::InternalServerError("ไม่สามารถดึงขั้นตอนแบบประเมินนิเทศได้".to_string())
     })?;
 
-    template_from_rows(template_row, section_rows, item_rows, step_rows)
+    let mut sections_by_template = HashMap::<Uuid, Vec<SupervisionTemplateSectionRow>>::new();
+    for section_row in section_rows {
+        sections_by_template
+            .entry(section_row.template_id)
+            .or_default()
+            .push(section_row);
+    }
+
+    let section_template_ids = sections_by_template
+        .iter()
+        .flat_map(|(template_id, sections)| {
+            sections.iter().map(|section| (section.id, *template_id))
+        })
+        .collect::<HashMap<_, _>>();
+    let mut items_by_template = HashMap::<Uuid, Vec<SupervisionTemplateItemRow>>::new();
+    for item_row in item_rows {
+        if let Some(template_id) = section_template_ids.get(&item_row.section_id) {
+            items_by_template
+                .entry(*template_id)
+                .or_default()
+                .push(item_row);
+        }
+    }
+
+    let mut steps_by_template = HashMap::<Uuid, Vec<SupervisionTemplateStepRow>>::new();
+    for step_row in step_rows {
+        steps_by_template
+            .entry(step_row.template_id)
+            .or_default()
+            .push(step_row);
+    }
+
+    rows.into_iter()
+        .map(|row| {
+            let template_id = row.id;
+            template_from_rows(
+                row,
+                sections_by_template
+                    .remove(&template_id)
+                    .unwrap_or_default(),
+                items_by_template.remove(&template_id).unwrap_or_default(),
+                steps_by_template.remove(&template_id).unwrap_or_default(),
+            )
+        })
+        .collect()
 }
 
 pub async fn create_template(

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use chrono::{DateTime, Datelike, FixedOffset, Utc, Weekday};
 use sqlx::types::Json;
 use sqlx::{PgPool, Postgres, QueryBuilder, Row};
@@ -21,7 +23,6 @@ use super::evaluations::{
     evaluator_availability_from_row, insert_supervision_evaluators,
     validate_evaluator_availability_for_observation, EvaluatorAvailabilityRow,
 };
-use super::reviews_and_reports::fetch_observation_average_rating;
 use super::shared::{
     can_transition_observation_status, evaluator_conflict_status_codes, has_required_evaluator,
     manager_can_edit_observation, parse_cycle_status, parse_evaluator_status,
@@ -120,16 +121,15 @@ pub async fn list_observations(
     filter: SupervisionObservationFilter,
 ) -> Result<Vec<SupervisionObservation>, AppError> {
     let rows = list_observation_rows(pool, access, filter).await?;
-    let mut observations = Vec::with_capacity(rows.len());
-    for row in rows {
-        observations.push(observation_from_row(pool, row).await?);
-    }
-    Ok(observations)
+    hydrate_observations(pool, rows).await
 }
 
 pub async fn get_observation(pool: &PgPool, id: Uuid) -> Result<SupervisionObservation, AppError> {
     let row = load_observation_row(pool, id).await?;
-    observation_from_row(pool, row).await
+    hydrate_observations(pool, vec![row])
+        .await?
+        .pop()
+        .ok_or_else(|| AppError::NotFound("ไม่พบรายการนิเทศ".to_string()))
 }
 
 pub async fn evaluator_availability(
@@ -742,41 +742,55 @@ fn observation_select_sql() -> &'static str {
     "#
 }
 
-async fn observation_from_row(
+async fn hydrate_observations(
     pool: &PgPool,
-    row: SupervisionObservationRow,
-) -> Result<SupervisionObservation, AppError> {
-    let evaluators = load_observation_evaluators(pool, row.id).await?;
-    let actions = load_observation_actions(pool, row.id).await?;
-    let average_rating = fetch_observation_average_rating(pool, row.id).await?;
-    let manual_lesson = manual_lesson_from_row(&row);
+    rows: Vec<SupervisionObservationRow>,
+) -> Result<Vec<SupervisionObservation>, AppError> {
+    if rows.is_empty() {
+        return Ok(Vec::new());
+    }
 
-    Ok(SupervisionObservation {
-        id: row.id,
-        cycle_id: row.cycle_id,
-        academic_year_id: row.academic_year_id,
-        academic_term_id: row.academic_term_id,
-        learning_group_id: row.learning_group_id,
-        homeroom_id: row.homeroom_id,
-        observed_user_id: row.observed_user_id,
-        observed_display_name: row.observed_display_name,
-        requested_by: row.requested_by,
-        approved_by: row.approved_by,
-        template_id: row.template_id,
-        timetable_entry_id: row.timetable_entry_id,
-        observed_at: row.observed_at,
-        manual_lesson,
-        lesson_snapshot: row.lesson_snapshot.0,
-        status: parse_observation_status(&row.status)?,
-        requested_at: row.requested_at,
-        approved_at: row.approved_at,
-        cancelled_at: row.cancelled_at,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-        evaluators,
-        actions,
-        average_rating,
-    })
+    let observation_ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
+    let mut evaluators_by_observation = load_observation_evaluators(pool, &observation_ids).await?;
+    let mut actions_by_observation = load_observation_actions(pool, &observation_ids).await?;
+    let average_ratings = load_observation_average_ratings(pool, &observation_ids).await?;
+
+    rows.into_iter()
+        .map(|row| {
+            let observation_id = row.id;
+            let manual_lesson = manual_lesson_from_row(&row);
+            Ok(SupervisionObservation {
+                id: observation_id,
+                cycle_id: row.cycle_id,
+                academic_year_id: row.academic_year_id,
+                academic_term_id: row.academic_term_id,
+                learning_group_id: row.learning_group_id,
+                homeroom_id: row.homeroom_id,
+                observed_user_id: row.observed_user_id,
+                observed_display_name: row.observed_display_name,
+                requested_by: row.requested_by,
+                approved_by: row.approved_by,
+                template_id: row.template_id,
+                timetable_entry_id: row.timetable_entry_id,
+                observed_at: row.observed_at,
+                manual_lesson,
+                lesson_snapshot: row.lesson_snapshot.0,
+                status: parse_observation_status(&row.status)?,
+                requested_at: row.requested_at,
+                approved_at: row.approved_at,
+                cancelled_at: row.cancelled_at,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+                evaluators: evaluators_by_observation
+                    .remove(&observation_id)
+                    .unwrap_or_default(),
+                actions: actions_by_observation
+                    .remove(&observation_id)
+                    .unwrap_or_default(),
+                average_rating: average_ratings.get(&observation_id).copied(),
+            })
+        })
+        .collect()
 }
 
 fn manual_lesson_from_row(row: &SupervisionObservationRow) -> Option<ManualLesson> {
@@ -792,8 +806,8 @@ fn manual_lesson_from_row(row: &SupervisionObservationRow) -> Option<ManualLesso
 
 async fn load_observation_evaluators(
     pool: &PgPool,
-    observation_id: Uuid,
-) -> Result<Vec<SupervisionEvaluator>, AppError> {
+    observation_ids: &[Uuid],
+) -> Result<HashMap<Uuid, Vec<SupervisionEvaluator>>, AppError> {
     let rows = sqlx::query_as::<_, SupervisionEvaluatorRow>(
         r#"
         SELECT e.id, e.observation_id, e.evaluator_user_id,
@@ -803,11 +817,11 @@ async fn load_observation_evaluators(
                e.created_at, e.updated_at
         FROM supervision_evaluators e
         JOIN users u ON u.id = e.evaluator_user_id
-        WHERE e.observation_id = $1
-        ORDER BY e.is_required DESC, e.created_at
+        WHERE e.observation_id = ANY($1)
+        ORDER BY e.observation_id, e.is_required DESC, e.created_at
         "#,
     )
-    .bind(observation_id)
+    .bind(observation_ids)
     .fetch_all(pool)
     .await
     .map_err(|error| {
@@ -815,13 +829,21 @@ async fn load_observation_evaluators(
         AppError::InternalServerError("ไม่สามารถดึงผู้ประเมินนิเทศได้".to_string())
     })?;
 
-    rows.into_iter().map(evaluator_from_row).collect()
+    let mut evaluators_by_observation = HashMap::new();
+    for row in rows {
+        let observation_id = row.observation_id;
+        evaluators_by_observation
+            .entry(observation_id)
+            .or_insert_with(Vec::new)
+            .push(evaluator_from_row(row)?);
+    }
+    Ok(evaluators_by_observation)
 }
 
 async fn load_observation_actions(
     pool: &PgPool,
-    observation_id: Uuid,
-) -> Result<Vec<SupervisionAction>, AppError> {
+    observation_ids: &[Uuid],
+) -> Result<HashMap<Uuid, Vec<SupervisionAction>>, AppError> {
     let rows = sqlx::query_as::<_, SupervisionActionRow>(
         r#"
         SELECT a.id, a.observation_id, a.actor_user_id,
@@ -830,11 +852,11 @@ async fn load_observation_actions(
                a.action_kind, a.from_status, a.to_status, a.comment, a.created_at
         FROM supervision_actions a
         LEFT JOIN users u ON u.id = a.actor_user_id
-        WHERE a.observation_id = $1
-        ORDER BY a.created_at DESC
+        WHERE a.observation_id = ANY($1)
+        ORDER BY a.observation_id, a.created_at DESC
         "#,
     )
-    .bind(observation_id)
+    .bind(observation_ids)
     .fetch_all(pool)
     .await
     .map_err(|error| {
@@ -842,7 +864,48 @@ async fn load_observation_actions(
         AppError::InternalServerError("ไม่สามารถดึงประวัติรายการนิเทศได้".to_string())
     })?;
 
-    rows.into_iter().map(action_from_row).collect()
+    let mut actions_by_observation = HashMap::new();
+    for row in rows {
+        let observation_id = row.observation_id;
+        actions_by_observation
+            .entry(observation_id)
+            .or_insert_with(Vec::new)
+            .push(action_from_row(row)?);
+    }
+    Ok(actions_by_observation)
+}
+
+async fn load_observation_average_ratings(
+    pool: &PgPool,
+    observation_ids: &[Uuid],
+) -> Result<HashMap<Uuid, f64>, AppError> {
+    let rows = sqlx::query_as::<_, (Uuid, f64)>(
+        r#"
+        SELECT observation_id, AVG(evaluator_average)::double precision AS average_rating
+        FROM (
+            SELECT e.observation_id, e.id,
+                   AVG(r.rating_score)::double precision AS evaluator_average
+            FROM supervision_evaluators e
+            JOIN supervision_evaluator_responses r ON r.evaluator_id = e.id
+            JOIN supervision_template_items i ON i.id = r.template_item_id
+            WHERE e.observation_id = ANY($1)
+              AND e.status = 'submitted'
+              AND i.item_type = 'rating'
+              AND r.rating_score IS NOT NULL
+            GROUP BY e.observation_id, e.id
+        ) evaluator_averages
+        GROUP BY observation_id
+        "#,
+    )
+    .bind(observation_ids)
+    .fetch_all(pool)
+    .await
+    .map_err(|error| {
+        tracing::error!("Failed to load supervision observation averages: {}", error);
+        AppError::InternalServerError("ไม่สามารถคำนวณคะแนนเฉลี่ยนิเทศได้".to_string())
+    })?;
+
+    Ok(rows.into_iter().collect())
 }
 
 fn action_from_row(row: SupervisionActionRow) -> Result<SupervisionAction, AppError> {

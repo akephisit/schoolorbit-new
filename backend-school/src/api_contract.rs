@@ -126,6 +126,8 @@ use crate::modules::students::models::{
     StudentListItem, StudentListResponse, StudentProfile, UpdateOwnProfileRequest,
     UpdateStudentRequest,
 };
+use crate::modules::supervision::handlers::{ItemsData, ListObservationsQuery};
+use crate::modules::supervision::models::*;
 use crate::modules::system::handlers::feature_toggles::{
     FeatureListResponse, FeatureToggleResponse,
 };
@@ -415,6 +417,32 @@ use utoipa::OpenApi;
         crate::modules::academic::delivery::handlers::list_my_activity_registrations,
         crate::modules::academic::delivery::handlers::enroll_my_activity_registration,
         crate::modules::academic::delivery::handlers::unenroll_my_activity_registration,
+        crate::modules::supervision::handlers::list_cycles,
+        crate::modules::supervision::handlers::create_cycle,
+        crate::modules::supervision::handlers::update_cycle,
+        crate::modules::supervision::handlers::list_templates,
+        crate::modules::supervision::handlers::create_template,
+        crate::modules::supervision::handlers::get_template,
+        crate::modules::supervision::handlers::update_template,
+        crate::modules::supervision::handlers::list_observations,
+        crate::modules::supervision::handlers::get_observation,
+        crate::modules::supervision::handlers::get_observation_review,
+        crate::modules::supervision::handlers::evaluator_availability,
+        crate::modules::supervision::handlers::observation_timetable_options,
+        crate::modules::supervision::handlers::request_observation,
+        crate::modules::supervision::handlers::update_requested_observation,
+        crate::modules::supervision::handlers::cancel_requested_observation,
+        crate::modules::supervision::handlers::update_observation,
+        crate::modules::supervision::handlers::replace_observation_evaluators,
+        crate::modules::supervision::handlers::cancel_observation,
+        crate::modules::supervision::handlers::approve_observation_request,
+        crate::modules::supervision::handlers::return_observation_request,
+        crate::modules::supervision::handlers::submit_my_evaluation,
+        crate::modules::supervision::handlers::certify_observation,
+        crate::modules::supervision::handlers::approve_observation,
+        crate::modules::supervision::handlers::acknowledge_observation,
+        crate::modules::supervision::handlers::cycle_progress,
+        crate::modules::supervision::handlers::teacher_status_overview,
         crate::modules::calendar::handlers::list_my_calendar_events,
         crate::modules::calendar::handlers::list_public_calendar_events,
         crate::modules::calendar::handlers::list_calendar_events,
@@ -1032,6 +1060,72 @@ use utoipa::OpenApi;
         DocumentUploadResponse,
         ApiResponse<PortalUploadDocumentData>,
         ApiResponse<DocumentUploadResponse>,
+        SupervisionCycleStatus,
+        SupervisionTemplateStatus,
+        SupervisionTargetType,
+        SupervisionTemplateItemType,
+        SupervisionTemplateStepActorKind,
+        SupervisionTemplateStepActionKind,
+        SupervisionObservationStatus,
+        SupervisionEvaluatorStatus,
+        LessonSnapshot,
+        SupervisionCycleTarget,
+        SupervisionCycle,
+        SupervisionTemplateItem,
+        SupervisionTemplateSection,
+        SupervisionTemplateStep,
+        SupervisionTemplate,
+        SupervisionEvaluator,
+        SupervisionEvaluatorConflict,
+        SupervisionEvaluatorAvailability,
+        SupervisionAction,
+        SupervisionObservation,
+        SupervisionReviewResponse,
+        SupervisionReviewEvaluatorResult,
+        SupervisionReviewItemSummary,
+        SupervisionObservationReview,
+        ManualLesson,
+        CreateSupervisionCycleTargetRequest,
+        CreateSupervisionCycleRequest,
+        UpdateSupervisionCycleRequest,
+        SupervisionCycleQuery,
+        CreateSupervisionTemplateItemRequest,
+        CreateSupervisionTemplateSectionRequest,
+        CreateSupervisionTemplateStepRequest,
+        CreateSupervisionTemplateRequest,
+        UpdateSupervisionTemplateRequest,
+        ManualLessonInput,
+        RequestSupervisionObservationRequest,
+        UpdateRequestedObservationRequest,
+        UpdateSupervisionObservationRequest,
+        ReplaceObservationEvaluatorsRequest,
+        CancelObservationRequest,
+        EvaluatorAssignmentInput,
+        ApproveObservationRequest,
+        ReturnObservationRequest,
+        EvaluationResponseInput,
+        SaveEvaluationRequest,
+        AcknowledgeObservationRequest,
+        ListObservationsQuery,
+        SupervisionCycleProgress,
+        SupervisionTeacherStatusRow,
+        ItemsData<SupervisionCycle>,
+        ItemsData<SupervisionTemplate>,
+        ItemsData<SupervisionObservation>,
+        ItemsData<SupervisionEvaluatorAvailability>,
+        ItemsData<TimetableEntry>,
+        ItemsData<SupervisionTeacherStatusRow>,
+        ApiResponse<ItemsData<SupervisionCycle>>,
+        ApiResponse<ItemsData<SupervisionTemplate>>,
+        ApiResponse<ItemsData<SupervisionObservation>>,
+        ApiResponse<SupervisionCycle>,
+        ApiResponse<SupervisionTemplate>,
+        ApiResponse<SupervisionObservation>,
+        ApiResponse<SupervisionObservationReview>,
+        ApiResponse<ItemsData<SupervisionEvaluatorAvailability>>,
+        ApiResponse<ItemsData<TimetableEntry>>,
+        ApiResponse<SupervisionCycleProgress>,
+        ApiResponse<ItemsData<SupervisionTeacherStatusRow>>,
         Notification,
         ListNotificationsResponse,
         ApiResponse<ListNotificationsResponse>,
@@ -1050,6 +1144,7 @@ use utoipa::OpenApi;
         (name = "parent", description = "Parent self-service reads"),
         (name = "academic", description = "Academic structure administration and self-service reads"),
         (name = "calendar", description = "Calendar reads"),
+        (name = "supervision", description = "Teaching supervision workflows and reports"),
         (name = "school", description = "School settings and public branding reads"),
         (name = "files", description = "Authorized provider-neutral file operations"),
         (name = "admission", description = "Admission document attachment operations"),
@@ -2301,6 +2396,160 @@ mod tests {
                 !document["components"]["schemas"][schema].is_null(),
                 "missing schema {schema}"
             );
+        }
+    }
+
+    #[test]
+    fn supervision_routes_are_fully_documented() {
+        let document = school_api_value().expect("document should serialize");
+        let expected = [
+            ("/api/supervision/cycles", "get", "listSupervisionCycles"),
+            ("/api/supervision/cycles", "post", "createSupervisionCycle"),
+            (
+                "/api/supervision/cycles/{id}",
+                "patch",
+                "updateSupervisionCycle",
+            ),
+            (
+                "/api/supervision/templates",
+                "get",
+                "listSupervisionTemplates",
+            ),
+            (
+                "/api/supervision/templates",
+                "post",
+                "createSupervisionTemplate",
+            ),
+            (
+                "/api/supervision/templates/{id}",
+                "get",
+                "getSupervisionTemplate",
+            ),
+            (
+                "/api/supervision/templates/{id}",
+                "patch",
+                "updateSupervisionTemplate",
+            ),
+            (
+                "/api/supervision/observations",
+                "get",
+                "listSupervisionObservations",
+            ),
+            (
+                "/api/supervision/observations/requests",
+                "post",
+                "requestSupervisionObservation",
+            ),
+            (
+                "/api/supervision/observations/{id}",
+                "get",
+                "getSupervisionObservation",
+            ),
+            (
+                "/api/supervision/observations/{id}",
+                "patch",
+                "updateSupervisionObservation",
+            ),
+            (
+                "/api/supervision/observations/{id}/review",
+                "get",
+                "getSupervisionObservationReview",
+            ),
+            (
+                "/api/supervision/observations/{id}/evaluator-availability",
+                "get",
+                "getSupervisionEvaluatorAvailability",
+            ),
+            (
+                "/api/supervision/observations/{id}/timetable-options",
+                "get",
+                "getSupervisionObservationTimetableOptions",
+            ),
+            (
+                "/api/supervision/observations/{id}/evaluators",
+                "put",
+                "replaceSupervisionObservationEvaluators",
+            ),
+            (
+                "/api/supervision/observations/{id}/cancel",
+                "post",
+                "cancelSupervisionObservation",
+            ),
+            (
+                "/api/supervision/observations/{id}/request",
+                "patch",
+                "updateRequestedSupervisionObservation",
+            ),
+            (
+                "/api/supervision/observations/{id}/request",
+                "delete",
+                "cancelRequestedSupervisionObservation",
+            ),
+            (
+                "/api/supervision/observations/{id}/approve-request",
+                "post",
+                "approveSupervisionObservationRequest",
+            ),
+            (
+                "/api/supervision/observations/{id}/return-request",
+                "post",
+                "returnSupervisionObservationRequest",
+            ),
+            (
+                "/api/supervision/observations/{id}/evaluations/me/submit",
+                "post",
+                "submitMySupervisionEvaluation",
+            ),
+            (
+                "/api/supervision/observations/{id}/certify",
+                "post",
+                "certifySupervisionObservation",
+            ),
+            (
+                "/api/supervision/observations/{id}/approve",
+                "post",
+                "approveSupervisionObservation",
+            ),
+            (
+                "/api/supervision/observations/{id}/acknowledge",
+                "post",
+                "acknowledgeSupervisionObservation",
+            ),
+            (
+                "/api/supervision/reports/cycles/{id}/progress",
+                "get",
+                "getSupervisionCycleProgress",
+            ),
+            (
+                "/api/supervision/reports/cycles/{id}/teacher-status",
+                "get",
+                "getSupervisionTeacherStatusOverview",
+            ),
+        ];
+        assert_operations(&document, &expected);
+
+        assert_eq!(
+            query_contract(&document, "/api/supervision/cycles", "get"),
+            BTreeSet::from([
+                ("academicTermId".to_string(), false),
+                ("academicYearId".to_string(), true),
+            ])
+        );
+        assert_eq!(
+            query_contract(&document, "/api/supervision/observations", "get"),
+            BTreeSet::from([
+                ("academicTermId".to_string(), false),
+                ("academicYearId".to_string(), true),
+                ("cycleId".to_string(), false),
+                ("status".to_string(), false),
+            ])
+        );
+        for (path, method, _) in expected {
+            if let Some(parameters) = document["paths"][path][method]["parameters"].as_array() {
+                assert!(parameters.iter().all(|parameter| !parameter["name"]
+                    .as_str()
+                    .is_some_and(|name| name.contains('_'))));
+            }
         }
     }
 

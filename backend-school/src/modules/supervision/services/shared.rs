@@ -24,6 +24,7 @@ pub struct SupervisionTargetMatch {
     pub organization_unit_ids: Vec<Uuid>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct EvaluatorRatingInput {
     pub submitted: bool,
@@ -143,6 +144,7 @@ pub(super) fn has_required_evaluator(evaluators: &[EvaluatorAssignmentInput]) ->
         .any(|evaluator| evaluator.is_required.unwrap_or(true))
 }
 
+#[allow(dead_code)]
 pub fn average_submitted_evaluator_rating(inputs: &[EvaluatorRatingInput]) -> Option<f64> {
     let evaluator_averages = inputs
         .iter()

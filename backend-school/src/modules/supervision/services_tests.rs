@@ -557,3 +557,192 @@ async fn completed_evaluations_flow_through_certification_approval_acknowledgeme
     );
     assert_eq!(teacher_row.average_rating, Some(3.0));
 }
+
+#[tokio::test]
+async fn list_hydrators_preserve_multi_parent_relations() {
+    let pool = migrated_pool("supervision_multi_parent_hydration").await;
+    let fixture = insert_fixture(&pool).await;
+
+    let mut second_template_input = template_input();
+    second_template_input.title = "Second rubric".to_string();
+    second_template_input.sections[0].title = "Second teaching section".to_string();
+    second_template_input.sections[0].items[0].label = "Second lesson clarity".to_string();
+    second_template_input.steps[0].step_code = "second_evaluate".to_string();
+    let second_template = services::create_template(&pool, second_template_input, fixture.actor_id)
+        .await
+        .expect("second supervision template should create");
+
+    let templates = services::list_templates(&pool)
+        .await
+        .expect("templates should list");
+    assert!(templates
+        .windows(2)
+        .all(|pair| pair[0].created_at >= pair[1].created_at));
+    let first_template = templates
+        .iter()
+        .find(|template| template.id == fixture.template.id)
+        .expect("first template should be listed");
+    let listed_second_template = templates
+        .iter()
+        .find(|template| template.id == second_template.id)
+        .expect("second template should be listed");
+    assert_eq!(first_template.sections[0].title, "Teaching");
+    assert_eq!(first_template.sections[0].items[0].label, "Lesson clarity");
+    assert_eq!(first_template.steps[0].step_code, "evaluate");
+    assert_eq!(
+        listed_second_template.sections[0].title,
+        "Second teaching section"
+    );
+    assert_eq!(
+        listed_second_template.sections[0].items[0].label,
+        "Second lesson clarity"
+    );
+    assert_eq!(listed_second_template.steps[0].step_code, "second_evaluate");
+
+    let first = request_observation(&pool, &fixture).await;
+    approve_with(
+        &pool,
+        &fixture,
+        first.id,
+        vec![fixture.evaluator_id, fixture.second_evaluator_id],
+    )
+    .await;
+    services::submit_my_evaluation(
+        &pool,
+        fixture.evaluator_id,
+        first.id,
+        evaluation_responses(&fixture.template, 5.0),
+    )
+    .await
+    .expect("first observation evaluation should submit");
+    let first_rating_item_id = fixture.template.sections[0].items[0].id;
+    services::submit_my_evaluation(
+        &pool,
+        fixture.second_evaluator_id,
+        first.id,
+        SaveEvaluationRequest {
+            responses: vec![EvaluationResponseInput {
+                template_item_id: first_rating_item_id,
+                rating_score: Some(1.0),
+                text_response: None,
+            }],
+        },
+    )
+    .await
+    .expect("second evaluator should submit a partial rating set");
+
+    let second = services::request_observation(
+        &pool,
+        fixture.teacher_id,
+        RequestSupervisionObservationRequest {
+            cycle_id: fixture.cycle.id,
+            academic_term_id: fixture.academic_term_id,
+            timetable_entry_id: None,
+            observed_at: None,
+            manual_lesson: Some(ManualLessonInput {
+                subject_name: "Science".to_string(),
+                classroom_label: "Grade 6/2".to_string(),
+                room_label: Some("Room 602".to_string()),
+                observed_at: fixture.observed_at + Duration::days(1),
+                period_label: "Period 3".to_string(),
+                reason: "Second list hydration fixture".to_string(),
+            }),
+        },
+    )
+    .await
+    .expect("second observation request should create");
+    approve_with(
+        &pool,
+        &fixture,
+        second.id,
+        vec![fixture.second_evaluator_id],
+    )
+    .await;
+    services::submit_my_evaluation(
+        &pool,
+        fixture.second_evaluator_id,
+        second.id,
+        evaluation_responses(&fixture.template, 2.0),
+    )
+    .await
+    .expect("second observation evaluation should submit");
+
+    let inaccessible_teacher_id = test_user(&pool, "inaccessible-teacher").await;
+    let inaccessible = services::request_observation(
+        &pool,
+        inaccessible_teacher_id,
+        RequestSupervisionObservationRequest {
+            cycle_id: fixture.cycle.id,
+            academic_term_id: fixture.academic_term_id,
+            timetable_entry_id: None,
+            observed_at: None,
+            manual_lesson: Some(ManualLessonInput {
+                subject_name: "English".to_string(),
+                classroom_label: "Grade 6/3".to_string(),
+                room_label: None,
+                observed_at: fixture.observed_at + Duration::days(2),
+                period_label: "Period 4".to_string(),
+                reason: "Access boundary fixture".to_string(),
+            }),
+        },
+    )
+    .await
+    .expect("inaccessible observation request should create");
+
+    let observations = services::list_observations(
+        &pool,
+        services::SupervisionObservationListAccess {
+            own_user_id: Some(fixture.teacher_id),
+            ..Default::default()
+        },
+        SupervisionObservationFilter {
+            academic_year_id: fixture.cycle.academic_year_id,
+            academic_term_id: Some(fixture.academic_term_id),
+            cycle_id: Some(fixture.cycle.id),
+            status: None,
+        },
+    )
+    .await
+    .expect("authorized observations should list");
+
+    assert_eq!(observations.len(), 2);
+    assert!(observations
+        .windows(2)
+        .all(|pair| pair[0].created_at >= pair[1].created_at));
+    assert!(!observations
+        .iter()
+        .any(|observation| observation.id == inaccessible.id));
+
+    let listed_first = observations
+        .iter()
+        .find(|observation| observation.id == first.id)
+        .expect("first observation should be listed");
+    let listed_second = observations
+        .iter()
+        .find(|observation| observation.id == second.id)
+        .expect("second observation should be listed");
+    assert_eq!(listed_first.evaluators.len(), 2);
+    assert!(listed_first
+        .evaluators
+        .iter()
+        .any(|evaluator| evaluator.evaluator_user_id == fixture.evaluator_id));
+    assert!(listed_first
+        .evaluators
+        .iter()
+        .any(|evaluator| evaluator.evaluator_user_id == fixture.second_evaluator_id));
+    assert!(listed_first
+        .actions
+        .iter()
+        .all(|action| action.observation_id == first.id));
+    assert_eq!(listed_first.average_rating, Some(3.0));
+    assert_eq!(listed_second.evaluators.len(), 1);
+    assert_eq!(
+        listed_second.evaluators[0].evaluator_user_id,
+        fixture.second_evaluator_id
+    );
+    assert!(listed_second
+        .actions
+        .iter()
+        .all(|action| action.observation_id == second.id));
+    assert_eq!(listed_second.average_rating, Some(2.0));
+}

@@ -15,8 +15,8 @@ use crate::modules::supervision::models::{
 use super::evaluations::load_evaluator_submission_states;
 use super::observations::{get_observation, set_observation_status};
 use super::shared::{
-    all_required_evaluators_submitted, average_submitted_evaluator_rating,
-    parse_optional_observation_status, EvaluatorRatingInput, SupervisionObservationListAccess,
+    all_required_evaluators_submitted, parse_optional_observation_status,
+    SupervisionObservationListAccess,
 };
 use super::templates::get_template;
 
@@ -466,55 +466,6 @@ fn teacher_status_next_step_label(status: Option<SupervisionObservationStatus>) 
         Some(SupervisionObservationStatus::Cancelled) => "ยกเลิก",
     }
     .to_string()
-}
-
-pub(super) async fn fetch_observation_average_rating(
-    pool: &PgPool,
-    observation_id: Uuid,
-) -> Result<Option<f64>, AppError> {
-    let rows = sqlx::query(
-        r#"
-        SELECT e.id AS evaluator_id,
-               e.status,
-               CASE WHEN i.item_type = 'rating'
-                    THEN r.rating_score::double precision
-                    ELSE NULL
-               END AS rating_score
-        FROM supervision_evaluators e
-        LEFT JOIN supervision_evaluator_responses r ON r.evaluator_id = e.id
-        LEFT JOIN supervision_template_items i ON i.id = r.template_item_id
-        WHERE e.observation_id = $1
-        "#,
-    )
-    .bind(observation_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to load supervision observation average: {}", error);
-        AppError::InternalServerError("ไม่สามารถคำนวณคะแนนเฉลี่ยนิเทศได้".to_string())
-    })?;
-
-    let mut inputs: HashMap<Uuid, EvaluatorRatingInput> = HashMap::new();
-    for row in rows {
-        let evaluator_id: Uuid = row.try_get("evaluator_id").map_err(|error| {
-            tracing::error!("Failed to read supervision evaluator id: {}", error);
-            AppError::InternalServerError("ไม่สามารถคำนวณคะแนนเฉลี่ยนิเทศได้".to_string())
-        })?;
-        let status: String = row.try_get("status").map_err(|error| {
-            tracing::error!("Failed to read supervision evaluator status: {}", error);
-            AppError::InternalServerError("ไม่สามารถคำนวณคะแนนเฉลี่ยนิเทศได้".to_string())
-        })?;
-        let rating_score: Option<f64> = row.try_get("rating_score").ok();
-
-        let input = inputs.entry(evaluator_id).or_insert(EvaluatorRatingInput {
-            submitted: status == "submitted",
-            rating_scores: Vec::new(),
-        });
-        input.rating_scores.push(rating_score);
-    }
-
-    let ratings = inputs.into_values().collect::<Vec<_>>();
-    Ok(average_submitted_evaluator_rating(&ratings))
 }
 
 #[cfg(test)]

@@ -6216,3 +6216,37 @@ fn academic_delivery_and_timetable_collection_reads_are_set_based() {
             .is_match(&validate_moves)
     );
 }
+
+#[test]
+fn supervision_collection_hydrators_are_set_based() {
+    let templates = strip_comments(&read_source(
+        manifest_dir().join("src/modules/supervision/services/templates.rs"),
+    ));
+    let observations = strip_comments(&read_source(
+        manifest_dir().join("src/modules/supervision/services/observations.rs"),
+    ));
+    let template_list = extract_braced_block(&templates, "pub async fn list_templates", false);
+    let observation_list =
+        extract_braced_block(&observations, "pub async fn list_observations", false);
+
+    assert!(
+        !Regex::new(r"(?s)for\s+row\s+in\s+rows\s*\{.*?get_template\(pool")
+            .unwrap()
+            .is_match(&template_list),
+        "supervision template lists must not call the detail hydrator per parent row"
+    );
+    assert!(
+        template_list.contains("hydrate_templates(pool, rows).await"),
+        "supervision template lists must share the set-based template hydrator"
+    );
+    assert!(
+        !Regex::new(r"(?s)for\s+row\s+in\s+rows\s*\{.*?observation_from_row\(pool")
+            .unwrap()
+            .is_match(&observation_list),
+        "supervision observation lists must not call the detail hydrator per parent row"
+    );
+    assert!(
+        observation_list.contains("hydrate_observations(pool, rows).await"),
+        "supervision observation lists must share the set-based observation hydrator"
+    );
+}

@@ -1,8 +1,9 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SupervisionCycleStatus {
     Draft,
@@ -32,7 +33,7 @@ impl SupervisionCycleStatus {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SupervisionTemplateStatus {
     Draft,
@@ -59,7 +60,7 @@ impl SupervisionTemplateStatus {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SupervisionTargetType {
     School,
@@ -89,7 +90,7 @@ impl SupervisionTargetType {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SupervisionTemplateItemType {
     Rating,
@@ -113,7 +114,7 @@ impl SupervisionTemplateItemType {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SupervisionTemplateStepActorKind {
     Supervisor,
@@ -143,7 +144,7 @@ impl SupervisionTemplateStepActorKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SupervisionTemplateStepActionKind {
     Submit,
@@ -179,7 +180,7 @@ impl SupervisionTemplateStepActionKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SupervisionObservationStatus {
     Requested,
@@ -230,7 +231,7 @@ impl SupervisionObservationStatus {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SupervisionEvaluatorStatus {
     Assigned,
@@ -249,7 +250,7 @@ impl SupervisionEvaluatorStatus {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct LessonSnapshot {
     pub source: Option<String>,
@@ -261,7 +262,7 @@ pub struct LessonSnapshot {
     pub period_label: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SupervisionCycleTarget {
     pub id: Uuid,
@@ -274,7 +275,7 @@ pub struct SupervisionCycleTarget {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SupervisionCycle {
     pub id: Uuid,
@@ -294,7 +295,7 @@ pub struct SupervisionCycle {
     pub targets: Vec<SupervisionCycleTarget>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SupervisionTemplateItem {
     pub id: Uuid,
@@ -308,7 +309,7 @@ pub struct SupervisionTemplateItem {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SupervisionTemplateSection {
     pub id: Uuid,
@@ -321,7 +322,7 @@ pub struct SupervisionTemplateSection {
     pub items: Vec<SupervisionTemplateItem>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SupervisionTemplateStep {
     pub id: Uuid,
@@ -338,7 +339,7 @@ pub struct SupervisionTemplateStep {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SupervisionTemplate {
     pub id: Uuid,
@@ -354,7 +355,7 @@ pub struct SupervisionTemplate {
     pub steps: Vec<SupervisionTemplateStep>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SupervisionEvaluator {
     pub id: Uuid,
@@ -369,7 +370,7 @@ pub struct SupervisionEvaluator {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SupervisionEvaluatorConflict {
     pub observation_id: Uuid,
@@ -378,7 +379,7 @@ pub struct SupervisionEvaluatorConflict {
     pub lesson_title: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SupervisionEvaluatorAvailability {
     pub id: Uuid,
@@ -389,7 +390,7 @@ pub struct SupervisionEvaluatorAvailability {
     pub conflict: Option<SupervisionEvaluatorConflict>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SupervisionAction {
     pub id: Uuid,
@@ -403,7 +404,7 @@ pub struct SupervisionAction {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SupervisionObservation {
     pub id: Uuid,
@@ -432,7 +433,7 @@ pub struct SupervisionObservation {
     pub average_rating: Option<f64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SupervisionReviewResponse {
     pub template_item_id: Uuid,
@@ -440,7 +441,7 @@ pub struct SupervisionReviewResponse {
     pub text_response: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SupervisionReviewEvaluatorResult {
     pub evaluator_id: Uuid,
@@ -453,7 +454,7 @@ pub struct SupervisionReviewEvaluatorResult {
     pub responses: Vec<SupervisionReviewResponse>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SupervisionReviewItemSummary {
     pub template_item_id: Uuid,
@@ -461,7 +462,7 @@ pub struct SupervisionReviewItemSummary {
     pub response_count: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SupervisionObservationReview {
     pub observation: SupervisionObservation,
@@ -471,7 +472,7 @@ pub struct SupervisionObservationReview {
     pub average_rating: Option<f64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ManualLesson {
     pub subject_name: String,
@@ -482,7 +483,7 @@ pub struct ManualLesson {
     pub reason: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateSupervisionCycleTargetRequest {
     pub target_type: SupervisionTargetType,
@@ -493,7 +494,7 @@ pub struct CreateSupervisionCycleTargetRequest {
     pub priority: i32,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateSupervisionCycleRequest {
     pub academic_year_id: Uuid,
@@ -510,7 +511,7 @@ pub struct CreateSupervisionCycleRequest {
     pub targets: Vec<CreateSupervisionCycleTargetRequest>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateSupervisionCycleRequest {
     pub academic_year_id: Option<Uuid>,
@@ -526,14 +527,15 @@ pub struct UpdateSupervisionCycleRequest {
     pub targets: Option<Vec<CreateSupervisionCycleTargetRequest>>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SupervisionCycleQuery {
     pub academic_year_id: Uuid,
     pub academic_term_id: Option<Uuid>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateSupervisionTemplateItemRequest {
     pub label: String,
@@ -545,7 +547,7 @@ pub struct CreateSupervisionTemplateItemRequest {
     pub sort_order: i32,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateSupervisionTemplateSectionRequest {
     pub title: String,
@@ -556,7 +558,7 @@ pub struct CreateSupervisionTemplateSectionRequest {
     pub items: Vec<CreateSupervisionTemplateItemRequest>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateSupervisionTemplateStepRequest {
     pub step_order: i32,
@@ -570,7 +572,7 @@ pub struct CreateSupervisionTemplateStepRequest {
     pub required: bool,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateSupervisionTemplateRequest {
     pub title: String,
@@ -586,7 +588,7 @@ pub struct CreateSupervisionTemplateRequest {
     pub steps: Vec<CreateSupervisionTemplateStepRequest>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateSupervisionTemplateRequest {
     pub title: Option<String>,
@@ -598,7 +600,7 @@ pub struct UpdateSupervisionTemplateRequest {
     pub steps: Option<Vec<CreateSupervisionTemplateStepRequest>>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ManualLessonInput {
     pub subject_name: String,
@@ -623,7 +625,7 @@ impl ManualLessonInput {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RequestSupervisionObservationRequest {
     pub cycle_id: Uuid,
@@ -633,7 +635,7 @@ pub struct RequestSupervisionObservationRequest {
     pub manual_lesson: Option<ManualLessonInput>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateRequestedObservationRequest {
     pub timetable_entry_id: Option<Uuid>,
@@ -641,7 +643,7 @@ pub struct UpdateRequestedObservationRequest {
     pub manual_lesson: Option<ManualLessonInput>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateSupervisionObservationRequest {
     pub template_id: Option<Uuid>,
@@ -650,20 +652,20 @@ pub struct UpdateSupervisionObservationRequest {
     pub manual_lesson: Option<ManualLessonInput>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ReplaceObservationEvaluatorsRequest {
     #[serde(default)]
     pub evaluators: Vec<EvaluatorAssignmentInput>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CancelObservationRequest {
     pub reason: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct EvaluatorAssignmentInput {
     pub evaluator_user_id: Uuid,
@@ -671,20 +673,20 @@ pub struct EvaluatorAssignmentInput {
     pub is_required: Option<bool>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ApproveObservationRequest {
     #[serde(default)]
     pub evaluators: Vec<EvaluatorAssignmentInput>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ReturnObservationRequest {
     pub comment: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct EvaluationResponseInput {
     pub template_item_id: Uuid,
@@ -692,14 +694,14 @@ pub struct EvaluationResponseInput {
     pub text_response: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SaveEvaluationRequest {
     #[serde(default)]
     pub responses: Vec<EvaluationResponseInput>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AcknowledgeObservationRequest {
     pub comment: Option<String>,
@@ -713,7 +715,7 @@ pub struct SupervisionObservationFilter {
     pub status: Option<SupervisionObservationStatus>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SupervisionCycleProgress {
     pub cycle_id: Uuid,
@@ -728,7 +730,7 @@ pub struct SupervisionCycleProgress {
     pub average_rating: Option<f64>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SupervisionTeacherStatusRow {
     pub teacher_id: Uuid,
