@@ -1,16 +1,16 @@
 use super::models::{
     AcademicTermStatus, AcademicTermType, AcademicYearStatus, BellSchedulePeriodInput,
-    CreateAcademicTermRequest, CreateActivityVersionRequest, CreateBellScheduleRequest,
-    CreateCatalogActivityRequest, CreateCatalogSubjectRequest, CreateCurriculumRequest,
-    CreateCurriculumVersionRequest, CreateHomeroomPlacementRequest, CreateHomeroomRequest,
-    CreateStudentAcademicYearRequest, CreateStudyProgramRequest, CreateSubjectGroupRequest,
-    CreateSubjectVersionRequest, HomeroomPlacementStatus, ProgramRequirementInput,
-    PublishVersionRequest, ReplaceBellSchedulePeriodsRequest, ReplaceGradeProgressionsRequest,
-    ReplaceProgramRequirementsRequest, RequirementKind, RequirementResourceKind,
-    TransferHomeroomPlacementRequest, UpdateAcademicTermRequest, UpdateAcademicYearRequest,
-    UpdateActivityVersionRequest, UpdateCatalogActivityRequest, UpdateCatalogSubjectRequest,
-    UpdateStudyProgramRequest, UpdateSubjectGroupRequest, UpdateSubjectVersionRequest,
-    VersionStatus,
+    CatalogDisplayState, CreateAcademicTermRequest, CreateActivityVersionRequest,
+    CreateBellScheduleRequest, CreateCatalogActivityRequest, CreateCatalogSubjectRequest,
+    CreateCurriculumRequest, CreateCurriculumVersionRequest, CreateHomeroomPlacementRequest,
+    CreateHomeroomRequest, CreateStudentAcademicYearRequest, CreateStudyProgramRequest,
+    CreateSubjectGroupRequest, CreateSubjectVersionRequest, HomeroomPlacementStatus,
+    ProgramRequirementInput, PublishVersionRequest, ReplaceBellSchedulePeriodsRequest,
+    ReplaceGradeProgressionsRequest, ReplaceProgramRequirementsRequest, RequirementKind,
+    RequirementResourceKind, TransferHomeroomPlacementRequest, UpdateAcademicTermRequest,
+    UpdateAcademicYearRequest, UpdateActivityVersionRequest, UpdateCatalogActivityRequest,
+    UpdateCatalogSubjectRequest, UpdateStudyProgramRequest, UpdateSubjectGroupRequest,
+    UpdateSubjectVersionRequest, VersionStatus,
 };
 use super::services::{
     bell_schedules, catalog, context, curriculum, ensure_draft_version, ensure_planning_delete,
@@ -1433,6 +1433,294 @@ async fn activity_catalog_versions_round_trip_exact_hours_and_archive_stably() {
     .await
     .unwrap();
     assert!(archived.archived_at.is_some());
+}
+
+async fn create_overview_subject_version(
+    pool: &PgPool,
+    subject_id: Uuid,
+    grade_level_id: Uuid,
+    name: &str,
+    effective_from: NaiveDate,
+    effective_until: Option<NaiveDate>,
+    publish: bool,
+) {
+    let version = catalog::create_subject_version(
+        pool,
+        subject_id,
+        CreateSubjectVersionRequest {
+            name_th: name.to_string(),
+            name_en: None,
+            credit: "1.00".to_string(),
+            hours_per_semester: Some(40),
+            subject_type: "BASIC".to_string(),
+            group_id: None,
+            description: None,
+            effective_from,
+            effective_until,
+            term_code: None,
+            periods_per_week: Some(2),
+            grade_level_ids: vec![grade_level_id],
+        },
+    )
+    .await
+    .unwrap();
+    if publish {
+        catalog::publish_subject_version(
+            pool,
+            version.id,
+            PublishVersionRequest {
+                row_version: version.row_version,
+            },
+        )
+        .await
+        .unwrap();
+    }
+}
+
+#[tokio::test]
+async fn catalog_overview_selects_effective_versions_without_promoting_drafts() {
+    let pool = prepare_core_fixture("catalog_overview_version_states").await;
+    let today = NaiveDate::from_ymd_opt(2026, 8, 27).unwrap();
+    let grade_level_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM grade_levels WHERE is_active = true ORDER BY level_type, year, id LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let current = catalog::create_subject(
+        &pool,
+        CreateCatalogSubjectRequest {
+            code: "OVERVIEW-CURRENT".to_string(),
+            owning_organization_unit_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    create_overview_subject_version(
+        &pool,
+        current.id,
+        grade_level_id,
+        "รุ่นที่ใช้อยู่",
+        NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
+        Some(NaiveDate::from_ymd_opt(2026, 12, 31).unwrap()),
+        true,
+    )
+    .await;
+    create_overview_subject_version(
+        &pool,
+        current.id,
+        grade_level_id,
+        "ร่างที่ยังไม่เผยแพร่",
+        NaiveDate::from_ymd_opt(2025, 5, 1).unwrap(),
+        Some(NaiveDate::from_ymd_opt(2026, 4, 30).unwrap()),
+        false,
+    )
+    .await;
+
+    let upcoming = catalog::create_subject(
+        &pool,
+        CreateCatalogSubjectRequest {
+            code: "OVERVIEW-UPCOMING".to_string(),
+            owning_organization_unit_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    create_overview_subject_version(
+        &pool,
+        upcoming.id,
+        grade_level_id,
+        "รุ่นอนาคต",
+        NaiveDate::from_ymd_opt(2026, 12, 1).unwrap(),
+        None,
+        true,
+    )
+    .await;
+
+    let expired = catalog::create_subject(
+        &pool,
+        CreateCatalogSubjectRequest {
+            code: "OVERVIEW-EXPIRED".to_string(),
+            owning_organization_unit_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    create_overview_subject_version(
+        &pool,
+        expired.id,
+        grade_level_id,
+        "รุ่นเดิม",
+        NaiveDate::from_ymd_opt(2025, 5, 1).unwrap(),
+        Some(NaiveDate::from_ymd_opt(2026, 3, 31).unwrap()),
+        true,
+    )
+    .await;
+
+    let unpublished = catalog::create_subject(
+        &pool,
+        CreateCatalogSubjectRequest {
+            code: "OVERVIEW-UNPUBLISHED".to_string(),
+            owning_organization_unit_id: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    let overview = catalog::list_subject_overview(
+        &pool,
+        &AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..AcademicResourceListFilter::default()
+        },
+        today,
+    )
+    .await
+    .unwrap();
+
+    let current_item = overview
+        .items
+        .iter()
+        .find(|item| item.subject.id == current.id)
+        .unwrap();
+    assert_eq!(current_item.display_state, CatalogDisplayState::Current);
+    assert_eq!(
+        current_item.display_version.as_ref().unwrap().name_th,
+        "รุ่นที่ใช้อยู่"
+    );
+    assert_eq!(current_item.draft_count, 1);
+    assert_eq!(current_item.grade_levels[0].id, grade_level_id);
+    assert!(!current_item.grade_levels[0].name.is_empty());
+
+    let upcoming_item = overview
+        .items
+        .iter()
+        .find(|item| item.subject.id == upcoming.id)
+        .unwrap();
+    assert_eq!(upcoming_item.display_state, CatalogDisplayState::Upcoming);
+    assert_eq!(upcoming_item.draft_count, 0);
+
+    let expired_item = overview
+        .items
+        .iter()
+        .find(|item| item.subject.id == expired.id)
+        .unwrap();
+    assert_eq!(expired_item.display_state, CatalogDisplayState::Expired);
+
+    let unpublished_item = overview
+        .items
+        .iter()
+        .find(|item| item.subject.id == unpublished.id)
+        .unwrap();
+    assert_eq!(
+        unpublished_item.display_state,
+        CatalogDisplayState::Unpublished
+    );
+    assert!(unpublished_item.display_version.is_none());
+    assert!(unpublished_item.grade_levels.is_empty());
+    assert!(overview
+        .grade_level_options
+        .iter()
+        .any(|level| level.id == grade_level_id && level.short_name.is_some()));
+}
+
+#[tokio::test]
+async fn catalog_overview_keeps_activity_owner_scope_and_grade_options() {
+    let pool = prepare_core_fixture("catalog_overview_activity_scope").await;
+    let today = NaiveDate::from_ymd_opt(2026, 8, 27).unwrap();
+    let grade_level_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM grade_levels WHERE is_active = true ORDER BY level_type, year, id LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let owner_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM organization_units ORDER BY id LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let activity = catalog::create_activity(
+        &pool,
+        CreateCatalogActivityRequest {
+            code: "OVERVIEW-ACTIVITY".to_string(),
+            activity_type: "guidance".to_string(),
+            owning_organization_unit_id: Some(owner_id),
+        },
+    )
+    .await
+    .unwrap();
+    let version = catalog::create_activity_version(
+        &pool,
+        activity.id,
+        CreateActivityVersionRequest {
+            name: "แนะแนวที่ใช้อยู่".to_string(),
+            description: None,
+            hours_per_week: "1.00".to_string(),
+            scheduling_mode: "synchronized".to_string(),
+            effective_from: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
+            effective_until: None,
+            term_code: None,
+            grade_level_ids: vec![grade_level_id],
+        },
+    )
+    .await
+    .unwrap();
+    catalog::publish_activity_version(
+        &pool,
+        version.id,
+        PublishVersionRequest {
+            row_version: version.row_version,
+        },
+    )
+    .await
+    .unwrap();
+
+    let no_access =
+        catalog::list_activity_overview(&pool, &AcademicResourceListFilter::default(), today)
+            .await
+            .unwrap();
+    assert!(!no_access
+        .items
+        .iter()
+        .any(|item| item.activity.id == activity.id));
+
+    let school_scope = catalog::list_activity_overview(
+        &pool,
+        &AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..AcademicResourceListFilter::default()
+        },
+        today,
+    )
+    .await
+    .unwrap();
+    assert!(school_scope
+        .items
+        .iter()
+        .any(|item| item.activity.id == activity.id));
+
+    let owner_scope = catalog::list_activity_overview(
+        &pool,
+        &AcademicResourceListFilter {
+            organization_unit_ids: vec![owner_id],
+            ..AcademicResourceListFilter::default()
+        },
+        today,
+    )
+    .await
+    .unwrap();
+    let item = owner_scope
+        .items
+        .iter()
+        .find(|item| item.activity.id == activity.id)
+        .unwrap();
+    assert_eq!(item.display_state, CatalogDisplayState::Current);
+    assert_eq!(item.grade_levels[0].id, grade_level_id);
+    assert!(owner_scope
+        .grade_level_options
+        .iter()
+        .any(|level| level.id == grade_level_id));
 }
 
 #[tokio::test]

@@ -1,16 +1,20 @@
+use chrono::NaiveDate;
 use sqlx::{PgPool, Postgres, Transaction};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::error::AppError;
+use crate::modules::lookup::models::GradeLevelLookupItem;
 use crate::policies::resource_access_policy::AcademicResourceListFilter;
 
 use super::super::models::{
-    ActivityVersion, CatalogActivity, CatalogSubject, CreateActivityVersionRequest,
-    CreateCatalogActivityRequest, CreateCatalogSubjectRequest, CreateSubjectGroupRequest,
-    CreateSubjectVersionRequest, DefaultTeacher, PublishVersionRequest,
+    ActivityVersion, CatalogActivity, CatalogActivityOverview, CatalogActivityOverviewItem,
+    CatalogDisplayState, CatalogSubject, CatalogSubjectOverview, CatalogSubjectOverviewItem,
+    CreateActivityVersionRequest, CreateCatalogActivityRequest, CreateCatalogSubjectRequest,
+    CreateSubjectGroupRequest, CreateSubjectVersionRequest, DefaultTeacher, PublishVersionRequest,
     ReplaceDefaultTeachersRequest, SubjectGroup, SubjectVersion, UpdateActivityVersionRequest,
     UpdateCatalogActivityRequest, UpdateCatalogSubjectRequest, UpdateSubjectGroupRequest,
-    UpdateSubjectVersionRequest,
+    UpdateSubjectVersionRequest, VersionStatus,
 };
 use super::{ensure_draft_version, parse_row_version, validate_canonical_decimal};
 
@@ -38,6 +42,62 @@ pub async fn list_subjects(
         .bind(owner_ids)
         .fetch_all(pool)
         .await?)
+}
+
+pub async fn list_subject_overview(
+    pool: &PgPool,
+    filter: &AcademicResourceListFilter,
+    today: NaiveDate,
+) -> Result<CatalogSubjectOverview, AppError> {
+    let subjects = list_subjects(pool, filter).await?;
+    let subject_ids = subjects
+        .iter()
+        .map(|subject| subject.id)
+        .collect::<Vec<_>>();
+    let versions: Vec<SubjectVersion> = if subject_ids.is_empty() {
+        Vec::new()
+    } else {
+        sqlx::query_as(&subject_version_select(
+            "version.subject_id = ANY($1)",
+            "version.subject_id, version.version_no DESC",
+        ))
+        .bind(&subject_ids)
+        .fetch_all(pool)
+        .await?
+    };
+    let grade_level_options = list_catalog_grade_levels(pool).await?;
+    let mut versions_by_subject = HashMap::<Uuid, Vec<SubjectVersion>>::new();
+    for version in versions {
+        versions_by_subject
+            .entry(version.subject_id)
+            .or_default()
+            .push(version);
+    }
+
+    let items = subjects
+        .into_iter()
+        .map(|subject| {
+            let versions = versions_by_subject.remove(&subject.id).unwrap_or_default();
+            let (display_version, display_state, draft_count) =
+                select_subject_display(&versions, today);
+            let grade_levels = display_version
+                .as_ref()
+                .map(|version| resolve_grade_levels(&version.grade_level_ids, &grade_level_options))
+                .unwrap_or_default();
+            CatalogSubjectOverviewItem {
+                subject,
+                display_version,
+                display_state,
+                draft_count,
+                grade_levels,
+            }
+        })
+        .collect();
+
+    Ok(CatalogSubjectOverview {
+        items,
+        grade_level_options,
+    })
 }
 
 pub async fn get_subject(pool: &PgPool, id: Uuid) -> Result<CatalogSubject, AppError> {
@@ -266,6 +326,64 @@ pub async fn list_activities(
         .bind(owner_ids)
         .fetch_all(pool)
         .await?)
+}
+
+pub async fn list_activity_overview(
+    pool: &PgPool,
+    filter: &AcademicResourceListFilter,
+    today: NaiveDate,
+) -> Result<CatalogActivityOverview, AppError> {
+    let activities = list_activities(pool, filter).await?;
+    let activity_ids = activities
+        .iter()
+        .map(|activity| activity.id)
+        .collect::<Vec<_>>();
+    let versions: Vec<ActivityVersion> = if activity_ids.is_empty() {
+        Vec::new()
+    } else {
+        sqlx::query_as(&activity_version_select(
+            "version.activity_id = ANY($1)",
+            "version.activity_id, version.version_no DESC",
+        ))
+        .bind(&activity_ids)
+        .fetch_all(pool)
+        .await?
+    };
+    let grade_level_options = list_catalog_grade_levels(pool).await?;
+    let mut versions_by_activity = HashMap::<Uuid, Vec<ActivityVersion>>::new();
+    for version in versions {
+        versions_by_activity
+            .entry(version.activity_id)
+            .or_default()
+            .push(version);
+    }
+
+    let items = activities
+        .into_iter()
+        .map(|activity| {
+            let versions = versions_by_activity
+                .remove(&activity.id)
+                .unwrap_or_default();
+            let (display_version, display_state, draft_count) =
+                select_activity_display(&versions, today);
+            let grade_levels = display_version
+                .as_ref()
+                .map(|version| resolve_grade_levels(&version.grade_level_ids, &grade_level_options))
+                .unwrap_or_default();
+            CatalogActivityOverviewItem {
+                activity,
+                display_version,
+                display_state,
+                draft_count,
+                grade_levels,
+            }
+        })
+        .collect();
+
+    Ok(CatalogActivityOverview {
+        items,
+        grade_level_options,
+    })
 }
 
 pub async fn get_activity(pool: &PgPool, id: Uuid) -> Result<CatalogActivity, AppError> {
@@ -618,6 +736,168 @@ pub async fn delete_subject_group(pool: &PgPool, id: Uuid) -> Result<(), AppErro
         return Err(AppError::NotFound("ไม่พบกลุ่มสาระ".to_string()));
     }
     Ok(())
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct CatalogGradeLevelRow {
+    id: Uuid,
+    level_type: String,
+    year: i32,
+}
+
+async fn list_catalog_grade_levels(pool: &PgPool) -> Result<Vec<GradeLevelLookupItem>, AppError> {
+    let rows = sqlx::query_as::<_, CatalogGradeLevelRow>(
+        r#"
+        SELECT id, level_type, year
+        FROM grade_levels
+        WHERE is_active = true
+        ORDER BY CASE level_type
+                    WHEN 'kindergarten' THEN 1
+                    WHEN 'primary' THEN 2
+                    WHEN 'secondary' THEN 3
+                    ELSE 4
+                 END,
+                 year,
+                 id
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(grade_level_lookup_item).collect())
+}
+
+fn grade_level_lookup_item(row: CatalogGradeLevelRow) -> GradeLevelLookupItem {
+    let (name, code, short_name, order_base) = match row.level_type.as_str() {
+        "kindergarten" => (
+            format!("อนุบาลปีที่ {}", row.year),
+            format!("K{}", row.year),
+            format!("อ.{}", row.year),
+            1,
+        ),
+        "primary" => (
+            format!("ประถมศึกษาปีที่ {}", row.year),
+            format!("P{}", row.year),
+            format!("ป.{}", row.year),
+            2,
+        ),
+        "secondary" => (
+            format!("มัธยมศึกษาปีที่ {}", row.year),
+            format!("M{}", row.year),
+            format!("ม.{}", row.year),
+            3,
+        ),
+        _ => (
+            format!("Other {}", row.year),
+            format!("O{}", row.year),
+            format!("?{}", row.year),
+            4,
+        ),
+    };
+    GradeLevelLookupItem {
+        id: row.id,
+        code,
+        name,
+        short_name: Some(short_name),
+        level_type: row.level_type,
+        level_order: order_base * 100 + row.year,
+    }
+}
+
+fn resolve_grade_levels(
+    grade_level_ids: &[Uuid],
+    options: &[GradeLevelLookupItem],
+) -> Vec<GradeLevelLookupItem> {
+    options
+        .iter()
+        .filter(|option| grade_level_ids.contains(&option.id))
+        .cloned()
+        .collect()
+}
+
+fn select_subject_display(
+    versions: &[SubjectVersion],
+    today: NaiveDate,
+) -> (Option<SubjectVersion>, CatalogDisplayState, i64) {
+    let draft_count = versions
+        .iter()
+        .filter(|version| version.status == VersionStatus::Draft)
+        .count() as i64;
+    let display = select_display_version(
+        versions
+            .iter()
+            .filter(|version| version.status == VersionStatus::Published),
+        today,
+        |version| version.effective_from,
+        |version| version.effective_until,
+        |version| version.version_no,
+    );
+    match display {
+        Some((version, state)) => (Some(version.clone()), state, draft_count),
+        None => (None, CatalogDisplayState::Unpublished, draft_count),
+    }
+}
+
+fn select_activity_display(
+    versions: &[ActivityVersion],
+    today: NaiveDate,
+) -> (Option<ActivityVersion>, CatalogDisplayState, i64) {
+    let draft_count = versions
+        .iter()
+        .filter(|version| version.status == VersionStatus::Draft)
+        .count() as i64;
+    let display = select_display_version(
+        versions
+            .iter()
+            .filter(|version| version.status == VersionStatus::Published),
+        today,
+        |version| version.effective_from,
+        |version| version.effective_until,
+        |version| version.version_no,
+    );
+    match display {
+        Some((version, state)) => (Some(version.clone()), state, draft_count),
+        None => (None, CatalogDisplayState::Unpublished, draft_count),
+    }
+}
+
+fn select_display_version<'a, T: 'a>(
+    versions: impl Iterator<Item = &'a T>,
+    today: NaiveDate,
+    effective_from: impl Fn(&T) -> NaiveDate,
+    effective_until: impl Fn(&T) -> Option<NaiveDate>,
+    version_no: impl Fn(&T) -> i32,
+) -> Option<(&'a T, CatalogDisplayState)> {
+    let versions = versions.collect::<Vec<_>>();
+    if let Some(current) = versions
+        .iter()
+        .copied()
+        .filter(|version| {
+            effective_from(version) <= today
+                && effective_until(version).is_none_or(|until| until >= today)
+        })
+        .max_by_key(|version| (effective_from(version), version_no(version)))
+    {
+        return Some((current, CatalogDisplayState::Current));
+    }
+    if let Some(upcoming) = versions
+        .iter()
+        .copied()
+        .filter(|version| effective_from(version) > today)
+        .min_by_key(|version| (effective_from(version), version_no(version)))
+    {
+        return Some((upcoming, CatalogDisplayState::Upcoming));
+    }
+    versions
+        .into_iter()
+        .filter(|version| effective_until(version).is_some_and(|until| until < today))
+        .max_by_key(|version| {
+            (
+                effective_until(version).unwrap_or_else(|| effective_from(version)),
+                effective_from(version),
+                version_no(version),
+            )
+        })
+        .map(|version| (version, CatalogDisplayState::Expired))
 }
 
 fn subject_version_select(predicate: &str, order: &str) -> String {

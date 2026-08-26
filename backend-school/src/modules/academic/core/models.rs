@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
+use crate::modules::lookup::models::GradeLevelLookupItem;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema, sqlx::Type)]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
@@ -44,6 +46,15 @@ pub enum VersionStatus {
     Draft,
     Published,
     Archived,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CatalogDisplayState {
+    Current,
+    Upcoming,
+    Expired,
+    Unpublished,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema, sqlx::Type)]
@@ -455,6 +466,40 @@ pub struct ActivityVersion {
     pub migrated: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogSubjectOverviewItem {
+    pub subject: CatalogSubject,
+    pub display_version: Option<SubjectVersion>,
+    pub display_state: CatalogDisplayState,
+    pub draft_count: i64,
+    pub grade_levels: Vec<GradeLevelLookupItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogSubjectOverview {
+    pub items: Vec<CatalogSubjectOverviewItem>,
+    pub grade_level_options: Vec<GradeLevelLookupItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogActivityOverviewItem {
+    pub activity: CatalogActivity,
+    pub display_version: Option<ActivityVersion>,
+    pub display_state: CatalogDisplayState,
+    pub draft_count: i64,
+    pub grade_levels: Vec<GradeLevelLookupItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogActivityOverview {
+    pub items: Vec<CatalogActivityOverviewItem>,
+    pub grade_level_options: Vec<GradeLevelLookupItem>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
