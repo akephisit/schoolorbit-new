@@ -319,7 +319,7 @@ async function buildContentParagraphs(
 	let prefixPending = Boolean(options.prefix);
 	const indent = options.indent ? { left: options.indent } : undefined;
 
-	for (const block of content.document.content) {
+	for (const block of content.document.content ?? []) {
 		if (block.type === 'paragraph') {
 			const children = buildInlineRuns(block.content ?? []);
 			if (prefixPending) {
@@ -734,7 +734,7 @@ function hasMark(node: Extract<RichInlineNode, { type: 'text' }>, type: 'bold' |
 
 function hasContent(content: RichContent | null | undefined): content is RichContent {
 	return Boolean(
-		content?.document.content.some((block) => {
+		content?.document.content?.some((block) => {
 			if (block.type === 'image') return true;
 			if (block.type === 'math_block') return Boolean(block.attrs.latex.trim());
 			return (block.content ?? []).some((node) => {

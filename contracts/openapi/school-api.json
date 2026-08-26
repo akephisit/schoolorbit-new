@@ -6544,6 +6544,131 @@
         ],
         "type": "object"
       },
+      "ApiResponse_QuestionBankOptions": {
+        "properties": {
+          "data": {
+            "properties": {
+              "subjects": {
+                "items": {
+                  "$ref": "#/components/schemas/QuestionBankSubjectOption"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "subjects"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_QuestionBankPage": {
+        "properties": {
+          "data": {
+            "properties": {
+              "items": {
+                "items": {
+                  "$ref": "#/components/schemas/QuestionSummary"
+                },
+                "type": "array"
+              },
+              "page": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "pageSize": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "summary": {
+                "$ref": "#/components/schemas/QuestionBankSummary"
+              },
+              "total": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "totalPages": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "items",
+              "total",
+              "page",
+              "pageSize",
+              "totalPages",
+              "summary"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_QuestionDetail": {
+        "properties": {
+          "data": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/QuestionSummary"
+              },
+              {
+                "properties": {
+                  "choices": {
+                    "items": {
+                      "$ref": "#/components/schemas/QuestionChoice"
+                    },
+                    "type": "array"
+                  },
+                  "files": {
+                    "items": {
+                      "$ref": "#/components/schemas/QuestionFile"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "choices",
+                  "files"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_RevokeCertificateResult": {
         "properties": {
           "data": {
@@ -12465,6 +12590,52 @@
                 "rowVersion"
               ],
               "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_QuestionDetail": {
+        "properties": {
+          "data": {
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/QuestionSummary"
+                },
+                {
+                  "properties": {
+                    "choices": {
+                      "items": {
+                        "$ref": "#/components/schemas/QuestionChoice"
+                      },
+                      "type": "array"
+                    },
+                    "files": {
+                      "items": {
+                        "$ref": "#/components/schemas/QuestionFile"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "choices",
+                    "files"
+                  ],
+                  "type": "object"
+                }
+              ]
             },
             "type": "array"
           },
@@ -22111,6 +22282,14 @@
         ],
         "type": "object"
       },
+      "ImageAlignment": {
+        "enum": [
+          "left",
+          "center",
+          "right"
+        ],
+        "type": "string"
+      },
       "ImageElement": {
         "additionalProperties": false,
         "properties": {
@@ -22144,6 +22323,41 @@
           "assetId",
           "lockAspectRatio",
           "aspectRatio"
+        ],
+        "type": "object"
+      },
+      "ImageNodeAttributes": {
+        "additionalProperties": false,
+        "properties": {
+          "alignment": {
+            "$ref": "#/components/schemas/ImageAlignment"
+          },
+          "altText": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "caption": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fileId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "widthPercent": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "fileId",
+          "alignment",
+          "widthPercent"
         ],
         "type": "object"
       },
@@ -23943,6 +24157,18 @@
         ],
         "type": "object"
       },
+      "MathNodeAttributes": {
+        "additionalProperties": false,
+        "properties": {
+          "latex": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "latex"
+        ],
+        "type": "object"
+      },
       "MembershipStatus": {
         "enum": [
           "active",
@@ -25657,6 +25883,404 @@
         ],
         "type": "object"
       },
+      "QuestionBankExportDataRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "questionIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "questionIds"
+        ],
+        "type": "object"
+      },
+      "QuestionBankListQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "difficulty": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "page": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "pageSize": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "questionType": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subjectId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tag": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "QuestionBankOptions": {
+        "properties": {
+          "subjects": {
+            "items": {
+              "$ref": "#/components/schemas/QuestionBankSubjectOption"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "subjects"
+        ],
+        "type": "object"
+      },
+      "QuestionBankPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/QuestionSummary"
+            },
+            "type": "array"
+          },
+          "page": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "pageSize": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/QuestionBankSummary"
+          },
+          "total": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "totalPages": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pageSize",
+          "totalPages",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "QuestionBankSubjectOption": {
+        "properties": {
+          "canCreate": {
+            "type": "boolean"
+          },
+          "code": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "nameEn": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "nameTh": {
+            "type": "string"
+          },
+          "subjectGroupId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subjectGroupName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "nameTh",
+          "canCreate"
+        ],
+        "type": "object"
+      },
+      "QuestionBankSummary": {
+        "properties": {
+          "choice": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ready": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "total": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "written": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "choice",
+          "written",
+          "ready"
+        ],
+        "type": "object"
+      },
+      "QuestionChoice": {
+        "properties": {
+          "content": {
+            "$ref": "#/components/schemas/RichContent"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "isCorrect": {
+            "type": "boolean"
+          },
+          "label": {
+            "type": "string"
+          },
+          "questionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sortOrder": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "questionId",
+          "label",
+          "content",
+          "isCorrect",
+          "sortOrder"
+        ],
+        "type": "object"
+      },
+      "QuestionDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/QuestionSummary"
+          },
+          {
+            "properties": {
+              "choices": {
+                "items": {
+                  "$ref": "#/components/schemas/QuestionChoice"
+                },
+                "type": "array"
+              },
+              "files": {
+                "items": {
+                  "$ref": "#/components/schemas/QuestionFile"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "choices",
+              "files"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "QuestionFile": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "QuestionSummary": {
+        "properties": {
+          "canManage": {
+            "type": "boolean"
+          },
+          "choiceCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "correctChoiceCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "difficulty": {
+            "type": "string"
+          },
+          "explanationContent": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RichContent"
+              }
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "ownerUserId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "points": {
+            "format": "double",
+            "type": "number"
+          },
+          "questionType": {
+            "type": "string"
+          },
+          "rubricContent": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RichContent"
+              }
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "stemContent": {
+            "$ref": "#/components/schemas/RichContent"
+          },
+          "subjectCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subjectGroupId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subjectGroupName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subjectId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subjectNameEn": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subjectNameTh": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ownerUserId",
+          "questionType",
+          "difficulty",
+          "points",
+          "stemContent",
+          "tags",
+          "status",
+          "choiceCount",
+          "correctChoiceCount",
+          "canManage",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
       "RecipientType": {
         "enum": [
           "student",
@@ -26006,6 +26630,200 @@
           "replacementCandidate"
         ],
         "type": "object"
+      },
+      "RichBlockNode": {
+        "oneOf": [
+          {
+            "properties": {
+              "content": {
+                "items": {
+                  "$ref": "#/components/schemas/RichInlineNode"
+                },
+                "type": "array"
+              },
+              "type": {
+                "enum": [
+                  "paragraph"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "attrs": {
+                "$ref": "#/components/schemas/MathNodeAttributes"
+              },
+              "type": {
+                "enum": [
+                  "math_block"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "attrs",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "attrs": {
+                "$ref": "#/components/schemas/ImageNodeAttributes"
+              },
+              "type": {
+                "enum": [
+                  "image"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "attrs",
+              "type"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "RichContent": {
+        "additionalProperties": false,
+        "properties": {
+          "document": {
+            "$ref": "#/components/schemas/RichDocument"
+          },
+          "schemaVersion": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "document"
+        ],
+        "type": "object"
+      },
+      "RichDocument": {
+        "oneOf": [
+          {
+            "properties": {
+              "content": {
+                "items": {
+                  "$ref": "#/components/schemas/RichBlockNode"
+                },
+                "type": "array"
+              },
+              "type": {
+                "enum": [
+                  "doc"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "RichInlineNode": {
+        "oneOf": [
+          {
+            "properties": {
+              "marks": {
+                "items": {
+                  "$ref": "#/components/schemas/RichTextMark"
+                },
+                "type": "array"
+              },
+              "text": {
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "text"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "text",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "attrs": {
+                "$ref": "#/components/schemas/MathNodeAttributes"
+              },
+              "type": {
+                "enum": [
+                  "inline_math"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "attrs",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "type": {
+                "enum": [
+                  "hardBreak"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "RichTextMark": {
+        "oneOf": [
+          {
+            "properties": {
+              "type": {
+                "enum": [
+                  "bold"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "type": {
+                "enum": [
+                  "italic"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "type": "object"
+          }
+        ]
       },
       "Role": {
         "properties": {
@@ -31829,6 +32647,104 @@
           "endTime",
           "gradeLevelIds",
           "blockedWindows"
+        ],
+        "type": "object"
+      },
+      "UpsertQuestionChoiceRequest": {
+        "properties": {
+          "content": {
+            "$ref": "#/components/schemas/RichContent"
+          },
+          "id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "isCorrect": {
+            "type": "boolean"
+          },
+          "label": {
+            "type": "string"
+          },
+          "sortOrder": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "label",
+          "content",
+          "isCorrect",
+          "sortOrder"
+        ],
+        "type": "object"
+      },
+      "UpsertQuestionRequest": {
+        "properties": {
+          "choices": {
+            "items": {
+              "$ref": "#/components/schemas/UpsertQuestionChoiceRequest"
+            },
+            "type": "array"
+          },
+          "difficulty": {
+            "type": "string"
+          },
+          "explanationContent": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RichContent"
+              }
+            ]
+          },
+          "points": {
+            "format": "double",
+            "type": "number"
+          },
+          "questionType": {
+            "type": "string"
+          },
+          "rubricContent": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RichContent"
+              }
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "stemContent": {
+            "$ref": "#/components/schemas/RichContent"
+          },
+          "subjectId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "subjectId",
+          "questionType",
+          "difficulty",
+          "points",
+          "stemContent",
+          "tags",
+          "status",
+          "choices"
         ],
         "type": "object"
       },
@@ -39183,6 +40099,560 @@
         },
         "tags": [
           "academic"
+        ]
+      }
+    },
+    "/api/academic/question-bank/options": {
+      "get": {
+        "operationId": "listQuestionBankOptions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_QuestionBankOptions"
+                }
+              }
+            },
+            "description": "Question bank options"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Question bank access denied"
+          }
+        },
+        "tags": [
+          "question-bank"
+        ]
+      }
+    },
+    "/api/academic/question-bank/questions": {
+      "get": {
+        "operationId": "listQuestionBankQuestions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "subjectId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "questionType",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "difficulty",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tag",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_QuestionBankPage"
+                }
+              }
+            },
+            "description": "Question bank page"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid question bank filters"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Question bank access denied"
+          }
+        },
+        "tags": [
+          "question-bank"
+        ]
+      },
+      "post": {
+        "operationId": "createQuestionBankQuestion",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertQuestionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_QuestionDetail"
+                }
+              }
+            },
+            "description": "Question created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid question"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Question bank management denied"
+          }
+        },
+        "tags": [
+          "question-bank"
+        ]
+      }
+    },
+    "/api/academic/question-bank/questions/{id}": {
+      "delete": {
+        "operationId": "deleteQuestionBankQuestion",
+        "parameters": [
+          {
+            "description": "Question ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Question deleted"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Question bank management denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Question not found"
+          }
+        },
+        "tags": [
+          "question-bank"
+        ]
+      },
+      "get": {
+        "operationId": "getQuestionBankQuestion",
+        "parameters": [
+          {
+            "description": "Question ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_QuestionDetail"
+                }
+              }
+            },
+            "description": "Question detail"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Question bank access denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Question not found"
+          }
+        },
+        "tags": [
+          "question-bank"
+        ]
+      },
+      "put": {
+        "operationId": "updateQuestionBankQuestion",
+        "parameters": [
+          {
+            "description": "Question ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertQuestionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_QuestionDetail"
+                }
+              }
+            },
+            "description": "Question updated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid question"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Question bank management denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Question not found"
+          }
+        },
+        "tags": [
+          "question-bank"
+        ]
+      }
+    },
+    "/api/academic/question-bank/questions/{question_id}/files/{file_id}": {
+      "get": {
+        "operationId": "getQuestionBankQuestionFile",
+        "parameters": [
+          {
+            "description": "Question ID",
+            "in": "path",
+            "name": "question_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Question image file ID",
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Redirect to the authorized private file"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Question image access denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Question image not found"
+          }
+        },
+        "tags": [
+          "question-bank"
+        ]
+      }
+    },
+    "/api/academic/question-bank/questions/export-data": {
+      "post": {
+        "operationId": "exportQuestionBankData",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuestionBankExportDataRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_QuestionDetail"
+                }
+              }
+            },
+            "description": "Ordered question export data"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid export selection"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Question bank access denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Question selection unavailable"
+          }
+        },
+        "tags": [
+          "question-bank"
         ]
       }
     },
@@ -55396,6 +56866,10 @@
     {
       "description": "Teaching supervision workflows and reports",
       "name": "supervision"
+    },
+    {
+      "description": "Authorized question bank and export operations",
+      "name": "question-bank"
     },
     {
       "description": "School settings and public branding reads",

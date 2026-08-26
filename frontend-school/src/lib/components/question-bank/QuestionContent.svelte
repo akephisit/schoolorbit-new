@@ -12,6 +12,7 @@
 
 	let { content = null, files = [], questionId, compact = false }: Props = $props();
 	let fileIds = $derived(new Set(files.map((file) => file.id)));
+	let blocks = $derived(content?.document.content ?? []);
 
 	function hasMark(node: Extract<RichInlineNode, { type: 'text' }>, type: 'bold' | 'italic') {
 		return node.marks?.some((mark) => mark.type === type) ?? false;
@@ -23,14 +24,14 @@
 	}
 </script>
 
-{#if content?.document.content.length}
+{#if blocks.length}
 	<div
 		class={[
 			'question-content min-w-0',
 			compact ? 'question-content--compact line-clamp-2 leading-7' : 'space-y-2'
 		]}
 	>
-		{#each content.document.content as block, index (`${block.type}-${index}`)}
+		{#each blocks as block, index (`${block.type}-${index}`)}
 			{#if block.type === 'paragraph'}
 				<p class={['whitespace-pre-wrap break-words', compact ? 'inline' : 'leading-7']}>
 					{#each block.content ?? [] as node, inlineIndex (`${node.type}-${inlineIndex}`)}

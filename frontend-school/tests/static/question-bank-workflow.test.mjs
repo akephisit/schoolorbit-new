@@ -15,11 +15,15 @@ async function readProjectFile(relativePath) {
 
 test('question bank uses its own subject options and exact subject contract', async () => {
 	const api = await readProjectFile('src/lib/api/questionBank.ts');
+	const generated = await readProjectFile('src/lib/api/generated/school-api.ts');
 	const page = await readProjectFile('src/routes/(app)/staff/academic/question-bank/+page.svelte');
 
 	assert.match(api, /export async function getQuestionBankOptions/);
 	assert.match(api, /\/api\/academic\/question-bank\/options/);
-	assert.match(api, /subjectId:\s*string;/);
+	assert.match(api, /import type \{ components, operations \}/);
+	assert.match(api, /QuestionBankListQuery = NonNullable</);
+	assert.match(api, /operations\['listQuestionBankQuestions'\]/);
+	assert.match(generated, /QuestionBankListQuery:[\s\S]*subjectId\?: string \| null/);
 	assert.doesNotMatch(api, /gradeLevelId/);
 	assert.match(page, /getQuestionBankOptions\(\)/);
 	assert.doesNotMatch(page, /getAcademicStructure|listSubjects|gradeLevelId|ปีการศึกษา/);
@@ -94,9 +98,10 @@ test('question content uses a versioned JSON document and strips editor-only ima
 	const extensions = await readProjectFile('src/lib/question-bank/rich-editor-extensions.ts');
 	const renderer = await readProjectFile('src/lib/components/question-bank/QuestionContent.svelte');
 
-	assert.match(api, /schemaVersion:\s*1/);
-	assert.match(api, /type:\s*'inline_math'/);
-	assert.match(api, /type:\s*'image'/);
+	assert.match(api, /RichContent = Schemas\['RichContent'\]/);
+	assert.match(api, /RichInlineNode = Schemas\['RichInlineNode'\]/);
+	assert.match(api, /RichContentBlock = Schemas\['RichBlockNode'\]/);
+	assert.match(documentHelpers, /schemaVersion:\s*1/);
 	assert.match(documentHelpers, /toPersistedRichContent/);
 	assert.match(documentHelpers, /const fileId = block\.attrs\.fileId \?\?/);
 	assert.match(documentHelpers, /attrs:\s*\{\s*fileId,/);
@@ -169,8 +174,23 @@ test('question bank exports selected questions with editable native Word Math eq
 	assert.match(page, /new SvelteSet<string>\(\)/);
 	assert.match(page, /เลือกทั้งหมดในหน้านี้/);
 	assert.match(page, /ส่งออก Word/);
-	assert.match(page, /loadSelectedQuestionDetails/);
-	assert.match(page, /getQuestionBankQuestion\(questionIds\[index\]\)/);
+	assert.match(page, /loadQuestionBankExportData/);
+	assert.match(page, /exportQuestionBankData/);
+	assert.match(api, /const body = \{ questionIds \} satisfies ExportQuestionBankDataRequest/);
+	assert.match(api, /apiClient\.post<QuestionDetail\[\]>/);
+	const exportWorkflow = page.slice(
+		page.indexOf('function openWordExportDialog'),
+		page.indexOf('async function loadInitialData')
+	);
+	assert.doesNotMatch(exportWorkflow, /getQuestionBankQuestion/);
+	assert.doesNotMatch(exportWorkflow, /Promise\.all\(Array\.from/);
+	assert.match(exportWorkflow, /wordExportRequest\.begin\(\)/);
+	assert.match(
+		exportWorkflow,
+		/handleWordExportDialogOpenChange[\s\S]*wordExportRequest\.abort\(\)/
+	);
+	assert.match(exportWorkflow, /isAbortError\(error\)/);
+	assert.match(page, /onDestroy\(\(\) => \{[\s\S]*wordExportRequest\.abort\(\)/);
 	assert.match(
 		page,
 		/const selectedQuestionSummaries = new SvelteMap<string, QuestionSummary>\(\)/

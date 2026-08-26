@@ -51,17 +51,21 @@ export function toEditorRichContent(
 	content: RichContent | null | undefined,
 	previewUrls: ReadonlyMap<string, string>
 ): EditorRichContent {
-	const blocks = (content ?? emptyRichContent()).document.content.map((block): EditorRichBlock => {
-		if (block.type !== 'image') return cloneBlock(block);
-		return {
-			type: 'image',
-			attrs: {
-				...block.attrs,
-				pendingId: null,
-				previewUrl: previewUrls.get(block.attrs.fileId) ?? null
-			}
-		};
-	});
+	const blocks = ((content ?? emptyRichContent()).document.content ?? []).map(
+		(block): EditorRichBlock => {
+			if (block.type !== 'image') return cloneBlock(block);
+			return {
+				type: 'image',
+				attrs: {
+					...block.attrs,
+					altText: block.attrs.altText ?? null,
+					caption: block.attrs.caption ?? null,
+					pendingId: null,
+					previewUrl: previewUrls.get(block.attrs.fileId) ?? null
+				}
+			};
+		}
+	);
 	return {
 		schemaVersion: 1,
 		document: {
@@ -108,7 +112,7 @@ export function toPersistedRichContent(
 }
 
 export function richContentHasBody(content: EditorRichContent | RichContent): boolean {
-	return content.document.content.some((block) => {
+	return (content.document.content ?? []).some((block) => {
 		if (block.type === 'image') return true;
 		if (block.type === 'math_block') return Boolean(block.attrs.latex.trim());
 		return (block.content ?? []).some((node) => {
@@ -121,7 +125,7 @@ export function richContentHasBody(content: EditorRichContent | RichContent): bo
 
 export function richContentPlainText(content: EditorRichContent | RichContent): string {
 	const parts: string[] = [];
-	for (const block of content.document.content) {
+	for (const block of content.document.content ?? []) {
 		if (block.type === 'image') {
 			if (block.attrs.altText?.trim()) parts.push(block.attrs.altText.trim());
 			if (block.attrs.caption?.trim()) parts.push(block.attrs.caption.trim());
@@ -142,11 +146,11 @@ export function richContentPlainText(content: EditorRichContent | RichContent): 
 }
 
 export function contentHasImage(content: EditorRichContent | RichContent): boolean {
-	return content.document.content.some((block) => block.type === 'image');
+	return (content.document.content ?? []).some((block) => block.type === 'image');
 }
 
 export function contentHasMath(content: EditorRichContent | RichContent): boolean {
-	return content.document.content.some((block) => {
+	return (content.document.content ?? []).some((block) => {
 		if (block.type === 'math_block') return Boolean(block.attrs.latex.trim());
 		return (
 			block.type === 'paragraph' &&

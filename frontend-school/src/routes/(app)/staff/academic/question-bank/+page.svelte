@@ -6,6 +6,7 @@
 	import {
 		createQuestionBankQuestion,
 		deleteQuestionBankQuestion,
+		exportQuestionBankData,
 		getQuestionBankOptions,
 		getQuestionBankQuestion,
 		listQuestionBankQuestions,
@@ -20,6 +21,7 @@
 		type RichContent,
 		type UpsertQuestionRequest
 	} from '$lib/api/questionBank';
+	import { isAbortError, LatestRequest } from '$lib/async/latest-request';
 	import { deleteFile, uploadFile } from '$lib/api/files';
 	import { PageShell } from '$lib/components/app-layout';
 	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
@@ -34,6 +36,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
 	import { PERMISSIONS } from '$lib/permissions/registry';
+	import { loadQuestionBankExportData } from '$lib/question-bank/export-data';
 	import {
 		contentHasImage,
 		contentHasMath,
@@ -172,6 +175,7 @@
 	let draggedExportQuestionId = $state<string | null>(null);
 	const selectedQuestionIds = new SvelteSet<string>();
 	const selectedQuestionSummaries = new SvelteMap<string, QuestionSummary>();
+	const wordExportRequest = new LatestRequest();
 
 	const creatableSubjects = $derived(subjects.filter((subject) => subject.canCreate));
 	const canCreateQuestion = $derived(hasManagePermission && creatableSubjects.length > 0);
@@ -195,6 +199,7 @@
 	});
 
 	onDestroy(() => {
+		wordExportRequest.abort();
 		hideMathVirtualKeyboard(false);
 		cleanupDraftObjectUrls(draft);
 	});
@@ -341,6 +346,7 @@
 
 	function openWordExportDialog() {
 		if (selectedQuestionIds.size === 0) return;
+		wordExportRequest.abort();
 		const subject = subjects.find((item) => item.id === selectedSubjectId);
 		wordExportTitle = subject ? `ชุดข้อสอบ ${subject.code} ${subject.nameTh}` : 'ชุดข้อสอบ';
 		includeAnswerKey = false;
@@ -348,6 +354,14 @@
 		originalExportQuestionIds = [...exportQuestionIds];
 		draggedExportQuestionId = null;
 		wordExportDialogOpen = true;
+	}
+
+	function handleWordExportDialogOpenChange(open: boolean) {
+		wordExportDialogOpen = open;
+		if (!open) {
+			wordExportRequest.abort();
+			exportingWord = false;
+		}
 	}
 
 	function reorderExportQuestion(sourceId: string, targetId: string) {
@@ -397,44 +411,34 @@
 		draggedExportQuestionId = null;
 	}
 
-	async function loadSelectedQuestionDetails(questionIds: string[]) {
-		const details = new Array<QuestionDetail>(questionIds.length);
-		let nextIndex = 0;
-		async function loadNext() {
-			while (nextIndex < questionIds.length) {
-				const index = nextIndex;
-				nextIndex += 1;
-				details[index] = await getQuestionBankQuestion(questionIds[index]);
-			}
-		}
-		await Promise.all(Array.from({ length: Math.min(4, questionIds.length) }, () => loadNext()));
-		return details;
-	}
-
 	async function confirmWordExport() {
-		if (exportingWord || exportQuestionIds.length === 0) return;
+		if (exportQuestionIds.length === 0) return;
 		if (!wordExportTitle.trim()) {
 			toast.error('กรุณาระบุชื่อเอกสาร');
 			return;
 		}
 
+		const request = wordExportRequest.begin();
 		exportingWord = true;
 		try {
 			const questionIds = [...exportQuestionIds];
 			const [details, exporter] = await Promise.all([
-				loadSelectedQuestionDetails(questionIds),
+				loadQuestionBankExportData({ exportQuestionBankData }, questionIds, request.signal),
 				loadWordExporter()
 			]);
+			if (!wordExportRequest.isCurrent(request.revision)) return;
 			const fileName = await exporter.exportQuestionBankWord(details, {
 				title: wordExportTitle,
 				includeAnswerKey
 			});
-			wordExportDialogOpen = false;
+			if (!wordExportRequest.isCurrent(request.revision)) return;
+			handleWordExportDialogOpenChange(false);
 			toast.success(`ส่งออก ${fileName} แล้ว`);
 		} catch (error) {
+			if (!wordExportRequest.isCurrent(request.revision) || isAbortError(error)) return;
 			toast.error(error instanceof Error ? error.message : 'ส่งออกไฟล์ Word ไม่สำเร็จ');
 		} finally {
-			exportingWord = false;
+			if (wordExportRequest.isCurrent(request.revision)) exportingWord = false;
 		}
 	}
 
@@ -1337,7 +1341,7 @@
 	</Dialog.Content>
 </Dialog.Root>
 
-<Dialog.Root bind:open={wordExportDialogOpen}>
+<Dialog.Root bind:open={wordExportDialogOpen} onOpenChange={handleWordExportDialogOpenChange}>
 	<Dialog.Content class="flex max-h-[90vh] flex-col overflow-hidden sm:max-w-2xl">
 		<Dialog.Header>
 			<Dialog.Title>ส่งออกข้อสอบเป็น Word</Dialog.Title>
@@ -1442,10 +1446,8 @@
 			</div>
 		</div>
 		<Dialog.Footer>
-			<Button
-				variant="outline"
-				onclick={() => (wordExportDialogOpen = false)}
-				disabled={exportingWord}>ยกเลิก</Button
+			<Button variant="outline" onclick={() => handleWordExportDialogOpenChange(false)}
+				>ยกเลิก</Button
 			>
 			<LoadingButton
 				loading={exportingWord}

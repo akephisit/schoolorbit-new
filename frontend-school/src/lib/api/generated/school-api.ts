@@ -1033,6 +1033,86 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/question-bank/options': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listQuestionBankOptions'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/question-bank/questions': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listQuestionBankQuestions'];
+		put?: never;
+		post: operations['createQuestionBankQuestion'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/question-bank/questions/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getQuestionBankQuestion'];
+		put: operations['updateQuestionBankQuestion'];
+		post?: never;
+		delete: operations['deleteQuestionBankQuestion'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/question-bank/questions/{question_id}/files/{file_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getQuestionBankQuestionFile'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/question-bank/questions/export-data': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['exportQuestionBankData'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/setup/workspace': {
 		parameters: {
 			query?: never;
@@ -5769,6 +5849,37 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_QuestionBankOptions: {
+			data: {
+				subjects: components['schemas']['QuestionBankSubjectOption'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_QuestionBankPage: {
+			data: {
+				items: components['schemas']['QuestionSummary'][];
+				/** Format: int64 */
+				page: number;
+				/** Format: int64 */
+				pageSize: number;
+				summary: components['schemas']['QuestionBankSummary'];
+				/** Format: int64 */
+				total: number;
+				/** Format: int64 */
+				totalPages: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_QuestionDetail: {
+			data: components['schemas']['QuestionSummary'] & {
+				choices: components['schemas']['QuestionChoice'][];
+				files: components['schemas']['QuestionFile'][];
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_RevokeCertificateResult: {
 			data: {
 				certificate: components['schemas']['IssuedCertificateDetail'];
@@ -7377,6 +7488,14 @@ export interface components {
 				/** Format: int64 */
 				rowVersion: number;
 			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_QuestionDetail: {
+			data: (components['schemas']['QuestionSummary'] & {
+				choices: components['schemas']['QuestionChoice'][];
+				files: components['schemas']['QuestionFile'][];
+			})[];
 			message?: string;
 			success: boolean;
 		};
@@ -10024,6 +10143,8 @@ export interface components {
 			newPlacement: components['schemas']['HomeroomPlacement'];
 			replayed: boolean;
 		};
+		/** @enum {string} */
+		ImageAlignment: 'left' | 'center' | 'right';
 		ImageElement: {
 			/** Format: double */
 			aspectRatio: number;
@@ -10035,6 +10156,15 @@ export interface components {
 			lockAspectRatio: boolean;
 			/** Format: double */
 			rotation: number;
+		};
+		ImageNodeAttributes: {
+			alignment: components['schemas']['ImageAlignment'];
+			altText?: string | null;
+			caption?: string | null;
+			/** Format: uuid */
+			fileId: string;
+			/** Format: int32 */
+			widthPercent: number;
 		};
 		ImportExamItemsRequest: {
 			gradeLevelIds?: string[] | null;
@@ -10520,6 +10650,9 @@ export interface components {
 			roomLabel?: string | null;
 			subjectName: string;
 		};
+		MathNodeAttributes: {
+			latex: string;
+		};
 		/** @enum {string} */
 		MembershipStatus: 'active' | 'ended' | 'removed';
 		/** @description Menu Group */
@@ -10971,6 +11104,109 @@ export interface components {
 			/** Format: double */
 			rotation: number;
 		};
+		QuestionBankExportDataRequest: {
+			questionIds: string[];
+		};
+		QuestionBankListQuery: {
+			difficulty?: string | null;
+			/** Format: int64 */
+			page?: number | null;
+			/** Format: int64 */
+			pageSize?: number | null;
+			questionType?: string | null;
+			search?: string | null;
+			status?: string | null;
+			/** Format: uuid */
+			subjectId?: string | null;
+			tag?: string | null;
+		};
+		QuestionBankOptions: {
+			subjects: components['schemas']['QuestionBankSubjectOption'][];
+		};
+		QuestionBankPage: {
+			items: components['schemas']['QuestionSummary'][];
+			/** Format: int64 */
+			page: number;
+			/** Format: int64 */
+			pageSize: number;
+			summary: components['schemas']['QuestionBankSummary'];
+			/** Format: int64 */
+			total: number;
+			/** Format: int64 */
+			totalPages: number;
+		};
+		QuestionBankSubjectOption: {
+			canCreate: boolean;
+			code: string;
+			/** Format: uuid */
+			id: string;
+			nameEn?: string | null;
+			nameTh: string;
+			/** Format: uuid */
+			subjectGroupId?: string | null;
+			subjectGroupName?: string | null;
+		};
+		QuestionBankSummary: {
+			/** Format: int64 */
+			choice: number;
+			/** Format: int64 */
+			ready: number;
+			/** Format: int64 */
+			total: number;
+			/** Format: int64 */
+			written: number;
+		};
+		QuestionChoice: {
+			content: components['schemas']['RichContent'];
+			/** Format: uuid */
+			id: string;
+			isCorrect: boolean;
+			label: string;
+			/** Format: uuid */
+			questionId: string;
+			/** Format: int32 */
+			sortOrder: number;
+		};
+		QuestionDetail: components['schemas']['QuestionSummary'] & {
+			choices: components['schemas']['QuestionChoice'][];
+			files: components['schemas']['QuestionFile'][];
+		};
+		QuestionFile: {
+			/** Format: uuid */
+			id: string;
+		};
+		QuestionSummary: {
+			canManage: boolean;
+			/** Format: int64 */
+			choiceCount: number;
+			/** Format: int64 */
+			correctChoiceCount: number;
+			/** Format: date-time */
+			createdAt: string;
+			difficulty: string;
+			explanationContent?: null | components['schemas']['RichContent'];
+			/** Format: uuid */
+			id: string;
+			/** Format: uuid */
+			ownerUserId: string;
+			/** Format: double */
+			points: number;
+			questionType: string;
+			rubricContent?: null | components['schemas']['RichContent'];
+			status: string;
+			stemContent: components['schemas']['RichContent'];
+			subjectCode?: string | null;
+			/** Format: uuid */
+			subjectGroupId?: string | null;
+			subjectGroupName?: string | null;
+			/** Format: uuid */
+			subjectId?: string | null;
+			subjectNameEn?: string | null;
+			subjectNameTh?: string | null;
+			tags: string[];
+			/** Format: date-time */
+			updatedAt: string;
+		};
 		/** @enum {string} */
 		RecipientType: 'student' | 'staff' | 'external';
 		ReorderGroupsRequest: {
@@ -11058,6 +11294,57 @@ export interface components {
 			certificate: components['schemas']['IssuedCertificateDetail'];
 			replacementCandidate: null | components['schemas']['CertificateReplacementCandidate'];
 		};
+		RichBlockNode:
+			| {
+					content?: components['schemas']['RichInlineNode'][];
+					/** @enum {string} */
+					type: 'paragraph';
+			  }
+			| {
+					attrs: components['schemas']['MathNodeAttributes'];
+					/** @enum {string} */
+					type: 'math_block';
+			  }
+			| {
+					attrs: components['schemas']['ImageNodeAttributes'];
+					/** @enum {string} */
+					type: 'image';
+			  };
+		RichContent: {
+			document: components['schemas']['RichDocument'];
+			/** Format: int32 */
+			schemaVersion: number;
+		};
+		RichDocument: {
+			content?: components['schemas']['RichBlockNode'][];
+			/** @enum {string} */
+			type: 'doc';
+		};
+		RichInlineNode:
+			| {
+					marks?: components['schemas']['RichTextMark'][];
+					text: string;
+					/** @enum {string} */
+					type: 'text';
+			  }
+			| {
+					attrs: components['schemas']['MathNodeAttributes'];
+					/** @enum {string} */
+					type: 'inline_math';
+			  }
+			| {
+					/** @enum {string} */
+					type: 'hardBreak';
+			  };
+		RichTextMark:
+			| {
+					/** @enum {string} */
+					type: 'bold';
+			  }
+			| {
+					/** @enum {string} */
+					type: 'italic';
+			  };
 		Role: {
 			code: string;
 			/** Format: date-time */
@@ -12604,6 +12891,29 @@ export interface components {
 			gradeLevelIds: string[];
 			label?: string | null;
 			startTime: string;
+		};
+		UpsertQuestionChoiceRequest: {
+			content: components['schemas']['RichContent'];
+			/** Format: uuid */
+			id?: string | null;
+			isCorrect: boolean;
+			label: string;
+			/** Format: int32 */
+			sortOrder: number;
+		};
+		UpsertQuestionRequest: {
+			choices: components['schemas']['UpsertQuestionChoiceRequest'][];
+			difficulty: string;
+			explanationContent?: null | components['schemas']['RichContent'];
+			/** Format: double */
+			points: number;
+			questionType: string;
+			rubricContent?: null | components['schemas']['RichContent'];
+			status: string;
+			stemContent: components['schemas']['RichContent'];
+			/** Format: uuid */
+			subjectId: string;
+			tags: string[];
 		};
 		UserMenuData: {
 			groups: components['schemas']['MenuGroupResponse'][];
@@ -18460,6 +18770,424 @@ export interface operations {
 			};
 			/** @description Homeroom placement transfer conflict */
 			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listQuestionBankOptions: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Question bank options */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_QuestionBankOptions'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Question bank access denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listQuestionBankQuestions: {
+		parameters: {
+			query?: {
+				difficulty?: string;
+				page?: number;
+				pageSize?: number;
+				questionType?: string;
+				search?: string;
+				status?: string;
+				subjectId?: string;
+				tag?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Question bank page */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_QuestionBankPage'];
+				};
+			};
+			/** @description Invalid question bank filters */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Question bank access denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createQuestionBankQuestion: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpsertQuestionRequest'];
+			};
+		};
+		responses: {
+			/** @description Question created */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_QuestionDetail'];
+				};
+			};
+			/** @description Invalid question */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Question bank management denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getQuestionBankQuestion: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Question ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Question detail */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_QuestionDetail'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Question bank access denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Question not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateQuestionBankQuestion: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Question ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpsertQuestionRequest'];
+			};
+		};
+		responses: {
+			/** @description Question updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_QuestionDetail'];
+				};
+			};
+			/** @description Invalid question */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Question bank management denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Question not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteQuestionBankQuestion: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Question ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Question deleted */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Question bank management denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Question not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getQuestionBankQuestionFile: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Question image file ID */
+				file_id: string;
+				/** @description Question ID */
+				question_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Redirect to the authorized private file */
+			302: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Question image access denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Question image not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	exportQuestionBankData: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['QuestionBankExportDataRequest'];
+			};
+		};
+		responses: {
+			/** @description Ordered question export data */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_QuestionDetail'];
+				};
+			};
+			/** @description Invalid export selection */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Question bank access denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Question selection unavailable */
+			404: {
 				headers: {
 					[name: string]: unknown;
 				};

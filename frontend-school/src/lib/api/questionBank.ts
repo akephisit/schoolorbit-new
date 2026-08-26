@@ -1,141 +1,32 @@
-import { apiClient, BACKEND_URL, requireApiData } from '$lib/api/client';
+import { apiClient, BACKEND_URL, requireApiData, type ApiRequestOptions } from '$lib/api/client';
+import type { components, operations } from '$lib/api/generated/school-api';
 
-export type QuestionType = 'single_choice' | 'multiple_choice' | 'short_answer' | 'essay';
-export type QuestionDifficulty = 'easy' | 'medium' | 'hard';
-export type QuestionStatus = 'draft' | 'ready' | 'archived';
+type Schemas = components['schemas'];
+type ExportQuestionBankDataRequest =
+	operations['exportQuestionBankData']['requestBody']['content']['application/json'];
+type QuestionId = operations['getQuestionBankQuestion']['parameters']['path']['id'];
 
-export type RichTextMark = { type: 'bold' } | { type: 'italic' };
-
-export type RichInlineNode =
-	| { type: 'text'; text: string; marks?: RichTextMark[] }
-	| { type: 'inline_math'; attrs: { latex: string } }
-	| { type: 'hardBreak' };
-
-export type RichContentBlock =
-	| { type: 'paragraph'; content?: RichInlineNode[] }
-	| { type: 'math_block'; attrs: { latex: string } }
-	| {
-			type: 'image';
-			attrs: {
-				fileId: string;
-				altText: string | null;
-				caption: string | null;
-				alignment: 'left' | 'center' | 'right';
-				widthPercent: number;
-			};
-	  };
-
-export interface RichContent {
-	schemaVersion: 1;
-	document: {
-		type: 'doc';
-		content: RichContentBlock[];
-	};
-}
-
-export interface QuestionChoice {
-	id: string;
-	questionId: string;
-	label: string;
-	content: RichContent;
-	isCorrect: boolean;
-	sortOrder: number;
-}
-
-export interface QuestionSummary {
-	id: string;
-	subjectId?: string | null;
-	ownerUserId: string;
-	questionType: QuestionType;
-	difficulty: QuestionDifficulty;
-	points: number;
-	stemContent: RichContent;
-	explanationContent?: RichContent | null;
-	rubricContent?: RichContent | null;
-	tags: string[];
-	status: QuestionStatus;
-	subjectCode?: string | null;
-	subjectNameTh?: string | null;
-	subjectNameEn?: string | null;
-	subjectGroupId?: string | null;
-	subjectGroupName?: string | null;
-	choiceCount: number;
-	correctChoiceCount: number;
-	canManage: boolean;
-	createdAt: string;
-	updatedAt: string;
-}
-
-export interface QuestionFile {
-	id: string;
-}
-
-export interface QuestionDetail extends QuestionSummary {
-	choices: QuestionChoice[];
-	files: QuestionFile[];
-}
-
-export interface UpsertQuestionChoiceRequest {
-	id?: string | null;
-	label: string;
-	content: RichContent;
-	isCorrect: boolean;
-	sortOrder: number;
-}
-
-export interface UpsertQuestionRequest {
-	subjectId: string;
-	questionType: QuestionType;
-	difficulty: QuestionDifficulty;
-	points: number;
-	stemContent: RichContent;
-	explanationContent?: RichContent | null;
-	rubricContent?: RichContent | null;
-	tags: string[];
-	status: QuestionStatus;
-	choices: UpsertQuestionChoiceRequest[];
-}
-
-export interface QuestionBankListQuery {
-	subjectId?: string;
-	questionType?: QuestionType | 'all';
-	difficulty?: QuestionDifficulty | 'all';
-	status?: QuestionStatus | 'all';
-	tag?: string;
-	search?: string;
-	page?: number;
-	pageSize?: number;
-}
-
-export interface QuestionBankSummary {
-	total: number;
-	choice: number;
-	written: number;
-	ready: number;
-}
-
-export interface QuestionBankPage {
-	items: QuestionSummary[];
-	total: number;
-	page: number;
-	pageSize: number;
-	totalPages: number;
-	summary: QuestionBankSummary;
-}
-
-export interface QuestionBankSubjectOption {
-	id: string;
-	code: string;
-	nameTh: string;
-	nameEn?: string | null;
-	subjectGroupId?: string | null;
-	subjectGroupName?: string | null;
-	canCreate: boolean;
-}
-
-export interface QuestionBankOptions {
-	subjects: QuestionBankSubjectOption[];
-}
+export type RichTextMark = Schemas['RichTextMark'];
+export type RichInlineNode = Schemas['RichInlineNode'];
+export type RichContentBlock = Schemas['RichBlockNode'];
+export type RichContent = Schemas['RichContent'];
+export type QuestionChoice = Schemas['QuestionChoice'];
+export type QuestionSummary = Schemas['QuestionSummary'];
+export type QuestionFile = Schemas['QuestionFile'];
+export type QuestionDetail = Schemas['QuestionDetail'];
+export type UpsertQuestionChoiceRequest = Schemas['UpsertQuestionChoiceRequest'];
+export type UpsertQuestionRequest =
+	operations['createQuestionBankQuestion']['requestBody']['content']['application/json'];
+export type QuestionBankListQuery = NonNullable<
+	operations['listQuestionBankQuestions']['parameters']['query']
+>;
+export type QuestionBankSummary = Schemas['QuestionBankSummary'];
+export type QuestionBankPage = Schemas['QuestionBankPage'];
+export type QuestionBankSubjectOption = Schemas['QuestionBankSubjectOption'];
+export type QuestionBankOptions = Schemas['QuestionBankOptions'];
+export type QuestionType = QuestionSummary['questionType'];
+export type QuestionDifficulty = QuestionSummary['difficulty'];
+export type QuestionStatus = QuestionSummary['status'];
 
 function questionBankQueryString(query: QuestionBankListQuery = {}) {
 	const params = new URLSearchParams();
@@ -166,11 +57,24 @@ export async function getQuestionBankOptions(): Promise<QuestionBankOptions> {
 	return requireApiData(response, 'โหลดตัวเลือกรายวิชาไม่สำเร็จ');
 }
 
-export async function getQuestionBankQuestion(id: string): Promise<QuestionDetail> {
+export async function getQuestionBankQuestion(id: QuestionId): Promise<QuestionDetail> {
 	const response = await apiClient.get<QuestionDetail>(
-		`/api/academic/question-bank/questions/${id}`
+		`/api/academic/question-bank/questions/${encodeURIComponent(id)}`
 	);
 	return requireApiData(response, 'โหลดข้อสอบไม่สำเร็จ');
+}
+
+export async function exportQuestionBankData(
+	questionIds: ExportQuestionBankDataRequest['questionIds'],
+	options: ApiRequestOptions = {}
+): Promise<QuestionDetail[]> {
+	const body = { questionIds } satisfies ExportQuestionBankDataRequest;
+	const response = await apiClient.post<QuestionDetail[]>(
+		'/api/academic/question-bank/questions/export-data',
+		body,
+		options
+	);
+	return requireApiData(response, 'โหลดข้อมูลข้อสอบสำหรับส่งออกไม่สำเร็จ');
 }
 
 export async function getQuestionBankQuestionFile(
