@@ -94,7 +94,7 @@ test('backend-school deployment validates session runtime before compose activat
 	);
 	const composeDryRun = workflow.indexOf('            podman-compose -f', firstExport);
 	const firstUnset = workflow.indexOf('            unset_school_compose_env\n', composeDryRun);
-	const backendCompose = workflow.indexOf('            compose_up_quiet backend-school');
+	const backendCompose = workflow.indexOf('            compose_up_quiet --no-deps backend-school');
 	const secondExport = workflow.lastIndexOf(
 		'            export_school_compose_env\n',
 		backendCompose
@@ -147,6 +147,7 @@ test('the resolved production topology has one owner and private backend ports',
 	assert.equal(topology.networks['clamav-egress'].name, 'schoolorbit-clamav-egress');
 	assert.equal(topology.volumes.clamav_signatures.name, 'schoolorbit-clamav-signatures');
 	assert.equal(topology.services.nginx.depends_on, undefined);
+	assert.equal(topology.services['backend-school'].depends_on, undefined);
 	for (const [service, target] of [
 		['backend-admin', 8080],
 		['backend-school', 8081]
@@ -212,7 +213,7 @@ test('backend-school deployment recreates clamd and verifies runtime memory befo
 	assert.doesNotMatch(scannerDeployment, /podman volume (?:rm|prune)/);
 });
 
-test('backend-school replacement force-removes the stale container without a restart-policy stop', async () => {
+test('backend-school replacement force-removes the stale container without touching dependencies', async () => {
 	const workflow = await readRepo('.github/workflows/deploy-backend-school.yml');
 	const replacementStart = workflow.indexOf(
 		'# Recreate backend-school only; do not restart unrelated services.'
@@ -242,7 +243,10 @@ test('backend-school replacement force-removes the stale container without a res
 		'echo "Stale backend-school container remains after forced removal"',
 		staleContainerCheck
 	);
-	const composeUp = replacement.indexOf('compose_up_quiet backend-school', staleContainerError);
+	const composeUp = replacement.indexOf(
+		'compose_up_quiet --no-deps backend-school',
+		staleContainerError
+	);
 	assert.ok(
 		staleContainerCheck > previousIndex,
 		'the forced removal must verify the container is gone'
@@ -258,6 +262,48 @@ test('backend-school replacement force-removes the stale container without a res
 	assert.doesNotMatch(replacement, /podman update .*schoolorbit-backend-school/);
 	assert.doesNotMatch(replacement, /podman stop .*schoolorbit-backend-school/);
 	assert.doesNotMatch(replacement, /podman rm schoolorbit-backend-school \|\| true/);
+	assert.doesNotMatch(replacement, /^\s*compose_up_quiet backend-school\s*$/m);
+});
+
+test('backend-school deployment repairs the admin network alias before maintenance activation', async () => {
+	const workflow = await readRepo('.github/workflows/deploy-backend-school.yml');
+	const adminNetworkRepair = workflow.indexOf(
+		'            reconnect_backend_network schoolorbit-backend-admin backend-admin'
+	);
+	const maintenanceActivation = workflow.indexOf(
+		'            cp "$maintenance_proxy_source" "$proxy_target"'
+	);
+
+	assert.ok(
+		adminNetworkRepair >= 0,
+		'the admin container alias must be repaired before Nginx reloads'
+	);
+	assert.ok(
+		maintenanceActivation > adminNetworkRepair,
+		'the admin network alias must be repaired before the maintenance proxy is activated'
+	);
+});
+
+test('backend workflows use the recoverable shared network alias helper', async () => {
+	for (const workflowPath of [
+		'.github/workflows/deploy-backend-admin.yml',
+		'.github/workflows/deploy-backend-school.yml'
+	]) {
+		const workflow = await readRepo(workflowPath);
+		const uploadedHelper = workflow.indexOf(
+			'scripts/lib/schoolorbit-installer/remote/ensure_container_network.sh'
+		);
+		const sourcedHelper = workflow.indexOf('. "$network_helper_source"');
+		const firstRepair = workflow.indexOf('reconnect_backend_network ');
+
+		assert.ok(uploadedHelper >= 0, `${workflowPath} must upload the shared network helper`);
+		assert.ok(sourcedHelper > uploadedHelper, `${workflowPath} must source the uploaded helper`);
+		assert.ok(firstRepair > sourcedHelper, `${workflowPath} must load the helper before using it`);
+		assert.doesNotMatch(
+			workflow,
+			/podman network disconnect -f schoolorbit-web "\$container"[^\n]*\|\| true/
+		);
+	}
 });
 
 test('the proxy renderer substitutes only a validated base domain', async (t) => {
@@ -357,7 +403,7 @@ test('backend workflows deploy the canonical target and verify the selected orig
 		);
 		assert.match(
 			workflow,
-			/podman network connect --alias "\$service_alias" --alias "\$container" schoolorbit-web "\$container"/
+			/schoolorbit_ensure_container_network_aliases \\\n\s+schoolorbit-web "\$container" "\$service_alias" "\$container"/
 		);
 		assert.match(workflow, /podman rm schoolorbit-nginx >\/dev\/null 2>&1 \|\| true/);
 		assert.match(workflow, /timeout 180 bash/);

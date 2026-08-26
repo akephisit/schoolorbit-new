@@ -94,7 +94,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           port: ${{ secrets.SERVER_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: podman-compose.yml,scripts/render_nginx_config.sh,scripts/lib/schoolorbit-installer/remote/install_origin_root.sh,nginx-configs/admin-api.conf.template,nginx-configs/school-api.conf.template,nginx-configs/school-api.maintenance.conf.template
+          source: podman-compose.yml,scripts/render_nginx_config.sh,scripts/lib/schoolorbit-installer/remote/install_origin_root.sh,scripts/lib/schoolorbit-installer/remote/ensure_container_network.sh,nginx-configs/admin-api.conf.template,nginx-configs/school-api.conf.template,nginx-configs/school-api.maintenance.conf.template
           target: /opt/stack/deployment
 
       - name: Deploy selected commit to the target origin
@@ -117,18 +117,13 @@ jobs:
             renderer="$deployment_root/render-nginx"
             origin_root_installer_source="$deployment_root/scripts/lib/schoolorbit-installer/remote/install_origin_root.sh"
             origin_root_installer="$deployment_root/install-origin-root"
+            network_helper_source="$deployment_root/scripts/lib/schoolorbit-installer/remote/ensure_container_network.sh"
             proxy_template="$deployment_root/nginx-configs/admin-api.conf.template"
             proxy_target=/opt/stack/nginx/conf.d/admin-api.conf
             legacy_proxy_target=/opt/stack/nginx/conf.d/admin-api.${base_domain}.conf
             origin_root=/opt/stack/nginx/ssl/cloudflare-origin-rsa-root.pem
             compose_up_quiet() {
               podman-compose -f "$runtime_compose" up -d "$@" >/dev/null 2>&1
-            }
-            reconnect_backend_network() {
-              container=$1
-              service_alias=$2
-              podman network disconnect -f schoolorbit-web "$container" >/dev/null 2>&1 || true
-              podman network connect --alias "$service_alias" --alias "$container" schoolorbit-web "$container" >/dev/null 2>&1
             }
             recreate_nginx() {
               podman stop schoolorbit-nginx >/dev/null 2>&1 || true
@@ -154,7 +149,16 @@ jobs:
             test -f "$runtime_source" || { echo "Canonical runtime definition is missing"; exit 1; }
             test -f "$renderer_source" || { echo "Proxy renderer is missing"; exit 1; }
             test -f "$origin_root_installer_source" || { echo "Origin CA root installer is missing"; exit 1; }
+            test -f "$network_helper_source" || { echo "Container network helper is missing"; exit 1; }
             test -f "$proxy_template" || { echo "Admin API proxy template is missing"; exit 1; }
+
+            . "$network_helper_source"
+            reconnect_backend_network() {
+              container=$1
+              service_alias=$2
+              schoolorbit_ensure_container_network_aliases \
+                schoolorbit-web "$container" "$service_alias" "$container"
+            }
 
             install -m 0755 "$renderer_source" "$renderer"
             install -m 0755 "$origin_root_installer_source" "$origin_root_installer"

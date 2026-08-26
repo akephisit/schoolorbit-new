@@ -117,11 +117,6 @@ services:
       timeout: 20s
       retries: 3
       start_period: 40s
-    depends_on:
-      backend-admin:
-        condition: service_healthy
-      clamd:
-        condition: service_healthy
     networks:
       - schoolorbit-net
       - file-platform-internal

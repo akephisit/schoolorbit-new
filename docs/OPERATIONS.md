@@ -55,9 +55,11 @@ Current workflows:
 - [installer.yml](../.github/workflows/installer.yml)
 
 Backend workflows stage the tracked canonical Compose file, validate it, atomically replace
-`/opt/stack/podman-compose.yml`, and recreate only the selected service plus its declared
-dependency. An admin deployment does not restart backend-school or clamd. A school deployment
-starts clamd when required and recreates backend-school without restarting backend-admin.
+`/opt/stack/podman-compose.yml`, and recreate only the selected service. An admin deployment
+does not restart backend-school or clamd. A school deployment starts and verifies clamd when
+required, then recreates backend-school without restarting backend-admin. Production
+backend-school deliberately has no Compose `depends_on`: this prevents older supported
+`podman-compose` releases from expanding a selected-service update into backend-admin or clamd.
 Both workflows verify the selected target origin with the intended hostname and pinned
 Cloudflare Origin CA root; they do not use the still-public hostname as proof of the new origin.
 
