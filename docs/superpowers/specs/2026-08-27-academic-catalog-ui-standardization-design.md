@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-27
 
-**Status:** Design approved in chat; written review pending
+**Status:** Approved
 
 **Scope:** `backend-school` academic catalog read contracts, `frontend-school` academic catalog pages, the global academic-context switcher, shared select/date-picker/calendar primitives, and static UI policy tests
 
