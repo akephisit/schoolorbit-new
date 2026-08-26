@@ -7,6 +7,8 @@
 		exactValue: string;
 		effectiveFrom: string;
 		effectiveUntil?: string | null;
+		classification?: string | null;
+		gradeLevels?: import('$lib/api/academic-core').GradeLevelOption[];
 		status: 'draft' | 'published' | 'archived';
 		rowVersion: number;
 	};
@@ -23,16 +25,29 @@
 </script>
 
 <script lang="ts">
+	import type { GradeLevelOption } from '$lib/api/academic-core';
+	import {
+		SCHEDULING_MODE_OPTIONS,
+		SUBJECT_TYPE_OPTIONS,
+		formatEffectiveRange,
+		gradeLevelSummary,
+		optionLabel,
+		versionStatusLabel
+	} from '$lib/academic-core/catalog-presentation';
+	import GradeLevelMultiSelect from '$lib/components/academic-core/GradeLevelMultiSelect.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
+	import { DatePicker } from '$lib/components/ui/date-picker';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import * as Select from '$lib/components/ui/select';
 	import { CheckCircle2, GitBranchPlus, History } from 'lucide-svelte';
 
 	let {
 		kind,
 		code,
 		items,
+		gradeLevelOptions = [],
 		canManage = false,
 		onCreate,
 		onPublish
@@ -40,6 +55,7 @@
 		kind: 'subject' | 'activity';
 		code: string;
 		items: CatalogVersionItem[];
+		gradeLevelOptions?: GradeLevelOption[];
 		canManage?: boolean;
 		onCreate: (draft: CatalogVersionDraft) => Promise<void>;
 		onPublish: (id: string, rowVersion: number) => Promise<void>;
@@ -54,24 +70,28 @@
 		gradeLevelIds: [],
 		classification: ''
 	});
-	let gradeLevelsText = $state('');
 	let busy = $state(false);
 	let errorMessage = $state('');
+	let classificationOptions = $derived(
+		kind === 'subject' ? SUBJECT_TYPE_OPTIONS : SCHEDULING_MODE_OPTIONS
+	);
+	let selectedClassification = $derived(
+		classificationOptions.some((option) => option.value === draft.classification)
+			? draft.classification
+			: classificationOptions[0].value
+	);
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
+		if (!draft.effectiveFrom) {
+			errorMessage = 'กรุณาเลือกวันที่เริ่มใช้';
+			return;
+		}
 		busy = true;
 		errorMessage = '';
 		try {
-			await onCreate({
-				...draft,
-				gradeLevelIds: gradeLevelsText
-					.split(',')
-					.map((value) => value.trim())
-					.filter(Boolean)
-			});
+			await onCreate({ ...draft, classification: selectedClassification });
 			draft = { ...draft, name: '', secondaryName: '', effectiveUntil: '' };
-			gradeLevelsText = '';
 		} catch (error) {
 			errorMessage = error instanceof Error ? error.message : 'สร้างรุ่นใหม่ไม่สำเร็จ';
 		} finally {
@@ -112,17 +132,22 @@
 						<div class="flex flex-wrap items-center gap-2">
 							<h3 class="font-medium">{item.name}</h3>
 							<Badge variant={item.status === 'published' ? 'default' : 'secondary'}
-								>{item.status}</Badge
+								>{versionStatusLabel(item.status)}</Badge
 							>
 						</div>
 						{#if item.secondaryName}<p class="text-xs text-muted-foreground">
 								{item.secondaryName}
 							</p>{/if}
-						<p class="mt-1 text-xs text-muted-foreground">
-							{item.exactValue} · เริ่ม {item.effectiveFrom}{item.effectiveUntil
-								? ` ถึง ${item.effectiveUntil}`
-								: ''}
-						</p>
+						<div class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+							<span>{kind === 'subject' ? 'หน่วยกิต' : 'ชม./สัปดาห์'} {item.exactValue}</span>
+							{#if item.classification}
+								<span>{optionLabel(classificationOptions, item.classification)}</span>
+							{/if}
+							<span>{formatEffectiveRange(item.effectiveFrom, item.effectiveUntil)}</span>
+							{#if item.gradeLevels}
+								<span>{gradeLevelSummary(item.gradeLevels)}</span>
+							{/if}
+						</div>
 					</div>
 					{#if canManage && item.status === 'draft'}<Button
 							size="sm"
@@ -169,29 +194,46 @@
 			<div class="space-y-1.5">
 				<Label for={`${code}-version-class`}
 					>{kind === 'subject' ? 'ประเภทรายวิชา' : 'รูปแบบจัดกิจกรรม'}</Label
-				><Input id={`${code}-version-class`} bind:value={draft.classification} required />
+				>
+				<Select.Root
+					type="single"
+					value={selectedClassification}
+					onValueChange={(value) => (draft.classification = value)}
+				>
+					<Select.Trigger id={`${code}-version-class`} class="w-full">
+						{optionLabel(classificationOptions, selectedClassification, 'เลือกประเภท')}
+					</Select.Trigger>
+					<Select.Content>
+						{#each classificationOptions as option (option.value)}
+							<Select.Item value={option.value}>{option.label}</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
 			</div>
 			<div class="space-y-1.5">
-				<Label for={`${code}-version-levels`}>รหัสระดับชั้น (คั่นด้วยจุลภาค)</Label><Input
-					id={`${code}-version-levels`}
-					bind:value={gradeLevelsText}
-					required
+				<Label>ระดับชั้นที่ใช้</Label>
+				<GradeLevelMultiSelect
+					bind:value={draft.gradeLevelIds}
+					options={gradeLevelOptions}
+					ariaLabel={`เลือกระดับชั้นสำหรับ ${code}`}
 				/>
+				<p class="text-xs text-muted-foreground">ไม่เลือก หมายถึงใช้ได้กับทุกระดับชั้น</p>
 			</div>
 			<div class="grid grid-cols-2 gap-3">
 				<div class="space-y-1.5">
-					<Label for={`${code}-version-from`}>เริ่มใช้</Label><Input
+					<Label for={`${code}-version-from`}>เริ่มใช้</Label>
+					<DatePicker
 						id={`${code}-version-from`}
-						type="date"
 						bind:value={draft.effectiveFrom}
-						required
+						placeholder="เลือกวันเริ่มใช้"
 					/>
 				</div>
 				<div class="space-y-1.5">
-					<Label for={`${code}-version-until`}>สิ้นสุด</Label><Input
+					<Label for={`${code}-version-until`}>สิ้นสุด</Label>
+					<DatePicker
 						id={`${code}-version-until`}
-						type="date"
 						bind:value={draft.effectiveUntil}
+						placeholder="ไม่กำหนดวันสิ้นสุด"
 					/>
 				</div>
 			</div>
