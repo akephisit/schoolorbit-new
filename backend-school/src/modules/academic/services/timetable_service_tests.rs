@@ -266,13 +266,15 @@ async fn batch_and_conflict_reads_preserve_results() {
     let deactivated = timetable_service::deactivate_batch(&pool, created.batch_id, actor_id)
         .await
         .unwrap();
+    let mut expected_deactivated_ids = created
+        .entries
+        .iter()
+        .map(|entry| entry.id)
+        .collect::<Vec<_>>();
+    expected_deactivated_ids.sort_unstable();
     assert_eq!(
         deactivated.iter().map(|entry| entry.id).collect::<Vec<_>>(),
-        created
-            .entries
-            .iter()
-            .map(|entry| entry.id)
-            .collect::<Vec<_>>()
+        expected_deactivated_ids
     );
     assert!(deactivated.iter().all(|entry| !entry.is_active));
 }
