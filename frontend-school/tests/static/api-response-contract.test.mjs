@@ -1066,6 +1066,12 @@ test('new academic workspace mutations use typed returned resources', async () =
 	const deliveryPage = await readRepoFile(
 		'frontend-school/src/routes/(app)/staff/academic/delivery/+page.svelte'
 	);
+	const deliveryCreateDialog = await readRepoFile(
+		'frontend-school/src/lib/components/learning-delivery/OfferingCreateDialog.svelte'
+	);
+	const deliveryDetailPage = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/delivery/[offeringId]/+page.svelte'
+	);
 
 	assert.match(coreApi, /apiClient\.post<AcademicYear>/);
 	assert.match(coreApi, /apiClient\.post<AcademicTerm>/);
@@ -1076,10 +1082,14 @@ test('new academic workspace mutations use typed returned resources', async () =
 		/ApiResponse<unknown>|Record<string,\s*unknown>|\sas\s/
 	);
 	assert.match(corePage, /years = \[created, \.\.\.years\]/);
-	assert.match(
-		deliveryPage,
-		/offerings = \[\.\.\.offerings, await createLearningOffering\(body\)\]/
-	);
+	assert.match(deliveryCreateDialog, /const offering = await createLearningOffering\(/);
+	assert.match(deliveryCreateDialog, /onCreated\(\{\s*offering,/);
+	assert.match(deliveryPage, /function addCreated\(item: LearningOfferingOverviewItem\)/);
+	assert.match(deliveryPage, /offerings: \[\.\.\.overview\.offerings, item\]\.sort/);
+	assert.match(deliveryDetailPage, /const created = await createLearningGroup\(/);
+	assert.match(deliveryDetailPage, /groups = \[\.\.\.groups, created\]\.sort/);
+	assert.match(deliveryDetailPage, /const updated = await updateLearningGroup\(/);
+	assert.match(deliveryDetailPage, /updateGroupState\(updated\)/);
 });
 
 test('admission exam-room mutations return typed data and patch local state', async () => {
