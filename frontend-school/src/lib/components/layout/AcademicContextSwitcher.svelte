@@ -124,14 +124,14 @@
 				class="flex h-9 items-center gap-2 rounded-lg border border-border/70 bg-muted/40 px-3 text-xs text-muted-foreground"
 			>
 				<LoaderCircle class="size-4 animate-spin" />
-				<span class="hidden sm:inline">กำลังโหลดบริบทการศึกษา...</span>
+				<span class="hidden sm:inline">กำลังโหลดปีการศึกษา...</span>
 			</div>
 		{:else if contextState.status === 'error'}
 			<div
 				class="flex h-9 items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-2 text-xs text-destructive"
 			>
 				<TriangleAlert class="size-4 shrink-0" />
-				<span class="hidden xl:inline">โหลดบริบทการศึกษาไม่สำเร็จ</span>
+				<span class="hidden xl:inline">โหลดปีการศึกษาไม่สำเร็จ</span>
 				<Button
 					variant="ghost"
 					size="sm"
@@ -148,19 +148,14 @@
 				class="hidden h-11 items-center gap-2 rounded-xl border border-border/70 bg-card px-2 shadow-xs lg:flex"
 				title={contextState.status === 'unavailable'
 					? 'กรุณาเลือกปีการศึกษาและภาคเรียนที่ใช้ได้'
-					: 'บริบทงานปัจจุบัน'}
+					: 'ปีการศึกษาและภาคเรียนที่เลือก'}
 			>
-				<div class="flex items-center gap-2 px-1">
+				<div class="flex items-center px-1">
 					<div
 						class="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary"
 					>
 						<CalendarRange class="size-4" />
 					</div>
-					<span
-						class="hidden text-[10px] font-semibold tracking-wide text-muted-foreground 2xl:block"
-					>
-						บริบทงาน
-					</span>
 				</div>
 
 				<Select.Root
@@ -171,16 +166,11 @@
 					<Select.Trigger
 						size="sm"
 						aria-label="เลือกปีการศึกษา"
-						class="min-w-36 max-w-48 border-0 bg-transparent shadow-none hover:bg-accent"
+						class="min-w-32 max-w-40 border-0 bg-transparent shadow-none hover:bg-accent"
 					>
 						<span data-slot="select-value" class="min-w-0 truncate font-medium">
 							{selectedYear?.name ?? 'เลือกปีการศึกษา'}
 						</span>
-						{#if selectedYear}
-							<Badge variant="outline" class={statusClass(selectedYear.status)}>
-								{statusLabels[selectedYear.status]}
-							</Badge>
-						{/if}
 					</Select.Trigger>
 					<Select.Content>
 						{#each yearOptions as year (year.id)}
@@ -208,17 +198,12 @@
 						<Select.Trigger
 							size="sm"
 							aria-label="เลือกภาคเรียน"
-							class="min-w-32 max-w-48 border-0 bg-transparent shadow-none hover:bg-accent"
+							class="min-w-28 max-w-40 border-0 bg-transparent shadow-none hover:bg-accent"
 						>
 							<span data-slot="select-value" class="min-w-0 truncate font-medium">
 								{selectedTerm?.name ??
 									(contextState.requirement === 'term_optional' ? 'ทั้งปี' : 'เลือกภาคเรียน')}
 							</span>
-							{#if selectedTerm}
-								<Badge variant="outline" class={statusClass(selectedTerm.status)}>
-									{statusLabels[selectedTerm.status]}
-								</Badge>
-							{/if}
 						</Select.Trigger>
 						<Select.Content>
 							{#if contextState.requirement === 'term_optional'}
@@ -248,7 +233,7 @@
 							size="sm"
 							class="max-w-32 gap-2 sm:max-w-40 lg:hidden"
 							data-testid="academic-context-mobile-trigger"
-							aria-label={`บริบทการศึกษา ${mobileSummary}`}
+							aria-label={`ปีการศึกษาและภาคเรียน ${mobileSummary}`}
 						>
 							<CalendarRange class="size-4 shrink-0 text-primary" />
 							<span class="truncate">{mobileSummary}</span>

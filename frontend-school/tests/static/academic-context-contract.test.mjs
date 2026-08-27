@@ -266,6 +266,34 @@ test('route discovery, layout initialization, and responsive topbar remain expli
 	assert.doesNotMatch(`${layout}\n${header}\n${switcher}`, /activate|is_active/i);
 });
 
+test('desktop academic context triggers stay compact while dropdowns retain statuses', async () => {
+	const switcher = await readProjectFile(
+		'src/lib/components/layout/AcademicContextSwitcher.svelte'
+	);
+	const desktopStart = switcher.indexOf('class="hidden h-11');
+	const desktopEnd = switcher.indexOf('<Sheet.Root', desktopStart);
+	assert.ok(desktopStart >= 0 && desktopEnd > desktopStart);
+	const desktop = switcher.slice(desktopStart, desktopEnd);
+	const triggers = [...desktop.matchAll(/<Select\.Trigger[\s\S]*?<\/Select\.Trigger>/g)].map(
+		(match) => match[0]
+	);
+	const contents = [...desktop.matchAll(/<Select\.Content[\s\S]*?<\/Select\.Content>/g)].map(
+		(match) => match[0]
+	);
+
+	assert.equal(triggers.length, 2);
+	for (const trigger of triggers) {
+		assert.doesNotMatch(trigger, /บริบทงาน/);
+		assert.doesNotMatch(trigger, /statusLabels/);
+		assert.doesNotMatch(trigger, /<Badge/);
+	}
+	assert.ok(contents.length >= 2);
+	for (const content of contents) {
+		assert.match(content, /statusLabels/);
+		assert.match(content, /<Badge/);
+	}
+});
+
 test('existing staff academic consumers declare their exact context requirement', async () => {
 	const routes = [
 		['staff', 'year_required'],
