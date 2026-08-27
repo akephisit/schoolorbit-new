@@ -1023,7 +1023,7 @@ test('academic catalog and curriculum workspaces gate mutation actions', async (
 			file: 'frontend-school/src/routes/(app)/staff/academic/curricula/+page.svelte',
 			imports: ['$lib/components/app-state'],
 			permissions: ['PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_SCHOOL'],
-			identifiers: ['canManage']
+			identifiers: ['canManageAcademicCurriculum']
 		}
 	];
 	const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

@@ -64,6 +64,8 @@
 	let errorMessage = $state('');
 	let programDraft = $state({ code: '', nameTh: '', nameEn: '', isDefault: false });
 	let requirementProgramId = $state('');
+	let requirementProgramError = $state('');
+	let requirementProgramTrigger = $state<HTMLButtonElement | null>(null);
 	let requirementDraft = $state({
 		resourceKind: 'course' as 'course' | 'activity',
 		catalogVersionId: '',
@@ -183,7 +185,12 @@
 	async function addRequirement(event: SubmitEvent) {
 		event.preventDefault();
 		const program = programs.find((item) => item.id === requirementProgramId);
-		if (!program) return;
+		if (!program) {
+			requirementProgramError = 'กรุณาเลือกแผนการเรียนก่อนเพิ่มรายการ';
+			requestAnimationFrame(() => requirementProgramTrigger?.focus());
+			return;
+		}
+		requirementProgramError = '';
 		const existing = programRequirements(program.id).map((item, index) =>
 			requirementInput(item, index + 1)
 		);
@@ -403,8 +410,19 @@
 						<h3 class="font-medium">เพิ่มรายการในแผน</h3>
 						<label class="space-y-1.5 text-sm">
 							<span class="font-medium">แผนการเรียน</span>
-							<Select.Root type="single" bind:value={requirementProgramId}>
-								<Select.Trigger class="w-full">
+							<Select.Root
+								type="single"
+								bind:value={requirementProgramId}
+								onValueChange={() => (requirementProgramError = '')}
+							>
+								<Select.Trigger
+									bind:ref={requirementProgramTrigger}
+									class="w-full"
+									aria-invalid={requirementProgramError ? true : undefined}
+									aria-describedby={requirementProgramError
+										? `requirement-program-error-${version.id}`
+										: undefined}
+								>
 									{programs.find((program) => program.id === requirementProgramId)?.nameTh ??
 										'เลือกแผนการเรียน'}
 								</Select.Trigger>
@@ -414,6 +432,15 @@
 									{/each}
 								</Select.Content>
 							</Select.Root>
+							{#if requirementProgramError}
+								<span
+									id={`requirement-program-error-${version.id}`}
+									role="alert"
+									class="block text-xs text-destructive"
+								>
+									{requirementProgramError}
+								</span>
+							{/if}
 						</label>
 						<div class="grid grid-cols-2 gap-3">
 							<label class="space-y-1.5 text-sm">
@@ -510,9 +537,7 @@
 							class="w-full"
 							loading={requirementBusy}
 							loadingLabel="กำลังเพิ่ม"
-							disabled={!requirementProgramId ||
-								!requirementDraft.catalogVersionId ||
-								!requirementDraft.gradeLevelId}
+							disabled={!requirementDraft.catalogVersionId || !requirementDraft.gradeLevelId}
 						>
 							<Plus class="size-4" /> เพิ่มในแผน
 						</LoadingButton>
