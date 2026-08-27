@@ -1691,6 +1691,140 @@ async fn delivery_overview_batches_labels_and_group_coverage() {
 }
 
 #[tokio::test]
+async fn delivery_management_options_are_scoped_and_human_readable() {
+    let pool = prepare_delivery_runtime_fixture("academic_delivery_management_options").await;
+    let context = planning_runtime_context(&pool).await;
+
+    let options = workspaces::delivery_management_options(
+        &pool,
+        context.term_id,
+        context.teacher_id,
+        &AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("management options should load");
+
+    assert_eq!(options.academic_term_id, context.term_id);
+    assert_eq!(options.academic_year_id, context.year_id);
+    assert!(options
+        .catalog_versions
+        .iter()
+        .any(|item| item.id == context.subject_version_id
+            && item.label.contains(&item.code)
+            && item.label.contains(&item.name)));
+    assert!(options
+        .grade_levels
+        .iter()
+        .any(|item| item.id == context.grade_level_id && !item.name.is_empty()));
+    assert!(options
+        .study_programs
+        .iter()
+        .any(|item| item.id == context.study_program_id && !item.name.is_empty()));
+    assert!(options
+        .organization_units
+        .iter()
+        .any(|item| item.id == context.owner_id && !item.name.is_empty()));
+    assert!(options
+        .homerooms
+        .iter()
+        .any(|item| item.id == context.homeroom_id && item.grade_level.is_some()));
+    assert!(options
+        .teachers
+        .iter()
+        .any(|item| item.id == context.teacher_id && !item.name.trim().is_empty()));
+    assert!(options.rooms.iter().all(|item| !item.name_th.is_empty()));
+
+    let scoped = workspaces::delivery_management_options(
+        &pool,
+        context.term_id,
+        context.teacher_id,
+        &AcademicResourceListFilter {
+            organization_unit_ids: vec![context.owner_id],
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("organization-scoped options should load");
+    assert!(scoped
+        .organization_units
+        .iter()
+        .all(|item| item.id == context.owner_id));
+}
+
+#[tokio::test]
+async fn roster_preview_exposes_minimal_display_data_without_hashing_names() {
+    let pool = prepare_delivery_runtime_fixture("academic_delivery_roster_display").await;
+    let context = planning_runtime_context(&pool).await;
+    let offering = offerings::create(&pool, context.teacher_id, course_request(&context))
+        .await
+        .unwrap();
+    let group = groups::create(
+        &pool,
+        context.teacher_id,
+        offering.id,
+        CreateLearningGroupRequest {
+            code: "ROSTER-DISPLAY".to_string(),
+            name: "กลุ่มตรวจข้อมูลรายชื่อ".to_string(),
+            description: None,
+            capacity: Some(40),
+            preferred_room_ids: Vec::new(),
+        },
+    )
+    .await
+    .unwrap();
+    let group = groups::replace_homerooms(
+        &pool,
+        context.teacher_id,
+        group.id,
+        ReplaceLearningGroupHomeroomsRequest {
+            row_version: group.row_version,
+            homeroom_ids: vec![context.homeroom_id],
+        },
+    )
+    .await
+    .unwrap();
+
+    let preview = groups::preview_roster(&pool, group.id)
+        .await
+        .expect("preview should contain named students");
+    let student = preview.students.first().expect("fixture roster student");
+    assert!(!student.display_name.trim().is_empty());
+    assert!(!student.grade_level_name.trim().is_empty());
+    assert!(student
+        .homeroom_name
+        .as_deref()
+        .is_some_and(|name| !name.is_empty()));
+    let student_json = serde_json::to_value(student).expect("student should serialize");
+    assert!(student_json.get("studentCode").is_some());
+    for forbidden in [
+        "nationalId",
+        "nationalIdHash",
+        "phone",
+        "email",
+        "guardian",
+        "medical",
+        "document",
+    ] {
+        assert!(student_json.get(forbidden).is_none());
+    }
+
+    sqlx::query("UPDATE users SET first_name = 'ชื่อใหม่', last_name = 'สำหรับทดสอบ' WHERE id = $1")
+        .bind(student.student_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let renamed = groups::preview_roster(&pool, group.id).await.unwrap();
+    assert_eq!(renamed.source_hash, preview.source_hash);
+    assert!(renamed
+        .students
+        .iter()
+        .any(|item| item.display_name.contains("ชื่อใหม่")));
+}
+
+#[tokio::test]
 async fn list_groups_for_term_preserves_access_union_and_relations() {
     let pool = prepare_delivery_runtime_fixture("academic_delivery_term_group_list").await;
     let context = planning_runtime_context(&pool).await;

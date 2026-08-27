@@ -5,15 +5,21 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::modules::academic::core::models::StudyProgramOption;
-use crate::modules::lookup::models::GradeLevelLookupItem;
+use crate::modules::academic::core::services::curriculum;
+use crate::modules::lookup::models::{AcademicLookupQuery, GradeLevelLookupItem, LookupQuery};
+use crate::modules::lookup::services as lookup_services;
+use crate::policies::learning_offering_access_policy::learning_offering_owner_allowed;
 use crate::policies::resource_access_policy::AcademicResourceListFilter;
 
 use super::super::models::{
-    LearningDeliveryOverview, LearningOfferingOverviewItem, LearningOfferingQuery,
+    DeliveryCatalogVersionOption, DeliveryManagementOptions, LearningDeliveryOverview,
+    LearningOfferingKind, LearningOfferingOverviewItem, LearningOfferingQuery,
 };
 use super::offerings;
 
 const MAX_WORKSPACE_GROUPS: i64 = 2_000;
+const MAX_CATALOG_OPTIONS: usize = 2_000;
+const MAX_LOOKUP_OPTIONS: usize = 500;
 
 #[derive(Debug, sqlx::FromRow)]
 struct GradeLevelRow {
@@ -29,6 +35,15 @@ struct OfferingAggregateRow {
     teacher_assignment_count: i64,
     groups_without_primary_teacher: i64,
     published_roster_count: i64,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct CatalogVersionRow {
+    id: Uuid,
+    kind: LearningOfferingKind,
+    code: String,
+    name: String,
+    version_no: i32,
 }
 
 pub async fn delivery_overview(
@@ -228,6 +243,140 @@ pub async fn delivery_overview(
         academic_term_id,
         offerings: overview_items,
     })
+}
+
+pub async fn delivery_management_options(
+    pool: &PgPool,
+    academic_term_id: Uuid,
+    actor_user_id: Uuid,
+    filter: &AcademicResourceListFilter,
+) -> Result<DeliveryManagementOptions, AppError> {
+    let (academic_year_id, term_start): (Uuid, chrono::NaiveDate) =
+        sqlx::query_as("SELECT academic_year_id, start_date FROM academic_terms WHERE id = $1")
+            .bind(academic_term_id)
+            .fetch_optional(pool)
+            .await?
+            .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียนที่เลือก".to_string()))?;
+    let owner_ids = filter.allowed_organization_unit_ids();
+    let catalog_rows: Vec<CatalogVersionRow> = sqlx::query_as(
+        r#"
+        SELECT option.id, option.kind, option.code, option.name, option.version_no
+        FROM (
+            SELECT version.id, 'course'::text AS kind, subject.code,
+                   version.name_th AS name, version.version_no
+            FROM subject_versions version
+            JOIN subjects subject ON subject.id = version.subject_id
+            WHERE version.status = 'published'
+              AND version.effective_from <= $1
+              AND (version.effective_until IS NULL OR version.effective_until > $1)
+              AND ($2 OR subject.owning_organization_unit_id = ANY($3))
+            UNION ALL
+            SELECT version.id, 'activity'::text AS kind, activity.code,
+                   version.name, version.version_no
+            FROM activity_versions version
+            JOIN activities activity ON activity.id = version.activity_id
+            WHERE version.status = 'published'
+              AND version.effective_from <= $1
+              AND (version.effective_until IS NULL OR version.effective_until > $1)
+              AND ($2 OR activity.owning_organization_unit_id = ANY($3))
+        ) option
+        ORDER BY option.kind, option.code, option.version_no DESC, option.id
+        LIMIT $4
+        "#,
+    )
+    .bind(term_start)
+    .bind(filter.includes_school_owned)
+    .bind(&owner_ids)
+    .bind((MAX_CATALOG_OPTIONS + 1) as i64)
+    .fetch_all(pool)
+    .await?;
+    ensure_option_size(
+        catalog_rows.len(),
+        MAX_CATALOG_OPTIONS,
+        "รายการวิชาและกิจกรรม",
+    )?;
+    let catalog_versions = catalog_rows
+        .into_iter()
+        .map(|row| DeliveryCatalogVersionOption {
+            id: row.id,
+            kind: row.kind,
+            label: format!("{} — {} (ฉบับ {})", row.code, row.name, row.version_no),
+            code: row.code,
+            name: row.name,
+            version_no: row.version_no,
+        })
+        .collect();
+
+    let academic_lookup = || AcademicLookupQuery {
+        academic_year_id,
+        active_only: Some(true),
+        search: None,
+        limit: Some(MAX_LOOKUP_OPTIONS as i32),
+        level_type: None,
+        subject_type: None,
+    };
+    let grade_rows: Vec<GradeLevelRow> = sqlx::query_as(
+        r#"
+        SELECT id, level_type, year
+        FROM grade_levels
+        WHERE is_active
+        ORDER BY CASE level_type
+            WHEN 'kindergarten' THEN 1
+            WHEN 'primary' THEN 2
+            WHEN 'secondary' THEN 3
+            ELSE 4
+        END, year, id
+        LIMIT $1
+        "#,
+    )
+    .bind((MAX_LOOKUP_OPTIONS + 1) as i64)
+    .fetch_all(pool)
+    .await?;
+    ensure_option_size(grade_rows.len(), MAX_LOOKUP_OPTIONS, "ระดับชั้น")?;
+    let grade_levels = grade_rows
+        .into_iter()
+        .map(grade_level_lookup_item)
+        .collect();
+    let study_programs =
+        curriculum::list_study_program_options_for_year(pool, academic_year_id, filter).await?;
+    let homerooms = lookup_services::lookup_homerooms(pool, academic_lookup()).await?;
+    let lookup_query = || LookupQuery {
+        active_only: Some(true),
+        search: None,
+        limit: Some(MAX_LOOKUP_OPTIONS as i32),
+        member_only: Some(false),
+    };
+    let organization_units =
+        lookup_services::lookup_organization_units(pool, actor_user_id, lookup_query())
+            .await?
+            .into_iter()
+            .filter(|unit| learning_offering_owner_allowed(filter, unit.id))
+            .collect();
+    let teachers = lookup_services::lookup_staff(pool, lookup_query()).await?;
+    let rooms = lookup_services::lookup_rooms(pool).await?;
+    ensure_option_size(rooms.len(), MAX_LOOKUP_OPTIONS, "ห้องเรียน")?;
+
+    Ok(DeliveryManagementOptions {
+        academic_term_id,
+        academic_year_id,
+        catalog_versions,
+        grade_levels,
+        study_programs,
+        organization_units,
+        homerooms,
+        teachers,
+        rooms,
+    })
+}
+
+fn ensure_option_size(actual: usize, maximum: usize, label: &str) -> Result<(), AppError> {
+    if actual > maximum {
+        Err(AppError::ValidationError(format!(
+            "จำนวนตัวเลือก{label}เกิน {maximum} รายการ กรุณาลดข้อมูลก่อนเปิดตัวเลือก"
+        )))
+    } else {
+        Ok(())
+    }
 }
 
 fn grade_level_lookup_item(row: GradeLevelRow) -> GradeLevelLookupItem {

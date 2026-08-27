@@ -70,6 +70,16 @@ struct RosterSource {
     registration_type: Option<ActivityRegistrationType>,
 }
 
+#[derive(Debug, sqlx::FromRow)]
+struct RosterDisplayRow {
+    student_academic_year_id: Uuid,
+    student_code: Option<String>,
+    display_name: String,
+    level_type: String,
+    grade_year: i32,
+    homeroom_name: Option<String>,
+}
+
 pub async fn list(pool: &PgPool, offering_id: Uuid) -> Result<Vec<LearningGroup>, AppError> {
     let sql = format!(
         "SELECT {GROUP_COLUMNS} FROM learning_groups WHERE learning_offering_id = $1 \
@@ -366,7 +376,8 @@ pub async fn preview_roster(pool: &PgPool, group_id: Uuid) -> Result<RosterPrevi
     let group = lock_group(&mut transaction, group_id).await?;
     let source = roster_source(&mut transaction, &group).await?;
     let current = current_roster_students(&mut transaction, group_id).await?;
-    let preview = build_roster_preview(group_id, source, current);
+    let mut preview = build_roster_preview(group_id, source, current);
+    enrich_roster_preview(&mut transaction, &mut preview).await?;
     transaction.commit().await?;
     Ok(preview)
 }
@@ -994,6 +1005,10 @@ fn build_roster_preview(
         students.push(RosterPreviewStudent {
             student_academic_year_id: student_year_id,
             student_id,
+            student_code: None,
+            display_name: String::new(),
+            grade_level_name: String::new(),
+            homeroom_name: None,
             proposed_active,
             currently_active,
             conflict_reason: None,
@@ -1019,6 +1034,81 @@ fn build_roster_preview(
             .filter(|student| student.conflict_reason.is_some())
             .count(),
         students,
+    }
+}
+
+async fn enrich_roster_preview(
+    transaction: &mut Transaction<'_, Postgres>,
+    preview: &mut RosterPreview,
+) -> Result<(), AppError> {
+    if preview.students.is_empty() {
+        return Ok(());
+    }
+    let student_year_ids: Vec<Uuid> = preview
+        .students
+        .iter()
+        .map(|student| student.student_academic_year_id)
+        .collect();
+    let rows: Vec<RosterDisplayRow> = sqlx::query_as(
+        r#"
+        SELECT student_year.id AS student_academic_year_id,
+               info.student_id AS student_code,
+               concat_ws(' ', nullif(btrim(student.title), ''),
+                                student.first_name, student.last_name) AS display_name,
+               grade.level_type, grade.year AS grade_year,
+               homeroom.name AS homeroom_name
+        FROM student_academic_years student_year
+        JOIN users student ON student.id = student_year.student_id
+        LEFT JOIN student_info info ON info.user_id = student.id
+        JOIN grade_levels grade ON grade.id = student_year.grade_level_id
+        LEFT JOIN LATERAL (
+            SELECT placement.homeroom_id
+            FROM homeroom_placements placement
+            WHERE placement.student_academic_year_id = student_year.id
+              AND placement.academic_year_id = student_year.academic_year_id
+              AND placement.status IN ('current', 'planned')
+              AND placement.end_date IS NULL
+            ORDER BY (placement.status = 'current') DESC,
+                     placement.start_date DESC, placement.id
+            LIMIT 1
+        ) placement ON true
+        LEFT JOIN homerooms homeroom ON homeroom.id = placement.homeroom_id
+        WHERE student_year.id = ANY($1)
+        ORDER BY student_year.id
+        "#,
+    )
+    .bind(&student_year_ids)
+    .fetch_all(&mut **transaction)
+    .await?;
+    if rows.len() != student_year_ids.len() {
+        return Err(AppError::InternalServerError(
+            "ไม่สามารถแสดงข้อมูลนักเรียนใน roster ได้ครบถ้วน".to_string(),
+        ));
+    }
+    let mut display_by_student_year: HashMap<Uuid, RosterDisplayRow> = rows
+        .into_iter()
+        .map(|row| (row.student_academic_year_id, row))
+        .collect();
+    for student in &mut preview.students {
+        let display = display_by_student_year
+            .remove(&student.student_academic_year_id)
+            .ok_or_else(|| {
+                AppError::InternalServerError("ไม่สามารถจับคู่ข้อมูลนักเรียนใน roster ได้".to_string())
+            })?;
+        student.student_code = display.student_code;
+        student.display_name = display.display_name;
+        student.grade_level_name = grade_level_short_name(&display.level_type, display.grade_year);
+        student.homeroom_name = display.homeroom_name;
+    }
+    Ok(())
+}
+
+fn grade_level_short_name(level_type: &str, year: i32) -> String {
+    match level_type {
+        "kindergarten" => format!("อ.{year}"),
+        "primary" => format!("ป.{year}"),
+        "secondary" => format!("ม.{year}"),
+        _ => format!("ระดับ {year}"),
     }
 }
 

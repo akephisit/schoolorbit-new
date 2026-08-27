@@ -5,7 +5,10 @@ use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 use crate::modules::academic::core::models::StudyProgramOption;
-use crate::modules::lookup::models::GradeLevelLookupItem;
+use crate::modules::facility::models::Room;
+use crate::modules::lookup::models::{
+    GradeLevelLookupItem, HomeroomLookupItem, OrganizationUnitLookupItem, StaffLookupItem,
+};
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, sqlx::Type, ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -363,6 +366,31 @@ pub struct LearningDeliveryOverview {
 
 #[derive(Clone, Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
+pub struct DeliveryCatalogVersionOption {
+    pub id: Uuid,
+    pub kind: LearningOfferingKind,
+    pub code: String,
+    pub name: String,
+    pub version_no: i32,
+    pub label: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DeliveryManagementOptions {
+    pub academic_term_id: Uuid,
+    pub academic_year_id: Uuid,
+    pub catalog_versions: Vec<DeliveryCatalogVersionOption>,
+    pub grade_levels: Vec<GradeLevelLookupItem>,
+    pub study_programs: Vec<StudyProgramOption>,
+    pub organization_units: Vec<OrganizationUnitLookupItem>,
+    pub homerooms: Vec<HomeroomLookupItem>,
+    pub teachers: Vec<StaffLookupItem>,
+    pub rooms: Vec<Room>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct CurriculumOfferingPreviewItem {
     pub action: CurriculumPreviewAction,
     pub resource_kind: LearningOfferingKind,
@@ -470,6 +498,10 @@ pub struct LearningGroup {
 pub struct RosterPreviewStudent {
     pub student_academic_year_id: Uuid,
     pub student_id: Uuid,
+    pub student_code: Option<String>,
+    pub display_name: String,
+    pub grade_level_name: String,
+    pub homeroom_name: Option<String>,
     pub proposed_active: bool,
     pub currently_active: bool,
     pub conflict_reason: Option<String>,
