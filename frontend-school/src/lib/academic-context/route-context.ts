@@ -71,7 +71,7 @@ export function createAcademicContextRouteResolver(
 }
 
 function discoverRouteModules(): RouteModuleMap {
-	return import.meta.glob('/src/routes/(app)/**/+page.ts', {
+	return import.meta.glob('/src/routes/[(]app[)]/**/+page.ts', {
 		eager: true
 	}) as RouteModuleMap;
 }

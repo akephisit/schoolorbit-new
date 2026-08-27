@@ -1,7 +1,7 @@
 import { PERMISSION_MODULES } from '$lib/permissions/registry';
 
 export const _meta = {
-	academicContext: 'required' as const,
+	academicContext: 'term_required' as const,
 	access: {
 		user_type: 'staff',
 		permission: PERMISSION_MODULES.LEARNING_OFFERING

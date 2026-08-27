@@ -3,6 +3,7 @@ import { access, readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
 import ts from 'typescript';
+import { createServer as createViteServer } from 'vite';
 
 const projectRoot = path.resolve(import.meta.dirname, '../..');
 const repoRoot = path.resolve(projectRoot, '..');
@@ -190,6 +191,41 @@ test('route requirements are validated, inherited, and staff-only', async () => 
 	);
 });
 
+test('application route metadata uses only supported academic context requirements', async () => {
+	const { createAcademicContextRouteResolver } = await importRouteContext();
+	const routeFiles = (await sourceFiles('src/routes')).filter((file) => file.endsWith('/+page.ts'));
+	const routeModules = {};
+
+	for (const file of routeFiles) {
+		const source = await readProjectFile(file);
+		const declaredRequirement = source.match(/academicContext:\s*['"]([^'"]+)['"]/u)?.[1];
+		if (!declaredRequirement) continue;
+
+		const normalizedFile = file.split(path.sep).join('/');
+		routeModules[`/src/routes/${normalizedFile.slice('src/routes/'.length)}`] = {
+			_meta: { academicContext: declaredRequirement }
+		};
+	}
+
+	assert.ok(Object.keys(routeModules).length > 0, 'expected route metadata fixtures');
+	assert.doesNotThrow(() => createAcademicContextRouteResolver(routeModules));
+});
+
+test('Vite discovers the staff route metadata consumed by the topbar', async (t) => {
+	const server = await createViteServer({
+		root: projectRoot,
+		configFile: false,
+		appType: 'custom',
+		logLevel: 'silent',
+		server: { middlewareMode: true }
+	});
+	t.after(() => server.close());
+
+	const transformed = await server.transformRequest('/src/lib/academic-context/route-context.ts');
+	assert.ok(transformed, 'expected Vite to transform the academic context route resolver');
+	assert.match(transformed.code, /\/src\/routes\/\(app\)\/staff\/\+page\.ts/u);
+});
+
 test('URL resolution preserves deep links and enforces term ownership', async () => {
 	const { resolveAcademicContextUrl } = await importRouteContext();
 	const options = contextOptions();
@@ -239,16 +275,13 @@ test('URL resolution preserves deep links and enforces term ownership', async ()
 	assert.equal(hidden.replaceUrl, null);
 });
 
-test('route discovery, layout initialization, and responsive topbar remain explicit', async () => {
-	const routeContext = await readProjectFile('src/lib/academic-context/route-context.ts');
+test('layout initialization and responsive topbar remain explicit', async () => {
 	const layout = await readProjectFile('src/routes/(app)/+layout.svelte');
 	const header = await readProjectFile('src/lib/components/layout/Header.svelte');
 	const switcher = await readProjectFile(
 		'src/lib/components/layout/AcademicContextSwitcher.svelte'
 	);
 
-	assert.match(routeContext, /import\.meta\.glob\('\/src\/routes\/\(app\)\/\*\*\/\+page\.ts'/);
-	assert.match(routeContext, /eager:\s*true/);
 	assert.match(layout, /authStatus === 'authenticated'/);
 	assert.match(layout, /setAcademicContextStore/);
 	assert.match(layout, /academicContext\.sync/);

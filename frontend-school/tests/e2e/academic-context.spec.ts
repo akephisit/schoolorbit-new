@@ -209,7 +209,10 @@ test('missing required IDs use active defaults with replaceState and no mutation
 	await expect(page).toHaveURL(new RegExp(`academicYearId=${ids.activeYear}`));
 	await expect(page).toHaveURL(new RegExp(`academicTermId=${ids.activeTerm}`));
 	await expect(page).toHaveURL(/view=grid/);
-	await expect(page.getByText('กำลังใช้งาน', { exact: true }).first()).toBeVisible();
+	await expect(page.getByLabel('เลือกปีการศึกษา', { exact: true })).toContainText(
+		'ปีการศึกษา 2570'
+	);
+	await expect(page.getByLabel('เลือกภาคเรียน', { exact: true })).toContainText('ภาคเรียนที่ 1');
 	expect(await page.evaluate(() => window.__academicReplaceCount ?? 0)).toBeGreaterThan(0);
 	expect(requests).toEqual([{ method: 'GET', pathname: '/api/academic/context/options' }]);
 });
@@ -220,21 +223,21 @@ test('year changes remove an incompatible term and term-optional routes offer al
 	await mockAcademicContextApis(page);
 	await openDelivery(page, `?academicYearId=${ids.activeYear}&academicTermId=${ids.activeTerm}`);
 
-	await page.getByLabel('เลือกปีการศึกษา').click();
+	await page.getByLabel('เลือกปีการศึกษา', { exact: true }).click();
 	await page.getByRole('option', { name: /ปีการศึกษา 2571/ }).click();
 	await expect(page).toHaveURL(new RegExp(`academicYearId=${ids.planningYear}`));
 	await expect(page).not.toHaveURL(/academicTermId=/);
 
-	await page.getByLabel('เลือกภาคเรียน').click();
+	await page.getByLabel('เลือกภาคเรียน', { exact: true }).click();
 	await page.getByRole('option', { name: /ภาคฤดูร้อน/ }).click();
 	await expect(page).toHaveURL(new RegExp(`academicTermId=${ids.planningTerm}`));
 
 	await page.goto(
 		`/staff/academic/supervision?academicYearId=${ids.activeYear}&academicTermId=${ids.activeTerm}&view=calendar`
 	);
-	await page.getByLabel('เลือกภาคเรียน').click();
+	await page.getByLabel('เลือกภาคเรียน', { exact: true }).click();
 	await page.getByRole('option', { name: 'ทั้งปี', exact: true }).click();
-	await expect(page.getByLabel('เลือกภาคเรียน')).toContainText('ทั้งปี');
+	await expect(page.getByLabel('เลือกภาคเรียน', { exact: true })).toContainText('ทั้งปี');
 	await expect(page).not.toHaveURL(/academicTermId=/);
 	await expect(page).toHaveURL(/view=calendar/);
 });
@@ -243,16 +246,16 @@ test('normal history restores selected terms', async ({ page }) => {
 	await mockAcademicContextApis(page);
 	await openDelivery(page, `?academicYearId=${ids.activeYear}&academicTermId=${ids.activeTerm}`);
 
-	await page.getByLabel('เลือกภาคเรียน').click();
+	await page.getByLabel('เลือกภาคเรียน', { exact: true }).click();
 	await page.getByRole('option', { name: /ภาคเรียนที่ 2/ }).click();
 	await expect(page).toHaveURL(new RegExp(`academicTermId=${ids.readyTerm}`));
 
 	await page.goBack();
 	await expect(page).toHaveURL(new RegExp(`academicTermId=${ids.activeTerm}`));
-	await expect(page.getByLabel('เลือกภาคเรียน')).toContainText('ภาคเรียนที่ 1');
+	await expect(page.getByLabel('เลือกภาคเรียน', { exact: true })).toContainText('ภาคเรียนที่ 1');
 
 	await page.goForward();
-	await expect(page.getByLabel('เลือกภาคเรียน')).toContainText('ภาคเรียนที่ 2');
+	await expect(page.getByLabel('เลือกภาคเรียน', { exact: true })).toContainText('ภาคเรียนที่ 2');
 });
 
 test('dirty sources require confirmation and cancelling preserves the context', async ({
@@ -266,14 +269,14 @@ test('dirty sources require confirmation and cancelling preserves the context', 
 		registerAcademicContextDirtySource('playwright-draft', () => true);
 	});
 
-	await page.getByLabel('เลือกภาคเรียน').click();
+	await page.getByLabel('เลือกภาคเรียน', { exact: true }).click();
 	await page.getByRole('option', { name: /ภาคเรียนที่ 2/ }).click();
 	await expect(page.getByRole('alertdialog')).toBeVisible();
 	await page.getByRole('button', { name: 'อยู่หน้านี้ต่อ' }).click();
 	await expect(page).toHaveURL(new RegExp(`academicTermId=${ids.activeTerm}`));
 	await expect(page.getByRole('alertdialog')).toHaveCount(0);
 
-	await page.getByLabel('เลือกภาคเรียน').click();
+	await page.getByLabel('เลือกภาคเรียน', { exact: true }).click();
 	await page.getByRole('option', { name: /ภาคเรียนที่ 2/ }).click();
 	await page.getByRole('button', { name: 'เปลี่ยนบริบท' }).click();
 	await expect(page).toHaveURL(new RegExp(`academicTermId=${ids.readyTerm}`));
@@ -298,18 +301,18 @@ test('status labels are visible and option failure is actionable without guessin
 }) => {
 	await mockAcademicContextApis(page);
 	await openDelivery(page, `?academicYearId=${ids.activeYear}&academicTermId=${ids.activeTerm}`);
-	await page.getByLabel('เลือกปีการศึกษา').click();
+	await page.getByLabel('เลือกปีการศึกษา', { exact: true }).click();
 	for (const label of ['กำลังวางแผน', 'กำลังใช้งาน', 'ปิดแล้ว']) {
 		await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
 	}
 	await page.keyboard.press('Escape');
-	await page.getByLabel('เลือกภาคเรียน').click();
+	await page.getByLabel('เลือกภาคเรียน', { exact: true }).click();
 	await expect(page.getByText('พร้อมใช้งาน', { exact: true }).first()).toBeVisible();
 
 	const failedPage = await page.context().newPage();
 	await mockAcademicContextApis(failedPage, { contextFailure: true });
 	await failedPage.goto('/staff/academic/delivery');
-	await expect(failedPage.getByText('โหลดบริบทการศึกษาไม่สำเร็จ')).toBeVisible();
+	await expect(failedPage.getByText('โหลดปีการศึกษาไม่สำเร็จ')).toBeVisible();
 	await expect(failedPage.getByRole('button', { name: 'ลองโหลดอีกครั้ง' })).toBeVisible();
 	await expect(failedPage).not.toHaveURL(/academicYearId=|academicTermId=/);
 	await failedPage.close();
