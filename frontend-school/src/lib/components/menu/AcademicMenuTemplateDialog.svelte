@@ -179,7 +179,9 @@
 						{#if preview.moves.length === 0}
 							<div class="rounded-xl border border-dashed p-6 text-center">
 								<p class="font-medium">โครงสร้างเมนูตรงกับคำแนะนำแล้ว</p>
-								<p class="mt-1 text-sm text-muted-foreground">ไม่มีรายการที่ต้องย้ายหรือเรียงใหม่</p>
+								<p class="mt-1 text-sm text-muted-foreground">
+									ไม่มีรายการที่ต้องย้ายหรือเรียงใหม่
+								</p>
 							</div>
 						{:else}
 							<div class="hidden overflow-hidden rounded-xl border md:block">
@@ -200,7 +202,8 @@
 													<div>{item.currentGroupName ?? 'ยังไม่จัดงาน'}</div>
 													<div class="text-xs text-muted-foreground">ลำดับ {item.currentOrder}</div>
 												</Table.Cell>
-												<Table.Cell><ArrowRight class="h-4 w-4 text-muted-foreground" /></Table.Cell>
+												<Table.Cell><ArrowRight class="h-4 w-4 text-muted-foreground" /></Table.Cell
+												>
 												<Table.Cell>
 													<div>{item.targetGroupName}</div>
 													<div class="text-xs text-muted-foreground">ลำดับ {item.targetOrder}</div>
@@ -216,7 +219,9 @@
 									<article class="rounded-xl border p-3">
 										<h4 class="font-medium">{item.menuItemName}</h4>
 										<div class="mt-2 grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-sm">
-											<span class="text-muted-foreground">{item.currentGroupName ?? 'ยังไม่จัดงาน'}</span>
+											<span class="text-muted-foreground"
+												>{item.currentGroupName ?? 'ยังไม่จัดงาน'}</span
+											>
 											<ArrowRight class="h-4 w-4 text-primary" />
 											<span class="font-medium">{item.targetGroupName}</span>
 										</div>

@@ -12,9 +12,7 @@ async function readProjectFile(relativePath) {
 
 test('academic menu template publishes generated preview and apply contracts', async () => {
 	const api = await readProjectFile('src/lib/api/menu-admin.ts');
-	const contract = JSON.parse(
-		await readProjectFile('../contracts/openapi/school-api.json')
-	);
+	const contract = JSON.parse(await readProjectFile('../contracts/openapi/school-api.json'));
 	const previewPath = contract.paths['/api/admin/menu/templates/academic/recommended'];
 	const applyPath = contract.paths['/api/admin/menu/templates/academic/recommended/apply'];
 
@@ -32,14 +30,15 @@ test('academic menu template publishes generated preview and apply contracts', a
 	assert.match(api, /AcademicMenuTemplatePreview/);
 	assert.match(api, /previewRecommendedAcademicMenuTemplate/);
 	assert.match(api, /applyRecommendedAcademicMenuTemplate/);
-	assert.doesNotMatch(api, /ApiResponse<unknown>|Record<string, unknown>|\sas\sAcademicMenuTemplate/);
+	assert.doesNotMatch(
+		api,
+		/ApiResponse<unknown>|Record<string, unknown>|\sas\sAcademicMenuTemplate/
+	);
 });
 
 test('menu administration previews the recommended structure before explicit apply', async () => {
 	const page = await readProjectFile('src/routes/(app)/staff/menu/+page.svelte');
-	const dialog = await readProjectFile(
-		'src/lib/components/menu/AcademicMenuTemplateDialog.svelte'
-	);
+	const dialog = await readProjectFile('src/lib/components/menu/AcademicMenuTemplateDialog.svelte');
 
 	assert.match(page, /PERMISSIONS\.MENU_READ_ALL/);
 	assert.match(page, /PERMISSIONS\.MENU_UPDATE_ALL/);
