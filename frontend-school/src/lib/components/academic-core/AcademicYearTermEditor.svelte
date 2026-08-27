@@ -626,7 +626,11 @@
 				>
 			</form>
 
-			<form class="space-y-3 rounded-xl border bg-card p-5 shadow-sm" onsubmit={submitPeriods}>
+			<form
+				id="bell-schedules"
+				class="scroll-mt-24 space-y-3 rounded-xl border bg-card p-5 shadow-sm"
+				onsubmit={submitPeriods}
+			>
 				<div>
 					<h2 class="font-semibold">จัดคาบในตารางเวลา</h2>
 					<p class="mt-1 text-xs text-muted-foreground">

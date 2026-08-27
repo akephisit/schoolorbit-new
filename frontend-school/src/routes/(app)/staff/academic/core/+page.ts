@@ -3,9 +3,9 @@ import { PERMISSION_MODULES } from '$lib/permissions/registry';
 export const _meta = {
 	academicContext: 'none',
 	menu: {
-		title: 'ตั้งค่าปีและภาคเรียน',
+		title: 'ปีการศึกษา ภาคเรียน และเวลาเรียน',
 		icon: 'CalendarRange',
-		group: 'academic',
+		group: 'academic_delivery',
 		workspace: 'academic',
 		order: 10,
 		user_type: 'staff',

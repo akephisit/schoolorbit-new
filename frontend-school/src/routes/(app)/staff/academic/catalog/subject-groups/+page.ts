@@ -5,9 +5,9 @@ export const _meta = {
 	menu: {
 		title: 'กลุ่มสาระการเรียนรู้',
 		icon: 'Layers3',
-		group: 'academic',
+		group: 'academic_curriculum',
 		workspace: 'academic',
-		order: 1,
+		order: 10,
 		user_type: 'staff',
 		permission: PERMISSION_MODULES.ACADEMIC_CATALOG
 	}

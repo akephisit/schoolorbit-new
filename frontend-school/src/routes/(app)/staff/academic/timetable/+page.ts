@@ -5,10 +5,10 @@ export const _meta = {
 	menu: {
 		title: 'จัดตารางสอน',
 		icon: 'CalendarDays',
-		group: 'academic',
+		group: 'academic_delivery',
 		workspace: 'academic',
 		permission: PERMISSION_MODULES.LEARNING_OFFERING,
-		order: 51,
+		order: 40,
 		user_type: 'staff'
 	}
 };

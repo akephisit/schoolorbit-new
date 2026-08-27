@@ -6,9 +6,9 @@ export const _meta = {
 	menu: {
 		title: 'นิเทศการสอน',
 		icon: 'ClipboardCheck',
-		group: 'academic',
+		group: 'academic_supervision',
 		workspace: 'academic',
-		order: 11,
+		order: 10,
 		user_type: 'staff',
 		permission: PERMISSION_MODULES.SUPERVISION
 	}

@@ -5,10 +5,10 @@ export const _meta = {
 	menu: {
 		title: 'ตารางสอบ',
 		icon: 'CalendarClock',
-		group: 'academic',
+		group: 'academic_assessment',
 		workspace: 'academic',
 		permission: PERMISSIONS.ACADEMIC_EXAM_SCHEDULE_READ_SCHOOL,
-		order: 52,
+		order: 30,
 		user_type: 'staff'
 	}
 };

@@ -5,9 +5,9 @@ export const _meta = {
 	menu: {
 		title: 'นักเรียนประจำปี',
 		icon: 'UsersRound',
-		group: 'academic',
+		group: 'academic_registry',
 		workspace: 'academic',
-		order: 30,
+		order: 20,
 		user_type: 'staff',
 		permission: PERMISSION_MODULES.STUDENT_ACADEMIC_YEAR
 	}

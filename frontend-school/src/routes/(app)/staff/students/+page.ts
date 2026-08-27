@@ -9,9 +9,9 @@ export const _meta = {
 	menu: {
 		title: 'รายชื่อนักเรียน',
 		icon: 'GraduationCap',
-		group: 'academic',
+		group: 'academic_registry',
 		workspace: 'academic',
-		order: 5, // Top priority in academic
+		order: 30,
 		user_type: 'staff',
 		permission: PERMISSION_MODULES.STUDENT
 	}

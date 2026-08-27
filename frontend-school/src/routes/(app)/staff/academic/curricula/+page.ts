@@ -5,9 +5,9 @@ export const _meta = {
 	menu: {
 		title: 'หลักสูตรและแผนการเรียน',
 		icon: 'BookCopy',
-		group: 'academic',
+		group: 'academic_curriculum',
 		workspace: 'academic',
-		order: 4,
+		order: 30,
 		user_type: 'staff',
 		permission: PERMISSION_MODULES.ACADEMIC_CURRICULUM
 	}

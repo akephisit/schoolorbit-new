@@ -1,20 +1,11 @@
 import { PERMISSION_MODULES } from '$lib/permissions/registry';
+import { redirect } from '@sveltejs/kit';
 
 export const _meta = {
-	academicContext: 'year_required' as const,
-	menu: {
-		title: 'ตั้งค่าคาบเวลา',
-		icon: 'Clock',
-		group: 'academic',
-		workspace: 'academic',
-		permission: PERMISSION_MODULES.ACADEMIC_TERM,
-		order: 50,
-		user_type: 'staff'
+	access: {
+		user_type: 'staff',
+		permission: PERMISSION_MODULES.ACADEMIC_TERM
 	}
 };
 
-export const load = async () => {
-	return {
-		title: _meta.menu.title
-	};
-};
+export const load = () => redirect(308, '/staff/academic/core#bell-schedules');

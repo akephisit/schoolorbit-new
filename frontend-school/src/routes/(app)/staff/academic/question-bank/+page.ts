@@ -5,9 +5,9 @@ export const _meta = {
 	menu: {
 		title: 'คลังข้อสอบ',
 		icon: 'BookOpenCheck',
-		group: 'academic',
+		group: 'academic_assessment',
 		workspace: 'academic',
-		order: 54,
+		order: 20,
 		user_type: 'staff',
 		permission: PERMISSION_MODULES.ACADEMIC_QUESTION_BANK
 	}

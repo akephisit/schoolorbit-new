@@ -5,10 +5,10 @@ export const _meta = {
 	menu: {
 		title: 'ตารางสอนวันนี้',
 		icon: 'CalendarClock',
-		group: 'academic',
+		group: 'academic_delivery',
 		workspace: 'academic',
 		permission: PERMISSION_MODULES.ACADEMIC_TIMETABLE_TODAY,
-		order: 50,
+		order: 30,
 		user_type: 'staff'
 	}
 };

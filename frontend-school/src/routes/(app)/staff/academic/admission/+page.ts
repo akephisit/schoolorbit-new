@@ -9,9 +9,9 @@ export const _meta = {
 	menu: {
 		title: 'รับสมัครนักเรียน',
 		icon: 'ClipboardList',
-		group: 'academic',
+		group: 'academic_admission',
 		workspace: 'academic',
-		order: 40,
+		order: 10,
 		user_type: 'staff',
 		permission: PERMISSION_MODULES.ADMISSION
 	}

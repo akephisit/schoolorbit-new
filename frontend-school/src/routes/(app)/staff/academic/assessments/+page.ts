@@ -9,9 +9,9 @@ export const _meta = {
 	menu: {
 		title: 'โครงสร้างคะแนน',
 		icon: 'ClipboardList',
-		group: 'academic',
+		group: 'academic_assessment',
 		workspace: 'academic',
-		order: 36,
+		order: 10,
 		user_type: 'staff',
 		permission: PERMISSION_MODULES.ACADEMIC_ASSESSMENT
 	}

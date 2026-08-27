@@ -3,11 +3,11 @@ import { PERMISSION_MODULES } from '$lib/permissions/registry';
 export const _meta = {
 	academicContext: 'term_required',
 	menu: {
-		title: 'จัดการชุดและกลุ่มเรียน',
+		title: 'รายวิชาและกิจกรรมที่เปิดสอน',
 		icon: 'Workflow',
-		group: 'academic',
+		group: 'academic_delivery',
 		workspace: 'academic',
-		order: 40,
+		order: 20,
 		user_type: 'staff',
 		permission: PERMISSION_MODULES.LEARNING_OFFERING
 	}

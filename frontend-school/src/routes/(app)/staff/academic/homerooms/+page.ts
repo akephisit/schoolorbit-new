@@ -5,9 +5,9 @@ export const _meta = {
 	menu: {
 		title: 'ห้องประจำชั้น',
 		icon: 'School',
-		group: 'academic',
+		group: 'academic_registry',
 		workspace: 'academic',
-		order: 20,
+		order: 10,
 		user_type: 'staff',
 		permission: PERMISSION_MODULES.HOMEROOM
 	}

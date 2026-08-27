@@ -5,9 +5,9 @@ export const _meta = {
 	menu: {
 		title: 'ทะเบียนรายวิชา',
 		icon: 'LibraryBig',
-		group: 'academic',
+		group: 'academic_curriculum',
 		workspace: 'academic',
-		order: 2,
+		order: 20,
 		user_type: 'staff',
 		permission: PERMISSION_MODULES.ACADEMIC_CATALOG
 	}

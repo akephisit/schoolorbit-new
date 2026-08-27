@@ -3,11 +3,11 @@ import { PERMISSION_MODULES } from '$lib/permissions/registry';
 export const _meta = {
 	academicContext: 'none',
 	menu: {
-		title: 'ทะเบียนกิจกรรม',
+		title: 'ทะเบียนกิจกรรมพัฒนาผู้เรียน',
 		icon: 'Sparkles',
-		group: 'academic',
+		group: 'academic_activities',
 		workspace: 'academic',
-		order: 3,
+		order: 10,
 		user_type: 'staff',
 		permission: PERMISSION_MODULES.ACADEMIC_CATALOG
 	}
