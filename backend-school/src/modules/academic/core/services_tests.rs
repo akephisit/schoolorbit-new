@@ -4,13 +4,14 @@ use super::models::{
     CreateBellScheduleRequest, CreateCatalogActivityRequest, CreateCatalogSubjectRequest,
     CreateCurriculumRequest, CreateCurriculumVersionRequest, CreateHomeroomPlacementRequest,
     CreateHomeroomRequest, CreateStudentAcademicYearRequest, CreateStudyProgramRequest,
-    CreateSubjectGroupRequest, CreateSubjectVersionRequest, HomeroomPlacementStatus,
-    ProgramRequirementInput, PublishVersionRequest, ReplaceBellSchedulePeriodsRequest,
-    ReplaceGradeProgressionsRequest, ReplaceProgramRequirementsRequest, RequirementKind,
-    RequirementResourceKind, TransferHomeroomPlacementRequest, UpdateAcademicTermRequest,
-    UpdateAcademicYearRequest, UpdateActivityVersionRequest, UpdateCatalogActivityRequest,
-    UpdateCatalogSubjectRequest, UpdateStudyProgramRequest, UpdateSubjectGroupRequest,
-    UpdateSubjectVersionRequest, VersionStatus,
+    CreateSubjectGroupRequest, CreateSubjectVersionRequest, CurriculumDisplayState,
+    HomeroomPlacementStatus, ProgramRequirementInput, PublishVersionRequest,
+    ReplaceBellSchedulePeriodsRequest, ReplaceGradeProgressionsRequest,
+    ReplaceProgramRequirementsRequest, RequirementKind, RequirementResourceKind,
+    TransferHomeroomPlacementRequest, UpdateAcademicTermRequest, UpdateAcademicYearRequest,
+    UpdateActivityVersionRequest, UpdateCatalogActivityRequest, UpdateCatalogSubjectRequest,
+    UpdateStudyProgramRequest, UpdateSubjectGroupRequest, UpdateSubjectVersionRequest,
+    VersionStatus,
 };
 use super::services::{
     bell_schedules, catalog, context, curriculum, ensure_draft_version, ensure_planning_delete,
@@ -137,6 +138,90 @@ async fn create_published_program_option_fixture(
     .await
     .unwrap();
     (curriculum_row.id, program.id)
+}
+
+async fn create_curriculum_overview_fixture(
+    pool: &PgPool,
+    owner_id: Uuid,
+    grade_level_id: Uuid,
+    subject_version_id: Uuid,
+    code: &str,
+    start_academic_year_id: Uuid,
+    end_academic_year_id: Option<Uuid>,
+    publish: bool,
+    program_count: usize,
+) -> (Uuid, Uuid) {
+    let curriculum_row = curriculum::create(
+        pool,
+        CreateCurriculumRequest {
+            code: code.to_string(),
+            name_th: format!("หลักสูตร {code}"),
+            name_en: None,
+            description: None,
+            grade_level_ids: vec![grade_level_id],
+            owning_organization_unit_id: Some(owner_id),
+        },
+    )
+    .await
+    .unwrap();
+    let version = curriculum::create_version(
+        pool,
+        curriculum_row.id,
+        CreateCurriculumVersionRequest {
+            version_name: format!("ฉบับ {code}"),
+            start_academic_year_id,
+            end_academic_year_id,
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+    for index in 0..program_count {
+        let program = curriculum::create_program(
+            pool,
+            version.id,
+            CreateStudyProgramRequest {
+                code: format!("{code}-P{}", index + 1),
+                name_th: format!("แผน {}", index + 1),
+                name_en: None,
+                is_default: index == 0,
+                owning_organization_unit_id: Some(owner_id),
+            },
+        )
+        .await
+        .unwrap();
+        curriculum::replace_requirements(
+            pool,
+            program.id,
+            ReplaceProgramRequirementsRequest {
+                requirements: vec![ProgramRequirementInput {
+                    resource_kind: RequirementResourceKind::Course,
+                    catalog_version_id: subject_version_id,
+                    grade_level_id,
+                    recommended_term_code: Some("1".to_string()),
+                    requirement_kind: RequirementKind::Required,
+                    credit: Some("1.00".to_string()),
+                    hours: Some("40.00".to_string()),
+                    display_order: 1,
+                }],
+                row_version: program.row_version,
+            },
+        )
+        .await
+        .unwrap();
+    }
+    if publish {
+        curriculum::publish_version(
+            pool,
+            version.id,
+            PublishVersionRequest {
+                row_version: version.row_version,
+            },
+        )
+        .await
+        .unwrap();
+    }
+    (curriculum_row.id, version.id)
 }
 
 #[test]
@@ -1758,6 +1843,167 @@ async fn catalog_overview_keeps_activity_owner_scope_and_grade_options() {
         .owner_options
         .iter()
         .any(|owner| owner.organization_unit_id.is_none()));
+}
+
+#[tokio::test]
+async fn curriculum_overview_resolves_display_versions_and_labels() {
+    let pool = prepare_core_fixture("academic_core_curriculum_overview").await;
+    let grade_level_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM grade_levels WHERE is_active = true AND level_type = 'secondary' \
+         AND year = 1 ORDER BY id LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let subject_version_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM subject_versions WHERE status = 'published' ORDER BY id LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let owner_ids: Vec<Uuid> =
+        sqlx::query_scalar("SELECT id FROM organization_units ORDER BY id LIMIT 2")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(owner_ids.len(), 2);
+    let next_year_id = Uuid::new_v4();
+    sqlx::query(
+        r#"INSERT INTO academic_years (
+               id, year, name, start_date, end_date, school_days, status
+           ) VALUES ($1, 2027, 'ปีการศึกษา 2027', '2027-05-01', '2028-04-30',
+                     ARRAY['MON','TUE','WED','THU','FRI'], 'planning')"#,
+    )
+    .bind(next_year_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let (current_id, _) = create_curriculum_overview_fixture(
+        &pool,
+        owner_ids[0],
+        grade_level_id,
+        subject_version_id,
+        "CUR-A",
+        FUTURE_YEAR_ID,
+        None,
+        true,
+        2,
+    )
+    .await;
+    let current_draft = curriculum::create_version(
+        &pool,
+        current_id,
+        CreateCurriculumVersionRequest {
+            version_name: "ฉบับร่าง CUR-A".to_string(),
+            start_academic_year_id: next_year_id,
+            end_academic_year_id: None,
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+    curriculum::create_program(
+        &pool,
+        current_draft.id,
+        CreateStudyProgramRequest {
+            code: "CUR-A-DRAFT".to_string(),
+            name_th: "แผนฉบับร่าง".to_string(),
+            name_en: None,
+            is_default: true,
+            owning_organization_unit_id: Some(owner_ids[0]),
+        },
+    )
+    .await
+    .unwrap();
+    create_curriculum_overview_fixture(
+        &pool,
+        owner_ids[0],
+        grade_level_id,
+        subject_version_id,
+        "CUR-B",
+        next_year_id,
+        None,
+        true,
+        1,
+    )
+    .await;
+    create_curriculum_overview_fixture(
+        &pool,
+        owner_ids[0],
+        grade_level_id,
+        subject_version_id,
+        "CUR-C",
+        CURRENT_YEAR_ID,
+        Some(CURRENT_YEAR_ID),
+        true,
+        1,
+    )
+    .await;
+    create_curriculum_overview_fixture(
+        &pool,
+        owner_ids[0],
+        grade_level_id,
+        subject_version_id,
+        "CUR-D",
+        next_year_id,
+        None,
+        false,
+        0,
+    )
+    .await;
+    create_curriculum_overview_fixture(
+        &pool,
+        owner_ids[1],
+        grade_level_id,
+        subject_version_id,
+        "OUTSIDE",
+        FUTURE_YEAR_ID,
+        None,
+        true,
+        1,
+    )
+    .await;
+
+    let overview = workspaces::curriculum_overview(
+        &pool,
+        &AcademicResourceListFilter {
+            organization_unit_ids: vec![owner_ids[0]],
+            ..AcademicResourceListFilter::default()
+        },
+    )
+    .await
+    .expect("overview should load");
+
+    assert_eq!(overview.items.len(), 4);
+    assert_eq!(overview.items[0].curriculum.code, "CUR-A");
+    assert_eq!(
+        overview.items[0].display_state,
+        CurriculumDisplayState::Current
+    );
+    assert_eq!(overview.items[0].study_program_count, 2);
+    assert_eq!(overview.items[0].draft_count, 1);
+    assert_eq!(overview.items[0].grade_levels[0].name, "มัธยมศึกษาปีที่ 1");
+    assert_eq!(
+        overview.items[0].start_academic_year_name.as_deref(),
+        Some("ปีการศึกษา 2026")
+    );
+    assert_eq!(
+        overview.items[1].display_state,
+        CurriculumDisplayState::Upcoming
+    );
+    assert_eq!(
+        overview.items[2].display_state,
+        CurriculumDisplayState::Expired
+    );
+    assert_eq!(
+        overview.items[3].display_state,
+        CurriculumDisplayState::Unpublished
+    );
+    assert!(!overview
+        .items
+        .iter()
+        .any(|item| item.curriculum.code == "OUTSIDE"));
 }
 
 #[tokio::test]

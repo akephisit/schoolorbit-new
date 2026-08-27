@@ -57,6 +57,15 @@ pub enum CatalogDisplayState {
     Unpublished,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CurriculumDisplayState {
+    Current,
+    Upcoming,
+    Expired,
+    Unpublished,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema, sqlx::Type)]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
@@ -646,6 +655,25 @@ pub struct CurriculumVersion {
     pub migrated: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CurriculumOverviewItem {
+    pub curriculum: Curriculum,
+    pub display_version: Option<CurriculumVersion>,
+    pub display_state: CurriculumDisplayState,
+    pub grade_levels: Vec<GradeLevelLookupItem>,
+    pub start_academic_year_name: Option<String>,
+    pub end_academic_year_name: Option<String>,
+    pub study_program_count: i64,
+    pub draft_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CurriculumOverview {
+    pub items: Vec<CurriculumOverviewItem>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
