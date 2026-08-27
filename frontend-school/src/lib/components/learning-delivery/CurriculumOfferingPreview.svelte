@@ -67,7 +67,7 @@
 	<header class="border-b px-5 py-4">
 		<div class="flex items-center gap-2">
 			<WandSparkles class="size-5 text-primary" />
-			<h2 class="font-semibold">สร้างชุดการเรียนจากหลักสูตร</h2>
+			<h2 class="font-semibold">สร้างรายการเปิดสอนจากหลักสูตร</h2>
 		</div>
 		<p class="mt-1 text-xs text-muted-foreground">
 			ตรวจรายการที่จะสร้าง คงเดิม และรายการขัดแย้งก่อนนำมาใช้

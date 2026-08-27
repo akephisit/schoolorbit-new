@@ -27,6 +27,10 @@
 	import RosterPreviewPanel from '$lib/components/learning-delivery/RosterPreviewPanel.svelte';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import {
+		AcademicPrerequisiteNotice,
+		type AcademicPrerequisite
+	} from '$lib/components/academic-workflow';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 
@@ -46,6 +50,22 @@
 	let rosterLoading = $state(false);
 	let errorMessage = $state('');
 	let revision = 0;
+	const missingTermPrerequisite: AcademicPrerequisite = {
+		key: 'academic-term',
+		status: 'missing',
+		title: 'เลือกปีการศึกษาและภาคเรียนก่อน',
+		description: 'รายการเปิดสอน กลุ่มเรียน และรายชื่อนักเรียนแยกกันในแต่ละภาคเรียน',
+		actionLabel: 'ไปตั้งค่าปีและภาคเรียน',
+		href: '/staff/academic/core'
+	};
+	const noOfferingPrerequisite: AcademicPrerequisite = {
+		key: 'learning-offerings',
+		status: 'warning',
+		title: 'ภาคเรียนนี้ยังไม่มีรายการเปิดสอน',
+		description: 'ตรวจหลักสูตรก่อนสร้างรายการเปิดสอน แล้วจึงจัดกลุ่มเรียน ครู ห้อง และรายชื่อ',
+		actionLabel: 'ตรวจหลักสูตร',
+		href: '/staff/academic/curricula'
+	};
 	const canManage = $derived(
 		$can.hasAny(
 			PERMISSIONS.LEARNING_OFFERING_MANAGE_SCHOOL,
@@ -78,7 +98,7 @@
 			curriculumPreview = null;
 		} catch (error) {
 			if (current === revision)
-				errorMessage = error instanceof Error ? error.message : 'โหลดชุดการเรียนไม่สำเร็จ';
+				errorMessage = error instanceof Error ? error.message : 'โหลดรายการเปิดสอนไม่สำเร็จ';
 		} finally {
 			if (current === revision) loading = false;
 		}
@@ -259,16 +279,14 @@
 </script>
 
 <PageShell
-	title="จัดการชุดและกลุ่มเรียน"
-	description="สร้างรายวิชาและกิจกรรมของภาคเรียน จัดกลุ่ม ครู ห้อง และรายชื่อจากพื้นที่เดียว"
+	title="รายวิชาและกิจกรรมที่เปิดสอน"
+	description="นำรายการจากหลักสูตรมาเปิดสอน แล้วจัดกลุ่ม ครู ห้อง และรายชื่อนักเรียนของภาคเรียน"
 >
-	{#if !academicTermId || !academicYearId}<PageState
-			variant="empty"
-			title="เลือกภาคเรียนก่อน"
-			description="ใช้ตัวเลือกบริบทบนแถบด้านบนเพื่อเปิดชุดการเรียนของภาคที่ต้องการ"
-		/>{:else if loading}<PageSkeleton variant="cards" rows={5} />{:else if errorMessage}<PageState
+	{#if !academicTermId || !academicYearId}
+		<AcademicPrerequisiteNotice prerequisite={missingTermPrerequisite} />
+	{:else if loading}<PageSkeleton variant="cards" rows={5} />{:else if errorMessage}<PageState
 			variant="error"
-			title="โหลดชุดการเรียนไม่สำเร็จ"
+			title="โหลดรายการเปิดสอนไม่สำเร็จ"
 			description={errorMessage}
 			actionLabel="ลองอีกครั้ง"
 			onaction={() => loadWorkspace(academicTermId, academicYearId)}
@@ -279,6 +297,9 @@
 			onPreview={buildCurriculumPreview}
 			onApply={applyCurriculumPreview}
 		/>
+		{#if offerings.length === 0}
+			<AcademicPrerequisiteNotice prerequisite={noOfferingPrerequisite} />
+		{/if}
 		<LearningOfferingEditor
 			{offerings}
 			{canManage}

@@ -58,7 +58,7 @@ export const getAssessmentPlan = (offeringId: string) =>
 		apiClient.get<AssessmentPlanDetail>(
 			`/api/academic/assessments/offerings/${encodeURIComponent(offeringId)}`
 		),
-		'ไม่สามารถโหลดโครงสร้างคะแนนของชุดการเรียนได้'
+		'ไม่สามารถโหลดโครงสร้างคะแนนของรายการเปิดสอนได้'
 	);
 
 export const getAssessmentSettings = () =>

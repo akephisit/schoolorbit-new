@@ -45,7 +45,7 @@
 			await onCreate(draft);
 			draft = { ...draft, catalogVersionId: '' };
 		} catch (error) {
-			errorMessage = error instanceof Error ? error.message : 'สร้างชุดการเรียนไม่สำเร็จ';
+			errorMessage = error instanceof Error ? error.message : 'สร้างรายการเปิดสอนไม่สำเร็จ';
 		} finally {
 			busy = false;
 		}
@@ -86,13 +86,13 @@
 		{:else}<div
 				class="col-span-full rounded-xl border border-dashed p-10 text-center text-sm text-muted-foreground"
 			>
-				ยังไม่มีชุดการเรียนในภาคเรียนนี้
+				ยังไม่มีรายการเปิดสอนในภาคเรียนนี้
 			</div>{/each}
 	</section>
 
 	{#if canManage}
 		<form class="space-y-3 rounded-xl border bg-card p-5 shadow-sm" onsubmit={submit}>
-			<h2 class="font-semibold">สร้างชุดการเรียนเอง</h2>
+			<h2 class="font-semibold">เพิ่มรายการเปิดสอนเอง</h2>
 			<div class="space-y-1.5">
 				<Label for="offering-kind">ชนิด</Label>
 				<Select.Root type="single" bind:value={draft.kind}>

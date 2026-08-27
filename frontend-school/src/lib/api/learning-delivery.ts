@@ -58,23 +58,23 @@ export const listLearningOfferings = (academicTermId: string, options: ApiReques
 	} satisfies ListLearningOfferingsQuery;
 	return deliveryData(
 		apiClient.get<LearningOffering[]>('/api/academic/offerings', { ...options, query }),
-		'ไม่สามารถโหลดชุดการเรียนได้'
+		'ไม่สามารถโหลดรายการเปิดสอนได้'
 	);
 };
 export const createLearningOffering = (body: CreateLearningOfferingRequest) =>
 	deliveryData(
 		apiClient.post<LearningOffering>('/api/academic/offerings', body),
-		'สร้างชุดการเรียนไม่สำเร็จ'
+		'สร้างรายการเปิดสอนไม่สำเร็จ'
 	);
 export const updateLearningOffering = (id: string, body: UpdateLearningOfferingRequest) =>
 	deliveryData(
 		apiClient.patch<LearningOffering>(`/api/academic/offerings/${id}`, body),
-		'แก้ไขชุดการเรียนไม่สำเร็จ'
+		'แก้ไขรายการเปิดสอนไม่สำเร็จ'
 	);
 export const publishLearningOffering = (id: string, body: PublishLearningOfferingRequest) =>
 	deliveryData(
 		apiClient.post<LearningOffering>(`/api/academic/offerings/${id}/publish`, body),
-		'เผยแพร่ชุดการเรียนไม่สำเร็จ'
+		'เผยแพร่รายการเปิดสอนไม่สำเร็จ'
 	);
 export const previewLearningOfferingsFromCurriculum = (body: PreviewCurriculumOfferingsRequest) =>
 	deliveryData(
@@ -90,7 +90,7 @@ export const applyLearningOfferingsFromCurriculum = (body: ApplyCurriculumOfferi
 			'/api/academic/offerings/apply-from-curriculum',
 			body
 		),
-		'นำชุดการเรียนจากหลักสูตรมาใช้ไม่สำเร็จ'
+		'นำรายการเปิดสอนจากหลักสูตรมาใช้ไม่สำเร็จ'
 	);
 
 export const listLearningGroups = (offeringId: string) =>
