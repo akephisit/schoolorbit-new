@@ -74,6 +74,7 @@ export type UpdateCurriculumVersionRequest = Schemas['UpdateCurriculumVersionReq
 export type CreateStudyProgramRequest = Schemas['CreateStudyProgramRequest'];
 export type UpdateStudyProgramRequest = Schemas['UpdateStudyProgramRequest'];
 export type ReplaceProgramRequirementsRequest = Schemas['ReplaceProgramRequirementsRequest'];
+export type ProgramRequirementInput = Schemas['ProgramRequirementInput'];
 export type CreateHomeroomRequest = Schemas['CreateHomeroomRequest'];
 export type UpdateHomeroomRequest = Schemas['UpdateHomeroomRequest'];
 export type ReplaceHomeroomAdvisorsRequest = Schemas['ReplaceHomeroomAdvisorsRequest'];
@@ -300,16 +301,21 @@ export const getCurriculumOverview = (options: ApiRequestOptions = {}) =>
 	);
 export const getCurriculumCreateOptions = (options: ApiRequestOptions = {}) =>
 	academicData(
-		apiClient.get<CurriculumCreateOptions>(
-			'/api/academic/curricula/management-options',
-			options
-		),
+		apiClient.get<CurriculumCreateOptions>('/api/academic/curricula/management-options', options),
 		'ไม่สามารถโหลดตัวเลือกสำหรับสร้างหลักสูตรได้'
 	);
 export const createCurriculum = (body: CreateCurriculumRequest) =>
 	academicData(
 		apiClient.post<Curriculum>('/api/academic/curricula', body),
 		'สร้างหลักสูตรไม่สำเร็จ'
+	);
+export const getCurriculum = (id: string, options: ApiRequestOptions = {}) =>
+	academicData(
+		apiClient.get<Curriculum>(
+			`/api/academic/curricula/${requiredContext(id, 'หลักสูตร')}`,
+			options
+		),
+		'ไม่สามารถโหลดหลักสูตรได้'
 	);
 export const updateCurriculum = (id: string, body: UpdateCurriculumRequest) =>
 	academicData(

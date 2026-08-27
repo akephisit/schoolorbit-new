@@ -34,3 +34,24 @@ test('curriculum overview is read-first and uses labeled grade selection', async
 	assert.match(table, /startAcademicYearName/);
 	assert.match(table, /studyProgramCount/);
 });
+
+test('curriculum detail is deep-linked and uses labeled management options', async () => {
+	const meta = await readProjectFile(
+		'src/routes/(app)/staff/academic/curricula/[id]/+page.ts'
+	).catch(() => '');
+	const page = await readProjectFile(
+		'src/routes/(app)/staff/academic/curricula/[id]/+page.svelte'
+	).catch(() => '');
+	const editor = await readProjectFile(
+		'src/lib/components/academic-core/CurriculumProgramEditor.svelte'
+	);
+
+	assert.match(meta, /_meta\s*=\s*\{[\s\S]*access:/);
+	assert.doesNotMatch(meta, /menu:/);
+	assert.match(page, /getCurriculumProgramWorkspace/);
+	assert.match(page, /getCurriculumManagementOptions/);
+	assert.match(editor, /catalogVersions/);
+	assert.match(editor, /gradeLevels/);
+	assert.doesNotMatch(editor, /catalogVersionId[^\n]*<Input/);
+	assert.doesNotMatch(editor, /gradeLevelId[^\n]*<Input/);
+});

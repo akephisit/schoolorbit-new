@@ -44,7 +44,8 @@
 		try {
 			options = await getCurriculumCreateOptions();
 		} catch (error) {
-			errorMessage = error instanceof Error ? error.message : 'โหลดตัวเลือกสำหรับสร้างหลักสูตรไม่สำเร็จ';
+			errorMessage =
+				error instanceof Error ? error.message : 'โหลดตัวเลือกสำหรับสร้างหลักสูตรไม่สำเร็จ';
 		} finally {
 			optionsLoading = false;
 		}
@@ -68,9 +69,7 @@
 				curriculum,
 				displayVersion: null,
 				displayState: 'unpublished',
-				gradeLevels: options.gradeLevels.filter((level) =>
-					draft.gradeLevelIds.includes(level.id)
-				),
+				gradeLevels: options.gradeLevels.filter((level) => draft.gradeLevelIds.includes(level.id)),
 				startAcademicYearName: null,
 				endAcademicYearName: null,
 				studyProgramCount: 0,
@@ -136,7 +135,9 @@
 							type="submit"
 							loading={saving}
 							loadingLabel="กำลังสร้าง"
-							disabled={!draft.code.trim() || !draft.nameTh.trim() || draft.gradeLevelIds.length === 0}
+							disabled={!draft.code.trim() ||
+								!draft.nameTh.trim() ||
+								draft.gradeLevelIds.length === 0}
 						>
 							สร้างหลักสูตร
 						</LoadingButton>
