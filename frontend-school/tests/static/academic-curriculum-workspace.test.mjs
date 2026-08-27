@@ -19,3 +19,18 @@ test('curriculum workspace clients use generated contracts', async () => {
 	assert.match(api, /operations\['getCurriculumOverview'\]/);
 	assert.doesNotMatch(api, /ApiResponse<unknown>|Record<string, unknown>| as Curriculum/);
 });
+
+test('curriculum overview is read-first and uses labeled grade selection', async () => {
+	const page = await readProjectFile('src/routes/(app)/staff/academic/curricula/+page.svelte');
+	const table = await readProjectFile(
+		'src/lib/components/academic-core/CurriculumOverviewTable.svelte'
+	).catch(() => '');
+
+	assert.match(page, /getCurriculumOverview/);
+	assert.match(page, /canManageAcademicCurriculum/);
+	assert.doesNotMatch(page, /getCurriculumCreateOptions\([\s\S]*onMount/);
+	assert.doesNotMatch(page, /gradeLevelIds:\s*''/);
+	assert.doesNotMatch(page, /รหัสระดับชั้น/);
+	assert.match(table, /startAcademicYearName/);
+	assert.match(table, /studyProgramCount/);
+});
