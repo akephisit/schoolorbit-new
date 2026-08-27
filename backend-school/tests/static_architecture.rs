@@ -2040,7 +2040,7 @@ fn academic_core_catalog_handlers_enforce_resource_policy_contract() {
 
     for (handler_name, action) in cases {
         let handler =
-            extract_braced_block(&handlers, &format!("pub async fn {handler_name}"), false);
+            extract_braced_block(&handlers, &format!("pub async fn {handler_name}("), false);
         assert!(handler.contains("actor_tenant_context_from_session(&state, &session).await?"));
         assert!(
             handler.contains("require_academic_catalog_access") && handler.contains(action),

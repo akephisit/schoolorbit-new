@@ -1,7 +1,4 @@
-import type {
-	CatalogDisplayState,
-	GradeLevelOption
-} from '$lib/api/academic-core';
+import type { CatalogDisplayState, GradeLevelOption } from '$lib/api/academic-core';
 
 export type CatalogChoice = Readonly<{
 	value: string;

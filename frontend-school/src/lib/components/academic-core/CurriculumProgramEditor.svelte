@@ -4,6 +4,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import * as Select from '$lib/components/ui/select';
 	import { BookCheck, CheckCircle2, Layers, Plus } from 'lucide-svelte';
 
 	let {
@@ -194,32 +195,48 @@
 				</form>
 				<form class="space-y-3 rounded-lg border bg-muted/20 p-4" onsubmit={addRequirement}>
 					<h3 class="font-medium">เพิ่มข้อกำหนด</h3>
-					<label class="space-y-1.5 text-sm"
-						><span class="font-medium">แผนการเรียน</span><select
-							class="h-10 w-full rounded-md border bg-background px-3"
-							bind:value={requirementProgramId}
-							required
-							><option value="">เลือกแผน</option>{#each programs as program (program.id)}<option
-									value={program.id}>{program.nameTh}</option
-								>{/each}</select
-						></label
-					>
+					<label class="space-y-1.5 text-sm">
+						<span class="font-medium">แผนการเรียน</span>
+						<Select.Root type="single" bind:value={requirementProgramId}>
+							<Select.Trigger class="w-full">
+								{programs.find((program) => program.id === requirementProgramId)?.nameTh ??
+									'เลือกแผน'}
+							</Select.Trigger>
+							<Select.Content>
+								{#each programs as program (program.id)}
+									<Select.Item value={program.id}>{program.nameTh}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					</label>
 					<div class="grid grid-cols-2 gap-3">
-						<label class="space-y-1.5 text-sm"
-							><span class="font-medium">ชนิดทรัพยากร</span><select
-								class="h-10 w-full rounded-md border bg-background px-3"
-								bind:value={requirementDraft.resourceKind}
-								><option value="course">รายวิชา</option><option value="activity">กิจกรรม</option
-								></select
-							></label
-						><label class="space-y-1.5 text-sm"
-							><span class="font-medium">ข้อกำหนด</span><select
-								class="h-10 w-full rounded-md border bg-background px-3"
-								bind:value={requirementDraft.requirementKind}
-								><option value="required">บังคับ</option><option value="elective">เลือก</option
-								><option value="optional">เพิ่มเติม</option></select
-							></label
-						>
+						<label class="space-y-1.5 text-sm">
+							<span class="font-medium">ชนิดทรัพยากร</span>
+							<Select.Root type="single" bind:value={requirementDraft.resourceKind}>
+								<Select.Trigger class="w-full">
+									{requirementDraft.resourceKind === 'course' ? 'รายวิชา' : 'กิจกรรม'}
+								</Select.Trigger>
+								<Select.Content>
+									<Select.Item value="course">รายวิชา</Select.Item>
+									<Select.Item value="activity">กิจกรรม</Select.Item>
+								</Select.Content>
+							</Select.Root>
+						</label>
+						<label class="space-y-1.5 text-sm">
+							<span class="font-medium">ข้อกำหนด</span>
+							<Select.Root type="single" bind:value={requirementDraft.requirementKind}>
+								<Select.Trigger class="w-full">
+									{{ required: 'บังคับ', elective: 'เลือก', optional: 'เพิ่มเติม' }[
+										requirementDraft.requirementKind
+									]}
+								</Select.Trigger>
+								<Select.Content>
+									<Select.Item value="required">บังคับ</Select.Item>
+									<Select.Item value="elective">เลือก</Select.Item>
+									<Select.Item value="optional">เพิ่มเติม</Select.Item>
+								</Select.Content>
+							</Select.Root>
+						</label>
 					</div>
 					<div class="space-y-1.5">
 						<Label for={`requirement-version-${version.id}`}>รหัสรุ่นรายวิชา/กิจกรรม</Label><Input

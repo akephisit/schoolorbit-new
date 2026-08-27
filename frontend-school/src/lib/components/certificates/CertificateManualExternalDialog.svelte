@@ -7,7 +7,10 @@
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
+	import * as Select from '$lib/components/ui/select';
 	import { UserPlus } from 'lucide-svelte';
+
+	const NO_TEMPLATE_VALUE = '__no_template__';
 
 	let {
 		open,
@@ -99,17 +102,26 @@
 
 			<label class="block space-y-1.5">
 				<span class="text-sm font-medium">แบบเกียรติบัตร</span>
-				<select
-					bind:value={templateId}
-					class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+				<Select.Root
+					type="single"
+					value={templateId || NO_TEMPLATE_VALUE}
+					onValueChange={(value) => (templateId = value === NO_TEMPLATE_VALUE ? '' : value)}
 				>
-					<option value="">ยังไม่กำหนด</option>
-					{#each compatibleTemplates as template (template.id)}
-						<option value={template.id}
-							>{template.name}{template.isReady ? '' : ' (ยังไม่พร้อม)'}</option
-						>
-					{/each}
-				</select>
+					<Select.Trigger class="w-full">
+						{@const template = compatibleTemplates.find((item) => item.id === templateId)}
+						{template
+							? `${template.name}${template.isReady ? '' : ' (ยังไม่พร้อม)'}`
+							: 'ยังไม่กำหนด'}
+					</Select.Trigger>
+					<Select.Content>
+						<Select.Item value={NO_TEMPLATE_VALUE}>ยังไม่กำหนด</Select.Item>
+						{#each compatibleTemplates as template (template.id)}
+							<Select.Item value={template.id}
+								>{template.name}{template.isReady ? '' : ' (ยังไม่พร้อม)'}</Select.Item
+							>
+						{/each}
+					</Select.Content>
+				</Select.Root>
 				<p class="text-xs text-muted-foreground">
 					แสดงเฉพาะแบบที่รองรับบุคคลภายนอก จึงใช้แบบรางวัลการแข่งขันได้เมื่อผู้ออกแบบอนุญาต
 				</p>

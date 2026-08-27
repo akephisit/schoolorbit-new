@@ -91,12 +91,7 @@
 			.filter((item) => {
 				const version = item.displayVersion;
 				return (
-					matchesCatalogSearch(
-						search,
-						item.activity.code,
-						version?.name,
-						version?.description
-					) &&
+					matchesCatalogSearch(search, item.activity.code, version?.name, version?.description) &&
 					(typeFilter === allValue || item.activity.activityType === typeFilter) &&
 					(schedulingFilter === allValue || version?.schedulingMode === schedulingFilter) &&
 					(gradeFilter === allValue ||
@@ -231,7 +226,9 @@
 					</div>
 					<div class="grid gap-3 lg:grid-cols-[minmax(240px,1fr)_repeat(4,minmax(150px,auto))]">
 						<div class="relative">
-							<Search class="absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+							<Search
+								class="absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+							/>
 							<Label class="sr-only" for="activity-search">ค้นหากิจกรรม</Label>
 							<Input
 								id="activity-search"
@@ -295,7 +292,10 @@
 				</div>
 
 				{#if canManage}
-					<form class="grid gap-3 border-b p-4 sm:grid-cols-[minmax(180px,280px)_minmax(220px,360px)_auto] sm:items-end" onsubmit={addActivity}>
+					<form
+						class="grid gap-3 border-b p-4 sm:grid-cols-[minmax(180px,280px)_minmax(220px,360px)_auto] sm:items-end"
+						onsubmit={addActivity}
+					>
 						<div>
 							<Label for="new-activity-code">เพิ่มรหัสกิจกรรม</Label>
 							<Input
@@ -320,7 +320,8 @@
 							</Select.Root>
 						</div>
 						<Button type="submit" disabled={creating}>
-							<Plus class="size-4" /> {creating ? 'กำลังเพิ่ม...' : 'เพิ่มกิจกรรม'}
+							<Plus class="size-4" />
+							{creating ? 'กำลังเพิ่ม...' : 'เพิ่มกิจกรรม'}
 						</Button>
 						{#if mutationError}
 							<p role="alert" class="text-sm text-destructive sm:col-span-3">{mutationError}</p>
@@ -329,9 +330,17 @@
 				{/if}
 
 				{#if activityItems.length === 0}
-					<PageState class="m-4 border-0 shadow-none" title="ยังไม่มีกิจกรรมในทะเบียน" description="เพิ่มรหัสกิจกรรม แล้วสร้างรายละเอียดรุ่นแรกเมื่อพร้อม" />
+					<PageState
+						class="m-4 border-0 shadow-none"
+						title="ยังไม่มีกิจกรรมในทะเบียน"
+						description="เพิ่มรหัสกิจกรรม แล้วสร้างรายละเอียดรุ่นแรกเมื่อพร้อม"
+					/>
 				{:else if filteredActivities.length === 0}
-					<PageState class="m-4 border-0 shadow-none" title="ไม่พบกิจกรรมที่ตรงกับตัวกรอง" description="ลองเปลี่ยนคำค้นหา ประเภท รูปแบบการจัด ระดับชั้น หรือสถานะ" />
+					<PageState
+						class="m-4 border-0 shadow-none"
+						title="ไม่พบกิจกรรมที่ตรงกับตัวกรอง"
+						description="ลองเปลี่ยนคำค้นหา ประเภท รูปแบบการจัด ระดับชั้น หรือสถานะ"
+					/>
 				{:else}
 					<div class="hidden md:block">
 						<Table.Root>
@@ -350,23 +359,51 @@
 							<Table.Body>
 								{#each filteredActivities as item (item.activity.id)}
 									<Table.Row>
-										<Table.Cell class="border-s-4 border-s-primary ps-5 font-mono font-semibold">{item.activity.code}</Table.Cell>
+										<Table.Cell class="border-s-4 border-s-primary ps-5 font-mono font-semibold"
+											>{item.activity.code}</Table.Cell
+										>
 										<Table.Cell class="max-w-[260px] whitespace-normal">
-											<p class="font-medium">{item.displayVersion?.name ?? 'ยังไม่มีรายละเอียดรุ่น'}</p>
-											{#if item.displayVersion?.description}<p class="line-clamp-1 text-xs text-muted-foreground">{item.displayVersion.description}</p>{/if}
+											<p class="font-medium">
+												{item.displayVersion?.name ?? 'ยังไม่มีรายละเอียดรุ่น'}
+											</p>
+											{#if item.displayVersion?.description}<p
+													class="line-clamp-1 text-xs text-muted-foreground"
+												>
+													{item.displayVersion.description}
+												</p>{/if}
 										</Table.Cell>
-										<Table.Cell class="whitespace-normal">{optionLabel(activityTypeOptions, item.activity.activityType)}</Table.Cell>
-										<Table.Cell>{optionLabel(SCHEDULING_MODE_OPTIONS, item.displayVersion?.schedulingMode)}</Table.Cell>
-										<Table.Cell class="max-w-[190px] whitespace-normal">{gradeLevelSummary(item.gradeLevels)}</Table.Cell>
-										<Table.Cell class="text-end font-mono tabular-nums">{item.displayVersion?.hoursPerWeek ?? '—'}</Table.Cell>
+										<Table.Cell class="whitespace-normal"
+											>{optionLabel(activityTypeOptions, item.activity.activityType)}</Table.Cell
+										>
+										<Table.Cell
+											>{optionLabel(
+												SCHEDULING_MODE_OPTIONS,
+												item.displayVersion?.schedulingMode
+											)}</Table.Cell
+										>
+										<Table.Cell class="max-w-[190px] whitespace-normal"
+											>{gradeLevelSummary(item.gradeLevels)}</Table.Cell
+										>
+										<Table.Cell class="text-end font-mono tabular-nums"
+											>{item.displayVersion?.hoursPerWeek ?? '—'}</Table.Cell
+										>
 										<Table.Cell>
 											<div class="flex flex-wrap gap-1.5">
-												<Badge variant="outline" class={displayStateClass(item.displayState)}>{displayStateLabel(item.displayState)}</Badge>
-												{#if item.draftCount > 0}<Badge variant="secondary">ร่าง {item.draftCount}</Badge>{/if}
+												<Badge variant="outline" class={displayStateClass(item.displayState)}
+													>{displayStateLabel(item.displayState)}</Badge
+												>
+												{#if item.draftCount > 0}<Badge variant="secondary"
+														>ร่าง {item.draftCount}</Badge
+													>{/if}
 											</div>
 										</Table.Cell>
 										<Table.Cell>
-											<Button variant="ghost" size="icon" aria-label={`เปิด ${item.activity.code}`} onclick={() => openActivity(item)}><ArrowUpRight class="size-4" /></Button>
+											<Button
+												variant="ghost"
+												size="icon"
+												aria-label={`เปิด ${item.activity.code}`}
+												onclick={() => openActivity(item)}><ArrowUpRight class="size-4" /></Button
+											>
 										</Table.Cell>
 									</Table.Row>
 								{/each}
@@ -376,25 +413,56 @@
 
 					<div class="grid gap-3 p-4 md:hidden">
 						{#each filteredActivities as item (item.activity.id)}
-							<button type="button" class="rounded-xl border border-s-4 border-s-primary bg-background p-4 text-start shadow-xs transition hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onclick={() => openActivity(item)}>
+							<button
+								type="button"
+								class="rounded-xl border border-s-4 border-s-primary bg-background p-4 text-start shadow-xs transition hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+								onclick={() => openActivity(item)}
+							>
 								<div class="flex items-start justify-between gap-3">
-									<div class="min-w-0"><p class="font-mono text-sm font-semibold text-primary">{item.activity.code}</p><h2 class="mt-1 font-medium">{item.displayVersion?.name ?? 'ยังไม่มีรายละเอียดรุ่น'}</h2></div>
+									<div class="min-w-0">
+										<p class="font-mono text-sm font-semibold text-primary">{item.activity.code}</p>
+										<h2 class="mt-1 font-medium">
+											{item.displayVersion?.name ?? 'ยังไม่มีรายละเอียดรุ่น'}
+										</h2>
+									</div>
 									<ArrowUpRight class="size-4 shrink-0 text-muted-foreground" />
 								</div>
 								<div class="mt-3 grid grid-cols-2 gap-3 text-sm">
-									<div><p class="text-xs text-muted-foreground">ประเภทกิจกรรม</p><p>{optionLabel(activityTypeOptions, item.activity.activityType)}</p></div>
-									<div><p class="text-xs text-muted-foreground">รูปแบบการจัด</p><p>{optionLabel(SCHEDULING_MODE_OPTIONS, item.displayVersion?.schedulingMode)}</p></div>
-									<div><p class="text-xs text-muted-foreground">ชั่วโมงต่อสัปดาห์</p><p class="font-mono">{item.displayVersion?.hoursPerWeek ?? '—'}</p></div>
-									<div><p class="text-xs text-muted-foreground">ระดับชั้น</p><p>{gradeLevelSummary(item.gradeLevels)}</p></div>
+									<div>
+										<p class="text-xs text-muted-foreground">ประเภทกิจกรรม</p>
+										<p>{optionLabel(activityTypeOptions, item.activity.activityType)}</p>
+									</div>
+									<div>
+										<p class="text-xs text-muted-foreground">รูปแบบการจัด</p>
+										<p>
+											{optionLabel(SCHEDULING_MODE_OPTIONS, item.displayVersion?.schedulingMode)}
+										</p>
+									</div>
+									<div>
+										<p class="text-xs text-muted-foreground">ชั่วโมงต่อสัปดาห์</p>
+										<p class="font-mono">{item.displayVersion?.hoursPerWeek ?? '—'}</p>
+									</div>
+									<div>
+										<p class="text-xs text-muted-foreground">ระดับชั้น</p>
+										<p>{gradeLevelSummary(item.gradeLevels)}</p>
+									</div>
 								</div>
-								<div class="mt-3 flex flex-wrap gap-1.5"><Badge variant="outline" class={displayStateClass(item.displayState)}>{displayStateLabel(item.displayState)}</Badge>{#if item.draftCount > 0}<Badge variant="secondary">ร่าง {item.draftCount}</Badge>{/if}</div>
+								<div class="mt-3 flex flex-wrap gap-1.5">
+									<Badge variant="outline" class={displayStateClass(item.displayState)}
+										>{displayStateLabel(item.displayState)}</Badge
+									>{#if item.draftCount > 0}<Badge variant="secondary">ร่าง {item.draftCount}</Badge
+										>{/if}
+								</div>
 							</button>
 						{/each}
 					</div>
 				{/if}
 			</section>
 
-			<p class="text-xs text-muted-foreground">แสดง {filteredActivities.length} จาก {activityItems.length} กิจกรรม · ทะเบียนนี้เป็นข้อมูลกลาง ไม่ผูกกับภาคเรียนบนแถบด้านบน</p>
+			<p class="text-xs text-muted-foreground">
+				แสดง {filteredActivities.length} จาก {activityItems.length} กิจกรรม · ทะเบียนนี้เป็นข้อมูลกลาง
+				ไม่ผูกกับภาคเรียนบนแถบด้านบน
+			</p>
 			{#if errorMessage}<p role="alert" class="text-sm text-destructive">{errorMessage}</p>{/if}
 		</div>
 	{/if}
@@ -406,10 +474,14 @@
 			<Sheet.Title class="flex items-center gap-2">
 				<Sparkles class="size-5 text-primary" />
 				<span class="font-mono">{selected?.activity.code ?? 'กิจกรรม'}</span>
-				{#if selected?.displayVersion}<span class="font-sans">· {selected.displayVersion.name}</span>{/if}
+				{#if selected?.displayVersion}<span class="font-sans">· {selected.displayVersion.name}</span
+					>{/if}
 			</Sheet.Title>
 			<Sheet.Description>
-				{#if selected?.displayVersion}{formatEffectiveRange(selected.displayVersion.effectiveFrom, selected.displayVersion.effectiveUntil)}{:else}ยังไม่มีรายละเอียดรุ่น เลือกสร้างรุ่นแรกได้ด้านล่าง{/if}
+				{#if selected?.displayVersion}{formatEffectiveRange(
+						selected.displayVersion.effectiveFrom,
+						selected.displayVersion.effectiveUntil
+					)}{:else}ยังไม่มีรายละเอียดรุ่น เลือกสร้างรุ่นแรกได้ด้านล่าง{/if}
 			</Sheet.Description>
 		</Sheet.Header>
 		{#if historyLoading}

@@ -20,6 +20,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import * as Select from '$lib/components/ui/select';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { Eraser, Play, Plus, Trash2 } from 'lucide-svelte';
@@ -292,15 +293,20 @@
 		>
 		<div class="space-y-2 py-2">
 			<Label for="clear-mode">ขอบเขต</Label>
-			<select
-				id="clear-mode"
-				class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
-				bind:value={clearMode}
-			>
-				<option value="all_except_course">คาบทั่วไปและกิจกรรม (เก็บรายวิชา)</option>
-				<option value="course_only">เฉพาะรายวิชา</option>
-				<option value="all">ทุกคาบ</option>
-			</select>
+			<Select.Root type="single" bind:value={clearMode}>
+				<Select.Trigger id="clear-mode" class="w-full">
+					{clearMode === 'all_except_course'
+						? 'คาบทั่วไปและกิจกรรม (เก็บรายวิชา)'
+						: clearMode === 'course_only'
+							? 'เฉพาะรายวิชา'
+							: 'ทุกคาบ'}
+				</Select.Trigger>
+				<Select.Content>
+					<Select.Item value="all_except_course">คาบทั่วไปและกิจกรรม (เก็บรายวิชา)</Select.Item>
+					<Select.Item value="course_only">เฉพาะรายวิชา</Select.Item>
+					<Select.Item value="all">ทุกคาบ</Select.Item>
+				</Select.Content>
+			</Select.Root>
 		</div>
 		<Dialog.Footer
 			><Button variant="outline" onclick={() => (showClearDialog = false)}>ยกเลิก</Button

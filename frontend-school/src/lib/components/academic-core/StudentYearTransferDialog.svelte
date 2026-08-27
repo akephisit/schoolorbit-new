@@ -5,8 +5,10 @@
 		HomeroomPlacementTransfer
 	} from '$lib/api/academic-core';
 	import { Button } from '$lib/components/ui/button';
+	import { DatePicker } from '$lib/components/ui/date-picker';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import * as Select from '$lib/components/ui/select';
 	import { ArrowRightLeft, X } from 'lucide-svelte';
 
 	let {
@@ -42,6 +44,10 @@
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
+		if (!draft.targetHomeroomId || !draft.transferDate) {
+			errorMessage = 'กรุณาเลือกห้องใหม่และวันที่ย้าย';
+			return;
+		}
 		busy = true;
 		errorMessage = '';
 		try {
@@ -93,23 +99,26 @@
 			{:else}
 				<form class="space-y-4 p-5" onsubmit={submit}>
 					<div class="space-y-1.5">
-						<Label for="transfer-target">ห้องใหม่</Label><select
-							id="transfer-target"
-							class="h-10 w-full rounded-md border bg-background px-3 text-sm"
-							bind:value={draft.targetHomeroomId}
-							required
-							><option value="">เลือกห้องใหม่</option
-							>{#each homerooms.filter((room) => room.id !== placement.homeroomId) as room (room.id)}<option
-									value={room.id}>{room.name}</option
-								>{/each}</select
-						>
+						<Label for="transfer-target">ห้องใหม่</Label>
+						<Select.Root type="single" bind:value={draft.targetHomeroomId}>
+							<Select.Trigger id="transfer-target" class="w-full">
+								{homerooms.find((room) => room.id === draft.targetHomeroomId)?.name ??
+									'เลือกห้องใหม่'}
+							</Select.Trigger>
+							<Select.Content>
+								{#each homerooms.filter((room) => room.id !== placement.homeroomId) as room (room.id)}
+									<Select.Item value={room.id}>{room.name}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
 					</div>
 					<div class="grid grid-cols-2 gap-3">
 						<div class="space-y-1.5">
-							<Label for="transfer-date">วันที่ย้าย</Label><Input
+							<Label for="transfer-date">วันที่ย้าย</Label>
+							<DatePicker
 								id="transfer-date"
-								type="date"
 								bind:value={draft.transferDate}
+								ariaLabel="เลือกวันที่ย้ายห้อง"
 								required
 							/>
 						</div>

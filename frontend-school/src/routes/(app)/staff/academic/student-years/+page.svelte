@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
+	import { toast } from 'svelte-sonner';
 	import {
 		createHomeroomPlacement,
 		createStudentAcademicYear,
@@ -21,6 +22,8 @@
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Button } from '$lib/components/ui/button';
+	import { Label } from '$lib/components/ui/label';
+	import * as Select from '$lib/components/ui/select';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { loadStudentYearCollections } from '$lib/workspaces/academic-batch';
@@ -88,7 +91,10 @@
 
 	async function addStudentYear(event: SubmitEvent) {
 		event.preventDefault();
-		if (!academicYearId) return;
+		if (!academicYearId || !draft.studentId || !draft.gradeLevelId || !draft.studyProgramId) {
+			toast.error('กรุณาเลือกนักเรียน ระดับชั้น และแผนการเรียนให้ครบ');
+			return;
+		}
 		const created = await createStudentAcademicYear({ academicYearId, ...draft });
 		studentYears = [...studentYears, created];
 		placementsByStudentYear.set(created.id, []);
@@ -169,36 +175,49 @@
 				class="grid gap-3 rounded-xl border bg-card p-4 shadow-sm md:grid-cols-[1fr_1fr_1fr_auto] md:items-end"
 				onsubmit={addStudentYear}
 			>
-				<label class="space-y-1.5 text-sm"
-					><span class="font-medium">นักเรียน</span><select
-						class="h-10 w-full rounded-md border bg-background px-3"
-						bind:value={draft.studentId}
-						required
-						><option value="">เลือกนักเรียน</option
-						>{#each studentOptions as option (option.id)}<option value={option.id}
-								>{option.name}</option
-							>{/each}</select
-					></label
-				><label class="space-y-1.5 text-sm"
-					><span class="font-medium">ระดับชั้น</span><select
-						class="h-10 w-full rounded-md border bg-background px-3"
-						bind:value={draft.gradeLevelId}
-						required
-						><option value="">เลือกระดับชั้น</option
-						>{#each gradeLevelOptions as option (option.id)}<option value={option.id}
-								>{option.name}</option
-							>{/each}</select
-					></label
-				><label class="space-y-1.5 text-sm"
-					><span class="font-medium">แผนการเรียน</span><select
-						class="h-10 w-full rounded-md border bg-background px-3"
-						bind:value={draft.studyProgramId}
-						required
-						><option value="">เลือกแผน</option>{#each programOptions as option (option.id)}<option
-								value={option.id}>{option.name}</option
-							>{/each}</select
-					></label
-				><Button type="submit"><Plus class="size-4" /> เพิ่มในปีนี้</Button>
+				<div class="space-y-1.5">
+					<Label for="student-year-student">นักเรียน</Label>
+					<Select.Root type="single" bind:value={draft.studentId}>
+						<Select.Trigger id="student-year-student" class="w-full">
+							{studentOptions.find((option) => option.id === draft.studentId)?.name ??
+								'เลือกนักเรียน'}
+						</Select.Trigger>
+						<Select.Content>
+							{#each studentOptions as option (option.id)}
+								<Select.Item value={option.id}>{option.name}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+				<div class="space-y-1.5">
+					<Label for="student-year-grade">ระดับชั้น</Label>
+					<Select.Root type="single" bind:value={draft.gradeLevelId}>
+						<Select.Trigger id="student-year-grade" class="w-full">
+							{gradeLevelOptions.find((option) => option.id === draft.gradeLevelId)?.name ??
+								'เลือกระดับชั้น'}
+						</Select.Trigger>
+						<Select.Content>
+							{#each gradeLevelOptions as option (option.id)}
+								<Select.Item value={option.id}>{option.name}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+				<div class="space-y-1.5">
+					<Label for="student-year-program">แผนการเรียน</Label>
+					<Select.Root type="single" bind:value={draft.studyProgramId}>
+						<Select.Trigger id="student-year-program" class="w-full">
+							{programOptions.find((option) => option.id === draft.studyProgramId)?.name ??
+								'เลือกแผน'}
+						</Select.Trigger>
+						<Select.Content>
+							{#each programOptions as option (option.id)}
+								<Select.Item value={option.id}>{option.name}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+				<Button type="submit"><Plus class="size-4" /> เพิ่มในปีนี้</Button>
 			</form>{/if}
 		<div class="space-y-4">
 			{#each studentYears as record (record.id)}<StudentYearPlacementEditor

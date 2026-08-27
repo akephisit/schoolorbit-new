@@ -4,6 +4,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import * as Select from '$lib/components/ui/select';
 	import { DoorOpen, Plus, Users } from 'lucide-svelte';
 
 	let {
@@ -49,6 +50,10 @@
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
+		if (!draft.gradeLevelId || !draft.studyProgramId) {
+			errorMessage = 'กรุณาเลือกระดับชั้นและแผนการเรียน';
+			return;
+		}
 		busy = true;
 		errorMessage = '';
 		try {
@@ -63,6 +68,10 @@
 
 	async function addAdvisor(event: SubmitEvent) {
 		event.preventDefault();
+		if (!advisorDraft.homeroomId || !advisorDraft.userId) {
+			errorMessage = 'กรุณาเลือกห้องและครูที่ปรึกษา';
+			return;
+		}
 		const room = homerooms.find((item) => item.id === advisorDraft.homeroomId);
 		if (!room) return;
 		busy = true;
@@ -138,27 +147,32 @@
 				/>
 			</div>
 			<div class="space-y-1.5">
-				<Label for="homeroom-grade">ระดับชั้น</Label><select
-					id="homeroom-grade"
-					class="h-10 w-full rounded-md border bg-background px-3 text-sm"
-					bind:value={draft.gradeLevelId}
-					required
-					><option value="">เลือกระดับชั้น</option
-					>{#each gradeLevelOptions as option (option.id)}<option value={option.id}
-							>{option.name}</option
-						>{/each}</select
-				>
+				<Label for="homeroom-grade">ระดับชั้น</Label>
+				<Select.Root type="single" bind:value={draft.gradeLevelId}>
+					<Select.Trigger id="homeroom-grade" class="w-full">
+						{gradeLevelOptions.find((option) => option.id === draft.gradeLevelId)?.name ??
+							'เลือกระดับชั้น'}
+					</Select.Trigger>
+					<Select.Content>
+						{#each gradeLevelOptions as option (option.id)}
+							<Select.Item value={option.id}>{option.name}</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
 			</div>
 			<div class="space-y-1.5">
-				<Label for="homeroom-program">แผนการเรียน</Label><select
-					id="homeroom-program"
-					class="h-10 w-full rounded-md border bg-background px-3 text-sm"
-					bind:value={draft.studyProgramId}
-					required
-					><option value="">เลือกแผน</option>{#each programOptions as option (option.id)}<option
-							value={option.id}>{option.name}</option
-						>{/each}</select
-				>
+				<Label for="homeroom-program">แผนการเรียน</Label>
+				<Select.Root type="single" bind:value={draft.studyProgramId}>
+					<Select.Trigger id="homeroom-program" class="w-full">
+						{programOptions.find((option) => option.id === draft.studyProgramId)?.name ??
+							'เลือกแผน'}
+					</Select.Trigger>
+					<Select.Content>
+						{#each programOptions as option (option.id)}
+							<Select.Item value={option.id}>{option.name}</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
 			</div>
 			<div class="space-y-1.5">
 				<Label for="homeroom-capacity">ความจุ</Label><Input
@@ -175,26 +189,32 @@
 		</form>
 		<form class="space-y-3 rounded-xl border bg-card p-5 shadow-sm" onsubmit={addAdvisor}>
 			<h2 class="font-semibold">เพิ่มครูที่ปรึกษา</h2>
-			<label class="space-y-1.5 text-sm"
-				><span class="font-medium">ห้องประจำชั้น</span><select
-					class="h-10 w-full rounded-md border bg-background px-3"
-					bind:value={advisorDraft.homeroomId}
-					required
-					><option value="">เลือกห้อง</option>{#each homerooms as room (room.id)}<option
-							value={room.id}>{room.name}</option
-						>{/each}</select
-				></label
-			>
-			<label class="space-y-1.5 text-sm"
-				><span class="font-medium">ครู</span><select
-					class="h-10 w-full rounded-md border bg-background px-3"
-					bind:value={advisorDraft.userId}
-					required
-					><option value="">เลือกครู</option>{#each staffOptions as staff (staff.id)}<option
-							value={staff.id}>{staff.name}</option
-						>{/each}</select
-				></label
-			>
+			<label class="space-y-1.5 text-sm">
+				<span class="font-medium">ห้องประจำชั้น</span>
+				<Select.Root type="single" bind:value={advisorDraft.homeroomId}>
+					<Select.Trigger class="w-full">
+						{homerooms.find((room) => room.id === advisorDraft.homeroomId)?.name ?? 'เลือกห้อง'}
+					</Select.Trigger>
+					<Select.Content>
+						{#each homerooms as room (room.id)}
+							<Select.Item value={room.id}>{room.name}</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+			</label>
+			<label class="space-y-1.5 text-sm">
+				<span class="font-medium">ครู</span>
+				<Select.Root type="single" bind:value={advisorDraft.userId}>
+					<Select.Trigger class="w-full">
+						{staffOptions.find((staff) => staff.id === advisorDraft.userId)?.name ?? 'เลือกครู'}
+					</Select.Trigger>
+					<Select.Content>
+						{#each staffOptions as staff (staff.id)}
+							<Select.Item value={staff.id}>{staff.name}</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+			</label>
 			<div class="space-y-1.5">
 				<Label for="advisor-role">บทบาท</Label><Input
 					id="advisor-role"

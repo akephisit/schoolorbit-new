@@ -4,6 +4,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import * as Select from '$lib/components/ui/select';
 	import { BookOpen, CheckCircle2, Plus, Sparkles } from 'lucide-svelte';
 
 	let {
@@ -93,14 +94,16 @@
 		<form class="space-y-3 rounded-xl border bg-card p-5 shadow-sm" onsubmit={submit}>
 			<h2 class="font-semibold">สร้างชุดการเรียนเอง</h2>
 			<div class="space-y-1.5">
-				<Label for="offering-kind">ชนิด</Label><select
-					id="offering-kind"
-					class="h-10 w-full rounded-md border bg-background px-3 text-sm"
-					bind:value={draft.kind}
-					><option value="course">รายวิชา</option><option value="activity"
-						>กิจกรรมพัฒนาผู้เรียน</option
-					></select
-				>
+				<Label for="offering-kind">ชนิด</Label>
+				<Select.Root type="single" bind:value={draft.kind}>
+					<Select.Trigger id="offering-kind" class="w-full">
+						{draft.kind === 'course' ? 'รายวิชา' : 'กิจกรรมพัฒนาผู้เรียน'}
+					</Select.Trigger>
+					<Select.Content>
+						<Select.Item value="course">รายวิชา</Select.Item>
+						<Select.Item value="activity">กิจกรรมพัฒนาผู้เรียน</Select.Item>
+					</Select.Content>
+				</Select.Root>
 			</div>
 			<div class="space-y-1.5">
 				<Label for="offering-version"

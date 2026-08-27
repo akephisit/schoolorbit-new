@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { AcademicYearOption } from '$lib/api/academic-context';
+	import * as Select from '$lib/components/ui/select';
 
 	type Props = {
 		id: string;
@@ -12,14 +13,13 @@
 	let { id, years, value, disabled = false, onchange }: Props = $props();
 </script>
 
-<select
-	{id}
-	class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
-	{value}
-	{disabled}
-	onchange={(event) => onchange(event.currentTarget.value)}
->
-	{#each years as year (year.id)}
-		<option value={year.id}>{year.name}</option>
-	{/each}
-</select>
+<Select.Root type="single" {value} {disabled} onValueChange={onchange}>
+	<Select.Trigger {id} class="w-full">
+		{years.find((year) => year.id === value)?.name ?? 'เลือกปีการศึกษา'}
+	</Select.Trigger>
+	<Select.Content>
+		{#each years as year (year.id)}
+			<Select.Item value={year.id}>{year.name}</Select.Item>
+		{/each}
+	</Select.Content>
+</Select.Root>

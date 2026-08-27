@@ -2,8 +2,10 @@
 	import type { Homeroom, HomeroomPlacement, StudentAcademicYear } from '$lib/api/academic-core';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
+	import { DatePicker } from '$lib/components/ui/date-picker';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import * as Select from '$lib/components/ui/select';
 	import { ArrowRightLeft, CalendarPlus, History } from 'lucide-svelte';
 	import StudentYearTransferDialog from './StudentYearTransferDialog.svelte';
 
@@ -52,6 +54,10 @@
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
+		if (!draft.homeroomId || !draft.startDate) {
+			errorMessage = 'กรุณาเลือกห้องและวันที่เริ่ม';
+			return;
+		}
 		busy = true;
 		errorMessage = '';
 		try {
@@ -117,21 +123,24 @@
 					<h3 class="font-medium">สร้างรายการจัดห้อง</h3>
 				</div>
 				<div class="space-y-1.5">
-					<Label for={`placement-room-${studentYear.id}`}>ห้องประจำชั้น</Label><select
-						id={`placement-room-${studentYear.id}`}
-						class="h-10 w-full rounded-md border bg-background px-3 text-sm"
-						bind:value={draft.homeroomId}
-						required
-						><option value="">เลือกห้อง</option>{#each homerooms as room (room.id)}<option
-								value={room.id}>{room.name}</option
-							>{/each}</select
-					>
+					<Label for={`placement-room-${studentYear.id}`}>ห้องประจำชั้น</Label>
+					<Select.Root type="single" bind:value={draft.homeroomId}>
+						<Select.Trigger id={`placement-room-${studentYear.id}`} class="w-full">
+							{homerooms.find((room) => room.id === draft.homeroomId)?.name ?? 'เลือกห้อง'}
+						</Select.Trigger>
+						<Select.Content>
+							{#each homerooms as room (room.id)}
+								<Select.Item value={room.id}>{room.name}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
 				</div>
 				<div class="space-y-1.5">
-					<Label for={`placement-date-${studentYear.id}`}>วันที่เริ่ม</Label><Input
+					<Label for={`placement-date-${studentYear.id}`}>วันที่เริ่ม</Label>
+					<DatePicker
 						id={`placement-date-${studentYear.id}`}
-						type="date"
 						bind:value={draft.startDate}
+						ariaLabel="เลือกวันที่เริ่มจัดห้อง"
 						required
 					/>
 				</div>

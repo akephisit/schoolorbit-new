@@ -10,6 +10,7 @@
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
+	import * as Select from '$lib/components/ui/select';
 	import * as Table from '$lib/components/ui/table';
 	import { AlertTriangle, ArrowRight, RefreshCw, ShieldCheck } from 'lucide-svelte';
 	import { onMount } from 'svelte';
@@ -63,6 +64,20 @@
 		}
 	}
 
+	function changeStatusFilter(value: string): void {
+		if (
+			value !== 'all' &&
+			value !== 'pending' &&
+			value !== 'reviewing' &&
+			value !== 'returned' &&
+			value !== 'withdrawn' &&
+			value !== 'issued'
+		)
+			return;
+		statusFilter = value;
+		void loadQueue();
+	}
+
 	function initialize() {
 		if (initialized) return;
 		initialized = true;
@@ -105,18 +120,19 @@
 			</div>
 			<label class="min-w-52 space-y-1.5">
 				<span class="text-xs font-medium text-muted-foreground">สถานะคำขอ</span>
-				<select
-					bind:value={statusFilter}
-					onchange={() => void loadQueue()}
-					class="h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-				>
-					<option value="all">ทุกสถานะ</option>
-					<option value="pending">รอตรวจ</option>
-					<option value="reviewing">กำลังตรวจ</option>
-					<option value="returned">ส่งกลับแล้ว</option>
-					<option value="withdrawn">ถอนแล้ว</option>
-					<option value="issued">ออกแล้ว</option>
-				</select>
+				<Select.Root type="single" value={statusFilter} onValueChange={changeStatusFilter}>
+					<Select.Trigger class="w-full">
+						{statusFilter === 'all' ? 'ทุกสถานะ' : statusMeta[statusFilter].label}
+					</Select.Trigger>
+					<Select.Content>
+						<Select.Item value="all">ทุกสถานะ</Select.Item>
+						<Select.Item value="pending">รอตรวจ</Select.Item>
+						<Select.Item value="reviewing">กำลังตรวจ</Select.Item>
+						<Select.Item value="returned">ส่งกลับแล้ว</Select.Item>
+						<Select.Item value="withdrawn">ถอนแล้ว</Select.Item>
+						<Select.Item value="issued">ออกแล้ว</Select.Item>
+					</Select.Content>
+				</Select.Root>
 			</label>
 		</section>
 

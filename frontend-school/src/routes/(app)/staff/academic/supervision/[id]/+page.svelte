@@ -55,6 +55,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import * as Command from '$lib/components/ui/command';
 	import * as Dialog from '$lib/components/ui/dialog';
+	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Popover from '$lib/components/ui/popover';
@@ -1470,11 +1471,13 @@
 					<Input bind:value={lessonForm.roomLabel} />
 				</div>
 				<div class="space-y-2">
-					<Label>วันที่</Label>
-					<Input
-						type="date"
+					<Label for="supervision-observed-date">วันที่</Label>
+					<DatePicker
+						id="supervision-observed-date"
 						bind:value={lessonForm.observedDate}
-						oninput={() => {
+						required
+						ariaLabel="เลือกวันที่นิเทศ"
+						onValueChange={() => {
 							selectedEditTimetableEntryId = '';
 							selectedEditTimetableDate = '';
 						}}

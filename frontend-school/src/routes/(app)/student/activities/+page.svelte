@@ -22,6 +22,7 @@
 	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Label } from '$lib/components/ui/label';
+	import * as Select from '$lib/components/ui/select';
 	import { CheckCircle2, Clock3, UserRound, UsersRound, X } from 'lucide-svelte';
 
 	let { data }: PageProps = $props();
@@ -112,8 +113,7 @@
 		});
 	}
 
-	async function changeYear(event: Event): Promise<void> {
-		const yearId = (event.currentTarget as HTMLSelectElement).value;
+	async function changeYear(yearId: string): Promise<void> {
 		const availableTerms =
 			contextOptions?.terms.filter((term) => term.academicYearId === yearId) ?? [];
 		const nextTerm =
@@ -126,8 +126,8 @@
 		await loadActivities();
 	}
 
-	async function changeTerm(event: Event): Promise<void> {
-		selectedTermId = (event.currentTarget as HTMLSelectElement).value;
+	async function changeTerm(value: string): Promise<void> {
+		selectedTermId = value;
 		offerings = [];
 		await updateUrl(selectedYearId, selectedTermId);
 		await loadActivities();
@@ -187,31 +187,40 @@
 	<div class="flex flex-wrap gap-3 rounded-xl border bg-card p-4">
 		<div class="min-w-52 space-y-2">
 			<Label for="student-activity-year">ปีการศึกษา</Label>
-			<select
-				id="student-activity-year"
-				class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+			<Select.Root
+				type="single"
 				value={selectedYearId}
 				disabled={loading || actionGroupId !== ''}
-				onchange={changeYear}
+				onValueChange={(value) => void changeYear(value)}
 			>
-				{#each contextOptions?.years ?? [] as year (year.id)}
-					<option value={year.id}>{year.name}</option>
-				{/each}
-			</select>
+				<Select.Trigger id="student-activity-year" class="w-full">
+					{contextOptions?.years.find((year) => year.id === selectedYearId)?.name ??
+						'เลือกปีการศึกษา'}
+				</Select.Trigger>
+				<Select.Content>
+					{#each contextOptions?.years ?? [] as year (year.id)}
+						<Select.Item value={year.id}>{year.name}</Select.Item>
+					{/each}
+				</Select.Content>
+			</Select.Root>
 		</div>
 		<div class="min-w-52 space-y-2">
 			<Label for="student-activity-term">ภาคเรียน</Label>
-			<select
-				id="student-activity-term"
-				class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+			<Select.Root
+				type="single"
 				value={selectedTermId}
 				disabled={loading || actionGroupId !== '' || termOptions.length === 0}
-				onchange={changeTerm}
+				onValueChange={(value) => void changeTerm(value)}
 			>
-				{#each termOptions as term (term.id)}
-					<option value={term.id}>{term.name}</option>
-				{/each}
-			</select>
+				<Select.Trigger id="student-activity-term" class="w-full">
+					{termOptions.find((term) => term.id === selectedTermId)?.name ?? 'เลือกภาคเรียน'}
+				</Select.Trigger>
+				<Select.Content>
+					{#each termOptions as term (term.id)}
+						<Select.Item value={term.id}>{term.name}</Select.Item>
+					{/each}
+				</Select.Content>
+			</Select.Root>
 		</div>
 	</div>
 

@@ -226,6 +226,8 @@
 						id={`${code}-version-from`}
 						bind:value={draft.effectiveFrom}
 						placeholder="เลือกวันเริ่มใช้"
+						ariaLabel="เลือกวันที่เริ่มใช้"
+						required
 					/>
 				</div>
 				<div class="space-y-1.5">
@@ -234,6 +236,8 @@
 						id={`${code}-version-until`}
 						bind:value={draft.effectiveUntil}
 						placeholder="ไม่กำหนดวันสิ้นสุด"
+						ariaLabel="เลือกวันที่สิ้นสุด"
+						clearable
 					/>
 				</div>
 			</div>

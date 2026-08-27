@@ -36,6 +36,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import * as Select from '$lib/components/ui/select';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { authStore } from '$lib/stores/auth';
 	import { can } from '$lib/stores/permissions';
@@ -81,6 +82,7 @@
 		{ value: 'ACADEMIC', label: 'กิจกรรมวิชาการ' },
 		{ value: 'BREAK', label: 'พัก' }
 	];
+	const NO_ROOM_VALUE = '__no_room__';
 
 	const academicContext = getAcademicContextStore();
 	const academicTermId = $derived($academicContext.selected.academicTermId);
@@ -242,10 +244,8 @@
 		}
 	}
 
-	async function changeSchedule(event: Event): Promise<void> {
-		const nextId = (event.currentTarget as HTMLSelectElement).value;
+	async function changeSchedule(nextId: string): Promise<void> {
 		if (dirty) {
-			(event.currentTarget as HTMLSelectElement).value = selectedScheduleId;
 			toast.warning('กรุณาบันทึกหรือยกเลิกแบบร่างก่อนเปลี่ยนตารางเวลา');
 			return;
 		}
@@ -277,13 +277,12 @@
 		resetForm();
 	}
 
-	function changeTarget(event: Event): void {
+	function changeTarget(nextId: string): void {
 		if (dirty) {
-			(event.currentTarget as HTMLSelectElement).value = selectedTargetId;
 			toast.warning('กรุณาบันทึกหรือยกเลิกแบบร่างก่อนเปลี่ยนกลุ่ม');
 			return;
 		}
-		selectedTargetId = (event.currentTarget as HTMLSelectElement).value;
+		selectedTargetId = nextId;
 		resetForm();
 	}
 
@@ -637,16 +636,17 @@
 				<Card.Content class="grid gap-4 pt-6 lg:grid-cols-[14rem_auto_minmax(16rem,1fr)]">
 					<div class="space-y-2">
 						<Label for="timetable-schedule">ตารางเวลา</Label>
-						<select
-							id="timetable-schedule"
-							class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
-							value={selectedScheduleId}
-							onchange={changeSchedule}
-						>
-							{#each schedules as schedule (schedule.id)}
-								<option value={schedule.id}>{schedule.code} · {schedule.name}</option>
-							{/each}
-						</select>
+						<Select.Root type="single" value={selectedScheduleId} onValueChange={changeSchedule}>
+							<Select.Trigger id="timetable-schedule" class="w-full">
+								{@const schedule = schedules.find((item) => item.id === selectedScheduleId)}
+								{schedule ? `${schedule.code} · ${schedule.name}` : 'เลือกตารางเวลา'}
+							</Select.Trigger>
+							<Select.Content>
+								{#each schedules as schedule (schedule.id)}
+									<Select.Item value={schedule.id}>{schedule.code} · {schedule.name}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
 					</div>
 					<div class="space-y-2">
 						<Label>มุมมอง</Label>
@@ -665,22 +665,28 @@
 						<Label for="timetable-target"
 							>{viewKind === 'learning_group' ? 'กลุ่มเรียน' : 'ห้องประจำชั้น'}</Label
 						>
-						<select
-							id="timetable-target"
-							class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
-							value={selectedTargetId}
-							onchange={changeTarget}
-						>
-							{#if viewKind === 'learning_group'}
-								{#each groups as group (group.id)}<option value={group.id}
-										>{groupLabel(group)}</option
-									>{/each}
-							{:else}
-								{#each homerooms as homeroom (homeroom.id)}<option value={homeroom.id}
-										>{homeroom.code} · {homeroom.name}</option
-									>{/each}
-							{/if}
-						</select>
+						<Select.Root type="single" value={selectedTargetId} onValueChange={changeTarget}>
+							<Select.Trigger id="timetable-target" class="w-full">
+								{#if viewKind === 'learning_group'}
+									{@const group = groups.find((item) => item.id === selectedTargetId)}
+									{group ? groupLabel(group) : 'เลือกกลุ่มเรียน'}
+								{:else}
+									{@const homeroom = homerooms.find((item) => item.id === selectedTargetId)}
+									{homeroom ? `${homeroom.code} · ${homeroom.name}` : 'เลือกห้องประจำชั้น'}
+								{/if}
+							</Select.Trigger>
+							<Select.Content>
+								{#if viewKind === 'learning_group'}
+									{#each groups as group (group.id)}
+										<Select.Item value={group.id}>{groupLabel(group)}</Select.Item>
+									{/each}
+								{:else}
+									{#each homerooms as homeroom (homeroom.id)}
+										<Select.Item value={homeroom.id}>{homeroom.code} · {homeroom.name}</Select.Item>
+									{/each}
+								{/if}
+							</Select.Content>
+						</Select.Root>
 					</div>
 				</Card.Content>
 			</Card.Root>
@@ -787,58 +793,87 @@
 						<div class="grid grid-cols-2 gap-3">
 							<div class="space-y-2">
 								<Label for="entry-day">วัน</Label>
-								<select
-									id="entry-day"
-									class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+								<Select.Root
+									type="single"
 									bind:value={formDay}
 									disabled={!canManage}
-									onchange={markDirty}
-									>{#each activeDays as day (day.value)}<option value={day.value}
-											>{day.label}</option
-										>{/each}</select
+									onValueChange={markDirty}
 								>
+									<Select.Trigger id="entry-day" class="w-full">
+										{activeDays.find((day) => day.value === formDay)?.label ?? 'เลือกวัน'}
+									</Select.Trigger>
+									<Select.Content>
+										{#each activeDays as day (day.value)}
+											<Select.Item value={day.value}>{day.label}</Select.Item>
+										{/each}
+									</Select.Content>
+								</Select.Root>
 							</div>
 							<div class="space-y-2">
 								<Label for="entry-period">คาบ</Label>
-								<select
-									id="entry-period"
-									class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+								<Select.Root
+									type="single"
 									bind:value={formPeriodId}
 									disabled={!canManage}
-									onchange={markDirty}
-									>{#each periods as period (period.id)}<option value={period.id}
-											>{period.name ?? period.orderIndex}</option
-										>{/each}</select
+									onValueChange={markDirty}
 								>
+									<Select.Trigger id="entry-period" class="w-full">
+										{periods.find((period) => period.id === formPeriodId)?.name ??
+											periods.find((period) => period.id === formPeriodId)?.orderIndex ??
+											'เลือกคาบ'}
+									</Select.Trigger>
+									<Select.Content>
+										{#each periods as period (period.id)}
+											<Select.Item value={period.id}>{period.name ?? period.orderIndex}</Select.Item
+											>
+										{/each}
+									</Select.Content>
+								</Select.Root>
 							</div>
 						</div>
 						<div class="space-y-2">
 							<Label for="entry-type">ประเภทคาบ</Label>
-							<select
-								id="entry-type"
-								class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+							<Select.Root
+								type="single"
 								bind:value={formEntryType}
 								disabled={!canManage || Boolean(selectedEntry)}
-								onchange={markDirty}
-								>{#each entryTypeOptions as option (option.value)}<option value={option.value}
-										>{option.label}</option
-									>{/each}</select
+								onValueChange={markDirty}
 							>
+								<Select.Trigger id="entry-type" class="w-full">
+									{entryTypeOptions.find((option) => option.value === formEntryType)?.label ??
+										'เลือกประเภทคาบ'}
+								</Select.Trigger>
+								<Select.Content>
+									{#each entryTypeOptions as option (option.value)}
+										<Select.Item value={option.value}>{option.label}</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
 						</div>
 						<div class="space-y-2">
 							<Label for="entry-room">ห้องเรียน</Label>
-							<select
-								id="entry-room"
-								class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
-								bind:value={formRoomId}
+							<Select.Root
+								type="single"
+								value={formRoomId || NO_ROOM_VALUE}
 								disabled={!canManage}
-								onchange={markDirty}
+								onValueChange={(value) => {
+									formRoomId = value === NO_ROOM_VALUE ? '' : value;
+									markDirty();
+								}}
 							>
-								<option value="">ไม่ระบุ</option>
-								{#each rooms as room (room.id)}<option value={room.id}
-										>{room.code ? `${room.code} · ` : ''}{room.name_th}</option
-									>{/each}
-							</select>
+								<Select.Trigger id="entry-room" class="w-full">
+									{@const room = rooms.find((item) => item.id === formRoomId)}
+									{room ? `${room.code ? `${room.code} · ` : ''}${room.name_th}` : 'ไม่ระบุ'}
+								</Select.Trigger>
+								<Select.Content>
+									<Select.Item value={NO_ROOM_VALUE}>ไม่ระบุ</Select.Item>
+									{#each rooms as room (room.id)}
+										<Select.Item value={room.id}
+											>{room.code ? `${room.code} · ` : ''}{room.name_th}</Select.Item
+										>
+									{/each}
+								</Select.Content>
+							</Select.Root>
 						</div>
 						<div class="space-y-2">
 							<Label for="entry-title">ชื่อแสดงเพิ่มเติม</Label>

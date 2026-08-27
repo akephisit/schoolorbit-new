@@ -8,6 +8,7 @@
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Button } from '$lib/components/ui/button';
 	import { Label } from '$lib/components/ui/label';
+	import * as Select from '$lib/components/ui/select';
 	import CalendarColorKey from '$lib/components/calendar/CalendarColorKey.svelte';
 	import CalendarDayTimelineDialog from '$lib/components/calendar/CalendarDayTimelineDialog.svelte';
 	import CalendarMonthGrid from '$lib/components/calendar/CalendarMonthGrid.svelte';
@@ -23,6 +24,8 @@
 		toIsoDate
 	} from '$lib/utils/calendar';
 	import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-svelte';
+
+	const ALL_TERMS_VALUE = '__all_terms__';
 
 	type PublicCalendarMode = 'page' | 'embed';
 
@@ -115,14 +118,14 @@
 		}
 	}
 
-	async function changeYear(event: Event) {
-		selectedYearId = (event.currentTarget as HTMLSelectElement).value;
+	async function changeYear(yearId: string) {
+		selectedYearId = yearId;
 		selectedTermId = '';
 		await loadCalendar();
 	}
 
-	async function changeTerm(event: Event) {
-		selectedTermId = (event.currentTarget as HTMLSelectElement).value;
+	async function changeTerm(termId: string) {
+		selectedTermId = termId === ALL_TERMS_VALUE ? '' : termId;
 		await loadCalendar();
 	}
 
@@ -191,32 +194,41 @@
 				<div class="flex items-end gap-2">
 					<div class="space-y-1">
 						<Label for={`public-calendar-year-${mode}`} class="text-xs">ปีการศึกษา</Label>
-						<select
-							id={`public-calendar-year-${mode}`}
-							class="border-input bg-background h-8 max-w-36 rounded-md border px-2 text-xs"
+						<Select.Root
+							type="single"
 							value={selectedYearId}
 							disabled={loading}
-							onchange={changeYear}
+							onValueChange={changeYear}
 						>
-							{#each contextOptions?.years ?? [] as year (year.id)}
-								<option value={year.id}>{year.name}</option>
-							{/each}
-						</select>
+							<Select.Trigger id={`public-calendar-year-${mode}`} class="h-8 w-36 text-xs">
+								{contextOptions?.years.find((year) => year.id === selectedYearId)?.name ??
+									'เลือกปี'}
+							</Select.Trigger>
+							<Select.Content>
+								{#each contextOptions?.years ?? [] as year (year.id)}
+									<Select.Item value={year.id}>{year.name}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
 					</div>
 					<div class="space-y-1">
 						<Label for={`public-calendar-term-${mode}`} class="text-xs">ภาคเรียน</Label>
-						<select
-							id={`public-calendar-term-${mode}`}
-							class="border-input bg-background h-8 max-w-36 rounded-md border px-2 text-xs"
-							value={selectedTermId}
+						<Select.Root
+							type="single"
+							value={selectedTermId || ALL_TERMS_VALUE}
 							disabled={loading || !selectedYearId}
-							onchange={changeTerm}
+							onValueChange={changeTerm}
 						>
-							<option value="">ทั้งปี</option>
-							{#each termOptions as term (term.id)}
-								<option value={term.id}>{term.name}</option>
-							{/each}
-						</select>
+							<Select.Trigger id={`public-calendar-term-${mode}`} class="h-8 w-36 text-xs">
+								{termOptions.find((term) => term.id === selectedTermId)?.name ?? 'ทั้งปี'}
+							</Select.Trigger>
+							<Select.Content>
+								<Select.Item value={ALL_TERMS_VALUE}>ทั้งปี</Select.Item>
+								{#each termOptions as term (term.id)}
+									<Select.Item value={term.id}>{term.name}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
 					</div>
 				</div>
 				<Button variant="outline" size="sm" onclick={goToToday}>วันนี้</Button>

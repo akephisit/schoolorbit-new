@@ -19,6 +19,7 @@
 		DialogHeader,
 		DialogTitle
 	} from '$lib/components/ui/dialog';
+	import * as Select from '$lib/components/ui/select';
 	import { Shield, Plus, Trash2, Star } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -245,16 +246,17 @@
 		<div class="space-y-4 py-4">
 			<div class="space-y-2">
 				<Label for="role">เลือกบทบาท</Label>
-				<select
-					id="role"
-					bind:value={selectedRoleId}
-					class="w-full px-3 py-2 border rounded-md bg-white"
-				>
-					<option value={undefined}>เลือกบทบาท...</option>
-					{#each getUnassignedRoles() as role (role.id)}
-						<option value={role.id}>{role.name} ({role.code})</option>
-					{/each}
-				</select>
+				<Select.Root type="single" bind:value={selectedRoleId}>
+					<Select.Trigger id="role" class="w-full">
+						{@const selectedRole = availableRoles.find((role) => role.id === selectedRoleId)}
+						{selectedRole ? `${selectedRole.name} (${selectedRole.code})` : 'เลือกบทบาท...'}
+					</Select.Trigger>
+					<Select.Content>
+						{#each getUnassignedRoles() as role (role.id)}
+							<Select.Item value={role.id}>{role.name} ({role.code})</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
 			</div>
 
 			<div class="flex items-center gap-2">

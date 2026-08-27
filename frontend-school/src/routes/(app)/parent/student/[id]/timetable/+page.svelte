@@ -23,6 +23,7 @@
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import ScopedAcademicYearSelect from '$lib/components/academic-context/ScopedAcademicYearSelect.svelte';
 	import { Label } from '$lib/components/ui/label';
+	import * as Select from '$lib/components/ui/select';
 	import { MapPin, School } from 'lucide-svelte';
 
 	const dayOptions = [
@@ -175,9 +176,9 @@
 		}
 	}
 
-	async function changeTerm(event: Event): Promise<void> {
+	async function changeTerm(termId: string): Promise<void> {
 		const current = ++revision;
-		selectedTermId = (event.currentTarget as HTMLSelectElement).value;
+		selectedTermId = termId;
 		periods = [];
 		entries = [];
 		loading = true;
@@ -246,17 +247,21 @@
 			</div>
 			<div class="min-w-52 space-y-2">
 				<Label for="parent-child-term">ภาคเรียน</Label>
-				<select
-					id="parent-child-term"
-					class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+				<Select.Root
+					type="single"
 					value={selectedTermId}
 					disabled={loading || termOptions.length === 0}
-					onchange={changeTerm}
+					onValueChange={changeTerm}
 				>
-					{#each termOptions as term (term.id)}
-						<option value={term.id}>{term.name}</option>
-					{/each}
-				</select>
+					<Select.Trigger id="parent-child-term" class="w-full">
+						{termOptions.find((term) => term.id === selectedTermId)?.name ?? 'เลือกภาคเรียน'}
+					</Select.Trigger>
+					<Select.Content>
+						{#each termOptions as term (term.id)}
+							<Select.Item value={term.id}>{term.name}</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
 			</div>
 		</div>
 	{/if}

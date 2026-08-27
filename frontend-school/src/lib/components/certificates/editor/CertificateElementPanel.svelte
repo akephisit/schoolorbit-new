@@ -21,6 +21,7 @@
 	} from '$lib/certificates/font-variants';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
+	import * as Select from '$lib/components/ui/select';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import {
 		AlignCenter,
@@ -34,6 +35,8 @@
 		Type
 	} from 'lucide-svelte';
 	import CertificateVariablePicker from './CertificateVariablePicker.svelte';
+
+	const NO_IMAGE_ASSET_VALUE = '__no_image_asset__';
 
 	type TemplateAsset = CertificateTemplateDetail['assets'][number];
 
@@ -230,17 +233,23 @@
 	<div class="rounded-lg border bg-muted/15 p-3">
 		<label for="certificate-image-asset" class="text-xs font-medium">เพิ่มรูปภาพ</label>
 		<div class="mt-2 flex gap-2">
-			<select
-				id="certificate-image-asset"
-				class="h-9 min-w-0 flex-1 rounded-md border bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-				bind:value={imageAssetId}
+			<Select.Root
+				type="single"
+				value={imageAssetId || NO_IMAGE_ASSET_VALUE}
 				disabled={disabled || imageAssets.length === 0}
+				onValueChange={(value) => (imageAssetId = value === NO_IMAGE_ASSET_VALUE ? '' : value)}
 			>
-				<option value="">เลือกรูปที่แนบไว้</option>
-				{#each imageAssets as asset (asset.id)}
-					<option value={asset.id}>{asset.displayName}</option>
-				{/each}
-			</select>
+				<Select.Trigger id="certificate-image-asset" class="min-w-0 flex-1 text-xs">
+					{imageAssets.find((asset) => asset.id === imageAssetId)?.displayName ??
+						'เลือกรูปที่แนบไว้'}
+				</Select.Trigger>
+				<Select.Content>
+					<Select.Item value={NO_IMAGE_ASSET_VALUE}>เลือกรูปที่แนบไว้</Select.Item>
+					{#each imageAssets as asset (asset.id)}
+						<Select.Item value={asset.id}>{asset.displayName}</Select.Item>
+					{/each}
+				</Select.Content>
+			</Select.Root>
 			<Button
 				type="button"
 				size="icon-sm"
@@ -321,29 +330,39 @@
 				<div class="grid grid-cols-[minmax(0,1fr)_6.5rem] gap-2">
 					<label class="space-y-1.5 text-xs">
 						<span class="font-medium">ตระกูลฟอนต์</span>
-						<select
-							class="h-9 w-full rounded-md border bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-							value={currentFontVariant?.familyKey ?? ''}
+						<Select.Root
+							type="single"
+							value={currentFontVariant?.familyKey}
 							{disabled}
-							onchange={(event) => changeFontFamily(event.currentTarget.value)}
+							onValueChange={changeFontFamily}
 						>
-							{#each fontFamilies as family (family.familyKey)}
-								<option value={family.familyKey}>{family.familyLabel}</option>
-							{/each}
-						</select>
+							<Select.Trigger class="w-full text-xs">
+								{currentFontVariant?.familyLabel ?? 'เลือกฟอนต์'}
+							</Select.Trigger>
+							<Select.Content>
+								{#each fontFamilies as family (family.familyKey)}
+									<Select.Item value={family.familyKey}>{family.familyLabel}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
 					</label>
 					<label class="space-y-1.5 text-xs">
 						<span class="font-medium">น้ำหนักฟอนต์</span>
-						<select
-							class="h-9 w-full rounded-md border bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-							value={String(currentFontVariant?.weight ?? '')}
+						<Select.Root
+							type="single"
+							value={currentFontVariant ? String(currentFontVariant.weight) : undefined}
 							{disabled}
-							onchange={(event) => changeFontWeight(event.currentTarget.value)}
+							onValueChange={changeFontWeight}
 						>
-							{#each currentFontWeights as weight (weight)}
-								<option value={String(weight)}>{weight}</option>
-							{/each}
-						</select>
+							<Select.Trigger class="w-full text-xs">
+								{currentFontVariant?.weight ?? 'เลือก'}
+							</Select.Trigger>
+							<Select.Content>
+								{#each currentFontWeights as weight (weight)}
+									<Select.Item value={String(weight)}>{weight}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
 					</label>
 				</div>
 				<div class="grid grid-cols-2 gap-2">
@@ -542,17 +561,21 @@
 			{:else if selectedElement.type === 'image'}
 				<div class="space-y-2">
 					<label for="certificate-selected-image" class="text-xs font-medium">ไฟล์รูปภาพ</label>
-					<select
-						id="certificate-selected-image"
-						class="h-9 w-full rounded-md border bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					<Select.Root
+						type="single"
 						value={selectedElement.assetId}
 						{disabled}
-						onchange={(event) => changeSelectedImage(event.currentTarget.value)}
+						onValueChange={changeSelectedImage}
 					>
-						{#each imageAssets as asset (asset.id)}
-							<option value={asset.id}>{asset.displayName}</option>
-						{/each}
-					</select>
+						<Select.Trigger id="certificate-selected-image" class="w-full text-xs">
+							{currentImageAsset()?.displayName ?? 'เลือกรูปภาพ'}
+						</Select.Trigger>
+						<Select.Content>
+							{#each imageAssets as asset (asset.id)}
+								<Select.Item value={asset.id}>{asset.displayName}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
 				</div>
 				<div class="space-y-3 rounded-lg border bg-muted/15 p-3">
 					<label class="flex items-center justify-between gap-3 text-xs font-medium">

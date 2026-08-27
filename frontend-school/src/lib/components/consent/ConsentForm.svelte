@@ -6,6 +6,7 @@
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Label } from '$lib/components/ui/label';
 	import * as Card from '$lib/components/ui/card';
+	import * as Select from '$lib/components/ui/select';
 	import { LoaderCircle, AlertCircle, CheckCircle2 } from 'lucide-svelte';
 
 	// Props
@@ -234,15 +235,20 @@
 
 					<div class="space-y-2">
 						<Label for="parent-relationship">ความสัมพันธ์</Label>
-						<select
-							id="parent-relationship"
-							bind:value={parentRelationship}
-							class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-						>
-							<option value="father">บิดา</option>
-							<option value="mother">มารดา</option>
-							<option value="guardian">ผู้ปกครอง</option>
-						</select>
+						<Select.Root type="single" bind:value={parentRelationship}>
+							<Select.Trigger id="parent-relationship" class="w-full">
+								{parentRelationship === 'father'
+									? 'บิดา'
+									: parentRelationship === 'mother'
+										? 'มารดา'
+										: 'ผู้ปกครอง'}
+							</Select.Trigger>
+							<Select.Content>
+								<Select.Item value="father">บิดา</Select.Item>
+								<Select.Item value="mother">มารดา</Select.Item>
+								<Select.Item value="guardian">ผู้ปกครอง</Select.Item>
+							</Select.Content>
+						</Select.Root>
 					</div>
 				</Card.Content>
 			</Card.Root>
@@ -287,13 +293,11 @@
 </div>
 
 <style>
-	input,
-	select {
+	input {
 		transition: all 0.2s;
 	}
 
-	input:focus,
-	select:focus {
+	input:focus {
 		outline: none;
 		border-color: hsl(var(--primary));
 		box-shadow: 0 0 0 2px hsl(var(--primary) / 0.2);

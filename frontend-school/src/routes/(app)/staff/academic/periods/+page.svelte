@@ -19,6 +19,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import * as Select from '$lib/components/ui/select';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { CirclePlus, Clock3, Loader2, Save, Trash2 } from 'lucide-svelte';
@@ -89,11 +90,9 @@
 		}
 	}
 
-	async function selectSchedule(event: Event): Promise<void> {
-		const nextId = (event.currentTarget as HTMLSelectElement).value;
+	async function selectSchedule(nextId: string): Promise<void> {
 		if (nextId === selectedScheduleId) return;
 		if (dirty) {
-			(event.currentTarget as HTMLSelectElement).value = selectedScheduleId;
 			toast.warning('กรุณาบันทึกคาบที่แก้ไขก่อนเปลี่ยนตารางเวลา');
 			return;
 		}
@@ -218,16 +217,18 @@
 				<Card.Content class="flex flex-wrap items-center justify-between gap-4 pt-6">
 					<div class="min-w-64 space-y-2">
 						<Label for="bell-schedule">ตารางเวลา</Label>
-						<select
-							id="bell-schedule"
-							class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
-							value={selectedScheduleId}
-							onchange={selectSchedule}
-						>
-							{#each schedules as schedule (schedule.id)}
-								<option value={schedule.id}>{schedule.code} · {schedule.name}</option>
-							{/each}
-						</select>
+						<Select.Root type="single" value={selectedScheduleId} onValueChange={selectSchedule}>
+							<Select.Trigger id="bell-schedule" class="w-full">
+								{selectedSchedule
+									? `${selectedSchedule.code} · ${selectedSchedule.name}`
+									: 'เลือกตารางเวลา'}
+							</Select.Trigger>
+							<Select.Content>
+								{#each schedules as schedule (schedule.id)}
+									<Select.Item value={schedule.id}>{schedule.code} · {schedule.name}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
 					</div>
 					<div class="flex items-center gap-2">
 						{#if selectedSchedule?.isDefault}<Badge variant="secondary">ค่าเริ่มต้นของปี</Badge

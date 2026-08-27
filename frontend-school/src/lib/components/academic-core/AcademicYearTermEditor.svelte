@@ -11,8 +11,10 @@
 	} from '$lib/api/academic-core';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
+	import { DatePicker } from '$lib/components/ui/date-picker';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import * as Select from '$lib/components/ui/select';
 	import { CalendarPlus, ChevronRight, Pencil, Plus, Trash2, X } from 'lucide-svelte';
 
 	type YearDraft = {
@@ -45,6 +47,13 @@
 	type PeriodDraft = ReplaceBellSchedulePeriodsRequest['periods'][number] & {
 		applicableDaysText: string;
 	};
+
+	const TERM_TYPE_OPTIONS: Array<{ value: AcademicTermType; label: string }> = [
+		{ value: 'regular', label: 'ปกติ' },
+		{ value: 'summer', label: 'ฤดูร้อน' },
+		{ value: 'remedial', label: 'ซ่อมเสริม' },
+		{ value: 'custom', label: 'กำหนดเอง' }
+	];
 
 	let {
 		years,
@@ -131,6 +140,10 @@
 	async function submitYear(event: SubmitEvent) {
 		event.preventDefault();
 		formError = '';
+		if (!yearDraft.startDate || !yearDraft.endDate) {
+			formError = 'กรุณาเลือกวันเริ่มและวันสิ้นสุดปีการศึกษา';
+			return;
+		}
 		try {
 			await onCreateYear(yearDraft);
 			yearDraft = { ...yearDraft, name: '', startDate: '', endDate: '' };
@@ -142,6 +155,15 @@
 	async function submitTerm(event: SubmitEvent) {
 		event.preventDefault();
 		formError = '';
+		if (
+			!termDraft.academicYearId ||
+			!termDraft.startDate ||
+			!termDraft.endDate ||
+			!termDraft.bellScheduleId
+		) {
+			formError = 'กรุณาเลือกปี วันที่ และตารางเวลาให้ครบ';
+			return;
+		}
 		try {
 			await onCreateTerm(termDraft);
 			termDraft = {
@@ -160,6 +182,10 @@
 	async function submitBellSchedule(event: SubmitEvent) {
 		event.preventDefault();
 		formError = '';
+		if (!bellScheduleDraft.academicYearId) {
+			formError = 'กรุณาเลือกปีการศึกษา';
+			return;
+		}
 		try {
 			await onCreateBellSchedule(bellScheduleDraft);
 			bellScheduleDraft = { ...bellScheduleDraft, code: '', name: '', isDefault: false };
@@ -184,6 +210,10 @@
 		event.preventDefault();
 		if (!yearEdit) return;
 		formError = '';
+		if (!yearEdit.startDate || !yearEdit.endDate) {
+			formError = 'กรุณาเลือกวันเริ่มและวันสิ้นสุดปีการศึกษา';
+			return;
+		}
 		const { id, ...draft } = yearEdit;
 		try {
 			await onUpdateYear(id, draft);
@@ -214,6 +244,10 @@
 		event.preventDefault();
 		if (!termEdit) return;
 		formError = '';
+		if (!termEdit.startDate || !termEdit.endDate || !termEdit.bellScheduleId) {
+			formError = 'กรุณาเลือกวันที่และตารางเวลาให้ครบ';
+			return;
+		}
 		const { id, academicYearId: _academicYearId, ...draft } = termEdit;
 		try {
 			await onUpdateTerm(id, draft);
@@ -392,18 +426,18 @@
 							/>
 						</div>
 						<div class="space-y-1.5">
-							<Label for="edit-year-start">วันเริ่ม</Label><Input
+							<Label for="edit-year-start">วันเริ่ม</Label><DatePicker
 								id="edit-year-start"
-								type="date"
 								bind:value={yearEdit.startDate}
+								ariaLabel="เลือกวันเริ่มปีการศึกษา"
 								required
 							/>
 						</div>
 						<div class="space-y-1.5">
-							<Label for="edit-year-end">วันสิ้นสุด</Label><Input
+							<Label for="edit-year-end">วันสิ้นสุด</Label><DatePicker
 								id="edit-year-end"
-								type="date"
 								bind:value={yearEdit.endDate}
+								ariaLabel="เลือกวันสิ้นสุดปีการศึกษา"
 								required
 							/>
 						</div>
@@ -454,46 +488,49 @@
 					</div>
 					<div class="space-y-1.5">
 						<Label for="edit-term-type">ประเภท</Label>
-						<select
-							id="edit-term-type"
-							class="h-10 w-full rounded-md border bg-background px-3 text-sm"
-							bind:value={termEdit.termType}
-						>
-							<option value="regular">ปกติ</option><option value="summer">ฤดูร้อน</option><option
-								value="remedial">ซ่อมเสริม</option
-							><option value="custom">กำหนดเอง</option>
-						</select>
+						<Select.Root type="single" bind:value={termEdit.termType}>
+							<Select.Trigger id="edit-term-type" class="w-full">
+								{TERM_TYPE_OPTIONS.find((option) => option.value === termEdit?.termType)?.label ??
+									'เลือกประเภท'}
+							</Select.Trigger>
+							<Select.Content>
+								{#each TERM_TYPE_OPTIONS as option (option.value)}
+									<Select.Item value={option.value}>{option.label}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
 					</div>
 					<div class="grid grid-cols-2 gap-3">
 						<div class="space-y-1.5">
-							<Label for="edit-term-start">วันเริ่ม</Label><Input
+							<Label for="edit-term-start">วันเริ่ม</Label><DatePicker
 								id="edit-term-start"
-								type="date"
 								bind:value={termEdit.startDate}
+								ariaLabel="เลือกวันเริ่มภาคเรียน"
 								required
 							/>
 						</div>
 						<div class="space-y-1.5">
-							<Label for="edit-term-end">วันสิ้นสุด</Label><Input
+							<Label for="edit-term-end">วันสิ้นสุด</Label><DatePicker
 								id="edit-term-end"
-								type="date"
 								bind:value={termEdit.endDate}
+								ariaLabel="เลือกวันสิ้นสุดภาคเรียน"
 								required
 							/>
 						</div>
 					</div>
 					<div class="space-y-1.5">
 						<Label for="edit-term-bell">ตารางเวลา</Label>
-						<select
-							id="edit-term-bell"
-							class="h-10 w-full rounded-md border bg-background px-3 text-sm"
-							bind:value={termEdit.bellScheduleId}
-							required
-						>
-							{#each bellSchedules.filter((schedule) => schedule.academicYearId === termEdit?.academicYearId) as schedule (schedule.id)}
-								<option value={schedule.id}>{schedule.name}</option>
-							{/each}
-						</select>
+						<Select.Root type="single" bind:value={termEdit.bellScheduleId}>
+							<Select.Trigger id="edit-term-bell" class="w-full">
+								{bellSchedules.find((schedule) => schedule.id === termEdit?.bellScheduleId)?.name ??
+									'เลือกตารางเวลา'}
+							</Select.Trigger>
+							<Select.Content>
+								{#each bellSchedules.filter((schedule) => schedule.academicYearId === termEdit?.academicYearId) as schedule (schedule.id)}
+									<Select.Item value={schedule.id}>{schedule.name}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
 					</div>
 					<label class="flex items-center gap-2 text-sm"
 						><input type="checkbox" bind:checked={termEdit.includedInYearResult} /> รวมในผลลัพธ์ทั้งปี</label
@@ -528,18 +565,18 @@
 						/>
 					</div>
 					<div class="space-y-1.5">
-						<Label for="academic-year-start">วันเริ่ม</Label><Input
+						<Label for="academic-year-start">วันเริ่ม</Label><DatePicker
 							id="academic-year-start"
-							type="date"
 							bind:value={yearDraft.startDate}
+							ariaLabel="เลือกวันเริ่มปีการศึกษา"
 							required
 						/>
 					</div>
 					<div class="space-y-1.5">
-						<Label for="academic-year-end">วันสิ้นสุด</Label><Input
+						<Label for="academic-year-end">วันสิ้นสุด</Label><DatePicker
 							id="academic-year-end"
-							type="date"
 							bind:value={yearDraft.endDate}
+							ariaLabel="เลือกวันสิ้นสุดปีการศึกษา"
 							required
 						/>
 					</div>
@@ -552,16 +589,18 @@
 			<form class="space-y-3 rounded-xl border bg-card p-5 shadow-sm" onsubmit={submitBellSchedule}>
 				<h2 class="font-semibold">เพิ่มตารางเวลาของปี</h2>
 				<div class="space-y-1.5">
-					<Label for="bell-year">ปีการศึกษา</Label><select
-						id="bell-year"
-						class="h-10 w-full rounded-md border bg-background px-3 text-sm"
-						bind:value={bellScheduleDraft.academicYearId}
-						required
-						><option value="">เลือกปี</option
-						>{#each years.filter((year) => year.status === 'planning') as year (year.id)}<option
-								value={year.id}>{year.name}</option
-							>{/each}</select
-					>
+					<Label for="bell-year">ปีการศึกษา</Label>
+					<Select.Root type="single" bind:value={bellScheduleDraft.academicYearId}>
+						<Select.Trigger id="bell-year" class="w-full">
+							{years.find((year) => year.id === bellScheduleDraft.academicYearId)?.name ??
+								'เลือกปี'}
+						</Select.Trigger>
+						<Select.Content>
+							{#each years.filter((year) => year.status === 'planning') as year (year.id)}
+								<Select.Item value={year.id}>{year.name}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
 				</div>
 				<div class="grid grid-cols-2 gap-3">
 					<div class="space-y-1.5">
@@ -596,20 +635,29 @@
 				</div>
 				<div class="space-y-1.5">
 					<Label for="period-schedule">ตารางเวลาของปีที่กำลังวางแผน</Label>
-					<select
-						id="period-schedule"
-						class="h-10 w-full rounded-md border bg-background px-3 text-sm"
+					<Select.Root
+						type="single"
 						value={selectedBellScheduleId}
-						onchange={(event) => void selectBellSchedule(event.currentTarget.value)}
-						required
+						onValueChange={(value) => void selectBellSchedule(value)}
 					>
-						<option value="">เลือกตารางเวลา</option>
-						{#each planningBellSchedules as schedule (schedule.id)}
-							<option value={schedule.id}
-								>{years.find((year) => year.id === schedule.academicYearId)?.name} · {schedule.name}</option
-							>
-						{/each}
-					</select>
+						<Select.Trigger id="period-schedule" class="w-full">
+							{#if selectedBellScheduleId}
+								{@const selectedSchedule = planningBellSchedules.find(
+									(schedule) => schedule.id === selectedBellScheduleId
+								)}
+								{years.find((year) => year.id === selectedSchedule?.academicYearId)?.name} · {selectedSchedule?.name}
+							{:else}
+								เลือกตารางเวลา
+							{/if}
+						</Select.Trigger>
+						<Select.Content>
+							{#each planningBellSchedules as schedule (schedule.id)}
+								<Select.Item value={schedule.id}>
+									{years.find((year) => year.id === schedule.academicYearId)?.name} · {schedule.name}
+								</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
 				</div>
 				{#if loadingPeriods}
 					<p class="text-sm text-muted-foreground">กำลังโหลดคาบ…</p>
@@ -680,17 +728,16 @@
 				<h2 class="font-semibold">เพิ่มภาคเรียน</h2>
 				<div class="space-y-1.5">
 					<Label for="term-year">ปีการศึกษา</Label>
-					<select
-						id="term-year"
-						class="h-10 w-full rounded-md border bg-background px-3 text-sm"
-						bind:value={termDraft.academicYearId}
-						required
-					>
-						<option value="">เลือกปี</option>
-						{#each years.filter((year) => year.status === 'planning') as year (year.id)}<option
-								value={year.id}>{year.name}</option
-							>{/each}
-					</select>
+					<Select.Root type="single" bind:value={termDraft.academicYearId}>
+						<Select.Trigger id="term-year" class="w-full">
+							{years.find((year) => year.id === termDraft.academicYearId)?.name ?? 'เลือกปี'}
+						</Select.Trigger>
+						<Select.Content>
+							{#each years.filter((year) => year.status === 'planning') as year (year.id)}
+								<Select.Item value={year.id}>{year.name}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
 				</div>
 				<div class="grid grid-cols-2 gap-3">
 					<div class="space-y-1.5">
@@ -718,44 +765,50 @@
 					/>
 				</div>
 				<div class="space-y-1.5">
-					<Label for="term-type">ประเภท</Label><select
-						id="term-type"
-						class="h-10 w-full rounded-md border bg-background px-3 text-sm"
-						bind:value={termDraft.termType}
-						><option value="regular">ปกติ</option><option value="summer">ฤดูร้อน</option><option
-							value="remedial">ซ่อมเสริม</option
-						><option value="custom">กำหนดเอง</option></select
-					>
+					<Label for="term-type">ประเภท</Label>
+					<Select.Root type="single" bind:value={termDraft.termType}>
+						<Select.Trigger id="term-type" class="w-full">
+							{TERM_TYPE_OPTIONS.find((option) => option.value === termDraft.termType)?.label ??
+								'เลือกประเภท'}
+						</Select.Trigger>
+						<Select.Content>
+							{#each TERM_TYPE_OPTIONS as option (option.value)}
+								<Select.Item value={option.value}>{option.label}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
 				</div>
 				<div class="grid grid-cols-2 gap-3">
 					<div class="space-y-1.5">
-						<Label for="term-start">วันเริ่ม</Label><Input
+						<Label for="term-start">วันเริ่ม</Label><DatePicker
 							id="term-start"
-							type="date"
 							bind:value={termDraft.startDate}
+							ariaLabel="เลือกวันเริ่มภาคเรียน"
 							required
 						/>
 					</div>
 					<div class="space-y-1.5">
-						<Label for="term-end">วันสิ้นสุด</Label><Input
+						<Label for="term-end">วันสิ้นสุด</Label><DatePicker
 							id="term-end"
-							type="date"
 							bind:value={termDraft.endDate}
+							ariaLabel="เลือกวันสิ้นสุดภาคเรียน"
 							required
 						/>
 					</div>
 				</div>
 				<div class="space-y-1.5">
-					<Label for="term-bell">ตารางเวลา</Label><select
-						id="term-bell"
-						class="h-10 w-full rounded-md border bg-background px-3 text-sm"
-						bind:value={termDraft.bellScheduleId}
-						required
-						><option value="">เลือกตารางเวลา</option
-						>{#each bellSchedules.filter((schedule) => schedule.academicYearId === termDraft.academicYearId) as option (option.id)}<option
-								value={option.id}>{option.name}</option
-							>{/each}</select
-					>
+					<Label for="term-bell">ตารางเวลา</Label>
+					<Select.Root type="single" bind:value={termDraft.bellScheduleId}>
+						<Select.Trigger id="term-bell" class="w-full">
+							{bellSchedules.find((schedule) => schedule.id === termDraft.bellScheduleId)?.name ??
+								'เลือกตารางเวลา'}
+						</Select.Trigger>
+						<Select.Content>
+							{#each bellSchedules.filter((schedule) => schedule.academicYearId === termDraft.academicYearId) as option (option.id)}
+								<Select.Item value={option.id}>{option.name}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
 				</div>
 				<label class="flex items-center gap-2 text-sm"
 					><input type="checkbox" bind:checked={termDraft.includedInYearResult} /> รวมในผลลัพธ์ทั้งปี</label

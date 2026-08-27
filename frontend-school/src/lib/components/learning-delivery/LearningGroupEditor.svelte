@@ -4,6 +4,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import * as Select from '$lib/components/ui/select';
 	import { Plus, UsersRound } from 'lucide-svelte';
 
 	let {
@@ -84,7 +85,10 @@
 	async function configure(event: SubmitEvent) {
 		event.preventDefault();
 		const group = groups.find((item) => item.id === configureDraft.groupId);
-		if (!group) return;
+		if (!group || !configureDraft.teacherId) {
+			errorMessage = 'กรุณาเลือกกลุ่มเรียนและครูผู้สอน';
+			return;
+		}
 		busy = true;
 		errorMessage = '';
 		try {
@@ -182,16 +186,19 @@
 				</form>
 				<form class="space-y-3 rounded-lg border bg-muted/20 p-4" onsubmit={configure}>
 					<h3 class="font-medium">ห้องต้นทาง ครู และห้องเรียน</h3>
-					<label class="space-y-1.5 text-sm"
-						><span class="font-medium">กลุ่มเรียน</span><select
-							class="h-10 w-full rounded-md border bg-background px-3"
-							bind:value={configureDraft.groupId}
-							required
-							><option value="">เลือกกลุ่ม</option>{#each groups as group (group.id)}<option
-									value={group.id}>{group.name}</option
-								>{/each}</select
-						></label
-					>
+					<div class="space-y-1.5">
+						<Label for="configure-group">กลุ่มเรียน</Label>
+						<Select.Root type="single" bind:value={configureDraft.groupId}>
+							<Select.Trigger id="configure-group" class="w-full">
+								{groups.find((group) => group.id === configureDraft.groupId)?.name ?? 'เลือกกลุ่ม'}
+							</Select.Trigger>
+							<Select.Content>
+								{#each groups as group (group.id)}
+									<Select.Item value={group.id}>{group.name}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					</div>
 					<div class="space-y-1.5">
 						<Label for="configure-homerooms">รหัสห้องต้นทาง (คั่นด้วยจุลภาค)</Label><Input
 							id="configure-homerooms"
@@ -210,24 +217,38 @@
 							bind:value={configureRoomIdsText}
 						/>
 					</div>
-					<label class="space-y-1.5 text-sm"
-						><span class="font-medium">เพิ่มครูผู้สอน</span><select
-							class="h-10 w-full rounded-md border bg-background px-3"
-							bind:value={configureDraft.teacherId}
-							required
-							><option value="">เลือกครู</option>{#each staffOptions as option (option.id)}<option
-									value={option.id}>{option.name}</option
-								>{/each}</select
-						></label
-					><label class="space-y-1.5 text-sm"
-						><span class="font-medium">บทบาท</span><select
-							class="h-10 w-full rounded-md border bg-background px-3"
-							bind:value={configureDraft.teacherRole}
-							><option value="primary">ผู้สอนหลัก</option><option value="secondary"
-								>ผู้สอนร่วม</option
-							><option value="assistant">ผู้ช่วย</option></select
-						></label
-					><Button class="w-full" type="submit" variant="outline" disabled={busy}
+					<div class="space-y-1.5">
+						<Label for="configure-teacher">เพิ่มครูผู้สอน</Label>
+						<Select.Root type="single" bind:value={configureDraft.teacherId}>
+							<Select.Trigger id="configure-teacher" class="w-full">
+								{staffOptions.find((option) => option.id === configureDraft.teacherId)?.name ??
+									'เลือกครู'}
+							</Select.Trigger>
+							<Select.Content>
+								{#each staffOptions as option (option.id)}
+									<Select.Item value={option.id}>{option.name}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					</div>
+					<div class="space-y-1.5">
+						<Label for="configure-teacher-role">บทบาท</Label>
+						<Select.Root type="single" bind:value={configureDraft.teacherRole}>
+							<Select.Trigger id="configure-teacher-role" class="w-full">
+								{configureDraft.teacherRole === 'primary'
+									? 'ผู้สอนหลัก'
+									: configureDraft.teacherRole === 'secondary'
+										? 'ผู้สอนร่วม'
+										: 'ผู้ช่วย'}
+							</Select.Trigger>
+							<Select.Content>
+								<Select.Item value="primary">ผู้สอนหลัก</Select.Item>
+								<Select.Item value="secondary">ผู้สอนร่วม</Select.Item>
+								<Select.Item value="assistant">ผู้ช่วย</Select.Item>
+							</Select.Content>
+						</Select.Root>
+					</div>
+					<Button class="w-full" type="submit" variant="outline" disabled={busy}
 						>บันทึกการจัดกลุ่ม</Button
 					>
 				</form>

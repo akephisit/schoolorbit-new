@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
+	import * as Select from '$lib/components/ui/select';
 	import { Braces, CornerDownLeft } from 'lucide-svelte';
+
+	const NO_VARIABLE_VALUE = '__no_variable__';
 
 	let {
 		variables,
@@ -29,17 +32,22 @@
 			<Braces
 				class="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground"
 			/>
-			<select
-				id="certificate-variable-picker"
-				class="h-9 w-full rounded-md border bg-background pr-8 pl-8 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-				bind:value={selectedVariable}
+			<Select.Root
+				type="single"
+				value={selectedVariable || NO_VARIABLE_VALUE}
 				{disabled}
+				onValueChange={(value) => (selectedVariable = value === NO_VARIABLE_VALUE ? '' : value)}
 			>
-				<option value="">เลือกตัวแปร</option>
-				{#each variables as variable (variable)}
-					<option value={variable}>{variable}</option>
-				{/each}
-			</select>
+				<Select.Trigger id="certificate-variable-picker" class="w-full pl-8 text-xs">
+					{selectedVariable || 'เลือกตัวแปร'}
+				</Select.Trigger>
+				<Select.Content>
+					<Select.Item value={NO_VARIABLE_VALUE}>เลือกตัวแปร</Select.Item>
+					{#each variables as variable (variable)}
+						<Select.Item value={variable}>{variable}</Select.Item>
+					{/each}
+				</Select.Content>
+			</Select.Root>
 		</div>
 		<Button
 			type="button"

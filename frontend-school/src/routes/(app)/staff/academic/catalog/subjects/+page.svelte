@@ -220,7 +220,9 @@
 							<SlidersHorizontal class="size-4 text-primary" /> ค้นหาและกรองรายวิชา
 						</div>
 						<div class="relative">
-							<Search class="absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+							<Search
+								class="absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+							/>
 							<Label class="sr-only" for="subject-search">ค้นหารายวิชา</Label>
 							<Input
 								id="subject-search"
@@ -273,7 +275,10 @@
 				</div>
 
 				{#if canManage}
-					<form class="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-end" onsubmit={addSubject}>
+					<form
+						class="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-end"
+						onsubmit={addSubject}
+					>
 						<div class="min-w-0 flex-1 sm:max-w-xs">
 							<Label for="new-subject-code">เพิ่มรหัสรายวิชา</Label>
 							<Input
@@ -285,7 +290,8 @@
 							/>
 						</div>
 						<Button type="submit" disabled={creating}>
-							<Plus class="size-4" /> {creating ? 'กำลังเพิ่ม...' : 'เพิ่มรายวิชา'}
+							<Plus class="size-4" />
+							{creating ? 'กำลังเพิ่ม...' : 'เพิ่มรายวิชา'}
 						</Button>
 						{#if mutationError}
 							<p role="alert" class="text-sm text-destructive">{mutationError}</p>
@@ -326,24 +332,42 @@
 											{item.subject.code}
 										</Table.Cell>
 										<Table.Cell class="max-w-[280px] whitespace-normal">
-											<p class="font-medium">{item.displayVersion?.nameTh ?? 'ยังไม่มีรายละเอียดรุ่น'}</p>
+											<p class="font-medium">
+												{item.displayVersion?.nameTh ?? 'ยังไม่มีรายละเอียดรุ่น'}
+											</p>
 											{#if item.displayVersion?.nameEn}
 												<p class="text-xs text-muted-foreground">{item.displayVersion.nameEn}</p>
 											{/if}
 										</Table.Cell>
-										<Table.Cell>{optionLabel(SUBJECT_TYPE_OPTIONS, item.displayVersion?.subjectType)}</Table.Cell>
-										<Table.Cell class="max-w-[220px] whitespace-normal">{gradeLevelSummary(item.gradeLevels)}</Table.Cell>
-										<Table.Cell class="text-end font-mono tabular-nums">{item.displayVersion?.credit ?? '—'}</Table.Cell>
+										<Table.Cell
+											>{optionLabel(
+												SUBJECT_TYPE_OPTIONS,
+												item.displayVersion?.subjectType
+											)}</Table.Cell
+										>
+										<Table.Cell class="max-w-[220px] whitespace-normal"
+											>{gradeLevelSummary(item.gradeLevels)}</Table.Cell
+										>
+										<Table.Cell class="text-end font-mono tabular-nums"
+											>{item.displayVersion?.credit ?? '—'}</Table.Cell
+										>
 										<Table.Cell>
 											<div class="flex flex-wrap gap-1.5">
 												<Badge variant="outline" class={displayStateClass(item.displayState)}>
 													{displayStateLabel(item.displayState)}
 												</Badge>
-												{#if item.draftCount > 0}<Badge variant="secondary">ร่าง {item.draftCount}</Badge>{/if}
+												{#if item.draftCount > 0}<Badge variant="secondary"
+														>ร่าง {item.draftCount}</Badge
+													>{/if}
 											</div>
 										</Table.Cell>
 										<Table.Cell>
-											<Button variant="ghost" size="icon" aria-label={`เปิด ${item.subject.code}`} onclick={() => openSubject(item)}>
+											<Button
+												variant="ghost"
+												size="icon"
+												aria-label={`เปิด ${item.subject.code}`}
+												onclick={() => openSubject(item)}
+											>
 												<ArrowUpRight class="size-4" />
 											</Button>
 										</Table.Cell>
@@ -363,18 +387,32 @@
 								<div class="flex items-start justify-between gap-3">
 									<div class="min-w-0">
 										<p class="font-mono text-sm font-semibold text-primary">{item.subject.code}</p>
-										<h2 class="mt-1 font-medium">{item.displayVersion?.nameTh ?? 'ยังไม่มีรายละเอียดรุ่น'}</h2>
+										<h2 class="mt-1 font-medium">
+											{item.displayVersion?.nameTh ?? 'ยังไม่มีรายละเอียดรุ่น'}
+										</h2>
 									</div>
 									<ArrowUpRight class="size-4 shrink-0 text-muted-foreground" />
 								</div>
 								<div class="mt-3 grid grid-cols-2 gap-3 text-sm">
-									<div><p class="text-xs text-muted-foreground">ประเภท</p><p>{optionLabel(SUBJECT_TYPE_OPTIONS, item.displayVersion?.subjectType)}</p></div>
-									<div><p class="text-xs text-muted-foreground">หน่วยกิต</p><p class="font-mono">{item.displayVersion?.credit ?? '—'}</p></div>
-									<div class="col-span-2"><p class="text-xs text-muted-foreground">ระดับชั้น</p><p>{gradeLevelSummary(item.gradeLevels)}</p></div>
+									<div>
+										<p class="text-xs text-muted-foreground">ประเภท</p>
+										<p>{optionLabel(SUBJECT_TYPE_OPTIONS, item.displayVersion?.subjectType)}</p>
+									</div>
+									<div>
+										<p class="text-xs text-muted-foreground">หน่วยกิต</p>
+										<p class="font-mono">{item.displayVersion?.credit ?? '—'}</p>
+									</div>
+									<div class="col-span-2">
+										<p class="text-xs text-muted-foreground">ระดับชั้น</p>
+										<p>{gradeLevelSummary(item.gradeLevels)}</p>
+									</div>
 								</div>
 								<div class="mt-3 flex flex-wrap gap-1.5">
-									<Badge variant="outline" class={displayStateClass(item.displayState)}>{displayStateLabel(item.displayState)}</Badge>
-									{#if item.draftCount > 0}<Badge variant="secondary">ร่าง {item.draftCount}</Badge>{/if}
+									<Badge variant="outline" class={displayStateClass(item.displayState)}
+										>{displayStateLabel(item.displayState)}</Badge
+									>
+									{#if item.draftCount > 0}<Badge variant="secondary">ร่าง {item.draftCount}</Badge
+										>{/if}
 								</div>
 							</button>
 						{/each}
@@ -396,11 +434,16 @@
 			<Sheet.Title class="flex items-center gap-2">
 				<BookOpen class="size-5 text-primary" />
 				<span class="font-mono">{selected?.subject.code ?? 'รายวิชา'}</span>
-				{#if selected?.displayVersion}<span class="font-sans">· {selected.displayVersion.nameTh}</span>{/if}
+				{#if selected?.displayVersion}<span class="font-sans"
+						>· {selected.displayVersion.nameTh}</span
+					>{/if}
 			</Sheet.Title>
 			<Sheet.Description>
 				{#if selected?.displayVersion}
-					{formatEffectiveRange(selected.displayVersion.effectiveFrom, selected.displayVersion.effectiveUntil)}
+					{formatEffectiveRange(
+						selected.displayVersion.effectiveFrom,
+						selected.displayVersion.effectiveUntil
+					)}
 				{:else}
 					ยังไม่มีรายละเอียดรุ่น เลือกสร้างรุ่นแรกได้ด้านล่าง
 				{/if}

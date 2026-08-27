@@ -33,6 +33,7 @@
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
+	import * as Select from '$lib/components/ui/select';
 	import type { ParsedCertificateImport } from '$lib/certificates/importer';
 	import {
 		FileSpreadsheet,
@@ -46,6 +47,9 @@
 	} from 'lucide-svelte';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
+
+	const ALL_TEMPLATES_VALUE = '__all_templates__';
+	const NO_BULK_TEMPLATE_VALUE = '__no_bulk_template__';
 
 	let {
 		campaignId,
@@ -97,6 +101,12 @@
 	let loadGeneration = 0;
 	let candidateLoadGeneration = 0;
 	let requestedCampaignId = '';
+
+	function changeTemplateFilter(value: string): void {
+		templateFilter = value === ALL_TEMPLATES_VALUE ? '' : value;
+		selectedIds = [];
+		void loadCandidateList(campaignId);
+	}
 
 	const canPrepareCandidates = $derived(campaign?.capabilities.canPrepareCandidates === true);
 	const canCreateCandidates = $derived(canPrepareCandidates);
@@ -556,19 +566,21 @@
 				</label>
 				<label class="min-w-56 space-y-1.5">
 					<span class="text-xs font-medium text-muted-foreground">กรองตามแบบ</span>
-					<select
-						bind:value={templateFilter}
-						onchange={() => {
-							selectedIds = [];
-							void loadCandidateList(campaignId);
-						}}
-						class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					<Select.Root
+						type="single"
+						value={templateFilter || ALL_TEMPLATES_VALUE}
+						onValueChange={changeTemplateFilter}
 					>
-						<option value="">ทุกแบบ</option>
-						{#each templates as template (template.id)}
-							<option value={template.id}>{template.name}</option>
-						{/each}
-					</select>
+						<Select.Trigger class="w-full">
+							{templates.find((template) => template.id === templateFilter)?.name ?? 'ทุกแบบ'}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value={ALL_TEMPLATES_VALUE}>ทุกแบบ</Select.Item>
+							{#each templates as template (template.id)}
+								<Select.Item value={template.id}>{template.name}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
 				</label>
 				<div
 					class="flex h-9 items-center gap-2 rounded-md border bg-muted/30 px-3 text-xs text-muted-foreground"
@@ -587,19 +599,33 @@
 					{#if canManageCandidates}
 						<label class="min-w-52 space-y-1">
 							<span class="sr-only">แบบสำหรับรายการที่เลือก</span>
-							<select
-								bind:value={bulkTemplateId}
-								class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+							<Select.Root
+								type="single"
+								value={bulkTemplateId || NO_BULK_TEMPLATE_VALUE}
+								onValueChange={(value) =>
+									(bulkTemplateId = value === NO_BULK_TEMPLATE_VALUE ? '' : value)}
 							>
-								<option value="">เลือกแบบเกียรติบัตร</option>
-								{#each bulkCompatibleTemplates as template (template.id)}
-									<option value={template.id}>
-										{template.name} · {template.allowedRecipientTypes
-											.map((type) => recipientTypeLabels[type])
-											.join('/')}
-									</option>
-								{/each}
-							</select>
+								<Select.Trigger class="w-full">
+									{@const template = bulkCompatibleTemplates.find(
+										(item) => item.id === bulkTemplateId
+									)}
+									{template
+										? `${template.name} · ${template.allowedRecipientTypes
+												.map((type) => recipientTypeLabels[type])
+												.join('/')}`
+										: 'เลือกแบบเกียรติบัตร'}
+								</Select.Trigger>
+								<Select.Content>
+									<Select.Item value={NO_BULK_TEMPLATE_VALUE}>เลือกแบบเกียรติบัตร</Select.Item>
+									{#each bulkCompatibleTemplates as template (template.id)}
+										<Select.Item value={template.id}>
+											{template.name} · {template.allowedRecipientTypes
+												.map((type) => recipientTypeLabels[type])
+												.join('/')}
+										</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
 						</label>
 						<LoadingButton
 							variant="outline"

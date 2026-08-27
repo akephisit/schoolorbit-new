@@ -17,6 +17,10 @@
 		locale = 'en-US',
 		months: monthsProp,
 		years,
+		minValue,
+		maxValue,
+		disabled = false,
+		readonly = false,
 		monthFormat: monthFormatProp,
 		yearFormat = 'numeric',
 		day,
@@ -54,6 +58,10 @@ get along, so we shut typescript up by casting `value` to `never`.
 		className
 	)}
 	{locale}
+	{minValue}
+	{maxValue}
+	{disabled}
+	{readonly}
 	{monthFormat}
 	{yearFormat}
 	{...restProps}
@@ -73,6 +81,10 @@ get along, so we shut typescript up by casting `value` to `never`.
 							{monthFormat}
 							{years}
 							{yearFormat}
+							{minValue}
+							{maxValue}
+							{disabled}
+							{readonly}
 							month={month.value}
 							bind:placeholder
 							{locale}

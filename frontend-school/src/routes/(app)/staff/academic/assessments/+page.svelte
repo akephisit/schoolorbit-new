@@ -24,6 +24,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import * as Select from '$lib/components/ui/select';
 	import { Switch } from '$lib/components/ui/switch';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
@@ -390,15 +391,17 @@
 								<Card.Description>เลือกชุดที่ต้องการกำหนดคะแนน</Card.Description>
 							</div>
 							<label class="sr-only" for="assessment-status">กรองสถานะ</label>
-							<select
-								id="assessment-status"
-								class="border-input bg-background h-9 rounded-md border px-3 text-sm"
-								bind:value={statusFilter}
-							>
-								{#each statusOptions as option (option.value)}
-									<option value={option.value}>{option.label}</option>
-								{/each}
-							</select>
+							<Select.Root type="single" bind:value={statusFilter}>
+								<Select.Trigger id="assessment-status" class="w-40">
+									{statusOptions.find((option) => option.value === statusFilter)?.label ??
+										'ทุกสถานะ'}
+								</Select.Trigger>
+								<Select.Content>
+									{#each statusOptions as option (option.value)}
+										<Select.Item value={option.value}>{option.label}</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
 						</div>
 					</Card.Header>
 					<Card.Content class="space-y-2">
@@ -535,17 +538,22 @@
 										</div>
 										<div class="space-y-2">
 											<Label for={`category-mode-${categoryIndex}`}>รูปแบบ</Label>
-											<select
-												id={`category-mode-${categoryIndex}`}
-												class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+											<Select.Root
+												type="single"
 												bind:value={category.examMode}
 												disabled={!canEditDetail}
-												onchange={markDirty}
+												onValueChange={markDirty}
 											>
-												{#each examModeOptions as option (option.value)}
-													<option value={option.value}>{option.label}</option>
-												{/each}
-											</select>
+												<Select.Trigger id={`category-mode-${categoryIndex}`} class="w-full">
+													{examModeOptions.find((option) => option.value === category.examMode)
+														?.label ?? 'เลือกรูปแบบ'}
+												</Select.Trigger>
+												<Select.Content>
+													{#each examModeOptions as option (option.value)}
+														<Select.Item value={option.value}>{option.label}</Select.Item>
+													{/each}
+												</Select.Content>
+											</Select.Root>
 										</div>
 										<div class="flex items-end justify-end">
 											<Button

@@ -198,10 +198,7 @@ export const listCatalogSubjects = () =>
 	);
 export const getCatalogSubjectOverview = (options: ApiRequestOptions = {}) =>
 	academicData(
-		apiClient.get<CatalogSubjectOverview>(
-			'/api/academic/catalog/subjects/overview',
-			options
-		),
+		apiClient.get<CatalogSubjectOverview>('/api/academic/catalog/subjects/overview', options),
 		'ไม่สามารถโหลดภาพรวมทะเบียนรายวิชาได้'
 	);
 export const createCatalogSubject = (body: CreateCatalogSubjectRequest) =>
@@ -242,10 +239,7 @@ export const listCatalogActivities = () =>
 	);
 export const getCatalogActivityOverview = (options: ApiRequestOptions = {}) =>
 	academicData(
-		apiClient.get<CatalogActivityOverview>(
-			'/api/academic/catalog/activities/overview',
-			options
-		),
+		apiClient.get<CatalogActivityOverview>('/api/academic/catalog/activities/overview', options),
 		'ไม่สามารถโหลดภาพรวมทะเบียนกิจกรรมได้'
 	);
 export const createCatalogActivity = (body: CreateCatalogActivityRequest) =>

@@ -107,9 +107,7 @@
 				<Button type="button" size="sm" variant="ghost" onclick={clearSelection}>
 					ทุกระดับชั้น
 				</Button>
-				<Button type="button" size="sm" variant="ghost" onclick={selectAll}>
-					เลือกทั้งหมด
-				</Button>
+				<Button type="button" size="sm" variant="ghost" onclick={selectAll}>เลือกทั้งหมด</Button>
 			</div>
 		</Command.Root>
 	</Popover.Content>

@@ -42,7 +42,9 @@ test('catalog presentation keeps one canonical set of human-readable choices', a
 });
 
 test('subject catalog uses the responsive overview information architecture', async () => {
-	const subjects = await readSource('src/routes/(app)/staff/academic/catalog/subjects/+page.svelte');
+	const subjects = await readSource(
+		'src/routes/(app)/staff/academic/catalog/subjects/+page.svelte'
+	);
 
 	assert.match(subjects, /getCatalogSubjectOverview/);
 	assert.match(subjects, /\* as Table/);
