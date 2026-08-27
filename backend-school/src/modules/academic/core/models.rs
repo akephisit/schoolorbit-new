@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-use crate::modules::lookup::models::GradeLevelLookupItem;
+use crate::modules::lookup::models::{AcademicYearLookupItem, GradeLevelLookupItem};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema, sqlx::Type)]
 #[serde(rename_all = "snake_case")]
@@ -782,11 +782,46 @@ pub struct StudyProgramRequirement {
     pub requirement: ProgramRequirement,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct CurriculumCatalogVersionOption {
+    pub id: Uuid,
+    pub resource_kind: RequirementResourceKind,
+    pub code: String,
+    pub name: String,
+    pub version_no: i32,
+    pub effective_from: NaiveDate,
+    pub effective_until: Option<NaiveDate>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CurriculumRequirementView {
+    pub study_program_id: Uuid,
+    pub requirement: ProgramRequirement,
+    pub grade_level: GradeLevelLookupItem,
+    pub catalog: CurriculumCatalogVersionOption,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CurriculumCreateOptions {
+    pub grade_levels: Vec<GradeLevelLookupItem>,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CurriculumManagementOptions {
+    pub academic_years: Vec<AcademicYearLookupItem>,
+    pub grade_levels: Vec<GradeLevelLookupItem>,
+    pub catalog_versions: Vec<CurriculumCatalogVersionOption>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumProgramWorkspace {
     pub programs: Vec<StudyProgram>,
-    pub requirements: Vec<StudyProgramRequirement>,
+    pub requirements: Vec<CurriculumRequirementView>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

@@ -2007,7 +2007,218 @@ async fn curriculum_overview_resolves_display_versions_and_labels() {
 }
 
 #[tokio::test]
-async fn workspace_reads_return_complete_ordered_collections() {
+async fn curriculum_management_options_are_published_scoped_and_ordered() {
+    let pool = prepare_core_fixture("academic_core_curriculum_management_options").await;
+    let owner_ids: Vec<Uuid> =
+        sqlx::query_scalar("SELECT id FROM organization_units ORDER BY id LIMIT 2")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(owner_ids.len(), 2);
+    let grade_level_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM grade_levels WHERE is_active = true ORDER BY level_type, year, id LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let curriculum_row = curriculum::create(
+        &pool,
+        CreateCurriculumRequest {
+            code: "OPTIONS".to_string(),
+            name_th: "หลักสูตรตัวเลือก".to_string(),
+            name_en: None,
+            description: None,
+            grade_level_ids: vec![grade_level_id],
+            owning_organization_unit_id: Some(owner_ids[0]),
+        },
+    )
+    .await
+    .unwrap();
+    let version = curriculum::create_version(
+        &pool,
+        curriculum_row.id,
+        CreateCurriculumVersionRequest {
+            version_name: "ฉบับตัวเลือก".to_string(),
+            start_academic_year_id: FUTURE_YEAR_ID,
+            end_academic_year_id: None,
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    let subject = catalog::create_subject(
+        &pool,
+        CreateCatalogSubjectRequest {
+            code: "OPTION-SUBJECT".to_string(),
+            owning_organization_unit_id: Some(owner_ids[0]),
+        },
+    )
+    .await
+    .unwrap();
+    let subject_version = catalog::create_subject_version(
+        &pool,
+        subject.id,
+        CreateSubjectVersionRequest {
+            name_th: "รายวิชาตัวเลือก".to_string(),
+            name_en: None,
+            credit: "1.00".to_string(),
+            hours_per_semester: Some(40),
+            subject_type: "BASIC".to_string(),
+            group_id: None,
+            description: None,
+            effective_from: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
+            effective_until: None,
+            term_code: None,
+            periods_per_week: Some(2),
+            grade_level_ids: vec![grade_level_id],
+        },
+    )
+    .await
+    .unwrap();
+    let subject_version = catalog::publish_subject_version(
+        &pool,
+        subject_version.id,
+        PublishVersionRequest {
+            row_version: subject_version.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    let activity = catalog::create_activity(
+        &pool,
+        CreateCatalogActivityRequest {
+            code: "OPTION-ACTIVITY".to_string(),
+            activity_type: "guidance".to_string(),
+            owning_organization_unit_id: Some(owner_ids[0]),
+        },
+    )
+    .await
+    .unwrap();
+    let activity_version = catalog::create_activity_version(
+        &pool,
+        activity.id,
+        CreateActivityVersionRequest {
+            name: "กิจกรรมตัวเลือก".to_string(),
+            description: None,
+            hours_per_week: "1.00".to_string(),
+            scheduling_mode: "synchronized".to_string(),
+            effective_from: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
+            effective_until: None,
+            term_code: None,
+            grade_level_ids: vec![grade_level_id],
+        },
+    )
+    .await
+    .unwrap();
+    let activity_version = catalog::publish_activity_version(
+        &pool,
+        activity_version.id,
+        PublishVersionRequest {
+            row_version: activity_version.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    let outside = catalog::create_subject(
+        &pool,
+        CreateCatalogSubjectRequest {
+            code: "OPTION-OUTSIDE".to_string(),
+            owning_organization_unit_id: Some(owner_ids[1]),
+        },
+    )
+    .await
+    .unwrap();
+    let outside_version = catalog::create_subject_version(
+        &pool,
+        outside.id,
+        CreateSubjectVersionRequest {
+            name_th: "รายวิชานอกขอบเขต".to_string(),
+            name_en: None,
+            credit: "1.00".to_string(),
+            hours_per_semester: Some(40),
+            subject_type: "BASIC".to_string(),
+            group_id: None,
+            description: None,
+            effective_from: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
+            effective_until: None,
+            term_code: None,
+            periods_per_week: Some(2),
+            grade_level_ids: vec![grade_level_id],
+        },
+    )
+    .await
+    .unwrap();
+    let outside_version = catalog::publish_subject_version(
+        &pool,
+        outside_version.id,
+        PublishVersionRequest {
+            row_version: outside_version.row_version,
+        },
+    )
+    .await
+    .unwrap();
+
+    let owner_filter = AcademicResourceListFilter {
+        organization_unit_ids: vec![owner_ids[0]],
+        ..AcademicResourceListFilter::default()
+    };
+    let create_options = workspaces::curriculum_create_options(&pool, &owner_filter)
+        .await
+        .unwrap();
+    assert!(!create_options.grade_levels.is_empty());
+    let active_option_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM grade_levels WHERE id = ANY($1) AND is_active = true",
+    )
+    .bind(
+        &create_options
+            .grade_levels
+            .iter()
+            .map(|level| level.id)
+            .collect::<Vec<_>>(),
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        active_option_count,
+        create_options.grade_levels.len() as i64
+    );
+
+    let options = workspaces::curriculum_management_options(&pool, version.id, &owner_filter)
+        .await
+        .unwrap();
+    assert!(options
+        .academic_years
+        .windows(2)
+        .all(|pair| pair[0].year >= pair[1].year));
+    assert!(options
+        .catalog_versions
+        .iter()
+        .any(|option| option.id == subject_version.id
+            && option.resource_kind == RequirementResourceKind::Course));
+    assert!(options
+        .catalog_versions
+        .iter()
+        .any(|option| option.id == activity_version.id
+            && option.resource_kind == RequirementResourceKind::Activity));
+    assert!(!options
+        .catalog_versions
+        .iter()
+        .any(|option| option.id == outside_version.id));
+    assert!(matches!(
+        workspaces::curriculum_management_options(
+            &pool,
+            version.id,
+            &AcademicResourceListFilter::default(),
+        )
+        .await,
+        Err(crate::error::AppError::Forbidden(_))
+    ));
+}
+
+#[tokio::test]
+async fn curriculum_program_workspace_resolves_requirement_labels() {
     let pool = prepare_core_fixture("academic_core_workspace_reads").await;
     let actor_user_id = fixture_actor(&pool).await;
     let grade_level_id: Uuid =
@@ -2207,6 +2418,22 @@ async fn workspace_reads_return_complete_ordered_collections() {
         program_workspace.requirements[1].requirement.display_order,
         2
     );
+    let course_requirement = &program_workspace.requirements[0];
+    assert_eq!(course_requirement.grade_level.id, grade_level_id);
+    assert!(!course_requirement.grade_level.name.is_empty());
+    assert_eq!(course_requirement.catalog.id, subject_version_id);
+    assert_eq!(
+        course_requirement.catalog.resource_kind,
+        RequirementResourceKind::Course
+    );
+    assert!(!course_requirement.catalog.code.is_empty());
+    assert!(!course_requirement.catalog.name.is_empty());
+    let activity_requirement = &program_workspace.requirements[1];
+    assert_eq!(activity_requirement.catalog.id, activity_version_id);
+    assert_eq!(
+        activity_requirement.catalog.resource_kind,
+        RequirementResourceKind::Activity
+    );
     assert!(program_workspace
         .programs
         .iter()
@@ -2221,8 +2448,11 @@ async fn workspace_reads_return_complete_ordered_collections() {
         serialized_requirement["studyProgramId"],
         default_program.id.to_string()
     );
-    assert!(serialized_requirement.get("displayOrder").is_some());
-    assert!(serialized_requirement.get("requirement").is_none());
+    assert!(serialized_requirement["requirement"]
+        .get("displayOrder")
+        .is_some());
+    assert!(serialized_requirement.get("gradeLevel").is_some());
+    assert!(serialized_requirement.get("catalog").is_some());
     assert!(matches!(
         workspaces::program_workspace(&pool, version.id, &AcademicResourceListFilter::default(),)
             .await,

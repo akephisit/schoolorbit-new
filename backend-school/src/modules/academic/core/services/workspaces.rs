@@ -11,11 +11,14 @@ use crate::policies::resource_access_policy::{
     academic_resource_access_for, AcademicResourceAccess, AcademicResourceListFilter,
 };
 
-use crate::modules::lookup::models::GradeLevelLookupItem;
+use crate::modules::lookup::models::{AcademicYearLookupItem, GradeLevelLookupItem};
 
 use super::super::models::{
-    AcademicSetupWorkspace, CurriculumDisplayState, CurriculumOverview, CurriculumOverviewItem,
-    CurriculumProgramWorkspace, CurriculumVersion, VersionStatus,
+    AcademicSetupWorkspace, AcademicYearStatus, CurriculumCatalogVersionOption,
+    CurriculumCreateOptions, CurriculumDisplayState, CurriculumManagementOptions,
+    CurriculumOverview, CurriculumOverviewItem, CurriculumProgramWorkspace,
+    CurriculumRequirementView, CurriculumVersion, RequirementResourceKind, StudyProgramRequirement,
+    VersionStatus,
 };
 use super::{bell_schedules, curriculum, years_terms};
 
@@ -25,6 +28,9 @@ const MAX_SETUP_YEARS: usize = 100;
 const MAX_SETUP_TERMS: usize = 2_000;
 const MAX_SETUP_BELL_SCHEDULES: usize = 1_000;
 const MAX_CURRICULUM_OVERVIEW_VERSIONS: usize = 5_000;
+const MAX_CURRICULUM_OPTION_YEARS: usize = 100;
+const MAX_CURRICULUM_OPTION_GRADES: usize = 500;
+const MAX_CURRICULUM_CATALOG_OPTIONS: usize = 5_000;
 
 #[derive(sqlx::FromRow)]
 struct CurriculumVersionAccessRow {
@@ -81,6 +87,14 @@ struct WorkspaceGradeLevelRow {
 struct VersionProgramCountRow {
     curriculum_version_id: Uuid,
     count: i64,
+}
+
+#[derive(sqlx::FromRow)]
+struct WorkspaceAcademicYearRow {
+    id: Uuid,
+    name: String,
+    year: i32,
+    status: AcademicYearStatus,
 }
 
 pub async fn curriculum_overview(
@@ -333,11 +347,104 @@ fn workspace_grade_level_item(row: WorkspaceGradeLevelRow) -> GradeLevelLookupIt
     }
 }
 
-pub async fn program_workspace(
+pub async fn curriculum_create_options(
+    pool: &PgPool,
+    filter: &AcademicResourceListFilter,
+) -> Result<CurriculumCreateOptions, AppError> {
+    require_filter_scope(filter)?;
+    Ok(CurriculumCreateOptions {
+        grade_levels: active_workspace_grade_levels(pool).await?,
+    })
+}
+
+pub async fn curriculum_management_options(
     pool: &PgPool,
     version_id: Uuid,
     filter: &AcademicResourceListFilter,
-) -> Result<CurriculumProgramWorkspace, AppError> {
+) -> Result<CurriculumManagementOptions, AppError> {
+    require_curriculum_version_access(pool, version_id, filter).await?;
+    let academic_year_rows = sqlx::query_as::<_, WorkspaceAcademicYearRow>(
+        r#"
+        SELECT id, name, year, status
+        FROM academic_years
+        ORDER BY year DESC, id
+        LIMIT $1
+        "#,
+    )
+    .bind((MAX_CURRICULUM_OPTION_YEARS + 1) as i64)
+    .fetch_all(pool)
+    .await?;
+    ensure_workspace_size(
+        academic_year_rows.len(),
+        MAX_CURRICULUM_OPTION_YEARS,
+        "จำนวนปีการศึกษาสำหรับจัดการหลักสูตร",
+    )?;
+    let academic_years = academic_year_rows
+        .into_iter()
+        .map(|row| AcademicYearLookupItem {
+            id: row.id,
+            name: row.name,
+            year: row.year,
+            status: row.status,
+        })
+        .collect();
+    let grade_levels = active_workspace_grade_levels(pool).await?;
+    let owner_ids = filter.allowed_organization_unit_ids();
+    let catalog_versions = sqlx::query_as::<_, CurriculumCatalogVersionOption>(
+        r#"
+        SELECT option.id, option.resource_kind, option.code, option.name,
+               option.version_no, option.effective_from, option.effective_until
+        FROM (
+            SELECT version.id, 'course'::text AS resource_kind,
+                   subject.code, version.name_th AS name, version.version_no,
+                   version.effective_from, version.effective_until
+            FROM subject_versions version
+            JOIN subjects subject ON subject.id = version.subject_id
+            WHERE version.status = 'published'
+              AND ($1 OR subject.owning_organization_unit_id = ANY($2))
+            UNION ALL
+            SELECT version.id, 'activity'::text AS resource_kind,
+                   activity.code, version.name, version.version_no,
+                   version.effective_from, version.effective_until
+            FROM activity_versions version
+            JOIN activities activity ON activity.id = version.activity_id
+            WHERE version.status = 'published'
+              AND ($1 OR activity.owning_organization_unit_id = ANY($2))
+        ) option
+        ORDER BY option.resource_kind, option.code, option.version_no DESC, option.id
+        LIMIT $3
+        "#,
+    )
+    .bind(filter.includes_school_owned)
+    .bind(owner_ids)
+    .bind((MAX_CURRICULUM_CATALOG_OPTIONS + 1) as i64)
+    .fetch_all(pool)
+    .await?;
+    ensure_workspace_size(
+        catalog_versions.len(),
+        MAX_CURRICULUM_CATALOG_OPTIONS,
+        "จำนวนตัวเลือกวิชาและกิจกรรมสำหรับหลักสูตร",
+    )?;
+    Ok(CurriculumManagementOptions {
+        academic_years,
+        grade_levels,
+        catalog_versions,
+    })
+}
+
+fn require_filter_scope(filter: &AcademicResourceListFilter) -> Result<(), AppError> {
+    if filter.includes_school_owned || !filter.allowed_organization_unit_ids().is_empty() {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden("ไม่มีสิทธิ์เข้าถึงทรัพยากรนี้".to_string()))
+    }
+}
+
+async fn require_curriculum_version_access(
+    pool: &PgPool,
+    version_id: Uuid,
+    filter: &AcademicResourceListFilter,
+) -> Result<(), AppError> {
     let access: CurriculumVersionAccessRow = sqlx::query_as(
         r#"SELECT curriculum.owning_organization_unit_id
            FROM curriculum_versions version
@@ -351,8 +458,48 @@ pub async fn program_workspace(
     if academic_resource_access_for(filter, access.owning_organization_unit_id, false)
         == AcademicResourceAccess::None
     {
-        return Err(AppError::Forbidden("ไม่มีสิทธิ์เข้าถึงทรัพยากรนี้".to_string()));
+        Err(AppError::Forbidden("ไม่มีสิทธิ์เข้าถึงทรัพยากรนี้".to_string()))
+    } else {
+        Ok(())
     }
+}
+
+async fn active_workspace_grade_levels(
+    pool: &PgPool,
+) -> Result<Vec<GradeLevelLookupItem>, AppError> {
+    let rows = sqlx::query_as::<_, WorkspaceGradeLevelRow>(
+        r#"
+        SELECT id, level_type, year
+        FROM grade_levels
+        WHERE is_active = true
+        ORDER BY CASE level_type
+                    WHEN 'kindergarten' THEN 1
+                    WHEN 'primary' THEN 2
+                    WHEN 'secondary' THEN 3
+                    ELSE 4
+                 END,
+                 year,
+                 id
+        LIMIT $1
+        "#,
+    )
+    .bind((MAX_CURRICULUM_OPTION_GRADES + 1) as i64)
+    .fetch_all(pool)
+    .await?;
+    ensure_workspace_size(
+        rows.len(),
+        MAX_CURRICULUM_OPTION_GRADES,
+        "จำนวนระดับชั้นสำหรับจัดการหลักสูตร",
+    )?;
+    Ok(rows.into_iter().map(workspace_grade_level_item).collect())
+}
+
+pub async fn program_workspace(
+    pool: &PgPool,
+    version_id: Uuid,
+    filter: &AcademicResourceListFilter,
+) -> Result<CurriculumProgramWorkspace, AppError> {
+    require_curriculum_version_access(pool, version_id, filter).await?;
 
     let programs = curriculum::list_programs_for_version(pool, version_id).await?;
     ensure_workspace_size(
@@ -361,16 +508,117 @@ pub async fn program_workspace(
         "จำนวนแผนการเรียนในเวอร์ชันหลักสูตร",
     )?;
     let program_ids: Vec<Uuid> = programs.iter().map(|program| program.id).collect();
-    let requirements = curriculum::list_requirements_for_programs(pool, &program_ids).await?;
+    let raw_requirements = curriculum::list_requirements_for_programs(pool, &program_ids).await?;
     ensure_workspace_size(
-        requirements.len(),
+        raw_requirements.len(),
         MAX_WORKSPACE_REQUIREMENTS,
         "จำนวนข้อกำหนดในเวอร์ชันหลักสูตร",
     )?;
+    let requirements = resolve_curriculum_requirements(pool, raw_requirements).await?;
     Ok(CurriculumProgramWorkspace {
         programs,
         requirements,
     })
+}
+
+async fn resolve_curriculum_requirements(
+    pool: &PgPool,
+    requirements: Vec<StudyProgramRequirement>,
+) -> Result<Vec<CurriculumRequirementView>, AppError> {
+    if requirements.is_empty() {
+        return Ok(Vec::new());
+    }
+    let grade_level_ids = requirements
+        .iter()
+        .map(|item| item.requirement.grade_level_id)
+        .collect::<Vec<_>>();
+    let grade_levels = sqlx::query_as::<_, WorkspaceGradeLevelRow>(
+        r#"
+        SELECT id, level_type, year
+        FROM grade_levels
+        WHERE id = ANY($1)
+        ORDER BY CASE level_type
+                    WHEN 'kindergarten' THEN 1
+                    WHEN 'primary' THEN 2
+                    WHEN 'secondary' THEN 3
+                    ELSE 4
+                 END,
+                 year,
+                 id
+        "#,
+    )
+    .bind(&grade_level_ids)
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .map(workspace_grade_level_item)
+    .map(|item| (item.id, item))
+    .collect::<HashMap<_, _>>();
+    let course_ids = requirements
+        .iter()
+        .filter(|item| item.requirement.resource_kind == RequirementResourceKind::Course)
+        .map(|item| item.requirement.catalog_version_id)
+        .collect::<Vec<_>>();
+    let activity_ids = requirements
+        .iter()
+        .filter(|item| item.requirement.resource_kind == RequirementResourceKind::Activity)
+        .map(|item| item.requirement.catalog_version_id)
+        .collect::<Vec<_>>();
+    let catalog_versions = sqlx::query_as::<_, CurriculumCatalogVersionOption>(
+        r#"
+        SELECT option.id, option.resource_kind, option.code, option.name,
+               option.version_no, option.effective_from, option.effective_until
+        FROM (
+            SELECT version.id, 'course'::text AS resource_kind,
+                   subject.code, version.name_th AS name, version.version_no,
+                   version.effective_from, version.effective_until
+            FROM subject_versions version
+            JOIN subjects subject ON subject.id = version.subject_id
+            WHERE version.id = ANY($1)
+            UNION ALL
+            SELECT version.id, 'activity'::text AS resource_kind,
+                   activity.code, version.name, version.version_no,
+                   version.effective_from, version.effective_until
+            FROM activity_versions version
+            JOIN activities activity ON activity.id = version.activity_id
+            WHERE version.id = ANY($2)
+        ) option
+        "#,
+    )
+    .bind(&course_ids)
+    .bind(&activity_ids)
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .map(|item| ((item.resource_kind, item.id), item))
+    .collect::<HashMap<_, _>>();
+
+    requirements
+        .into_iter()
+        .map(|item| {
+            let grade_level = grade_levels
+                .get(&item.requirement.grade_level_id)
+                .cloned()
+                .ok_or_else(requirement_integrity_error)?;
+            let catalog = catalog_versions
+                .get(&(
+                    item.requirement.resource_kind,
+                    item.requirement.catalog_version_id,
+                ))
+                .cloned()
+                .ok_or_else(requirement_integrity_error)?;
+            Ok(CurriculumRequirementView {
+                study_program_id: item.study_program_id,
+                requirement: item.requirement,
+                grade_level,
+                catalog,
+            })
+        })
+        .collect()
+}
+
+fn requirement_integrity_error() -> AppError {
+    AppError::InternalServerError("ข้อมูลข้อกำหนดหลักสูตรไม่สมบูรณ์".to_string())
 }
 
 pub async fn setup_workspace(
