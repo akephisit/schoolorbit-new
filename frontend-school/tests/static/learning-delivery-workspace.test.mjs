@@ -35,3 +35,32 @@ test('delivery overview is term scoped, filterable, and keeps management options
 	assert.match(table, /groupsWithoutPrimaryTeacher/);
 	assert.match(table, /publishedRosterCount/);
 });
+
+test('offering detail keeps selection in the URL and renders named group and roster data', async () => {
+	const meta = await readProjectFile(
+		'src/routes/(app)/staff/academic/delivery/[offeringId]/+page.ts'
+	);
+	const page = await readProjectFile(
+		'src/routes/(app)/staff/academic/delivery/[offeringId]/+page.svelte'
+	);
+	const editor = await readProjectFile(
+		'src/lib/components/learning-delivery/LearningGroupEditor.svelte'
+	);
+	const roster = await readProjectFile(
+		'src/lib/components/learning-delivery/RosterPreviewPanel.svelte'
+	);
+	assert.match(meta, /access:/);
+	assert.doesNotMatch(meta, /menu:/);
+	assert.match(page, /getLearningOffering/);
+	assert.match(page, /getLearningGroup/);
+	assert.match(page, /listLearningGroups/);
+	assert.match(page, /groupId/);
+	assert.match(editor, /managementOptions\.teachers/);
+	assert.match(editor, /managementOptions\.homerooms/);
+	assert.match(editor, /managementOptions\.rooms/);
+	assert.match(roster, /studentCode/);
+	assert.match(roster, /displayName/);
+	assert.match(roster, /gradeLevelName/);
+	assert.match(roster, /homeroomName/);
+	assert.doesNotMatch(roster, /student\.studentId\s*\}/);
+});
