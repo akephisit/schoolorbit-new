@@ -4,6 +4,9 @@ use sqlx::FromRow;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
+use crate::modules::academic::core::models::StudyProgramOption;
+use crate::modules::lookup::models::GradeLevelLookupItem;
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, sqlx::Type, ToSchema)]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
@@ -337,6 +340,25 @@ pub struct LearningOffering {
     pub updated_at: DateTime<Utc>,
     pub snapshot: LearningOfferingSnapshot,
     pub targets: Vec<LearningOfferingTarget>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LearningOfferingOverviewItem {
+    pub offering: LearningOffering,
+    pub grade_levels: Vec<GradeLevelLookupItem>,
+    pub study_programs: Vec<StudyProgramOption>,
+    pub group_count: i64,
+    pub teacher_assignment_count: i64,
+    pub groups_without_primary_teacher: i64,
+    pub published_roster_count: i64,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LearningDeliveryOverview {
+    pub academic_term_id: Uuid,
+    pub offerings: Vec<LearningOfferingOverviewItem>,
 }
 
 #[derive(Clone, Debug, Serialize, ToSchema)]

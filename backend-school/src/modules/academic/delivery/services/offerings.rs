@@ -31,6 +31,7 @@ const OFFERING_COLUMNS: &str = r#"
 "#;
 
 const DELIVERY_NAMESPACE: Uuid = Uuid::from_u128(0x83c8_46da_e34e_5146_8ff1_f7ca_aa6e_20a4);
+const MAX_TERM_OFFERINGS: usize = 500;
 
 #[derive(Debug, sqlx::FromRow)]
 struct CourseVersionSource {
@@ -150,15 +151,21 @@ pub async fn list(
                WHERE learning_group.learning_offering_id = learning_offerings.id \
                  AND teacher.teacher_id = $4\
            )) \
-         ORDER BY kind, code_snapshot, id LIMIT 500"
+         ORDER BY kind, code_snapshot, id LIMIT $5"
     );
     let rows: Vec<LearningOfferingRow> = sqlx::query_as(&sql)
         .bind(query.academic_term_id)
         .bind(filter.includes_school_owned)
         .bind(owner_ids)
         .bind(filter.assigned_actor_id)
+        .bind((MAX_TERM_OFFERINGS + 1) as i64)
         .fetch_all(pool)
         .await?;
+    if rows.len() > MAX_TERM_OFFERINGS {
+        return Err(AppError::ValidationError(
+            "จำนวนรายการเปิดสอนในภาคเรียนเกิน 500 รายการ กรุณาแบ่งข้อมูลก่อนเปิดพื้นที่ทำงาน".to_string(),
+        ));
+    }
     hydrate_many(pool, rows).await
 }
 

@@ -25,7 +25,7 @@ use super::{
         RosterOverrideAction, RosterOverrideInput, StudentActivityRegistrationQuery,
         TeacherAssignmentInput,
     },
-    services::{activities, groups, offerings},
+    services::{activities, groups, offerings, workspaces},
 };
 use crate::error::AppError;
 use crate::policies::resource_access_policy::AcademicResourceListFilter;
@@ -1513,6 +1513,181 @@ async fn offering_list_batch_hydrates_mixed_snapshots_and_targets() {
             LearningOfferingSnapshot::Activity(_)
         )
     )));
+}
+
+#[tokio::test]
+async fn delivery_overview_batches_labels_and_group_coverage() {
+    let pool = prepare_delivery_runtime_fixture("academic_delivery_workspace_overview").await;
+    let context = planning_runtime_context(&pool).await;
+    let offering = offerings::create(&pool, context.teacher_id, course_request(&context))
+        .await
+        .unwrap();
+
+    let first_group = groups::create(
+        &pool,
+        context.teacher_id,
+        offering.id,
+        CreateLearningGroupRequest {
+            code: "WORKSPACE-A".to_string(),
+            name: "กลุ่มภาพรวมหนึ่ง".to_string(),
+            description: None,
+            capacity: Some(40),
+            preferred_room_ids: Vec::new(),
+        },
+    )
+    .await
+    .unwrap();
+    let first_group = groups::replace_teachers(
+        &pool,
+        context.teacher_id,
+        first_group.id,
+        ReplaceLearningGroupTeachersRequest {
+            row_version: first_group.row_version,
+            teachers: vec![TeacherAssignmentInput {
+                teacher_id: context.teacher_id,
+                role: LearningTeacherRole::Primary,
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    let first_group = groups::replace_homerooms(
+        &pool,
+        context.teacher_id,
+        first_group.id,
+        ReplaceLearningGroupHomeroomsRequest {
+            row_version: first_group.row_version,
+            homeroom_ids: vec![context.homeroom_id],
+        },
+    )
+    .await
+    .unwrap();
+
+    let second_group = groups::create(
+        &pool,
+        context.teacher_id,
+        offering.id,
+        CreateLearningGroupRequest {
+            code: "WORKSPACE-B".to_string(),
+            name: "กลุ่มภาพรวมสอง".to_string(),
+            description: None,
+            capacity: Some(40),
+            preferred_room_ids: Vec::new(),
+        },
+    )
+    .await
+    .unwrap();
+    let second_group = groups::replace_teachers(
+        &pool,
+        context.teacher_id,
+        second_group.id,
+        ReplaceLearningGroupTeachersRequest {
+            row_version: second_group.row_version,
+            teachers: vec![TeacherAssignmentInput {
+                teacher_id: context.teacher_id,
+                role: LearningTeacherRole::Primary,
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    let published_offering = offerings::publish(
+        &pool,
+        context.teacher_id,
+        offering.id,
+        PublishLearningOfferingRequest {
+            row_version: offering.row_version,
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap();
+
+    let first_group = groups::get(&pool, first_group.id).await.unwrap();
+    let roster_preview = groups::preview_roster(&pool, first_group.id).await.unwrap();
+    let first_group = groups::apply_roster(
+        &pool,
+        context.teacher_id,
+        first_group.id,
+        ApplyRosterRequest {
+            row_version: first_group.row_version,
+            source_hash: roster_preview.source_hash,
+            overrides: Vec::new(),
+        },
+    )
+    .await
+    .unwrap();
+    groups::publish_roster(
+        &pool,
+        context.teacher_id,
+        first_group.id,
+        PublishRosterRequest {
+            row_version: first_group.row_version,
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap();
+    let second_group = groups::get(&pool, second_group.id).await.unwrap();
+    groups::replace_teachers(
+        &pool,
+        context.teacher_id,
+        second_group.id,
+        ReplaceLearningGroupTeachersRequest {
+            row_version: second_group.row_version,
+            teachers: Vec::new(),
+        },
+    )
+    .await
+    .unwrap();
+
+    let overview = workspaces::delivery_overview(
+        &pool,
+        context.term_id,
+        &AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("delivery overview should load");
+    let summary = overview
+        .offerings
+        .iter()
+        .find(|item| item.offering.id == published_offering.id)
+        .expect("created offering should appear");
+    assert_eq!(summary.grade_levels.len(), 1);
+    assert_eq!(summary.grade_levels[0].id, context.grade_level_id);
+    assert!(!summary.grade_levels[0].name.is_empty());
+    assert_eq!(summary.study_programs.len(), 1);
+    assert_eq!(summary.study_programs[0].id, context.study_program_id);
+    assert!(!summary.study_programs[0].name.is_empty());
+    assert_eq!(summary.group_count, 2);
+    assert_eq!(summary.teacher_assignment_count, 1);
+    assert_eq!(summary.groups_without_primary_teacher, 1);
+    assert_eq!(summary.published_roster_count, 1);
+
+    let outside_owner_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM organization_units WHERE is_active AND id <> $1 ORDER BY id LIMIT 1",
+    )
+    .bind(context.owner_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let outside_scope = workspaces::delivery_overview(
+        &pool,
+        context.term_id,
+        &AcademicResourceListFilter {
+            organization_unit_ids: vec![outside_owner_id],
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("organization overview should load");
+    assert!(!outside_scope
+        .offerings
+        .iter()
+        .any(|item| item.offering.id == published_offering.id));
 }
 
 #[tokio::test]
