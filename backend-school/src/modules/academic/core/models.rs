@@ -470,12 +470,21 @@ pub struct ActivityVersion {
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
+pub struct CatalogOwnerOption {
+    pub organization_unit_id: Option<Uuid>,
+    pub code: Option<String>,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct CatalogSubjectOverviewItem {
     pub subject: CatalogSubject,
     pub display_version: Option<SubjectVersion>,
     pub display_state: CatalogDisplayState,
     pub draft_count: i64,
     pub grade_levels: Vec<GradeLevelLookupItem>,
+    pub can_manage: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -483,6 +492,7 @@ pub struct CatalogSubjectOverviewItem {
 pub struct CatalogSubjectOverview {
     pub items: Vec<CatalogSubjectOverviewItem>,
     pub grade_level_options: Vec<GradeLevelLookupItem>,
+    pub owner_options: Vec<CatalogOwnerOption>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -493,6 +503,7 @@ pub struct CatalogActivityOverviewItem {
     pub display_state: CatalogDisplayState,
     pub draft_count: i64,
     pub grade_levels: Vec<GradeLevelLookupItem>,
+    pub can_manage: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -500,6 +511,7 @@ pub struct CatalogActivityOverviewItem {
 pub struct CatalogActivityOverview {
     pub items: Vec<CatalogActivityOverviewItem>,
     pub grade_level_options: Vec<GradeLevelLookupItem>,
+    pub owner_options: Vec<CatalogOwnerOption>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

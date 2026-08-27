@@ -15,6 +15,8 @@
 	import {
 		CATALOG_DISPLAY_STATE_OPTIONS,
 		SUBJECT_TYPE_OPTIONS,
+		catalogOwnerLabel,
+		catalogOwnerValue,
 		displayStateClass,
 		displayStateLabel,
 		formatEffectiveRange,
@@ -32,8 +34,6 @@
 	import * as Select from '$lib/components/ui/select';
 	import * as Sheet from '$lib/components/ui/sheet';
 	import * as Table from '$lib/components/ui/table';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
 	import { ArrowUpRight, BookOpen, Plus, Search, SlidersHorizontal } from 'lucide-svelte';
 
 	type VersionDraft = {
@@ -61,20 +61,20 @@
 	let mutationError = $state('');
 	let creating = $state(false);
 	let code = $state('');
+	let ownerValue = $state('');
 	let search = $state('');
 	let typeFilter = $state(allValue);
 	let gradeFilter = $state(allValue);
 	let stateFilter = $state<CatalogDisplayState | typeof allValue>(allValue);
+	let historyRevision = 0;
 
-	const canManage = $derived(
-		$can.hasAny(
-			PERMISSIONS.ACADEMIC_CATALOG_MANAGE_SCHOOL,
-			PERMISSIONS.ACADEMIC_CATALOG_MANAGE_ORGANIZATION_TREE,
-			PERMISSIONS.ACADEMIC_CATALOG_MANAGE_ORGANIZATION_UNIT
-		)
-	);
 	let subjectItems = $derived(overview?.items ?? []);
 	let gradeLevelOptions = $derived(overview?.gradeLevelOptions ?? []);
+	let ownerOptions = $derived(overview?.ownerOptions ?? []);
+	let canCreate = $derived(ownerOptions.length > 0);
+	let selectedOwnerOption = $derived(
+		ownerOptions.find((option) => catalogOwnerValue(option) === ownerValue)
+	);
 	let filteredSubjects = $derived.by(() =>
 		subjectItems
 			.filter((item) => {
@@ -103,6 +103,9 @@
 		try {
 			const selectedId = selected?.subject.id;
 			overview = await getCatalogSubjectOverview();
+			if (!overview.ownerOptions.some((option) => catalogOwnerValue(option) === ownerValue)) {
+				ownerValue = overview.ownerOptions[0] ? catalogOwnerValue(overview.ownerOptions[0]) : '';
+			}
 			if (selectedId) {
 				selected = overview.items.find((item) => item.subject.id === selectedId) ?? null;
 			}
@@ -114,12 +117,14 @@
 	}
 
 	async function openSubject(item: CatalogSubjectOverviewItem) {
+		const currentHistoryRevision = ++historyRevision;
 		selected = item;
 		sheetOpen = true;
 		historyError = '';
 		const cached = subjectHistoryCache.get(item.subject.id);
 		if (cached) {
 			versions = cached;
+			historyLoading = false;
 			return;
 		}
 
@@ -128,32 +133,52 @@
 		try {
 			const loaded = await listSubjectVersions(item.subject.id);
 			subjectHistoryCache.set(item.subject.id, loaded);
-			if (selected?.subject.id === item.subject.id) versions = loaded;
+			if (currentHistoryRevision !== historyRevision) return;
+			versions = loaded;
 		} catch (error) {
-			historyError = error instanceof Error ? error.message : 'โหลดประวัติรายวิชาไม่สำเร็จ';
+			if (currentHistoryRevision === historyRevision) {
+				historyError = error instanceof Error ? error.message : 'โหลดประวัติรายวิชาไม่สำเร็จ';
+			}
 		} finally {
-			historyLoading = false;
+			if (currentHistoryRevision === historyRevision) historyLoading = false;
 		}
 	}
 
 	async function reloadSelectedHistory() {
 		if (!selected) return;
+		const currentHistoryRevision = ++historyRevision;
 		const subjectId = selected.subject.id;
 		subjectHistoryCache.delete(subjectId);
-		const loaded = await listSubjectVersions(subjectId);
-		subjectHistoryCache.set(subjectId, loaded);
-		versions = loaded;
-		await loadOverview(false);
+		historyLoading = true;
+		historyError = '';
+		try {
+			const loaded = await listSubjectVersions(subjectId);
+			subjectHistoryCache.set(subjectId, loaded);
+			if (currentHistoryRevision !== historyRevision) return;
+			versions = loaded;
+			await loadOverview(false);
+		} catch (error) {
+			if (currentHistoryRevision === historyRevision) {
+				historyError = error instanceof Error ? error.message : 'โหลดประวัติรายวิชาไม่สำเร็จ';
+			}
+		} finally {
+			if (currentHistoryRevision === historyRevision) historyLoading = false;
+		}
 	}
 
 	async function addSubject(event: SubmitEvent) {
 		event.preventDefault();
+		const owner = ownerOptions.find((option) => catalogOwnerValue(option) === ownerValue);
+		if (!owner) {
+			mutationError = 'ไม่มีหน่วยงานเจ้าของที่อนุญาตให้สร้างรายวิชา';
+			return;
+		}
 		creating = true;
 		mutationError = '';
 		try {
 			const created = await createCatalogSubject({
 				code,
-				owningOrganizationUnitId: null
+				owningOrganizationUnitId: owner.organizationUnitId
 			});
 			code = '';
 			await loadOverview(false);
@@ -274,9 +299,9 @@
 					</div>
 				</div>
 
-				{#if canManage}
+				{#if canCreate}
 					<form
-						class="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-end"
+						class="grid gap-3 border-b p-4 sm:grid-cols-[minmax(180px,280px)_minmax(220px,360px)_auto] sm:items-end"
 						onsubmit={addSubject}
 					>
 						<div class="min-w-0 flex-1 sm:max-w-xs">
@@ -289,12 +314,29 @@
 								required
 							/>
 						</div>
+						<div class="min-w-0">
+							<Label for="new-subject-owner">หน่วยงานเจ้าของ</Label>
+							<Select.Root type="single" bind:value={ownerValue}>
+								<Select.Trigger id="new-subject-owner" class="mt-1.5 w-full">
+									{selectedOwnerOption
+										? catalogOwnerLabel(selectedOwnerOption)
+										: 'เลือกหน่วยงานเจ้าของ'}
+								</Select.Trigger>
+								<Select.Content>
+									{#each ownerOptions as option (catalogOwnerValue(option))}
+										<Select.Item value={catalogOwnerValue(option)}>
+											{catalogOwnerLabel(option)}
+										</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						</div>
 						<Button type="submit" disabled={creating}>
 							<Plus class="size-4" />
 							{creating ? 'กำลังเพิ่ม...' : 'เพิ่มรายวิชา'}
 						</Button>
 						{#if mutationError}
-							<p role="alert" class="text-sm text-destructive">{mutationError}</p>
+							<p role="alert" class="text-sm text-destructive sm:col-span-3">{mutationError}</p>
 						{/if}
 					</form>
 				{/if}
@@ -338,6 +380,14 @@
 											{#if item.displayVersion?.nameEn}
 												<p class="text-xs text-muted-foreground">{item.displayVersion.nameEn}</p>
 											{/if}
+											{#if item.displayVersion}
+												<p class="mt-1 text-xs text-muted-foreground">
+													{formatEffectiveRange(
+														item.displayVersion.effectiveFrom,
+														item.displayVersion.effectiveUntil
+													)}
+												</p>
+											{/if}
 										</Table.Cell>
 										<Table.Cell
 											>{optionLabel(
@@ -358,6 +408,8 @@
 												</Badge>
 												{#if item.draftCount > 0}<Badge variant="secondary"
 														>ร่าง {item.draftCount}</Badge
+													>{/if}
+												{#if item.subject.archivedAt}<Badge variant="secondary">เก็บถาวร</Badge
 													>{/if}
 											</div>
 										</Table.Cell>
@@ -406,6 +458,17 @@
 										<p class="text-xs text-muted-foreground">ระดับชั้น</p>
 										<p>{gradeLevelSummary(item.gradeLevels)}</p>
 									</div>
+									{#if item.displayVersion}
+										<div class="col-span-2">
+											<p class="text-xs text-muted-foreground">ช่วงที่มีผล</p>
+											<p>
+												{formatEffectiveRange(
+													item.displayVersion.effectiveFrom,
+													item.displayVersion.effectiveUntil
+												)}
+											</p>
+										</div>
+									{/if}
 								</div>
 								<div class="mt-3 flex flex-wrap gap-1.5">
 									<Badge variant="outline" class={displayStateClass(item.displayState)}
@@ -413,6 +476,7 @@
 									>
 									{#if item.draftCount > 0}<Badge variant="secondary">ร่าง {item.draftCount}</Badge
 										>{/if}
+									{#if item.subject.archivedAt}<Badge variant="secondary">เก็บถาวร</Badge>{/if}
 								</div>
 							</button>
 						{/each}
@@ -471,7 +535,7 @@
 					rowVersion: item.rowVersion
 				}))}
 				{gradeLevelOptions}
-				{canManage}
+				canManage={selected.canManage}
 				onCreate={addVersion}
 				onPublish={publish}
 			/>

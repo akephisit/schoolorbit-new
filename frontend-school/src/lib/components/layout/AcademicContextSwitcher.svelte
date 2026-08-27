@@ -45,6 +45,13 @@
 
 	let mobileOpen = $state(false);
 	let pendingChange = $state<PendingChange | null>(null);
+	let yearSelectValue = $derived<string | undefined>(
+		contextState.selected.academicYearId ?? undefined
+	);
+	let termSelectValue = $derived<string | undefined>(
+		contextState.selected.academicTermId ??
+			(contextState.requirement === 'term_optional' ? ALL_YEAR_VALUE : undefined)
+	);
 
 	const statusLabels: Record<ContextStatus, string> = {
 		planning: 'กำลังวางแผน',
@@ -74,12 +81,23 @@
 	}
 
 	async function applyChange(change: PendingChange): Promise<void> {
-		if (change.kind === 'year') {
-			await academicContext.selectYear(change.value);
-		} else {
-			await academicContext.selectTerm(change.value);
+		try {
+			if (change.kind === 'year') {
+				await academicContext.selectYear(change.value);
+			} else {
+				await academicContext.selectTerm(change.value);
+			}
+			if (change.closeSheet) mobileOpen = false;
+		} finally {
+			resetSelectValues();
 		}
-		if (change.closeSheet) mobileOpen = false;
+	}
+
+	function resetSelectValues(): void {
+		yearSelectValue = contextState.selected.academicYearId ?? undefined;
+		termSelectValue =
+			contextState.selected.academicTermId ??
+			(contextState.requirement === 'term_optional' ? ALL_YEAR_VALUE : undefined);
 	}
 
 	function requestChange(change: PendingChange): void {
@@ -87,6 +105,7 @@
 		if (change.kind === 'term' && change.value === contextState.selected.academicTermId) return;
 
 		if (hasAcademicContextDirtySource()) {
+			resetSelectValues();
 			pendingChange = change;
 			return;
 		}
@@ -160,7 +179,7 @@
 
 				<Select.Root
 					type="single"
-					value={contextState.selected.academicYearId ?? undefined}
+					bind:value={yearSelectValue}
 					onValueChange={(value) => handleYearChange(value)}
 				>
 					<Select.Trigger
@@ -190,8 +209,7 @@
 					<ArrowRight class="size-3.5 shrink-0 text-muted-foreground" />
 					<Select.Root
 						type="single"
-						value={contextState.selected.academicTermId ??
-							(contextState.requirement === 'term_optional' ? ALL_YEAR_VALUE : undefined)}
+						bind:value={termSelectValue}
 						onValueChange={(value) => handleTermChange(value)}
 						disabled={!contextState.selected.academicYearId}
 					>
@@ -256,7 +274,7 @@
 							<span>ปีการศึกษา</span>
 							<Select.Root
 								type="single"
-								value={contextState.selected.academicYearId ?? undefined}
+								bind:value={yearSelectValue}
 								onValueChange={(value) => handleYearChange(value)}
 							>
 								<Select.Trigger aria-label="เลือกปีการศึกษา (มือถือ)" class="w-full">
@@ -284,8 +302,7 @@
 								<span>ภาคเรียน</span>
 								<Select.Root
 									type="single"
-									value={contextState.selected.academicTermId ??
-										(contextState.requirement === 'term_optional' ? ALL_YEAR_VALUE : undefined)}
+									bind:value={termSelectValue}
 									onValueChange={(value) => handleTermChange(value, true)}
 									disabled={!contextState.selected.academicYearId}
 								>

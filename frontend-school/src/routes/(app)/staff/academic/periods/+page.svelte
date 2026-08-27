@@ -30,6 +30,7 @@
 	const academicYearId = $derived($academicContext.selected.academicYearId);
 	let schedules = $state<BellSchedule[]>([]);
 	let selectedScheduleId = $state('');
+	let scheduleSelectValue = $state('');
 	let periods = $state<PeriodDraft[]>([]);
 	let loading = $state(false);
 	let saving = $state(false);
@@ -79,6 +80,7 @@
 			schedules = rows;
 			const preferred = rows.find((schedule) => schedule.isDefault) ?? rows[0] ?? null;
 			selectedScheduleId = preferred?.id ?? '';
+			scheduleSelectValue = selectedScheduleId;
 			periods = [];
 			if (preferred) await loadPeriods(preferred.id);
 		} catch (error) {
@@ -91,18 +93,24 @@
 	}
 
 	async function selectSchedule(nextId: string): Promise<void> {
-		if (nextId === selectedScheduleId) return;
+		if (nextId === selectedScheduleId) {
+			scheduleSelectValue = selectedScheduleId;
+			return;
+		}
 		if (dirty) {
+			scheduleSelectValue = selectedScheduleId;
 			toast.warning('กรุณาบันทึกคาบที่แก้ไขก่อนเปลี่ยนตารางเวลา');
 			return;
 		}
-		selectedScheduleId = nextId;
 		loading = true;
 		try {
 			await loadPeriods(nextId);
+			selectedScheduleId = nextId;
+			scheduleSelectValue = nextId;
 		} catch (error) {
 			errorMessage = error instanceof Error ? error.message : 'โหลดคาบไม่สำเร็จ';
 		} finally {
+			scheduleSelectValue = selectedScheduleId;
 			loading = false;
 		}
 	}
@@ -217,7 +225,11 @@
 				<Card.Content class="flex flex-wrap items-center justify-between gap-4 pt-6">
 					<div class="min-w-64 space-y-2">
 						<Label for="bell-schedule">ตารางเวลา</Label>
-						<Select.Root type="single" value={selectedScheduleId} onValueChange={selectSchedule}>
+						<Select.Root
+							type="single"
+							bind:value={scheduleSelectValue}
+							onValueChange={selectSchedule}
+						>
 							<Select.Trigger id="bell-schedule" class="w-full">
 								{selectedSchedule
 									? `${selectedSchedule.code} · ${selectedSchedule.name}`

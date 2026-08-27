@@ -95,8 +95,10 @@
 	let rooms = $state<RoomLookupItem[]>([]);
 	let entries = $state<TimetableEntry[]>([]);
 	let selectedScheduleId = $state('');
+	let scheduleSelectValue = $state('');
 	let viewKind = $state<ViewKind>('learning_group');
 	let selectedTargetId = $state('');
+	let targetSelectValue = $state('');
 	let selectedEntryId = $state('');
 	let formDay = $state('MON');
 	let formPeriodId = $state('');
@@ -214,6 +216,7 @@
 			if (!request.isCurrent(revision)) return;
 			schedules = loadedSchedules;
 			selectedScheduleId = preferredSchedule?.id ?? '';
+			scheduleSelectValue = selectedScheduleId;
 			periods = loadedPeriods;
 			offerings = collections.offerings;
 			groups = collections.groups;
@@ -222,6 +225,7 @@
 			entries = loadedEntries;
 			viewKind = groups.length > 0 ? 'learning_group' : 'homeroom';
 			selectedTargetId = groups[0]?.id ?? homerooms[0]?.id ?? '';
+			targetSelectValue = selectedTargetId;
 			resetForm();
 		} catch (error) {
 			if (isAbortError(error)) return;
@@ -246,6 +250,7 @@
 
 	async function changeSchedule(nextId: string): Promise<void> {
 		if (dirty) {
+			scheduleSelectValue = selectedScheduleId;
 			toast.warning('กรุณาบันทึกหรือยกเลิกแบบร่างก่อนเปลี่ยนตารางเวลา');
 			return;
 		}
@@ -255,6 +260,7 @@
 			const loadedPeriods = await loadPeriods(nextId, signal);
 			if (!request.isCurrent(revision)) return;
 			selectedScheduleId = nextId;
+			scheduleSelectValue = nextId;
 			periods = loadedPeriods;
 			resetForm();
 		} catch (error) {
@@ -262,7 +268,10 @@
 			if (request.isCurrent(revision))
 				errorMessage = error instanceof Error ? error.message : 'โหลดคาบเรียนไม่สำเร็จ';
 		} finally {
-			if (request.isCurrent(revision)) loading = false;
+			if (request.isCurrent(revision)) {
+				scheduleSelectValue = selectedScheduleId;
+				loading = false;
+			}
 		}
 	}
 
@@ -274,15 +283,18 @@
 		viewKind = nextKind;
 		selectedTargetId =
 			nextKind === 'learning_group' ? (groups[0]?.id ?? '') : (homerooms[0]?.id ?? '');
+		targetSelectValue = selectedTargetId;
 		resetForm();
 	}
 
 	function changeTarget(nextId: string): void {
 		if (dirty) {
+			targetSelectValue = selectedTargetId;
 			toast.warning('กรุณาบันทึกหรือยกเลิกแบบร่างก่อนเปลี่ยนกลุ่ม');
 			return;
 		}
 		selectedTargetId = nextId;
+		targetSelectValue = nextId;
 		resetForm();
 	}
 
@@ -636,7 +648,11 @@
 				<Card.Content class="grid gap-4 pt-6 lg:grid-cols-[14rem_auto_minmax(16rem,1fr)]">
 					<div class="space-y-2">
 						<Label for="timetable-schedule">ตารางเวลา</Label>
-						<Select.Root type="single" value={selectedScheduleId} onValueChange={changeSchedule}>
+						<Select.Root
+							type="single"
+							bind:value={scheduleSelectValue}
+							onValueChange={changeSchedule}
+						>
 							<Select.Trigger id="timetable-schedule" class="w-full">
 								{@const schedule = schedules.find((item) => item.id === selectedScheduleId)}
 								{schedule ? `${schedule.code} · ${schedule.name}` : 'เลือกตารางเวลา'}
@@ -665,7 +681,7 @@
 						<Label for="timetable-target"
 							>{viewKind === 'learning_group' ? 'กลุ่มเรียน' : 'ห้องประจำชั้น'}</Label
 						>
-						<Select.Root type="single" value={selectedTargetId} onValueChange={changeTarget}>
+						<Select.Root type="single" bind:value={targetSelectValue} onValueChange={changeTarget}>
 							<Select.Trigger id="timetable-target" class="w-full">
 								{#if viewKind === 'learning_group'}
 									{@const group = groups.find((item) => item.id === selectedTargetId)}

@@ -9,12 +9,13 @@ use crate::policies::resource_access_policy::AcademicResourceListFilter;
 
 use super::super::models::{
     ActivityVersion, CatalogActivity, CatalogActivityOverview, CatalogActivityOverviewItem,
-    CatalogDisplayState, CatalogSubject, CatalogSubjectOverview, CatalogSubjectOverviewItem,
-    CreateActivityVersionRequest, CreateCatalogActivityRequest, CreateCatalogSubjectRequest,
-    CreateSubjectGroupRequest, CreateSubjectVersionRequest, DefaultTeacher, PublishVersionRequest,
-    ReplaceDefaultTeachersRequest, SubjectGroup, SubjectVersion, UpdateActivityVersionRequest,
-    UpdateCatalogActivityRequest, UpdateCatalogSubjectRequest, UpdateSubjectGroupRequest,
-    UpdateSubjectVersionRequest, VersionStatus,
+    CatalogDisplayState, CatalogOwnerOption, CatalogSubject, CatalogSubjectOverview,
+    CatalogSubjectOverviewItem, CreateActivityVersionRequest, CreateCatalogActivityRequest,
+    CreateCatalogSubjectRequest, CreateSubjectGroupRequest, CreateSubjectVersionRequest,
+    DefaultTeacher, PublishVersionRequest, ReplaceDefaultTeachersRequest, SubjectGroup,
+    SubjectVersion, UpdateActivityVersionRequest, UpdateCatalogActivityRequest,
+    UpdateCatalogSubjectRequest, UpdateSubjectGroupRequest, UpdateSubjectVersionRequest,
+    VersionStatus,
 };
 use super::{ensure_draft_version, parse_row_version, validate_canonical_decimal};
 
@@ -46,10 +47,11 @@ pub async fn list_subjects(
 
 pub async fn list_subject_overview(
     pool: &PgPool,
-    filter: &AcademicResourceListFilter,
+    read_filter: &AcademicResourceListFilter,
+    manage_filter: &AcademicResourceListFilter,
     today: NaiveDate,
 ) -> Result<CatalogSubjectOverview, AppError> {
-    let subjects = list_subjects(pool, filter).await?;
+    let subjects = list_subjects(pool, read_filter).await?;
     let subject_ids = subjects
         .iter()
         .map(|subject| subject.id)
@@ -65,7 +67,9 @@ pub async fn list_subject_overview(
         .fetch_all(pool)
         .await?
     };
-    let grade_level_options = list_catalog_grade_levels(pool).await?;
+    let catalog_grade_levels = list_catalog_grade_levels(pool).await?;
+    let grade_level_options = active_catalog_grade_levels(&catalog_grade_levels);
+    let owner_options = list_catalog_owner_options(pool, manage_filter).await?;
     let mut versions_by_subject = HashMap::<Uuid, Vec<SubjectVersion>>::new();
     for version in versions {
         versions_by_subject
@@ -82,14 +86,18 @@ pub async fn list_subject_overview(
                 select_subject_display(&versions, today);
             let grade_levels = display_version
                 .as_ref()
-                .map(|version| resolve_grade_levels(&version.grade_level_ids, &grade_level_options))
+                .map(|version| {
+                    resolve_grade_levels(&version.grade_level_ids, &catalog_grade_levels)
+                })
                 .unwrap_or_default();
+            let can_manage = owner_allowed(manage_filter, subject.owning_organization_unit_id);
             CatalogSubjectOverviewItem {
                 subject,
                 display_version,
                 display_state,
                 draft_count,
                 grade_levels,
+                can_manage,
             }
         })
         .collect();
@@ -97,6 +105,7 @@ pub async fn list_subject_overview(
     Ok(CatalogSubjectOverview {
         items,
         grade_level_options,
+        owner_options,
     })
 }
 
@@ -330,10 +339,11 @@ pub async fn list_activities(
 
 pub async fn list_activity_overview(
     pool: &PgPool,
-    filter: &AcademicResourceListFilter,
+    read_filter: &AcademicResourceListFilter,
+    manage_filter: &AcademicResourceListFilter,
     today: NaiveDate,
 ) -> Result<CatalogActivityOverview, AppError> {
-    let activities = list_activities(pool, filter).await?;
+    let activities = list_activities(pool, read_filter).await?;
     let activity_ids = activities
         .iter()
         .map(|activity| activity.id)
@@ -349,7 +359,9 @@ pub async fn list_activity_overview(
         .fetch_all(pool)
         .await?
     };
-    let grade_level_options = list_catalog_grade_levels(pool).await?;
+    let catalog_grade_levels = list_catalog_grade_levels(pool).await?;
+    let grade_level_options = active_catalog_grade_levels(&catalog_grade_levels);
+    let owner_options = list_catalog_owner_options(pool, manage_filter).await?;
     let mut versions_by_activity = HashMap::<Uuid, Vec<ActivityVersion>>::new();
     for version in versions {
         versions_by_activity
@@ -368,14 +380,18 @@ pub async fn list_activity_overview(
                 select_activity_display(&versions, today);
             let grade_levels = display_version
                 .as_ref()
-                .map(|version| resolve_grade_levels(&version.grade_level_ids, &grade_level_options))
+                .map(|version| {
+                    resolve_grade_levels(&version.grade_level_ids, &catalog_grade_levels)
+                })
                 .unwrap_or_default();
+            let can_manage = owner_allowed(manage_filter, activity.owning_organization_unit_id);
             CatalogActivityOverviewItem {
                 activity,
                 display_version,
                 display_state,
                 draft_count,
                 grade_levels,
+                can_manage,
             }
         })
         .collect();
@@ -383,6 +399,7 @@ pub async fn list_activity_overview(
     Ok(CatalogActivityOverview {
         items,
         grade_level_options,
+        owner_options,
     })
 }
 
@@ -743,14 +760,26 @@ struct CatalogGradeLevelRow {
     id: Uuid,
     level_type: String,
     year: i32,
+    is_active: bool,
 }
 
-async fn list_catalog_grade_levels(pool: &PgPool) -> Result<Vec<GradeLevelLookupItem>, AppError> {
+struct CatalogGradeLevel {
+    item: GradeLevelLookupItem,
+    is_active: bool,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct CatalogOwnerRow {
+    id: Uuid,
+    code: String,
+    name: String,
+}
+
+async fn list_catalog_grade_levels(pool: &PgPool) -> Result<Vec<CatalogGradeLevel>, AppError> {
     let rows = sqlx::query_as::<_, CatalogGradeLevelRow>(
         r#"
-        SELECT id, level_type, year
+        SELECT id, level_type, year, is_active
         FROM grade_levels
-        WHERE is_active = true
         ORDER BY CASE level_type
                     WHEN 'kindergarten' THEN 1
                     WHEN 'primary' THEN 2
@@ -763,7 +792,58 @@ async fn list_catalog_grade_levels(pool: &PgPool) -> Result<Vec<GradeLevelLookup
     )
     .fetch_all(pool)
     .await?;
-    Ok(rows.into_iter().map(grade_level_lookup_item).collect())
+    Ok(rows
+        .into_iter()
+        .map(|row| CatalogGradeLevel {
+            is_active: row.is_active,
+            item: grade_level_lookup_item(row),
+        })
+        .collect())
+}
+
+async fn list_catalog_owner_options(
+    pool: &PgPool,
+    filter: &AcademicResourceListFilter,
+) -> Result<Vec<CatalogOwnerOption>, AppError> {
+    let owner_ids = filter.allowed_organization_unit_ids();
+    if !filter.includes_school_owned && owner_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows = sqlx::query_as::<_, CatalogOwnerRow>(
+        r#"
+        SELECT id, code, name
+        FROM organization_units
+        WHERE is_active = true
+          AND ($1 OR id = ANY($2))
+        ORDER BY display_order, name, id
+        "#,
+    )
+    .bind(filter.includes_school_owned)
+    .bind(owner_ids)
+    .fetch_all(pool)
+    .await?;
+    let mut options = Vec::with_capacity(rows.len() + usize::from(filter.includes_school_owned));
+    if filter.includes_school_owned {
+        options.push(CatalogOwnerOption {
+            organization_unit_id: None,
+            code: None,
+            name: "ส่วนกลางของโรงเรียน".to_string(),
+        });
+    }
+    options.extend(rows.into_iter().map(|row| CatalogOwnerOption {
+        organization_unit_id: Some(row.id),
+        code: Some(row.code),
+        name: row.name,
+    }));
+    Ok(options)
+}
+
+fn active_catalog_grade_levels(options: &[CatalogGradeLevel]) -> Vec<GradeLevelLookupItem> {
+    options
+        .iter()
+        .filter(|option| option.is_active)
+        .map(|option| option.item.clone())
+        .collect()
 }
 
 fn grade_level_lookup_item(row: CatalogGradeLevelRow) -> GradeLevelLookupItem {
@@ -805,12 +885,12 @@ fn grade_level_lookup_item(row: CatalogGradeLevelRow) -> GradeLevelLookupItem {
 
 fn resolve_grade_levels(
     grade_level_ids: &[Uuid],
-    options: &[GradeLevelLookupItem],
+    options: &[CatalogGradeLevel],
 ) -> Vec<GradeLevelLookupItem> {
     options
         .iter()
-        .filter(|option| grade_level_ids.contains(&option.id))
-        .cloned()
+        .filter(|option| grade_level_ids.contains(&option.item.id))
+        .map(|option| option.item.clone())
         .collect()
 }
 

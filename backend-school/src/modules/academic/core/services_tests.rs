@@ -1568,16 +1568,13 @@ async fn catalog_overview_selects_effective_versions_without_promoting_drafts() 
     .await
     .unwrap();
 
-    let overview = catalog::list_subject_overview(
-        &pool,
-        &AcademicResourceListFilter {
-            includes_school_owned: true,
-            ..AcademicResourceListFilter::default()
-        },
-        today,
-    )
-    .await
-    .unwrap();
+    let school_filter = AcademicResourceListFilter {
+        includes_school_owned: true,
+        ..AcademicResourceListFilter::default()
+    };
+    let overview = catalog::list_subject_overview(&pool, &school_filter, &school_filter, today)
+        .await
+        .unwrap();
 
     let current_item = overview
         .items
@@ -1590,6 +1587,7 @@ async fn catalog_overview_selects_effective_versions_without_promoting_drafts() 
         "รุ่นที่ใช้อยู่"
     );
     assert_eq!(current_item.draft_count, 1);
+    assert!(current_item.can_manage);
     assert_eq!(current_item.grade_levels[0].id, grade_level_id);
     assert!(!current_item.grade_levels[0].name.is_empty());
 
@@ -1623,6 +1621,30 @@ async fn catalog_overview_selects_effective_versions_without_promoting_drafts() 
         .grade_level_options
         .iter()
         .any(|level| level.id == grade_level_id && level.short_name.is_some()));
+    assert!(overview
+        .owner_options
+        .iter()
+        .any(|owner| owner.organization_unit_id.is_none()));
+
+    sqlx::query("UPDATE grade_levels SET is_active = false WHERE id = $1")
+        .bind(grade_level_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let overview_after_grade_archive =
+        catalog::list_subject_overview(&pool, &school_filter, &school_filter, today)
+            .await
+            .unwrap();
+    let archived_grade_item = overview_after_grade_archive
+        .items
+        .iter()
+        .find(|item| item.subject.id == current.id)
+        .unwrap();
+    assert_eq!(archived_grade_item.grade_levels[0].id, grade_level_id);
+    assert!(!overview_after_grade_archive
+        .grade_level_options
+        .iter()
+        .any(|level| level.id == grade_level_id));
 }
 
 #[tokio::test]
@@ -1676,51 +1698,66 @@ async fn catalog_overview_keeps_activity_owner_scope_and_grade_options() {
     .await
     .unwrap();
 
-    let no_access =
-        catalog::list_activity_overview(&pool, &AcademicResourceListFilter::default(), today)
-            .await
-            .unwrap();
+    let no_access = catalog::list_activity_overview(
+        &pool,
+        &AcademicResourceListFilter::default(),
+        &AcademicResourceListFilter::default(),
+        today,
+    )
+    .await
+    .unwrap();
     assert!(!no_access
         .items
         .iter()
         .any(|item| item.activity.id == activity.id));
 
+    let school_read_filter = AcademicResourceListFilter {
+        includes_school_owned: true,
+        ..AcademicResourceListFilter::default()
+    };
     let school_scope = catalog::list_activity_overview(
         &pool,
-        &AcademicResourceListFilter {
-            includes_school_owned: true,
-            ..AcademicResourceListFilter::default()
-        },
+        &school_read_filter,
+        &AcademicResourceListFilter::default(),
         today,
     )
     .await
     .unwrap();
-    assert!(school_scope
+    let school_read_item = school_scope
         .items
         .iter()
-        .any(|item| item.activity.id == activity.id));
+        .find(|item| item.activity.id == activity.id)
+        .unwrap();
+    assert!(!school_read_item.can_manage);
+    assert!(school_scope.owner_options.is_empty());
 
-    let owner_scope = catalog::list_activity_overview(
-        &pool,
-        &AcademicResourceListFilter {
-            organization_unit_ids: vec![owner_id],
-            ..AcademicResourceListFilter::default()
-        },
-        today,
-    )
-    .await
-    .unwrap();
+    let owner_filter = AcademicResourceListFilter {
+        organization_unit_ids: vec![owner_id],
+        ..AcademicResourceListFilter::default()
+    };
+    let owner_scope = catalog::list_activity_overview(&pool, &owner_filter, &owner_filter, today)
+        .await
+        .unwrap();
     let item = owner_scope
         .items
         .iter()
         .find(|item| item.activity.id == activity.id)
         .unwrap();
     assert_eq!(item.display_state, CatalogDisplayState::Current);
+    assert!(item.can_manage);
     assert_eq!(item.grade_levels[0].id, grade_level_id);
     assert!(owner_scope
         .grade_level_options
         .iter()
         .any(|level| level.id == grade_level_id));
+    assert!(owner_scope
+        .owner_options
+        .iter()
+        .any(|owner| { owner.organization_unit_id == Some(owner_id) && owner.code.is_some() }));
+    assert!(!owner_scope
+        .owner_options
+        .iter()
+        .any(|owner| owner.organization_unit_id.is_none()));
 }
 
 #[tokio::test]

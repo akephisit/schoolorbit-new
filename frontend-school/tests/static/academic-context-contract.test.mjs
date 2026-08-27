@@ -257,6 +257,9 @@ test('route discovery, layout initialization, and responsive topbar remain expli
 	assert.match(switcher, /<Select\.Root/);
 	assert.match(switcher, /<Sheet\.Root/);
 	assert.match(switcher, /<AlertDialog\.Root/);
+	assert.match(switcher, /bind:value=\{yearSelectValue\}/);
+	assert.match(switcher, /bind:value=\{termSelectValue\}/);
+	assert.match(switcher, /resetSelectValues\(\)/);
 	assert.match(switcher, /ทั้งปี/);
 	assert.match(switcher, /ปีการศึกษา/);
 	assert.match(switcher, /ภาคเรียน/);

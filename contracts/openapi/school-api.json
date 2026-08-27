@@ -1760,11 +1760,18 @@
                   "$ref": "#/components/schemas/CatalogActivityOverviewItem"
                 },
                 "type": "array"
+              },
+              "ownerOptions": {
+                "items": {
+                  "$ref": "#/components/schemas/CatalogOwnerOption"
+                },
+                "type": "array"
               }
             },
             "required": [
               "items",
-              "gradeLevelOptions"
+              "gradeLevelOptions",
+              "ownerOptions"
             ],
             "type": "object"
           },
@@ -1856,11 +1863,18 @@
                   "$ref": "#/components/schemas/CatalogSubjectOverviewItem"
                 },
                 "type": "array"
+              },
+              "ownerOptions": {
+                "items": {
+                  "$ref": "#/components/schemas/CatalogOwnerOption"
+                },
+                "type": "array"
               }
             },
             "required": [
               "items",
-              "gradeLevelOptions"
+              "gradeLevelOptions",
+              "ownerOptions"
             ],
             "type": "object"
           },
@@ -15471,11 +15485,18 @@
               "$ref": "#/components/schemas/CatalogActivityOverviewItem"
             },
             "type": "array"
+          },
+          "ownerOptions": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogOwnerOption"
+            },
+            "type": "array"
           }
         },
         "required": [
           "items",
-          "gradeLevelOptions"
+          "gradeLevelOptions",
+          "ownerOptions"
         ],
         "type": "object"
       },
@@ -15483,6 +15504,9 @@
         "properties": {
           "activity": {
             "$ref": "#/components/schemas/CatalogActivity"
+          },
+          "canManage": {
+            "type": "boolean"
           },
           "displayState": {
             "$ref": "#/components/schemas/CatalogDisplayState"
@@ -15512,7 +15536,8 @@
           "activity",
           "displayState",
           "draftCount",
-          "gradeLevels"
+          "gradeLevels",
+          "canManage"
         ],
         "type": "object"
       },
@@ -15524,6 +15549,30 @@
           "unpublished"
         ],
         "type": "string"
+      },
+      "CatalogOwnerOption": {
+        "properties": {
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "organizationUnitId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
       },
       "CatalogSubject": {
         "properties": {
@@ -15583,16 +15632,26 @@
               "$ref": "#/components/schemas/CatalogSubjectOverviewItem"
             },
             "type": "array"
+          },
+          "ownerOptions": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogOwnerOption"
+            },
+            "type": "array"
           }
         },
         "required": [
           "items",
-          "gradeLevelOptions"
+          "gradeLevelOptions",
+          "ownerOptions"
         ],
         "type": "object"
       },
       "CatalogSubjectOverviewItem": {
         "properties": {
+          "canManage": {
+            "type": "boolean"
+          },
           "displayState": {
             "$ref": "#/components/schemas/CatalogDisplayState"
           },
@@ -15624,7 +15683,8 @@
           "subject",
           "displayState",
           "draftCount",
-          "gradeLevels"
+          "gradeLevels",
+          "canManage"
         ],
         "type": "object"
       },

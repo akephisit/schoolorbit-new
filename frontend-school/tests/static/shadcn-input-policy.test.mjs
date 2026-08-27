@@ -37,6 +37,9 @@ test('calendar captions use shadcn Select while preserving the placeholder contr
 	assert.match(caption, /\* as Select/);
 	assert.match(caption, /placeholder\s*=\s*\$bindable/);
 	assert.match(calendar, /bind:placeholder/);
+	assert.match(caption, /month\.set\(\{ month:/);
+	assert.match(caption, /month\.set\(\{ year:/);
+	assert.doesNotMatch(caption, /placeholder\.set\(/);
 	assert.doesNotMatch(caption, /CalendarMonthSelect|CalendarYearSelect/);
 });
 
@@ -50,4 +53,22 @@ test('DatePicker exposes accessible migration props and safe clear behavior', as
 		assert.match(datePicker, new RegExp(`\\b${prop}\\b`));
 	}
 	assert.match(datePicker, /clearable\s*&&\s*value\s*&&\s*!disabled/);
+});
+
+test('dirty academic editors restore controlled shadcn Select values', async () => {
+	const periods = await readFile(
+		path.join(frontendRoot, 'src/routes/(app)/staff/academic/periods/+page.svelte'),
+		'utf8'
+	);
+	const timetable = await readFile(
+		path.join(frontendRoot, 'src/routes/(app)/staff/academic/timetable/+page.svelte'),
+		'utf8'
+	);
+
+	assert.match(periods, /bind:value=\{scheduleSelectValue\}/);
+	assert.match(periods, /scheduleSelectValue = selectedScheduleId/);
+	assert.match(timetable, /bind:value=\{scheduleSelectValue\}/);
+	assert.match(timetable, /bind:value=\{targetSelectValue\}/);
+	assert.match(timetable, /scheduleSelectValue = selectedScheduleId/);
+	assert.match(timetable, /targetSelectValue = selectedTargetId/);
 });

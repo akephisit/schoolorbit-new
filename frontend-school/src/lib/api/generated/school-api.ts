@@ -4599,6 +4599,7 @@ export interface components {
 			data: {
 				gradeLevelOptions: components['schemas']['GradeLevelLookupItem'][];
 				items: components['schemas']['CatalogActivityOverviewItem'][];
+				ownerOptions: components['schemas']['CatalogOwnerOption'][];
 			};
 			message?: string;
 			success: boolean;
@@ -4626,6 +4627,7 @@ export interface components {
 			data: {
 				gradeLevelOptions: components['schemas']['GradeLevelLookupItem'][];
 				items: components['schemas']['CatalogSubjectOverviewItem'][];
+				ownerOptions: components['schemas']['CatalogOwnerOption'][];
 			};
 			message?: string;
 			success: boolean;
@@ -8313,9 +8315,11 @@ export interface components {
 		CatalogActivityOverview: {
 			gradeLevelOptions: components['schemas']['GradeLevelLookupItem'][];
 			items: components['schemas']['CatalogActivityOverviewItem'][];
+			ownerOptions: components['schemas']['CatalogOwnerOption'][];
 		};
 		CatalogActivityOverviewItem: {
 			activity: components['schemas']['CatalogActivity'];
+			canManage: boolean;
 			displayState: components['schemas']['CatalogDisplayState'];
 			displayVersion?: null | components['schemas']['ActivityVersion'];
 			/** Format: int64 */
@@ -8324,6 +8328,12 @@ export interface components {
 		};
 		/** @enum {string} */
 		CatalogDisplayState: 'current' | 'upcoming' | 'expired' | 'unpublished';
+		CatalogOwnerOption: {
+			code?: string | null;
+			name: string;
+			/** Format: uuid */
+			organizationUnitId?: string | null;
+		};
 		CatalogSubject: {
 			/** Format: date-time */
 			archivedAt?: string | null;
@@ -8342,8 +8352,10 @@ export interface components {
 		CatalogSubjectOverview: {
 			gradeLevelOptions: components['schemas']['GradeLevelLookupItem'][];
 			items: components['schemas']['CatalogSubjectOverviewItem'][];
+			ownerOptions: components['schemas']['CatalogOwnerOption'][];
 		};
 		CatalogSubjectOverviewItem: {
+			canManage: boolean;
 			displayState: components['schemas']['CatalogDisplayState'];
 			displayVersion?: null | components['schemas']['SubjectVersion'];
 			/** Format: int64 */

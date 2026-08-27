@@ -23,6 +23,7 @@ export type CatalogActivity = Schemas['CatalogActivity'];
 export type CatalogActivityOverview = Schemas['CatalogActivityOverview'];
 export type CatalogActivityOverviewItem = Schemas['CatalogActivityOverviewItem'];
 export type CatalogDisplayState = Schemas['CatalogDisplayState'];
+export type CatalogOwnerOption = Schemas['CatalogOwnerOption'];
 export type ActivityVersion = Schemas['ActivityVersion'];
 export type Curriculum = Schemas['Curriculum'];
 export type CurriculumVersion = Schemas['CurriculumVersion'];

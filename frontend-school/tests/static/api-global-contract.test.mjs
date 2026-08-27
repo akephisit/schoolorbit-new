@@ -1023,12 +1023,6 @@ test('academic structure workspace pages gate read and mutation actions', async 
 test('academic catalog and curriculum workspaces gate mutation actions', async () => {
 	const routeExpectations = [
 		{
-			file: 'frontend-school/src/routes/(app)/staff/academic/catalog/subjects/+page.svelte',
-			imports: ['$lib/components/app-state'],
-			permissions: ['PERMISSIONS.ACADEMIC_CATALOG_MANAGE_SCHOOL'],
-			identifiers: ['canManage']
-		},
-		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/catalog/subject-groups/+page.svelte',
 			imports: ['$lib/components/app-state'],
 			permissions: ['PERMISSIONS.ACADEMIC_CATALOG_MANAGE_SCHOOL'],
@@ -1057,6 +1051,17 @@ test('academic catalog and curriculum workspaces gate mutation actions', async (
 		for (const identifier of expectation.identifiers) {
 			assert.match(source, new RegExp(`\\b${identifier}\\b`));
 		}
+	}
+
+	for (const file of [
+		'frontend-school/src/routes/(app)/staff/academic/catalog/subjects/+page.svelte',
+		'frontend-school/src/routes/(app)/staff/academic/catalog/activities/+page.svelte'
+	]) {
+		const source = stripComments(await readFile(path.join(repoRoot, file), 'utf8'));
+		assert.match(source, /ownerOptions/);
+		assert.match(source, /canCreate/);
+		assert.match(source, /selected\.canManage/);
+		assert.doesNotMatch(source, /PERMISSIONS\.ACADEMIC_CATALOG_MANAGE_/);
 	}
 });
 

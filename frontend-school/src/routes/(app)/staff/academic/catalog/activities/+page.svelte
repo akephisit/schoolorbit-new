@@ -16,6 +16,8 @@
 		ACTIVITY_TYPE_OPTIONS,
 		CATALOG_DISPLAY_STATE_OPTIONS,
 		SCHEDULING_MODE_OPTIONS,
+		catalogOwnerLabel,
+		catalogOwnerValue,
 		displayStateClass,
 		displayStateLabel,
 		formatEffectiveRange,
@@ -33,8 +35,6 @@
 	import * as Select from '$lib/components/ui/select';
 	import * as Sheet from '$lib/components/ui/sheet';
 	import * as Table from '$lib/components/ui/table';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
 	import { ArrowUpRight, Plus, Search, SlidersHorizontal, Sparkles } from 'lucide-svelte';
 
 	type VersionDraft = {
@@ -62,22 +62,22 @@
 	let mutationError = $state('');
 	let creating = $state(false);
 	let code = $state('');
+	let ownerValue = $state('');
 	let activityType = $state(ACTIVITY_TYPE_OPTIONS[0].value);
 	let search = $state('');
 	let typeFilter = $state(allValue);
 	let schedulingFilter = $state(allValue);
 	let gradeFilter = $state(allValue);
 	let stateFilter = $state<CatalogDisplayState | typeof allValue>(allValue);
+	let historyRevision = 0;
 
-	const canManage = $derived(
-		$can.hasAny(
-			PERMISSIONS.ACADEMIC_CATALOG_MANAGE_SCHOOL,
-			PERMISSIONS.ACADEMIC_CATALOG_MANAGE_ORGANIZATION_TREE,
-			PERMISSIONS.ACADEMIC_CATALOG_MANAGE_ORGANIZATION_UNIT
-		)
-	);
 	let activityItems = $derived(overview?.items ?? []);
 	let gradeLevelOptions = $derived(overview?.gradeLevelOptions ?? []);
+	let ownerOptions = $derived(overview?.ownerOptions ?? []);
+	let canCreate = $derived(ownerOptions.length > 0);
+	let selectedOwnerOption = $derived(
+		ownerOptions.find((option) => catalogOwnerValue(option) === ownerValue)
+	);
 	let activityTypeOptions = $derived.by(() => {
 		const known = new Set<string>(ACTIVITY_TYPE_OPTIONS.map((option) => option.value));
 		const legacy = activityItems
@@ -112,6 +112,9 @@
 		try {
 			const selectedId = selected?.activity.id;
 			overview = await getCatalogActivityOverview();
+			if (!overview.ownerOptions.some((option) => catalogOwnerValue(option) === ownerValue)) {
+				ownerValue = overview.ownerOptions[0] ? catalogOwnerValue(overview.ownerOptions[0]) : '';
+			}
 			if (selectedId) {
 				selected = overview.items.find((item) => item.activity.id === selectedId) ?? null;
 			}
@@ -123,12 +126,14 @@
 	}
 
 	async function openActivity(item: CatalogActivityOverviewItem) {
+		const currentHistoryRevision = ++historyRevision;
 		selected = item;
 		sheetOpen = true;
 		historyError = '';
 		const cached = activityHistoryCache.get(item.activity.id);
 		if (cached) {
 			versions = cached;
+			historyLoading = false;
 			return;
 		}
 
@@ -137,33 +142,53 @@
 		try {
 			const loaded = await listActivityVersions(item.activity.id);
 			activityHistoryCache.set(item.activity.id, loaded);
-			if (selected?.activity.id === item.activity.id) versions = loaded;
+			if (currentHistoryRevision !== historyRevision) return;
+			versions = loaded;
 		} catch (error) {
-			historyError = error instanceof Error ? error.message : 'โหลดประวัติกิจกรรมไม่สำเร็จ';
+			if (currentHistoryRevision === historyRevision) {
+				historyError = error instanceof Error ? error.message : 'โหลดประวัติกิจกรรมไม่สำเร็จ';
+			}
 		} finally {
-			historyLoading = false;
+			if (currentHistoryRevision === historyRevision) historyLoading = false;
 		}
 	}
 
 	async function reloadSelectedHistory() {
 		if (!selected) return;
+		const currentHistoryRevision = ++historyRevision;
 		const activityId = selected.activity.id;
 		activityHistoryCache.delete(activityId);
-		const loaded = await listActivityVersions(activityId);
-		activityHistoryCache.set(activityId, loaded);
-		versions = loaded;
-		await loadOverview(false);
+		historyLoading = true;
+		historyError = '';
+		try {
+			const loaded = await listActivityVersions(activityId);
+			activityHistoryCache.set(activityId, loaded);
+			if (currentHistoryRevision !== historyRevision) return;
+			versions = loaded;
+			await loadOverview(false);
+		} catch (error) {
+			if (currentHistoryRevision === historyRevision) {
+				historyError = error instanceof Error ? error.message : 'โหลดประวัติกิจกรรมไม่สำเร็จ';
+			}
+		} finally {
+			if (currentHistoryRevision === historyRevision) historyLoading = false;
+		}
 	}
 
 	async function addActivity(event: SubmitEvent) {
 		event.preventDefault();
+		const owner = ownerOptions.find((option) => catalogOwnerValue(option) === ownerValue);
+		if (!owner) {
+			mutationError = 'ไม่มีหน่วยงานเจ้าของที่อนุญาตให้สร้างกิจกรรม';
+			return;
+		}
 		creating = true;
 		mutationError = '';
 		try {
 			const created = await createCatalogActivity({
 				code,
 				activityType,
-				owningOrganizationUnitId: null
+				owningOrganizationUnitId: owner.organizationUnitId
 			});
 			code = '';
 			await loadOverview(false);
@@ -291,9 +316,9 @@
 					</div>
 				</div>
 
-				{#if canManage}
+				{#if canCreate}
 					<form
-						class="grid gap-3 border-b p-4 sm:grid-cols-[minmax(180px,280px)_minmax(220px,360px)_auto] sm:items-end"
+						class="grid gap-3 border-b p-4 sm:grid-cols-2 sm:items-end xl:grid-cols-[minmax(160px,240px)_minmax(200px,300px)_minmax(220px,360px)_auto]"
 						onsubmit={addActivity}
 					>
 						<div>
@@ -305,6 +330,23 @@
 								placeholder="เช่น GUIDE-M1"
 								required
 							/>
+						</div>
+						<div class="min-w-0">
+							<Label for="new-activity-owner">หน่วยงานเจ้าของ</Label>
+							<Select.Root type="single" bind:value={ownerValue}>
+								<Select.Trigger id="new-activity-owner" class="mt-1.5 w-full">
+									{selectedOwnerOption
+										? catalogOwnerLabel(selectedOwnerOption)
+										: 'เลือกหน่วยงานเจ้าของ'}
+								</Select.Trigger>
+								<Select.Content>
+									{#each ownerOptions as option (catalogOwnerValue(option))}
+										<Select.Item value={catalogOwnerValue(option)}>
+											{catalogOwnerLabel(option)}
+										</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
 						</div>
 						<div>
 							<Label for="new-activity-type">ประเภทกิจกรรม</Label>
@@ -324,7 +366,9 @@
 							{creating ? 'กำลังเพิ่ม...' : 'เพิ่มกิจกรรม'}
 						</Button>
 						{#if mutationError}
-							<p role="alert" class="text-sm text-destructive sm:col-span-3">{mutationError}</p>
+							<p role="alert" class="text-sm text-destructive sm:col-span-2 xl:col-span-4">
+								{mutationError}
+							</p>
 						{/if}
 					</form>
 				{/if}
@@ -371,6 +415,14 @@
 												>
 													{item.displayVersion.description}
 												</p>{/if}
+											{#if item.displayVersion}
+												<p class="mt-1 text-xs text-muted-foreground">
+													{formatEffectiveRange(
+														item.displayVersion.effectiveFrom,
+														item.displayVersion.effectiveUntil
+													)}
+												</p>
+											{/if}
 										</Table.Cell>
 										<Table.Cell class="whitespace-normal"
 											>{optionLabel(activityTypeOptions, item.activity.activityType)}</Table.Cell
@@ -394,6 +446,8 @@
 												>
 												{#if item.draftCount > 0}<Badge variant="secondary"
 														>ร่าง {item.draftCount}</Badge
+													>{/if}
+												{#if item.activity.archivedAt}<Badge variant="secondary">เก็บถาวร</Badge
 													>{/if}
 											</div>
 										</Table.Cell>
@@ -446,12 +500,24 @@
 										<p class="text-xs text-muted-foreground">ระดับชั้น</p>
 										<p>{gradeLevelSummary(item.gradeLevels)}</p>
 									</div>
+									{#if item.displayVersion}
+										<div class="col-span-2">
+											<p class="text-xs text-muted-foreground">ช่วงที่มีผล</p>
+											<p>
+												{formatEffectiveRange(
+													item.displayVersion.effectiveFrom,
+													item.displayVersion.effectiveUntil
+												)}
+											</p>
+										</div>
+									{/if}
 								</div>
 								<div class="mt-3 flex flex-wrap gap-1.5">
 									<Badge variant="outline" class={displayStateClass(item.displayState)}
 										>{displayStateLabel(item.displayState)}</Badge
 									>{#if item.draftCount > 0}<Badge variant="secondary">ร่าง {item.draftCount}</Badge
 										>{/if}
+									{#if item.activity.archivedAt}<Badge variant="secondary">เก็บถาวร</Badge>{/if}
 								</div>
 							</button>
 						{/each}
@@ -506,7 +572,7 @@
 					rowVersion: item.rowVersion
 				}))}
 				{gradeLevelOptions}
-				{canManage}
+				canManage={selected.canManage}
 				onCreate={addVersion}
 				onPublish={publish}
 			/>

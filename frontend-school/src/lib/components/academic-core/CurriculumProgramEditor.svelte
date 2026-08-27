@@ -45,6 +45,8 @@
 	let busy = $state(false);
 	let errorMessage = $state('');
 	let requirementProgramId = $state('');
+	let requirementProgramError = $state('');
+	let requirementProgramTrigger = $state<HTMLButtonElement | null>(null);
 	let requirementDraft = $state({
 		catalogVersionId: '',
 		gradeLevelId: '',
@@ -84,7 +86,12 @@
 	async function addRequirement(event: SubmitEvent) {
 		event.preventDefault();
 		const program = programs.find((item) => item.id === requirementProgramId);
-		if (!program) return;
+		if (!program) {
+			requirementProgramError = 'กรุณาเลือกแผนการเรียนก่อนเพิ่มข้อกำหนด';
+			requestAnimationFrame(() => requirementProgramTrigger?.focus());
+			return;
+		}
+		requirementProgramError = '';
 		busy = true;
 		errorMessage = '';
 		try {
@@ -197,8 +204,19 @@
 					<h3 class="font-medium">เพิ่มข้อกำหนด</h3>
 					<label class="space-y-1.5 text-sm">
 						<span class="font-medium">แผนการเรียน</span>
-						<Select.Root type="single" bind:value={requirementProgramId}>
-							<Select.Trigger class="w-full">
+						<Select.Root
+							type="single"
+							bind:value={requirementProgramId}
+							onValueChange={() => (requirementProgramError = '')}
+						>
+							<Select.Trigger
+								bind:ref={requirementProgramTrigger}
+								class="w-full"
+								aria-invalid={requirementProgramError ? true : undefined}
+								aria-describedby={requirementProgramError
+									? `requirement-program-error-${version.id}`
+									: undefined}
+							>
 								{programs.find((program) => program.id === requirementProgramId)?.nameTh ??
 									'เลือกแผน'}
 							</Select.Trigger>
@@ -208,6 +226,15 @@
 								{/each}
 							</Select.Content>
 						</Select.Root>
+						{#if requirementProgramError}
+							<span
+								id={`requirement-program-error-${version.id}`}
+								role="alert"
+								class="block text-xs text-destructive"
+							>
+								{requirementProgramError}
+							</span>
+						{/if}
 					</label>
 					<div class="grid grid-cols-2 gap-3">
 						<label class="space-y-1.5 text-sm">

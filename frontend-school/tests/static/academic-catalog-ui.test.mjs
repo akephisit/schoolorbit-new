@@ -51,6 +51,11 @@ test('subject catalog uses the responsive overview information architecture', as
 	assert.match(subjects, /\* as Sheet/);
 	assert.match(subjects, /\* as Select/);
 	assert.match(subjects, /subjectHistoryCache/);
+	assert.match(subjects, /historyRevision/);
+	assert.match(subjects, /ownerOptions/);
+	assert.match(subjects, /canManage=\{selected\.canManage\}/);
+	assert.match(subjects, /formatEffectiveRange/);
+	assert.match(subjects, /subject\.archivedAt/);
 	assert.match(subjects, /md:hidden/);
 	assert.match(subjects, /hidden md:block/);
 	for (const label of ['ชื่อรายวิชา', 'ประเภท', 'ระดับชั้น', 'หน่วยกิต', 'สถานะ']) {
@@ -68,6 +73,11 @@ test('activity catalog uses the responsive overview information architecture', a
 	assert.match(activities, /\* as Sheet/);
 	assert.match(activities, /\* as Select/);
 	assert.match(activities, /activityHistoryCache/);
+	assert.match(activities, /historyRevision/);
+	assert.match(activities, /ownerOptions/);
+	assert.match(activities, /canManage=\{selected\.canManage\}/);
+	assert.match(activities, /formatEffectiveRange/);
+	assert.match(activities, /activity\.archivedAt/);
 	assert.match(activities, /ACTIVITY_TYPE_OPTIONS/);
 	assert.match(activities, /SCHEDULING_MODE_OPTIONS/);
 	for (const label of [
@@ -80,4 +90,15 @@ test('activity catalog uses the responsive overview information architecture', a
 	]) {
 		assert.match(activities, new RegExp(label));
 	}
+});
+
+test('curriculum requirement form reports and focuses a missing program selection', async () => {
+	const editor = await readSource(
+		'src/lib/components/academic-core/CurriculumProgramEditor.svelte'
+	);
+
+	assert.match(editor, /requirementProgramError/);
+	assert.match(editor, /requirementProgramTrigger\?\.focus/);
+	assert.match(editor, /role="alert"/);
+	assert.match(editor, /aria-invalid/);
 });

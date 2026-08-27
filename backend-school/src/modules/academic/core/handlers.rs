@@ -756,16 +756,26 @@ pub async fn get_catalog_subject_overview(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    let filter = academic_catalog_access_policy::require_academic_catalog_list_access(
+    let read_filter = academic_catalog_access_policy::require_academic_catalog_list_access(
         &pool,
         &actor,
         CatalogAction::Read,
     )
     .await?;
+    let manage_filter = academic_catalog_access_policy::academic_catalog_list_access(
+        &pool,
+        &actor,
+        CatalogAction::Manage,
+    )
+    .await?;
     let today = Utc::now().with_timezone(&SCHOOL_TIMEZONE).date_naive();
-    Ok(ok(
-        catalog::list_subject_overview(&pool, &filter, today).await?
-    ))
+    Ok(ok(catalog::list_subject_overview(
+        &pool,
+        &read_filter,
+        &manage_filter,
+        today,
+    )
+    .await?))
 }
 
 #[utoipa::path(
@@ -1398,16 +1408,26 @@ pub async fn get_catalog_activity_overview(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    let filter = academic_catalog_access_policy::require_academic_catalog_list_access(
+    let read_filter = academic_catalog_access_policy::require_academic_catalog_list_access(
         &pool,
         &actor,
         CatalogAction::Read,
     )
     .await?;
+    let manage_filter = academic_catalog_access_policy::academic_catalog_list_access(
+        &pool,
+        &actor,
+        CatalogAction::Manage,
+    )
+    .await?;
     let today = Utc::now().with_timezone(&SCHOOL_TIMEZONE).date_naive();
-    Ok(ok(
-        catalog::list_activity_overview(&pool, &filter, today).await?
-    ))
+    Ok(ok(catalog::list_activity_overview(
+        &pool,
+        &read_filter,
+        &manage_filter,
+        today,
+    )
+    .await?))
 }
 
 #[utoipa::path(

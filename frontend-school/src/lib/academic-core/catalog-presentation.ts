@@ -1,4 +1,8 @@
-import type { CatalogDisplayState, GradeLevelOption } from '$lib/api/academic-core';
+import type {
+	CatalogDisplayState,
+	CatalogOwnerOption,
+	GradeLevelOption
+} from '$lib/api/academic-core';
 
 export type CatalogChoice = Readonly<{
 	value: string;
@@ -23,6 +27,8 @@ export const SCHEDULING_MODE_OPTIONS = [
 	{ value: 'synchronized', label: 'จัดพร้อมกัน' },
 	{ value: 'independent', label: 'จัดแยกเวลาได้' }
 ] as const satisfies readonly CatalogChoice[];
+
+export const SCHOOL_CATALOG_OWNER_VALUE = '__school_catalog_owner__';
 
 export const CATALOG_DISPLAY_STATE_OPTIONS = [
 	{ value: 'current', label: 'ใช้อยู่ปัจจุบัน' },
@@ -72,6 +78,14 @@ export function gradeLevelLabel(option: GradeLevelOption): string {
 export function gradeLevelSummary(options: readonly GradeLevelOption[]): string {
 	if (options.length === 0) return 'ทุกระดับชั้น';
 	return options.map(gradeLevelLabel).join(', ');
+}
+
+export function catalogOwnerValue(option: CatalogOwnerOption): string {
+	return option.organizationUnitId ?? SCHOOL_CATALOG_OWNER_VALUE;
+}
+
+export function catalogOwnerLabel(option: CatalogOwnerOption): string {
+	return option.code ? `${option.code} · ${option.name}` : option.name;
 }
 
 export function formatThaiDate(value: string | null | undefined): string {

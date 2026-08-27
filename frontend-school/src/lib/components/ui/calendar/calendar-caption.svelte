@@ -73,12 +73,12 @@
 
 	function selectMonth(value: string) {
 		if (!placeholder) return;
-		placeholder = placeholder.set({ month: Number(value) }).subtract({ months: monthIndex });
+		placeholder = month.set({ month: Number(value) }).subtract({ months: monthIndex });
 	}
 
 	function selectYear(value: string) {
 		if (!placeholder) return;
-		placeholder = placeholder.set({ year: Number(value) }).subtract({ months: monthIndex });
+		placeholder = month.set({ year: Number(value) }).subtract({ months: monthIndex });
 	}
 </script>
 
