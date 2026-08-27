@@ -34,3 +34,26 @@ test('academic menu template publishes generated preview and apply contracts', a
 	assert.match(api, /applyRecommendedAcademicMenuTemplate/);
 	assert.doesNotMatch(api, /ApiResponse<unknown>|Record<string, unknown>|\sas\sAcademicMenuTemplate/);
 });
+
+test('menu administration previews the recommended structure before explicit apply', async () => {
+	const page = await readProjectFile('src/routes/(app)/staff/menu/+page.svelte');
+	const dialog = await readProjectFile(
+		'src/lib/components/menu/AcademicMenuTemplateDialog.svelte'
+	);
+
+	assert.match(page, /PERMISSIONS\.MENU_READ_ALL/);
+	assert.match(page, /PERMISSIONS\.MENU_UPDATE_ALL/);
+	assert.match(page, /AcademicMenuTemplateDialog/);
+	assert.match(page, /canApply=\{canUpdateMenu\}/);
+	assert.match(dialog, /ใช้โครงสร้างงานวิชาการแนะนำ/);
+	assert.match(dialog, /previewRecommendedAcademicMenuTemplate/);
+	assert.match(dialog, /applyRecommendedAcademicMenuTemplate/);
+	assert.match(dialog, /preview\.revision/);
+	assert.match(dialog, /sections_to_create|sectionsToCreate/);
+	assert.match(dialog, /untouched_custom_item_count|untouchedCustomItemCount/);
+	assert.match(
+		dialog,
+		/if \(error instanceof ApiClientError && error\.status === 409\)[\s\S]*await loadPreview\(\);[\s\S]*errorMessage = 'ข้อมูลเมนูเปลี่ยนแล้ว กรุณาตรวจสอบรายการอีกครั้ง'/
+	);
+	assert.doesNotMatch(dialog, /onMount/);
+});

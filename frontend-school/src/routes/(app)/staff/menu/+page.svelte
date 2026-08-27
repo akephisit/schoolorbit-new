@@ -15,6 +15,7 @@
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import GroupManagementDialog from '$lib/components/menu/GroupManagementDialog.svelte';
+	import AcademicMenuTemplateDialog from '$lib/components/menu/AcademicMenuTemplateDialog.svelte';
 	import MenuGroupContainer from '$lib/components/menu/MenuGroupContainer.svelte';
 	import MenuItemManagementDialog from '$lib/components/menu/MenuItemManagementDialog.svelte';
 	import SortableItem from '$lib/components/menu/SortableItem.svelte';
@@ -53,6 +54,7 @@
 	let editingWorkspace = $state<MenuWorkspace | null>(null);
 	let itemDialogOpen = $state(false);
 	let editingItem = $state<MenuItem | null>(null);
+	let academicTemplateDialogOpen = $state(false);
 
 	let draggedItem = $state<MenuItem | null>(null);
 	let draggedGroup = $state<MenuGroup | null>(null);
@@ -407,6 +409,13 @@
 			description="บัญชีนี้ยังไม่มีสิทธิ์ menu.read.all"
 		/>
 	{:else}
+		<div class="flex justify-end">
+			<AcademicMenuTemplateDialog
+				bind:open={academicTemplateDialogOpen}
+				canApply={canUpdateMenu}
+				onApplied={loadData}
+			/>
+		</div>
 		<Tabs.Root bind:value={activeTab}>
 			<Tabs.List class="grid w-full max-w-xl grid-cols-3">
 				<Tabs.Trigger value="items">เมนูบริการ</Tabs.Trigger>
