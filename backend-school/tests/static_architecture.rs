@@ -1999,7 +1999,7 @@ fn academic_core_curriculum_handlers_enforce_resource_policy_contract() {
 
     for (handler_name, action) in cases {
         let handler =
-            extract_braced_block(&handlers, &format!("pub async fn {handler_name}"), false);
+            extract_braced_block(&handlers, &format!("pub async fn {handler_name}("), false);
         assert!(handler.contains("actor_tenant_context_from_session(&state, &session).await?"));
         assert!(
             handler.contains("require_academic_curriculum_access") && handler.contains(action),
@@ -2007,13 +2007,37 @@ fn academic_core_curriculum_handlers_enforce_resource_policy_contract() {
         );
     }
 
-    let list_handler = extract_braced_block(&handlers, "pub async fn list_curricula", false);
-    let create_handler = extract_braced_block(&handlers, "pub async fn create_curriculum", false);
+    let list_handler = extract_braced_block(&handlers, "pub async fn list_curricula(", false);
+    let create_handler = extract_braced_block(&handlers, "pub async fn create_curriculum(", false);
     assert!(list_handler.contains("require_academic_curriculum_list_access"));
     assert!(list_handler.contains("CurriculumAction::Read"));
     assert!(create_handler.contains("require_academic_curriculum_list_access"));
     assert!(create_handler.contains("CurriculumAction::Manage"));
     assert!(create_handler.contains("owner_allowed"));
+
+    for (handler_name, action) in [
+        ("get_curriculum_overview", "CurriculumAction::Read"),
+        ("get_curriculum_create_options", "CurriculumAction::Manage"),
+        (
+            "get_curriculum_management_options",
+            "CurriculumAction::Manage",
+        ),
+    ] {
+        let handler =
+            extract_braced_block(&handlers, &format!("pub async fn {handler_name}("), false);
+        assert!(handler.contains("actor_tenant_context_from_session(&state, &session).await?"));
+        assert!(handler.contains("require_academic_curriculum_list_access"));
+        assert!(
+            handler.contains(action),
+            "{handler_name} must require {action}"
+        );
+    }
+    let management_handler = extract_braced_block(
+        &handlers,
+        "pub async fn get_curriculum_management_options(",
+        false,
+    );
+    assert!(management_handler.contains("require_academic_curriculum_access"));
 }
 
 #[test]
