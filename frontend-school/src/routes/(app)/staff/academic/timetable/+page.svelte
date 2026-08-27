@@ -31,6 +31,10 @@
 	} from '$lib/api/timetable';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import {
+		AcademicPrerequisiteNotice,
+		type AcademicPrerequisite
+	} from '$lib/components/academic-workflow';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
@@ -83,6 +87,38 @@
 		{ value: 'BREAK', label: 'พัก' }
 	];
 	const NO_ROOM_VALUE = '__no_room__';
+	const missingGroupsPrerequisite: AcademicPrerequisite = {
+		key: 'timetable-learning-groups',
+		status: 'missing',
+		title: 'ยังไม่มีกลุ่มเรียนสำหรับจัดตาราง',
+		description: 'สร้างกลุ่มใต้รายการเปิดสอน และกำหนดผู้เรียนหรือห้องต้นทางให้ตรงกับการสอนจริง',
+		actionLabel: 'ไปจัดกลุ่มเรียน',
+		href: '/staff/academic/delivery'
+	};
+	const missingTeachersPrerequisite: AcademicPrerequisite = {
+		key: 'timetable-teachers',
+		status: 'warning',
+		title: 'บางกลุ่มยังไม่มีครูผู้สอน',
+		description: 'กำหนดครูให้กลุ่มเรียนก่อนวางคาบ เพื่อให้ตรวจตารางชนและสรุปภาระงานได้ถูกต้อง',
+		actionLabel: 'ไปกำหนดครูในกลุ่มเรียน',
+		href: '/staff/academic/delivery'
+	};
+	const missingPeriodsPrerequisite: AcademicPrerequisite = {
+		key: 'timetable-periods',
+		status: 'missing',
+		title: 'ยังไม่มีตารางเวลาและคาบเรียน',
+		description: 'ตั้งเวลาเริ่มและสิ้นสุดของแต่ละคาบในปีการศึกษา ก่อนนำมาใช้จัดตารางสอน',
+		actionLabel: 'ไปตั้งค่าคาบเรียน',
+		href: '/staff/academic/core#bell-schedules'
+	};
+	const missingRoomsPrerequisite: AcademicPrerequisite = {
+		key: 'timetable-rooms',
+		status: 'warning',
+		title: 'ยังไม่มีห้องเรียนให้เลือก',
+		description: 'เพิ่มอาคารและห้องเรียนในข้อมูลงานอาคาร แล้วกลับมาเลือกห้องให้แต่ละคาบ',
+		actionLabel: 'ไปจัดการอาคารและห้อง',
+		href: '/staff/facility/buildings'
+	};
 
 	const academicContext = getAcademicContextStore();
 	const academicTermId = $derived($academicContext.selected.academicTermId);
@@ -134,6 +170,9 @@
 		)
 	);
 	const selectedEntry = $derived(entries.find((entry) => entry.id === selectedEntryId) ?? null);
+	const groupsWithoutTeachers = $derived(
+		groups.filter((group) => group.teacherAssignments.length === 0).length
+	);
 	const activeDays = $derived.by(() => {
 		const selectedYear = $academicContext.options?.years.find((year) => year.id === academicYearId);
 		void selectedYear;
@@ -598,7 +637,7 @@
 
 <PageShell
 	title="จัดตารางสอน"
-	description="จัดคาบตามกลุ่มเรียนหรือห้องประจำชั้น โดยใช้ตารางเวลาและชุดการเรียนของภาคเรียนที่เลือก"
+	description="จัดคาบตามกลุ่มเรียนหรือห้องประจำชั้น โดยใช้ตารางเวลาและรายการเปิดสอนของภาคเรียนที่เลือก"
 >
 	{#snippet actions()}
 		<Button
@@ -619,7 +658,7 @@
 		<PageState
 			variant="permission"
 			title="ไม่มีสิทธิ์ดูตารางสอน"
-			description="ต้องมีสิทธิ์อ่านชุดการเรียนที่เกี่ยวข้อง"
+			description="ต้องมีสิทธิ์อ่านรายการเปิดสอนที่เกี่ยวข้อง"
 		/>
 	{:else if !academicTermId || !academicYearId}
 		<PageState
@@ -637,13 +676,21 @@
 			actionLabel="ลองอีกครั้ง"
 			onaction={() => loadWorkspace(academicTermId, academicYearId)}
 		/>
-	{:else if schedules.length === 0}
-		<PageState
-			title="ปีนี้ยังไม่มีตารางเวลา"
-			description="สร้างตารางเวลาและคาบเรียนก่อนเริ่มจัดตารางสอน"
-		/>
 	{:else}
 		<div class="space-y-5">
+			{#if groups.length === 0}
+				<AcademicPrerequisiteNotice prerequisite={missingGroupsPrerequisite} />
+			{/if}
+			{#if groupsWithoutTeachers > 0}
+				<AcademicPrerequisiteNotice prerequisite={missingTeachersPrerequisite} />
+			{/if}
+			{#if schedules.length === 0 || periods.length === 0}
+				<AcademicPrerequisiteNotice prerequisite={missingPeriodsPrerequisite} />
+			{/if}
+			{#if rooms.length === 0}
+				<AcademicPrerequisiteNotice prerequisite={missingRoomsPrerequisite} />
+			{/if}
+
 			<Card.Root class="gap-0 py-0">
 				<Card.Content class="grid gap-4 pt-6 lg:grid-cols-[14rem_auto_minmax(16rem,1fr)]">
 					<div class="space-y-2">
@@ -669,6 +716,7 @@
 						<div class="flex gap-2">
 							<Button
 								variant={viewKind === 'learning_group' ? 'default' : 'outline'}
+								disabled={groups.length === 0}
 								onclick={() => changeViewKind('learning_group')}>กลุ่มเรียน</Button
 							>
 							<Button

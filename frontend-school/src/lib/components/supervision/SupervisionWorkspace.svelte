@@ -1924,7 +1924,17 @@
 									<Alert.Root>
 										<Alert.Title>ไม่พบคาบสอนในภาคเรียนนี้</Alert.Title>
 										<Alert.Description>
-											ตรวจสอบตารางสอนของครู หรือใช้คาบกำหนดเองเมื่อจำเป็น
+											<p>
+												ตรวจว่ากลุ่มเรียนมีครูผู้สอนและมีคาบในตาราง หรือใช้คาบกำหนดเองเมื่อจำเป็น
+											</p>
+											<div class="mt-3 flex flex-wrap gap-2">
+												<Button href="/staff/academic/timetable" size="sm" variant="outline">
+													ตรวจตารางสอน
+												</Button>
+												<Button href="/staff/academic/delivery" size="sm" variant="outline">
+													ตรวจกลุ่มเรียนและครู
+												</Button>
+											</div>
 										</Alert.Description>
 									</Alert.Root>
 								{:else}

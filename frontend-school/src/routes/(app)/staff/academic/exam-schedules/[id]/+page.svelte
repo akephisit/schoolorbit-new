@@ -47,8 +47,13 @@
 	import MobileDragDropPolyfill from '$lib/components/MobileDragDropPolyfill.svelte';
 	import { PageShell } from '$lib/components/app-layout';
 	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
+	import {
+		AcademicPrerequisiteNotice,
+		type AcademicPrerequisite
+	} from '$lib/components/academic-workflow';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { Badge } from '$lib/components/ui/badge';
+	import { Button } from '$lib/components/ui/button';
 	import * as Select from '$lib/components/ui/select';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { PERMISSIONS } from '$lib/permissions/registry';
@@ -120,6 +125,31 @@
 	const examScheduleItemCount = $derived(
 		(workspace?.unscheduledItems.length ?? 0) + (workspace?.scheduledSessions.length ?? 0)
 	);
+	const noExamItemsPrerequisite: AcademicPrerequisite = {
+		key: 'exam-schedule-items',
+		status: 'missing',
+		title: 'ยังไม่มีรายการสอบที่นำเข้าได้',
+		description:
+			'ตรวจว่ารายการเปิดสอนมีกลุ่มเรียน และโครงสร้างคะแนนมีหมวดกลางภาคหรือปลายภาคตรงกับรอบนี้',
+		actionLabel: 'ตรวจรายการเปิดสอนและกลุ่มเรียน',
+		href: '/staff/academic/delivery'
+	};
+	const deliveryTargets = $derived.by(() => {
+		const items = [...(workspace?.unscheduledItems ?? []), ...(workspace?.scheduledSessions ?? [])];
+		const seen: string[] = [];
+		return items.flatMap((item) => {
+			const key = `${item.learningOfferingId}:${item.learningGroupId}`;
+			if (seen.includes(key)) return [];
+			seen.push(key);
+			return [
+				{
+					key,
+					label: `${item.subjectCode} · ${item.subjectNameTh} · ${item.homeroomName}`,
+					href: `/staff/academic/delivery/${item.learningOfferingId}?groupId=${encodeURIComponent(item.learningGroupId)}`
+				}
+			];
+		});
+	});
 
 	type PendingPlacementRollback = {
 		restoredItem: ExamScheduleItem | null;
@@ -1250,6 +1280,21 @@
 		<PageState title="ไม่พบรอบตารางสอบ" description="รายการที่เปิดอาจถูกลบหรือไม่มีสิทธิ์เข้าถึง" />
 	{:else}
 		<div class="flex min-h-0 flex-1 flex-col">
+			{#if examScheduleItemCount === 0}
+				<div class="mb-4">
+					<AcademicPrerequisiteNotice prerequisite={noExamItemsPrerequisite} />
+				</div>
+			{:else if deliveryTargets.length > 0}
+				<div
+					class="mb-4 flex flex-wrap items-center gap-2 rounded-xl border bg-muted/25 p-3 text-sm"
+				>
+					<span class="text-muted-foreground">แก้ข้อมูลต้นทาง:</span>
+					{#each deliveryTargets as target (target.key)}
+						<Button href={target.href} size="sm" variant="outline">{target.label}</Button>
+					{/each}
+				</div>
+			{/if}
+
 			<Tabs.Root bind:value={activeTab} class="flex min-h-0 flex-1 flex-col gap-4">
 				<Tabs.List class="grid w-full grid-cols-4 md:w-fit">
 					<Tabs.Trigger value="setup">ตั้งค่า</Tabs.Trigger>

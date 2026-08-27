@@ -35,6 +35,8 @@
 	import * as Select from '$lib/components/ui/select';
 	import * as Sheet from '$lib/components/ui/sheet';
 	import * as Table from '$lib/components/ui/table';
+	import { PERMISSION_MODULES } from '$lib/permissions/registry';
+	import { can } from '$lib/stores/permissions';
 	import { ArrowUpRight, Plus, Search, SlidersHorizontal, Sparkles } from 'lucide-svelte';
 
 	type VersionDraft = {
@@ -75,6 +77,7 @@
 	let gradeLevelOptions = $derived(overview?.gradeLevelOptions ?? []);
 	let ownerOptions = $derived(overview?.ownerOptions ?? []);
 	let canCreate = $derived(ownerOptions.length > 0);
+	let canOpenDelivery = $derived($can.hasModule(PERMISSION_MODULES.LEARNING_OFFERING));
 	let selectedOwnerOption = $derived(
 		ownerOptions.find((option) => catalogOwnerValue(option) === ownerValue)
 	);
@@ -232,6 +235,14 @@
 	title="ทะเบียนกิจกรรม"
 	description="ดูกิจกรรมพัฒนาผู้เรียน ประเภท รูปแบบการจัด ระดับชั้น และรุ่นที่ใช้อยู่ได้ในหน้าเดียว"
 >
+	{#snippet actions()}
+		{#if canOpenDelivery}
+			<Button href="/staff/academic/delivery?kind=activity" variant="outline">
+				เปิดกิจกรรมในภาคเรียน <ArrowUpRight class="size-4" />
+			</Button>
+		{/if}
+	{/snippet}
+
 	{#if loading}
 		<PageSkeleton variant="table" rows={7} />
 	{:else if errorMessage && activityItems.length === 0}

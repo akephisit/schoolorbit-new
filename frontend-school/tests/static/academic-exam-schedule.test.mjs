@@ -344,6 +344,23 @@ test('exam rounds expose exam kind for midterm and final import filtering', () =
 	assert.match(timeline, /นำเข้าเฉพาะ \{examKindLabel\}/);
 });
 
+test('exam schedule keeps empty guidance local and deep-links imported groups to delivery', async () => {
+	const listPage = await readProjectFile(
+		'src/routes/(app)/staff/academic/exam-schedules/+page.svelte'
+	);
+	const detailPage = await readProjectFile(
+		'src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'
+	);
+
+	assert.match(listPage, /AcademicPrerequisiteNotice/);
+	assert.match(listPage, /\/staff\/academic\/delivery/);
+	assert.match(detailPage, /deliveryTargets/);
+	assert.match(detailPage, /learningOfferingId/);
+	assert.match(detailPage, /learningGroupId/);
+	assert.match(detailPage, /\?groupId=/);
+	assert.doesNotMatch(listPage + detailPage, /getLearningDeliveryManagementOptions/);
+});
+
 test('staff schedule tab can clear imported items that do not match the round kind', () => {
 	const api = readFileSync(projectPath('src/lib/api/examSchedule.ts'), 'utf8');
 	const detailPage = readFileSync(

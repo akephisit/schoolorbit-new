@@ -60,6 +60,21 @@ test('teaching supervision booking uses a weekly timetable grid with exact obser
 	assert.match(migration, /DROP COLUMN manual_observed_at/);
 });
 
+test('teaching supervision booking gives term-local setup guidance without blocking other sections', async () => {
+	const routePage = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/supervision/+page.svelte'
+	);
+
+	assert.match(routePage, /AcademicPrerequisiteNotice/);
+	assert.match(routePage, /academicTermId/);
+	assert.match(routePage, /\/staff\/academic\/timetable/);
+	assert.match(routePage, /<SupervisionWorkspace section="mine"/);
+	assert.doesNotMatch(
+		routePage,
+		/getLearningDeliveryManagementOptions|getCurriculumProgramWorkspace/
+	);
+});
+
 test('teaching supervision templates expose a read-only form preview', async () => {
 	const supervisionPage = await readRepoFile(
 		'frontend-school/src/lib/components/supervision/SupervisionWorkspace.svelte'

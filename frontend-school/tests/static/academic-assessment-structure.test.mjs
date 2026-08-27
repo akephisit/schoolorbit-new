@@ -139,6 +139,15 @@ test('assessment workspace exposes offering snapshots instead of classroom cours
 	}
 });
 
+test('assessment workspace guides an empty term to Learning Delivery without extra readiness requests', async () => {
+	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
+
+	assert.match(page, /AcademicPrerequisiteNotice/);
+	assert.match(page, /สร้างรายการเปิดสอนก่อนกำหนดโครงสร้างคะแนน/);
+	assert.match(page, /href: '\/staff\/academic\/delivery'/);
+	assert.doesNotMatch(page, /getLearningDeliveryManagementOptions|getCurriculumProgramWorkspace/);
+});
+
 test('assessment editor supports categories, items, exam modes, save, and submit', async () => {
 	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
 

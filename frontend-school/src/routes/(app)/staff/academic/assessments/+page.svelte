@@ -19,6 +19,10 @@
 	} from '$lib/api/academicAssessments';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import {
+		AcademicPrerequisiteNotice,
+		type AcademicPrerequisite
+	} from '$lib/components/academic-workflow';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
@@ -102,6 +106,15 @@
 		{ value: 'outside_timetable', label: 'สอบนอกตาราง' },
 		{ value: 'practical', label: 'ปฏิบัติ / ชิ้นงาน' }
 	];
+	const noCourseOfferingPrerequisite: AcademicPrerequisite = {
+		key: 'assessment-course-offering',
+		status: 'missing',
+		title: 'สร้างรายการเปิดสอนก่อนกำหนดโครงสร้างคะแนน',
+		description:
+			'หน้านี้ใช้รายวิชาที่เปิดสอนในภาคเรียน ไม่ได้ดึงรายวิชาทุกตัวจากทะเบียนหลักสูตรโดยตรง',
+		actionLabel: 'ไปจัดรายการเปิดสอน',
+		href: '/staff/academic/delivery'
+	};
 
 	function statusLabel(status: AssessmentPlanStatus): string {
 		return statusOptions.find((option) => option.value === status)?.label ?? status;
@@ -165,7 +178,7 @@
 
 	async function openPlan(plan: AssessmentPlanSummary): Promise<void> {
 		if (dirty && plan.offeringId !== selectedOfferingId) {
-			toast.warning('กรุณาบันทึกการแก้ไขก่อนเปิดชุดการเรียนอื่น');
+			toast.warning('กรุณาบันทึกการแก้ไขก่อนเปิดรายการเปิดสอนอื่น');
 			return;
 		}
 		selectedOfferingId = plan.offeringId;
@@ -313,13 +326,13 @@
 
 <PageShell
 	title="โครงสร้างคะแนน"
-	description="กำหนดหมวดคะแนนและงานย่อยแยกตามชุดการเรียนของภาคเรียนที่เลือก"
+	description="กำหนดหมวดคะแนนและงานย่อยแยกตามรายการเปิดสอนของภาคเรียนที่เลือก"
 >
 	{#if !canRead}
 		<PageState
 			variant="permission"
 			title="ไม่มีสิทธิ์ดูโครงสร้างคะแนน"
-			description="ติดต่อผู้ดูแลเพื่อขอสิทธิ์อ่านโครงสร้างคะแนนหรือชุดการเรียน"
+			description="ติดต่อผู้ดูแลเพื่อขอสิทธิ์อ่านโครงสร้างคะแนนหรือรายการเปิดสอน"
 		/>
 	{:else if !academicTermId}
 		<PageState
@@ -342,7 +355,7 @@
 			<div class="grid gap-4 md:grid-cols-3">
 				<Card.Root class="border-primary/20 bg-primary/5">
 					<Card.Header class="pb-3">
-						<Card.Description>ชุดการเรียนทั้งหมด</Card.Description>
+						<Card.Description>รายการเปิดสอนทั้งหมด</Card.Description>
 						<Card.Title class="text-3xl">{plans.length}</Card.Title>
 					</Card.Header>
 				</Card.Root>
@@ -360,13 +373,17 @@
 				</Card.Root>
 			</div>
 
+			{#if plans.length === 0}
+				<AcademicPrerequisiteNotice prerequisite={noCourseOfferingPrerequisite} />
+			{/if}
+
 			{#if canManageSchool}
 				<Card.Root class="gap-0 py-0">
 					<Card.Content class="flex flex-wrap items-center justify-between gap-4 pt-6">
 						<div>
 							<p class="font-medium">เปิดให้ครูผู้สอนจัดทำโครงสร้างคะแนน</p>
 							<p class="text-muted-foreground text-sm">
-								มีผลกับครูที่ได้รับมอบหมายในชุดการเรียนเท่านั้น
+								มีผลกับครูที่ได้รับมอบหมายในรายการเปิดสอนเท่านั้น
 							</p>
 						</div>
 						<div class="flex items-center gap-3">
@@ -387,7 +404,7 @@
 					<Card.Header>
 						<div class="flex items-center justify-between gap-3">
 							<div>
-								<Card.Title>ชุดการเรียน</Card.Title>
+								<Card.Title>รายการเปิดสอน</Card.Title>
 								<Card.Description>เลือกชุดที่ต้องการกำหนดคะแนน</Card.Description>
 							</div>
 							<label class="sr-only" for="assessment-status">กรองสถานะ</label>
@@ -408,9 +425,9 @@
 						{#if filteredPlans.length === 0}
 							<div class="border-border rounded-lg border border-dashed p-8 text-center">
 								<BookOpenCheck class="text-muted-foreground mx-auto mb-3 size-8" />
-								<p class="font-medium">ยังไม่มีชุดการเรียนในสถานะนี้</p>
+								<p class="font-medium">ยังไม่มีรายการเปิดสอนในสถานะนี้</p>
 								<p class="text-muted-foreground mt-1 text-sm">
-									สร้างและเผยแพร่ชุดการเรียนก่อนกำหนดโครงสร้างคะแนน
+									สร้างและเผยแพร่รายการเปิดสอนก่อนกำหนดโครงสร้างคะแนน
 								</p>
 							</div>
 						{:else}
@@ -452,9 +469,9 @@
 					{:else if !detail}
 						<Card.Content class="flex min-h-80 flex-col items-center justify-center text-center">
 							<BookOpenCheck class="text-muted-foreground mb-4 size-10" />
-							<p class="font-medium">เลือกชุดการเรียนเพื่อเริ่มจัดโครงสร้าง</p>
+							<p class="font-medium">เลือกรายการเปิดสอนเพื่อเริ่มจัดโครงสร้าง</p>
 							<p class="text-muted-foreground mt-1 max-w-md text-sm">
-								คะแนนจะผูกกับชุดการเรียนและภาคเรียนโดยตรง ไม่ผูกกับห้องเรียนแบบเดิม
+								คะแนนจะผูกกับรายการเปิดสอนและภาคเรียนโดยตรง ไม่ผูกกับห้องเรียนแบบเดิม
 							</p>
 						</Card.Content>
 					{:else}
@@ -492,7 +509,7 @@
 							</div>
 							{#if dirty}
 								<p class="text-amber-700 dark:text-amber-300 text-sm">
-									มีการแก้ไขที่ยังไม่บันทึก — ต้องบันทึกก่อนเปลี่ยนปี ภาคเรียน หรือชุดการเรียน
+									มีการแก้ไขที่ยังไม่บันทึก — ต้องบันทึกก่อนเปลี่ยนปี ภาคเรียน หรือรายการเปิดสอน
 								</p>
 							{/if}
 						</Card.Header>

@@ -14,6 +14,10 @@
 	} from '$lib/api/examSchedule';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { PageShell } from '$lib/components/app-layout';
+	import {
+		AcademicPrerequisiteNotice,
+		type AcademicPrerequisite
+	} from '$lib/components/academic-workflow';
 	import ExamRoundDialog from '$lib/components/academic/exam-schedule/ExamRoundDialog.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -43,6 +47,15 @@
 	let rounds = $state<ExamRound[]>([]);
 	let createDialogOpen = $state(false);
 	let creatingRound = $state(false);
+	const deliveryPrerequisite: AcademicPrerequisite = {
+		key: 'exam-schedule-delivery',
+		status: 'warning',
+		title: 'เตรียมรายการเปิดสอนและกลุ่มเรียนสำหรับนำเข้ารายการสอบ',
+		description:
+			'สร้างรอบสอบไว้ก่อนได้ เมื่อโครงสร้างคะแนนและกลุ่มเรียนพร้อมจึงค่อยนำเข้ารายการสอบในรอบนั้น',
+		actionLabel: 'ตรวจรายการเปิดสอน',
+		href: '/staff/academic/delivery'
+	};
 
 	const canManageExamSchedules = $derived(
 		$can.has(PERMISSIONS.ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL)
@@ -159,16 +172,19 @@
 			onaction={() => loadRounds()}
 		/>
 	{:else if rounds.length === 0}
-		<PageState title="ยังไม่มีรอบตารางสอบ" description="ไม่พบรอบสอบในภาคเรียนที่เลือก">
-			{#snippet action()}
-				{#if canManageExamSchedules}
-					<Button onclick={() => (createDialogOpen = true)} disabled={!academicTermId}>
-						<Plus class="h-4 w-4" />
-						สร้างรอบสอบ
-					</Button>
-				{/if}
-			{/snippet}
-		</PageState>
+		<div class="space-y-4">
+			<AcademicPrerequisiteNotice prerequisite={deliveryPrerequisite} />
+			<PageState title="ยังไม่มีรอบตารางสอบ" description="ไม่พบรอบสอบในภาคเรียนที่เลือก">
+				{#snippet action()}
+					{#if canManageExamSchedules}
+						<Button onclick={() => (createDialogOpen = true)} disabled={!academicTermId}>
+							<Plus class="h-4 w-4" />
+							สร้างรอบสอบ
+						</Button>
+					{/if}
+				{/snippet}
+			</PageState>
+		</div>
 	{:else}
 		<Card.Root class="overflow-hidden p-0">
 			<div class="overflow-x-auto">

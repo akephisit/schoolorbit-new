@@ -24,16 +24,32 @@ test('timetable workspace uses one cancellable term collection load', async () =
 	assert.doesNotMatch(page, /listSlotInstructors|listSlotClassroomAssignments/);
 });
 
-test('academic delivery workspace loads learning groups once per term', async () => {
+test('academic delivery workspace uses one bounded overview request', async () => {
 	const page = await readFile(
 		path.join(projectRoot, 'src/routes/(app)/staff/academic/delivery/+page.svelte'),
 		'utf8'
 	);
 
-	assert.match(page, /listLearningGroupsForTerm/);
-	assert.match(page, /allGroups/);
-	assert.match(page, /groups = allGroups\.filter/);
+	assert.match(page, /getLearningDeliveryOverview/);
+	assert.doesNotMatch(page, /listLearningGroupsForTerm/);
+	assert.doesNotMatch(page, /listLearningOfferings/);
 	assert.doesNotMatch(page, /listLearningGroups\(offering\.id\)/);
+});
+
+test('timetable derives separate setup notices from its existing term collections', async () => {
+	const page = await readFile(
+		path.join(projectRoot, 'src/routes/(app)/staff/academic/timetable/+page.svelte'),
+		'utf8'
+	);
+
+	assert.match(page, /AcademicPrerequisiteNotice/);
+	assert.match(page, /missingGroupsPrerequisite/);
+	assert.match(page, /missingTeachersPrerequisite/);
+	assert.match(page, /missingPeriodsPrerequisite/);
+	assert.match(page, /missingRoomsPrerequisite/);
+	assert.match(page, /\/staff\/academic\/core#bell-schedules/);
+	assert.match(page, /\/staff\/facility\/buildings/);
+	assert.doesNotMatch(page, /getLearningDeliveryManagementOptions|getCurriculumProgramWorkspace/);
 });
 
 test('retired timetable activity context utility is removed after the hard cutover', async () => {

@@ -47,3 +47,47 @@ test('delivery guidance uses the shared local prerequisite notice', async () => 
 	assert.match(page, /missingTermPrerequisite/);
 	assert.match(page, /noOfferingPrerequisite/);
 });
+
+test('dependent academic pages provide local next actions without a global readiness center', async () => {
+	const activityPage = await readProjectFile(
+		'src/routes/(app)/staff/academic/catalog/activities/+page.svelte'
+	);
+	const assessmentPage = await readProjectFile(
+		'src/routes/(app)/staff/academic/assessments/+page.svelte'
+	);
+	const timetablePage = await readProjectFile(
+		'src/routes/(app)/staff/academic/timetable/+page.svelte'
+	);
+	const examListPage = await readProjectFile(
+		'src/routes/(app)/staff/academic/exam-schedules/+page.svelte'
+	);
+	const examDetailPage = await readProjectFile(
+		'src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'
+	);
+	const supervisionPage = await readProjectFile(
+		'src/routes/(app)/staff/academic/supervision/+page.svelte'
+	);
+	const allPages = [
+		activityPage,
+		assessmentPage,
+		timetablePage,
+		examListPage,
+		examDetailPage,
+		supervisionPage
+	].join('\n');
+
+	assert.match(activityPage, /\/staff\/academic\/delivery\?kind=activity/);
+	assert.match(assessmentPage, /AcademicPrerequisiteNotice/);
+	assert.match(assessmentPage, /\/staff\/academic\/delivery/);
+	assert.match(timetablePage, /AcademicPrerequisiteNotice/);
+	assert.match(timetablePage, /\/staff\/academic\/core#bell-schedules/);
+	assert.match(timetablePage, /\/staff\/facility\/buildings/);
+	assert.match(examListPage, /\/staff\/academic\/delivery/);
+	assert.match(examDetailPage, /\/staff\/academic\/delivery\/\$\{/);
+	assert.match(supervisionPage, /AcademicPrerequisiteNotice/);
+	assert.doesNotMatch(allPages, /readinessScore|completionPercent|ศูนย์เตรียมงานวิชาการ/);
+	assert.doesNotMatch(
+		allPages,
+		/getLearningDeliveryManagementOptions|getCurriculumManagementOptions|getCurriculumProgramWorkspace/
+	);
+});
