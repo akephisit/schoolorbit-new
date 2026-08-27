@@ -41,6 +41,7 @@
 		if (captionLayout.startsWith('dropdown')) return 'short';
 		return 'long';
 	});
+	const hasDropdownCaption = $derived(captionLayout.startsWith('dropdown'));
 </script>
 
 <!--
@@ -55,6 +56,7 @@ get along, so we shut typescript up by casting `value` to `never`.
 	{disableDaysOutsideMonth}
 	class={cn(
 		'bg-background group/calendar p-3 [--cell-size:--spacing(8)] [[data-slot=card-content]_&]:bg-transparent [[data-slot=popover-content]_&]:bg-transparent',
+		hasDropdownCaption && '[--cell-size:--spacing(9)]',
 		className
 	)}
 	{locale}
@@ -68,13 +70,19 @@ get along, so we shut typescript up by casting `value` to `never`.
 >
 	{#snippet children({ months, weekdays })}
 		<Calendar.Months>
-			<Calendar.Nav>
-				<Calendar.PrevButton variant={buttonVariant} />
-				<Calendar.NextButton variant={buttonVariant} />
+			<Calendar.Nav class={hasDropdownCaption ? 'top-0.5' : undefined}>
+				<Calendar.PrevButton
+					variant={buttonVariant}
+					class={hasDropdownCaption ? 'size-8' : undefined}
+				/>
+				<Calendar.NextButton
+					variant={buttonVariant}
+					class={hasDropdownCaption ? 'size-8' : undefined}
+				/>
 			</Calendar.Nav>
 			{#each months as month, monthIndex (month)}
 				<Calendar.Month>
-					<Calendar.Header>
+					<Calendar.Header class={hasDropdownCaption ? 'px-8' : undefined}>
 						<Calendar.Caption
 							{captionLayout}
 							months={monthsProp}

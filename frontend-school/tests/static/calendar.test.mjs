@@ -187,6 +187,27 @@ test('calendar shared components use shadcn primitives', async () => {
 	assert.match(staffPage, /items=\{activeCategories\}/);
 });
 
+test('date picker calendar keeps dropdown captions clickable and clear of navigation', async () => {
+	const calendar = await readProjectFile('src/lib/components/ui/calendar/calendar.svelte');
+	const caption = await readProjectFile('src/lib/components/ui/calendar/calendar-caption.svelte');
+	const nav = await readProjectFile('src/lib/components/ui/calendar/calendar-nav.svelte');
+	const previousButton = await readProjectFile(
+		'src/lib/components/ui/calendar/calendar-prev-button.svelte'
+	);
+	const nextButton = await readProjectFile(
+		'src/lib/components/ui/calendar/calendar-next-button.svelte'
+	);
+
+	assert.match(nav, /pointer-events-none/);
+	assert.match(previousButton, /pointer-events-auto/);
+	assert.match(nextButton, /pointer-events-auto/);
+	assert.match(calendar, /hasDropdownCaption/);
+	assert.match(calendar, /\[--cell-size:--spacing\(9\)\]/);
+	assert.match(calendar, /class=\{hasDropdownCaption \? 'px-8' : undefined\}/);
+	assert.match(caption, /w-\[4\.75rem\]/);
+	assert.match(caption, /w-26/);
+});
+
 test('calendar event dialog builds backend-safe event payloads', async () => {
 	const eventDialog = await readProjectFile(
 		'src/lib/components/calendar/CalendarEventDialog.svelte'

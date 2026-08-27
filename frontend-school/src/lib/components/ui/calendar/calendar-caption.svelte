@@ -87,7 +87,7 @@
 		<Select.Trigger
 			size="sm"
 			aria-label="เลือกเดือน"
-			class="h-8 min-w-24 border-input bg-background shadow-xs"
+			class="h-8 w-[4.75rem] border-input bg-background shadow-xs"
 			disabled={!placeholder || disabled || readonly}
 		>
 			{monthOptions.find((option) => option.value === month.month)?.label ?? formatMonth(month)}
@@ -105,7 +105,7 @@
 		<Select.Trigger
 			size="sm"
 			aria-label="เลือกปี"
-			class="h-8 min-w-20 border-input bg-background shadow-xs"
+			class="h-8 w-26 border-input bg-background shadow-xs"
 			disabled={!placeholder || disabled || readonly}
 		>
 			{yearOptions.find((option) => option.value === month.year)?.label ?? formatYear(month)}
