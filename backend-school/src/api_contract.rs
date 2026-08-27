@@ -377,6 +377,8 @@ use utoipa::OpenApi;
         crate::modules::academic::core::handlers::list_activity_default_teachers,
         crate::modules::academic::core::handlers::replace_activity_default_teachers,
         crate::modules::academic::core::handlers::list_curricula,
+        crate::modules::academic::core::handlers::get_curriculum_overview,
+        crate::modules::academic::core::handlers::get_curriculum_create_options,
         crate::modules::academic::core::handlers::list_study_program_options_for_year,
         crate::modules::academic::core::handlers::create_curriculum,
         crate::modules::academic::core::handlers::get_curriculum,
@@ -384,6 +386,7 @@ use utoipa::OpenApi;
         crate::modules::academic::core::handlers::list_curriculum_versions,
         crate::modules::academic::core::handlers::create_curriculum_version,
         crate::modules::academic::core::handlers::get_curriculum_version,
+        crate::modules::academic::core::handlers::get_curriculum_management_options,
         crate::modules::academic::core::handlers::update_curriculum_version,
         crate::modules::academic::core::handlers::publish_curriculum_version,
         crate::modules::academic::core::handlers::get_curriculum_program_workspace,
@@ -822,6 +825,9 @@ use utoipa::OpenApi;
         CreateSubjectGroupRequest,
         UpdateSubjectGroupRequest,
         Curriculum,
+        CurriculumDisplayState,
+        CurriculumOverviewItem,
+        CurriculumOverview,
         CreateCurriculumRequest,
         UpdateCurriculumRequest,
         CurriculumVersion,
@@ -835,6 +841,10 @@ use utoipa::OpenApi;
         RequirementResourceKind,
         ProgramRequirement,
         StudyProgramRequirement,
+        CurriculumCatalogVersionOption,
+        CurriculumRequirementView,
+        CurriculumCreateOptions,
+        CurriculumManagementOptions,
         CurriculumProgramWorkspace,
         AcademicSetupWorkspace,
         ProgramRequirementInput,
@@ -879,6 +889,9 @@ use utoipa::OpenApi;
         ApiResponse<Vec<ActivityVersion>>,
         ApiResponse<ActivityVersion>,
         ApiResponse<Vec<Curriculum>>,
+        ApiResponse<CurriculumOverview>,
+        ApiResponse<CurriculumCreateOptions>,
+        ApiResponse<CurriculumManagementOptions>,
         ApiResponse<Curriculum>,
         ApiResponse<Vec<CurriculumVersion>>,
         ApiResponse<CurriculumVersion>,
@@ -2430,6 +2443,21 @@ mod tests {
         let document = school_api_value().expect("document should serialize");
         for (path, operation_id, response_schema) in [
             (
+                "/api/academic/curricula/overview",
+                "getCurriculumOverview",
+                "#/components/schemas/ApiResponse_CurriculumOverview",
+            ),
+            (
+                "/api/academic/curricula/management-options",
+                "getCurriculumCreateOptions",
+                "#/components/schemas/ApiResponse_CurriculumCreateOptions",
+            ),
+            (
+                "/api/academic/curriculum-versions/{id}/management-options",
+                "getCurriculumManagementOptions",
+                "#/components/schemas/ApiResponse_CurriculumManagementOptions",
+            ),
+            (
                 "/api/academic/curriculum-versions/{id}/program-workspace",
                 "getCurriculumProgramWorkspace",
                 "#/components/schemas/ApiResponse_CurriculumProgramWorkspace",
@@ -2468,7 +2496,17 @@ mod tests {
                 ["responses"]["404"]["content"]["application/json"]["schema"]["$ref"],
             "#/components/schemas/ApiErrorResponse"
         );
+        assert_eq!(
+            document["paths"]["/api/academic/curriculum-versions/{id}/management-options"]["get"]
+                ["responses"]["404"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiErrorResponse"
+        );
         for schema in [
+            "CurriculumOverview",
+            "CurriculumCreateOptions",
+            "CurriculumManagementOptions",
+            "CurriculumCatalogVersionOption",
+            "CurriculumRequirementView",
             "StudyProgramRequirement",
             "CurriculumProgramWorkspace",
             "AcademicSetupWorkspace",

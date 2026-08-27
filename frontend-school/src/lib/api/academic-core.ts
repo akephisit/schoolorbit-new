@@ -26,6 +26,13 @@ export type CatalogDisplayState = Schemas['CatalogDisplayState'];
 export type CatalogOwnerOption = Schemas['CatalogOwnerOption'];
 export type ActivityVersion = Schemas['ActivityVersion'];
 export type Curriculum = Schemas['Curriculum'];
+export type CurriculumDisplayState = Schemas['CurriculumDisplayState'];
+export type CurriculumOverviewItem = Schemas['CurriculumOverviewItem'];
+export type CurriculumOverview = Schemas['CurriculumOverview'];
+export type CurriculumCreateOptions = Schemas['CurriculumCreateOptions'];
+export type CurriculumManagementOptions = Schemas['CurriculumManagementOptions'];
+export type CurriculumCatalogVersionOption = Schemas['CurriculumCatalogVersionOption'];
+export type CurriculumRequirementView = Schemas['CurriculumRequirementView'];
 export type CurriculumVersion = Schemas['CurriculumVersion'];
 export type StudyProgram = Schemas['StudyProgram'];
 export type ProgramRequirement = Schemas['ProgramRequirement'];
@@ -74,6 +81,10 @@ export type CreateStudentAcademicYearRequest = Schemas['CreateStudentAcademicYea
 export type UpdateStudentAcademicYearRequest = Schemas['UpdateStudentAcademicYearRequest'];
 export type CreateHomeroomPlacementRequest = Schemas['CreateHomeroomPlacementRequest'];
 export type TransferHomeroomPlacementRequest = Schemas['TransferHomeroomPlacementRequest'];
+
+export type GetCurriculumOverviewOperation = operations['getCurriculumOverview'];
+export type GetCurriculumCreateOptionsOperation = operations['getCurriculumCreateOptions'];
+export type GetCurriculumManagementOptionsOperation = operations['getCurriculumManagementOptions'];
 
 async function academicData<T>(request: Promise<ApiResponse<T>>, fallback: string): Promise<T> {
 	const response = await request;
@@ -282,6 +293,19 @@ export const listCurricula = (options: ApiRequestOptions = {}) =>
 		apiClient.get<Curriculum[]>('/api/academic/curricula', options),
 		'ไม่สามารถโหลดหลักสูตรได้'
 	);
+export const getCurriculumOverview = (options: ApiRequestOptions = {}) =>
+	academicData(
+		apiClient.get<CurriculumOverview>('/api/academic/curricula/overview', options),
+		'ไม่สามารถโหลดภาพรวมหลักสูตรได้'
+	);
+export const getCurriculumCreateOptions = (options: ApiRequestOptions = {}) =>
+	academicData(
+		apiClient.get<CurriculumCreateOptions>(
+			'/api/academic/curricula/management-options',
+			options
+		),
+		'ไม่สามารถโหลดตัวเลือกสำหรับสร้างหลักสูตรได้'
+	);
 export const createCurriculum = (body: CreateCurriculumRequest) =>
 	academicData(
 		apiClient.post<Curriculum>('/api/academic/curricula', body),
@@ -314,6 +338,17 @@ export const publishCurriculumVersion = (id: string, body: PublishVersionRequest
 	academicData(
 		apiClient.post<CurriculumVersion>(`/api/academic/curriculum-versions/${id}/publish`, body),
 		'เผยแพร่รุ่นหลักสูตรไม่สำเร็จ'
+	);
+export const getCurriculumManagementOptions = (
+	curriculumVersionId: string,
+	options: ApiRequestOptions = {}
+) =>
+	academicData(
+		apiClient.get<CurriculumManagementOptions>(
+			`/api/academic/curriculum-versions/${requiredContext(curriculumVersionId, 'รุ่นหลักสูตร')}/management-options`,
+			options
+		),
+		'ไม่สามารถโหลดตัวเลือกสำหรับจัดการหลักสูตรได้'
 	);
 export const listStudyPrograms = (curriculumVersionId: string) =>
 	academicData(

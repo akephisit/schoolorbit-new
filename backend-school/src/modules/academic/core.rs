@@ -120,6 +120,14 @@ pub fn routes() -> Router<AppState> {
             get(handlers::list_curricula).post(handlers::create_curriculum),
         )
         .route(
+            "/curricula/overview",
+            get(handlers::get_curriculum_overview),
+        )
+        .route(
+            "/curricula/management-options",
+            get(handlers::get_curriculum_create_options),
+        )
+        .route(
             "/study-program-options",
             get(handlers::list_study_program_options_for_year),
         )
@@ -134,6 +142,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/curriculum-versions/{id}",
             get(handlers::get_curriculum_version).patch(handlers::update_curriculum_version),
+        )
+        .route(
+            "/curriculum-versions/{id}/management-options",
+            get(handlers::get_curriculum_management_options),
         )
         .route(
             "/curriculum-versions/{id}/publish",

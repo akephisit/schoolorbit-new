@@ -1871,6 +1871,62 @@ pub async fn list_curricula(
 
 #[utoipa::path(
     get,
+    path = "/api/academic/curricula/overview",
+    operation_id = "getCurriculumOverview",
+    tag = "academic",
+    responses(
+        (status = 200, description = "Curriculum overview with the most relevant version for each curriculum", body = ApiResponse<CurriculumOverview>),
+        (status = 400, description = "Curriculum overview exceeds the supported size", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic curriculum read permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_curriculum_overview(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let pool = context.tenant.pool;
+    let filter = academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &pool,
+        &context.actor,
+        CurriculumAction::Read,
+    )
+    .await?;
+    Ok(ok(workspaces::curriculum_overview(&pool, &filter).await?))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/curricula/management-options",
+    operation_id = "getCurriculumCreateOptions",
+    tag = "academic",
+    responses(
+        (status = 200, description = "Options for creating a curriculum", body = ApiResponse<CurriculumCreateOptions>),
+        (status = 400, description = "Curriculum options exceed the supported size", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic curriculum management permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_curriculum_create_options(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let pool = context.tenant.pool;
+    let filter = academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &pool,
+        &context.actor,
+        CurriculumAction::Manage,
+    )
+    .await?;
+    Ok(ok(
+        workspaces::curriculum_create_options(&pool, &filter).await?
+    ))
+}
+
+#[utoipa::path(
+    get,
     path = "/api/academic/study-program-options",
     operation_id = "listStudyProgramOptionsForAcademicYear",
     tag = "academic",
@@ -2137,6 +2193,47 @@ pub async fn get_curriculum_version(
     )
     .await?;
     Ok(ok(version))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/curriculum-versions/{id}/management-options",
+    operation_id = "getCurriculumManagementOptions",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Curriculum version ID")),
+    responses(
+        (status = 200, description = "Options for managing a curriculum version", body = ApiResponse<CurriculumManagementOptions>),
+        (status = 400, description = "Curriculum management options exceed the supported size", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic curriculum management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Curriculum version not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_curriculum_management_options(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let pool = context.tenant.pool;
+    let version = curriculum::get_version(&pool, id).await?;
+    academic_curriculum_access_policy::require_academic_curriculum_access(
+        &pool,
+        &context.actor,
+        version.curriculum_id,
+        CurriculumAction::Manage,
+    )
+    .await?;
+    let filter = academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &pool,
+        &context.actor,
+        CurriculumAction::Manage,
+    )
+    .await?;
+    Ok(ok(workspaces::curriculum_management_options(
+        &pool, id, &filter,
+    )
+    .await?))
 }
 
 #[utoipa::path(

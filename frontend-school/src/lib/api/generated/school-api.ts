@@ -437,6 +437,38 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/curricula/management-options': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getCurriculumCreateOptions'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/curricula/overview': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getCurriculumOverview'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/curriculum-versions/{id}': {
 		parameters: {
 			query?: never;
@@ -451,6 +483,22 @@ export interface paths {
 		options?: never;
 		head?: never;
 		patch: operations['updateCurriculumVersion'];
+		trace?: never;
+	};
+	'/api/academic/curriculum-versions/{id}/management-options': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getCurriculumManagementOptions'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
 		trace?: never;
 	};
 	'/api/academic/curriculum-versions/{id}/program-workspace': {
@@ -5033,6 +5081,22 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_CurriculumCreateOptions: {
+			data: {
+				gradeLevels: components['schemas']['GradeLevelLookupItem'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CurriculumManagementOptions: {
+			data: {
+				academicYears: components['schemas']['AcademicYearLookupItem'][];
+				catalogVersions: components['schemas']['CurriculumCatalogVersionOption'][];
+				gradeLevels: components['schemas']['GradeLevelLookupItem'][];
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_CurriculumOfferingPreview: {
 			data: {
 				/** Format: uuid */
@@ -5043,10 +5107,17 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_CurriculumOverview: {
+			data: {
+				items: components['schemas']['CurriculumOverviewItem'][];
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_CurriculumProgramWorkspace: {
 			data: {
 				programs: components['schemas']['StudyProgram'][];
-				requirements: components['schemas']['StudyProgramRequirement'][];
+				requirements: components['schemas']['CurriculumRequirementView'][];
 			};
 			message?: string;
 			success: boolean;
@@ -9632,6 +9703,29 @@ export interface components {
 			/** Format: date-time */
 			updatedAt: string;
 		};
+		CurriculumCatalogVersionOption: {
+			code: string;
+			/** Format: date */
+			effectiveFrom: string;
+			/** Format: date */
+			effectiveUntil?: string | null;
+			/** Format: uuid */
+			id: string;
+			name: string;
+			resourceKind: components['schemas']['RequirementResourceKind'];
+			/** Format: int32 */
+			versionNo: number;
+		};
+		CurriculumCreateOptions: {
+			gradeLevels: components['schemas']['GradeLevelLookupItem'][];
+		};
+		/** @enum {string} */
+		CurriculumDisplayState: 'current' | 'upcoming' | 'expired' | 'unpublished';
+		CurriculumManagementOptions: {
+			academicYears: components['schemas']['AcademicYearLookupItem'][];
+			catalogVersions: components['schemas']['CurriculumCatalogVersionOption'][];
+			gradeLevels: components['schemas']['GradeLevelLookupItem'][];
+		};
 		CurriculumOfferingPreview: {
 			/** Format: uuid */
 			academicTermId: string;
@@ -9657,11 +9751,33 @@ export interface components {
 			/** Format: uuid */
 			studyProgramId: string;
 		};
+		CurriculumOverview: {
+			items: components['schemas']['CurriculumOverviewItem'][];
+		};
+		CurriculumOverviewItem: {
+			curriculum: components['schemas']['Curriculum'];
+			displayState: components['schemas']['CurriculumDisplayState'];
+			displayVersion?: null | components['schemas']['CurriculumVersion'];
+			/** Format: int64 */
+			draftCount: number;
+			endAcademicYearName?: string | null;
+			gradeLevels: components['schemas']['GradeLevelLookupItem'][];
+			startAcademicYearName?: string | null;
+			/** Format: int64 */
+			studyProgramCount: number;
+		};
 		/** @enum {string} */
 		CurriculumPreviewAction: 'create' | 'retain' | 'conflict';
 		CurriculumProgramWorkspace: {
 			programs: components['schemas']['StudyProgram'][];
-			requirements: components['schemas']['StudyProgramRequirement'][];
+			requirements: components['schemas']['CurriculumRequirementView'][];
+		};
+		CurriculumRequirementView: {
+			catalog: components['schemas']['CurriculumCatalogVersionOption'];
+			gradeLevel: components['schemas']['GradeLevelLookupItem'];
+			requirement: components['schemas']['ProgramRequirement'];
+			/** Format: uuid */
+			studyProgramId: string;
 		};
 		CurriculumVersion: {
 			/** Format: date-time */
@@ -15869,6 +15985,100 @@ export interface operations {
 			};
 		};
 	};
+	getCurriculumCreateOptions: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Options for creating a curriculum */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CurriculumCreateOptions'];
+				};
+			};
+			/** @description Curriculum options exceed the supported size */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic curriculum management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getCurriculumOverview: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Curriculum overview with the most relevant version for each curriculum */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CurriculumOverview'];
+				};
+			};
+			/** @description Curriculum overview exceeds the supported size */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic curriculum read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	getCurriculumVersion: {
 		parameters: {
 			query?: never;
@@ -15982,6 +16192,65 @@ export interface operations {
 			};
 			/** @description Curriculum version row version conflict */
 			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getCurriculumManagementOptions: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Curriculum version ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Options for managing a curriculum version */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CurriculumManagementOptions'];
+				};
+			};
+			/** @description Curriculum management options exceed the supported size */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic curriculum management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Curriculum version not found */
+			404: {
 				headers: {
 					[name: string]: unknown;
 				};
