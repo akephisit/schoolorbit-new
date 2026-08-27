@@ -412,6 +412,8 @@ use utoipa::OpenApi;
         crate::modules::academic::core::handlers::create_placement,
         crate::modules::academic::core::handlers::transfer_placement,
         crate::modules::academic::delivery::handlers::list_offerings,
+        crate::modules::academic::delivery::handlers::get_delivery_overview,
+        crate::modules::academic::delivery::handlers::get_delivery_management_options,
         crate::modules::academic::delivery::handlers::create_offering,
         crate::modules::academic::delivery::handlers::preview_offerings_from_curriculum,
         crate::modules::academic::delivery::handlers::apply_offerings_from_curriculum,
@@ -950,6 +952,10 @@ use utoipa::OpenApi;
         ActivityOfferingSnapshot,
         LearningOfferingSnapshot,
         LearningOffering,
+        LearningOfferingOverviewItem,
+        LearningDeliveryOverview,
+        DeliveryCatalogVersionOption,
+        DeliveryManagementOptions,
         CurriculumOfferingPreviewItem,
         CurriculumOfferingPreview,
         ApplyCurriculumOfferingsResult,
@@ -973,6 +979,8 @@ use utoipa::OpenApi;
         StudentActivityRegistrationResult,
         ApiResponse<Vec<LearningOffering>>,
         ApiResponse<LearningOffering>,
+        ApiResponse<LearningDeliveryOverview>,
+        ApiResponse<DeliveryManagementOptions>,
         ApiResponse<CurriculumOfferingPreview>,
         ApiResponse<ApplyCurriculumOfferingsResult>,
         ApiResponse<Vec<LearningGroup>>,
@@ -2467,6 +2475,16 @@ mod tests {
                 "getAcademicSetupWorkspace",
                 "#/components/schemas/ApiResponse_AcademicSetupWorkspace",
             ),
+            (
+                "/api/academic/delivery/workspace",
+                "getLearningDeliveryOverview",
+                "#/components/schemas/ApiResponse_LearningDeliveryOverview",
+            ),
+            (
+                "/api/academic/delivery/management-options",
+                "getLearningDeliveryManagementOptions",
+                "#/components/schemas/ApiResponse_DeliveryManagementOptions",
+            ),
         ] {
             let operation = &document["paths"][path]["get"];
             assert_eq!(operation["operationId"], operation_id, "path {path}");
@@ -2510,6 +2528,10 @@ mod tests {
             "StudyProgramRequirement",
             "CurriculumProgramWorkspace",
             "AcademicSetupWorkspace",
+            "LearningDeliveryOverview",
+            "LearningOfferingOverviewItem",
+            "DeliveryCatalogVersionOption",
+            "DeliveryManagementOptions",
         ] {
             assert!(
                 !document["components"]["schemas"][schema].is_null(),

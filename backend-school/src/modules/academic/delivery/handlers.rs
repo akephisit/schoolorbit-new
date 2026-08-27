@@ -15,7 +15,7 @@ use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 
 use super::models::*;
-use super::services::{activities, groups, offerings};
+use super::services::{activities, groups, offerings, workspaces};
 
 fn ok<T: serde::Serialize>(data: T) -> Response {
     Json(ApiResponse::ok(data)).into_response()
@@ -183,6 +183,74 @@ pub async fn list_offerings(
     Ok(ok(
         offerings::list(&context.tenant.pool, query, &filter).await?
     ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/delivery/workspace",
+    operation_id = "getLearningDeliveryOverview",
+    tag = "academic",
+    params(LearningOfferingQuery),
+    responses(
+        (status = 200, description = "Term-scoped learning delivery overview", body = ApiResponse<LearningDeliveryOverview>),
+        (status = 400, description = "Invalid academic term query or oversized workspace", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning offering read permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_delivery_overview(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<LearningOfferingQuery>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let filter = learning_offering_access_policy::require_learning_offering_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        OfferingAction::Read,
+    )
+    .await?;
+    Ok(ok(workspaces::delivery_overview(
+        &context.tenant.pool,
+        query.academic_term_id,
+        &filter,
+    )
+    .await?))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/delivery/management-options",
+    operation_id = "getLearningDeliveryManagementOptions",
+    tag = "academic",
+    params(LearningOfferingQuery),
+    responses(
+        (status = 200, description = "Term-scoped options for managing learning delivery", body = ApiResponse<DeliveryManagementOptions>),
+        (status = 400, description = "Invalid academic term query or oversized option set", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning offering management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Academic term not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_delivery_management_options(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<LearningOfferingQuery>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let filter = learning_offering_access_policy::require_learning_offering_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        OfferingAction::Manage,
+    )
+    .await?;
+    Ok(ok(workspaces::delivery_management_options(
+        &context.tenant.pool,
+        query.academic_term_id,
+        context.actor.user_id,
+        &filter,
+    )
+    .await?))
 }
 
 #[utoipa::path(

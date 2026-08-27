@@ -3697,6 +3697,87 @@
         ],
         "type": "object"
       },
+      "ApiResponse_DeliveryManagementOptions": {
+        "properties": {
+          "data": {
+            "properties": {
+              "academicTermId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "academicYearId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "catalogVersions": {
+                "items": {
+                  "$ref": "#/components/schemas/DeliveryCatalogVersionOption"
+                },
+                "type": "array"
+              },
+              "gradeLevels": {
+                "items": {
+                  "$ref": "#/components/schemas/GradeLevelLookupItem"
+                },
+                "type": "array"
+              },
+              "homerooms": {
+                "items": {
+                  "$ref": "#/components/schemas/HomeroomLookupItem"
+                },
+                "type": "array"
+              },
+              "organizationUnits": {
+                "items": {
+                  "$ref": "#/components/schemas/OrganizationUnitLookupItem"
+                },
+                "type": "array"
+              },
+              "rooms": {
+                "items": {
+                  "$ref": "#/components/schemas/Room"
+                },
+                "type": "array"
+              },
+              "studyPrograms": {
+                "items": {
+                  "$ref": "#/components/schemas/StudyProgramOption"
+                },
+                "type": "array"
+              },
+              "teachers": {
+                "items": {
+                  "$ref": "#/components/schemas/StaffLookupItem"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "academicTermId",
+              "academicYearId",
+              "catalogVersions",
+              "gradeLevels",
+              "studyPrograms",
+              "organizationUnits",
+              "homerooms",
+              "teachers",
+              "rooms"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_DocumentUploadResponse": {
         "properties": {
           "data": {
@@ -5658,6 +5739,40 @@
             },
             "required": [
               "items"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_LearningDeliveryOverview": {
+        "properties": {
+          "data": {
+            "properties": {
+              "academicTermId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "offerings": {
+                "items": {
+                  "$ref": "#/components/schemas/LearningOfferingOverviewItem"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "academicTermId",
+              "offerings"
             ],
             "type": "object"
           },
@@ -21345,6 +21460,105 @@
         ],
         "type": "object"
       },
+      "DeliveryCatalogVersionOption": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/LearningOfferingKind"
+          },
+          "label": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "versionNo": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "code",
+          "name",
+          "versionNo",
+          "label"
+        ],
+        "type": "object"
+      },
+      "DeliveryManagementOptions": {
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "academicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "catalogVersions": {
+            "items": {
+              "$ref": "#/components/schemas/DeliveryCatalogVersionOption"
+            },
+            "type": "array"
+          },
+          "gradeLevels": {
+            "items": {
+              "$ref": "#/components/schemas/GradeLevelLookupItem"
+            },
+            "type": "array"
+          },
+          "homerooms": {
+            "items": {
+              "$ref": "#/components/schemas/HomeroomLookupItem"
+            },
+            "type": "array"
+          },
+          "organizationUnits": {
+            "items": {
+              "$ref": "#/components/schemas/OrganizationUnitLookupItem"
+            },
+            "type": "array"
+          },
+          "rooms": {
+            "items": {
+              "$ref": "#/components/schemas/Room"
+            },
+            "type": "array"
+          },
+          "studyPrograms": {
+            "items": {
+              "$ref": "#/components/schemas/StudyProgramOption"
+            },
+            "type": "array"
+          },
+          "teachers": {
+            "items": {
+              "$ref": "#/components/schemas/StaffLookupItem"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "academicTermId",
+          "academicYearId",
+          "catalogVersions",
+          "gradeLevels",
+          "studyPrograms",
+          "organizationUnits",
+          "homerooms",
+          "teachers",
+          "rooms"
+        ],
+        "type": "object"
+      },
       "DocumentUploadResponse": {
         "properties": {
           "docType": {
@@ -24264,6 +24478,25 @@
         ],
         "type": "object"
       },
+      "LearningDeliveryOverview": {
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "offerings": {
+            "items": {
+              "$ref": "#/components/schemas/LearningOfferingOverviewItem"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "academicTermId",
+          "offerings"
+        ],
+        "type": "object"
+      },
       "LearningGroup": {
         "properties": {
           "academicTermId": {
@@ -24549,6 +24782,51 @@
           "activity"
         ],
         "type": "string"
+      },
+      "LearningOfferingOverviewItem": {
+        "properties": {
+          "gradeLevels": {
+            "items": {
+              "$ref": "#/components/schemas/GradeLevelLookupItem"
+            },
+            "type": "array"
+          },
+          "groupCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "groupsWithoutPrimaryTeacher": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "offering": {
+            "$ref": "#/components/schemas/LearningOffering"
+          },
+          "publishedRosterCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "studyPrograms": {
+            "items": {
+              "$ref": "#/components/schemas/StudyProgramOption"
+            },
+            "type": "array"
+          },
+          "teacherAssignmentCount": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "offering",
+          "gradeLevels",
+          "studyPrograms",
+          "groupCount",
+          "teacherAssignmentCount",
+          "groupsWithoutPrimaryTeacher",
+          "publishedRosterCount"
+        ],
+        "type": "object"
       },
       "LearningOfferingQuery": {
         "additionalProperties": false,
@@ -27895,12 +28173,30 @@
           "currentlyActive": {
             "type": "boolean"
           },
+          "displayName": {
+            "type": "string"
+          },
+          "gradeLevelName": {
+            "type": "string"
+          },
+          "homeroomName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "proposedActive": {
             "type": "boolean"
           },
           "studentAcademicYearId": {
             "format": "uuid",
             "type": "string"
+          },
+          "studentCode": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "studentId": {
             "format": "uuid",
@@ -27910,6 +28206,8 @@
         "required": [
           "studentAcademicYearId",
           "studentId",
+          "displayName",
+          "gradeLevelName",
           "proposedActive",
           "currentlyActive"
         ],
@@ -37607,6 +37905,138 @@
               }
             },
             "description": "Curriculum version row version conflict"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/delivery/management-options": {
+      "get": {
+        "operationId": "getLearningDeliveryManagementOptions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_DeliveryManagementOptions"
+                }
+              }
+            },
+            "description": "Term-scoped options for managing learning delivery"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid academic term query or oversized option set"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Learning offering management permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic term not found"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/delivery/workspace": {
+      "get": {
+        "operationId": "getLearningDeliveryOverview",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LearningDeliveryOverview"
+                }
+              }
+            },
+            "description": "Term-scoped learning delivery overview"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid academic term query or oversized workspace"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Learning offering read permission denied"
           }
         },
         "tags": [

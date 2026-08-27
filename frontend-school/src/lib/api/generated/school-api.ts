@@ -549,6 +549,38 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/delivery/management-options': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getLearningDeliveryManagementOptions'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/delivery/workspace': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getLearningDeliveryOverview'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/exam-schedules': {
 		parameters: {
 			query?: never;
@@ -5193,6 +5225,23 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_DeliveryManagementOptions: {
+			data: {
+				/** Format: uuid */
+				academicTermId: string;
+				/** Format: uuid */
+				academicYearId: string;
+				catalogVersions: components['schemas']['DeliveryCatalogVersionOption'][];
+				gradeLevels: components['schemas']['GradeLevelLookupItem'][];
+				homerooms: components['schemas']['HomeroomLookupItem'][];
+				organizationUnits: components['schemas']['OrganizationUnitLookupItem'][];
+				rooms: components['schemas']['Room'][];
+				studyPrograms: components['schemas']['StudyProgramOption'][];
+				teachers: components['schemas']['StaffLookupItem'][];
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_DocumentUploadResponse: {
 			data: {
 				docType: string;
@@ -5730,6 +5779,15 @@ export interface components {
 					/** Format: date-time */
 					updatedAt: string;
 				}[];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_LearningDeliveryOverview: {
+			data: {
+				/** Format: uuid */
+				academicTermId: string;
+				offerings: components['schemas']['LearningOfferingOverviewItem'][];
 			};
 			message?: string;
 			success: boolean;
@@ -9920,6 +9978,29 @@ export interface components {
 			to_user_id: string;
 			to_user_name: string;
 		};
+		DeliveryCatalogVersionOption: {
+			code: string;
+			/** Format: uuid */
+			id: string;
+			kind: components['schemas']['LearningOfferingKind'];
+			label: string;
+			name: string;
+			/** Format: int32 */
+			versionNo: number;
+		};
+		DeliveryManagementOptions: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			academicYearId: string;
+			catalogVersions: components['schemas']['DeliveryCatalogVersionOption'][];
+			gradeLevels: components['schemas']['GradeLevelLookupItem'][];
+			homerooms: components['schemas']['HomeroomLookupItem'][];
+			organizationUnits: components['schemas']['OrganizationUnitLookupItem'][];
+			rooms: components['schemas']['Room'][];
+			studyPrograms: components['schemas']['StudyProgramOption'][];
+			teachers: components['schemas']['StaffLookupItem'][];
+		};
 		DocumentUploadResponse: {
 			docType: string;
 			/** Format: uuid */
@@ -10765,6 +10846,11 @@ export interface components {
 				updatedAt: string;
 			}[];
 		};
+		LearningDeliveryOverview: {
+			/** Format: uuid */
+			academicTermId: string;
+			offerings: components['schemas']['LearningOfferingOverviewItem'][];
+		};
 		LearningGroup: {
 			/** Format: uuid */
 			academicTermId: string;
@@ -10849,6 +10935,19 @@ export interface components {
 		};
 		/** @enum {string} */
 		LearningOfferingKind: 'course' | 'activity';
+		LearningOfferingOverviewItem: {
+			gradeLevels: components['schemas']['GradeLevelLookupItem'][];
+			/** Format: int64 */
+			groupCount: number;
+			/** Format: int64 */
+			groupsWithoutPrimaryTeacher: number;
+			offering: components['schemas']['LearningOffering'];
+			/** Format: int64 */
+			publishedRosterCount: number;
+			studyPrograms: components['schemas']['StudyProgramOption'][];
+			/** Format: int64 */
+			teacherAssignmentCount: number;
+		};
 		LearningOfferingQuery: {
 			/** Format: uuid */
 			academicTermId: string;
@@ -11721,9 +11820,13 @@ export interface components {
 		RosterPreviewStudent: {
 			conflictReason?: string | null;
 			currentlyActive: boolean;
+			displayName: string;
+			gradeLevelName: string;
+			homeroomName?: string | null;
 			proposedActive: boolean;
 			/** Format: uuid */
 			studentAcademicYearId: string;
+			studentCode?: string | null;
 			/** Format: uuid */
 			studentId: string;
 		};
@@ -16504,6 +16607,113 @@ export interface operations {
 			};
 			/** @description Curriculum version row version conflict */
 			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getLearningDeliveryManagementOptions: {
+		parameters: {
+			query: {
+				academicTermId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Term-scoped options for managing learning delivery */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_DeliveryManagementOptions'];
+				};
+			};
+			/** @description Invalid academic term query or oversized option set */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning offering management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic term not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getLearningDeliveryOverview: {
+		parameters: {
+			query: {
+				academicTermId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Term-scoped learning delivery overview */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LearningDeliveryOverview'];
+				};
+			};
+			/** @description Invalid academic term query or oversized workspace */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning offering read permission denied */
+			403: {
 				headers: {
 					[name: string]: unknown;
 				};

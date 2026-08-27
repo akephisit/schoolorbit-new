@@ -9,6 +9,11 @@ use crate::AppState;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route("/delivery/workspace", get(handlers::get_delivery_overview))
+        .route(
+            "/delivery/management-options",
+            get(handlers::get_delivery_management_options),
+        )
         .route(
             "/offerings",
             get(handlers::list_offerings).post(handlers::create_offering),

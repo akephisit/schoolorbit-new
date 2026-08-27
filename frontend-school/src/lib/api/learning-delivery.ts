@@ -10,6 +10,8 @@ import type { components, operations } from '$lib/api/generated/school-api';
 type Schemas = components['schemas'];
 
 export type LearningOffering = Schemas['LearningOffering'];
+export type LearningDeliveryOverview = Schemas['LearningDeliveryOverview'];
+export type DeliveryManagementOptions = Schemas['DeliveryManagementOptions'];
 export type LearningGroup = Schemas['LearningGroup'];
 export type TeacherAssignment = Schemas['TeacherAssignmentInput'];
 export type RosterPreview = Schemas['RosterPreview'];
@@ -51,6 +53,44 @@ type ListLearningOfferingsQuery = NonNullable<
 type ListLearningGroupsForTermQuery = NonNullable<
 	operations['listLearningGroupsForTerm']['parameters']['query']
 >;
+type DeliveryWorkspaceQuery = NonNullable<
+	operations['getLearningDeliveryOverview']['parameters']['query']
+>;
+type DeliveryManagementOptionsQuery = NonNullable<
+	operations['getLearningDeliveryManagementOptions']['parameters']['query']
+>;
+
+export const getLearningDeliveryOverview = (
+	academicTermId: string,
+	options: ApiRequestOptions = {}
+) => {
+	const query = {
+		academicTermId: selectedTerm(academicTermId)
+	} satisfies DeliveryWorkspaceQuery;
+	return deliveryData(
+		apiClient.get<LearningDeliveryOverview>('/api/academic/delivery/workspace', {
+			...options,
+			query
+		}),
+		'ไม่สามารถโหลดภาพรวมรายการเปิดสอนได้'
+	);
+};
+
+export const getLearningDeliveryManagementOptions = (
+	academicTermId: string,
+	options: ApiRequestOptions = {}
+) => {
+	const query = {
+		academicTermId: selectedTerm(academicTermId)
+	} satisfies DeliveryManagementOptionsQuery;
+	return deliveryData(
+		apiClient.get<DeliveryManagementOptions>('/api/academic/delivery/management-options', {
+			...options,
+			query
+		}),
+		'ไม่สามารถโหลดตัวเลือกสำหรับจัดการรายการเปิดสอนได้'
+	);
+};
 
 export const listLearningOfferings = (academicTermId: string, options: ApiRequestOptions = {}) => {
 	const query = {
@@ -61,6 +101,11 @@ export const listLearningOfferings = (academicTermId: string, options: ApiReques
 		'ไม่สามารถโหลดรายการเปิดสอนได้'
 	);
 };
+export const getLearningOffering = (id: string, options: ApiRequestOptions = {}) =>
+	deliveryData(
+		apiClient.get<LearningOffering>(`/api/academic/offerings/${id}`, options),
+		'ไม่สามารถโหลดรายการเปิดสอนได้'
+	);
 export const createLearningOffering = (body: CreateLearningOfferingRequest) =>
 	deliveryData(
 		apiClient.post<LearningOffering>('/api/academic/offerings', body),
@@ -93,9 +138,9 @@ export const applyLearningOfferingsFromCurriculum = (body: ApplyCurriculumOfferi
 		'นำรายการเปิดสอนจากหลักสูตรมาใช้ไม่สำเร็จ'
 	);
 
-export const listLearningGroups = (offeringId: string) =>
+export const listLearningGroups = (offeringId: string, options: ApiRequestOptions = {}) =>
 	deliveryData(
-		apiClient.get<LearningGroup[]>(`/api/academic/offerings/${offeringId}/groups`),
+		apiClient.get<LearningGroup[]>(`/api/academic/offerings/${offeringId}/groups`, options),
 		'ไม่สามารถโหลดกลุ่มเรียนได้'
 	);
 export const listLearningGroupsForTerm = (
@@ -110,6 +155,11 @@ export const listLearningGroupsForTerm = (
 		'ไม่สามารถโหลดกลุ่มเรียนของภาคเรียนได้'
 	);
 };
+export const getLearningGroup = (id: string, options: ApiRequestOptions = {}) =>
+	deliveryData(
+		apiClient.get<LearningGroup>(`/api/academic/learning-groups/${id}`, options),
+		'ไม่สามารถโหลดกลุ่มเรียนได้'
+	);
 export const createLearningGroup = (offeringId: string, body: CreateLearningGroupRequest) =>
 	deliveryData(
 		apiClient.post<LearningGroup>(`/api/academic/offerings/${offeringId}/groups`, body),
