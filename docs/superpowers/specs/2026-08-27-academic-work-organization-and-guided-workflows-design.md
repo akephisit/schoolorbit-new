@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-27
 
-**Status:** Approved in chat; pending written spec review
+**Status:** Approved
 
 **Scope:** `backend-school` menu administration and academic read contracts, `frontend-school` academic navigation and workflow pages, generated API contracts, one forward-only tenant migration for recommended menu sections and route-recommendation metadata, and focused tests
 
