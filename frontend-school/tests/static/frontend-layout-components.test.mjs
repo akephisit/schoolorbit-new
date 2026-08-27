@@ -399,7 +399,6 @@ test('academic foundation workspace pages use shared app page shell', async () =
 		'src/routes/(app)/staff/academic/core/+page.svelte',
 		'src/routes/(app)/staff/academic/homerooms/+page.svelte',
 		'src/routes/(app)/staff/academic/catalog/subject-groups/+page.svelte',
-		'src/routes/(app)/staff/academic/periods/+page.svelte',
 		'src/routes/(app)/staff/academic/admission/+page.svelte'
 	];
 

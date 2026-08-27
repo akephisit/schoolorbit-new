@@ -980,15 +980,6 @@ test('academic structure workspace pages gate read and mutation actions', async 
 			identifiers: ['canRead', 'canManage']
 		},
 		{
-			file: 'frontend-school/src/routes/(app)/staff/academic/periods/+page.svelte',
-			imports: ['$lib/components/app-state'],
-			permissions: [
-				'PERMISSIONS.ACADEMIC_YEAR_READ_SCHOOL',
-				'PERMISSIONS.ACADEMIC_YEAR_MANAGE_SCHOOL'
-			],
-			identifiers: ['canReadAcademicPeriods', 'canManageAcademicPeriods']
-		},
-		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/homerooms/+page.svelte',
 			imports: ['$lib/components/app-state'],
 			permissions: ['PERMISSIONS.HOMEROOM_MANAGE_SCHOOL'],
@@ -1141,7 +1132,7 @@ test('daily teaching overview page is table based and read only', async () => {
 	);
 	assert.match(meta, /PERMISSION_MODULES\.ACADEMIC_TIMETABLE_TODAY/);
 	assert.match(meta, /title:\s*'ตารางสอนวันนี้'/);
-	assert.match(meta, /group:\s*'academic'/);
+	assert.match(meta, /group:\s*'academic_delivery'/);
 	assert.match(meta, /workspace:\s*'academic'/);
 	assert.match(page, /<PageShell/);
 	assert.match(page, /<PageSkeleton\s+variant="table"/);

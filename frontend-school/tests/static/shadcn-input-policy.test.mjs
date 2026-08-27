@@ -55,9 +55,9 @@ test('DatePicker exposes accessible migration props and safe clear behavior', as
 	assert.match(datePicker, /clearable\s*&&\s*value\s*&&\s*!disabled/);
 });
 
-test('dirty academic editors restore controlled shadcn Select values', async () => {
+test('academic editors keep controlled shadcn Select values', async () => {
 	const periods = await readFile(
-		path.join(frontendRoot, 'src/routes/(app)/staff/academic/periods/+page.svelte'),
+		path.join(frontendRoot, 'src/lib/components/academic-core/AcademicYearTermEditor.svelte'),
 		'utf8'
 	);
 	const timetable = await readFile(
@@ -65,8 +65,8 @@ test('dirty academic editors restore controlled shadcn Select values', async () 
 		'utf8'
 	);
 
-	assert.match(periods, /bind:value=\{scheduleSelectValue\}/);
-	assert.match(periods, /scheduleSelectValue = selectedScheduleId/);
+	assert.match(periods, /value=\{selectedBellScheduleId\}/);
+	assert.match(periods, /selectedBellScheduleId = id/);
 	assert.match(timetable, /bind:value=\{scheduleSelectValue\}/);
 	assert.match(timetable, /bind:value=\{targetSelectValue\}/);
 	assert.match(timetable, /scheduleSelectValue = selectedScheduleId/);
