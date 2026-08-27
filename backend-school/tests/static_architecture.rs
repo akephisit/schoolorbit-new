@@ -3592,6 +3592,13 @@ fn menu_workspace_contract_is_explicit_and_permission_based() {
     assert!(
         route_registration_service.contains("required_permission = EXCLUDED.required_permission")
     );
+    for recommendation_column in [
+        "recommended_workspace_code",
+        "recommended_group_code",
+        "recommended_display_order",
+    ] {
+        assert!(route_registration_service.contains(recommendation_column));
+    }
     assert!(route_migration.contains("CREATE TABLE menu_workspaces"));
     assert!(route_migration.contains("workspace_code"));
     for permission in [

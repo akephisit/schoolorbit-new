@@ -39,7 +39,9 @@ pub async fn sync_routes(
             r#"
             INSERT INTO menu_items (
                 id, code, name, name_en, path, icon, 
-                required_permission, user_type, group_id, display_order, is_active, managed_by
+                required_permission, user_type, group_id, display_order, is_active, managed_by,
+                recommended_workspace_code, recommended_group_code,
+                recommended_display_order
             )
             VALUES (
                 gen_random_uuid(),
@@ -47,13 +49,17 @@ pub async fn sync_routes(
                 (SELECT id FROM menu_groups WHERE code = $7),
                 $8,
                 true,
-                'frontend'
+                'frontend',
+                $9, $7, $8
             )
             ON CONFLICT (code) DO UPDATE SET
                 path = EXCLUDED.path,
                 required_permission = EXCLUDED.required_permission,
                 user_type = EXCLUDED.user_type,
                 managed_by = EXCLUDED.managed_by,
+                recommended_workspace_code = EXCLUDED.recommended_workspace_code,
+                recommended_group_code = EXCLUDED.recommended_group_code,
+                recommended_display_order = EXCLUDED.recommended_display_order,
                 group_id = COALESCE(menu_items.group_id, EXCLUDED.group_id),
                 display_order = COALESCE(menu_items.display_order, EXCLUDED.display_order),
                 is_active = menu_items.is_active
@@ -67,6 +73,7 @@ pub async fn sync_routes(
         .bind(user_type)
         .bind(&route.group)
         .bind(route.order)
+        .bind(workspace_code)
         .execute(&mut *transaction)
         .await
         .map_err(|error| {
@@ -242,6 +249,9 @@ mod tests {
         required_permission: Option<String>,
         user_type: String,
         managed_by: String,
+        recommended_workspace_code: Option<String>,
+        recommended_group_code: Option<String>,
+        recommended_display_order: Option<i32>,
     }
 
     async fn route_sync_test_pool(test_name: &str) -> PgPool {
@@ -333,7 +343,9 @@ mod tests {
 
         let active = sqlx::query_as::<_, StoredMenuRoute>(
             "SELECT name, icon, group_id, display_order, is_active, path,
-                    required_permission, user_type, managed_by
+                    required_permission, user_type, managed_by,
+                    recommended_workspace_code, recommended_group_code,
+                    recommended_display_order
              FROM menu_items
              WHERE code = 'staff-route-sync-active'",
         )
@@ -374,6 +386,69 @@ mod tests {
         .await
         .expect("stale frontend row count should load");
         assert_eq!(stale_frontend_count, 0);
+    }
+
+    #[tokio::test]
+    async fn synchronization_updates_recommendations_without_moving_school_layout() {
+        let pool = route_sync_test_pool("route_sync_recommendations").await;
+        let custom_group_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO menu_groups
+                (code, name, workspace_code, display_order, is_active)
+             VALUES ('teacher_custom', 'งานที่โรงเรียนจัดเอง', 'academic', 88, true)
+             RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("custom group should exist");
+
+        sqlx::query(
+            "INSERT INTO menu_items
+                (code, name, path, group_id, display_order, managed_by)
+             VALUES
+                ('staff-academic-core', 'ชื่อที่โรงเรียนตั้ง',
+                 '/staff/academic/core', $1, 77, 'frontend')",
+        )
+        .bind(custom_group_id)
+        .execute(&pool)
+        .await
+        .expect("menu item should exist");
+
+        sync_routes(
+            &pool,
+            &RouteRegistration {
+                routes: vec![route(
+                    "/staff/academic/core",
+                    "academic_delivery",
+                    "academic",
+                    "staff",
+                )],
+                environment: Some("test".to_string()),
+            },
+        )
+        .await
+        .expect("sync should pass");
+
+        let row = sqlx::query_as::<_, StoredMenuRoute>(
+            "SELECT name, icon, group_id, display_order, is_active, path,
+                    required_permission, user_type, managed_by,
+                    recommended_workspace_code, recommended_group_code,
+                    recommended_display_order
+             FROM menu_items
+             WHERE code = 'staff-academic-core'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("route should remain");
+
+        assert_eq!(row.group_id, Some(custom_group_id));
+        assert_eq!(row.display_order, 77);
+        assert_eq!(row.name, "ชื่อที่โรงเรียนตั้ง");
+        assert_eq!(row.recommended_workspace_code.as_deref(), Some("academic"));
+        assert_eq!(
+            row.recommended_group_code.as_deref(),
+            Some("academic_delivery")
+        );
+        assert_eq!(row.recommended_display_order, Some(10));
     }
 
     #[tokio::test]
