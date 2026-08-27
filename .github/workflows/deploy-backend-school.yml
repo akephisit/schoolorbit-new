@@ -26,7 +26,7 @@ on:
       academic_core_smoke_subdomain:
         description: "Tenant subdomain for the maintenance-only Academic Core smoke"
         required: false
-        default: "snwsb"
+        default: "sandbox"
         type: string
 
 env:
@@ -103,7 +103,7 @@ jobs:
       - name: Validate Academic Core authenticated smoke inputs
         if: ${{ inputs.academic_core_cleanup_smoke == true || (vars.SCHOOL_API_KEEP_MAINTENANCE || 'true') == 'false' }}
         env:
-          ACADEMIC_CORE_SMOKE_SUBDOMAIN: ${{ inputs.academic_core_smoke_subdomain || 'snwsb' }}
+          ACADEMIC_CORE_SMOKE_SUBDOMAIN: ${{ inputs.academic_core_smoke_subdomain || 'sandbox' }}
           SCHOOL_API_KEEP_MAINTENANCE: ${{ vars.SCHOOL_API_KEEP_MAINTENANCE || 'true' }}
         run: |
           case "$SCHOOL_API_KEEP_MAINTENANCE" in
@@ -592,7 +592,7 @@ jobs:
         if: ${{ inputs.academic_core_cleanup_smoke == true || (vars.SCHOOL_API_KEEP_MAINTENANCE || 'true') == 'false' }}
         uses: appleboy/ssh-action@v1.2.5
         env:
-          ACADEMIC_CORE_SMOKE_SUBDOMAIN: ${{ inputs.academic_core_smoke_subdomain || 'snwsb' }}
+          ACADEMIC_CORE_SMOKE_SUBDOMAIN: ${{ inputs.academic_core_smoke_subdomain || 'sandbox' }}
           SMOKE_USERNAME: ${{ secrets.SMOKE_USERNAME }}
           SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
         with:
