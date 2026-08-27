@@ -82,14 +82,16 @@ use crate::modules::lookup::models::{
     OrganizationUnitLookupItem, RoleLookupItem, StaffLookupItem, StudentLookupItem,
 };
 use crate::modules::menu::handlers::admin::{
-    CreateMenuGroupRequest, CreateMenuItemRequest, CreateMenuWorkspaceRequest,
-    MoveItemToGroupRequest, MovedCountData, ReorderGroupsRequest, ReorderItem, ReorderRequest,
-    ReorderWorkspacesRequest, UpdateMenuGroupRequest, UpdateMenuItemRequest,
-    UpdateMenuWorkspaceRequest,
+    ApplyAcademicMenuTemplateRequest, CreateMenuGroupRequest, CreateMenuItemRequest,
+    CreateMenuWorkspaceRequest, MoveItemToGroupRequest, MovedCountData, ReorderGroupsRequest,
+    ReorderItem, ReorderRequest, ReorderWorkspacesRequest, UpdateMenuGroupRequest,
+    UpdateMenuItemRequest, UpdateMenuWorkspaceRequest,
 };
 use crate::modules::menu::handlers::public::UserMenuData;
 use crate::modules::menu::models::{
-    FeatureToggle, MenuGroup, MenuGroupResponse, MenuItem, MenuItemResponse, MenuWorkspace,
+    AcademicMenuTemplateApplyResult, AcademicMenuTemplateMove, AcademicMenuTemplatePreview,
+    AcademicMenuTemplateSection, FeatureToggle, MenuGroup, MenuGroupResponse, MenuItem,
+    MenuItemResponse, MenuWorkspace,
 };
 use crate::modules::notification::models::{ListNotificationsResponse, Notification};
 use crate::modules::parents::models::{ChildDto, ParentProfile};
@@ -187,6 +189,8 @@ use utoipa::OpenApi;
         crate::modules::menu::handlers::admin::delete_menu_item,
         crate::modules::menu::handlers::admin::move_item_to_group,
         crate::modules::menu::handlers::admin::reorder_menu_items,
+        crate::modules::menu::handlers::admin::preview_recommended_academic_menu_template,
+        crate::modules::menu::handlers::admin::apply_recommended_academic_menu_template,
         crate::modules::lookup::handlers::lookup_staff,
         crate::modules::lookup::handlers::lookup_students,
         crate::modules::lookup::handlers::lookup_rooms,
@@ -713,11 +717,18 @@ use utoipa::OpenApi;
         ReorderWorkspacesRequest,
         MoveItemToGroupRequest,
         MovedCountData,
+        AcademicMenuTemplateSection,
+        AcademicMenuTemplateMove,
+        AcademicMenuTemplatePreview,
+        AcademicMenuTemplateApplyResult,
+        ApplyAcademicMenuTemplateRequest,
         ApiResponse<MenuWorkspace>,
         ApiResponse<Vec<MenuWorkspace>>,
         ApiResponse<MovedCountData>,
         ApiResponse<Vec<MenuGroup>>,
         ApiResponse<Vec<MenuItem>>,
+        ApiResponse<AcademicMenuTemplatePreview>,
+        ApiResponse<AcademicMenuTemplateApplyResult>,
         FeatureToggle,
         FeatureListResponse,
         FeatureToggleResponse,
@@ -2134,6 +2145,16 @@ mod tests {
                     "moveMenuItemToGroup",
                 ),
                 ("/api/admin/menu/items/reorder", "post", "reorderMenuItems"),
+                (
+                    "/api/admin/menu/templates/academic/recommended",
+                    "get",
+                    "previewRecommendedAcademicMenuTemplate",
+                ),
+                (
+                    "/api/admin/menu/templates/academic/recommended/apply",
+                    "post",
+                    "applyRecommendedAcademicMenuTemplate",
+                ),
                 ("/api/lookup/staff", "get", "lookupStaff"),
                 ("/api/lookup/students", "get", "lookupStudents"),
                 ("/api/lookup/rooms", "get", "lookupRooms"),

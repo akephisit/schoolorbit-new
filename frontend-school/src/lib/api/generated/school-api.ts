@@ -1705,6 +1705,38 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/admin/menu/templates/academic/recommended': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['previewRecommendedAcademicMenuTemplate'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/admin/menu/templates/academic/recommended/apply': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['applyRecommendedAcademicMenuTemplate'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/admin/menu/workspaces': {
 		parameters: {
 			query?: never;
@@ -4108,6 +4140,42 @@ export interface components {
 			terms: components['schemas']['AcademicTermOption'][];
 			years: components['schemas']['AcademicYearOption'][];
 		};
+		AcademicMenuTemplateApplyResult: {
+			/** Format: int64 */
+			createdSectionCount: number;
+			/** Format: int64 */
+			movedCount: number;
+			revision: string;
+		};
+		AcademicMenuTemplateMove: {
+			currentGroupName: string | null;
+			/** Format: int32 */
+			currentOrder: number;
+			/** Format: uuid */
+			menuItemId: string;
+			menuItemName: string;
+			targetGroupCode: string;
+			targetGroupName: string;
+			/** Format: int32 */
+			targetOrder: number;
+		};
+		AcademicMenuTemplatePreview: {
+			moves: components['schemas']['AcademicMenuTemplateMove'][];
+			recommendationsReady: boolean;
+			revision: string;
+			sectionsToCreate: components['schemas']['AcademicMenuTemplateSection'][];
+			/** Format: int64 */
+			untouchedCustomItemCount: number;
+			/** Format: int64 */
+			untouchedNonAcademicRouteCount: number;
+		};
+		AcademicMenuTemplateSection: {
+			code: string;
+			/** Format: int32 */
+			displayOrder: number;
+			name: string;
+			workspaceCode: string;
+		};
 		AcademicSetupWorkspace: {
 			bellSchedules: components['schemas']['BellSchedule'][];
 			terms: components['schemas']['AcademicTerm'][];
@@ -4369,6 +4437,31 @@ export interface components {
 				activeAcademicYearId?: string | null;
 				terms: components['schemas']['AcademicTermOption'][];
 				years: components['schemas']['AcademicYearOption'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_AcademicMenuTemplateApplyResult: {
+			data: {
+				/** Format: int64 */
+				createdSectionCount: number;
+				/** Format: int64 */
+				movedCount: number;
+				revision: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_AcademicMenuTemplatePreview: {
+			data: {
+				moves: components['schemas']['AcademicMenuTemplateMove'][];
+				recommendationsReady: boolean;
+				revision: string;
+				sectionsToCreate: components['schemas']['AcademicMenuTemplateSection'][];
+				/** Format: int64 */
+				untouchedCustomItemCount: number;
+				/** Format: int64 */
+				untouchedNonAcademicRouteCount: number;
 			};
 			message?: string;
 			success: boolean;
@@ -7927,6 +8020,9 @@ export interface components {
 			}[];
 			message?: string;
 			success: boolean;
+		};
+		ApplyAcademicMenuTemplateRequest: {
+			revision: string;
 		};
 		ApplyCurriculumOfferingsRequest: {
 			/** Format: uuid */
@@ -22255,6 +22351,104 @@ export interface operations {
 			};
 			/** @description Menu update permission required */
 			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	previewRecommendedAcademicMenuTemplate: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Recommended academic menu template preview */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AcademicMenuTemplatePreview'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Menu read permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	applyRecommendedAcademicMenuTemplate: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ApplyAcademicMenuTemplateRequest'];
+			};
+		};
+		responses: {
+			/** @description Recommended academic menu template applied */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AcademicMenuTemplateApplyResult'];
+				};
+			};
+			/** @description Route recommendations are not ready */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Menu update permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Preview revision is stale */
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};

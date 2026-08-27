@@ -36,6 +36,133 @@
         ],
         "type": "object"
       },
+      "AcademicMenuTemplateApplyResult": {
+        "properties": {
+          "createdSectionCount": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "movedCount": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "revision": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "revision",
+          "createdSectionCount",
+          "movedCount"
+        ],
+        "type": "object"
+      },
+      "AcademicMenuTemplateMove": {
+        "properties": {
+          "currentGroupName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "currentOrder": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "menuItemId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "menuItemName": {
+            "type": "string"
+          },
+          "targetGroupCode": {
+            "type": "string"
+          },
+          "targetGroupName": {
+            "type": "string"
+          },
+          "targetOrder": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "menuItemId",
+          "menuItemName",
+          "currentGroupName",
+          "targetGroupCode",
+          "targetGroupName",
+          "currentOrder",
+          "targetOrder"
+        ],
+        "type": "object"
+      },
+      "AcademicMenuTemplatePreview": {
+        "properties": {
+          "moves": {
+            "items": {
+              "$ref": "#/components/schemas/AcademicMenuTemplateMove"
+            },
+            "type": "array"
+          },
+          "recommendationsReady": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "sectionsToCreate": {
+            "items": {
+              "$ref": "#/components/schemas/AcademicMenuTemplateSection"
+            },
+            "type": "array"
+          },
+          "untouchedCustomItemCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "untouchedNonAcademicRouteCount": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revision",
+          "recommendationsReady",
+          "sectionsToCreate",
+          "moves",
+          "untouchedCustomItemCount",
+          "untouchedNonAcademicRouteCount"
+        ],
+        "type": "object"
+      },
+      "AcademicMenuTemplateSection": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "displayOrder": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "workspaceCode": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "workspaceCode",
+          "displayOrder"
+        ],
+        "type": "object"
+      },
       "AcademicSetupWorkspace": {
         "properties": {
           "bellSchedules": {
@@ -955,6 +1082,98 @@
             "required": [
               "years",
               "terms"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_AcademicMenuTemplateApplyResult": {
+        "properties": {
+          "data": {
+            "properties": {
+              "createdSectionCount": {
+                "format": "int64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "movedCount": {
+                "format": "int64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "revision": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "revision",
+              "createdSectionCount",
+              "movedCount"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_AcademicMenuTemplatePreview": {
+        "properties": {
+          "data": {
+            "properties": {
+              "moves": {
+                "items": {
+                  "$ref": "#/components/schemas/AcademicMenuTemplateMove"
+                },
+                "type": "array"
+              },
+              "recommendationsReady": {
+                "type": "boolean"
+              },
+              "revision": {
+                "type": "string"
+              },
+              "sectionsToCreate": {
+                "items": {
+                  "$ref": "#/components/schemas/AcademicMenuTemplateSection"
+                },
+                "type": "array"
+              },
+              "untouchedCustomItemCount": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "untouchedNonAcademicRouteCount": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "revision",
+              "recommendationsReady",
+              "sectionsToCreate",
+              "moves",
+              "untouchedCustomItemCount",
+              "untouchedNonAcademicRouteCount"
             ],
             "type": "object"
           },
@@ -14131,6 +14350,18 @@
         "required": [
           "success",
           "data"
+        ],
+        "type": "object"
+      },
+      "ApplyAcademicMenuTemplateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "revision"
         ],
         "type": "object"
       },
@@ -44638,6 +44869,116 @@
               }
             },
             "description": "Menu update permission required"
+          }
+        },
+        "tags": [
+          "menu"
+        ]
+      }
+    },
+    "/api/admin/menu/templates/academic/recommended": {
+      "get": {
+        "operationId": "previewRecommendedAcademicMenuTemplate",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AcademicMenuTemplatePreview"
+                }
+              }
+            },
+            "description": "Recommended academic menu template preview"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Menu read permission required"
+          }
+        },
+        "tags": [
+          "menu"
+        ]
+      }
+    },
+    "/api/admin/menu/templates/academic/recommended/apply": {
+      "post": {
+        "operationId": "applyRecommendedAcademicMenuTemplate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyAcademicMenuTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AcademicMenuTemplateApplyResult"
+                }
+              }
+            },
+            "description": "Recommended academic menu template applied"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Route recommendations are not ready"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Menu update permission required"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Preview revision is stale"
           }
         },
         "tags": [

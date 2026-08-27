@@ -18,6 +18,28 @@ export type UpdateMenuGroupRequest = Schemas['UpdateMenuGroupRequest'];
 export type CreateMenuItemRequest = Schemas['CreateMenuItemRequest'];
 export type UpdateMenuItemRequest = Schemas['UpdateMenuItemRequest'];
 export type ReorderItem = Schemas['ReorderItem'];
+export type AcademicMenuTemplatePreview = Schemas['AcademicMenuTemplatePreview'];
+export type AcademicMenuTemplateApplyResult = Schemas['AcademicMenuTemplateApplyResult'];
+
+// ==================== Recommended academic template ====================
+
+export async function previewRecommendedAcademicMenuTemplate(): Promise<AcademicMenuTemplatePreview> {
+	const response = await apiClient.get<AcademicMenuTemplatePreview>(
+		'/api/admin/menu/templates/academic/recommended'
+	);
+	return requireApiData(response, 'ไม่สามารถโหลดตัวอย่างโครงสร้างงานวิชาการได้');
+}
+
+export async function applyRecommendedAcademicMenuTemplate(
+	revision: string
+): Promise<AcademicMenuTemplateApplyResult> {
+	const request: Schemas['ApplyAcademicMenuTemplateRequest'] = { revision };
+	const response = await apiClient.post<AcademicMenuTemplateApplyResult>(
+		'/api/admin/menu/templates/academic/recommended/apply',
+		request
+	);
+	return requireApiData(response, 'ไม่สามารถใช้โครงสร้างงานวิชาการแนะนำได้');
+}
 
 // ==================== Management workspaces ====================
 
