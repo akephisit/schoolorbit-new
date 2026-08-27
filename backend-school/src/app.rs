@@ -541,6 +541,14 @@ fn protected_routes() -> Router<AppState> {
                 .post(modules::menu::handlers::admin::create_menu_workspace),
         )
         .route(
+            "/api/admin/menu/templates/academic/recommended",
+            get(modules::menu::handlers::admin::preview_recommended_academic_menu_template),
+        )
+        .route(
+            "/api/admin/menu/templates/academic/recommended/apply",
+            post(modules::menu::handlers::admin::apply_recommended_academic_menu_template),
+        )
+        .route(
             "/api/admin/menu/workspaces/reorder",
             post(modules::menu::handlers::admin::reorder_menu_workspaces),
         )

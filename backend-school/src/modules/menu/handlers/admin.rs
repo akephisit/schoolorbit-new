@@ -1,8 +1,11 @@
 use crate::api_response::{ApiErrorResponse, ApiResponse, EmptyData};
 use crate::error::AppError;
 use crate::modules::auth::session_service::AuthenticatedSession;
-use crate::modules::menu::models::{MenuGroup, MenuItem, MenuWorkspace};
-use crate::modules::menu::services::menu_service;
+use crate::modules::menu::models::{
+    AcademicMenuTemplateApplyResult, AcademicMenuTemplatePreview, MenuGroup, MenuItem,
+    MenuWorkspace,
+};
+use crate::modules::menu::services::{academic_template_service, menu_service};
 use crate::permissions::registry::codes;
 use crate::utils::request_context::{actor_tenant_context_from_session, ActorTenantContext};
 use crate::AppState;
@@ -124,6 +127,12 @@ pub struct MoveItemToGroupRequest {
     pub group_id: Uuid,
 }
 
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ApplyAcademicMenuTemplateRequest {
+    pub revision: String,
+}
+
 async fn auth_with_permission(
     state: &AppState,
     session: &AuthenticatedSession,
@@ -132,6 +141,63 @@ async fn auth_with_permission(
     let context = actor_tenant_context_from_session(state, session).await?;
     context.actor.require_permission(permission)?;
     Ok(context)
+}
+
+// ==================== Recommended Academic Template ====================
+
+#[utoipa::path(
+    get,
+    path = "/api/admin/menu/templates/academic/recommended",
+    operation_id = "previewRecommendedAcademicMenuTemplate",
+    tag = "menu",
+    responses(
+        (status = 200, description = "Recommended academic menu template preview", body = ApiResponse<AcademicMenuTemplatePreview>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Menu read permission required", body = ApiErrorResponse)
+    )
+)]
+pub async fn preview_recommended_academic_menu_template(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = auth_with_permission(&state, &session, codes::MENU_READ_ALL).await?;
+    let preview =
+        academic_template_service::preview_academic_template(&context.tenant.pool).await?;
+    Ok((StatusCode::OK, JsonResponse(ApiResponse::ok(preview))))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/admin/menu/templates/academic/recommended/apply",
+    operation_id = "applyRecommendedAcademicMenuTemplate",
+    tag = "menu",
+    request_body = ApplyAcademicMenuTemplateRequest,
+    responses(
+        (status = 200, description = "Recommended academic menu template applied", body = ApiResponse<AcademicMenuTemplateApplyResult>),
+        (status = 400, description = "Route recommendations are not ready", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Menu update permission required", body = ApiErrorResponse),
+        (status = 409, description = "Preview revision is stale", body = ApiErrorResponse)
+    )
+)]
+pub async fn apply_recommended_academic_menu_template(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    JsonResponse(data): JsonResponse<ApplyAcademicMenuTemplateRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = auth_with_permission(&state, &session, codes::MENU_UPDATE_ALL).await?;
+    let result = academic_template_service::apply_academic_template(
+        &context.tenant.pool,
+        data.revision.trim(),
+    )
+    .await?;
+    Ok((
+        StatusCode::OK,
+        JsonResponse(ApiResponse::with_message(
+            result,
+            "Applied recommended academic menu template",
+        )),
+    ))
 }
 
 // ==================== Menu Workspaces ====================

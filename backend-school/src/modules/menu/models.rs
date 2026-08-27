@@ -95,6 +95,47 @@ pub struct MenuGroupResponse {
     pub items: Vec<MenuItemResponse>,
 }
 
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AcademicMenuTemplateSection {
+    pub code: String,
+    pub name: String,
+    pub workspace_code: String,
+    pub display_order: i32,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AcademicMenuTemplateMove {
+    pub menu_item_id: Uuid,
+    pub menu_item_name: String,
+    #[schema(required = true)]
+    pub current_group_name: Option<String>,
+    pub target_group_code: String,
+    pub target_group_name: String,
+    pub current_order: i32,
+    pub target_order: i32,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AcademicMenuTemplatePreview {
+    pub revision: String,
+    pub recommendations_ready: bool,
+    pub sections_to_create: Vec<AcademicMenuTemplateSection>,
+    pub moves: Vec<AcademicMenuTemplateMove>,
+    pub untouched_custom_item_count: i64,
+    pub untouched_non_academic_route_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AcademicMenuTemplateApplyResult {
+    pub revision: String,
+    pub created_section_count: u64,
+    pub moved_count: u64,
+}
+
 // ==================== Route Registration (Build-time) ====================
 
 /// Request payload for route registration from frontend build
