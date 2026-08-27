@@ -55,3 +55,27 @@ test('subject catalog uses the responsive overview information architecture', as
 		assert.match(subjects, new RegExp(label));
 	}
 });
+
+test('activity catalog uses the responsive overview information architecture', async () => {
+	const activities = await readSource(
+		'src/routes/(app)/staff/academic/catalog/activities/+page.svelte'
+	);
+
+	assert.match(activities, /getCatalogActivityOverview/);
+	assert.match(activities, /\* as Table/);
+	assert.match(activities, /\* as Sheet/);
+	assert.match(activities, /\* as Select/);
+	assert.match(activities, /activityHistoryCache/);
+	assert.match(activities, /ACTIVITY_TYPE_OPTIONS/);
+	assert.match(activities, /SCHEDULING_MODE_OPTIONS/);
+	for (const label of [
+		'ชื่อกิจกรรม',
+		'ประเภทกิจกรรม',
+		'รูปแบบการจัด',
+		'ระดับชั้น',
+		'ชั่วโมง',
+		'สถานะ'
+	]) {
+		assert.match(activities, new RegExp(label));
+	}
+});
