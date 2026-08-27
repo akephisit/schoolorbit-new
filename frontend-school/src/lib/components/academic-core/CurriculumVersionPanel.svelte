@@ -1,10 +1,9 @@
 <script lang="ts">
 	import type {
-		AcademicYear,
 		CreateCurriculumVersionRequest,
 		Curriculum,
-		CurriculumManagementOptions,
-		CurriculumVersion
+		CurriculumCreateOptions,
+		CurriculumVersionView
 	} from '$lib/api/academic-core';
 	import { LoadingButton } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
@@ -15,25 +14,21 @@
 	import * as Select from '$lib/components/ui/select';
 	import { BookCopy, GitBranchPlus } from 'lucide-svelte';
 
-	type AcademicYearChoice = Pick<AcademicYear, 'id' | 'name' | 'year' | 'status'>;
-
 	let {
 		curriculum,
 		versions,
 		selectedVersion,
-		academicYears,
 		canManage,
 		onSelectVersion,
-		onRequestManagementOptions,
+		onRequestCreateOptions,
 		onCreateVersion
 	}: {
 		curriculum: Curriculum;
-		versions: CurriculumVersion[];
-		selectedVersion: CurriculumVersion | null;
-		academicYears: AcademicYear[];
+		versions: CurriculumVersionView[];
+		selectedVersion: CurriculumVersionView | null;
 		canManage: boolean;
-		onSelectVersion: (version: CurriculumVersion) => Promise<void>;
-		onRequestManagementOptions: () => Promise<CurriculumManagementOptions | null>;
+		onSelectVersion: (version: CurriculumVersionView) => Promise<void>;
+		onRequestCreateOptions: () => Promise<CurriculumCreateOptions | null>;
 		onCreateVersion: (draft: CreateCurriculumVersionRequest) => Promise<void>;
 	} = $props();
 
@@ -42,7 +37,7 @@
 	let optionsLoading = $state(false);
 	let saving = $state(false);
 	let errorMessage = $state('');
-	let createYears = $state.raw<AcademicYearChoice[]>([]);
+	let createYears = $state.raw<CurriculumCreateOptions['academicYears']>([]);
 	let draft = $state({
 		versionName: '',
 		startAcademicYearId: '',
@@ -50,21 +45,16 @@
 		description: ''
 	});
 
-	function yearLabel(yearId: string | null | undefined) {
-		if (!yearId) return 'ไม่กำหนด';
-		return academicYears.find((year) => year.id === yearId)?.name ?? 'ไม่พบปีการศึกษา';
-	}
-
-	function versionRange(version: CurriculumVersion) {
-		const start = yearLabel(version.startAcademicYearId);
-		const end = version.endAcademicYearId ? yearLabel(version.endAcademicYearId) : null;
+	function versionRange(view: CurriculumVersionView) {
+		const start = view.startAcademicYearName;
+		const end = view.endAcademicYearName;
 		return end ? `${start}–${end}` : `ตั้งแต่ ${start}`;
 	}
 
-	function versionStatusLabel(version: CurriculumVersion) {
-		return version.status === 'published'
+	function versionStatusLabel(view: CurriculumVersionView) {
+		return view.version.status === 'published'
 			? 'เผยแพร่แล้ว'
-			: version.status === 'archived'
+			: view.version.status === 'archived'
 				? 'เก็บถาวร'
 				: 'แบบร่าง';
 	}
@@ -84,8 +74,8 @@
 		errorMessage = '';
 		optionsLoading = true;
 		try {
-			const options = selectedVersion ? await onRequestManagementOptions() : null;
-			createYears = options?.academicYears ?? academicYears;
+			const options = await onRequestCreateOptions();
+			createYears = options?.academicYears ?? [];
 			if (!draft.startAcademicYearId && createYears[0]) {
 				draft.startAcademicYearId = createYears[0].id;
 			}
@@ -141,7 +131,9 @@
 		{#if canManage}
 			<Button variant="outline" onclick={showCreateDialog}>
 				<GitBranchPlus class="size-4" />
-				{selectedVersion?.status === 'published' ? 'สร้างแบบร่างรุ่นใหม่' : 'เพิ่มรุ่นหลักสูตร'}
+				{selectedVersion?.version.status === 'published'
+					? 'สร้างแบบร่างรุ่นใหม่'
+					: 'เพิ่มรุ่นหลักสูตร'}
 			</Button>
 		{/if}
 	</header>
@@ -160,13 +152,13 @@
 			</div>
 		{:else}
 			<div class="flex gap-2 overflow-x-auto pb-1">
-				{#each versions as version (version.id)}
+				{#each versions as version (version.version.id)}
 					<Button
-						variant={selectedVersion?.id === version.id ? 'default' : 'outline'}
+						variant={selectedVersion?.version.id === version.version.id ? 'default' : 'outline'}
 						class="h-auto min-w-44 flex-col items-start gap-1 px-3 py-2 text-start"
 						onclick={() => onSelectVersion(version)}
 					>
-						<span class="w-full truncate font-medium">{version.versionName}</span>
+						<span class="w-full truncate font-medium">{version.version.versionName}</span>
 						<span class="text-xs opacity-80">{versionRange(version)}</span>
 						<span class="text-xs opacity-80">{versionStatusLabel(version)}</span>
 					</Button>

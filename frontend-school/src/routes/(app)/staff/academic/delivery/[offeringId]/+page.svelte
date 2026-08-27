@@ -224,9 +224,14 @@
 
 	async function refreshRoster() {
 		if (!selectedGroup) return;
+		const groupId = selectedGroup.id;
 		rosterLoading = true;
 		try {
-			rosterPreview = await previewLearningGroupRoster(selectedGroup.id);
+			const refreshedGroup = await getLearningGroup(groupId);
+			const refreshedPreview = await previewLearningGroupRoster(groupId);
+			if (selectedGroup?.id !== groupId) return;
+			updateGroupState(refreshedGroup);
+			rosterPreview = refreshedPreview;
 			rosterStale = false;
 		} finally {
 			rosterLoading = false;

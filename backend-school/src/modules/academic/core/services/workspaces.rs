@@ -17,10 +17,10 @@ use super::super::models::{
     AcademicSetupWorkspace, AcademicYearStatus, CurriculumCatalogVersionOption,
     CurriculumCreateOptions, CurriculumDisplayState, CurriculumManagementOptions,
     CurriculumOverview, CurriculumOverviewItem, CurriculumProgramWorkspace,
-    CurriculumRequirementView, CurriculumVersion, RequirementResourceKind, StudyProgramRequirement,
-    VersionStatus,
+    CurriculumRequirementView, CurriculumVersion, CurriculumVersionView, RequirementResourceKind,
+    StudyProgramRequirement, VersionStatus,
 };
-use super::{bell_schedules, curriculum, years_terms};
+use super::{bell_schedules, catalog, curriculum, years_terms};
 
 const MAX_WORKSPACE_PROGRAMS: usize = 500;
 const MAX_WORKSPACE_REQUIREMENTS: usize = 10_000;
@@ -72,6 +72,14 @@ impl CurriculumOverviewVersionRow {
             migrated: self.migrated,
             created_at: self.created_at,
             updated_at: self.updated_at,
+        }
+    }
+
+    fn view(&self) -> CurriculumVersionView {
+        CurriculumVersionView {
+            version: self.version(),
+            start_academic_year_name: self.start_academic_year_name.clone(),
+            end_academic_year_name: self.end_academic_year_name.clone(),
         }
     }
 }
@@ -353,8 +361,47 @@ pub async fn curriculum_create_options(
 ) -> Result<CurriculumCreateOptions, AppError> {
     require_filter_scope(filter)?;
     Ok(CurriculumCreateOptions {
+        academic_years: curriculum_academic_year_options(pool).await?,
         grade_levels: active_workspace_grade_levels(pool).await?,
+        owner_options: catalog::list_catalog_owner_options(pool, filter).await?,
     })
+}
+
+pub async fn curriculum_version_views(
+    pool: &PgPool,
+    curriculum_id: Uuid,
+) -> Result<Vec<CurriculumVersionView>, AppError> {
+    curriculum::get(pool, curriculum_id).await?;
+    let rows = sqlx::query_as::<_, CurriculumOverviewVersionRow>(
+        r#"
+        SELECT version.id, version.curriculum_id, version.version_name,
+               version.start_academic_year_id, version.end_academic_year_id,
+               version.description, version.status, version.published_at,
+               version.row_version,
+               version.migration_provenance <> '{}'::jsonb AS migrated,
+               version.created_at, version.updated_at,
+               starts.name AS start_academic_year_name,
+               starts.start_date AS start_academic_year_date,
+               ends.name AS end_academic_year_name,
+               ends.end_date AS end_academic_year_date
+        FROM curriculum_versions version
+        JOIN academic_years starts ON starts.id = version.start_academic_year_id
+        LEFT JOIN academic_years ends ON ends.id = version.end_academic_year_id
+        WHERE version.curriculum_id = $1
+        ORDER BY version.created_at DESC, version.id
+        LIMIT $2
+        "#,
+    )
+    .bind(curriculum_id)
+    .bind((MAX_CURRICULUM_OVERVIEW_VERSIONS + 1) as i64)
+    .fetch_all(pool)
+    .await?;
+    ensure_workspace_size(
+        rows.len(),
+        MAX_CURRICULUM_OVERVIEW_VERSIONS,
+        "จำนวนเวอร์ชันหลักสูตร",
+    )?;
+    Ok(rows.into_iter().map(|row| row.view()).collect())
 }
 
 pub async fn curriculum_management_options(
@@ -363,31 +410,7 @@ pub async fn curriculum_management_options(
     filter: &AcademicResourceListFilter,
 ) -> Result<CurriculumManagementOptions, AppError> {
     require_curriculum_version_access(pool, version_id, filter).await?;
-    let academic_year_rows = sqlx::query_as::<_, WorkspaceAcademicYearRow>(
-        r#"
-        SELECT id, name, year, status
-        FROM academic_years
-        ORDER BY year DESC, id
-        LIMIT $1
-        "#,
-    )
-    .bind((MAX_CURRICULUM_OPTION_YEARS + 1) as i64)
-    .fetch_all(pool)
-    .await?;
-    ensure_workspace_size(
-        academic_year_rows.len(),
-        MAX_CURRICULUM_OPTION_YEARS,
-        "จำนวนปีการศึกษาสำหรับจัดการหลักสูตร",
-    )?;
-    let academic_years = academic_year_rows
-        .into_iter()
-        .map(|row| AcademicYearLookupItem {
-            id: row.id,
-            name: row.name,
-            year: row.year,
-            status: row.status,
-        })
-        .collect();
+    let academic_years = curriculum_academic_year_options(pool).await?;
     let grade_levels = active_workspace_grade_levels(pool).await?;
     let owner_ids = filter.allowed_organization_unit_ids();
     let catalog_versions = sqlx::query_as::<_, CurriculumCatalogVersionOption>(
@@ -430,6 +453,36 @@ pub async fn curriculum_management_options(
         grade_levels,
         catalog_versions,
     })
+}
+
+async fn curriculum_academic_year_options(
+    pool: &PgPool,
+) -> Result<Vec<AcademicYearLookupItem>, AppError> {
+    let rows = sqlx::query_as::<_, WorkspaceAcademicYearRow>(
+        r#"
+        SELECT id, name, year, status
+        FROM academic_years
+        ORDER BY year DESC, id
+        LIMIT $1
+        "#,
+    )
+    .bind((MAX_CURRICULUM_OPTION_YEARS + 1) as i64)
+    .fetch_all(pool)
+    .await?;
+    ensure_workspace_size(
+        rows.len(),
+        MAX_CURRICULUM_OPTION_YEARS,
+        "จำนวนปีการศึกษาสำหรับจัดการหลักสูตร",
+    )?;
+    Ok(rows
+        .into_iter()
+        .map(|row| AcademicYearLookupItem {
+            id: row.id,
+            name: row.name,
+            year: row.year,
+            status: row.status,
+        })
+        .collect())
 }
 
 fn require_filter_scope(filter: &AcademicResourceListFilter) -> Result<(), AppError> {
@@ -663,7 +716,13 @@ fn ensure_workspace_size(actual: usize, maximum: usize, label: &str) -> Result<(
 
 #[cfg(test)]
 mod tests {
-    use super::ensure_workspace_size;
+    use super::{curriculum_create_options, curriculum_version_views, ensure_workspace_size};
+    use crate::modules::academic::cutover_test_support::{
+        apply_migrations_through, seed_academic_cutover_fixture, CutoverFixture,
+    };
+    use crate::policies::resource_access_policy::AcademicResourceListFilter;
+    use crate::test_helpers::create_named_test_pool;
+    use uuid::Uuid;
 
     #[test]
     fn oversized_workspace_collections_are_rejected() {
@@ -672,5 +731,61 @@ mod tests {
             ensure_workspace_size(3, 2, "รายการทดสอบ"),
             Err(crate::error::AppError::ValidationError(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn curriculum_read_views_resolve_years_and_create_options_follow_owner_scope() {
+        let pool = create_named_test_pool("academic_curriculum_workspace_options").await;
+        apply_migrations_through(&pool, 40).await.unwrap();
+        seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
+            .await
+            .unwrap();
+        apply_migrations_through(&pool, 43).await.unwrap();
+
+        let curriculum_id = Uuid::parse_str("30000000-0000-0000-0000-000000000001").unwrap();
+        let owner_id = Uuid::parse_str("c5e06a47-ebf6-40f6-bbf9-59c509e842f2").unwrap();
+        sqlx::query("UPDATE curricula SET owning_organization_unit_id = $1 WHERE id = $2")
+            .bind(owner_id)
+            .bind(curriculum_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let views = curriculum_version_views(&pool, curriculum_id)
+            .await
+            .unwrap();
+        assert!(!views.is_empty());
+        assert!(views
+            .iter()
+            .all(|view| !view.start_academic_year_name.trim().is_empty()));
+
+        let unit_filter = AcademicResourceListFilter {
+            organization_unit_ids: vec![owner_id],
+            ..AcademicResourceListFilter::default()
+        };
+        let options = curriculum_create_options(&pool, &unit_filter)
+            .await
+            .unwrap();
+        assert!(!options.academic_years.is_empty());
+        assert!(!options.grade_levels.is_empty());
+        assert_eq!(options.owner_options.len(), 1);
+        assert_eq!(
+            options.owner_options[0].organization_unit_id,
+            Some(owner_id)
+        );
+
+        let school_options = curriculum_create_options(
+            &pool,
+            &AcademicResourceListFilter {
+                includes_school_owned: true,
+                ..AcademicResourceListFilter::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert!(school_options
+            .owner_options
+            .iter()
+            .any(|option| option.organization_unit_id.is_none()));
     }
 }

@@ -676,6 +676,14 @@ pub struct CurriculumOverview {
     pub items: Vec<CurriculumOverviewItem>,
 }
 
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CurriculumVersionView {
+    pub version: CurriculumVersion,
+    pub start_academic_year_name: String,
+    pub end_academic_year_name: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateCurriculumVersionRequest {
@@ -806,7 +814,9 @@ pub struct CurriculumRequirementView {
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumCreateOptions {
+    pub academic_years: Vec<AcademicYearLookupItem>,
     pub grade_levels: Vec<GradeLevelLookupItem>,
+    pub owner_options: Vec<CatalogOwnerOption>,
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]

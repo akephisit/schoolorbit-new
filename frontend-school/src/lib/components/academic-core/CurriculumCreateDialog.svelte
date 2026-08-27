@@ -5,6 +5,7 @@
 		type CurriculumCreateOptions,
 		type CurriculumOverviewItem
 	} from '$lib/api/academic-core';
+	import { catalogOwnerValue } from '$lib/academic-core/catalog-presentation';
 	import { LoadingButton } from '$lib/components/app-state';
 	import AcademicPrerequisiteNotice from '$lib/components/academic-workflow/AcademicPrerequisiteNotice.svelte';
 	import type { AcademicPrerequisite } from '$lib/components/academic-workflow/prerequisite';
@@ -12,6 +13,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import * as Select from '$lib/components/ui/select';
 	import { Plus } from 'lucide-svelte';
 	import GradeLevelMultiSelect from './GradeLevelMultiSelect.svelte';
 
@@ -22,6 +24,7 @@
 	let optionsLoading = $state(false);
 	let saving = $state(false);
 	let errorMessage = $state('');
+	let ownerValue = $state('');
 	let draft = $state({
 		code: '',
 		nameTh: '',
@@ -35,6 +38,16 @@
 		title: 'ยังไม่มีระดับชั้นให้เลือก',
 		description: 'กรุณาติดต่อผู้ดูแลระบบให้ตั้งค่าระดับชั้นก่อนสร้างหลักสูตร'
 	};
+	const noOwners: AcademicPrerequisite = {
+		key: 'curriculum-owner-options',
+		status: 'missing',
+		title: 'ยังไม่มีหน่วยงานเจ้าของที่เลือกได้',
+		description: 'กรุณาตรวจสอบขอบเขตสิทธิ์และสถานะหน่วยงานก่อนสร้างหลักสูตร'
+	};
+
+	let selectedOwner = $derived(
+		options?.ownerOptions.find((option) => catalogOwnerValue(option) === ownerValue) ?? null
+	);
 
 	async function showDialog() {
 		open = true;
@@ -43,6 +56,7 @@
 		errorMessage = '';
 		try {
 			options = await getCurriculumCreateOptions();
+			ownerValue = options.ownerOptions[0] ? catalogOwnerValue(options.ownerOptions[0]) : '';
 		} catch (error) {
 			errorMessage =
 				error instanceof Error ? error.message : 'โหลดตัวเลือกสำหรับสร้างหลักสูตรไม่สำเร็จ';
@@ -53,7 +67,7 @@
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
-		if (!options || draft.gradeLevelIds.length === 0) return;
+		if (!options || !selectedOwner || draft.gradeLevelIds.length === 0) return;
 		saving = true;
 		errorMessage = '';
 		try {
@@ -63,7 +77,7 @@
 				nameEn: draft.nameEn.trim() || null,
 				description: null,
 				gradeLevelIds: draft.gradeLevelIds,
-				owningOrganizationUnitId: null
+				owningOrganizationUnitId: selectedOwner.organizationUnitId
 			});
 			onCreated({
 				curriculum,
@@ -76,6 +90,7 @@
 				draftCount: 0
 			});
 			draft = { code: '', nameTh: '', nameEn: '', gradeLevelIds: [] };
+			ownerValue = options.ownerOptions[0] ? catalogOwnerValue(options.ownerOptions[0]) : '';
 			open = false;
 		} catch (error) {
 			errorMessage = error instanceof Error ? error.message : 'สร้างหลักสูตรไม่สำเร็จ';
@@ -102,7 +117,9 @@
 				<div class="h-10 animate-pulse rounded-md bg-muted"></div>
 			</div>
 		{:else if options}
-			{#if options.gradeLevels.length === 0}
+			{#if options.ownerOptions.length === 0}
+				<AcademicPrerequisiteNotice prerequisite={noOwners} class="my-2" />
+			{:else if options.gradeLevels.length === 0}
 				<AcademicPrerequisiteNotice prerequisite={noGradeLevels} class="my-2" />
 			{:else}
 				<form class="space-y-4 py-2" onsubmit={submit}>
@@ -121,6 +138,21 @@
 						<Input id="curriculum-name-en" bind:value={draft.nameEn} />
 					</div>
 					<div class="space-y-2">
+						<Label>หน่วยงานเจ้าของหลักสูตร</Label>
+						<Select.Root type="single" bind:value={ownerValue}>
+							<Select.Trigger class="w-full">
+								{selectedOwner?.name ?? 'เลือกหน่วยงานเจ้าของ'}
+							</Select.Trigger>
+							<Select.Content>
+								{#each options.ownerOptions as option (catalogOwnerValue(option))}
+									<Select.Item value={catalogOwnerValue(option)}>
+										{option.name}{option.code ? ` · ${option.code}` : ''}
+									</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					</div>
+					<div class="space-y-2">
 						<Label>ระดับชั้นที่หลักสูตรครอบคลุม</Label>
 						<GradeLevelMultiSelect
 							bind:value={draft.gradeLevelIds}
@@ -135,7 +167,8 @@
 							type="submit"
 							loading={saving}
 							loadingLabel="กำลังสร้าง"
-							disabled={!draft.code.trim() ||
+							disabled={!selectedOwner ||
+								!draft.code.trim() ||
 								!draft.nameTh.trim() ||
 								draft.gradeLevelIds.length === 0}
 						>

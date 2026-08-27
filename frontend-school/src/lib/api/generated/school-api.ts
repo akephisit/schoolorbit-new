@@ -5115,7 +5115,9 @@ export interface components {
 		};
 		ApiResponse_CurriculumCreateOptions: {
 			data: {
+				academicYears: components['schemas']['AcademicYearLookupItem'][];
 				gradeLevels: components['schemas']['GradeLevelLookupItem'][];
+				ownerOptions: components['schemas']['CatalogOwnerOption'][];
 			};
 			message?: string;
 			success: boolean;
@@ -7241,6 +7243,15 @@ export interface components {
 				/** Format: date-time */
 				updatedAt: string;
 				versionName: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_CurriculumVersionView: {
+			data: {
+				endAcademicYearName?: string | null;
+				startAcademicYearName: string;
+				version: components['schemas']['CurriculumVersion'];
 			}[];
 			message?: string;
 			success: boolean;
@@ -9775,7 +9786,9 @@ export interface components {
 			versionNo: number;
 		};
 		CurriculumCreateOptions: {
+			academicYears: components['schemas']['AcademicYearLookupItem'][];
 			gradeLevels: components['schemas']['GradeLevelLookupItem'][];
+			ownerOptions: components['schemas']['CatalogOwnerOption'][];
 		};
 		/** @enum {string} */
 		CurriculumDisplayState: 'current' | 'upcoming' | 'expired' | 'unpublished';
@@ -9858,6 +9871,11 @@ export interface components {
 			/** Format: date-time */
 			updatedAt: string;
 			versionName: string;
+		};
+		CurriculumVersionView: {
+			endAcademicYearName?: string | null;
+			startAcademicYearName: string;
+			version: components['schemas']['CurriculumVersion'];
 		};
 		DailyTeachingEntry: {
 			/** Format: uuid */
@@ -15978,13 +15996,13 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
-			/** @description Curriculum versions */
+			/** @description Curriculum versions with readable academic-year labels */
 			200: {
 				headers: {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_CurriculumVersion'];
+					'application/json': components['schemas']['ApiResponse_Vec_CurriculumVersionView'];
 				};
 			};
 			/** @description Authentication required */

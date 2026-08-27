@@ -833,6 +833,7 @@ use utoipa::OpenApi;
         CreateCurriculumRequest,
         UpdateCurriculumRequest,
         CurriculumVersion,
+        CurriculumVersionView,
         CreateCurriculumVersionRequest,
         UpdateCurriculumVersionRequest,
         StudyProgram,

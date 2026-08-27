@@ -34,6 +34,7 @@ export type CurriculumManagementOptions = Schemas['CurriculumManagementOptions']
 export type CurriculumCatalogVersionOption = Schemas['CurriculumCatalogVersionOption'];
 export type CurriculumRequirementView = Schemas['CurriculumRequirementView'];
 export type CurriculumVersion = Schemas['CurriculumVersion'];
+export type CurriculumVersionView = Schemas['CurriculumVersionView'];
 export type StudyProgram = Schemas['StudyProgram'];
 export type ProgramRequirement = Schemas['ProgramRequirement'];
 export type CurriculumProgramWorkspace = Schemas['CurriculumProgramWorkspace'];
@@ -324,7 +325,10 @@ export const updateCurriculum = (id: string, body: UpdateCurriculumRequest) =>
 	);
 export const listCurriculumVersions = (curriculumId: string, options: ApiRequestOptions = {}) =>
 	academicData(
-		apiClient.get<CurriculumVersion[]>(`/api/academic/curricula/${curriculumId}/versions`, options),
+		apiClient.get<CurriculumVersionView[]>(
+			`/api/academic/curricula/${curriculumId}/versions`,
+			options
+		),
 		'ไม่สามารถโหลดรุ่นหลักสูตรได้'
 	);
 export const createCurriculumVersion = (

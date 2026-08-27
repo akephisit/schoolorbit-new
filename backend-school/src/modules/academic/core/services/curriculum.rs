@@ -132,21 +132,6 @@ pub async fn update(
     get(pool, id).await
 }
 
-pub async fn list_versions(
-    pool: &PgPool,
-    curriculum_id: Uuid,
-) -> Result<Vec<CurriculumVersion>, AppError> {
-    get(pool, curriculum_id).await?;
-    let sql = format!(
-        "SELECT {VERSION_COLUMNS} FROM curriculum_versions WHERE curriculum_id = $1 \
-         ORDER BY created_at DESC, id"
-    );
-    Ok(sqlx::query_as(&sql)
-        .bind(curriculum_id)
-        .fetch_all(pool)
-        .await?)
-}
-
 pub async fn get_version(pool: &PgPool, id: Uuid) -> Result<CurriculumVersion, AppError> {
     let sql = format!("SELECT {VERSION_COLUMNS} FROM curriculum_versions WHERE id = $1");
     sqlx::query_as(&sql)

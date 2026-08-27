@@ -64,3 +64,24 @@ test('offering detail keeps selection in the URL and renders named group and ros
 	assert.match(roster, /homeroomName/);
 	assert.doesNotMatch(roster, /student\.studentId\s*\}/);
 });
+
+test('stale roster refresh replaces the group version and preview atomically', async () => {
+	const page = await readProjectFile(
+		'src/routes/(app)/staff/academic/delivery/[offeringId]/+page.svelte'
+	);
+	const refreshStart = page.indexOf('async function refreshRoster()');
+	const applyStart = page.indexOf('async function applyRoster(', refreshStart);
+	assert.notEqual(refreshStart, -1);
+	assert.notEqual(applyStart, -1);
+	const refresh = page.slice(refreshStart, applyStart);
+	const reloadIndex = refresh.indexOf('await getLearningGroup(');
+	const previewIndex = refresh.indexOf('await previewLearningGroupRoster(');
+	const updateIndex = refresh.indexOf('updateGroupState(');
+
+	assert.notEqual(reloadIndex, -1);
+	assert.notEqual(previewIndex, -1);
+	assert.notEqual(updateIndex, -1);
+	assert.ok(reloadIndex < previewIndex);
+	assert.ok(previewIndex < updateIndex);
+	assert.match(refresh, /rosterPreview\s*=\s*refreshedPreview/);
+});

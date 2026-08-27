@@ -3280,15 +3280,29 @@
         "properties": {
           "data": {
             "properties": {
+              "academicYears": {
+                "items": {
+                  "$ref": "#/components/schemas/AcademicYearLookupItem"
+                },
+                "type": "array"
+              },
               "gradeLevels": {
                 "items": {
                   "$ref": "#/components/schemas/GradeLevelLookupItem"
                 },
                 "type": "array"
+              },
+              "ownerOptions": {
+                "items": {
+                  "$ref": "#/components/schemas/CatalogOwnerOption"
+                },
+                "type": "array"
               }
             },
             "required": [
-              "gradeLevels"
+              "academicYears",
+              "gradeLevels",
+              "ownerOptions"
             ],
             "type": "object"
           },
@@ -11195,6 +11209,45 @@
                 "migrated",
                 "createdAt",
                 "updatedAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_CurriculumVersionView": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "endAcademicYearName": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "startAcademicYearName": {
+                  "type": "string"
+                },
+                "version": {
+                  "$ref": "#/components/schemas/CurriculumVersion"
+                }
+              },
+              "required": [
+                "version",
+                "startAcademicYearName"
               ],
               "type": "object"
             },
@@ -20696,15 +20749,29 @@
       },
       "CurriculumCreateOptions": {
         "properties": {
+          "academicYears": {
+            "items": {
+              "$ref": "#/components/schemas/AcademicYearLookupItem"
+            },
+            "type": "array"
+          },
           "gradeLevels": {
             "items": {
               "$ref": "#/components/schemas/GradeLevelLookupItem"
             },
             "type": "array"
+          },
+          "ownerOptions": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogOwnerOption"
+            },
+            "type": "array"
           }
         },
         "required": [
-          "gradeLevels"
+          "academicYears",
+          "gradeLevels",
+          "ownerOptions"
         ],
         "type": "object"
       },
@@ -21023,6 +21090,27 @@
           "migrated",
           "createdAt",
           "updatedAt"
+        ],
+        "type": "object"
+      },
+      "CurriculumVersionView": {
+        "properties": {
+          "endAcademicYearName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "startAcademicYearName": {
+            "type": "string"
+          },
+          "version": {
+            "$ref": "#/components/schemas/CurriculumVersion"
+          }
+        },
+        "required": [
+          "version",
+          "startAcademicYearName"
         ],
         "type": "object"
       },
@@ -37140,11 +37228,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_CurriculumVersion"
+                  "$ref": "#/components/schemas/ApiResponse_Vec_CurriculumVersionView"
                 }
               }
             },
-            "description": "Curriculum versions"
+            "description": "Curriculum versions with readable academic-year labels"
           },
           "401": {
             "content": {

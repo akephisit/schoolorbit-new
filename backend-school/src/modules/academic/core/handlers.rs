@@ -2093,7 +2093,7 @@ pub async fn update_curriculum(
     tag = "academic",
     params(("id" = Uuid, Path, description = "Curriculum ID")),
     responses(
-        (status = 200, description = "Curriculum versions", body = ApiResponse<Vec<CurriculumVersion>>),
+        (status = 200, description = "Curriculum versions with readable academic-year labels", body = ApiResponse<Vec<CurriculumVersionView>>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Academic curriculum read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Curriculum not found", body = ApiErrorResponse)
@@ -2114,7 +2114,11 @@ pub async fn list_curriculum_versions(
         CurriculumAction::Read,
     )
     .await?;
-    Ok(ok(curriculum::list_versions(&pool, curriculum_id).await?))
+    Ok(ok(workspaces::curriculum_version_views(
+        &pool,
+        curriculum_id,
+    )
+    .await?))
 }
 
 #[utoipa::path(

@@ -801,7 +801,7 @@ async fn list_catalog_grade_levels(pool: &PgPool) -> Result<Vec<CatalogGradeLeve
         .collect())
 }
 
-async fn list_catalog_owner_options(
+pub(super) async fn list_catalog_owner_options(
     pool: &PgPool,
     filter: &AcademicResourceListFilter,
 ) -> Result<Vec<CatalogOwnerOption>, AppError> {

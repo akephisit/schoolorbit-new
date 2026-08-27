@@ -45,13 +45,26 @@ test('curriculum detail is deep-linked and uses labeled management options', asy
 	const editor = await readProjectFile(
 		'src/lib/components/academic-core/CurriculumProgramEditor.svelte'
 	);
+	const versionPanel = await readProjectFile(
+		'src/lib/components/academic-core/CurriculumVersionPanel.svelte'
+	);
+	const createDialog = await readProjectFile(
+		'src/lib/components/academic-core/CurriculumCreateDialog.svelte'
+	);
 
 	assert.match(meta, /_meta\s*=\s*\{[\s\S]*access:/);
 	assert.doesNotMatch(meta, /menu:/);
 	assert.match(page, /getCurriculumProgramWorkspace/);
 	assert.match(page, /getCurriculumManagementOptions/);
+	assert.doesNotMatch(page, /listAcademicYears/);
+	assert.match(page, /CurriculumVersionView/);
+	assert.match(versionPanel, /startAcademicYearName/);
+	assert.match(versionPanel, /endAcademicYearName/);
 	assert.match(editor, /catalogVersions/);
 	assert.match(editor, /gradeLevels/);
 	assert.doesNotMatch(editor, /catalogVersionId[^\n]*<Input/);
 	assert.doesNotMatch(editor, /gradeLevelId[^\n]*<Input/);
+	assert.match(createDialog, /ownerOptions/);
+	assert.match(createDialog, /owningOrganizationUnitId:\s*selectedOwner\.organizationUnitId/);
+	assert.doesNotMatch(createDialog, /owningOrganizationUnitId:\s*null/);
 });

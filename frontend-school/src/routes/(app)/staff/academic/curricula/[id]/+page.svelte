@@ -8,21 +8,21 @@
 		createCurriculumVersion,
 		createStudyProgram,
 		getCurriculum,
+		getCurriculumCreateOptions,
 		getCurriculumManagementOptions,
 		getCurriculumProgramWorkspace,
 		getStudyProgram,
-		listAcademicYears,
 		listCurriculumVersions,
 		publishCurriculumVersion,
 		replaceProgramRequirements,
-		type AcademicYear,
 		type CreateCurriculumVersionRequest,
 		type CreateStudyProgramRequest,
 		type Curriculum,
+		type CurriculumCreateOptions,
 		type CurriculumManagementOptions,
 		type CurriculumProgramWorkspace,
 		type CurriculumRequirementView,
-		type CurriculumVersion,
+		type CurriculumVersionView,
 		type ProgramRequirement,
 		type ProgramRequirementInput,
 		type StudyProgram
@@ -42,10 +42,10 @@
 	const managementCache = new SvelteMap<string, CurriculumManagementOptions>();
 
 	let curriculum = $state.raw<Curriculum | null>(null);
-	let versions = $state.raw<CurriculumVersion[]>([]);
-	let selectedVersion = $state.raw<CurriculumVersion | null>(null);
+	let versions = $state.raw<CurriculumVersionView[]>([]);
+	let selectedVersion = $state.raw<CurriculumVersionView | null>(null);
 	let workspace = $state.raw<CurriculumProgramWorkspace>({ programs: [], requirements: [] });
-	let academicYears = $state.raw<AcademicYear[]>([]);
+	let createOptions = $state.raw<CurriculumCreateOptions | null>(null);
 	let loading = $state(true);
 	let workspaceLoading = $state(false);
 	let initialized = $state(false);
@@ -60,7 +60,7 @@
 		)
 	);
 	let selectedManagementOptions = $derived(
-		selectedVersion ? (managementCache.get(selectedVersion.id) ?? null) : null
+		selectedVersion ? (managementCache.get(selectedVersion.version.id) ?? null) : null
 	);
 
 	async function loadDetail() {
@@ -70,26 +70,24 @@
 		try {
 			const loadedCurriculum = await getCurriculum(curriculumId, { signal });
 			const loadedVersions = await listCurriculumVersions(curriculumId, { signal });
-			const loadedYears = await listAcademicYears({ signal });
 			const requestedVersionId = page.url.searchParams.get('versionId');
 			const version =
-				loadedVersions.find((candidate) => candidate.id === requestedVersionId) ??
+				loadedVersions.find((candidate) => candidate.version.id === requestedVersionId) ??
 				loadedVersions[0] ??
 				null;
 			const loadedWorkspace = version
-				? await getCurriculumProgramWorkspace(version.id, { signal })
+				? await getCurriculumProgramWorkspace(version.version.id, { signal })
 				: { programs: [], requirements: [] };
 			if (!detailRequest.isCurrent(revision)) return;
 			curriculum = loadedCurriculum;
 			versions = loadedVersions;
-			academicYears = loadedYears;
 			selectedVersion = version;
 			workspace = loadedWorkspace;
 			initialized = true;
-			if (version && requestedVersionId !== version.id) {
+			if (version && requestedVersionId !== version.version.id) {
 				await goto(
 					resolve(
-						`/staff/academic/curricula/${curriculumId}?versionId=${encodeURIComponent(version.id)}`
+						`/staff/academic/curricula/${curriculumId}?versionId=${encodeURIComponent(version.version.id)}`
 					),
 					{ replaceState: true, keepFocus: true, noScroll: true }
 				);
@@ -104,19 +102,19 @@
 		}
 	}
 
-	async function loadVersion(version: CurriculumVersion, updateUrl = true) {
+	async function loadVersion(version: CurriculumVersionView, updateUrl = true) {
 		const { revision, signal } = versionRequest.begin();
 		workspaceLoading = true;
 		workspaceError = '';
 		try {
-			const loadedWorkspace = await getCurriculumProgramWorkspace(version.id, { signal });
+			const loadedWorkspace = await getCurriculumProgramWorkspace(version.version.id, { signal });
 			if (!versionRequest.isCurrent(revision)) return;
 			selectedVersion = version;
 			workspace = loadedWorkspace;
 			if (updateUrl) {
 				await goto(
 					resolve(
-						`/staff/academic/curricula/${curriculumId}?versionId=${encodeURIComponent(version.id)}`
+						`/staff/academic/curricula/${curriculumId}?versionId=${encodeURIComponent(version.version.id)}`
 					),
 					{ keepFocus: true, noScroll: true }
 				);
@@ -133,22 +131,40 @@
 
 	async function requestManagementOptions() {
 		if (!canManageAcademicCurriculum || !selectedVersion) return null;
-		const cached = managementCache.get(selectedVersion.id);
+		const versionId = selectedVersion.version.id;
+		const cached = managementCache.get(versionId);
 		if (cached) return cached;
-		const loaded = await getCurriculumManagementOptions(selectedVersion.id);
-		managementCache.set(selectedVersion.id, loaded);
+		const loaded = await getCurriculumManagementOptions(versionId);
+		managementCache.set(versionId, loaded);
 		return loaded;
 	}
 
+	async function requestCreateOptions() {
+		if (!canManageAcademicCurriculum) return null;
+		if (createOptions) return createOptions;
+		createOptions = await getCurriculumCreateOptions();
+		return createOptions;
+	}
+
 	async function createVersion(draft: CreateCurriculumVersionRequest) {
+		const options = await requestCreateOptions();
+		if (!options) throw new Error('ไม่มีสิทธิ์สร้างรุ่นหลักสูตร');
 		const created = await createCurriculumVersion(curriculumId, draft);
-		versions = [created, ...versions];
-		await loadVersion(created);
+		const start = options.academicYears.find((year) => year.id === created.startAcademicYearId);
+		const end = options.academicYears.find((year) => year.id === created.endAcademicYearId);
+		if (!start) throw new Error('สร้างรุ่นสำเร็จแต่ไม่พบชื่อปีเริ่มใช้ กรุณาโหลดหน้าใหม่');
+		const createdView: CurriculumVersionView = {
+			version: created,
+			startAcademicYearName: start.name,
+			endAcademicYearName: end?.name ?? null
+		};
+		versions = [createdView, ...versions];
+		await loadVersion(createdView);
 	}
 
 	async function createProgram(draft: CreateStudyProgramRequest) {
 		if (!selectedVersion) return;
-		const created = await createStudyProgram(selectedVersion.id, draft);
+		const created = await createStudyProgram(selectedVersion.version.id, draft);
 		workspace = {
 			...workspace,
 			programs: [...workspace.programs, created]
@@ -201,16 +217,19 @@
 
 	async function publishVersion(id: string, rowVersion: number) {
 		const updated = await publishCurriculumVersion(id, { rowVersion });
-		versions = versions.map((version) => (version.id === updated.id ? updated : version));
-		selectedVersion = updated;
+		versions = versions.map((view) =>
+			view.version.id === updated.id ? { ...view, version: updated } : view
+		);
+		selectedVersion = selectedVersion ? { ...selectedVersion, version: updated } : null;
 	}
 
 	afterNavigate(({ to }) => {
 		const requestedVersionId = to?.url.searchParams.get('versionId') ?? null;
 		if (!initialized || versions.length === 0) return;
 		const target =
-			versions.find((version) => version.id === requestedVersionId) ?? versions[0] ?? null;
-		if (target && target.id !== selectedVersion?.id) void loadVersion(target, false);
+			versions.find((version) => version.version.id === requestedVersionId) ?? versions[0] ?? null;
+		if (target && target.version.id !== selectedVersion?.version.id)
+			void loadVersion(target, false);
 	});
 
 	onMount(() => {
@@ -248,10 +267,9 @@
 				{curriculum}
 				{versions}
 				{selectedVersion}
-				{academicYears}
 				canManage={canManageAcademicCurriculum}
 				onSelectVersion={loadVersion}
-				onRequestManagementOptions={requestManagementOptions}
+				onRequestCreateOptions={requestCreateOptions}
 				onCreateVersion={createVersion}
 			/>
 
@@ -266,9 +284,9 @@
 					onaction={() => selectedVersion && loadVersion(selectedVersion, false)}
 				/>
 			{:else if selectedVersion}
-				{#key selectedVersion.id}
+				{#key selectedVersion.version.id}
 					<CurriculumProgramEditor
-						version={selectedVersion}
+						version={selectedVersion.version}
 						programs={workspace.programs}
 						requirements={workspace.requirements}
 						managementOptions={selectedManagementOptions}
