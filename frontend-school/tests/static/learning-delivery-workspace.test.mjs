@@ -17,3 +17,21 @@ test('delivery workspace uses generated term query contracts', async () => {
 	assert.match(api, /getLearningGroup/);
 	assert.doesNotMatch(api, /academic_term_id|ApiResponse<unknown>|Record<string, unknown>/);
 });
+
+test('delivery overview is term scoped, filterable, and keeps management options lazy', async () => {
+	const page = await readProjectFile('src/routes/(app)/staff/academic/delivery/+page.svelte');
+	const table = await readProjectFile(
+		'src/lib/components/learning-delivery/OfferingOverviewTable.svelte'
+	);
+	const dialog = await readProjectFile(
+		'src/lib/components/learning-delivery/OfferingCreateDialog.svelte'
+	);
+	assert.match(page, /getLearningDeliveryOverview/);
+	assert.match(page, /academicTermId/);
+	assert.match(page, /kind=activity|kindFilter|initialKind/);
+	assert.doesNotMatch(page, /getLearningDeliveryManagementOptions\([\s\S]*onMount/);
+	assert.doesNotMatch(dialog, /catalogVersionId[^\n]*<Input/);
+	assert.doesNotMatch(dialog, /gradeLevelId[^\n]*<Input/);
+	assert.match(table, /groupsWithoutPrimaryTeacher/);
+	assert.match(table, /publishedRosterCount/);
+});

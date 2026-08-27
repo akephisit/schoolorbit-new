@@ -11,6 +11,7 @@ type Schemas = components['schemas'];
 
 export type LearningOffering = Schemas['LearningOffering'];
 export type LearningDeliveryOverview = Schemas['LearningDeliveryOverview'];
+export type LearningOfferingOverviewItem = Schemas['LearningOfferingOverviewItem'];
 export type DeliveryManagementOptions = Schemas['DeliveryManagementOptions'];
 export type LearningGroup = Schemas['LearningGroup'];
 export type TeacherAssignment = Schemas['TeacherAssignmentInput'];
