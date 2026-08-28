@@ -134,7 +134,7 @@ git commit -m "feat(academic): normalize curriculum structure schema"
 
 **Interfaces:**
 - Consumes: Task 1 schema.
-- Produces: `CurriculumStructureWorkspace`, `CurriculumTermSlot`, typed `CatalogCurriculumMetrics`, and `ReplaceCurriculumStructureRequest`; `curriculum_structure::get_workspace` and `curriculum_structure::replace_program_structure` service functions.
+- Produces: `CurriculumStructureWorkspace`, `CurriculumTermSlot`, typed `CatalogCurriculumMetrics`, `ReplaceCurriculumTermSlotsRequest`, and `ReplaceCurriculumStructureRequest`; `curriculum_structure::get_workspace`, `curriculum_structure::replace_term_slots`, and `curriculum_structure::replace_program_structure` service functions.
 
 - [ ] **Step 1: Write failing service tests for the read model**
 
@@ -219,6 +219,19 @@ pub struct CurriculumStructureWorkspace {
     pub validation: CurriculumStructureValidation,
     pub row_version: i64,
 }
+
+pub struct CurriculumTermSlotInput {
+    pub id: Option<Uuid>,
+    pub sequence: i32,
+    pub term_type: AcademicTermType,
+    pub type_occurrence: i32,
+    pub name: String,
+}
+
+pub struct ReplaceCurriculumTermSlotsRequest {
+    pub slots: Vec<CurriculumTermSlotInput>,
+    pub row_version: i64,
+}
 ```
 
 `CurriculumDocumentSection` is derived from resource kind plus normalized official catalog classification. It is not accepted in mutations.
@@ -229,7 +242,7 @@ Use one query for slots and programs and one union query for course/activity req
 
 - [ ] **Step 5: Write failing atomic replacement and publish-validation tests**
 
-Cover add, move, reorder, duplicate, copy payload normalization, stale row version, a catalog version outside its supported grade, missing activity total hours, and mutation of a published curriculum version.
+Cover term-slot add/rename/reorder/remove, prevention of removing a referenced slot, add/move/reorder requirements, duplicate and copy payload normalization, stale row version, a catalog version outside its supported grade, missing activity total hours, and mutation of a published curriculum version.
 
 ```rust
 assert!(matches!(stale, Err(AppError::Conflict(message)) if message.contains("เปลี่ยนแปลง")));
@@ -256,7 +269,9 @@ pub struct ReplaceCurriculumStructureRequest {
 }
 ```
 
-Normalize and deduplicate before validated bulk SQL. Lock the owning draft curriculum version, verify slot/program/catalog ownership in set-based queries, replace both requirement tables in one transaction, increment the owning version row version, and return the complete updated workspace. Update curriculum publication validation to reject structural blockers.
+Implement term-slot replacement as a separate atomic command on the owning draft curriculum version. Generate IDs server-side for new slots, preserve supplied IDs only when they belong to that version, normalize ordering, reject duplicate `(termType, typeOccurrence)`, and reject removal while a requirement references the slot.
+
+Normalize and deduplicate requirement inputs before validated bulk SQL. Lock the owning draft curriculum version, verify slot/program/catalog ownership in set-based queries, replace both requirement tables in one transaction, increment the owning version row version, and return the complete updated workspace. Update curriculum publication validation to reject structural blockers.
 
 - [ ] **Step 7: Add explicit activity total hours to catalog create/update services**
 
@@ -291,7 +306,7 @@ git commit -m "feat(academic): add curriculum structure workspace service"
 
 **Interfaces:**
 - Consumes: Task 2 service functions and DTOs.
-- Produces: typed `getCurriculumStructureWorkspace` and `replaceCurriculumStructure` OpenAPI operations and generated frontend types.
+- Produces: typed `getCurriculumStructureWorkspace`, `replaceCurriculumTermSlots`, and `replaceCurriculumStructure` OpenAPI operations and generated frontend types.
 
 - [ ] **Step 1: Add failing route/contract assertions**
 
@@ -299,6 +314,7 @@ Assert the generated contract contains:
 
 ```text
 GET /api/academic/curriculum-versions/{curriculumVersionId}/structure
+PUT /api/academic/curriculum-versions/{curriculumVersionId}/term-slots
 PUT /api/academic/study-programs/{studyProgramId}/structure
 ```
 
@@ -330,6 +346,7 @@ Expose concrete generated operations:
 
 ```ts
 export type CurriculumStructureWorkspace = Schemas['CurriculumStructureWorkspace'];
+export type ReplaceCurriculumTermSlotsRequest = Schemas['ReplaceCurriculumTermSlotsRequest'];
 export type ReplaceCurriculumStructureRequest = Schemas['ReplaceCurriculumStructureRequest'];
 ```
 
@@ -436,6 +453,7 @@ git commit -m "feat(academic): add curriculum document views"
 
 **Files:**
 - Create: `frontend-school/src/lib/components/academic-core/CurriculumStructureEditor.svelte`
+- Create: `frontend-school/src/lib/components/academic-core/CurriculumTermSlotEditor.svelte`
 - Create: `frontend-school/src/lib/components/academic-core/CurriculumCatalogPicker.svelte`
 - Create: `frontend-school/src/lib/components/academic-core/CurriculumChangePreview.svelte`
 - Modify: `frontend-school/src/routes/(app)/staff/academic/curricula/[id]/+page.svelte`
@@ -451,7 +469,7 @@ git commit -m "feat(academic): add curriculum document views"
 
 - [ ] **Step 1: Add failing static and browser workflow assertions**
 
-Cover read-only published behavior, switching all-program/single-program views, dynamic slots, multi-select add, move, copy, remove, undo, preview, stale-save preservation, and no editable metric fields in requirement rows.
+Cover read-only published behavior, switching all-program/single-program views, add/rename/reorder Summer or custom slots, prevention of removing a used slot, multi-select add/move/copy/remove, undo, preview, stale-save preservation, and no editable metric fields in requirement rows.
 
 - [ ] **Step 2: Run the focused static test and confirm failure**
 
@@ -481,6 +499,8 @@ All add/copy/move/remove/reorder operations return a new array and push the prev
 - [ ] **Step 4: Build the catalog picker and change preview**
 
 The picker loads only published catalog options after manage permission and edit mode are active. It supports search, grade/resource filters, checkboxes, select-all-visible, and clear. Metrics are read-only. Preview lists additions, removals, moves, copies, and conflicts before enabling save.
+
+Build the term-slot editor as a separate draft-only dialog. Presets add the next regular, summer, remedial, or custom slot; staff may edit the school-facing label and order. Saving returns the updated workspace before requirements can target a newly generated slot ID.
 
 - [ ] **Step 5: Integrate the route and activity metric form**
 
