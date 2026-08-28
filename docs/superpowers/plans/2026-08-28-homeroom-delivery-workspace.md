@@ -58,7 +58,7 @@ Add a database test proving two curriculum-generated groups with the same offeri
 - [ ] **Step 2: Run the focused test and confirm failure**
 
 ```bash
-scripts/test_backend_school.sh cargo test homeroom_delivery_provenance_contract -- --nocapture
+scripts/test_backend_school.sh homeroom_delivery_provenance_contract -- --nocapture
 ```
 
 Expected: FAIL because migration 049 does not exist.
@@ -89,7 +89,7 @@ Existing rows become `manual` and are never treated as generated. Do not infer p
 - [ ] **Step 4: Run focused schema tests**
 
 ```bash
-scripts/test_backend_school.sh cargo test core::schema_tests -- --nocapture
+scripts/test_backend_school.sh core::schema_tests -- --nocapture
 ```
 
 Expected: PASS.
@@ -138,7 +138,7 @@ assert_eq!(workspace.unlinked.len(), 1);
 - [ ] **Step 2: Run the focused tests and confirm failure**
 
 ```bash
-scripts/test_backend_school.sh cargo test homeroom_delivery_workspace -- --nocapture
+scripts/test_backend_school.sh homeroom_delivery_workspace -- --nocapture
 ```
 
 Expected: FAIL because the read model does not exist.
@@ -219,7 +219,7 @@ Resolve operational term occurrence with a window over terms of the same type. L
 - [ ] **Step 5: Run focused delivery service tests**
 
 ```bash
-scripts/test_backend_school.sh cargo test modules::academic::delivery::services_tests -- --nocapture
+scripts/test_backend_school.sh modules::academic::delivery::services_tests -- --nocapture
 ```
 
 Expected: PASS.
@@ -262,7 +262,7 @@ Cover normal groups, one combined group, two split groups, skip, deferred groups
 - [ ] **Step 3: Run the focused preparation tests and confirm failure**
 
 ```bash
-scripts/test_backend_school.sh cargo test curriculum_preparation_groups -- --nocapture
+scripts/test_backend_school.sh curriculum_preparation_groups -- --nocapture
 ```
 
 Expected: FAIL because preview/apply still handles offerings only.
@@ -327,11 +327,11 @@ Return typed counts and per-homeroom created/retained/skipped/conflict results. 
 - [ ] **Step 7: Run focused preparation and delivery tests**
 
 ```bash
-scripts/test_backend_school.sh cargo test curriculum_preparation_groups -- --nocapture
+scripts/test_backend_school.sh curriculum_preparation_groups -- --nocapture
 ```
 
 ```bash
-scripts/test_backend_school.sh cargo test modules::academic::delivery::services_tests -- --nocapture
+scripts/test_backend_school.sh modules::academic::delivery::services_tests -- --nocapture
 ```
 
 Expected: PASS.
@@ -508,7 +508,7 @@ cd backend-school && cargo fmt --all -- --check
 ```
 
 ```bash
-scripts/test_backend_school.sh cargo test --test static_architecture
+cd backend-school && cargo test --test static_architecture
 ```
 
 ```bash

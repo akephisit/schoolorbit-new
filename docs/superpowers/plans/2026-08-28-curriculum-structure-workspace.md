@@ -63,7 +63,7 @@ Add fixture cases proving `TERM-1`, `TERM-2`, `SUMMER`, and `REMEDIAL` map deter
 Run:
 
 ```bash
-scripts/test_backend_school.sh cargo test core::schema_tests::curriculum_structure_contract -- --nocapture
+scripts/test_backend_school.sh curriculum_structure_contract -- --nocapture
 ```
 
 Expected: FAIL because migration 048 and the new columns/tables do not exist.
@@ -109,7 +109,7 @@ Attach the existing published-curriculum child immutability trigger. Populate de
 Run:
 
 ```bash
-scripts/test_backend_school.sh cargo test core::schema_tests -- --nocapture
+scripts/test_backend_school.sh core::schema_tests -- --nocapture
 ```
 
 Expected: PASS, including “preflight failure leaves the old columns intact” and published-slot immutability.
@@ -153,7 +153,7 @@ Add tests that a referenced activity with no `hours_per_term` creates a blocking
 - [ ] **Step 2: Run the focused workspace tests and confirm failure**
 
 ```bash
-scripts/test_backend_school.sh cargo test curriculum_structure_workspace -- --nocapture
+scripts/test_backend_school.sh curriculum_structure_workspace -- --nocapture
 ```
 
 Expected: FAIL because the types and service do not exist.
@@ -265,7 +265,7 @@ Extend `ActivityVersion`, create, and update DTOs with `hours_per_term: Option<S
 - [ ] **Step 8: Run all focused core service tests**
 
 ```bash
-scripts/test_backend_school.sh cargo test modules::academic::core::services_tests -- --nocapture
+scripts/test_backend_school.sh modules::academic::core::services_tests -- --nocapture
 ```
 
 Expected: PASS with no row-by-row SQL path.
@@ -533,7 +533,7 @@ cd backend-school && cargo fmt --all -- --check
 ```
 
 ```bash
-scripts/test_backend_school.sh cargo test --test static_architecture
+cd backend-school && cargo test --test static_architecture
 ```
 
 ```bash
