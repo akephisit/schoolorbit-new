@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-28
 
-**Status:** Proposed
+**Status:** Approved
 
 **Scope:** `backend-school` Academic Core and closely related foundation services, `frontend-school` staff academic foundation pages, typed OpenAPI/generated frontend contracts, focused data repair when deterministic, and verification for the planning-only workflow
 
