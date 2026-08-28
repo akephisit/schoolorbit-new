@@ -469,6 +469,38 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/curriculum-versions/{curriculumVersionId}/structure': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getCurriculumStructureWorkspace'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/curriculum-versions/{curriculumVersionId}/term-slots': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['replaceCurriculumTermSlots'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/curriculum-versions/{id}': {
 		parameters: {
 			query?: never;
@@ -493,22 +525,6 @@ export interface paths {
 			cookie?: never;
 		};
 		get: operations['getCurriculumManagementOptions'];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/curriculum-versions/{id}/program-workspace': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['getCurriculumProgramWorkspace'];
 		put?: never;
 		post?: never;
 		delete?: never;
@@ -1337,15 +1353,15 @@ export interface paths {
 		patch: operations['updateStudyProgram'];
 		trace?: never;
 	};
-	'/api/academic/study-programs/{id}/requirements': {
+	'/api/academic/study-programs/{studyProgramId}/structure': {
 		parameters: {
 			query?: never;
 			header?: never;
 			path?: never;
 			cookie?: never;
 		};
-		get: operations['listProgramRequirements'];
-		put: operations['replaceProgramRequirements'];
+		get?: never;
+		put: operations['replaceCurriculumStructure'];
 		post?: never;
 		delete?: never;
 		options?: never;
@@ -4453,6 +4469,7 @@ export interface components {
 			/** Format: date */
 			effectiveUntil?: string | null;
 			gradeLevelIds: string[];
+			hoursPerTerm?: string | null;
 			hoursPerWeek: string;
 			/** Format: uuid */
 			id: string;
@@ -4664,6 +4681,7 @@ export interface components {
 				/** Format: date */
 				effectiveUntil?: string | null;
 				gradeLevelIds: string[];
+				hoursPerTerm?: string | null;
 				hoursPerWeek: string;
 				/** Format: uuid */
 				id: string;
@@ -5164,10 +5182,16 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
-		ApiResponse_CurriculumProgramWorkspace: {
+		ApiResponse_CurriculumStructureWorkspace: {
 			data: {
+				curriculumVersion: components['schemas']['CurriculumVersion'];
+				gradeLevels: components['schemas']['GradeLevelLookupItem'][];
 				programs: components['schemas']['StudyProgram'][];
-				requirements: components['schemas']['CurriculumRequirementView'][];
+				requirements: components['schemas']['CurriculumStructureRequirement'][];
+				/** Format: int64 */
+				rowVersion: number;
+				termSlots: components['schemas']['CurriculumTermSlot'][];
+				validation: components['schemas']['CurriculumStructureValidation'];
 			};
 			message?: string;
 			success: boolean;
@@ -6809,6 +6833,7 @@ export interface components {
 				/** Format: date */
 				effectiveUntil?: string | null;
 				gradeLevelIds: string[];
+				hoursPerTerm?: string | null;
 				hoursPerWeek: string;
 				/** Format: uuid */
 				id: string;
@@ -7773,27 +7798,6 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
-		ApiResponse_Vec_ProgramRequirement: {
-			data: {
-				/** Format: uuid */
-				catalogVersionId: string;
-				credit?: string | null;
-				/** Format: int32 */
-				displayOrder: number;
-				/** Format: uuid */
-				gradeLevelId: string;
-				hours?: string | null;
-				/** Format: uuid */
-				id: string;
-				recommendedTermCode?: string | null;
-				requirementKind: components['schemas']['RequirementKind'];
-				resourceKind: components['schemas']['RequirementResourceKind'];
-				/** Format: int64 */
-				rowVersion: number;
-			}[];
-			message?: string;
-			success: boolean;
-		};
 		ApiResponse_Vec_QuestionDetail: {
 			data: (components['schemas']['QuestionSummary'] & {
 				choices: components['schemas']['QuestionChoice'][];
@@ -8596,6 +8600,12 @@ export interface components {
 			draftCount: number;
 			gradeLevels: components['schemas']['GradeLevelLookupItem'][];
 		};
+		CatalogCurriculumMetrics: {
+			credit?: string | null;
+			totalHours?: string | null;
+			weeklyUnit: components['schemas']['CatalogWeeklyUnit'];
+			weeklyValue?: string | null;
+		};
 		/** @enum {string} */
 		CatalogDisplayState: 'current' | 'upcoming' | 'expired' | 'unpublished';
 		CatalogOwnerOption: {
@@ -8633,6 +8643,8 @@ export interface components {
 			gradeLevels: components['schemas']['GradeLevelLookupItem'][];
 			subject: components['schemas']['CatalogSubject'];
 		};
+		/** @enum {string} */
+		CatalogWeeklyUnit: 'period' | 'hour';
 		CertificateAccountSearchQuery: {
 			recipientType: components['schemas']['RecipientType'];
 			search: string;
@@ -9367,6 +9379,7 @@ export interface components {
 			/** Format: date */
 			effectiveUntil?: string | null;
 			gradeLevelIds: string[];
+			hoursPerTerm?: string | null;
 			hoursPerWeek: string;
 			name: string;
 			schedulingMode: string;
@@ -9820,6 +9833,8 @@ export interface components {
 		};
 		/** @enum {string} */
 		CurriculumDisplayState: 'current' | 'upcoming' | 'expired' | 'unpublished';
+		/** @enum {string} */
+		CurriculumDocumentSection: 'basic_course' | 'additional_course' | 'student_development';
 		CurriculumManagementOptions: {
 			academicYears: components['schemas']['AcademicYearLookupItem'][];
 			catalogVersions: components['schemas']['CurriculumCatalogVersionOption'][];
@@ -9867,16 +9882,80 @@ export interface components {
 		};
 		/** @enum {string} */
 		CurriculumPreviewAction: 'create' | 'retain' | 'conflict';
-		CurriculumProgramWorkspace: {
-			programs: components['schemas']['StudyProgram'][];
-			requirements: components['schemas']['CurriculumRequirementView'][];
-		};
-		CurriculumRequirementView: {
-			catalog: components['schemas']['CurriculumCatalogVersionOption'];
+		CurriculumStructureRequirement: {
+			/** Format: uuid */
+			catalogVersionId: string;
+			code: string;
+			/** Format: int32 */
+			displayOrder: number;
 			gradeLevel: components['schemas']['GradeLevelLookupItem'];
-			requirement: components['schemas']['ProgramRequirement'];
+			/** Format: uuid */
+			id: string;
+			metrics: components['schemas']['CatalogCurriculumMetrics'];
+			name: string;
+			requirementKind: components['schemas']['RequirementKind'];
+			resourceKind: components['schemas']['RequirementResourceKind'];
+			section: components['schemas']['CurriculumDocumentSection'];
 			/** Format: uuid */
 			studyProgramId: string;
+			/** Format: uuid */
+			termSlotId: string;
+		};
+		CurriculumStructureRequirementInput: {
+			/** Format: uuid */
+			catalogVersionId: string;
+			/** Format: int32 */
+			displayOrder: number;
+			/** Format: uuid */
+			gradeLevelId: string;
+			requirementKind: components['schemas']['RequirementKind'];
+			resourceKind: components['schemas']['RequirementResourceKind'];
+			/** Format: uuid */
+			termSlotId: string;
+		};
+		CurriculumStructureValidation: {
+			blockers: components['schemas']['CurriculumValidationNotice'][];
+			warnings: components['schemas']['CurriculumValidationNotice'][];
+		};
+		CurriculumStructureWorkspace: {
+			curriculumVersion: components['schemas']['CurriculumVersion'];
+			gradeLevels: components['schemas']['GradeLevelLookupItem'][];
+			programs: components['schemas']['StudyProgram'][];
+			requirements: components['schemas']['CurriculumStructureRequirement'][];
+			/** Format: int64 */
+			rowVersion: number;
+			termSlots: components['schemas']['CurriculumTermSlot'][];
+			validation: components['schemas']['CurriculumStructureValidation'];
+		};
+		CurriculumTermSlot: {
+			/** Format: uuid */
+			curriculumVersionId: string;
+			/** Format: uuid */
+			id: string;
+			name: string;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: int32 */
+			sequence: number;
+			termType: components['schemas']['AcademicTermType'];
+			/** Format: int32 */
+			typeOccurrence: number;
+		};
+		CurriculumTermSlotInput: {
+			/** Format: uuid */
+			id?: string | null;
+			name: string;
+			/** Format: int32 */
+			sequence: number;
+			termType: components['schemas']['AcademicTermType'];
+			/** Format: int32 */
+			typeOccurrence: number;
+		};
+		CurriculumValidationNotice: {
+			/** Format: uuid */
+			catalogVersionId?: string | null;
+			code: string;
+			message: string;
 		};
 		CurriculumVersion: {
 			/** Format: date-time */
@@ -11424,36 +11503,6 @@ export interface components {
 			username: string;
 			userType: string;
 		};
-		ProgramRequirement: {
-			/** Format: uuid */
-			catalogVersionId: string;
-			credit?: string | null;
-			/** Format: int32 */
-			displayOrder: number;
-			/** Format: uuid */
-			gradeLevelId: string;
-			hours?: string | null;
-			/** Format: uuid */
-			id: string;
-			recommendedTermCode?: string | null;
-			requirementKind: components['schemas']['RequirementKind'];
-			resourceKind: components['schemas']['RequirementResourceKind'];
-			/** Format: int64 */
-			rowVersion: number;
-		};
-		ProgramRequirementInput: {
-			/** Format: uuid */
-			catalogVersionId: string;
-			credit?: string | null;
-			/** Format: int32 */
-			displayOrder: number;
-			/** Format: uuid */
-			gradeLevelId: string;
-			hours?: string | null;
-			recommendedTermCode?: string | null;
-			requirementKind: components['schemas']['RequirementKind'];
-			resourceKind: components['schemas']['RequirementResourceKind'];
-		};
 		PublicCertificateRenderRequest: {
 			receipt: string;
 		};
@@ -11674,6 +11723,16 @@ export interface components {
 			/** Format: int64 */
 			rowVersion: number;
 		};
+		ReplaceCurriculumStructureRequest: {
+			requirements: components['schemas']['CurriculumStructureRequirementInput'][];
+			/** Format: int64 */
+			rowVersion: number;
+		};
+		ReplaceCurriculumTermSlotsRequest: {
+			/** Format: int64 */
+			rowVersion: number;
+			slots: components['schemas']['CurriculumTermSlotInput'][];
+		};
 		ReplaceDefaultTeachersRequest: {
 			/** Format: int64 */
 			rowVersion: number;
@@ -11701,11 +11760,6 @@ export interface components {
 		};
 		ReplaceObservationEvaluatorsRequest: {
 			evaluators?: components['schemas']['EvaluatorAssignmentInput'][];
-		};
-		ReplaceProgramRequirementsRequest: {
-			requirements: components['schemas']['ProgramRequirementInput'][];
-			/** Format: int64 */
-			rowVersion: number;
 		};
 		RequestSupervisionObservationRequest: {
 			/** Format: uuid */
@@ -12314,10 +12368,6 @@ export interface components {
 			/** Format: uuid */
 			id: string;
 			name: string;
-		};
-		StudyProgramRequirement: components['schemas']['ProgramRequirement'] & {
-			/** Format: uuid */
-			studyProgramId: string;
 		};
 		SubjectGroup: {
 			code: string;
@@ -12958,6 +13008,7 @@ export interface components {
 			/** Format: date */
 			effectiveUntil?: string | null;
 			gradeLevelIds: string[];
+			hoursPerTerm?: string | null;
 			hoursPerWeek: string;
 			name: string;
 			/** Format: int64 */
@@ -16233,6 +16284,137 @@ export interface operations {
 			};
 		};
 	};
+	getCurriculumStructureWorkspace: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Curriculum version ID */
+				curriculumVersionId: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Curriculum structure workspace */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CurriculumStructureWorkspace'];
+				};
+			};
+			/** @description Curriculum structure cannot be represented */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic curriculum read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Curriculum version not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	replaceCurriculumTermSlots: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Curriculum version ID */
+				curriculumVersionId: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ReplaceCurriculumTermSlotsRequest'];
+			};
+		};
+		responses: {
+			/** @description Curriculum term slots replaced */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CurriculumStructureWorkspace'];
+				};
+			};
+			/** @description Invalid or immutable term slots */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic curriculum management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Curriculum version not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Curriculum version row version conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	getCurriculumVersion: {
 		parameters: {
 			query?: never;
@@ -16395,65 +16577,6 @@ export interface operations {
 				};
 			};
 			/** @description Academic curriculum management permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Curriculum version not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	getCurriculumProgramWorkspace: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Curriculum version ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Programs and requirements for the curriculum version */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_CurriculumProgramWorkspace'];
-				};
-			};
-			/** @description Curriculum program workspace exceeds the supported size */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Academic curriculum read permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -20621,82 +20744,32 @@ export interface operations {
 			};
 		};
 	};
-	listProgramRequirements: {
+	replaceCurriculumStructure: {
 		parameters: {
 			query?: never;
 			header?: never;
 			path: {
 				/** @description Study program ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Study program requirements */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_ProgramRequirement'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Academic curriculum read permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Study program not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	replaceProgramRequirements: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Study program ID */
-				id: string;
+				studyProgramId: string;
 			};
 			cookie?: never;
 		};
 		requestBody: {
 			content: {
-				'application/json': components['schemas']['ReplaceProgramRequirementsRequest'];
+				'application/json': components['schemas']['ReplaceCurriculumStructureRequest'];
 			};
 		};
 		responses: {
-			/** @description Study program requirements replaced */
+			/** @description Study program curriculum structure replaced */
 			200: {
 				headers: {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_ProgramRequirement'];
+					'application/json': components['schemas']['ApiResponse_CurriculumStructureWorkspace'];
 				};
 			};
-			/** @description Invalid or immutable requirements */
+			/** @description Invalid or immutable curriculum structure */
 			400: {
 				headers: {
 					[name: string]: unknown;

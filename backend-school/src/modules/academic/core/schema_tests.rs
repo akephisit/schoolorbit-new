@@ -1717,10 +1717,7 @@ async fn migration_048_maps_canonical_term_codes_and_keeps_published_slots_immut
     .expect("migrated term slots must be queryable");
     assert_eq!(slots.len(), 2);
     assert!(slots.iter().all(|slot| {
-        slot.1 == "regular"
-            && slot.2 == 1
-            && slot.3 == 1
-            && slot.4 == "ภาคเรียนที่ 1"
+        slot.1 == "regular" && slot.2 == 1 && slot.3 == 1 && slot.4 == "ภาคเรียนที่ 1"
     }));
 
     let missing_term_links: i64 = sqlx::query_scalar(

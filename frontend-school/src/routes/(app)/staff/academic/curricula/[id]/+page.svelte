@@ -10,25 +10,26 @@
 		getCurriculum,
 		getCurriculumCreateOptions,
 		getCurriculumManagementOptions,
-		getCurriculumProgramWorkspace,
-		getStudyProgram,
+		getCurriculumStructureWorkspace,
 		listCurriculumVersions,
 		publishCurriculumVersion,
-		replaceProgramRequirements,
+		replaceCurriculumStructure,
+		replaceCurriculumTermSlots,
 		type CreateCurriculumVersionRequest,
 		type CreateStudyProgramRequest,
 		type Curriculum,
 		type CurriculumCreateOptions,
 		type CurriculumManagementOptions,
-		type CurriculumProgramWorkspace,
-		type CurriculumRequirementView,
-		type CurriculumVersionView,
-		type ProgramRequirement,
-		type ProgramRequirementInput,
-		type StudyProgram
+		type CurriculumStructureRequirementInput,
+		type CurriculumStructureWorkspace,
+		type CurriculumTermSlotInput,
+		type CurriculumVersionView
 	} from '$lib/api/academic-core';
 	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
-	import CurriculumProgramEditor from '$lib/components/academic-core/CurriculumProgramEditor.svelte';
+	import CurriculumProgramComparison from '$lib/components/academic-core/CurriculumProgramComparison.svelte';
+	import CurriculumStructureEditor from '$lib/components/academic-core/CurriculumStructureEditor.svelte';
+	import CurriculumStructureToolbar from '$lib/components/academic-core/CurriculumStructureToolbar.svelte';
+	import CurriculumTermDocument from '$lib/components/academic-core/CurriculumTermDocument.svelte';
 	import CurriculumVersionPanel from '$lib/components/academic-core/CurriculumVersionPanel.svelte';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
@@ -44,13 +45,17 @@
 	let curriculum = $state.raw<Curriculum | null>(null);
 	let versions = $state.raw<CurriculumVersionView[]>([]);
 	let selectedVersion = $state.raw<CurriculumVersionView | null>(null);
-	let workspace = $state.raw<CurriculumProgramWorkspace>({ programs: [], requirements: [] });
+	let workspace = $state.raw<CurriculumStructureWorkspace | null>(null);
 	let createOptions = $state.raw<CurriculumCreateOptions | null>(null);
 	let loading = $state(true);
 	let workspaceLoading = $state(false);
 	let initialized = $state(false);
 	let errorMessage = $state('');
 	let workspaceError = $state('');
+	let editorOpen = $state(false);
+	let viewMode = $state<'comparison' | 'document'>('comparison');
+	let selectedGradeLevelId = $state('');
+	let selectedStudyProgramId = $state('');
 	let curriculumId = $derived(page.params.id ?? '');
 	let canManageAcademicCurriculum = $derived(
 		$can.hasAny(
@@ -62,6 +67,17 @@
 	let selectedManagementOptions = $derived(
 		selectedVersion ? (managementCache.get(selectedVersion.version.id) ?? null) : null
 	);
+
+	function applyWorkspace(value: CurriculumStructureWorkspace | null) {
+		workspace = value;
+		if (!value) return;
+		if (!value.gradeLevels.some((grade) => grade.id === selectedGradeLevelId)) {
+			selectedGradeLevelId = value.gradeLevels[0]?.id ?? '';
+		}
+		if (!value.programs.some((program) => program.id === selectedStudyProgramId)) {
+			selectedStudyProgramId = value.programs[0]?.id ?? '';
+		}
+	}
 
 	async function loadDetail() {
 		const { revision, signal } = detailRequest.begin();
@@ -76,13 +92,13 @@
 				loadedVersions[0] ??
 				null;
 			const loadedWorkspace = version
-				? await getCurriculumProgramWorkspace(version.version.id, { signal })
-				: { programs: [], requirements: [] };
+				? await getCurriculumStructureWorkspace(version.version.id, { signal })
+				: null;
 			if (!detailRequest.isCurrent(revision)) return;
 			curriculum = loadedCurriculum;
 			versions = loadedVersions;
 			selectedVersion = version;
-			workspace = loadedWorkspace;
+			applyWorkspace(loadedWorkspace);
 			initialized = true;
 			if (version && requestedVersionId !== version.version.id) {
 				await goto(
@@ -107,10 +123,10 @@
 		workspaceLoading = true;
 		workspaceError = '';
 		try {
-			const loadedWorkspace = await getCurriculumProgramWorkspace(version.version.id, { signal });
+			const loadedWorkspace = await getCurriculumStructureWorkspace(version.version.id, { signal });
 			if (!versionRequest.isCurrent(revision)) return;
 			selectedVersion = version;
-			workspace = loadedWorkspace;
+			applyWorkspace(loadedWorkspace);
 			if (updateUrl) {
 				await goto(
 					resolve(
@@ -163,56 +179,37 @@
 	}
 
 	async function createProgram(draft: CreateStudyProgramRequest) {
-		if (!selectedVersion) return;
+		if (!selectedVersion || !workspace) return;
 		const created = await createStudyProgram(selectedVersion.version.id, draft);
-		workspace = {
+		applyWorkspace({
 			...workspace,
 			programs: [...workspace.programs, created]
-		};
-	}
-
-	function resolveRequirementViews(
-		programId: string,
-		updated: ProgramRequirement[],
-		options: CurriculumManagementOptions
-	): CurriculumRequirementView[] {
-		return updated.map((requirement) => {
-			const gradeLevel = options.gradeLevels.find(
-				(option) => option.id === requirement.gradeLevelId
-			);
-			const catalog = options.catalogVersions.find(
-				(option) => option.id === requirement.catalogVersionId
-			);
-			if (!gradeLevel || !catalog) {
-				throw new Error(
-					'บันทึกสำเร็จแต่ไม่สามารถจับคู่ชื่อระดับชั้นหรือรายการทะเบียนได้ กรุณาโหลดหน้าใหม่'
-				);
-			}
-			return { studyProgramId: programId, requirement, gradeLevel, catalog };
 		});
 	}
 
-	async function replaceRequirements(
-		program: StudyProgram,
-		requirements: ProgramRequirementInput[]
+	async function saveStructure(
+		studyProgramId: string,
+		rowVersion: number,
+		requirements: CurriculumStructureRequirementInput[]
 	) {
+		applyWorkspace(
+			await replaceCurriculumStructure(studyProgramId, { rowVersion, requirements })
+		);
+	}
+
+	async function saveTermSlots(slots: CurriculumTermSlotInput[]) {
+		if (!selectedVersion || !workspace) return;
+		applyWorkspace(
+			await replaceCurriculumTermSlots(selectedVersion.version.id, {
+				rowVersion: workspace.rowVersion,
+				slots
+			})
+		);
+	}
+
+	async function openEditor() {
 		const options = await requestManagementOptions();
-		if (!options) throw new Error('ไม่มีสิทธิ์จัดการรายการในแผนการเรียน');
-		const updated = await replaceProgramRequirements(program.id, {
-			rowVersion: program.rowVersion,
-			requirements
-		});
-		const views = resolveRequirementViews(program.id, updated, options);
-		const refreshedProgram = await getStudyProgram(program.id);
-		workspace = {
-			programs: workspace.programs.map((item) =>
-				item.id === refreshedProgram.id ? refreshedProgram : item
-			),
-			requirements: [
-				...workspace.requirements.filter((item) => item.studyProgramId !== program.id),
-				...views
-			]
-		};
+		if (options) editorOpen = true;
 	}
 
 	async function publishVersion(id: string, rowVersion: number) {
@@ -221,6 +218,7 @@
 			view.version.id === updated.id ? { ...view, version: updated } : view
 		);
 		selectedVersion = selectedVersion ? { ...selectedVersion, version: updated } : null;
+		applyWorkspace(await getCurriculumStructureWorkspace(id));
 	}
 
 	afterNavigate(({ to }) => {
@@ -283,19 +281,57 @@
 					actionLabel="ลองอีกครั้ง"
 					onaction={() => selectedVersion && loadVersion(selectedVersion, false)}
 				/>
-			{:else if selectedVersion}
+			{:else if selectedVersion && workspace}
 				{#key selectedVersion.version.id}
-					<CurriculumProgramEditor
-						version={selectedVersion.version}
-						programs={workspace.programs}
-						requirements={workspace.requirements}
-						managementOptions={selectedManagementOptions}
-						canManage={canManageAcademicCurriculum}
-						onRequestManagementOptions={requestManagementOptions}
-						onCreateProgram={createProgram}
-						onReplaceRequirements={replaceRequirements}
-						onPublishVersion={publishVersion}
-					/>
+					<div class="space-y-4">
+						<CurriculumStructureToolbar
+							{workspace}
+							bind:viewMode
+							bind:gradeLevelId={selectedGradeLevelId}
+							bind:studyProgramId={selectedStudyProgramId}
+							canManage={canManageAcademicCurriculum}
+							onEdit={() => void openEditor()}
+						/>
+
+						{#if workspace.validation.blockers.length > 0}
+							<div class="rounded-xl border border-destructive/30 bg-destructive/5 p-3">
+								<h3 class="font-semibold text-destructive">ข้อมูลที่ต้องแก้ก่อนเผยแพร่</h3>
+								<ul class="mt-2 space-y-1 text-sm text-muted-foreground">
+									{#each workspace.validation.blockers as blocker (`${blocker.code}-${blocker.catalogVersionId ?? ''}`)}
+										<li>• {blocker.message}</li>
+									{/each}
+								</ul>
+							</div>
+						{/if}
+
+						{#if workspace.programs.length === 0 || workspace.gradeLevels.length === 0}
+							<PageState
+								title={workspace.programs.length === 0 ? 'ยังไม่มีแผนการเรียน' : 'หลักสูตรยังไม่มีระดับชั้น'}
+								description={workspace.programs.length === 0
+									? 'เปิดตัวจัดโครงสร้างเพื่อเพิ่มแผนการเรียนแรก'
+									: 'แก้ระดับชั้นของหลักสูตรก่อนจัดรายวิชา'}
+							/>
+						{:else if viewMode === 'comparison'}
+							<CurriculumProgramComparison {workspace} gradeLevelId={selectedGradeLevelId} />
+						{:else}
+							<CurriculumTermDocument
+								{workspace}
+								studyProgramId={selectedStudyProgramId}
+								gradeLevelId={selectedGradeLevelId}
+							/>
+						{/if}
+
+						{#if canManageAcademicCurriculum && selectedVersion.version.status === 'draft'}
+							<div class="flex justify-end">
+								<Button
+									disabled={workspace.validation.blockers.length > 0 || workspace.requirements.length === 0}
+									onclick={() => void publishVersion(selectedVersion!.version.id, workspace!.rowVersion)}
+								>
+									เผยแพร่รุ่นหลักสูตร
+								</Button>
+							</div>
+						{/if}
+					</div>
 				{/key}
 			{:else}
 				<PageState
@@ -306,3 +342,14 @@
 		</div>
 	{/if}
 </PageShell>
+
+{#if editorOpen && workspace && selectedManagementOptions}
+	<CurriculumStructureEditor
+		{workspace}
+		managementOptions={selectedManagementOptions}
+		onSaveStructure={saveStructure}
+		onSaveTermSlots={saveTermSlots}
+		onCreateProgram={createProgram}
+		onClose={() => (editorOpen = false)}
+	/>
+{/if}

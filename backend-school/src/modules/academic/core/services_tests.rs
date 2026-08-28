@@ -5,18 +5,19 @@ use super::models::{
     CreateCurriculumRequest, CreateCurriculumVersionRequest, CreateHomeroomPlacementRequest,
     CreateHomeroomRequest, CreateStudentAcademicYearRequest, CreateStudyProgramRequest,
     CreateSubjectGroupRequest, CreateSubjectVersionRequest, CurriculumDisplayState,
-    HomeroomPlacementStatus, ProgramRequirementInput, PublishVersionRequest,
-    ReplaceBellSchedulePeriodsRequest, ReplaceGradeProgressionsRequest,
-    ReplaceProgramRequirementsRequest, RequirementKind, RequirementResourceKind,
-    StudentAcademicYearFilter, StudentYearCandidateQuery, TransferHomeroomPlacementRequest,
-    UpdateAcademicTermRequest, UpdateAcademicYearRequest, UpdateActivityVersionRequest,
-    UpdateCatalogActivityRequest, UpdateCatalogSubjectRequest, UpdateStudyProgramRequest,
-    UpdateSubjectGroupRequest, UpdateSubjectVersionRequest, VersionStatus,
+    CurriculumStructureRequirementInput, CurriculumTermSlotInput, HomeroomPlacementStatus,
+    PublishVersionRequest, ReplaceBellSchedulePeriodsRequest, ReplaceCurriculumStructureRequest,
+    ReplaceCurriculumTermSlotsRequest, ReplaceGradeProgressionsRequest, RequirementKind,
+    RequirementResourceKind, StudentAcademicYearFilter, StudentYearCandidateQuery,
+    TransferHomeroomPlacementRequest, UpdateAcademicTermRequest, UpdateAcademicYearRequest,
+    UpdateActivityVersionRequest, UpdateCatalogActivityRequest, UpdateCatalogSubjectRequest,
+    UpdateStudyProgramRequest, UpdateSubjectGroupRequest, UpdateSubjectVersionRequest,
+    VersionStatus,
 };
 use super::services::{
-    bell_schedules, catalog, context, curriculum, ensure_draft_version, ensure_planning_delete,
-    parse_row_version, progressions, student_years, validate_canonical_decimal,
-    validate_date_containment, workspaces, years_terms,
+    bell_schedules, catalog, context, curriculum, curriculum_structure, ensure_draft_version,
+    ensure_planning_delete, parse_row_version, progressions, student_years,
+    validate_canonical_decimal, validate_date_containment, workspaces, years_terms,
 };
 use crate::policies::resource_access_policy::AcademicResourceListFilter;
 use crate::{
@@ -43,6 +44,7 @@ async fn prepare_core_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
+    apply_migrations_through(&pool, 48).await.unwrap();
     pool
 }
 
@@ -69,6 +71,15 @@ async fn create_published_program_option_fixture(
         "SELECT id FROM subject_versions WHERE status = 'published' ORDER BY id LIMIT 1",
     )
     .fetch_one(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"INSERT INTO subject_version_grade_levels (subject_id, grade_level_id)
+           VALUES ($1, $2) ON CONFLICT DO NOTHING"#,
+    )
+    .bind(subject_version_id)
+    .bind(grade_level_id)
+    .execute(pool)
     .await
     .unwrap();
     let curriculum_row = curriculum::create(
@@ -109,18 +120,38 @@ async fn create_published_program_option_fixture(
     )
     .await
     .unwrap();
-    curriculum::replace_requirements(
+    let mut workspace = curriculum_structure::get_workspace(pool, version.id)
+        .await
+        .unwrap();
+    if workspace.term_slots.is_empty() {
+        workspace = curriculum_structure::replace_term_slots(
+            pool,
+            version.id,
+            ReplaceCurriculumTermSlotsRequest {
+                slots: vec![CurriculumTermSlotInput {
+                    id: None,
+                    sequence: 1,
+                    term_type: AcademicTermType::Regular,
+                    type_occurrence: 1,
+                    name: "ภาคเรียนที่ 1".to_string(),
+                }],
+                row_version: workspace.row_version,
+            },
+        )
+        .await
+        .unwrap();
+    }
+    let term_slot_id = workspace.term_slots[0].id;
+    curriculum_structure::replace_program_structure(
         pool,
         program.id,
-        ReplaceProgramRequirementsRequest {
-            requirements: vec![ProgramRequirementInput {
+        ReplaceCurriculumStructureRequest {
+            requirements: vec![CurriculumStructureRequirementInput {
                 resource_kind: RequirementResourceKind::Course,
                 catalog_version_id: subject_version_id,
                 grade_level_id,
-                recommended_term_code: Some("T1".to_string()),
+                term_slot_id,
                 requirement_kind: RequirementKind::Required,
-                credit: Some("1.00".to_string()),
-                hours: Some("40.00".to_string()),
                 display_order: 1,
             }],
             row_version: program.row_version,
@@ -132,7 +163,7 @@ async fn create_published_program_option_fixture(
         pool,
         version.id,
         PublishVersionRequest {
-            row_version: version.row_version,
+            row_version: workspace.row_version,
         },
     )
     .await
@@ -176,6 +207,37 @@ async fn create_curriculum_overview_fixture(
     )
     .await
     .unwrap();
+    sqlx::query(
+        r#"INSERT INTO subject_version_grade_levels (subject_id, grade_level_id)
+           VALUES ($1, $2) ON CONFLICT DO NOTHING"#,
+    )
+    .bind(subject_version_id)
+    .bind(grade_level_id)
+    .execute(pool)
+    .await
+    .unwrap();
+    let mut workspace = curriculum_structure::get_workspace(pool, version.id)
+        .await
+        .unwrap();
+    if workspace.term_slots.is_empty() {
+        workspace = curriculum_structure::replace_term_slots(
+            pool,
+            version.id,
+            ReplaceCurriculumTermSlotsRequest {
+                slots: vec![CurriculumTermSlotInput {
+                    id: None,
+                    sequence: 1,
+                    term_type: AcademicTermType::Regular,
+                    type_occurrence: 1,
+                    name: "ภาคเรียนที่ 1".to_string(),
+                }],
+                row_version: workspace.row_version,
+            },
+        )
+        .await
+        .unwrap();
+    }
+    let term_slot_id = workspace.term_slots[0].id;
     for index in 0..program_count {
         let program = curriculum::create_program(
             pool,
@@ -190,18 +252,16 @@ async fn create_curriculum_overview_fixture(
         )
         .await
         .unwrap();
-        curriculum::replace_requirements(
+        curriculum_structure::replace_program_structure(
             pool,
             program.id,
-            ReplaceProgramRequirementsRequest {
-                requirements: vec![ProgramRequirementInput {
+            ReplaceCurriculumStructureRequest {
+                requirements: vec![CurriculumStructureRequirementInput {
                     resource_kind: RequirementResourceKind::Course,
                     catalog_version_id: subject_version_id,
                     grade_level_id,
-                    recommended_term_code: Some("1".to_string()),
+                    term_slot_id,
                     requirement_kind: RequirementKind::Required,
-                    credit: Some("1.00".to_string()),
-                    hours: Some("40.00".to_string()),
                     display_order: 1,
                 }],
                 row_version: program.row_version,
@@ -215,13 +275,272 @@ async fn create_curriculum_overview_fixture(
             pool,
             version.id,
             PublishVersionRequest {
-                row_version: version.row_version,
+                row_version: workspace.row_version,
             },
         )
         .await
         .unwrap();
     }
     (curriculum_row.id, version.id)
+}
+
+#[tokio::test]
+async fn curriculum_structure_workspace_reads_catalog_metrics_and_dynamic_term_slots() {
+    let pool = prepare_core_fixture("academic_core_structure_workspace").await;
+    let grade_level_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM grade_levels ORDER BY level_type, year, id LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let subject_version_id: Uuid = sqlx::query_scalar(
+        r#"SELECT id
+           FROM subject_versions
+           WHERE status = 'published'
+             AND periods_per_week IS NOT NULL
+             AND hours_per_semester IS NOT NULL
+           ORDER BY version_no DESC, id
+           LIMIT 1"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"INSERT INTO subject_version_grade_levels (subject_id, grade_level_id)
+           VALUES ($1, $2)
+           ON CONFLICT DO NOTHING"#,
+    )
+    .bind(subject_version_id)
+    .bind(grade_level_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let curriculum_row = curriculum::create(
+        &pool,
+        CreateCurriculumRequest {
+            code: "STRUCTURE".to_string(),
+            name_th: "หลักสูตรโครงสร้าง".to_string(),
+            name_en: None,
+            description: None,
+            grade_level_ids: vec![grade_level_id],
+            owning_organization_unit_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    let version = curriculum::create_version(
+        &pool,
+        curriculum_row.id,
+        CreateCurriculumVersionRequest {
+            version_name: "ฉบับโครงสร้าง".to_string(),
+            start_academic_year_id: CURRENT_YEAR_ID,
+            end_academic_year_id: None,
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+    let program = curriculum::create_program(
+        &pool,
+        version.id,
+        CreateStudyProgramRequest {
+            code: "GENERAL".to_string(),
+            name_th: "แผนทั่วไป".to_string(),
+            name_en: None,
+            is_default: true,
+            owning_organization_unit_id: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    let empty_workspace = curriculum_structure::get_workspace(&pool, version.id)
+        .await
+        .unwrap();
+    let first_regular_slot = empty_workspace
+        .term_slots
+        .iter()
+        .find(|slot| slot.term_type == AcademicTermType::Regular && slot.type_occurrence == 1)
+        .expect("the start academic year must seed its first regular curriculum slot");
+
+    let workspace = curriculum_structure::replace_program_structure(
+        &pool,
+        program.id,
+        ReplaceCurriculumStructureRequest {
+            requirements: vec![CurriculumStructureRequirementInput {
+                resource_kind: RequirementResourceKind::Course,
+                catalog_version_id: subject_version_id,
+                grade_level_id,
+                term_slot_id: first_regular_slot.id,
+                requirement_kind: RequirementKind::Required,
+                display_order: 1,
+            }],
+            row_version: program.row_version,
+        },
+    )
+    .await
+    .unwrap();
+
+    assert!(workspace.term_slots.len() >= 2);
+    assert_eq!(workspace.programs.len(), 1);
+    assert_eq!(workspace.requirements.len(), 1);
+    assert_eq!(
+        workspace.requirements[0].metrics.credit.as_deref(),
+        Some("1.50")
+    );
+    assert_eq!(
+        workspace.requirements[0].metrics.total_hours.as_deref(),
+        Some("60")
+    );
+    assert!(workspace.validation.blockers.is_empty());
+}
+
+#[tokio::test]
+async fn curriculum_term_slots_are_draft_only_and_cannot_remove_a_referenced_slot() {
+    let pool = prepare_core_fixture("academic_core_term_slot_replace").await;
+    let grade_level_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM grade_levels ORDER BY level_type, year, id LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let subject_version_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM subject_versions WHERE status = 'published' ORDER BY id LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"INSERT INTO subject_version_grade_levels (subject_id, grade_level_id)
+           VALUES ($1, $2) ON CONFLICT DO NOTHING"#,
+    )
+    .bind(subject_version_id)
+    .bind(grade_level_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"INSERT INTO subject_version_grade_levels (subject_id, grade_level_id)
+           VALUES ($1, $2) ON CONFLICT DO NOTHING"#,
+    )
+    .bind(subject_version_id)
+    .bind(grade_level_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let curriculum_row = curriculum::create(
+        &pool,
+        CreateCurriculumRequest {
+            code: "TERM-SLOTS".to_string(),
+            name_th: "หลักสูตรภาคเรียนยืดหยุ่น".to_string(),
+            name_en: None,
+            description: None,
+            grade_level_ids: vec![grade_level_id],
+            owning_organization_unit_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    let version = curriculum::create_version(
+        &pool,
+        curriculum_row.id,
+        CreateCurriculumVersionRequest {
+            version_name: "ฉบับภาคเรียนยืดหยุ่น".to_string(),
+            start_academic_year_id: CURRENT_YEAR_ID,
+            end_academic_year_id: None,
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+    let initial = curriculum_structure::get_workspace(&pool, version.id)
+        .await
+        .unwrap();
+    let first_slot = initial.term_slots[0].clone();
+    let mut slot_inputs = initial
+        .term_slots
+        .iter()
+        .map(|slot| CurriculumTermSlotInput {
+            id: Some(slot.id),
+            sequence: slot.sequence,
+            term_type: slot.term_type,
+            type_occurrence: slot.type_occurrence,
+            name: slot.name.clone(),
+        })
+        .collect::<Vec<_>>();
+    slot_inputs.push(CurriculumTermSlotInput {
+        id: None,
+        sequence: slot_inputs.len() as i32 + 1,
+        term_type: AcademicTermType::Custom,
+        type_occurrence: 1,
+        name: "ภาคเรียนโครงงาน".to_string(),
+    });
+    let with_custom = curriculum_structure::replace_term_slots(
+        &pool,
+        version.id,
+        ReplaceCurriculumTermSlotsRequest {
+            slots: slot_inputs,
+            row_version: initial.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(with_custom
+        .term_slots
+        .iter()
+        .any(|slot| slot.name == "ภาคเรียนโครงงาน"));
+
+    let program = curriculum::create_program(
+        &pool,
+        version.id,
+        CreateStudyProgramRequest {
+            code: "GENERAL".to_string(),
+            name_th: "แผนทั่วไป".to_string(),
+            name_en: None,
+            is_default: true,
+            owning_organization_unit_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    curriculum_structure::replace_program_structure(
+        &pool,
+        program.id,
+        ReplaceCurriculumStructureRequest {
+            requirements: vec![CurriculumStructureRequirementInput {
+                resource_kind: RequirementResourceKind::Course,
+                catalog_version_id: subject_version_id,
+                grade_level_id,
+                term_slot_id: first_slot.id,
+                requirement_kind: RequirementKind::Required,
+                display_order: 1,
+            }],
+            row_version: program.row_version,
+        },
+    )
+    .await
+    .unwrap();
+
+    let without_referenced = with_custom
+        .term_slots
+        .iter()
+        .filter(|slot| slot.id != first_slot.id)
+        .map(|slot| CurriculumTermSlotInput {
+            id: Some(slot.id),
+            sequence: slot.sequence,
+            term_type: slot.term_type,
+            type_occurrence: slot.type_occurrence,
+            name: slot.name.clone(),
+        })
+        .collect();
+    let removal = curriculum_structure::replace_term_slots(
+        &pool,
+        version.id,
+        ReplaceCurriculumTermSlotsRequest {
+            slots: without_referenced,
+            row_version: with_custom.row_version,
+        },
+    )
+    .await;
+    assert!(matches!(removal, Err(crate::error::AppError::Conflict(_))));
 }
 
 #[test]
@@ -1636,6 +1955,7 @@ async fn activity_catalog_versions_round_trip_exact_hours_and_archive_stably() {
             name: "กิจกรรมแนะแนวทดสอบ".to_string(),
             description: None,
             hours_per_week: "1.50".to_string(),
+            hours_per_term: Some("30.00".to_string()),
             scheduling_mode: "synchronized".to_string(),
             effective_from: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
             effective_until: None,
@@ -1646,6 +1966,7 @@ async fn activity_catalog_versions_round_trip_exact_hours_and_archive_stably() {
     .await
     .unwrap();
     assert_eq!(version.hours_per_week, "1.50");
+    assert_eq!(version.hours_per_term.as_deref(), Some("30.00"));
     assert_eq!(version.grade_level_ids, vec![grade_level_id]);
 
     let published = catalog::publish_activity_version(
@@ -1664,6 +1985,7 @@ async fn activity_catalog_versions_round_trip_exact_hours_and_archive_stably() {
             name: published.name,
             description: published.description,
             hours_per_week: published.hours_per_week,
+            hours_per_term: published.hours_per_term,
             scheduling_mode: published.scheduling_mode,
             effective_from: published.effective_from,
             effective_until: published.effective_until,
@@ -1690,6 +2012,57 @@ async fn activity_catalog_versions_round_trip_exact_hours_and_archive_stably() {
     .await
     .unwrap();
     assert!(archived.archived_at.is_some());
+}
+
+#[tokio::test]
+async fn activity_catalog_requires_total_hours_before_publishing_a_new_version() {
+    let pool = prepare_core_fixture("academic_core_activity_total_hours_publish").await;
+    let grade_level_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM grade_levels ORDER BY level_type, year, id LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let activity = catalog::create_activity(
+        &pool,
+        CreateCatalogActivityRequest {
+            code: "TOTAL-HOURS-REQUIRED".to_string(),
+            activity_type: "guidance".to_string(),
+            owning_organization_unit_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    let version = catalog::create_activity_version(
+        &pool,
+        activity.id,
+        CreateActivityVersionRequest {
+            name: "กิจกรรมที่ยังขาดชั่วโมงรวม".to_string(),
+            description: None,
+            hours_per_week: "1.00".to_string(),
+            hours_per_term: None,
+            scheduling_mode: "synchronized".to_string(),
+            effective_from: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
+            effective_until: None,
+            term_code: None,
+            grade_level_ids: vec![grade_level_id],
+        },
+    )
+    .await
+    .unwrap();
+
+    let result = catalog::publish_activity_version(
+        &pool,
+        version.id,
+        PublishVersionRequest {
+            row_version: version.row_version,
+        },
+    )
+    .await;
+    assert!(matches!(
+        result,
+        Err(crate::error::AppError::ValidationError(message))
+            if message.contains("ชั่วโมงรวมต่อภาคเรียน")
+    ));
 }
 
 async fn create_overview_subject_version(
@@ -1936,6 +2309,7 @@ async fn catalog_overview_keeps_activity_owner_scope_and_grade_options() {
             name: "แนะแนวที่ใช้อยู่".to_string(),
             description: None,
             hours_per_week: "1.00".to_string(),
+            hours_per_term: Some("20.00".to_string()),
             scheduling_mode: "synchronized".to_string(),
             effective_from: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
             effective_until: None,
@@ -2274,6 +2648,7 @@ async fn curriculum_management_options_are_published_scoped_and_ordered() {
             name: "กิจกรรมตัวเลือก".to_string(),
             description: None,
             hours_per_week: "1.00".to_string(),
+            hours_per_term: Some("20.00".to_string()),
             scheduling_mode: "synchronized".to_string(),
             effective_from: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
             effective_until: None,
@@ -2404,12 +2779,52 @@ async fn curriculum_program_workspace_resolves_requirement_labels() {
     .fetch_one(&pool)
     .await
     .unwrap();
-    let activity_version_id: Uuid = sqlx::query_scalar(
-        "SELECT id FROM activity_versions WHERE status = 'published' ORDER BY id LIMIT 1",
+    sqlx::query(
+        r#"INSERT INTO subject_version_grade_levels (subject_id, grade_level_id)
+           VALUES ($1, $2) ON CONFLICT DO NOTHING"#,
     )
-    .fetch_one(&pool)
+    .bind(subject_version_id)
+    .bind(grade_level_id)
+    .execute(&pool)
     .await
     .unwrap();
+    let activity = catalog::create_activity(
+        &pool,
+        CreateCatalogActivityRequest {
+            code: "WORKSPACE-ACTIVITY".to_string(),
+            activity_type: "guidance".to_string(),
+            owning_organization_unit_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    let activity_version = catalog::create_activity_version(
+        &pool,
+        activity.id,
+        CreateActivityVersionRequest {
+            name: "กิจกรรม workspace".to_string(),
+            description: None,
+            hours_per_week: "1.00".to_string(),
+            hours_per_term: Some("20.00".to_string()),
+            scheduling_mode: "synchronized".to_string(),
+            effective_from: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
+            effective_until: None,
+            term_code: None,
+            grade_level_ids: vec![grade_level_id],
+        },
+    )
+    .await
+    .unwrap();
+    let activity_version = catalog::publish_activity_version(
+        &pool,
+        activity_version.id,
+        PublishVersionRequest {
+            row_version: activity_version.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    let activity_version_id = activity_version.id;
     let curriculum_row = curriculum::create(
         &pool,
         CreateCurriculumRequest {
@@ -2461,29 +2876,33 @@ async fn curriculum_program_workspace_resolves_requirement_labels() {
     )
     .await
     .unwrap();
-    curriculum::replace_requirements(
+    let structure = curriculum_structure::get_workspace(&pool, version.id)
+        .await
+        .unwrap();
+    let first_slot_id = structure.term_slots[0].id;
+    let second_slot_id = structure
+        .term_slots
+        .get(1)
+        .map_or(first_slot_id, |slot| slot.id);
+    curriculum_structure::replace_program_structure(
         &pool,
         default_program.id,
-        ReplaceProgramRequirementsRequest {
+        ReplaceCurriculumStructureRequest {
             requirements: vec![
-                ProgramRequirementInput {
+                CurriculumStructureRequirementInput {
                     resource_kind: RequirementResourceKind::Activity,
                     catalog_version_id: activity_version_id,
                     grade_level_id,
-                    recommended_term_code: Some("T2".to_string()),
+                    term_slot_id: second_slot_id,
                     requirement_kind: RequirementKind::Required,
-                    credit: None,
-                    hours: Some("20.00".to_string()),
                     display_order: 2,
                 },
-                ProgramRequirementInput {
+                CurriculumStructureRequirementInput {
                     resource_kind: RequirementResourceKind::Course,
                     catalog_version_id: subject_version_id,
                     grade_level_id,
-                    recommended_term_code: Some("T1".to_string()),
+                    term_slot_id: first_slot_id,
                     requirement_kind: RequirementKind::Required,
-                    credit: Some("1.00".to_string()),
-                    hours: Some("40.00".to_string()),
                     display_order: 1,
                 },
             ],
@@ -2492,18 +2911,16 @@ async fn curriculum_program_workspace_resolves_requirement_labels() {
     )
     .await
     .unwrap();
-    curriculum::replace_requirements(
+    curriculum_structure::replace_program_structure(
         &pool,
         alternative_program.id,
-        ReplaceProgramRequirementsRequest {
-            requirements: vec![ProgramRequirementInput {
+        ReplaceCurriculumStructureRequest {
+            requirements: vec![CurriculumStructureRequirementInput {
                 resource_kind: RequirementResourceKind::Course,
                 catalog_version_id: subject_version_id,
                 grade_level_id,
-                recommended_term_code: Some("T1".to_string()),
+                term_slot_id: first_slot_id,
                 requirement_kind: RequirementKind::Elective,
-                credit: Some("1.50".to_string()),
-                hours: Some("60.00".to_string()),
                 display_order: 1,
             }],
             row_version: alternative_program.row_version,
@@ -2551,16 +2968,9 @@ async fn curriculum_program_workspace_resolves_requirement_labels() {
     .await
     .unwrap();
 
-    let program_workspace = workspaces::program_workspace(
-        &pool,
-        version.id,
-        &AcademicResourceListFilter {
-            includes_school_owned: true,
-            ..AcademicResourceListFilter::default()
-        },
-    )
-    .await
-    .unwrap();
+    let program_workspace = curriculum_structure::get_workspace(&pool, version.id)
+        .await
+        .unwrap();
     assert_eq!(
         program_workspace
             .programs
@@ -2574,7 +2984,7 @@ async fn curriculum_program_workspace_resolves_requirement_labels() {
         program_workspace
             .requirements
             .iter()
-            .map(|tagged| tagged.study_program_id)
+            .map(|requirement| requirement.study_program_id)
             .collect::<Vec<_>>(),
         vec![
             default_program.id,
@@ -2582,28 +2992,22 @@ async fn curriculum_program_workspace_resolves_requirement_labels() {
             alternative_program.id
         ]
     );
-    assert_eq!(
-        program_workspace.requirements[0].requirement.display_order,
-        1
-    );
-    assert_eq!(
-        program_workspace.requirements[1].requirement.display_order,
-        2
-    );
+    assert_eq!(program_workspace.requirements[0].display_order, 1);
+    assert_eq!(program_workspace.requirements[1].display_order, 2);
     let course_requirement = &program_workspace.requirements[0];
     assert_eq!(course_requirement.grade_level.id, grade_level_id);
     assert!(!course_requirement.grade_level.name.is_empty());
-    assert_eq!(course_requirement.catalog.id, subject_version_id);
+    assert_eq!(course_requirement.catalog_version_id, subject_version_id);
     assert_eq!(
-        course_requirement.catalog.resource_kind,
+        course_requirement.resource_kind,
         RequirementResourceKind::Course
     );
-    assert!(!course_requirement.catalog.code.is_empty());
-    assert!(!course_requirement.catalog.name.is_empty());
+    assert!(!course_requirement.code.is_empty());
+    assert!(!course_requirement.name.is_empty());
     let activity_requirement = &program_workspace.requirements[1];
-    assert_eq!(activity_requirement.catalog.id, activity_version_id);
+    assert_eq!(activity_requirement.catalog_version_id, activity_version_id);
     assert_eq!(
-        activity_requirement.catalog.resource_kind,
+        activity_requirement.resource_kind,
         RequirementResourceKind::Activity
     );
     assert!(program_workspace
@@ -2613,23 +3017,16 @@ async fn curriculum_program_workspace_resolves_requirement_labels() {
     assert!(program_workspace
         .requirements
         .iter()
-        .all(|tagged| tagged.study_program_id != other_program.id));
+        .all(|requirement| requirement.study_program_id != other_program.id));
     let serialized_program_workspace = serde_json::to_value(&program_workspace).unwrap();
     let serialized_requirement = &serialized_program_workspace["requirements"][0];
     assert_eq!(
         serialized_requirement["studyProgramId"],
         default_program.id.to_string()
     );
-    assert!(serialized_requirement["requirement"]
-        .get("displayOrder")
-        .is_some());
+    assert!(serialized_requirement.get("displayOrder").is_some());
     assert!(serialized_requirement.get("gradeLevel").is_some());
-    assert!(serialized_requirement.get("catalog").is_some());
-    assert!(matches!(
-        workspaces::program_workspace(&pool, version.id, &AcademicResourceListFilter::default(),)
-            .await,
-        Err(crate::error::AppError::Forbidden(_))
-    ));
+    assert!(serialized_requirement.get("metrics").is_some());
 
     let extra_schedule = bell_schedules::create(
         &pool,
@@ -2751,6 +3148,15 @@ async fn curriculum_version_supports_multiple_programs_and_freezes_them_on_publi
     .fetch_one(&pool)
     .await
     .unwrap();
+    sqlx::query(
+        r#"INSERT INTO subject_version_grade_levels (subject_id, grade_level_id)
+           VALUES ($1, $2) ON CONFLICT DO NOTHING"#,
+    )
+    .bind(subject_version_id)
+    .bind(grade_level_id)
+    .execute(&pool)
+    .await
+    .unwrap();
     let curriculum_row = curriculum::create(
         &pool,
         CreateCurriculumRequest {
@@ -2810,19 +3216,40 @@ async fn curriculum_version_supports_multiple_programs_and_freezes_them_on_publi
         2
     );
 
+    let mut structure = curriculum_structure::get_workspace(&pool, version.id)
+        .await
+        .unwrap();
+    if structure.term_slots.is_empty() {
+        structure = curriculum_structure::replace_term_slots(
+            &pool,
+            version.id,
+            ReplaceCurriculumTermSlotsRequest {
+                slots: vec![CurriculumTermSlotInput {
+                    id: None,
+                    sequence: 1,
+                    term_type: AcademicTermType::Regular,
+                    type_occurrence: 1,
+                    name: "ภาคเรียนที่ 1".to_string(),
+                }],
+                row_version: structure.row_version,
+            },
+        )
+        .await
+        .unwrap();
+    }
+    let term_slot_id = structure.term_slots[0].id;
+
     for program in [&default_program, &science_program] {
-        let requirements = curriculum::replace_requirements(
+        structure = curriculum_structure::replace_program_structure(
             &pool,
             program.id,
-            ReplaceProgramRequirementsRequest {
-                requirements: vec![ProgramRequirementInput {
+            ReplaceCurriculumStructureRequest {
+                requirements: vec![CurriculumStructureRequirementInput {
                     resource_kind: RequirementResourceKind::Course,
                     catalog_version_id: subject_version_id,
                     grade_level_id,
-                    recommended_term_code: Some("T1".to_string()),
+                    term_slot_id,
                     requirement_kind: RequirementKind::Required,
-                    credit: Some("1.50".to_string()),
-                    hours: Some("60.00".to_string()),
                     display_order: 1,
                 }],
                 row_version: program.row_version,
@@ -2830,16 +3257,20 @@ async fn curriculum_version_supports_multiple_programs_and_freezes_them_on_publi
         )
         .await
         .unwrap();
-        assert_eq!(requirements.len(), 1);
-        assert_eq!(requirements[0].credit.as_deref(), Some("1.50"));
-        assert_eq!(requirements[0].hours.as_deref(), Some("60.00"));
+        let requirement = structure
+            .requirements
+            .iter()
+            .find(|requirement| requirement.study_program_id == program.id)
+            .unwrap();
+        assert!(requirement.metrics.credit.is_some());
+        assert!(requirement.metrics.total_hours.is_some());
     }
 
     let published = curriculum::publish_version(
         &pool,
         version.id,
         PublishVersionRequest {
-            row_version: version.row_version,
+            row_version: structure.row_version,
         },
     )
     .await
@@ -2863,4 +3294,89 @@ async fn curriculum_version_supports_multiple_programs_and_freezes_them_on_publi
     .await
     .unwrap_err();
     assert!(immutable.public_message().contains("แก้ไขไม่ได้"));
+}
+
+#[tokio::test]
+async fn curriculum_publication_rejects_missing_official_catalog_metrics() {
+    let pool = prepare_core_fixture("academic_core_curriculum_metric_blocker").await;
+    let (activity_version_id, grade_level_id): (Uuid, Uuid) = sqlx::query_as(
+        r#"SELECT version.id, grade.value::uuid
+           FROM activity_versions version
+           CROSS JOIN LATERAL jsonb_array_elements_text(version.grade_level_ids) grade(value)
+           WHERE version.status = 'published' AND version.hours_per_term IS NULL
+           ORDER BY version.id
+           LIMIT 1"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let curriculum_row = curriculum::create(
+        &pool,
+        CreateCurriculumRequest {
+            code: "METRIC-BLOCKER".to_string(),
+            name_th: "หลักสูตรทดสอบข้อมูลทางการ".to_string(),
+            name_en: None,
+            description: None,
+            grade_level_ids: vec![grade_level_id],
+            owning_organization_unit_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    let version = curriculum::create_version(
+        &pool,
+        curriculum_row.id,
+        CreateCurriculumVersionRequest {
+            version_name: "ฉบับข้อมูลไม่ครบ".to_string(),
+            start_academic_year_id: CURRENT_YEAR_ID,
+            end_academic_year_id: None,
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+    let program = curriculum::create_program(
+        &pool,
+        version.id,
+        CreateStudyProgramRequest {
+            code: "DEFAULT".to_string(),
+            name_th: "แผนหลัก".to_string(),
+            name_en: None,
+            is_default: true,
+            owning_organization_unit_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    let workspace = curriculum_structure::get_workspace(&pool, version.id)
+        .await
+        .unwrap();
+    let workspace = curriculum_structure::replace_program_structure(
+        &pool,
+        program.id,
+        ReplaceCurriculumStructureRequest {
+            requirements: vec![CurriculumStructureRequirementInput {
+                resource_kind: RequirementResourceKind::Activity,
+                catalog_version_id: activity_version_id,
+                grade_level_id,
+                term_slot_id: workspace.term_slots[0].id,
+                requirement_kind: RequirementKind::Required,
+                display_order: 1,
+            }],
+            row_version: program.row_version,
+        },
+    )
+    .await
+    .unwrap();
+
+    let error = curriculum::publish_version(
+        &pool,
+        version.id,
+        PublishVersionRequest {
+            row_version: workspace.row_version,
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(error.public_message().contains("ชั่วโมงรวม"));
 }

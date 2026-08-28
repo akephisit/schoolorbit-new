@@ -6,12 +6,11 @@ use crate::policies::resource_access_policy::AcademicResourceListFilter;
 
 use super::super::models::{
     CreateCurriculumRequest, CreateCurriculumVersionRequest, CreateStudyProgramRequest, Curriculum,
-    CurriculumVersion, ProgramRequirement, ProgramRequirementInput, PublishVersionRequest,
-    ReplaceProgramRequirementsRequest, RequirementResourceKind, StudyProgram, StudyProgramOption,
-    StudyProgramRequirement, UpdateCurriculumRequest, UpdateCurriculumVersionRequest,
-    UpdateStudyProgramRequest, VersionStatus,
+    CurriculumVersion, PublishVersionRequest, StudyProgram, StudyProgramOption,
+    UpdateCurriculumRequest, UpdateCurriculumVersionRequest, UpdateStudyProgramRequest,
+    VersionStatus,
 };
-use super::{ensure_draft_version, parse_row_version, validate_canonical_decimal};
+use super::{ensure_draft_version, parse_row_version};
 
 const VERSION_COLUMNS: &str = r#"
     id, curriculum_id, version_name, start_academic_year_id, end_academic_year_id,
@@ -149,6 +148,7 @@ pub async fn create_version(
     validate_version_fields(pool, &request).await?;
     get(pool, curriculum_id).await?;
     let id = Uuid::new_v4();
+    let mut transaction = pool.begin().await?;
     sqlx::query(
         r#"
         INSERT INTO curriculum_versions (
@@ -163,8 +163,34 @@ pub async fn create_version(
     .bind(request.start_academic_year_id)
     .bind(request.end_academic_year_id)
     .bind(request.description)
-    .execute(pool)
+    .execute(&mut *transaction)
     .await?;
+    sqlx::query(
+        r#"
+        WITH ordered_terms AS (
+            SELECT sequence_no,
+                   term_type,
+                   name,
+                   row_number() OVER (
+                       PARTITION BY term_type
+                       ORDER BY sequence_no, id
+                   )::integer AS type_occurrence
+            FROM academic_terms
+            WHERE academic_year_id = $2
+        )
+        INSERT INTO curriculum_term_slots (
+            id, curriculum_version_id, sequence, term_type, type_occurrence, name
+        )
+        SELECT gen_random_uuid(), $1, sequence_no, term_type, type_occurrence, name
+        FROM ordered_terms
+        ORDER BY sequence_no
+        "#,
+    )
+    .bind(id)
+    .bind(request.start_academic_year_id)
+    .execute(&mut *transaction)
+    .await?;
+    transaction.commit().await?;
     get_version(pool, id).await
 }
 
@@ -271,90 +297,6 @@ pub(super) async fn list_programs_for_version(
         .bind(version_id)
         .fetch_all(pool)
         .await?)
-}
-
-#[derive(sqlx::FromRow)]
-struct StudyProgramRequirementRow {
-    study_program_id: Uuid,
-    id: Uuid,
-    resource_kind: RequirementResourceKind,
-    catalog_version_id: Uuid,
-    grade_level_id: Uuid,
-    recommended_term_code: Option<String>,
-    requirement_kind: super::super::models::RequirementKind,
-    credit: Option<String>,
-    hours: Option<String>,
-    display_order: i32,
-    row_version: i64,
-}
-
-impl From<StudyProgramRequirementRow> for StudyProgramRequirement {
-    fn from(row: StudyProgramRequirementRow) -> Self {
-        Self {
-            study_program_id: row.study_program_id,
-            requirement: ProgramRequirement {
-                id: row.id,
-                resource_kind: row.resource_kind,
-                catalog_version_id: row.catalog_version_id,
-                grade_level_id: row.grade_level_id,
-                recommended_term_code: row.recommended_term_code,
-                requirement_kind: row.requirement_kind,
-                credit: row.credit,
-                hours: row.hours,
-                display_order: row.display_order,
-                row_version: row.row_version,
-            },
-        }
-    }
-}
-
-pub(super) async fn list_requirements_for_programs(
-    pool: &PgPool,
-    program_ids: &[Uuid],
-) -> Result<Vec<StudyProgramRequirement>, AppError> {
-    if program_ids.is_empty() {
-        return Ok(Vec::new());
-    }
-    let rows: Vec<StudyProgramRequirementRow> = sqlx::query_as(
-        r#"
-        WITH requirement_rows AS (
-            SELECT requirement.study_program_id, requirement.id,
-                   'course'::text AS resource_kind,
-                   requirement.subject_version_id AS catalog_version_id,
-                   requirement.grade_level_id, requirement.recommended_term_code,
-                   requirement.requirement_kind, requirement.credit::text AS credit,
-                   requirement.hours::text AS hours,
-                   COALESCE(requirement.display_order, 0) AS display_order,
-                   requirement.row_version
-            FROM curriculum_course_requirements requirement
-            WHERE requirement.study_program_id = ANY($1)
-            UNION ALL
-            SELECT requirement.study_program_id, requirement.id,
-                   'activity'::text AS resource_kind,
-                   requirement.activity_version_id AS catalog_version_id,
-                   requirement.grade_level_id, requirement.recommended_term_code,
-                   requirement.requirement_kind, NULL::text AS credit,
-                   requirement.hours::text AS hours,
-                   requirement.display_order, requirement.row_version
-            FROM curriculum_activity_requirements requirement
-            WHERE requirement.study_program_id = ANY($1)
-        )
-        SELECT requirement.study_program_id, requirement.id, requirement.resource_kind,
-               requirement.catalog_version_id, requirement.grade_level_id,
-               requirement.recommended_term_code, requirement.requirement_kind,
-               requirement.credit, requirement.hours, requirement.display_order,
-               requirement.row_version
-        FROM requirement_rows requirement
-        JOIN study_programs program ON program.id = requirement.study_program_id
-        ORDER BY program.is_default DESC, program.code, program.id,
-                 requirement.display_order, requirement.resource_kind,
-                 requirement.catalog_version_id, requirement.id
-        "#,
-    )
-    .bind(program_ids)
-    .fetch_all(pool)
-    .await?;
-    Ok(rows.into_iter().map(Into::into).collect())
 }
 
 pub async fn list_study_program_options_for_year(
@@ -493,83 +435,6 @@ pub async fn update_program(
     get_program(pool, id).await
 }
 
-pub async fn list_requirements(
-    pool: &PgPool,
-    program_id: Uuid,
-) -> Result<Vec<ProgramRequirement>, AppError> {
-    get_program(pool, program_id).await?;
-    Ok(sqlx::query_as(
-        r#"
-        SELECT requirement.id, 'course'::text AS resource_kind,
-               requirement.subject_version_id AS catalog_version_id,
-               requirement.grade_level_id, requirement.recommended_term_code,
-               requirement.requirement_kind, requirement.credit::text AS credit,
-               requirement.hours::text AS hours,
-               COALESCE(requirement.display_order, 0) AS display_order,
-               requirement.row_version
-        FROM curriculum_course_requirements requirement
-        WHERE requirement.study_program_id = $1
-        UNION ALL
-        SELECT requirement.id, 'activity'::text AS resource_kind,
-               requirement.activity_version_id AS catalog_version_id,
-               requirement.grade_level_id, requirement.recommended_term_code,
-               requirement.requirement_kind, NULL::text AS credit,
-               requirement.hours::text AS hours,
-               requirement.display_order, requirement.row_version
-        FROM curriculum_activity_requirements requirement
-        WHERE requirement.study_program_id = $1
-        ORDER BY display_order, resource_kind, catalog_version_id
-        "#,
-    )
-    .bind(program_id)
-    .fetch_all(pool)
-    .await?)
-}
-
-pub async fn replace_requirements(
-    pool: &PgPool,
-    program_id: Uuid,
-    request: ReplaceProgramRequirementsRequest,
-) -> Result<Vec<ProgramRequirement>, AppError> {
-    parse_row_version(request.row_version)?;
-    validate_requirements(&request.requirements)?;
-    let mut transaction = pool.begin().await?;
-    let (version_id, status, actual): (Uuid, VersionStatus, i64) = sqlx::query_as(
-        "SELECT curriculum_version_id, status, row_version FROM study_programs WHERE id = $1 FOR UPDATE",
-    )
-    .bind(program_id)
-    .fetch_optional(&mut *transaction)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบแผนการเรียน".to_string()))?;
-    ensure_draft_version(status)?;
-    require_draft_curriculum_version(&mut transaction, version_id).await?;
-    if actual != request.row_version {
-        return Err(AppError::Conflict(
-            "แผนการเรียนถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string(),
-        ));
-    }
-    validate_requirement_resources(&mut transaction, &request.requirements).await?;
-    sqlx::query("DELETE FROM curriculum_course_requirements WHERE study_program_id = $1")
-        .bind(program_id)
-        .execute(&mut *transaction)
-        .await?;
-    sqlx::query("DELETE FROM curriculum_activity_requirements WHERE study_program_id = $1")
-        .bind(program_id)
-        .execute(&mut *transaction)
-        .await?;
-    for requirement in request.requirements {
-        insert_requirement(&mut transaction, version_id, program_id, requirement).await?;
-    }
-    sqlx::query(
-        "UPDATE study_programs SET row_version = row_version + 1, updated_at = now() WHERE id = $1",
-    )
-    .bind(program_id)
-    .execute(&mut *transaction)
-    .await?;
-    transaction.commit().await?;
-    list_requirements(pool, program_id).await
-}
-
 fn validate_curriculum_fields(code: &str, name_th: &str) -> Result<(), AppError> {
     if code.trim().is_empty() || name_th.trim().is_empty() {
         return Err(AppError::ValidationError(
@@ -642,147 +507,6 @@ async fn validate_grade_levels(pool: &PgPool, ids: &[Uuid]) -> Result<(), AppErr
     Ok(())
 }
 
-fn validate_requirements(requirements: &[ProgramRequirementInput]) -> Result<(), AppError> {
-    let mut seen = std::collections::HashSet::new();
-    for requirement in requirements {
-        let key = (
-            requirement.resource_kind,
-            requirement.catalog_version_id,
-            requirement.grade_level_id,
-            requirement.recommended_term_code.clone(),
-        );
-        if !seen.insert(key) {
-            return Err(AppError::ValidationError("ข้อกำหนดหลักสูตรซ้ำกัน".to_string()));
-        }
-        match requirement.resource_kind {
-            RequirementResourceKind::Course => {
-                let credit = requirement
-                    .credit
-                    .as_deref()
-                    .ok_or_else(|| AppError::ValidationError("รายวิชาต้องระบุหน่วยกิต".to_string()))?;
-                validate_canonical_decimal(credit, 2)?;
-                if let Some(hours) = &requirement.hours {
-                    validate_canonical_decimal(hours, 2)?;
-                }
-            }
-            RequirementResourceKind::Activity => {
-                if requirement.credit.is_some() {
-                    return Err(AppError::ValidationError("กิจกรรมไม่มีหน่วยกิต".to_string()));
-                }
-                validate_canonical_decimal(
-                    requirement.hours.as_deref().ok_or_else(|| {
-                        AppError::ValidationError("กิจกรรมต้องระบุชั่วโมง".to_string())
-                    })?,
-                    2,
-                )?;
-            }
-        }
-    }
-    Ok(())
-}
-
-async fn validate_requirement_resources(
-    transaction: &mut Transaction<'_, Postgres>,
-    requirements: &[ProgramRequirementInput],
-) -> Result<(), AppError> {
-    for requirement in requirements {
-        let exists: bool = match requirement.resource_kind {
-            RequirementResourceKind::Course => {
-                sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM subject_versions WHERE id = $1)")
-                    .bind(requirement.catalog_version_id)
-                    .fetch_one(&mut **transaction)
-                    .await?
-            }
-            RequirementResourceKind::Activity => {
-                sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM activity_versions WHERE id = $1)")
-                    .bind(requirement.catalog_version_id)
-                    .fetch_one(&mut **transaction)
-                    .await?
-            }
-        };
-        if !exists {
-            return Err(AppError::ValidationError(
-                "เวอร์ชันวิชาหรือกิจกรรมไม่ถูกต้อง".to_string(),
-            ));
-        }
-        let grade_exists: bool =
-            sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM grade_levels WHERE id = $1)")
-                .bind(requirement.grade_level_id)
-                .fetch_one(&mut **transaction)
-                .await?;
-        if !grade_exists {
-            return Err(AppError::ValidationError(
-                "ระดับชั้นของข้อกำหนดไม่ถูกต้อง".to_string(),
-            ));
-        }
-    }
-    Ok(())
-}
-
-async fn insert_requirement(
-    transaction: &mut Transaction<'_, Postgres>,
-    version_id: Uuid,
-    program_id: Uuid,
-    requirement: ProgramRequirementInput,
-) -> Result<(), AppError> {
-    match requirement.resource_kind {
-        RequirementResourceKind::Course => {
-            let credit =
-                validate_canonical_decimal(requirement.credit.as_deref().unwrap_or(""), 2)?;
-            let hours = requirement
-                .hours
-                .as_deref()
-                .map(|value| validate_canonical_decimal(value, 2))
-                .transpose()?;
-            sqlx::query(
-                r#"
-                INSERT INTO curriculum_course_requirements (
-                    id, curriculum_version_id, study_program_id, subject_version_id,
-                    grade_level_id, recommended_term_code, requirement_kind,
-                    credit, hours, display_order
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-                "#,
-            )
-            .bind(Uuid::new_v4())
-            .bind(version_id)
-            .bind(program_id)
-            .bind(requirement.catalog_version_id)
-            .bind(requirement.grade_level_id)
-            .bind(requirement.recommended_term_code)
-            .bind(requirement.requirement_kind)
-            .bind(credit)
-            .bind(hours)
-            .bind(requirement.display_order)
-            .execute(&mut **transaction)
-            .await?;
-        }
-        RequirementResourceKind::Activity => {
-            let hours = validate_canonical_decimal(requirement.hours.as_deref().unwrap_or(""), 2)?;
-            sqlx::query(
-                r#"
-                INSERT INTO curriculum_activity_requirements (
-                    id, curriculum_version_id, study_program_id, activity_version_id,
-                    grade_level_id, recommended_term_code, requirement_kind,
-                    hours, display_order
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                "#,
-            )
-            .bind(Uuid::new_v4())
-            .bind(version_id)
-            .bind(program_id)
-            .bind(requirement.catalog_version_id)
-            .bind(requirement.grade_level_id)
-            .bind(requirement.recommended_term_code)
-            .bind(requirement.requirement_kind)
-            .bind(hours)
-            .bind(requirement.display_order)
-            .execute(&mut **transaction)
-            .await?;
-        }
-    }
-    Ok(())
-}
-
 async fn require_draft_curriculum_version(
     transaction: &mut Transaction<'_, Postgres>,
     version_id: Uuid,
@@ -816,6 +540,17 @@ async fn validate_publishable(
     transaction: &mut Transaction<'_, Postgres>,
     version: &CurriculumVersion,
 ) -> Result<(), AppError> {
+    let term_slot_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM curriculum_term_slots WHERE curriculum_version_id = $1",
+    )
+    .bind(version.id)
+    .fetch_one(&mut **transaction)
+    .await?;
+    if term_slot_count == 0 {
+        return Err(AppError::ValidationError(
+            "ต้องกำหนดภาคเรียนในโครงสร้างหลักสูตรก่อนเผยแพร่".to_string(),
+        ));
+    }
     let program_count: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM study_programs WHERE curriculum_version_id = $1 AND status <> 'archived'",
     )
@@ -871,6 +606,38 @@ async fn validate_publishable(
     if unpublished_resources != 0 {
         return Err(AppError::ValidationError(
             "ข้อกำหนดอ้างอิงเวอร์ชันที่ยังไม่เผยแพร่".to_string(),
+        ));
+    }
+    let incomplete_course_metrics: i64 = sqlx::query_scalar(
+        r#"SELECT count(*)
+           FROM curriculum_course_requirements requirement
+           JOIN subject_versions version ON version.id = requirement.subject_version_id
+           WHERE requirement.curriculum_version_id = $1
+             AND (version.periods_per_week IS NULL
+                  OR version.credit IS NULL
+                  OR version.hours_per_semester IS NULL)"#,
+    )
+    .bind(version.id)
+    .fetch_one(&mut **transaction)
+    .await?;
+    if incomplete_course_metrics != 0 {
+        return Err(AppError::ValidationError(
+            "รายวิชาในโครงสร้างต้องมีหน่วยกิต จำนวนคาบ และชั่วโมงรวมจากบัญชีรายวิชาให้ครบ".to_string(),
+        ));
+    }
+    let incomplete_activity_metrics: i64 = sqlx::query_scalar(
+        r#"SELECT count(*)
+           FROM curriculum_activity_requirements requirement
+           JOIN activity_versions version ON version.id = requirement.activity_version_id
+           WHERE requirement.curriculum_version_id = $1
+             AND (version.hours_per_week IS NULL OR version.hours_per_term IS NULL)"#,
+    )
+    .bind(version.id)
+    .fetch_one(&mut **transaction)
+    .await?;
+    if incomplete_activity_metrics != 0 {
+        return Err(AppError::ValidationError(
+            "กิจกรรมในโครงสร้างต้องมีชั่วโมงต่อสัปดาห์และชั่วโมงรวมต่อภาคเรียนให้ครบ".to_string(),
         ));
     }
     Ok(())

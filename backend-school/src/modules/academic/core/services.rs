@@ -8,6 +8,7 @@ pub mod bell_schedules;
 pub mod catalog;
 pub mod context;
 pub mod curriculum;
+pub mod curriculum_structure;
 pub mod progressions;
 pub mod student_years;
 pub mod workspaces;

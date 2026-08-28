@@ -37,6 +37,10 @@ pub(super) async fn require_writable_term(
     };
     let query = format!(
         "SELECT term.id, term.academic_year_id, term.code, term.start_date, term.end_date, \
+         term.term_type, (SELECT count(*)::integer FROM academic_terms occurrence \
+             WHERE occurrence.academic_year_id = term.academic_year_id \
+               AND occurrence.term_type = term.term_type \
+               AND occurrence.sequence_no <= term.sequence_no) AS type_occurrence, \
          term.status, term.row_version \
          FROM academic_terms term WHERE term.id = $1 {lock}"
     );
@@ -107,6 +111,8 @@ pub(super) struct TermContext {
     pub code: String,
     pub start_date: chrono::NaiveDate,
     pub end_date: chrono::NaiveDate,
+    pub term_type: String,
+    pub type_occurrence: i32,
     pub status: String,
     pub row_version: i64,
 }

@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::modules::lookup::models::{AcademicYearLookupItem, GradeLevelLookupItem};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema, sqlx::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema, sqlx::Type)]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum AcademicYearStatus {
@@ -29,7 +29,7 @@ pub enum AcademicTermStatus {
     Cancelled,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema, sqlx::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema, sqlx::Type)]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum AcademicTermType {
@@ -439,6 +439,8 @@ pub struct ActivityVersion {
     pub description: Option<String>,
     #[schema(value_type = String, pattern = r"^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$")]
     pub hours_per_week: String,
+    #[schema(value_type = Option<String>, pattern = r"^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$")]
+    pub hours_per_term: Option<String>,
     pub scheduling_mode: String,
     pub effective_from: NaiveDate,
     pub effective_until: Option<NaiveDate>,
@@ -505,6 +507,8 @@ pub struct CreateActivityVersionRequest {
     pub description: Option<String>,
     #[schema(value_type = String, pattern = r"^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$")]
     pub hours_per_week: String,
+    #[schema(value_type = Option<String>, pattern = r"^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$")]
+    pub hours_per_term: Option<String>,
     pub scheduling_mode: String,
     pub effective_from: NaiveDate,
     pub effective_until: Option<NaiveDate>,
@@ -519,6 +523,8 @@ pub struct UpdateActivityVersionRequest {
     pub description: Option<String>,
     #[schema(value_type = String, pattern = r"^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$")]
     pub hours_per_week: String,
+    #[schema(value_type = Option<String>, pattern = r"^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$")]
+    pub hours_per_term: Option<String>,
     pub scheduling_mode: String,
     pub effective_from: NaiveDate,
     pub effective_until: Option<NaiveDate>,
@@ -744,29 +750,6 @@ pub enum RequirementResourceKind {
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
-pub struct ProgramRequirement {
-    pub id: Uuid,
-    pub resource_kind: RequirementResourceKind,
-    pub catalog_version_id: Uuid,
-    pub grade_level_id: Uuid,
-    pub recommended_term_code: Option<String>,
-    pub requirement_kind: RequirementKind,
-    pub credit: Option<String>,
-    pub hours: Option<String>,
-    pub display_order: i32,
-    pub row_version: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct StudyProgramRequirement {
-    pub study_program_id: Uuid,
-    #[serde(flatten)]
-    pub requirement: ProgramRequirement,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
-#[serde(rename_all = "camelCase")]
 pub struct CurriculumCatalogVersionOption {
     pub id: Uuid,
     pub resource_kind: RequirementResourceKind,
@@ -775,15 +758,6 @@ pub struct CurriculumCatalogVersionOption {
     pub version_no: i32,
     pub effective_from: NaiveDate,
     pub effective_until: Option<NaiveDate>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct CurriculumRequirementView {
-    pub study_program_id: Uuid,
-    pub requirement: ProgramRequirement,
-    pub grade_level: GradeLevelLookupItem,
-    pub catalog: CurriculumCatalogVersionOption,
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
@@ -802,11 +776,119 @@ pub struct CurriculumManagementOptions {
     pub catalog_versions: Vec<CurriculumCatalogVersionOption>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct CurriculumTermSlot {
+    pub id: Uuid,
+    pub curriculum_version_id: Uuid,
+    pub sequence: i32,
+    pub term_type: AcademicTermType,
+    pub type_occurrence: i32,
+    pub name: String,
+    pub row_version: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CatalogWeeklyUnit {
+    Period,
+    Hour,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CurriculumDocumentSection {
+    BasicCourse,
+    AdditionalCourse,
+    StudentDevelopment,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct CurriculumProgramWorkspace {
+pub struct CatalogCurriculumMetrics {
+    pub weekly_value: Option<String>,
+    pub weekly_unit: CatalogWeeklyUnit,
+    pub credit: Option<String>,
+    pub total_hours: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CurriculumStructureRequirement {
+    pub id: Uuid,
+    pub study_program_id: Uuid,
+    pub grade_level: GradeLevelLookupItem,
+    pub term_slot_id: Uuid,
+    pub resource_kind: RequirementResourceKind,
+    pub catalog_version_id: Uuid,
+    pub code: String,
+    pub name: String,
+    pub section: CurriculumDocumentSection,
+    pub requirement_kind: RequirementKind,
+    pub metrics: CatalogCurriculumMetrics,
+    pub display_order: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CurriculumValidationNotice {
+    pub code: String,
+    pub message: String,
+    pub catalog_version_id: Option<Uuid>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CurriculumStructureValidation {
+    pub blockers: Vec<CurriculumValidationNotice>,
+    pub warnings: Vec<CurriculumValidationNotice>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CurriculumStructureWorkspace {
+    pub curriculum_version: CurriculumVersion,
+    pub term_slots: Vec<CurriculumTermSlot>,
     pub programs: Vec<StudyProgram>,
-    pub requirements: Vec<CurriculumRequirementView>,
+    pub grade_levels: Vec<GradeLevelLookupItem>,
+    pub requirements: Vec<CurriculumStructureRequirement>,
+    pub validation: CurriculumStructureValidation,
+    pub row_version: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CurriculumTermSlotInput {
+    pub id: Option<Uuid>,
+    pub sequence: i32,
+    pub term_type: AcademicTermType,
+    pub type_occurrence: i32,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReplaceCurriculumTermSlotsRequest {
+    pub slots: Vec<CurriculumTermSlotInput>,
+    pub row_version: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CurriculumStructureRequirementInput {
+    pub resource_kind: RequirementResourceKind,
+    pub catalog_version_id: Uuid,
+    pub grade_level_id: Uuid,
+    pub term_slot_id: Uuid,
+    pub requirement_kind: RequirementKind,
+    pub display_order: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReplaceCurriculumStructureRequest {
+    pub requirements: Vec<CurriculumStructureRequirementInput>,
+    pub row_version: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -815,28 +897,6 @@ pub struct AcademicSetupWorkspace {
     pub years: Vec<AcademicYear>,
     pub terms: Vec<AcademicTerm>,
     pub bell_schedules: Vec<BellSchedule>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ProgramRequirementInput {
-    pub resource_kind: RequirementResourceKind,
-    pub catalog_version_id: Uuid,
-    pub grade_level_id: Uuid,
-    pub recommended_term_code: Option<String>,
-    pub requirement_kind: RequirementKind,
-    #[schema(value_type = Option<String>, pattern = r"^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$")]
-    pub credit: Option<String>,
-    #[schema(value_type = Option<String>, pattern = r"^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$")]
-    pub hours: Option<String>,
-    pub display_order: i32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ReplaceProgramRequirementsRequest {
-    pub requirements: Vec<ProgramRequirementInput>,
-    pub row_version: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

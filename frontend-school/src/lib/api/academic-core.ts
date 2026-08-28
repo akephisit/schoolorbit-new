@@ -32,12 +32,17 @@ export type CurriculumOverview = Schemas['CurriculumOverview'];
 export type CurriculumCreateOptions = Schemas['CurriculumCreateOptions'];
 export type CurriculumManagementOptions = Schemas['CurriculumManagementOptions'];
 export type CurriculumCatalogVersionOption = Schemas['CurriculumCatalogVersionOption'];
-export type CurriculumRequirementView = Schemas['CurriculumRequirementView'];
 export type CurriculumVersion = Schemas['CurriculumVersion'];
 export type CurriculumVersionView = Schemas['CurriculumVersionView'];
 export type StudyProgram = Schemas['StudyProgram'];
-export type ProgramRequirement = Schemas['ProgramRequirement'];
-export type CurriculumProgramWorkspace = Schemas['CurriculumProgramWorkspace'];
+export type CurriculumTermSlot = Schemas['CurriculumTermSlot'];
+export type CatalogWeeklyUnit = Schemas['CatalogWeeklyUnit'];
+export type CurriculumDocumentSection = Schemas['CurriculumDocumentSection'];
+export type CatalogCurriculumMetrics = Schemas['CatalogCurriculumMetrics'];
+export type CurriculumStructureRequirement = Schemas['CurriculumStructureRequirement'];
+export type CurriculumValidationNotice = Schemas['CurriculumValidationNotice'];
+export type CurriculumStructureValidation = Schemas['CurriculumStructureValidation'];
+export type CurriculumStructureWorkspace = Schemas['CurriculumStructureWorkspace'];
 export type AcademicSetupWorkspace = Schemas['AcademicSetupWorkspace'];
 export type Homeroom = Schemas['Homeroom'];
 export type HomeroomAdvisor = Schemas['HomeroomAdvisor'];
@@ -75,8 +80,10 @@ export type CreateCurriculumVersionRequest = Schemas['CreateCurriculumVersionReq
 export type UpdateCurriculumVersionRequest = Schemas['UpdateCurriculumVersionRequest'];
 export type CreateStudyProgramRequest = Schemas['CreateStudyProgramRequest'];
 export type UpdateStudyProgramRequest = Schemas['UpdateStudyProgramRequest'];
-export type ReplaceProgramRequirementsRequest = Schemas['ReplaceProgramRequirementsRequest'];
-export type ProgramRequirementInput = Schemas['ProgramRequirementInput'];
+export type ReplaceCurriculumTermSlotsRequest = Schemas['ReplaceCurriculumTermSlotsRequest'];
+export type CurriculumTermSlotInput = Schemas['CurriculumTermSlotInput'];
+export type ReplaceCurriculumStructureRequest = Schemas['ReplaceCurriculumStructureRequest'];
+export type CurriculumStructureRequirementInput = Schemas['CurriculumStructureRequirementInput'];
 export type CreateHomeroomRequest = Schemas['CreateHomeroomRequest'];
 export type UpdateHomeroomRequest = Schemas['UpdateHomeroomRequest'];
 export type ReplaceHomeroomAdvisorsRequest = Schemas['ReplaceHomeroomAdvisorsRequest'];
@@ -88,6 +95,8 @@ export type TransferHomeroomPlacementRequest = Schemas['TransferHomeroomPlacemen
 export type GetCurriculumOverviewOperation = operations['getCurriculumOverview'];
 export type GetCurriculumCreateOptionsOperation = operations['getCurriculumCreateOptions'];
 export type GetCurriculumManagementOptionsOperation = operations['getCurriculumManagementOptions'];
+export type GetCurriculumStructureWorkspaceOperation =
+	operations['getCurriculumStructureWorkspace'];
 
 async function academicData<T>(request: Promise<ApiResponse<T>>, fallback: string): Promise<T> {
 	const response = await request;
@@ -386,35 +395,40 @@ export const updateStudyProgram = (id: string, body: UpdateStudyProgramRequest) 
 		apiClient.patch<StudyProgram>(`/api/academic/study-programs/${id}`, body),
 		'แก้ไขแผนการเรียนไม่สำเร็จ'
 	);
-export const listProgramRequirements = (studyProgramId: string) =>
-	academicData(
-		apiClient.get<ProgramRequirement[]>(
-			`/api/academic/study-programs/${studyProgramId}/requirements`
-		),
-		'ไม่สามารถโหลดข้อกำหนดหลักสูตรได้'
-	);
-export const replaceProgramRequirements = (
+export const replaceCurriculumStructure = (
 	studyProgramId: string,
-	body: ReplaceProgramRequirementsRequest
+	body: ReplaceCurriculumStructureRequest
 ) =>
 	academicData(
-		apiClient.put<ProgramRequirement[]>(
-			`/api/academic/study-programs/${studyProgramId}/requirements`,
+		apiClient.put<CurriculumStructureWorkspace>(
+			`/api/academic/study-programs/${studyProgramId}/structure`,
 			body
 		),
-		'บันทึกข้อกำหนดหลักสูตรไม่สำเร็จ'
+		'บันทึกโครงสร้างหลักสูตรไม่สำเร็จ'
 	);
 
-export const getCurriculumProgramWorkspace = (
+export const getCurriculumStructureWorkspace = (
 	curriculumVersionId: string,
 	options: ApiRequestOptions = {}
 ) =>
 	academicData(
-		apiClient.get<CurriculumProgramWorkspace>(
-			`/api/academic/curriculum-versions/${requiredContext(curriculumVersionId, 'รุ่นหลักสูตร')}/program-workspace`,
+		apiClient.get<CurriculumStructureWorkspace>(
+			`/api/academic/curriculum-versions/${requiredContext(curriculumVersionId, 'รุ่นหลักสูตร')}/structure`,
 			options
 		),
-		'ไม่สามารถโหลดแผนการเรียนและข้อกำหนดหลักสูตรได้'
+		'ไม่สามารถโหลดโครงสร้างหลักสูตรได้'
+	);
+
+export const replaceCurriculumTermSlots = (
+	curriculumVersionId: string,
+	body: ReplaceCurriculumTermSlotsRequest
+) =>
+	academicData(
+		apiClient.put<CurriculumStructureWorkspace>(
+			`/api/academic/curriculum-versions/${requiredContext(curriculumVersionId, 'รุ่นหลักสูตร')}/term-slots`,
+			body
+		),
+		'บันทึกภาคเรียนในโครงสร้างหลักสูตรไม่สำเร็จ'
 	);
 
 type ListHomeroomsQuery = NonNullable<operations['listHomerooms']['parameters']['query']>;

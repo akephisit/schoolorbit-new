@@ -671,26 +671,30 @@ async fn insert_course(
         term,
     )?;
     let (credit, hours) = if let Some(requirement_id) = request.curriculum_course_requirement_id {
-        let requirement: (Uuid, Uuid, Uuid, Option<String>, String, Option<String>) =
-            sqlx::query_as(
-                "SELECT subject_version_id, grade_level_id, study_program_id, \
-                 recommended_term_code, credit::text, hours::text \
-                 FROM curriculum_course_requirements WHERE id = $1",
-            )
-            .bind(requirement_id)
-            .fetch_optional(&mut **transaction)
-            .await?
-            .ok_or_else(|| AppError::ValidationError("ไม่พบข้อกำหนดรายวิชา".to_string()))?;
+        let requirement: (Uuid, Uuid, Uuid, String, i32, String, Option<String>) = sqlx::query_as(
+            "SELECT requirement.subject_version_id, requirement.grade_level_id, \
+                 requirement.study_program_id, slot.term_type, slot.type_occurrence, \
+                 version.credit::text, version.hours_per_semester::text \
+                 FROM curriculum_course_requirements requirement \
+                 JOIN curriculum_term_slots slot ON slot.id = requirement.term_slot_id \
+                 JOIN subject_versions version ON version.id = requirement.subject_version_id \
+                 WHERE requirement.id = $1",
+        )
+        .bind(requirement_id)
+        .fetch_optional(&mut **transaction)
+        .await?
+        .ok_or_else(|| AppError::ValidationError("ไม่พบข้อกำหนดรายวิชา".to_string()))?;
         validate_requirement_target(
             source.subject_version_id,
             requirement.0,
             requirement.1,
             requirement.2,
-            requirement.3.as_deref(),
+            &requirement.3,
+            requirement.4,
             term,
             &request.targets,
         )?;
-        (requirement.4, requirement.5)
+        (requirement.5, requirement.6)
     } else {
         (source.credit.clone(), source.hours.clone())
     };
@@ -764,10 +768,14 @@ async fn insert_activity(
         ));
     }
     let hours = if let Some(requirement_id) = request.curriculum_activity_requirement_id {
-        let requirement: (Uuid, Uuid, Uuid, Option<String>, String) = sqlx::query_as(
-            "SELECT activity_version_id, grade_level_id, study_program_id, \
-             recommended_term_code, hours::text \
-             FROM curriculum_activity_requirements WHERE id = $1",
+        let requirement: (Uuid, Uuid, Uuid, String, i32, String) = sqlx::query_as(
+            "SELECT requirement.activity_version_id, requirement.grade_level_id, \
+             requirement.study_program_id, slot.term_type, slot.type_occurrence, \
+             version.hours_per_week::text \
+             FROM curriculum_activity_requirements requirement \
+             JOIN curriculum_term_slots slot ON slot.id = requirement.term_slot_id \
+             JOIN activity_versions version ON version.id = requirement.activity_version_id \
+             WHERE requirement.id = $1",
         )
         .bind(requirement_id)
         .fetch_optional(&mut **transaction)
@@ -778,11 +786,12 @@ async fn insert_activity(
             requirement.0,
             requirement.1,
             requirement.2,
-            requirement.3.as_deref(),
+            &requirement.3,
+            requirement.4,
             term,
             &request.targets,
         )?;
-        requirement.4
+        requirement.5
     } else {
         source.hours.clone()
     };
@@ -894,7 +903,8 @@ fn validate_requirement_target(
     requirement_version_id: Uuid,
     grade_level_id: Uuid,
     study_program_id: Uuid,
-    recommended_term_code: Option<&str>,
+    requirement_term_type: &str,
+    requirement_type_occurrence: i32,
     term: &TermContext,
     targets: &[OfferingTargetInput],
 ) -> Result<(), AppError> {
@@ -903,7 +913,9 @@ fn validate_requirement_target(
             "ข้อกำหนดอ้างอิงคนละเวอร์ชัน".to_string(),
         ));
     }
-    if recommended_term_code.is_some_and(|code| !code.eq_ignore_ascii_case(&term.code)) {
+    if requirement_term_type != term.term_type
+        || requirement_type_occurrence != term.type_occurrence
+    {
         return Err(AppError::ValidationError(
             "ข้อกำหนดไม่อยู่ในภาคเรียนที่เลือก".to_string(),
         ));
@@ -1171,32 +1183,35 @@ async fn build_curriculum_preview(
                   requirement.subject_version_id AS catalog_version_id,
                   requirement.id AS requirement_id, requirement.study_program_id,
                   requirement.grade_level_id, version.code, version.name_th AS name,
-                  requirement.credit::text AS credit, requirement.hours::text AS hours,
+                  version.credit::text AS credit, version.hours_per_semester::text AS hours,
                   version.status AS version_status, version.effective_from,
                   version.effective_until
            FROM curriculum_course_requirements requirement
            JOIN subject_versions version ON version.id = requirement.subject_version_id
+           JOIN curriculum_term_slots slot ON slot.id = requirement.term_slot_id
            WHERE requirement.study_program_id = ANY($1)
-             AND (requirement.recommended_term_code IS NULL
-                  OR lower(requirement.recommended_term_code) = lower($2))
+             AND slot.term_type = $2
+             AND slot.type_occurrence = $3
            UNION ALL
            SELECT 'activity'::text AS resource_kind,
                   requirement.activity_version_id AS catalog_version_id,
                   requirement.id AS requirement_id, requirement.study_program_id,
                   requirement.grade_level_id, stable.code, version.name,
-                  NULL::text AS credit, requirement.hours::text AS hours,
+                  NULL::text AS credit, version.hours_per_week::text AS hours,
                   version.status AS version_status, version.effective_from,
                   version.effective_until
            FROM curriculum_activity_requirements requirement
            JOIN activity_versions version ON version.id = requirement.activity_version_id
            JOIN activities stable ON stable.id = version.activity_id
+           JOIN curriculum_term_slots slot ON slot.id = requirement.term_slot_id
            WHERE requirement.study_program_id = ANY($1)
-             AND (requirement.recommended_term_code IS NULL
-                  OR lower(requirement.recommended_term_code) = lower($2))
+             AND slot.term_type = $2
+             AND slot.type_occurrence = $3
            ORDER BY resource_kind, catalog_version_id, study_program_id, grade_level_id, requirement_id"#,
     )
     .bind(program_ids)
-    .bind(&term.code)
+    .bind(&term.term_type)
+    .bind(term.type_occurrence)
     .fetch_all(&mut **transaction)
     .await?;
     let existing_offerings =

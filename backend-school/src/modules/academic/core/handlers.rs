@@ -24,8 +24,8 @@ use crate::AppState;
 
 use super::models::*;
 use super::services::{
-    bell_schedules, catalog, context, curriculum, progressions, student_years, workspaces,
-    years_terms,
+    bell_schedules, catalog, context, curriculum, curriculum_structure, progressions,
+    student_years, workspaces, years_terms,
 };
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
@@ -2334,32 +2334,84 @@ pub async fn publish_curriculum_version(
 
 #[utoipa::path(
     get,
-    path = "/api/academic/curriculum-versions/{id}/program-workspace",
-    operation_id = "getCurriculumProgramWorkspace",
+    path = "/api/academic/curriculum-versions/{curriculumVersionId}/structure",
+    operation_id = "getCurriculumStructureWorkspace",
     tag = "academic",
-    params(("id" = Uuid, Path, description = "Curriculum version ID")),
+    params(("curriculumVersionId" = Uuid, Path, description = "Curriculum version ID")),
     responses(
-        (status = 200, description = "Programs and requirements for the curriculum version", body = ApiResponse<CurriculumProgramWorkspace>),
-        (status = 400, description = "Curriculum program workspace exceeds the supported size", body = ApiErrorResponse),
+        (status = 200, description = "Curriculum structure workspace", body = ApiResponse<CurriculumStructureWorkspace>),
+        (status = 400, description = "Curriculum structure cannot be represented", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Academic curriculum read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Curriculum version not found", body = ApiErrorResponse)
     )
 )]
-pub async fn get_curriculum_program_workspace(
+pub async fn get_curriculum_structure_workspace(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
-    Path(id): Path<Uuid>,
+    Path(curriculum_version_id): Path<Uuid>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
-    let filter = academic_curriculum_access_policy::require_academic_curriculum_list_access(
+    let version = curriculum::get_version(&pool, curriculum_version_id).await?;
+    academic_curriculum_access_policy::require_academic_curriculum_access(
         &pool,
         &context.actor,
+        version.curriculum_id,
         CurriculumAction::Read,
     )
     .await?;
-    Ok(ok(workspaces::program_workspace(&pool, id, &filter).await?))
+    Ok(ok(curriculum_structure::get_workspace(
+        &pool,
+        curriculum_version_id,
+    )
+    .await?))
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/academic/curriculum-versions/{curriculumVersionId}/term-slots",
+    operation_id = "replaceCurriculumTermSlots",
+    tag = "academic",
+    params(("curriculumVersionId" = Uuid, Path, description = "Curriculum version ID")),
+    request_body = ReplaceCurriculumTermSlotsRequest,
+    responses(
+        (status = 200, description = "Curriculum term slots replaced", body = ApiResponse<CurriculumStructureWorkspace>),
+        (status = 400, description = "Invalid or immutable term slots", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic curriculum management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Curriculum version not found", body = ApiErrorResponse),
+        (status = 409, description = "Curriculum version row version conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn replace_curriculum_term_slots(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(curriculum_version_id): Path<Uuid>,
+    Json(request): Json<ReplaceCurriculumTermSlotsRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let pool = context.tenant.pool;
+    let version = curriculum::get_version(&pool, curriculum_version_id).await?;
+    academic_curriculum_access_policy::require_academic_curriculum_access(
+        &pool,
+        &context.actor,
+        version.curriculum_id,
+        CurriculumAction::Manage,
+    )
+    .await?;
+    let workspace =
+        curriculum_structure::replace_term_slots(&pool, curriculum_version_id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &context.actor,
+        "curriculum_structure",
+        Some(curriculum_version_id),
+        None,
+        None,
+    );
+    Ok(ok(workspace))
 }
 
 #[utoipa::path(
@@ -2529,66 +2581,31 @@ pub async fn update_study_program(
 }
 
 #[utoipa::path(
-    get,
-    path = "/api/academic/study-programs/{id}/requirements",
-    operation_id = "listProgramRequirements",
-    tag = "academic",
-    params(("id" = Uuid, Path, description = "Study program ID")),
-    responses(
-        (status = 200, description = "Study program requirements", body = ApiResponse<Vec<ProgramRequirement>>),
-        (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Academic curriculum read permission denied", body = ApiErrorResponse),
-        (status = 404, description = "Study program not found", body = ApiErrorResponse)
-    )
-)]
-pub async fn list_program_requirements(
-    State(state): State<AppState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Path(id): Path<Uuid>,
-) -> Result<Response, AppError> {
-    let context = actor_tenant_context_from_session(&state, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    let program = curriculum::get_program(&pool, id).await?;
-    let curriculum_id = curriculum::get_version(&pool, program.curriculum_version_id)
-        .await?
-        .curriculum_id;
-    academic_curriculum_access_policy::require_academic_curriculum_access(
-        &pool,
-        &actor,
-        curriculum_id,
-        CurriculumAction::Read,
-    )
-    .await?;
-    Ok(ok(curriculum::list_requirements(&pool, id).await?))
-}
-
-#[utoipa::path(
     put,
-    path = "/api/academic/study-programs/{id}/requirements",
-    operation_id = "replaceProgramRequirements",
+    path = "/api/academic/study-programs/{studyProgramId}/structure",
+    operation_id = "replaceCurriculumStructure",
     tag = "academic",
-    params(("id" = Uuid, Path, description = "Study program ID")),
-    request_body = ReplaceProgramRequirementsRequest,
+    params(("studyProgramId" = Uuid, Path, description = "Study program ID")),
+    request_body = ReplaceCurriculumStructureRequest,
     responses(
-        (status = 200, description = "Study program requirements replaced", body = ApiResponse<Vec<ProgramRequirement>>),
-        (status = 400, description = "Invalid or immutable requirements", body = ApiErrorResponse),
+        (status = 200, description = "Study program curriculum structure replaced", body = ApiResponse<CurriculumStructureWorkspace>),
+        (status = 400, description = "Invalid or immutable curriculum structure", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Academic curriculum management permission denied", body = ApiErrorResponse),
         (status = 404, description = "Study program not found", body = ApiErrorResponse),
         (status = 409, description = "Study program row version conflict", body = ApiErrorResponse)
     )
 )]
-pub async fn replace_program_requirements(
+pub async fn replace_curriculum_structure(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
-    Path(id): Path<Uuid>,
-    Json(request): Json<ReplaceProgramRequirementsRequest>,
+    Path(study_program_id): Path<Uuid>,
+    Json(request): Json<ReplaceCurriculumStructureRequest>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    let program = curriculum::get_program(&pool, id).await?;
+    let program = curriculum::get_program(&pool, study_program_id).await?;
     let curriculum_id = curriculum::get_version(&pool, program.curriculum_version_id)
         .await?
         .curriculum_id;
@@ -2599,17 +2616,18 @@ pub async fn replace_program_requirements(
         CurriculumAction::Manage,
     )
     .await?;
-    let values = curriculum::replace_requirements(&pool, id, request).await?;
+    let workspace =
+        curriculum_structure::replace_program_structure(&pool, study_program_id, request).await?;
     signal_core_changed(
         &state,
         &session,
         &actor,
-        "program_requirements",
-        Some(id),
+        "curriculum_structure",
+        Some(study_program_id),
         None,
         None,
     );
-    Ok(ok(values))
+    Ok(ok(workspace))
 }
 
 #[utoipa::path(

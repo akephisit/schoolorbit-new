@@ -503,6 +503,11 @@ pub async fn create_activity_version(
 ) -> Result<ActivityVersion, AppError> {
     validate_activity_version(&request)?;
     let hours = validate_canonical_decimal(&request.hours_per_week, 2)?;
+    let hours_per_term = request
+        .hours_per_term
+        .as_deref()
+        .map(|value| validate_canonical_decimal(value, 2))
+        .transpose()?;
     let grade_level_ids = sqlx::types::Json(request.grade_level_ids.clone());
     let mut transaction = pool.begin().await?;
     let version_no: i32 = sqlx::query_scalar(
@@ -530,10 +535,10 @@ pub async fn create_activity_version(
         r#"
         INSERT INTO activity_versions (
             id, activity_id, version_no, name, activity_type, description,
-            periods_per_week, hours_per_week, scheduling_mode, is_active,
+            periods_per_week, hours_per_week, hours_per_term, scheduling_mode, is_active,
             term, grade_level_ids, start_academic_year_id, effective_from,
             effective_until, status
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, $14, 'draft')
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, $11, $12, $13, $14, $15, 'draft')
         "#,
     )
     .bind(id)
@@ -544,6 +549,7 @@ pub async fn create_activity_version(
     .bind(request.description)
     .bind(legacy_periods)
     .bind(hours)
+    .bind(hours_per_term)
     .bind(request.scheduling_mode.trim())
     .bind(request.term_code)
     .bind(grade_level_ids)
@@ -567,6 +573,7 @@ pub async fn update_activity_version(
         name: request.name,
         description: request.description,
         hours_per_week: request.hours_per_week,
+        hours_per_term: request.hours_per_term,
         scheduling_mode: request.scheduling_mode,
         effective_from: request.effective_from,
         effective_until: request.effective_until,
@@ -576,19 +583,25 @@ pub async fn update_activity_version(
     parse_row_version(row_version)?;
     validate_activity_version(&values)?;
     let hours = validate_canonical_decimal(&values.hours_per_week, 2)?;
+    let hours_per_term = values
+        .hours_per_term
+        .as_deref()
+        .map(|value| validate_canonical_decimal(value, 2))
+        .transpose()?;
     let grade_level_ids = sqlx::types::Json(values.grade_level_ids.clone());
     let result = sqlx::query(
         r#"
         UPDATE activity_versions SET name = $1, description = $2, hours_per_week = $3,
-            scheduling_mode = $4, effective_from = $5, effective_until = $6,
-            term = $7, grade_level_ids = $8, row_version = row_version + 1,
+            hours_per_term = $4, scheduling_mode = $5, effective_from = $6, effective_until = $7,
+            term = $8, grade_level_ids = $9, row_version = row_version + 1,
             updated_at = now()
-        WHERE id = $9 AND row_version = $10 AND status = 'draft'
+        WHERE id = $10 AND row_version = $11 AND status = 'draft'
         "#,
     )
     .bind(values.name.trim())
     .bind(values.description)
     .bind(hours)
+    .bind(hours_per_term)
     .bind(values.scheduling_mode.trim())
     .bind(values.effective_from)
     .bind(values.effective_until)
@@ -612,6 +625,18 @@ pub async fn publish_activity_version(
     id: Uuid,
     request: PublishVersionRequest,
 ) -> Result<ActivityVersion, AppError> {
+    let has_total_hours: bool = sqlx::query_scalar(
+        "SELECT hours_per_term IS NOT NULL FROM activity_versions WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound("ไม่พบเวอร์ชันกิจกรรม".to_string()))?;
+    if !has_total_hours {
+        return Err(AppError::ValidationError(
+            "ระบุชั่วโมงรวมต่อภาคเรียนก่อนเผยแพร่เวอร์ชันกิจกรรม".to_string(),
+        ));
+    }
     publish_version(pool, "activity_versions", id, request.row_version).await?;
     get_activity_version(pool, id).await
 }
@@ -1005,6 +1030,7 @@ fn activity_version_select(predicate: &str, order: &str) -> String {
         r#"
         SELECT version.id, version.activity_id, version.version_no, version.name,
                version.description, version.hours_per_week::text AS hours_per_week,
+               version.hours_per_term::text AS hours_per_term,
                version.scheduling_mode, version.effective_from, version.effective_until,
                version.term AS term_code,
                COALESCE(ARRAY(SELECT jsonb_array_elements_text(COALESCE(version.grade_level_ids, '[]'::jsonb))::uuid), ARRAY[]::uuid[]) AS grade_level_ids,
@@ -1032,6 +1058,11 @@ fn validate_subject_version(request: &CreateSubjectVersionRequest) -> Result<(),
 fn validate_activity_version(request: &CreateActivityVersionRequest) -> Result<(), AppError> {
     validate_effective_range(request.effective_from, request.effective_until)?;
     validate_canonical_decimal(&request.hours_per_week, 2)?;
+    request
+        .hours_per_term
+        .as_deref()
+        .map(|value| validate_canonical_decimal(value, 2))
+        .transpose()?;
     if request.name.trim().is_empty()
         || !matches!(
             request.scheduling_mode.as_str(),

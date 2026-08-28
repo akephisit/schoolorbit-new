@@ -43,6 +43,7 @@
 		name: string;
 		secondaryName: string;
 		exactValue: string;
+		totalValue: string;
 		effectiveFrom: string;
 		effectiveUntil: string;
 		gradeLevelIds: string[];
@@ -209,6 +210,7 @@
 		await createActivityVersion(selected.activity.id, {
 			name: draft.name,
 			hoursPerWeek: draft.exactValue,
+			hoursPerTerm: draft.totalValue,
 			description: draft.secondaryName || null,
 			effectiveFrom: draft.effectiveFrom,
 			effectiveUntil: draft.effectiveUntil || null,
@@ -575,6 +577,7 @@
 					name: item.name,
 					secondaryName: item.description,
 					exactValue: item.hoursPerWeek,
+					totalValue: item.hoursPerTerm,
 					effectiveFrom: item.effectiveFrom,
 					effectiveUntil: item.effectiveUntil,
 					classification: item.schedulingMode,

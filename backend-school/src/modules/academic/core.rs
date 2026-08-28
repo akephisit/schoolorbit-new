@@ -3,7 +3,7 @@ pub mod models;
 pub mod services;
 
 use crate::AppState;
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use axum::Router;
 
 pub fn routes() -> Router<AppState> {
@@ -152,8 +152,12 @@ pub fn routes() -> Router<AppState> {
             post(handlers::publish_curriculum_version),
         )
         .route(
-            "/curriculum-versions/{id}/program-workspace",
-            get(handlers::get_curriculum_program_workspace),
+            "/curriculum-versions/{curriculum_version_id}/structure",
+            get(handlers::get_curriculum_structure_workspace),
+        )
+        .route(
+            "/curriculum-versions/{curriculum_version_id}/term-slots",
+            put(handlers::replace_curriculum_term_slots),
         )
         .route(
             "/curriculum-versions/{id}/programs",
@@ -164,8 +168,8 @@ pub fn routes() -> Router<AppState> {
             get(handlers::get_study_program).patch(handlers::update_study_program),
         )
         .route(
-            "/study-programs/{id}/requirements",
-            get(handlers::list_program_requirements).put(handlers::replace_program_requirements),
+            "/study-programs/{study_program_id}/structure",
+            put(handlers::replace_curriculum_structure),
         )
         .route(
             "/homerooms",

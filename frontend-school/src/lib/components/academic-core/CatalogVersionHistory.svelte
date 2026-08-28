@@ -5,6 +5,7 @@
 		name: string;
 		secondaryName?: string | null;
 		exactValue: string;
+		totalValue?: string | null;
 		effectiveFrom: string;
 		effectiveUntil?: string | null;
 		classification?: string | null;
@@ -17,6 +18,7 @@
 		name: string;
 		secondaryName: string;
 		exactValue: string;
+		totalValue: string;
 		effectiveFrom: string;
 		effectiveUntil: string;
 		gradeLevelIds: string[];
@@ -65,6 +67,7 @@
 		name: '',
 		secondaryName: '',
 		exactValue: '1.00',
+		totalValue: '20.00',
 		effectiveFrom: '',
 		effectiveUntil: '',
 		gradeLevelIds: [],
@@ -140,6 +143,7 @@
 							</p>{/if}
 						<div class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
 							<span>{kind === 'subject' ? 'หน่วยกิต' : 'ชม./สัปดาห์'} {item.exactValue}</span>
+							{#if kind === 'activity'}<span>รวม {item.totalValue ?? '—'} ชม./ภาคเรียน</span>{/if}
 							{#if item.classification}
 								<span>{optionLabel(classificationOptions, item.classification)}</span>
 							{/if}
@@ -175,6 +179,18 @@
 					required
 				/>
 			</div>
+			{#if kind === 'activity'}
+				<div class="space-y-1.5">
+					<Label for={`${code}-version-total`}>ชั่วโมงรวมต่อภาคเรียน</Label>
+					<Input
+						id={`${code}-version-total`}
+						inputmode="decimal"
+						bind:value={draft.totalValue}
+						required
+					/>
+					<p class="text-xs text-muted-foreground">ใช้เป็นค่าทางการในโครงสร้างหลักสูตรและการเปิดสอน</p>
+				</div>
+			{/if}
 			<div class="space-y-1.5">
 				<Label for={`${code}-version-en`}>ชื่อภาษาอังกฤษ</Label><Input
 					id={`${code}-version-en`}

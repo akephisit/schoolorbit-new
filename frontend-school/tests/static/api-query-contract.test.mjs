@@ -107,7 +107,7 @@ test('generated API exposes repaired academic query operations', async () => {
 		'listPlacementsForAcademicYear',
 		'listHomeroomAdvisorsForAcademicYear',
 		'listStudyProgramOptionsForAcademicYear',
-		'getCurriculumProgramWorkspace',
+		'getCurriculumStructureWorkspace',
 		'getAcademicSetupWorkspace'
 	]) {
 		assert.match(generated, new RegExp(`\\b${operationId}: \\{`));
@@ -193,10 +193,10 @@ test('academic batch wrappers send generated camelCase queries and preserve abor
 	}
 
 	globalThis.__schoolOrbitApiResponseData = {};
-	await academicCore.getCurriculumProgramWorkspace('version/1', options);
+	await academicCore.getCurriculumStructureWorkspace('version/1', options);
 	assert.deepEqual(globalThis.__schoolOrbitApiCalls.pop(), {
 		method: 'get',
-		endpoint: '/api/academic/curriculum-versions/version%2F1/program-workspace',
+		endpoint: '/api/academic/curriculum-versions/version%2F1/structure',
 		options
 	});
 	await academicCore.getAcademicSetupWorkspace(options);

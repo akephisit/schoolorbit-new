@@ -40,6 +40,7 @@
 		name: string;
 		secondaryName: string;
 		exactValue: string;
+		totalValue: string;
 		effectiveFrom: string;
 		effectiveUntil: string;
 		gradeLevelIds: string[];

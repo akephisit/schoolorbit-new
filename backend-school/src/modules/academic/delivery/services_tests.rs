@@ -561,6 +561,7 @@ async fn prepare_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
+    apply_migrations_through(&pool, 48).await.unwrap();
     pool
 }
 
@@ -587,9 +588,16 @@ async fn planning_runtime_context(pool: &PgPool) -> RuntimeContext {
                  JOIN curriculum_course_requirements requirement
                    ON requirement.study_program_id = homeroom.study_program_id
                   AND requirement.grade_level_id = homeroom.grade_level_id
+                 JOIN curriculum_term_slots slot ON slot.id = requirement.term_slot_id
                  WHERE homeroom.academic_year_id = term.academic_year_id
-                   AND (requirement.recommended_term_code IS NULL
-                        OR lower(requirement.recommended_term_code) = lower(term.code))
+                   AND slot.term_type = term.term_type
+                   AND slot.type_occurrence = (
+                       SELECT count(*)::integer
+                       FROM academic_terms occurrence
+                       WHERE occurrence.academic_year_id = term.academic_year_id
+                         AND occurrence.term_type = term.term_type
+                         AND occurrence.sequence_no <= term.sequence_no
+                   )
              )
            ORDER BY term.start_date
            LIMIT 1"#,
