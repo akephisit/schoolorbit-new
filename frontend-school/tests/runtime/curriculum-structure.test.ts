@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
 	buildCurriculumDocument,
+	buildCurriculumValidationNoticeViews,
 	buildProgramComparison
 } from '../../src/lib/academic/curriculum-structure.ts';
 import type { CurriculumStructureWorkspace } from '../../src/lib/api/academic-core';
@@ -197,4 +198,31 @@ test('curriculum comparison keeps program assignments independent', () => {
 	assert.deepEqual(mathematics?.cells['program-a']?.termNames, ['ภาคเรียนที่ 1']);
 	assert.deepEqual(mathematics?.cells['program-b']?.termNames, ['ภาคเรียนที่ 2']);
 	assert.equal(mathematics?.isDifferent, true);
+});
+
+test('curriculum validation notices collapse duplicate API rows into unique render keys', () => {
+	const views = buildCurriculumValidationNoticeViews([
+		{
+			code: 'catalog_total_hours_missing',
+			message: 'ค21101 คณิตศาสตร์พื้นฐาน ยังไม่มีชั่วโมงรวมต่อภาคเรียน',
+			catalogVersionId: 'subject-1'
+		},
+		{
+			code: 'catalog_total_hours_missing',
+			message: 'ค21101 คณิตศาสตร์พื้นฐาน ยังไม่มีชั่วโมงรวมต่อภาคเรียน',
+			catalogVersionId: 'subject-1'
+		},
+		{
+			code: 'catalog_weekly_value_missing',
+			message: 'ค21101 คณิตศาสตร์พื้นฐาน ยังไม่มีจำนวนคาบหรือชั่วโมงต่อสัปดาห์',
+			catalogVersionId: 'subject-1'
+		}
+	]);
+
+	assert.equal(views.length, 2);
+	assert.equal(new Set(views.map((view) => view.key)).size, views.length);
+	assert.deepEqual(
+		views.map((view) => view.code),
+		['catalog_total_hours_missing', 'catalog_weekly_value_missing']
+	);
 });

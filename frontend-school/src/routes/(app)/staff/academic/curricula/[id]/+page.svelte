@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
+	import { buildCurriculumValidationNoticeViews } from '$lib/academic/curriculum-structure';
 	import {
 		createCurriculumVersion,
 		createStudyProgram,
@@ -66,6 +67,9 @@
 	);
 	let selectedManagementOptions = $derived(
 		selectedVersion ? (managementCache.get(selectedVersion.version.id) ?? null) : null
+	);
+	let validationBlockers = $derived(
+		buildCurriculumValidationNoticeViews(workspace?.validation.blockers ?? [])
 	);
 
 	function applyWorkspace(value: CurriculumStructureWorkspace | null) {
@@ -291,11 +295,11 @@
 							onEdit={() => void openEditor()}
 						/>
 
-						{#if workspace.validation.blockers.length > 0}
+						{#if validationBlockers.length > 0}
 							<div class="rounded-xl border border-destructive/30 bg-destructive/5 p-3">
 								<h3 class="font-semibold text-destructive">ข้อมูลที่ต้องแก้ก่อนเผยแพร่</h3>
 								<ul class="mt-2 space-y-1 text-sm text-muted-foreground">
-									{#each workspace.validation.blockers as blocker (`${blocker.code}-${blocker.catalogVersionId ?? ''}`)}
+									{#each validationBlockers as blocker (blocker.key)}
 										<li>• {blocker.message}</li>
 									{/each}
 								</ul>

@@ -2,6 +2,7 @@ import type {
 	CurriculumDocumentSection,
 	CurriculumStructureRequirement,
 	CurriculumStructureWorkspace,
+	CurriculumValidationNotice,
 	StudyProgram
 } from '$lib/api/academic-core';
 
@@ -61,6 +62,22 @@ export type ProgramComparisonView = {
 	sections: typeof sectionDefinitions;
 	rows: ProgramComparisonRow[];
 };
+
+export type CurriculumValidationNoticeView = CurriculumValidationNotice & { key: string };
+
+export function buildCurriculumValidationNoticeViews(
+	notices: readonly CurriculumValidationNotice[]
+): CurriculumValidationNoticeView[] {
+	const seen = new Set<string>();
+	const views: CurriculumValidationNoticeView[] = [];
+	for (const notice of notices) {
+		const key = JSON.stringify([notice.code, notice.catalogVersionId ?? null, notice.message]);
+		if (seen.has(key)) continue;
+		seen.add(key);
+		views.push({ ...notice, key });
+	}
+	return views;
+}
 
 function decimalToHundredths(value: string | null | undefined): number | null {
 	if (value == null || value.trim() === '') return null;
