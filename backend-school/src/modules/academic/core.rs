@@ -188,6 +188,10 @@ pub fn routes() -> Router<AppState> {
             get(handlers::list_student_years).post(handlers::create_student_year),
         )
         .route(
+            "/student-years/candidates",
+            get(handlers::list_student_year_candidates),
+        )
+        .route(
             "/student-years/{id}",
             get(handlers::get_student_year).patch(handlers::update_student_year),
         )

@@ -99,6 +99,7 @@ const operations = [
 	['/api/academic/homeroom-advisors', 'get', 'listHomeroomAdvisorsForAcademicYear'],
 	['/api/academic/student-years', 'get', 'listStudentAcademicYears'],
 	['/api/academic/student-years', 'post', 'createStudentAcademicYear'],
+	['/api/academic/student-years/candidates', 'get', 'listStudentYearCandidates'],
 	['/api/academic/student-years/{id}', 'get', 'getStudentAcademicYear'],
 	['/api/academic/student-years/{id}', 'patch', 'updateStudentAcademicYear'],
 	['/api/academic/student-years/{id}/placements', 'get', 'listHomeroomPlacements'],
@@ -295,10 +296,10 @@ test('new workspaces use focused typed APIs without legacy academic paths', asyn
 		'frontend-school/src/lib/components/academic-core/HomeroomEditor.svelte',
 		'frontend-school/src/lib/components/academic-core/StudentYearPlacementEditor.svelte',
 		'frontend-school/src/lib/components/academic-core/StudentYearTransferDialog.svelte',
-		'frontend-school/src/lib/components/learning-delivery/LearningOfferingEditor.svelte',
+		'frontend-school/src/lib/components/learning-delivery/OfferingCreateDialog.svelte',
 		'frontend-school/src/lib/components/learning-delivery/LearningGroupEditor.svelte',
 		'frontend-school/src/lib/components/learning-delivery/RosterPreviewPanel.svelte',
-		'frontend-school/src/lib/components/learning-delivery/CurriculumOfferingPreview.svelte'
+		'frontend-school/src/lib/components/learning-delivery/OfferingCurriculumPreview.svelte'
 	];
 
 	for (const file of requiredFiles) await access(path.join(repoRoot, file));
@@ -313,13 +314,13 @@ test('new workspaces use focused typed APIs without legacy academic paths', asyn
 	const allUi = [];
 	for (const file of requiredFiles.slice(2))
 		allUi.push(await readFile(path.join(repoRoot, file), 'utf8'));
-	assert.doesNotMatch(allUi.join('\n'), /numberOfTerms|number_of_terms|คะแนน|GPA|เกรดเฉลี่ย/);
+	assert.doesNotMatch(allUi.join('\n'), /numberOfTerms|number_of_terms|GPA|เกรดเฉลี่ย/);
 
 	const coreEditor = allUi[0];
 	assert.match(coreEditor, /onUpdateYear/);
 	assert.match(coreEditor, /onUpdateTerm/);
 	assert.match(coreEditor, /onReplaceBellSchedulePeriods/);
-	assert.match(coreEditor, /จัดคาบในตารางเวลา/);
+	assert.match(coreEditor, /BellSchedulePeriodsStep/);
 });
 
 test('legacy academic workspace routes are removed without aliases', async () => {

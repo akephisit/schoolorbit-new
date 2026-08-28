@@ -29,8 +29,8 @@ test('learning delivery no longer calls offerings ชุดการเรีย
 		[
 			'src/lib/api/learning-delivery.ts',
 			'src/lib/api/academicAssessments.ts',
-			'src/lib/components/learning-delivery/LearningOfferingEditor.svelte',
-			'src/lib/components/learning-delivery/CurriculumOfferingPreview.svelte',
+			'src/lib/components/learning-delivery/OfferingCreateDialog.svelte',
+			'src/lib/components/learning-delivery/OfferingCurriculumPreview.svelte',
 			'src/routes/(app)/staff/academic/delivery/+page.svelte'
 		].map(readProjectFile)
 	);

@@ -1,59 +1,34 @@
 <script lang="ts">
 	import type {
 		AcademicTerm,
-		AcademicTermType,
 		AcademicYear,
 		BellSchedule,
 		BellSchedulePeriod,
+		CreateAcademicTermRequest,
+		CreateAcademicYearRequest,
+		CreateBellScheduleRequest,
 		ReplaceBellSchedulePeriodsRequest,
 		UpdateAcademicTermRequest,
-		UpdateAcademicYearRequest
+		UpdateAcademicYearRequest,
+		UpdateBellScheduleRequest
 	} from '$lib/api/academic-core';
+	import AcademicTermSetupStep from '$lib/components/academic-core/setup/AcademicTermSetupStep.svelte';
+	import AcademicYearSetupStep from '$lib/components/academic-core/setup/AcademicYearSetupStep.svelte';
+	import BellSchedulePeriodsStep from '$lib/components/academic-core/setup/BellSchedulePeriodsStep.svelte';
+	import BellScheduleSetupStep from '$lib/components/academic-core/setup/BellScheduleSetupStep.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import { DatePicker } from '$lib/components/ui/date-picker';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
-	import { CalendarPlus, ChevronRight, Pencil, Plus, Trash2, X } from 'lucide-svelte';
+	import {
+		BookOpenCheck,
+		CalendarDays,
+		Check,
+		ChevronRight,
+		Plus,
+		School,
+		TimerReset
+	} from 'lucide-svelte';
 
-	type YearDraft = {
-		year: number;
-		name: string;
-		startDate: string;
-		endDate: string;
-	};
-
-	type TermDraft = {
-		academicYearId: string;
-		sequence: number;
-		code: string;
-		name: string;
-		termType: AcademicTermType;
-		startDate: string;
-		endDate: string;
-		includedInYearResult: boolean;
-		blocksYearClosure: boolean;
-		bellScheduleId: string;
-	};
-
-	type BellScheduleDraft = {
-		academicYearId: string;
-		code: string;
-		name: string;
-		isDefault: boolean;
-	};
-
-	type PeriodDraft = ReplaceBellSchedulePeriodsRequest['periods'][number] & {
-		applicableDaysText: string;
-	};
-
-	const TERM_TYPE_OPTIONS: Array<{ value: AcademicTermType; label: string }> = [
-		{ value: 'regular', label: 'ปกติ' },
-		{ value: 'summer', label: 'ฤดูร้อน' },
-		{ value: 'remedial', label: 'ซ่อมเสริม' },
-		{ value: 'custom', label: 'กำหนดเอง' }
-	];
+	type StepKey = 'year' | 'schedule' | 'periods' | 'term';
 
 	let {
 		years,
@@ -64,6 +39,7 @@
 		onCreateYear,
 		onUpdateYear,
 		onCreateBellSchedule,
+		onUpdateBellSchedule,
 		onLoadBellSchedulePeriods,
 		onReplaceBellSchedulePeriods,
 		onCreateTerm,
@@ -74,762 +50,381 @@
 		bellSchedules?: BellSchedule[];
 		canManage?: boolean;
 		busy?: boolean;
-		onCreateYear: (draft: YearDraft) => Promise<void>;
-		onUpdateYear: (id: string, draft: UpdateAcademicYearRequest) => Promise<void>;
-		onCreateBellSchedule: (draft: BellScheduleDraft) => Promise<void>;
+		onCreateYear: (draft: CreateAcademicYearRequest) => Promise<AcademicYear>;
+		onUpdateYear: (id: string, draft: UpdateAcademicYearRequest) => Promise<AcademicYear>;
+		onCreateBellSchedule: (draft: CreateBellScheduleRequest) => Promise<BellSchedule>;
+		onUpdateBellSchedule: (id: string, draft: UpdateBellScheduleRequest) => Promise<BellSchedule>;
 		onLoadBellSchedulePeriods: (id: string) => Promise<BellSchedulePeriod[]>;
 		onReplaceBellSchedulePeriods: (
 			id: string,
 			draft: ReplaceBellSchedulePeriodsRequest
 		) => Promise<BellSchedulePeriod[]>;
-		onCreateTerm: (draft: TermDraft) => Promise<void>;
-		onUpdateTerm: (id: string, draft: UpdateAcademicTermRequest) => Promise<void>;
+		onCreateTerm: (draft: CreateAcademicTermRequest) => Promise<AcademicTerm>;
+		onUpdateTerm: (id: string, draft: UpdateAcademicTermRequest) => Promise<AcademicTerm>;
 	} = $props();
 
-	let yearDraft = $state<YearDraft>({
-		year: new Date().getFullYear() + 544,
-		name: '',
-		startDate: '',
-		endDate: ''
-	});
-	let termDraft = $state<TermDraft>({
-		academicYearId: '',
-		sequence: 1,
-		code: '1',
-		name: 'ภาคเรียนที่ 1',
-		termType: 'regular',
-		startDate: '',
-		endDate: '',
-		includedInYearResult: true,
-		blocksYearClosure: true,
-		bellScheduleId: ''
-	});
-	let bellScheduleDraft = $state<BellScheduleDraft>({
-		academicYearId: '',
-		code: 'DEFAULT',
-		name: 'ตารางเวลาปกติ',
-		isDefault: true
-	});
-	let yearEdit = $state<(UpdateAcademicYearRequest & { id: string }) | null>(null);
-	let termEdit = $state<
-		(UpdateAcademicTermRequest & { id: string; academicYearId: string }) | null
-	>(null);
-	let selectedBellScheduleId = $state('');
-	let periodDrafts = $state<PeriodDraft[]>([]);
-	let loadingPeriods = $state(false);
-	let formError = $state('');
+	let selectedYearId = $derived(
+		years.find((year) => year.status === 'planning')?.id ?? years[0]?.id ?? ''
+	);
+	let activeStep = $derived<StepKey>(selectedYearId ? firstIncompleteStep(selectedYearId) : 'year');
+	let creatingYear = $derived(years.length === 0);
+	let configuredScheduleIds = $state<string[]>([]);
 
-	const planningBellSchedules = $derived(
-		bellSchedules.filter((schedule) =>
-			years.some((year) => year.id === schedule.academicYearId && year.status === 'planning')
-		)
+	const selectedYear = $derived(years.find((year) => year.id === selectedYearId) ?? null);
+	const selectedSchedules = $derived(
+		bellSchedules.filter((schedule) => schedule.academicYearId === selectedYearId)
+	);
+	const selectedTerms = $derived(termsByYear.get(selectedYearId) ?? []);
+	const suggestedYear = $derived(
+		years.length === 0
+			? new Date().getFullYear() + 543
+			: Math.max(...years.map((year) => year.year)) + 1
 	);
 
-	function statusLabel(status: AcademicYear['status'] | AcademicTerm['status']) {
+	function firstIncompleteStep(yearId: string): StepKey {
+		const schedules = bellSchedules.filter((schedule) => schedule.academicYearId === yearId);
+		if (schedules.length === 0) return 'schedule';
+		if ((termsByYear.get(yearId) ?? []).length === 0) return 'periods';
+		return 'term';
+	}
+
+	function selectYear(id: string) {
+		selectedYearId = id;
+		creatingYear = false;
+		activeStep = firstIncompleteStep(id);
+	}
+
+	function startNewYear() {
+		creatingYear = true;
+		activeStep = 'year';
+	}
+
+	function editSelectedYear() {
+		creatingYear = false;
+		activeStep = 'year';
+	}
+
+	function handleYearSaved(year: AcademicYear) {
+		selectedYearId = year.id;
+		creatingYear = false;
+		activeStep = 'schedule';
+	}
+
+	function handleScheduleSaved(_schedule: BellSchedule) {
+		activeStep = 'periods';
+	}
+
+	function handlePeriodsSaved(scheduleId: string, _periods: BellSchedulePeriod[]) {
+		if (!configuredScheduleIds.includes(scheduleId)) {
+			configuredScheduleIds = [...configuredScheduleIds, scheduleId];
+		}
+		activeStep = 'term';
+	}
+
+	function handleTermSaved(_term: AcademicTerm) {
+		activeStep = 'term';
+	}
+
+	function statusLabel(status: AcademicYear['status']) {
 		return {
-			planning: 'กำลังวางแผน',
+			planning: 'ฉบับเตรียมการ',
 			ready: 'พร้อมใช้งาน',
 			active: 'กำลังใช้งาน',
 			closing: 'กำลังปิดรอบ',
 			closed: 'ปิดแล้ว',
-			archived: 'เก็บถาวร',
-			cancelled: 'ยกเลิก'
+			archived: 'เก็บถาวร'
 		}[status];
-	}
-
-	async function submitYear(event: SubmitEvent) {
-		event.preventDefault();
-		formError = '';
-		if (!yearDraft.startDate || !yearDraft.endDate) {
-			formError = 'กรุณาเลือกวันเริ่มและวันสิ้นสุดปีการศึกษา';
-			return;
-		}
-		try {
-			await onCreateYear(yearDraft);
-			yearDraft = { ...yearDraft, name: '', startDate: '', endDate: '' };
-		} catch (error) {
-			formError = error instanceof Error ? error.message : 'สร้างปีการศึกษาไม่สำเร็จ';
-		}
-	}
-
-	async function submitTerm(event: SubmitEvent) {
-		event.preventDefault();
-		formError = '';
-		if (
-			!termDraft.academicYearId ||
-			!termDraft.startDate ||
-			!termDraft.endDate ||
-			!termDraft.bellScheduleId
-		) {
-			formError = 'กรุณาเลือกปี วันที่ และตารางเวลาให้ครบ';
-			return;
-		}
-		try {
-			await onCreateTerm(termDraft);
-			termDraft = {
-				...termDraft,
-				sequence: termDraft.sequence + 1,
-				code: '',
-				name: '',
-				startDate: '',
-				endDate: ''
-			};
-		} catch (error) {
-			formError = error instanceof Error ? error.message : 'สร้างภาคเรียนไม่สำเร็จ';
-		}
-	}
-
-	async function submitBellSchedule(event: SubmitEvent) {
-		event.preventDefault();
-		formError = '';
-		if (!bellScheduleDraft.academicYearId) {
-			formError = 'กรุณาเลือกปีการศึกษา';
-			return;
-		}
-		try {
-			await onCreateBellSchedule(bellScheduleDraft);
-			bellScheduleDraft = { ...bellScheduleDraft, code: '', name: '', isDefault: false };
-		} catch (error) {
-			formError = error instanceof Error ? error.message : 'สร้างตารางเวลาไม่สำเร็จ';
-		}
-	}
-
-	function beginYearEdit(year: AcademicYear) {
-		yearEdit = {
-			id: year.id,
-			year: year.year,
-			name: year.name,
-			startDate: year.startDate,
-			endDate: year.endDate,
-			schoolDays: [...year.schoolDays],
-			rowVersion: year.rowVersion
-		};
-	}
-
-	async function submitYearEdit(event: SubmitEvent) {
-		event.preventDefault();
-		if (!yearEdit) return;
-		formError = '';
-		if (!yearEdit.startDate || !yearEdit.endDate) {
-			formError = 'กรุณาเลือกวันเริ่มและวันสิ้นสุดปีการศึกษา';
-			return;
-		}
-		const { id, ...draft } = yearEdit;
-		try {
-			await onUpdateYear(id, draft);
-			yearEdit = null;
-		} catch (error) {
-			formError = error instanceof Error ? error.message : 'แก้ไขปีการศึกษาไม่สำเร็จ';
-		}
-	}
-
-	function beginTermEdit(term: AcademicTerm) {
-		termEdit = {
-			id: term.id,
-			academicYearId: term.academicYearId,
-			sequence: term.sequence,
-			code: term.code,
-			name: term.name,
-			termType: term.termType,
-			startDate: term.startDate,
-			endDate: term.endDate,
-			includedInYearResult: term.includedInYearResult,
-			blocksYearClosure: term.blocksYearClosure,
-			bellScheduleId: term.bellScheduleId,
-			rowVersion: term.rowVersion
-		};
-	}
-
-	async function submitTermEdit(event: SubmitEvent) {
-		event.preventDefault();
-		if (!termEdit) return;
-		formError = '';
-		if (!termEdit.startDate || !termEdit.endDate || !termEdit.bellScheduleId) {
-			formError = 'กรุณาเลือกวันที่และตารางเวลาให้ครบ';
-			return;
-		}
-		const { id, academicYearId: _academicYearId, ...draft } = termEdit;
-		try {
-			await onUpdateTerm(id, draft);
-			termEdit = null;
-		} catch (error) {
-			formError = error instanceof Error ? error.message : 'แก้ไขภาคเรียนไม่สำเร็จ';
-		}
-	}
-
-	function periodDraft(period?: BellSchedulePeriod): PeriodDraft {
-		return {
-			name: period?.name ?? '',
-			startTime: period?.startTime.slice(0, 5) ?? '',
-			endTime: period?.endTime.slice(0, 5) ?? '',
-			orderIndex: period?.orderIndex ?? periodDrafts.length + 1,
-			applicableDays: [],
-			applicableDaysText: period?.applicableDays ?? 'MON,TUE,WED,THU,FRI',
-			isActive: period?.isActive ?? true
-		};
-	}
-
-	async function selectBellSchedule(id: string) {
-		selectedBellScheduleId = id;
-		periodDrafts = [];
-		if (!id) return;
-		loadingPeriods = true;
-		formError = '';
-		try {
-			periodDrafts = (await onLoadBellSchedulePeriods(id)).map((period) => periodDraft(period));
-		} catch (error) {
-			formError = error instanceof Error ? error.message : 'โหลดคาบเรียนไม่สำเร็จ';
-		} finally {
-			loadingPeriods = false;
-		}
-	}
-
-	function addPeriod() {
-		periodDrafts = [...periodDrafts, periodDraft()];
-	}
-
-	function removePeriod(index: number) {
-		periodDrafts = periodDrafts.filter((_, draftIndex) => draftIndex !== index);
-	}
-
-	async function submitPeriods(event: SubmitEvent) {
-		event.preventDefault();
-		const schedule = bellSchedules.find((item) => item.id === selectedBellScheduleId);
-		if (!schedule) return;
-		formError = '';
-		try {
-			const saved = await onReplaceBellSchedulePeriods(schedule.id, {
-				rowVersion: schedule.rowVersion,
-				periods: periodDrafts.map(({ applicableDaysText, ...period }) => ({
-					...period,
-					name: period.name?.trim() || null,
-					applicableDays: applicableDaysText
-						.split(',')
-						.map((day) => day.trim().toUpperCase())
-						.filter(Boolean)
-				}))
-			});
-			periodDrafts = saved.map((period) => periodDraft(period));
-		} catch (error) {
-			formError = error instanceof Error ? error.message : 'บันทึกคาบเรียนไม่สำเร็จ';
-		}
 	}
 </script>
 
-<div class="grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.6fr)]">
-	<section class="space-y-3" aria-label="รายการปีและภาคเรียน">
-		{#each years as year (year.id)}
-			{@const terms = termsByYear.get(year.id) ?? []}
-			<article class="overflow-hidden rounded-xl border bg-card shadow-sm">
-				<header
-					class="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/30 px-5 py-4"
-				>
-					<div>
-						<div class="flex items-center gap-2">
-							<h2 class="text-base font-semibold">{year.name}</h2>
-							<Badge variant={year.status === 'active' ? 'default' : 'secondary'}
-								>{statusLabel(year.status)}</Badge
-							>
-						</div>
-						<p class="mt-1 text-sm text-muted-foreground">{year.startDate} – {year.endDate}</p>
-					</div>
-					<div class="flex items-center gap-2">
-						{#if canManage && year.status === 'planning'}
-							<Button size="sm" variant="outline" onclick={() => beginYearEdit(year)}>
-								<Pencil class="size-3.5" /> แก้ไขปี
-							</Button>
-						{/if}
-						<div class="rounded-lg border bg-background px-3 py-2 text-right">
-							<p class="text-xl font-semibold tabular-nums">{terms.length}</p>
-							<p class="text-[11px] text-muted-foreground">ภาคเรียนจากรายการจริง</p>
-						</div>
-					</div>
-				</header>
-
-				<div class="divide-y">
-					{#each terms as term (term.id)}
-						<div class="grid gap-3 px-5 py-3 sm:grid-cols-[48px_1fr_auto] sm:items-center">
-							<div
-								class="flex size-10 items-center justify-center rounded-full bg-primary/10 font-semibold text-primary"
-							>
-								{term.sequence}
-							</div>
-							<div>
-								<p class="font-medium">
-									{term.name} <span class="text-muted-foreground">· {term.code}</span>
-								</p>
-								<p class="text-xs text-muted-foreground">
-									{term.startDate} – {term.endDate} · {term.termType}
-								</p>
-							</div>
-							<div class="flex items-center gap-2">
-								<Badge variant="outline">{statusLabel(term.status)}</Badge>
-								{#if canManage && term.status === 'planning'}
-									<Button
-										size="icon-sm"
-										variant="ghost"
-										onclick={() => beginTermEdit(term)}
-										aria-label={`แก้ไข ${term.name}`}
-									>
-										<Pencil class="size-3.5" />
-									</Button>
-								{:else}
-									<ChevronRight class="size-4 text-muted-foreground" />
-								{/if}
-							</div>
-						</div>
-					{:else}
-						<p class="px-5 py-6 text-sm text-muted-foreground">
-							ยังไม่มีภาคเรียน เพิ่มภาคเรียนตามรอบที่โรงเรียนใช้จริงได้ทางแบบฟอร์มด้านข้าง
-						</p>
-					{/each}
-				</div>
-			</article>
-		{:else}
-			<div class="rounded-xl border border-dashed p-10 text-center text-sm text-muted-foreground">
-				ยังไม่มีปีการศึกษา เริ่มจากสร้างปีสำหรับวางแผน
+<div class="grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)]">
+	<aside class="space-y-3 xl:sticky xl:top-20 xl:self-start" aria-label="ปีการศึกษา">
+		<div class="flex items-center justify-between gap-3">
+			<div>
+				<p class="text-sm font-semibold">ปีการศึกษา</p>
+				<p class="text-xs text-muted-foreground">เลือกปีที่จะวางแผนหรือดูข้อมูลเดิม</p>
 			</div>
-		{/each}
-	</section>
-
-	<aside class="space-y-4">
-		{#if canManage}
-			{#if yearEdit}
-				<form
-					class="space-y-3 rounded-xl border border-primary/30 bg-card p-5 shadow-sm"
-					onsubmit={submitYearEdit}
+			{#if canManage}
+				<Button
+					type="button"
+					size="icon-sm"
+					variant="outline"
+					onclick={startNewYear}
+					aria-label="เพิ่มปีการศึกษา"
 				>
-					<div class="flex items-center justify-between gap-3">
-						<h2 class="font-semibold">แก้ไขปีที่กำลังวางแผน</h2>
-						<Button
-							type="button"
-							size="icon-sm"
-							variant="ghost"
-							onclick={() => (yearEdit = null)}
-							aria-label="ปิดแบบแก้ไขปี"><X class="size-4" /></Button
-						>
-					</div>
-					<div class="grid grid-cols-2 gap-3">
-						<div class="space-y-1.5">
-							<Label for="edit-year-value">ปี พ.ศ.</Label><Input
-								id="edit-year-value"
-								type="number"
-								bind:value={yearEdit.year}
-								required
-							/>
-						</div>
-						<div class="space-y-1.5">
-							<Label for="edit-year-name">ชื่อปี</Label><Input
-								id="edit-year-name"
-								bind:value={yearEdit.name}
-								required
-							/>
-						</div>
-						<div class="space-y-1.5">
-							<Label for="edit-year-start">วันเริ่ม</Label><DatePicker
-								id="edit-year-start"
-								bind:value={yearEdit.startDate}
-								ariaLabel="เลือกวันเริ่มปีการศึกษา"
-								required
-							/>
-						</div>
-						<div class="space-y-1.5">
-							<Label for="edit-year-end">วันสิ้นสุด</Label><DatePicker
-								id="edit-year-end"
-								bind:value={yearEdit.endDate}
-								ariaLabel="เลือกวันสิ้นสุดปีการศึกษา"
-								required
-							/>
-						</div>
-					</div>
-					<Button type="submit" class="w-full" disabled={busy}>บันทึกปีการศึกษา</Button>
-				</form>
+					<Plus class="size-4" />
+				</Button>
 			{/if}
-
-			{#if termEdit}
-				<form
-					class="space-y-3 rounded-xl border border-primary/30 bg-card p-5 shadow-sm"
-					onsubmit={submitTermEdit}
+		</div>
+		<div class="space-y-2">
+			{#each years as year (year.id)}
+				<button
+					type="button"
+					class={[
+						'w-full rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+						year.id === selectedYearId
+							? 'border-primary bg-primary/[0.06]'
+							: 'bg-card hover:bg-muted/40'
+					]}
+					onclick={() => selectYear(year.id)}
 				>
-					<div class="flex items-center justify-between gap-3">
-						<h2 class="font-semibold">แก้ไขภาคเรียนที่กำลังวางแผน</h2>
-						<Button
-							type="button"
-							size="icon-sm"
-							variant="ghost"
-							onclick={() => (termEdit = null)}
-							aria-label="ปิดแบบแก้ไขภาคเรียน"><X class="size-4" /></Button
-						>
-					</div>
-					<div class="grid grid-cols-2 gap-3">
-						<div class="space-y-1.5">
-							<Label for="edit-term-sequence">ลำดับ</Label><Input
-								id="edit-term-sequence"
-								type="number"
-								min="1"
-								bind:value={termEdit.sequence}
-								required
-							/>
-						</div>
-						<div class="space-y-1.5">
-							<Label for="edit-term-code">รหัส</Label><Input
-								id="edit-term-code"
-								bind:value={termEdit.code}
-								required
-							/>
-						</div>
-					</div>
-					<div class="space-y-1.5">
-						<Label for="edit-term-name">ชื่อภาคเรียน</Label><Input
-							id="edit-term-name"
-							bind:value={termEdit.name}
-							required
-						/>
-					</div>
-					<div class="space-y-1.5">
-						<Label for="edit-term-type">ประเภท</Label>
-						<Select.Root type="single" bind:value={termEdit.termType}>
-							<Select.Trigger id="edit-term-type" class="w-full">
-								{TERM_TYPE_OPTIONS.find((option) => option.value === termEdit?.termType)?.label ??
-									'เลือกประเภท'}
-							</Select.Trigger>
-							<Select.Content>
-								{#each TERM_TYPE_OPTIONS as option (option.value)}
-									<Select.Item value={option.value}>{option.label}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
-					</div>
-					<div class="grid grid-cols-2 gap-3">
-						<div class="space-y-1.5">
-							<Label for="edit-term-start">วันเริ่ม</Label><DatePicker
-								id="edit-term-start"
-								bind:value={termEdit.startDate}
-								ariaLabel="เลือกวันเริ่มภาคเรียน"
-								required
-							/>
-						</div>
-						<div class="space-y-1.5">
-							<Label for="edit-term-end">วันสิ้นสุด</Label><DatePicker
-								id="edit-term-end"
-								bind:value={termEdit.endDate}
-								ariaLabel="เลือกวันสิ้นสุดภาคเรียน"
-								required
-							/>
-						</div>
-					</div>
-					<div class="space-y-1.5">
-						<Label for="edit-term-bell">ตารางเวลา</Label>
-						<Select.Root type="single" bind:value={termEdit.bellScheduleId}>
-							<Select.Trigger id="edit-term-bell" class="w-full">
-								{bellSchedules.find((schedule) => schedule.id === termEdit?.bellScheduleId)?.name ??
-									'เลือกตารางเวลา'}
-							</Select.Trigger>
-							<Select.Content>
-								{#each bellSchedules.filter((schedule) => schedule.academicYearId === termEdit?.academicYearId) as schedule (schedule.id)}
-									<Select.Item value={schedule.id}>{schedule.name}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
-					</div>
-					<label class="flex items-center gap-2 text-sm"
-						><input type="checkbox" bind:checked={termEdit.includedInYearResult} /> รวมในผลลัพธ์ทั้งปี</label
-					>
-					<label class="flex items-center gap-2 text-sm"
-						><input type="checkbox" bind:checked={termEdit.blocksYearClosure} /> ต้องปิดรอบนี้ก่อนปิดปี</label
-					>
-					<Button type="submit" class="w-full" disabled={busy}>บันทึกภาคเรียน</Button>
-				</form>
-			{/if}
+					<span class="flex items-center justify-between gap-2">
+						<strong class="truncate text-sm">{year.name}</strong>
+						{#if year.id === selectedYearId}<Check class="size-4 shrink-0 text-primary" />{/if}
+					</span>
+					<span class="mt-1 block text-xs text-muted-foreground">
+						{(termsByYear.get(year.id) ?? []).length} ภาคเรียน · {statusLabel(year.status)}
+					</span>
+				</button>
+			{:else}
+				<p class="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+					ยังไม่มีปีการศึกษา เริ่มจากขั้นที่ 1
+				</p>
+			{/each}
+		</div>
+	</aside>
 
-			<form class="space-y-3 rounded-xl border bg-card p-5 shadow-sm" onsubmit={submitYear}>
-				<div class="flex items-center gap-2">
-					<CalendarPlus class="size-5 text-primary" />
-					<h2 class="font-semibold">เพิ่มปีสำหรับวางแผน</h2>
-				</div>
-				<div class="grid grid-cols-2 gap-3">
-					<div class="space-y-1.5">
-						<Label for="academic-year-value">ปี พ.ศ.</Label><Input
-							id="academic-year-value"
-							type="number"
-							bind:value={yearDraft.year}
-							required
-						/>
-					</div>
-					<div class="space-y-1.5">
-						<Label for="academic-year-name">ชื่อปี</Label><Input
-							id="academic-year-name"
-							bind:value={yearDraft.name}
-							placeholder="ปีการศึกษา 2571"
-							required
-						/>
-					</div>
-					<div class="space-y-1.5">
-						<Label for="academic-year-start">วันเริ่ม</Label><DatePicker
-							id="academic-year-start"
-							bind:value={yearDraft.startDate}
-							ariaLabel="เลือกวันเริ่มปีการศึกษา"
-							required
-						/>
-					</div>
-					<div class="space-y-1.5">
-						<Label for="academic-year-end">วันสิ้นสุด</Label><DatePicker
-							id="academic-year-end"
-							bind:value={yearDraft.endDate}
-							ariaLabel="เลือกวันสิ้นสุดปีการศึกษา"
-							required
-						/>
-					</div>
-				</div>
-				<Button type="submit" class="w-full" disabled={busy}
-					><Plus class="size-4" /> เพิ่มปีการศึกษา</Button
-				>
-			</form>
-
-			<form class="space-y-3 rounded-xl border bg-card p-5 shadow-sm" onsubmit={submitBellSchedule}>
-				<h2 class="font-semibold">เพิ่มตารางเวลาของปี</h2>
-				<div class="space-y-1.5">
-					<Label for="bell-year">ปีการศึกษา</Label>
-					<Select.Root type="single" bind:value={bellScheduleDraft.academicYearId}>
-						<Select.Trigger id="bell-year" class="w-full">
-							{years.find((year) => year.id === bellScheduleDraft.academicYearId)?.name ??
-								'เลือกปี'}
-						</Select.Trigger>
-						<Select.Content>
-							{#each years.filter((year) => year.status === 'planning') as year (year.id)}
-								<Select.Item value={year.id}>{year.name}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-				<div class="grid grid-cols-2 gap-3">
-					<div class="space-y-1.5">
-						<Label for="bell-code">รหัส</Label><Input
-							id="bell-code"
-							bind:value={bellScheduleDraft.code}
-							required
-						/>
-					</div>
-					<div class="space-y-1.5">
-						<Label for="bell-name">ชื่อ</Label><Input
-							id="bell-name"
-							bind:value={bellScheduleDraft.name}
-							required
-						/>
-					</div>
-				</div>
-				<label class="flex items-center gap-2 text-sm"
-					><input type="checkbox" bind:checked={bellScheduleDraft.isDefault} /> ใช้เป็นตารางเริ่มต้นของปี</label
-				>
-				<Button type="submit" variant="outline" class="w-full" disabled={busy}
-					><Plus class="size-4" /> เพิ่มตารางเวลา</Button
-				>
-			</form>
-
-			<form
-				id="bell-schedules"
-				class="scroll-mt-24 space-y-3 rounded-xl border bg-card p-5 shadow-sm"
-				onsubmit={submitPeriods}
+	<section class="min-w-0 space-y-4" aria-label="ลำดับการตั้งค่างานวิชาการ">
+		<div class="overflow-hidden rounded-2xl border bg-card">
+			<div
+				class="border-b bg-gradient-to-r from-primary/[0.09] via-primary/[0.03] to-transparent p-5 sm:p-6"
 			>
-				<div>
-					<h2 class="font-semibold">จัดคาบในตารางเวลา</h2>
-					<p class="mt-1 text-xs text-muted-foreground">
-						กำหนดลำดับ เวลา และวันที่ใช้จริง ก่อนนำไปผูกกับภาคเรียน
-					</p>
-				</div>
-				<div class="space-y-1.5">
-					<Label for="period-schedule">ตารางเวลาของปีที่กำลังวางแผน</Label>
-					<Select.Root
-						type="single"
-						value={selectedBellScheduleId}
-						onValueChange={(value) => void selectBellSchedule(value)}
-					>
-						<Select.Trigger id="period-schedule" class="w-full">
-							{#if selectedBellScheduleId}
-								{@const selectedSchedule = planningBellSchedules.find(
-									(schedule) => schedule.id === selectedBellScheduleId
-								)}
-								{years.find((year) => year.id === selectedSchedule?.academicYearId)?.name} · {selectedSchedule?.name}
-							{:else}
-								เลือกตารางเวลา
-							{/if}
-						</Select.Trigger>
-						<Select.Content>
-							{#each planningBellSchedules as schedule (schedule.id)}
-								<Select.Item value={schedule.id}>
-									{years.find((year) => year.id === schedule.academicYearId)?.name} · {schedule.name}
-								</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-				{#if loadingPeriods}
-					<p class="text-sm text-muted-foreground">กำลังโหลดคาบ…</p>
-				{:else if selectedBellScheduleId}
-					<div class="space-y-3">
-						{#each periodDrafts as period, index (index)}
-							<div class="space-y-2 rounded-lg border bg-muted/20 p-3">
-								<div class="flex items-center justify-between gap-2">
-									<p class="text-sm font-medium">คาบลำดับ {period.orderIndex}</p>
-									<Button
-										type="button"
-										size="icon-sm"
-										variant="ghost"
-										onclick={() => removePeriod(index)}
-										aria-label={`ลบคาบลำดับ ${period.orderIndex}`}><Trash2 class="size-4" /></Button
-									>
-								</div>
-								<div class="grid grid-cols-[72px_1fr] gap-2">
-									<Input
-										type="number"
-										min="1"
-										aria-label="ลำดับคาบ"
-										bind:value={period.orderIndex}
-										required
-									/>
-									<Input
-										aria-label="ชื่อคาบ"
-										placeholder="คาบ 1 / พักกลางวัน"
-										bind:value={period.name}
-									/>
-								</div>
-								<div class="grid grid-cols-2 gap-2">
-									<Input
-										type="time"
-										aria-label="เวลาเริ่มคาบ"
-										bind:value={period.startTime}
-										required
-									/>
-									<Input
-										type="time"
-										aria-label="เวลาสิ้นสุดคาบ"
-										bind:value={period.endTime}
-										required
-									/>
-								</div>
-								<Input
-									aria-label="วันที่ใช้คาบ"
-									placeholder="MON,TUE,WED,THU,FRI"
-									bind:value={period.applicableDaysText}
-									required
-								/>
-								<label class="flex items-center gap-2 text-xs"
-									><input type="checkbox" bind:checked={period.isActive} /> เปิดใช้คาบนี้</label
-								>
-							</div>
-						{/each}
-						<Button type="button" variant="outline" class="w-full" onclick={addPeriod}
-							><Plus class="size-4" /> เพิ่มคาบ</Button
-						>
-						<Button type="submit" class="w-full" disabled={busy || periodDrafts.length === 0}
-							>บันทึกคาบทั้งหมด</Button
-						>
+				<div class="flex flex-wrap items-start justify-between gap-4">
+					<div>
+						<p class="text-xs font-semibold tracking-wide text-primary">เส้นทางตั้งค่างานวิชาการ</p>
+						<h2 class="mt-1 text-xl font-semibold">
+							{creatingYear
+								? 'สร้างปีสำหรับวางแผน'
+								: (selectedYear?.name ?? 'เริ่มตั้งค่าปีการศึกษา')}
+						</h2>
+						<p class="mt-2 max-w-2xl text-sm text-muted-foreground">
+							ทำตามลำดับ 4 ขั้น ข้อมูลในขั้นก่อนหน้าจะถูกส่งต่อให้ขั้นถัดไปโดยอัตโนมัติ
+						</p>
 					</div>
-				{/if}
-			</form>
+					<Badge variant="secondary">ฉบับเตรียมการ</Badge>
+				</div>
+			</div>
+			<div class="flex gap-3 border-b bg-muted/20 px-5 py-3 text-xs text-muted-foreground sm:px-6">
+				<School class="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+				<p>
+					หน้านี้ใช้เตรียมโครงสร้างเท่านั้น การเปิดใช้ปี การปิดภาคเรียน
+					และการเลื่อนชั้นเป็นขั้นตอนแยกเมื่อระบบผลการเรียนพร้อม
+				</p>
+			</div>
+		</div>
 
-			<form class="space-y-3 rounded-xl border bg-card p-5 shadow-sm" onsubmit={submitTerm}>
-				<h2 class="font-semibold">เพิ่มภาคเรียน</h2>
-				<div class="space-y-1.5">
-					<Label for="term-year">ปีการศึกษา</Label>
-					<Select.Root type="single" bind:value={termDraft.academicYearId}>
-						<Select.Trigger id="term-year" class="w-full">
-							{years.find((year) => year.id === termDraft.academicYearId)?.name ?? 'เลือกปี'}
-						</Select.Trigger>
-						<Select.Content>
-							{#each years.filter((year) => year.status === 'planning') as year (year.id)}
-								<Select.Item value={year.id}>{year.name}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
+		<article class="overflow-hidden rounded-2xl border bg-card">
+			<header class="flex items-center gap-3 border-b p-4 sm:p-5">
+				<div
+					class="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground"
+				>
+					1
 				</div>
-				<div class="grid grid-cols-2 gap-3">
-					<div class="space-y-1.5">
-						<Label for="term-sequence">ลำดับ</Label><Input
-							id="term-sequence"
-							type="number"
-							min="1"
-							bind:value={termDraft.sequence}
-							required
+				<div class="min-w-0 flex-1">
+					<h3 class="font-semibold">ปีการศึกษา</h3>
+					<p class="text-xs text-muted-foreground">ปี พ.ศ. ช่วงวันที่ และวันเรียนปกติ</p>
+				</div>
+				{#if selectedYear && !creatingYear}
+					<Badge variant="outline"><Check class="size-3" /> บันทึกแล้ว</Badge>
+				{/if}
+				{#if canManage && selectedYear && activeStep !== 'year'}
+					<Button type="button" size="sm" variant="ghost" onclick={editSelectedYear}>แก้ไข</Button>
+				{/if}
+			</header>
+			{#if canManage && activeStep === 'year'}
+				<div class="p-4 sm:p-6">
+					{#key creatingYear ? 'new-year' : (selectedYear?.id ?? 'year')}
+						<AcademicYearSetupStep
+							existing={creatingYear ? null : selectedYear}
+							{suggestedYear}
+							{busy}
+							onCreate={onCreateYear}
+							onUpdate={onUpdateYear}
+							onSaved={handleYearSaved}
 						/>
+					{/key}
+				</div>
+			{:else if selectedYear}
+				<div class="grid gap-3 p-4 text-sm sm:grid-cols-3 sm:p-5">
+					<div>
+						<span class="text-muted-foreground">ชื่อ</span><strong class="block"
+							>{selectedYear.name}</strong
+						>
 					</div>
-					<div class="space-y-1.5">
-						<Label for="term-code">รหัส</Label><Input
-							id="term-code"
-							bind:value={termDraft.code}
-							required
-						/>
+					<div>
+						<span class="text-muted-foreground">ช่วงวันที่</span><strong class="block"
+							>{selectedYear.startDate} – {selectedYear.endDate}</strong
+						>
+					</div>
+					<div>
+						<span class="text-muted-foreground">วันเรียน</span><strong class="block"
+							>{selectedYear.schoolDays.length} วันต่อสัปดาห์</strong
+						>
 					</div>
 				</div>
-				<div class="space-y-1.5">
-					<Label for="term-name">ชื่อภาคเรียน</Label><Input
-						id="term-name"
-						bind:value={termDraft.name}
-						required
+			{/if}
+		</article>
+
+		<article id="bell-schedules" class="scroll-mt-20 overflow-hidden rounded-2xl border bg-card">
+			<header class="flex items-center gap-3 border-b p-4 sm:p-5">
+				<div
+					class="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary"
+				>
+					2
+				</div>
+				<div class="min-w-0 flex-1">
+					<h3 class="font-semibold">ตารางเวลา</h3>
+					<p class="text-xs text-muted-foreground">ตั้งชื่อชุดเวลาและเลือกตารางหลักของปี</p>
+				</div>
+				{#if selectedSchedules.length > 0}
+					<Badge variant="outline">{selectedSchedules.length} ตาราง</Badge>
+				{/if}
+				{#if canManage && selectedYear && activeStep !== 'schedule'}
+					<Button type="button" size="sm" variant="ghost" onclick={() => (activeStep = 'schedule')}
+						>จัดการ</Button
+					>
+				{/if}
+			</header>
+			{#if !selectedYear}
+				<p class="p-5 text-sm text-muted-foreground">บันทึกปีการศึกษาก่อนจึงจะเพิ่มตารางเวลาได้</p>
+			{:else if canManage && activeStep === 'schedule'}
+				<div class="p-4 sm:p-6">
+					<BellScheduleSetupStep
+						year={selectedYear}
+						schedules={selectedSchedules}
+						{busy}
+						onCreate={onCreateBellSchedule}
+						onUpdate={onUpdateBellSchedule}
+						onSaved={handleScheduleSaved}
 					/>
 				</div>
-				<div class="space-y-1.5">
-					<Label for="term-type">ประเภท</Label>
-					<Select.Root type="single" bind:value={termDraft.termType}>
-						<Select.Trigger id="term-type" class="w-full">
-							{TERM_TYPE_OPTIONS.find((option) => option.value === termDraft.termType)?.label ??
-								'เลือกประเภท'}
-						</Select.Trigger>
-						<Select.Content>
-							{#each TERM_TYPE_OPTIONS as option (option.value)}
-								<Select.Item value={option.value}>{option.label}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
+			{:else if selectedSchedules.length > 0}
+				<div class="flex flex-wrap gap-2 p-4 sm:p-5">
+					{#each selectedSchedules as schedule (schedule.id)}
+						<Badge variant={schedule.isDefault ? 'default' : 'secondary'}>
+							{schedule.name}{schedule.isDefault ? ' · ตารางหลัก' : ''}
+						</Badge>
+					{/each}
 				</div>
-				<div class="grid grid-cols-2 gap-3">
-					<div class="space-y-1.5">
-						<Label for="term-start">วันเริ่ม</Label><DatePicker
-							id="term-start"
-							bind:value={termDraft.startDate}
-							ariaLabel="เลือกวันเริ่มภาคเรียน"
-							required
-						/>
-					</div>
-					<div class="space-y-1.5">
-						<Label for="term-end">วันสิ้นสุด</Label><DatePicker
-							id="term-end"
-							bind:value={termDraft.endDate}
-							ariaLabel="เลือกวันสิ้นสุดภาคเรียน"
-							required
-						/>
-					</div>
+			{/if}
+		</article>
+
+		<article class="overflow-hidden rounded-2xl border bg-card">
+			<header class="flex items-center gap-3 border-b p-4 sm:p-5">
+				<div
+					class="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary"
+				>
+					3
 				</div>
-				<div class="space-y-1.5">
-					<Label for="term-bell">ตารางเวลา</Label>
-					<Select.Root type="single" bind:value={termDraft.bellScheduleId}>
-						<Select.Trigger id="term-bell" class="w-full">
-							{bellSchedules.find((schedule) => schedule.id === termDraft.bellScheduleId)?.name ??
-								'เลือกตารางเวลา'}
-						</Select.Trigger>
-						<Select.Content>
-							{#each bellSchedules.filter((schedule) => schedule.academicYearId === termDraft.academicYearId) as option (option.id)}
-								<Select.Item value={option.id}>{option.name}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
+				<div class="min-w-0 flex-1">
+					<h3 class="font-semibold">คาบเรียน</h3>
+					<p class="text-xs text-muted-foreground">กำหนดเวลาและวันที่ใช้ของแต่ละคาบ</p>
 				</div>
-				<label class="flex items-center gap-2 text-sm"
-					><input type="checkbox" bind:checked={termDraft.includedInYearResult} /> รวมในผลลัพธ์ทั้งปี</label
+				{#if configuredScheduleIds.length > 0}
+					<Badge variant="outline"><Check class="size-3" /> บันทึกแล้ว</Badge>
+				{/if}
+				{#if canManage && selectedSchedules.length > 0 && activeStep !== 'periods'}
+					<Button type="button" size="sm" variant="ghost" onclick={() => (activeStep = 'periods')}
+						>จัดการ</Button
+					>
+				{/if}
+			</header>
+			{#if selectedSchedules.length === 0}
+				<p class="p-5 text-sm text-muted-foreground">เพิ่มตารางเวลาก่อนจึงจะจัดคาบเรียนได้</p>
+			{:else if selectedYear && canManage && activeStep === 'periods'}
+				<div class="p-4 sm:p-6">
+					<BellSchedulePeriodsStep
+						year={selectedYear}
+						schedules={selectedSchedules}
+						{busy}
+						onLoad={onLoadBellSchedulePeriods}
+						onReplace={onReplaceBellSchedulePeriods}
+						onSaved={handlePeriodsSaved}
+					/>
+				</div>
+			{:else}
+				<p class="p-5 text-sm text-muted-foreground">
+					เลือก “จัดการ” เพื่อตรวจหรือแก้คาบของแต่ละตารางเวลา
+				</p>
+			{/if}
+		</article>
+
+		<article class="overflow-hidden rounded-2xl border bg-card">
+			<header class="flex items-center gap-3 border-b p-4 sm:p-5">
+				<div
+					class="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary"
 				>
-				<label class="flex items-center gap-2 text-sm"
-					><input type="checkbox" bind:checked={termDraft.blocksYearClosure} /> ต้องปิดรอบนี้ก่อนปิดปี</label
-				>
-				<Button type="submit" variant="outline" class="w-full" disabled={busy}
-					><Plus class="size-4" /> เพิ่มภาคเรียน</Button
-				>
-			</form>
-		{/if}
-		{#if formError}<p
-				role="alert"
-				class="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
-			>
-				{formError}
-			</p>{/if}
-	</aside>
+					4
+				</div>
+				<div class="min-w-0 flex-1">
+					<h3 class="font-semibold">ภาคเรียน</h3>
+					<p class="text-xs text-muted-foreground">ผูกช่วงเรียนเข้ากับตารางเวลาที่เตรียมไว้</p>
+				</div>
+				{#if selectedTerms.length > 0}
+					<Badge variant="outline">{selectedTerms.length} ภาคเรียน</Badge>
+				{/if}
+				{#if canManage && selectedSchedules.length > 0 && activeStep !== 'term'}
+					<Button type="button" size="sm" variant="ghost" onclick={() => (activeStep = 'term')}
+						>จัดการ</Button
+					>
+				{/if}
+			</header>
+			{#if selectedSchedules.length === 0}
+				<p class="p-5 text-sm text-muted-foreground">เตรียมตารางเวลาและคาบเรียนก่อนเพิ่มภาคเรียน</p>
+			{:else if selectedYear && canManage && activeStep === 'term'}
+				<div class="p-4 sm:p-6">
+					<AcademicTermSetupStep
+						year={selectedYear}
+						schedules={selectedSchedules}
+						terms={selectedTerms}
+						{busy}
+						onCreate={onCreateTerm}
+						onUpdate={onUpdateTerm}
+						onSaved={handleTermSaved}
+					/>
+				</div>
+			{:else if selectedTerms.length > 0}
+				<div class="divide-y">
+					{#each selectedTerms as term (term.id)}
+						<div class="flex items-center justify-between gap-3 p-4 text-sm sm:px-5">
+							<div>
+								<strong>{term.name}</strong>
+								<p class="text-xs text-muted-foreground">{term.startDate} – {term.endDate}</p>
+							</div>
+							<ChevronRight class="size-4 text-muted-foreground" />
+						</div>
+					{/each}
+				</div>
+			{/if}
+		</article>
+
+		<div
+			class="grid gap-3 rounded-2xl border border-dashed bg-muted/10 p-4 text-sm sm:grid-cols-3 sm:p-5"
+		>
+			<div class="flex gap-3">
+				<CalendarDays class="size-4 shrink-0 text-primary" />
+				<p>
+					<strong class="block">เปิดใช้งานภายหลัง</strong><span
+						class="text-xs text-muted-foreground">เมื่อข้อมูลหลักสูตรและการจัดชั้นพร้อม</span
+					>
+				</p>
+			</div>
+			<div class="flex gap-3">
+				<TimerReset class="size-4 shrink-0 text-primary" />
+				<p>
+					<strong class="block">ปิดภาคเรียนภายหลัง</strong><span
+						class="text-xs text-muted-foreground">เมื่อคะแนนและผลการเรียนครบ</span
+					>
+				</p>
+			</div>
+			<div class="flex gap-3">
+				<BookOpenCheck class="size-4 shrink-0 text-primary" />
+				<p>
+					<strong class="block">เลื่อนชั้นภายหลัง</strong><span
+						class="text-xs text-muted-foreground">เป็น workflow แยก ไม่เกิดจากการสร้างปีใหม่</span
+					>
+				</p>
+			</div>
+		</div>
+	</section>
 </div>

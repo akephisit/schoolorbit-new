@@ -1,8 +1,7 @@
-use super::models::{AcademicTermStatus, CreateAcademicTermRequest, VersionStatus};
+use super::models::{AcademicTermStatus, VersionStatus};
 use crate::error::AppError;
 use bigdecimal::BigDecimal;
 use chrono::NaiveDate;
-use std::collections::HashSet;
 use std::str::FromStr;
 
 pub mod bell_schedules;
@@ -52,33 +51,6 @@ pub fn validate_date_containment(
         return Err(AppError::ValidationError(
             "ช่วงวันที่ต้องอยู่ภายในปีการศึกษา".to_string(),
         ));
-    }
-    Ok(())
-}
-
-pub fn validate_term_definitions(terms: &[CreateAcademicTermRequest]) -> Result<(), AppError> {
-    let mut sequences = HashSet::new();
-    let mut codes = HashSet::new();
-    for term in terms {
-        if term.sequence <= 0 {
-            return Err(AppError::ValidationError(
-                "ลำดับภาคเรียนต้องมากกว่าศูนย์".to_string(),
-            ));
-        }
-        if !sequences.insert((term.academic_year_id, term.sequence)) {
-            return Err(AppError::ValidationError(
-                "ลำดับภาคเรียนซ้ำภายในปีการศึกษา".to_string(),
-            ));
-        }
-        let code = term.code.trim().to_uppercase();
-        if code.is_empty() {
-            return Err(AppError::ValidationError("รหัสภาคเรียนห้ามว่าง".to_string()));
-        }
-        if !codes.insert((term.academic_year_id, code)) {
-            return Err(AppError::ValidationError(
-                "รหัสภาคเรียนซ้ำภายในปีการศึกษา".to_string(),
-            ));
-        }
     }
     Ok(())
 }

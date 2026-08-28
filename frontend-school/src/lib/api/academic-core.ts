@@ -43,6 +43,7 @@ export type Homeroom = Schemas['Homeroom'];
 export type HomeroomAdvisor = Schemas['HomeroomAdvisor'];
 export type HomeroomAdvisorAssignment = Schemas['HomeroomAdvisorAssignment'];
 export type StudentAcademicYear = Schemas['StudentAcademicYear'];
+export type StudentYearCandidate = Schemas['StudentYearCandidate'];
 export type HomeroomPlacement = Schemas['HomeroomPlacement'];
 export type HomeroomPlacementTransfer = Schemas['HomeroomPlacementTransfer'];
 export type GradeLevelOption = Schemas['GradeLevelLookupItem'];
@@ -464,6 +465,9 @@ export interface StudentYearFilters {
 type ListStudentAcademicYearsQuery = NonNullable<
 	operations['listStudentAcademicYears']['parameters']['query']
 >;
+type ListStudentYearCandidatesQuery = NonNullable<
+	operations['listStudentYearCandidates']['parameters']['query']
+>;
 
 export const listStudentAcademicYears = (
 	academicYearId: string,
@@ -477,6 +481,25 @@ export const listStudentAcademicYears = (
 	return academicData(
 		apiClient.get<StudentAcademicYear[]>('/api/academic/student-years', { ...options, query }),
 		'ไม่สามารถโหลดข้อมูลนักเรียนประจำปีได้'
+	);
+};
+export const listStudentYearCandidates = (
+	academicYearId: string,
+	search = '',
+	options: ApiRequestOptions = {}
+) => {
+	const normalizedSearch = search.trim();
+	const query = {
+		academicYearId: requiredContextValue(academicYearId, 'ปีการศึกษา'),
+		limit: 30,
+		...(normalizedSearch ? { search: normalizedSearch } : {})
+	} satisfies ListStudentYearCandidatesQuery;
+	return academicData(
+		apiClient.get<StudentYearCandidate[]>('/api/academic/student-years/candidates', {
+			...options,
+			query
+		}),
+		'ไม่สามารถค้นหานักเรียนที่เพิ่มได้'
 	);
 };
 export const createStudentAcademicYear = (body: CreateStudentAcademicYearRequest) =>

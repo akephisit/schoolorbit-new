@@ -8,15 +8,15 @@ use super::models::{
     HomeroomPlacementStatus, ProgramRequirementInput, PublishVersionRequest,
     ReplaceBellSchedulePeriodsRequest, ReplaceGradeProgressionsRequest,
     ReplaceProgramRequirementsRequest, RequirementKind, RequirementResourceKind,
-    TransferHomeroomPlacementRequest, UpdateAcademicTermRequest, UpdateAcademicYearRequest,
-    UpdateActivityVersionRequest, UpdateCatalogActivityRequest, UpdateCatalogSubjectRequest,
-    UpdateStudyProgramRequest, UpdateSubjectGroupRequest, UpdateSubjectVersionRequest,
-    VersionStatus,
+    StudentAcademicYearFilter, StudentYearCandidateQuery, TransferHomeroomPlacementRequest,
+    UpdateAcademicTermRequest, UpdateAcademicYearRequest, UpdateActivityVersionRequest,
+    UpdateCatalogActivityRequest, UpdateCatalogSubjectRequest, UpdateStudyProgramRequest,
+    UpdateSubjectGroupRequest, UpdateSubjectVersionRequest, VersionStatus,
 };
 use super::services::{
     bell_schedules, catalog, context, curriculum, ensure_draft_version, ensure_planning_delete,
     parse_row_version, progressions, student_years, validate_canonical_decimal,
-    validate_date_containment, validate_term_definitions, workspaces, years_terms,
+    validate_date_containment, workspaces, years_terms,
 };
 use crate::policies::resource_access_policy::AcademicResourceListFilter;
 use crate::{
@@ -241,10 +241,81 @@ fn academic_enums_serialize_as_snake_case() {
 }
 
 #[test]
+fn academic_foundation_identity_derives_standard_and_custom_labels() {
+    assert_eq!(
+        years_terms::derive_academic_year_name(2571, None).unwrap(),
+        "ปีการศึกษา 2571"
+    );
+    assert_eq!(
+        years_terms::derive_academic_year_name(2571, Some("ปีแห่งการอ่าน")).unwrap(),
+        "ปีแห่งการอ่าน"
+    );
+    assert!(years_terms::derive_academic_year_name(2571, Some("   ")).is_err());
+
+    let regular = years_terms::derive_term_identity(AcademicTermType::Regular, 2, None).unwrap();
+    assert_eq!(regular.code, "2");
+    assert_eq!(regular.name, "ภาคเรียนที่ 2");
+
+    let summer =
+        years_terms::derive_term_identity(AcademicTermType::Summer, 3, Some("ภาคฤดูร้อนเพิ่มเติม"))
+            .unwrap();
+    assert_eq!(summer.code, "SUMMER");
+    assert_eq!(summer.name, "ภาคฤดูร้อนเพิ่มเติม");
+}
+
+#[test]
+fn academic_foundation_period_overlap_is_scoped_to_shared_school_days() {
+    let period =
+        |order_index, start_hour, end_hour, days: &[&str], is_active| BellSchedulePeriodInput {
+            name: Some(format!("คาบ {order_index}")),
+            start_time: NaiveTime::from_hms_opt(start_hour, 0, 0).unwrap(),
+            end_time: NaiveTime::from_hms_opt(end_hour, 0, 0).unwrap(),
+            order_index,
+            applicable_days: days.iter().map(|day| (*day).to_string()).collect(),
+            is_active,
+        };
+
+    assert!(bell_schedules::validate_periods(&[
+        period(1, 8, 10, &["MON"], true),
+        period(2, 9, 11, &["TUE"], true),
+    ])
+    .is_ok());
+    assert!(bell_schedules::validate_periods(&[
+        period(1, 8, 10, &["MON"], true),
+        period(2, 9, 11, &["MON"], true),
+    ])
+    .is_err());
+    assert!(bell_schedules::validate_periods(&[
+        period(1, 8, 10, &["MON"], true),
+        period(2, 9, 11, &["MON"], false),
+    ])
+    .is_ok());
+    assert!(bell_schedules::validate_periods(&[period(1, 8, 10, &["MON", "MON"], true,)]).is_err());
+    assert!(bell_schedules::validate_periods(&[period(1, 8, 10, &["HOLIDAY"], true)]).is_err());
+}
+
+#[test]
+fn academic_foundation_homeroom_identity_uses_grade_and_room_number() {
+    let secondary = student_years::derive_homeroom_identity("secondary", 1, "3", None).unwrap();
+    assert_eq!(secondary.code, "M1-3");
+    assert_eq!(secondary.name, "ม.1/3");
+
+    let primary =
+        student_years::derive_homeroom_identity("primary", 2, " 1 ", Some("ห้องส่งเสริมวิทยาศาสตร์"))
+            .unwrap();
+    assert_eq!(primary.code, "P2-1");
+    assert_eq!(primary.name, "ห้องส่งเสริมวิทยาศาสตร์");
+
+    assert!(student_years::derive_homeroom_identity("secondary", 1, " ", None).is_err());
+    assert!(student_years::derive_homeroom_identity("other", 1, "1", None).is_err());
+    assert!(student_years::derive_homeroom_identity("primary", 1, "1", Some("   "),).is_err());
+}
+
+#[test]
 fn request_dtos_use_camel_case_and_reject_unknown_fields() {
     let payload = json!({
-        "name": "ปีการศึกษา 2570",
         "year": 2570,
+        "customName": "ปีแห่งการอ่าน",
         "startDate": "2027-05-01",
         "endDate": "2028-03-31",
         "schoolDays": ["MON", "TUE"],
@@ -260,9 +331,48 @@ fn request_dtos_use_camel_case_and_reject_unknown_fields() {
         "endDate": "2028-03-31",
         "schoolDays": ["MON"],
         "rowVersion": 3,
-        "status": "active"
     });
     assert!(serde_json::from_value::<UpdateAcademicYearRequest>(unknown).is_err());
+
+    let term = json!({
+        "academicYearId": Uuid::new_v4(),
+        "termType": "regular",
+        "customName": null,
+        "startDate": "2027-05-01",
+        "endDate": "2027-09-30",
+        "includedInYearResult": true,
+        "blocksYearClosure": true,
+        "bellScheduleId": Uuid::new_v4()
+    });
+    assert!(serde_json::from_value::<CreateAcademicTermRequest>(term).is_ok());
+
+    let schedule = json!({
+        "academicYearId": Uuid::new_v4(),
+        "name": "ตารางเวลาปกติ",
+        "owningOrganizationUnitId": null
+    });
+    assert!(serde_json::from_value::<CreateBellScheduleRequest>(schedule).is_ok());
+
+    let homeroom = json!({
+        "academicYearId": Uuid::new_v4(),
+        "customName": null,
+        "gradeLevelId": Uuid::new_v4(),
+        "roomNumber": "1",
+        "studyProgramId": Uuid::new_v4(),
+        "capacity": 30
+    });
+    assert!(serde_json::from_value::<CreateHomeroomRequest>(homeroom).is_ok());
+
+    let legacy_homeroom = json!({
+        "academicYearId": Uuid::new_v4(),
+        "code": "M1-1",
+        "name": "ม.1/1",
+        "gradeLevelId": Uuid::new_v4(),
+        "roomNumber": "1",
+        "studyProgramId": Uuid::new_v4(),
+        "capacity": 30
+    });
+    assert!(serde_json::from_value::<CreateHomeroomRequest>(legacy_homeroom).is_err());
 }
 
 #[test]
@@ -298,32 +408,6 @@ fn child_dates_must_be_contained_by_parent_dates() {
         year_end.succ_opt().unwrap()
     )
     .is_err());
-}
-
-#[test]
-fn duplicate_term_code_and_sequence_have_stable_messages() {
-    let year_id = Uuid::new_v4();
-    let terms = vec![
-        CreateAcademicTermRequest::fixture(year_id, 1, "T1"),
-        CreateAcademicTermRequest::fixture(year_id, 1, "T2"),
-    ];
-    assert_eq!(
-        validate_term_definitions(&terms)
-            .unwrap_err()
-            .public_message(),
-        "ลำดับภาคเรียนซ้ำภายในปีการศึกษา"
-    );
-
-    let terms = vec![
-        CreateAcademicTermRequest::fixture(year_id, 1, "T1"),
-        CreateAcademicTermRequest::fixture(year_id, 2, "T1"),
-    ];
-    assert_eq!(
-        validate_term_definitions(&terms)
-            .unwrap_err()
-            .public_message(),
-        "รหัสภาคเรียนซ้ำภายในปีการศึกษา"
-    );
 }
 
 #[test]
@@ -443,7 +527,7 @@ async fn planning_year_and_term_updates_reject_stale_versions_and_unused_term_de
     let future = years_terms::get_year(&pool, FUTURE_YEAR_ID).await.unwrap();
     let update_year = UpdateAcademicYearRequest {
         year: future.year,
-        name: "ปีการศึกษา 2026 เตรียมการ".to_string(),
+        custom_name: Some("ปีการศึกษา 2026 เตรียมการ".to_string()),
         start_date: future.start_date,
         end_date: future.end_date,
         school_days: future.school_days,
@@ -459,7 +543,7 @@ async fn planning_year_and_term_updates_reject_stale_versions_and_unused_term_de
         FUTURE_YEAR_ID,
         UpdateAcademicYearRequest {
             year: future.year,
-            name: "ข้อมูลเก่า".to_string(),
+            custom_name: Some("ข้อมูลเก่า".to_string()),
             start_date: future.start_date,
             end_date: future.end_date,
             school_days: vec!["MON".to_string()],
@@ -482,10 +566,8 @@ async fn planning_year_and_term_updates_reject_stale_versions_and_unused_term_de
         actor,
         CreateAcademicTermRequest {
             academic_year_id: FUTURE_YEAR_ID,
-            sequence: 3,
-            code: "REMEDIAL".to_string(),
-            name: "ภาคซ่อมเสริม".to_string(),
             term_type: AcademicTermType::Remedial,
+            custom_name: None,
             start_date: NaiveDate::from_ymd_opt(2027, 4, 1).unwrap(),
             end_date: NaiveDate::from_ymd_opt(2027, 4, 15).unwrap(),
             included_in_year_result: true,
@@ -496,10 +578,8 @@ async fn planning_year_and_term_updates_reject_stale_versions_and_unused_term_de
     .await
     .unwrap();
     let update_term = UpdateAcademicTermRequest {
-        sequence: created.sequence,
-        code: created.code.clone(),
-        name: "ภาคซ่อมเสริมปรับปรุง".to_string(),
-        term_type: created.term_type,
+        term_type: AcademicTermType::Custom,
+        custom_name: Some("ภาคซ่อมเสริมปรับปรุง".to_string()),
         start_date: created.start_date,
         end_date: created.end_date,
         included_in_year_result: created.included_in_year_result,
@@ -511,15 +591,15 @@ async fn planning_year_and_term_updates_reject_stale_versions_and_unused_term_de
         .await
         .unwrap();
     assert_eq!(updated_term.row_version, created.row_version + 1);
+    assert_eq!(updated_term.term_type, AcademicTermType::Custom);
+    assert_eq!(updated_term.code, created.code);
     let stale_term = years_terms::update_term(
         &pool,
         actor,
         created.id,
         UpdateAcademicTermRequest {
-            sequence: created.sequence,
-            code: created.code,
-            name: "ข้อมูลเก่า".to_string(),
             term_type: created.term_type,
+            custom_name: Some("ข้อมูลเก่า".to_string()),
             start_date: created.start_date,
             end_date: created.end_date,
             included_in_year_result: created.included_in_year_result,
@@ -543,6 +623,102 @@ async fn planning_year_and_term_updates_reject_stale_versions_and_unused_term_de
             .await
             .unwrap();
     assert_eq!(durable_audit, 3);
+}
+
+#[tokio::test]
+async fn student_year_read_models_are_human_readable() {
+    let pool = prepare_core_fixture("academic_core_student_year_read_model").await;
+    let records = student_years::list_student_years(
+        &pool,
+        StudentAcademicYearFilter {
+            academic_year_id: CURRENT_YEAR_ID,
+            student_id: None,
+            grade_level_id: None,
+            study_program_id: None,
+            homeroom_id: None,
+            status: None,
+        },
+    )
+    .await
+    .unwrap();
+    let record = records.first().expect("fixture student-year record");
+    assert!(!record.student_name.is_empty());
+    assert!(!record.grade_level_name.is_empty());
+    assert!(!record.study_program_name.is_empty());
+    assert_ne!(record.student_name, record.student_id.to_string());
+}
+
+#[tokio::test]
+async fn student_year_candidates_include_only_students_missing_the_target_year() {
+    let pool = prepare_core_fixture("academic_core_student_year_candidates").await;
+    let candidate_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO users (id, username, password_hash, first_name, last_name, user_type, status) \
+         VALUES ($1, $2, $3, $4, $5, 'student', 'active')",
+    )
+    .bind(candidate_id)
+    .bind(format!("candidate-{candidate_id}"))
+    .bind("test-password-hash")
+    .bind("พร้อม")
+    .bind("เรียน")
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO student_info (user_id, student_id) VALUES ($1, '67099')")
+        .bind(candidate_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let query = StudentYearCandidateQuery {
+        academic_year_id: FUTURE_YEAR_ID,
+        search: Some("67099".to_string()),
+        limit: Some(10),
+    };
+    let candidates = student_years::list_student_year_candidates(&pool, query.clone())
+        .await
+        .unwrap();
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].id, candidate_id);
+    assert_eq!(candidates[0].student_code.as_deref(), Some("67099"));
+    assert_eq!(candidates[0].name, "พร้อม เรียน");
+
+    let (grade_level_id, study_program_id): (Uuid, Uuid) = sqlx::query_as(
+        r#"
+        SELECT grade.id, program.id
+        FROM grade_levels grade
+        CROSS JOIN study_programs program
+        JOIN curriculum_versions version ON version.id = program.curriculum_version_id
+        JOIN academic_years starts ON starts.id = version.start_academic_year_id
+        JOIN academic_years target ON target.id = $1
+        LEFT JOIN academic_years ends ON ends.id = version.end_academic_year_id
+        WHERE starts.start_date <= target.start_date
+          AND (ends.end_date IS NULL OR ends.end_date >= target.end_date)
+        ORDER BY grade.level_type, grade.year, program.id
+        LIMIT 1
+        "#,
+    )
+    .bind(FUTURE_YEAR_ID)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    student_years::create_student_year(
+        &pool,
+        fixture_actor(&pool).await,
+        CreateStudentAcademicYearRequest {
+            academic_year_id: FUTURE_YEAR_ID,
+            student_id: candidate_id,
+            grade_level_id,
+            study_program_id,
+        },
+    )
+    .await
+    .unwrap();
+
+    let after = student_years::list_student_year_candidates(&pool, query)
+        .await
+        .unwrap();
+    assert!(after.is_empty());
 }
 
 #[tokio::test]
@@ -585,9 +761,7 @@ async fn bell_schedule_period_replacement_is_atomic_and_rejects_stale_revisions(
         actor,
         CreateBellScheduleRequest {
             academic_year_id: FUTURE_YEAR_ID,
-            code: "ALT".to_string(),
             name: "ตารางคาบทางเลือก".to_string(),
-            is_default: false,
             owning_organization_unit_id: None,
         },
     )
@@ -772,10 +946,9 @@ async fn future_student_year_and_transfer_do_not_mutate_current_year_and_retries
         &pool,
         CreateHomeroomRequest {
             academic_year_id: FUTURE_YEAR_ID,
-            code: "FUTURE-A".to_string(),
-            name: "ห้องอนาคต A".to_string(),
+            custom_name: Some("ห้องอนาคต A".to_string()),
             grade_level_id: current.2,
-            room_number: Some("A".to_string()),
+            room_number: "A".to_string(),
             study_program_id: current.3,
             capacity: 40,
         },
@@ -786,10 +959,9 @@ async fn future_student_year_and_transfer_do_not_mutate_current_year_and_retries
         &pool,
         CreateHomeroomRequest {
             academic_year_id: FUTURE_YEAR_ID,
-            code: "FUTURE-B".to_string(),
-            name: "ห้องอนาคต B".to_string(),
+            custom_name: Some("ห้องอนาคต B".to_string()),
             grade_level_id: current.2,
-            room_number: Some("B".to_string()),
+            room_number: "B".to_string(),
             study_program_id: current.3,
             capacity: 40,
         },
@@ -2464,9 +2636,7 @@ async fn curriculum_program_workspace_resolves_requirement_labels() {
         actor_user_id,
         CreateBellScheduleRequest {
             academic_year_id: FUTURE_YEAR_ID,
-            code: "WORKSPACE".to_string(),
             name: "ตารางคาบ workspace".to_string(),
-            is_default: false,
             owning_organization_unit_id: None,
         },
     )

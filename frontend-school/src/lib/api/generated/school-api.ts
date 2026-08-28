@@ -1289,6 +1289,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/student-years/candidates': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listStudentYearCandidates'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/study-program-options': {
 		parameters: {
 			query?: never;
@@ -6294,16 +6310,20 @@ export interface components {
 				createdAt: string;
 				/** Format: uuid */
 				gradeLevelId: string;
+				gradeLevelName: string;
 				/** Format: uuid */
 				id: string;
 				migrated: boolean;
 				/** Format: int64 */
 				rowVersion: number;
 				status: components['schemas']['StudentAcademicYearStatus'];
+				studentCode?: string | null;
 				/** Format: uuid */
 				studentId: string;
+				studentName: string;
 				/** Format: uuid */
 				studyProgramId: string;
+				studyProgramName: string;
 				/** Format: date-time */
 				updatedAt: string;
 			};
@@ -7891,16 +7911,20 @@ export interface components {
 				createdAt: string;
 				/** Format: uuid */
 				gradeLevelId: string;
+				gradeLevelName: string;
 				/** Format: uuid */
 				id: string;
 				migrated: boolean;
 				/** Format: int64 */
 				rowVersion: number;
 				status: components['schemas']['StudentAcademicYearStatus'];
+				studentCode?: string | null;
 				/** Format: uuid */
 				studentId: string;
+				studentName: string;
 				/** Format: uuid */
 				studyProgramId: string;
+				studyProgramName: string;
 				/** Format: date-time */
 				updatedAt: string;
 			}[];
@@ -7933,6 +7957,16 @@ export interface components {
 				name: string;
 				studentId?: string;
 				title?: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_StudentYearCandidate: {
+			data: {
+				/** Format: uuid */
+				id: string;
+				name: string;
+				studentCode?: string | null;
 			}[];
 			message?: string;
 			success: boolean;
@@ -9270,21 +9304,18 @@ export interface components {
 			/** Format: uuid */
 			bellScheduleId: string;
 			blocksYearClosure: boolean;
-			code: string;
+			customName?: string | null;
 			/** Format: date */
 			endDate: string;
 			includedInYearResult: boolean;
-			name: string;
-			/** Format: int32 */
-			sequence: number;
 			/** Format: date */
 			startDate: string;
 			termType: components['schemas']['AcademicTermType'];
 		};
 		CreateAcademicYearRequest: {
+			customName?: string | null;
 			/** Format: date */
 			endDate: string;
-			name: string;
 			schoolDays: string[];
 			/** Format: date */
 			startDate: string;
@@ -9358,8 +9389,6 @@ export interface components {
 		CreateBellScheduleRequest: {
 			/** Format: uuid */
 			academicYearId: string;
-			code: string;
-			isDefault: boolean;
 			name: string;
 			/** Format: uuid */
 			owningOrganizationUnitId?: string | null;
@@ -9450,11 +9479,10 @@ export interface components {
 			academicYearId: string;
 			/** Format: int32 */
 			capacity: number;
-			code: string;
+			customName?: string | null;
 			/** Format: uuid */
 			gradeLevelId: string;
-			name: string;
-			roomNumber?: string | null;
+			roomNumber: string;
 			/** Format: uuid */
 			studyProgramId: string;
 		};
@@ -12120,16 +12148,20 @@ export interface components {
 			createdAt: string;
 			/** Format: uuid */
 			gradeLevelId: string;
+			gradeLevelName: string;
 			/** Format: uuid */
 			id: string;
 			migrated: boolean;
 			/** Format: int64 */
 			rowVersion: number;
 			status: components['schemas']['StudentAcademicYearStatus'];
+			studentCode?: string | null;
 			/** Format: uuid */
 			studentId: string;
+			studentName: string;
 			/** Format: uuid */
 			studyProgramId: string;
+			studyProgramName: string;
 			/** Format: date-time */
 			updatedAt: string;
 		};
@@ -12248,6 +12280,12 @@ export interface components {
 		};
 		StudentProfile: components['schemas']['StudentDbRow'] & {
 			parents: components['schemas']['ParentDto'][];
+		};
+		StudentYearCandidate: {
+			/** Format: uuid */
+			id: string;
+			name: string;
+			studentCode?: string | null;
 		};
 		StudyProgram: {
 			code: string;
@@ -12883,23 +12921,20 @@ export interface components {
 			/** Format: uuid */
 			bellScheduleId: string;
 			blocksYearClosure: boolean;
-			code: string;
+			customName?: string | null;
 			/** Format: date */
 			endDate: string;
 			includedInYearResult: boolean;
-			name: string;
 			/** Format: int64 */
 			rowVersion: number;
-			/** Format: int32 */
-			sequence: number;
 			/** Format: date */
 			startDate: string;
 			termType: components['schemas']['AcademicTermType'];
 		};
 		UpdateAcademicYearRequest: {
+			customName?: string | null;
 			/** Format: date */
 			endDate: string;
-			name: string;
 			/** Format: int64 */
 			rowVersion: number;
 			schoolDays: string[];
@@ -12934,7 +12969,6 @@ export interface components {
 			teacherAccessEnabled: boolean;
 		};
 		UpdateBellScheduleRequest: {
-			code: string;
 			isDefault: boolean;
 			name: string;
 			/** Format: uuid */
@@ -13032,11 +13066,10 @@ export interface components {
 		UpdateHomeroomRequest: {
 			/** Format: int32 */
 			capacity: number;
-			code: string;
+			customName?: string | null;
 			/** Format: uuid */
 			gradeLevelId: string;
-			name: string;
-			roomNumber?: string | null;
+			roomNumber: string;
 			/** Format: int64 */
 			rowVersion: number;
 			/** Format: uuid */
@@ -20339,6 +20372,66 @@ export interface operations {
 			};
 			/** @description Homeroom placement conflict */
 			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listStudentYearCandidates: {
+		parameters: {
+			query: {
+				academicYearId: string;
+				limit?: number;
+				search?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Students available to add to the selected academic year */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_StudentYearCandidate'];
+				};
+			};
+			/** @description Invalid candidate search */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student academic year management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic year not found */
+			404: {
 				headers: {
 					[name: string]: unknown;
 				};

@@ -9,7 +9,8 @@ use super::super::models::{
     Homeroom, HomeroomAdvisor, HomeroomAdvisorAssignment, HomeroomPlacement,
     HomeroomPlacementStatus, HomeroomPlacementTransfer, ReplaceHomeroomAdvisorsRequest,
     StudentAcademicYear, StudentAcademicYearFilter, StudentAcademicYearStatus,
-    TransferHomeroomPlacementRequest, UpdateHomeroomRequest, UpdateStudentAcademicYearRequest,
+    StudentYearCandidate, StudentYearCandidateQuery, TransferHomeroomPlacementRequest,
+    UpdateHomeroomRequest, UpdateStudentAcademicYearRequest,
 };
 use super::parse_row_version;
 use super::years_terms::append_audit;
@@ -20,9 +21,26 @@ const HOMEROOM_COLUMNS: &str = r#"
     migration_provenance <> '{}'::jsonb AS migrated, created_at, updated_at
 "#;
 const STUDENT_YEAR_COLUMNS: &str = r#"
-    id, student_id, academic_year_id, grade_level_id, study_program_id,
-    status, row_version, migration_provenance <> '{}'::jsonb AS migrated,
-    created_at, updated_at
+    student_year.id, student_year.student_id, student_info.student_id AS student_code,
+    concat_ws(' ', nullif(btrim(student.title), ''), student.first_name, student.last_name)
+        AS student_name,
+    student_year.academic_year_id, student_year.grade_level_id,
+    CASE grade.level_type
+        WHEN 'kindergarten' THEN 'อนุบาลปีที่ ' || grade.year
+        WHEN 'primary' THEN 'ประถมศึกษาปีที่ ' || grade.year
+        WHEN 'secondary' THEN 'มัธยมศึกษาปีที่ ' || grade.year
+        ELSE 'ระดับชั้น ' || grade.year
+    END AS grade_level_name,
+    student_year.study_program_id, program.name_th AS study_program_name,
+    student_year.status, student_year.row_version,
+    student_year.migration_provenance <> '{}'::jsonb AS migrated,
+    student_year.created_at, student_year.updated_at
+"#;
+const STUDENT_YEAR_JOINS: &str = r#"
+    JOIN users student ON student.id = student_year.student_id
+    LEFT JOIN student_info ON student_info.user_id = student_year.student_id
+    JOIN grade_levels grade ON grade.id = student_year.grade_level_id
+    JOIN study_programs program ON program.id = student_year.study_program_id
 "#;
 const PLACEMENT_COLUMNS: &str = r#"
     id, student_academic_year_id, academic_year_id, homeroom_id, start_date,
@@ -30,6 +48,53 @@ const PLACEMENT_COLUMNS: &str = r#"
     migration_provenance <> '{}'::jsonb AS migrated, created_at, updated_at
 "#;
 const MAX_YEAR_RELATIONSHIP_ROWS: usize = 2_000;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DerivedHomeroomIdentity {
+    pub code: String,
+    pub name: String,
+}
+
+pub(crate) fn derive_homeroom_identity(
+    level_type: &str,
+    grade_year: i32,
+    room_number: &str,
+    custom_name: Option<&str>,
+) -> Result<DerivedHomeroomIdentity, AppError> {
+    if grade_year <= 0 || room_number.trim().is_empty() {
+        return Err(AppError::ValidationError(
+            "ระดับชั้นและเลขห้องไม่ถูกต้อง".to_string(),
+        ));
+    }
+    let (code_prefix, short_prefix) = match level_type {
+        "kindergarten" => ("K", "อ."),
+        "primary" => ("P", "ป."),
+        "secondary" => ("M", "ม."),
+        _ => {
+            return Err(AppError::ValidationError(
+                "ไม่รองรับประเภทระดับชั้นนี้".to_string(),
+            ));
+        }
+    };
+    let room_number = room_number.trim();
+    let standard_name = format!("{short_prefix}{grade_year}/{room_number}");
+    let name = match custom_name {
+        Some(value) if value.trim().is_empty() => {
+            return Err(AppError::ValidationError(
+                "ชื่อแสดงผลที่กำหนดเองห้ามว่าง".to_string(),
+            ));
+        }
+        Some(value) => value.trim().to_string(),
+        None => standard_name,
+    };
+    Ok(DerivedHomeroomIdentity {
+        code: format!(
+            "{code_prefix}{grade_year}-{}",
+            room_number.to_ascii_uppercase()
+        ),
+        name,
+    })
+}
 
 pub async fn list_homerooms(
     pool: &PgPool,
@@ -58,15 +123,21 @@ pub async fn create_homeroom(
     pool: &PgPool,
     request: CreateHomeroomRequest,
 ) -> Result<Homeroom, AppError> {
-    validate_homeroom_fields(&request.code, &request.name, request.capacity)?;
+    validate_homeroom_fields(request.capacity)?;
     let mut transaction = pool.begin().await?;
-    validate_homeroom_context(
+    let (level_type, grade_year) = validate_homeroom_context(
         &mut transaction,
         request.academic_year_id,
         request.grade_level_id,
         request.study_program_id,
     )
     .await?;
+    let identity = derive_homeroom_identity(
+        &level_type,
+        grade_year,
+        &request.room_number,
+        request.custom_name.as_deref(),
+    )?;
     let id = Uuid::new_v4();
     sqlx::query(
         r#"
@@ -77,11 +148,11 @@ pub async fn create_homeroom(
         "#,
     )
     .bind(id)
-    .bind(request.code.trim().to_uppercase())
-    .bind(request.name.trim())
+    .bind(identity.code)
+    .bind(identity.name)
     .bind(request.academic_year_id)
     .bind(request.grade_level_id)
-    .bind(request.room_number)
+    .bind(request.room_number.trim())
     .bind(request.study_program_id)
     .bind(request.capacity)
     .execute(&mut *transaction)
@@ -97,7 +168,7 @@ pub async fn update_homeroom(
     request: UpdateHomeroomRequest,
 ) -> Result<Homeroom, AppError> {
     parse_row_version(request.row_version)?;
-    validate_homeroom_fields(&request.code, &request.name, request.capacity)?;
+    validate_homeroom_fields(request.capacity)?;
     let mut transaction = pool.begin().await?;
     let academic_year_id: Uuid =
         sqlx::query_scalar("SELECT academic_year_id FROM homerooms WHERE id = $1 FOR UPDATE")
@@ -105,13 +176,19 @@ pub async fn update_homeroom(
             .fetch_optional(&mut *transaction)
             .await?
             .ok_or_else(|| AppError::NotFound("ไม่พบห้องเรียนประจำชั้น".to_string()))?;
-    validate_homeroom_context(
+    let (level_type, grade_year) = validate_homeroom_context(
         &mut transaction,
         academic_year_id,
         request.grade_level_id,
         request.study_program_id,
     )
     .await?;
+    let identity = derive_homeroom_identity(
+        &level_type,
+        grade_year,
+        &request.room_number,
+        request.custom_name.as_deref(),
+    )?;
     let result = sqlx::query(
         r#"
         UPDATE homerooms SET code = $1, name = $2, grade_level_id = $3,
@@ -120,10 +197,10 @@ pub async fn update_homeroom(
         WHERE id = $7 AND row_version = $8
         "#,
     )
-    .bind(request.code.trim().to_uppercase())
-    .bind(request.name.trim())
+    .bind(identity.code)
+    .bind(identity.name)
     .bind(request.grade_level_id)
-    .bind(request.room_number)
+    .bind(request.room_number.trim())
     .bind(request.study_program_id)
     .bind(request.capacity)
     .bind(id)
@@ -243,18 +320,20 @@ pub async fn list_student_years(
         r#"
         SELECT {STUDENT_YEAR_COLUMNS}
         FROM student_academic_years student_year
-        WHERE academic_year_id = $1
-          AND ($2::uuid IS NULL OR student_id = $2)
-          AND ($3::uuid IS NULL OR grade_level_id = $3)
-          AND ($4::uuid IS NULL OR study_program_id = $4)
-          AND ($5::text IS NULL OR status = $5)
+        {STUDENT_YEAR_JOINS}
+        WHERE student_year.academic_year_id = $1
+          AND ($2::uuid IS NULL OR student_year.student_id = $2)
+          AND ($3::uuid IS NULL OR student_year.grade_level_id = $3)
+          AND ($4::uuid IS NULL OR student_year.study_program_id = $4)
+          AND ($5::text IS NULL OR student_year.status = $5)
           AND ($6::uuid IS NULL OR EXISTS (
               SELECT 1 FROM homeroom_placements placement
               WHERE placement.student_academic_year_id = student_year.id
                 AND placement.homeroom_id = $6
                 AND placement.status IN ('planned', 'current')
           ))
-        ORDER BY student_id, id
+        ORDER BY student_info.student_id NULLS LAST, student.first_name, student.last_name,
+                 student_year.id
         LIMIT 1000
         "#
     );
@@ -269,8 +348,53 @@ pub async fn list_student_years(
         .await?)
 }
 
+pub async fn list_student_year_candidates(
+    pool: &PgPool,
+    query: StudentYearCandidateQuery,
+) -> Result<Vec<StudentYearCandidate>, AppError> {
+    require_academic_year(pool, query.academic_year_id).await?;
+    let limit = query.limit.unwrap_or(20).clamp(1, 100) as i64;
+    let search = query
+        .search
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| format!("%{value}%"));
+    Ok(sqlx::query_as(
+        r#"
+        SELECT student.id, student_info.student_id AS student_code,
+               concat_ws(' ', nullif(btrim(student.title), ''),
+                         student.first_name, student.last_name) AS name
+        FROM users student
+        LEFT JOIN student_info ON student_info.user_id = student.id
+        WHERE student.user_type = 'student'
+          AND student.status = 'active'
+          AND NOT EXISTS (
+              SELECT 1
+              FROM student_academic_years student_year
+              WHERE student_year.student_id = student.id
+                AND student_year.academic_year_id = $1
+          )
+          AND ($2::text IS NULL OR student.first_name ILIKE $2
+               OR student.last_name ILIKE $2 OR student.username ILIKE $2
+               OR student_info.student_id ILIKE $2)
+        ORDER BY student_info.student_id NULLS LAST, student.first_name,
+                 student.last_name, student.id
+        LIMIT $3
+        "#,
+    )
+    .bind(query.academic_year_id)
+    .bind(search)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?)
+}
+
 pub async fn get_student_year(pool: &PgPool, id: Uuid) -> Result<StudentAcademicYear, AppError> {
-    let sql = format!("SELECT {STUDENT_YEAR_COLUMNS} FROM student_academic_years WHERE id = $1");
+    let sql = format!(
+        "SELECT {STUDENT_YEAR_COLUMNS} FROM student_academic_years student_year \
+         {STUDENT_YEAR_JOINS} WHERE student_year.id = $1"
+    );
     sqlx::query_as(&sql)
         .bind(id)
         .fetch_optional(pool)
@@ -689,8 +813,8 @@ async fn replay_transfer(
     }))
 }
 
-fn validate_homeroom_fields(code: &str, name: &str, capacity: i32) -> Result<(), AppError> {
-    if code.trim().is_empty() || name.trim().is_empty() || capacity <= 0 {
+fn validate_homeroom_fields(capacity: i32) -> Result<(), AppError> {
+    if capacity <= 0 {
         return Err(AppError::ValidationError(
             "ข้อมูลห้องเรียนประจำชั้นไม่ถูกต้อง".to_string(),
         ));
@@ -703,7 +827,7 @@ async fn validate_homeroom_context(
     academic_year_id: Uuid,
     grade_level_id: Uuid,
     study_program_id: Uuid,
-) -> Result<(), AppError> {
+) -> Result<(String, i32), AppError> {
     let year_status: Option<String> =
         sqlx::query_scalar("SELECT status FROM academic_years WHERE id = $1 FOR SHARE")
             .bind(academic_year_id)
@@ -714,14 +838,12 @@ async fn validate_homeroom_context(
             "จัดห้องได้เฉพาะปีการศึกษาสถานะ planning".to_string(),
         ));
     }
-    let grade_exists: bool =
-        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM grade_levels WHERE id = $1)")
+    let grade: (String, i32) =
+        sqlx::query_as("SELECT level_type, year FROM grade_levels WHERE id = $1")
             .bind(grade_level_id)
-            .fetch_one(&mut **transaction)
-            .await?;
-    if !grade_exists {
-        return Err(AppError::ValidationError("ระดับชั้นไม่ถูกต้อง".to_string()));
-    }
+            .fetch_optional(&mut **transaction)
+            .await?
+            .ok_or_else(|| AppError::ValidationError("ระดับชั้นไม่ถูกต้อง".to_string()))?;
     let valid_program: Option<i32> = sqlx::query_scalar(
         r#"
         SELECT 1
@@ -740,7 +862,7 @@ async fn validate_homeroom_context(
     .fetch_optional(&mut **transaction)
     .await?;
     valid_program
-        .map(|_| ())
+        .map(|_| grade)
         .ok_or_else(|| AppError::ValidationError("แผนการเรียนใช้ไม่ได้กับปีที่เลือก".to_string()))
 }
 
@@ -757,6 +879,7 @@ async fn validate_student_year_context(
         study_program_id,
     )
     .await
+    .map(|_| ())
 }
 
 async fn validate_target_homeroom(

@@ -10,9 +10,64 @@ use super::super::models::{
     CreateAcademicTermRequest, CreateAcademicYearRequest, UpdateAcademicTermRequest,
     UpdateAcademicYearRequest,
 };
-use super::{parse_row_version, validate_date_containment, validate_term_definitions};
+use super::{parse_row_version, validate_date_containment};
 
 const SCHOOL_DAYS: &[&str] = &["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DerivedTermIdentity {
+    pub code: String,
+    pub name: String,
+}
+
+pub(crate) fn derive_academic_year_name(
+    year: i32,
+    custom_name: Option<&str>,
+) -> Result<String, AppError> {
+    if year <= 0 {
+        return Err(AppError::ValidationError(
+            "ปีการศึกษาต้องมากกว่าศูนย์".to_string(),
+        ));
+    }
+    match custom_name {
+        Some(name) if name.trim().is_empty() => Err(AppError::ValidationError(
+            "ชื่อแสดงผลที่กำหนดเองห้ามว่าง".to_string(),
+        )),
+        Some(name) => Ok(name.trim().to_string()),
+        None => Ok(format!("ปีการศึกษา {year}")),
+    }
+}
+
+pub(crate) fn derive_term_identity(
+    term_type: AcademicTermType,
+    sequence: i32,
+    custom_name: Option<&str>,
+) -> Result<DerivedTermIdentity, AppError> {
+    if sequence <= 0 {
+        return Err(AppError::ValidationError(
+            "ลำดับภาคเรียนต้องมากกว่าศูนย์".to_string(),
+        ));
+    }
+    let (code, standard_name) = match term_type {
+        AcademicTermType::Regular => (sequence.to_string(), format!("ภาคเรียนที่ {sequence}")),
+        AcademicTermType::Summer => ("SUMMER".to_string(), "ภาคฤดูร้อน".to_string()),
+        AcademicTermType::Remedial => ("REMEDIAL".to_string(), "ภาคซ่อมเสริม".to_string()),
+        AcademicTermType::Custom => (
+            format!("CUSTOM-{sequence}"),
+            format!("ภาคเรียนกำหนดเอง {sequence}"),
+        ),
+    };
+    let name = match custom_name {
+        Some(name) if name.trim().is_empty() => {
+            return Err(AppError::ValidationError(
+                "ชื่อแสดงผลที่กำหนดเองห้ามว่าง".to_string(),
+            ));
+        }
+        Some(name) => name.trim().to_string(),
+        None => standard_name,
+    };
+    Ok(DerivedTermIdentity { code, name })
+}
 
 #[derive(FromRow)]
 struct AcademicYearRow {
@@ -130,15 +185,14 @@ pub async fn create_year(
     actor_user_id: Uuid,
     request: CreateAcademicYearRequest,
 ) -> Result<AcademicYear, AppError> {
-    validate_year_fields(
+    let name = derive_academic_year_name(request.year, request.custom_name.as_deref())?;
+    let school_days = validate_year_fields(
         request.year,
-        &request.name,
         request.start_date,
         request.end_date,
         &request.school_days,
     )?;
     let id = Uuid::new_v4();
-    let school_days = request.school_days.join(",");
     let mut transaction = pool.begin().await?;
     let sql = format!(
         "INSERT INTO academic_years (id, year, name, start_date, end_date, school_days, status) \
@@ -147,10 +201,10 @@ pub async fn create_year(
     let row = sqlx::query_as::<_, AcademicYearRow>(&sql)
         .bind(id)
         .bind(request.year)
-        .bind(request.name)
+        .bind(name)
         .bind(request.start_date)
         .bind(request.end_date)
-        .bind(school_days)
+        .bind(school_days.join(","))
         .fetch_one(&mut *transaction)
         .await
         .map_err(map_year_write_error)?;
@@ -175,9 +229,9 @@ pub async fn update_year(
     id: Uuid,
     request: UpdateAcademicYearRequest,
 ) -> Result<AcademicYear, AppError> {
-    validate_year_fields(
+    let name = derive_academic_year_name(request.year, request.custom_name.as_deref())?;
+    let school_days = validate_year_fields(
         request.year,
-        &request.name,
         request.start_date,
         request.end_date,
         &request.school_days,
@@ -192,10 +246,10 @@ pub async fn update_year(
     );
     let row = sqlx::query_as::<_, AcademicYearRow>(&sql)
         .bind(request.year)
-        .bind(request.name)
+        .bind(name)
         .bind(request.start_date)
         .bind(request.end_date)
-        .bind(request.school_days.join(","))
+        .bind(school_days.join(","))
         .bind(id)
         .bind(request.row_version)
         .fetch_optional(&mut *transaction)
@@ -266,8 +320,6 @@ pub async fn create_term(
     actor_user_id: Uuid,
     request: CreateAcademicTermRequest,
 ) -> Result<AcademicTerm, AppError> {
-    validate_term_definitions(std::slice::from_ref(&request))?;
-    validate_term_fields(&request.name, request.start_date, request.end_date)?;
     let mut transaction = pool.begin().await?;
     validate_term_context(
         &mut transaction,
@@ -275,6 +327,22 @@ pub async fn create_term(
         request.bell_schedule_id,
         request.start_date,
         request.end_date,
+    )
+    .await?;
+    let sequence: i32 = sqlx::query_scalar(
+        "SELECT COALESCE(MAX(sequence_no), 0) + 1 FROM academic_terms WHERE academic_year_id = $1",
+    )
+    .bind(request.academic_year_id)
+    .fetch_one(&mut *transaction)
+    .await?;
+    let identity =
+        derive_term_identity(request.term_type, sequence, request.custom_name.as_deref())?;
+    validate_term_fields(&identity.name, request.start_date, request.end_date)?;
+    let code = unique_term_code(
+        &mut transaction,
+        request.academic_year_id,
+        &identity.code,
+        sequence,
     )
     .await?;
     let id = Uuid::new_v4();
@@ -287,9 +355,9 @@ pub async fn create_term(
     let row = sqlx::query_as::<_, AcademicTermRow>(&sql)
         .bind(id)
         .bind(request.academic_year_id)
-        .bind(request.sequence)
-        .bind(request.code.trim().to_uppercase())
-        .bind(request.name)
+        .bind(sequence)
+        .bind(&code)
+        .bind(&identity.name)
         .bind(request.term_type)
         .bind(request.start_date)
         .bind(request.end_date)
@@ -307,7 +375,7 @@ pub async fn create_term(
         Some(request.academic_year_id),
         Some(id),
         actor_user_id,
-        json!({"sequence": request.sequence, "code": request.code.trim().to_uppercase()}),
+        json!({"sequence": sequence, "code": code}),
     )
     .await?;
     transaction.commit().await?;
@@ -321,19 +389,14 @@ pub async fn update_term(
     request: UpdateAcademicTermRequest,
 ) -> Result<AcademicTerm, AppError> {
     parse_row_version(request.row_version)?;
-    validate_term_fields(&request.name, request.start_date, request.end_date)?;
-    if request.sequence <= 0 || request.code.trim().is_empty() {
-        return Err(AppError::ValidationError(
-            "ลำดับและรหัสภาคเรียนไม่ถูกต้อง".to_string(),
-        ));
-    }
     let mut transaction = pool.begin().await?;
-    let academic_year_id: Uuid =
-        sqlx::query_scalar("SELECT academic_year_id FROM academic_terms WHERE id = $1")
-            .bind(id)
-            .fetch_optional(&mut *transaction)
-            .await?
-            .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียน".to_string()))?;
+    let (academic_year_id, sequence): (Uuid, i32) = sqlx::query_as(
+        "SELECT academic_year_id, sequence_no FROM academic_terms WHERE id = $1 FOR UPDATE",
+    )
+    .bind(id)
+    .fetch_optional(&mut *transaction)
+    .await?
+    .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียน".to_string()))?;
     validate_term_context(
         &mut transaction,
         academic_year_id,
@@ -342,16 +405,17 @@ pub async fn update_term(
         request.end_date,
     )
     .await?;
+    let identity =
+        derive_term_identity(request.term_type, sequence, request.custom_name.as_deref())?;
+    validate_term_fields(&identity.name, request.start_date, request.end_date)?;
     let sql = format!(
-        "UPDATE academic_terms SET sequence_no = $1, code = $2, name = $3, term_type = $4, \
-         start_date = $5, end_date = $6, included_in_year_result = $7, blocks_year_closure = $8, \
-         bell_schedule_id = $9, row_version = row_version + 1, updated_at = now() \
-         WHERE id = $10 AND row_version = $11 AND status = 'planning' RETURNING {TERM_COLUMNS}"
+        "UPDATE academic_terms SET name = $1, term_type = $2, start_date = $3, end_date = $4, \
+         included_in_year_result = $5, blocks_year_closure = $6, bell_schedule_id = $7, \
+         row_version = row_version + 1, updated_at = now() \
+         WHERE id = $8 AND row_version = $9 AND status = 'planning' RETURNING {TERM_COLUMNS}"
     );
     let row = sqlx::query_as::<_, AcademicTermRow>(&sql)
-        .bind(request.sequence)
-        .bind(request.code.trim().to_uppercase())
-        .bind(request.name)
+        .bind(identity.name)
         .bind(request.term_type)
         .bind(request.start_date)
         .bind(request.end_date)
@@ -431,12 +495,11 @@ pub async fn delete_term(pool: &PgPool, actor_user_id: Uuid, id: Uuid) -> Result
 
 fn validate_year_fields(
     year: i32,
-    name: &str,
     start_date: NaiveDate,
     end_date: NaiveDate,
     school_days: &[String],
-) -> Result<(), AppError> {
-    if year <= 0 || name.trim().is_empty() || start_date > end_date {
+) -> Result<Vec<String>, AppError> {
+    if year <= 0 || start_date > end_date {
         return Err(AppError::ValidationError("ข้อมูลปีการศึกษาไม่ถูกต้อง".to_string()));
     }
     if school_days.is_empty() {
@@ -444,16 +507,27 @@ fn validate_year_fields(
             "ต้องกำหนดวันเรียนอย่างน้อยหนึ่งวัน".to_string(),
         ));
     }
-    let mut unique = std::collections::HashSet::new();
-    if school_days
-        .iter()
-        .any(|day| !SCHOOL_DAYS.contains(&day.as_str()) || !unique.insert(day))
-    {
+    let mut normalized = Vec::new();
+    for supported in SCHOOL_DAYS {
+        let count = school_days
+            .iter()
+            .filter(|day| day.trim().eq_ignore_ascii_case(supported))
+            .count();
+        if count > 1 {
+            return Err(AppError::ValidationError(
+                "วันเรียนไม่ถูกต้องหรือซ้ำกัน".to_string(),
+            ));
+        }
+        if count == 1 {
+            normalized.push((*supported).to_string());
+        }
+    }
+    if normalized.len() != school_days.len() {
         return Err(AppError::ValidationError(
             "วันเรียนไม่ถูกต้องหรือซ้ำกัน".to_string(),
         ));
     }
-    Ok(())
+    Ok(normalized)
 }
 
 fn validate_term_fields(
@@ -476,7 +550,7 @@ async fn validate_term_context(
 ) -> Result<(), AppError> {
     let (year_start, year_end, status): (NaiveDate, NaiveDate, AcademicYearStatus) =
         sqlx::query_as(
-            "SELECT start_date, end_date, status FROM academic_years WHERE id = $1 FOR SHARE",
+            "SELECT start_date, end_date, status FROM academic_years WHERE id = $1 FOR UPDATE",
         )
         .bind(academic_year_id)
         .fetch_optional(&mut **transaction)
@@ -501,6 +575,26 @@ async fn validate_term_context(
         ));
     }
     Ok(())
+}
+
+async fn unique_term_code(
+    transaction: &mut Transaction<'_, Postgres>,
+    academic_year_id: Uuid,
+    base_code: &str,
+    sequence: i32,
+) -> Result<String, AppError> {
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM academic_terms WHERE academic_year_id = $1 AND code = $2)",
+    )
+    .bind(academic_year_id)
+    .bind(base_code)
+    .fetch_one(&mut **transaction)
+    .await?;
+    if exists {
+        Ok(format!("{base_code}-{sequence}"))
+    } else {
+        Ok(base_code.to_string())
+    }
 }
 
 async fn ensure_terms_fit_year(

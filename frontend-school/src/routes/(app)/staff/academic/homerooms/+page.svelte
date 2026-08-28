@@ -10,8 +10,14 @@
 		listStaffOptions,
 		listStudyProgramOptionsForAcademicYear,
 		replaceHomeroomAdvisors,
+		updateHomeroom,
+		type CreateHomeroomRequest,
+		type GradeLevelOption,
 		type Homeroom,
-		type HomeroomAdvisor
+		type HomeroomAdvisor,
+		type ReplaceHomeroomAdvisorsRequest,
+		type StudyProgramOption,
+		type UpdateHomeroomRequest
 	} from '$lib/api/academic-core';
 	import { getAcademicContextStore } from '$lib/academic-context/store';
 	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
@@ -25,10 +31,9 @@
 	const academicContext = getAcademicContextStore();
 	const academicYearId = $derived($academicContext.selected.academicYearId);
 	let homerooms = $state<Homeroom[]>([]);
-	let gradeLevelOptions = $state<Array<{ id: string; name: string }>>([]);
-	let programOptions = $state<Array<{ id: string; name: string }>>([]);
+	let gradeLevelOptions = $state<GradeLevelOption[]>([]);
+	let programOptions = $state<StudyProgramOption[]>([]);
 	const advisorsByHomeroom = new SvelteMap<string, HomeroomAdvisor[]>();
-	let staffOptions = $state<Array<{ id: string; name: string }>>([]);
 	let loading = $state(false);
 	let errorMessage = $state('');
 	const request = new LatestRequest();
@@ -44,8 +49,7 @@
 					listHomerooms,
 					listHomeroomAdvisorsForAcademicYear,
 					listGradeLevelOptions,
-					listStudyProgramOptionsForAcademicYear,
-					listStaffOptions
+					listStudyProgramOptionsForAcademicYear
 				},
 				yearId,
 				signal
@@ -55,15 +59,8 @@
 			advisorsByHomeroom.clear();
 			for (const [roomId, advisors] of workspace.advisorsByHomeroomId)
 				advisorsByHomeroom.set(roomId, advisors);
-			gradeLevelOptions = workspace.gradeLevels.map((level) => ({
-				id: level.id,
-				name: level.name
-			}));
-			programOptions = workspace.programs.map((program) => ({
-				id: program.id,
-				name: `${program.curriculumName} · ${program.name}`
-			}));
-			staffOptions = workspace.staff.map((person) => ({ id: person.id, name: person.name }));
+			gradeLevelOptions = workspace.gradeLevels;
+			programOptions = workspace.programs;
 		} catch (error) {
 			if (isAbortError(error)) return;
 			if (request.isCurrent(revision))
@@ -73,36 +70,35 @@
 		}
 	}
 
-	async function addHomeroom(draft: {
-		code: string;
-		name: string;
-		gradeLevelId: string;
-		studyProgramId: string;
-		roomNumber: string;
-		capacity: number;
-	}) {
+	async function addHomeroom(draft: Omit<CreateHomeroomRequest, 'academicYearId'>) {
 		if (!academicYearId) throw new Error('กรุณาเลือกปีการศึกษาก่อน');
 		const created = await createHomeroom({
 			academicYearId,
-			...draft,
-			roomNumber: draft.roomNumber || null
+			...draft
 		});
 		homerooms = [...homerooms, created];
 		advisorsByHomeroom.set(created.id, []);
+		return created;
 	}
 
-	async function addAdvisor(room: Homeroom, userId: string, role: string) {
-		const existing = advisorsByHomeroom.get(room.id) ?? [];
-		const advisors = await replaceHomeroomAdvisors(room.id, {
+	async function editHomeroom(room: Homeroom, draft: UpdateHomeroomRequest) {
+		const updated = await updateHomeroom(room.id, draft);
+		homerooms = homerooms.map((item) => (item.id === updated.id ? updated : item));
+		return updated;
+	}
+
+	async function saveAdvisors(
+		room: Homeroom,
+		advisors: ReplaceHomeroomAdvisorsRequest['advisors']
+	) {
+		const savedAdvisors = await replaceHomeroomAdvisors(room.id, {
 			rowVersion: room.rowVersion,
-			advisors: [
-				...existing.map((advisor) => ({ userId: advisor.userId, role: advisor.role })),
-				{ userId, role }
-			]
+			advisors
 		});
-		advisorsByHomeroom.set(room.id, advisors);
+		advisorsByHomeroom.set(room.id, savedAdvisors);
 		const refreshed = await getHomeroom(room.id);
 		homerooms = homerooms.map((item) => (item.id === room.id ? refreshed : item));
+		return savedAdvisors;
 	}
 
 	onMount(() => {
@@ -141,14 +137,14 @@
 			actionLabel="ลองอีกครั้ง"
 			onaction={() => loadWorkspace(academicYearId)}
 		/>{:else}<HomeroomEditor
-			{academicYearId}
 			{homerooms}
 			{gradeLevelOptions}
 			{programOptions}
 			{advisorsByHomeroom}
-			{staffOptions}
 			{canManage}
 			onCreate={addHomeroom}
-			onAddAdvisor={addAdvisor}
+			onUpdate={editHomeroom}
+			onLoadStaffOptions={listStaffOptions}
+			onSaveAdvisors={saveAdvisors}
 		/>{/if}
 </PageShell>

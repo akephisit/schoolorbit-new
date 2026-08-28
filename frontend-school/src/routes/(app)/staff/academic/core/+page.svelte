@@ -13,7 +13,8 @@
 		type AcademicYear,
 		type BellSchedule,
 		updateAcademicTerm,
-		updateAcademicYear
+		updateAcademicYear,
+		updateBellSchedule
 	} from '$lib/api/academic-core';
 	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
 	import AcademicYearTermEditor from '$lib/components/academic-core/AcademicYearTermEditor.svelte';
@@ -60,20 +61,13 @@
 		}
 	}
 
-	async function addYear(draft: {
-		year: number;
-		name: string;
-		startDate: string;
-		endDate: string;
-	}) {
+	async function addYear(draft: Parameters<typeof createAcademicYear>[0]) {
 		busy = true;
 		try {
-			const created = await createAcademicYear({
-				...draft,
-				schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI']
-			});
+			const created = await createAcademicYear(draft);
 			years = [created, ...years].sort((a, b) => b.year - a.year);
 			termsByYear.set(created.id, []);
+			return created;
 		} finally {
 			busy = false;
 		}
@@ -89,6 +83,7 @@
 					(a, b) => a.sequence - b.sequence
 				)
 			);
+			return created;
 		} finally {
 			busy = false;
 		}
@@ -101,6 +96,7 @@
 			years = years
 				.map((year) => (year.id === updated.id ? updated : year))
 				.sort((a, b) => b.year - a.year);
+			return updated;
 		} finally {
 			busy = false;
 		}
@@ -116,6 +112,7 @@
 					.map((term) => (term.id === updated.id ? updated : term))
 					.sort((a, b) => a.sequence - b.sequence)
 			);
+			return updated;
 		} finally {
 			busy = false;
 		}
@@ -124,8 +121,24 @@
 	async function addBellSchedule(draft: Parameters<typeof createBellSchedule>[0]) {
 		busy = true;
 		try {
-			const created = await createBellSchedule({ ...draft, owningOrganizationUnitId: null });
+			const created = await createBellSchedule(draft);
 			bellSchedules = [...bellSchedules, created];
+			return created;
+		} finally {
+			busy = false;
+		}
+	}
+
+	async function editBellSchedule(id: string, draft: Parameters<typeof updateBellSchedule>[1]) {
+		busy = true;
+		try {
+			const updated = await updateBellSchedule(id, draft);
+			const refreshed = await listBellSchedules(updated.academicYearId);
+			bellSchedules = [
+				...bellSchedules.filter((item) => item.academicYearId !== updated.academicYearId),
+				...refreshed
+			];
+			return refreshed.find((item) => item.id === id) ?? updated;
 		} finally {
 			busy = false;
 		}
@@ -188,6 +201,7 @@
 			onCreateYear={addYear}
 			onUpdateYear={editYear}
 			onCreateBellSchedule={addBellSchedule}
+			onUpdateBellSchedule={editBellSchedule}
 			onLoadBellSchedulePeriods={listBellSchedulePeriods}
 			onReplaceBellSchedulePeriods={saveBellSchedulePeriods}
 			onCreateTerm={addTerm}

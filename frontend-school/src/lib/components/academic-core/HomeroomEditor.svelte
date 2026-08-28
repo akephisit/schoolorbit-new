@@ -1,230 +1,431 @@
 <script lang="ts">
-	import type { Homeroom, HomeroomAdvisor } from '$lib/api/academic-core';
+	import type {
+		CreateHomeroomRequest,
+		GradeLevelOption,
+		Homeroom,
+		HomeroomAdvisor,
+		ReplaceHomeroomAdvisorsRequest,
+		StaffOption,
+		StudyProgramOption,
+		UpdateHomeroomRequest
+	} from '$lib/api/academic-core';
+	import { customNameFromStored } from '$lib/academic-core/foundation-presentation';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
+	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
-	import { DoorOpen, Plus, Users } from 'lucide-svelte';
+	import * as Table from '$lib/components/ui/table';
+	import { DoorOpen, Pencil, Plus, Trash2, UserRoundCog, Users } from 'lucide-svelte';
+
+	type HomeroomDraft = Omit<CreateHomeroomRequest, 'academicYearId'>;
+	type AdvisorDraft = ReplaceHomeroomAdvisorsRequest['advisors'][number];
 
 	let {
-		academicYearId,
 		homerooms,
 		gradeLevelOptions,
 		programOptions,
 		advisorsByHomeroom,
-		staffOptions,
 		canManage = false,
 		onCreate,
-		onAddAdvisor
+		onUpdate,
+		onLoadStaffOptions,
+		onSaveAdvisors
 	}: {
-		academicYearId: string;
 		homerooms: Homeroom[];
-		gradeLevelOptions: Array<{ id: string; name: string }>;
-		programOptions: Array<{ id: string; name: string }>;
+		gradeLevelOptions: GradeLevelOption[];
+		programOptions: StudyProgramOption[];
 		advisorsByHomeroom: Map<string, HomeroomAdvisor[]>;
-		staffOptions: Array<{ id: string; name: string }>;
 		canManage?: boolean;
-		onCreate: (draft: {
-			code: string;
-			name: string;
-			gradeLevelId: string;
-			studyProgramId: string;
-			roomNumber: string;
-			capacity: number;
-		}) => Promise<void>;
-		onAddAdvisor: (room: Homeroom, userId: string, role: string) => Promise<void>;
+		onCreate: (draft: HomeroomDraft) => Promise<Homeroom>;
+		onUpdate: (room: Homeroom, draft: UpdateHomeroomRequest) => Promise<Homeroom>;
+		onLoadStaffOptions: () => Promise<StaffOption[]>;
+		onSaveAdvisors: (
+			room: Homeroom,
+			advisors: ReplaceHomeroomAdvisorsRequest['advisors']
+		) => Promise<HomeroomAdvisor[]>;
 	} = $props();
 
-	let draft = $state({
-		code: '',
-		name: '',
-		gradeLevelId: '',
-		studyProgramId: '',
-		roomNumber: '',
-		capacity: 40
-	});
-	let busy = $state(false);
-	let errorMessage = $state('');
-	let advisorDraft = $state({ homeroomId: '', userId: '', role: 'primary' });
+	let roomDialogOpen = $state(false);
+	let editingRoom = $state<Homeroom | null>(null);
+	let roomDraft = $state<HomeroomDraft>(emptyRoomDraft());
+	let roomBusy = $state(false);
+	let roomError = $state('');
 
-	async function submit(event: SubmitEvent) {
+	let advisorDialogOpen = $state(false);
+	let advisorRoom = $state<Homeroom | null>(null);
+	let advisorDrafts = $state<AdvisorDraft[]>([]);
+	let staffOptions = $state<StaffOption[]>([]);
+	let loadingStaff = $state(false);
+	let advisorBusy = $state(false);
+	let advisorError = $state('');
+
+	const selectedGrade = $derived(
+		gradeLevelOptions.find((option) => option.id === roomDraft.gradeLevelId) ?? null
+	);
+	const standardRoomName = $derived(
+		selectedGrade?.short_name && roomDraft.roomNumber.trim()
+			? `${selectedGrade.short_name}/${roomDraft.roomNumber.trim()}`
+			: 'ระบบจะสร้างชื่อจากระดับชั้นและเลขห้อง'
+	);
+	const roomPreview = $derived(roomDraft.customName?.trim() || standardRoomName);
+
+	function emptyRoomDraft(): HomeroomDraft {
+		return {
+			customName: null,
+			gradeLevelId: '',
+			roomNumber: '',
+			studyProgramId: '',
+			capacity: 40
+		};
+	}
+
+	function gradeLabel(id: string): string {
+		return gradeLevelOptions.find((option) => option.id === id)?.name ?? 'ไม่พบระดับชั้นที่อ้างอิง';
+	}
+
+	function programLabel(id: string): string {
+		const program = programOptions.find((option) => option.id === id);
+		return program ? `${program.curriculumName} · ${program.name}` : 'ไม่พบแผนการเรียนที่อ้างอิง';
+	}
+
+	function customNameForRoom(room: Homeroom): string | null {
+		const grade = gradeLevelOptions.find((option) => option.id === room.gradeLevelId);
+		const standard =
+			grade?.short_name && room.roomNumber ? `${grade.short_name}/${room.roomNumber}` : '';
+		if (!standard) return room.name;
+		return customNameFromStored(room.name, standard) || null;
+	}
+
+	function openCreateDialog() {
+		editingRoom = null;
+		roomDraft = emptyRoomDraft();
+		roomError = '';
+		roomDialogOpen = true;
+	}
+
+	function openEditDialog(room: Homeroom) {
+		editingRoom = room;
+		roomDraft = {
+			customName: customNameForRoom(room),
+			gradeLevelId: room.gradeLevelId,
+			roomNumber: room.roomNumber ?? '',
+			studyProgramId: room.studyProgramId,
+			capacity: room.capacity
+		};
+		roomError = '';
+		roomDialogOpen = true;
+	}
+
+	async function saveRoom(event: SubmitEvent) {
 		event.preventDefault();
-		if (!draft.gradeLevelId || !draft.studyProgramId) {
-			errorMessage = 'กรุณาเลือกระดับชั้นและแผนการเรียน';
+		roomError = '';
+		if (!roomDraft.gradeLevelId || !roomDraft.studyProgramId || !roomDraft.roomNumber.trim()) {
+			roomError = 'กรุณาเลือกระดับชั้น แผนการเรียน และระบุเลขห้อง';
 			return;
 		}
-		busy = true;
-		errorMessage = '';
+		const common = {
+			...roomDraft,
+			roomNumber: roomDraft.roomNumber.trim(),
+			customName: roomDraft.customName?.trim() || null
+		};
+		roomBusy = true;
 		try {
-			await onCreate(draft);
-			draft = { ...draft, code: '', name: '', roomNumber: '' };
+			if (editingRoom) {
+				await onUpdate(editingRoom, { ...common, rowVersion: editingRoom.rowVersion });
+			} else {
+				await onCreate(common);
+			}
+			roomDialogOpen = false;
 		} catch (error) {
-			errorMessage = error instanceof Error ? error.message : 'สร้างห้องประจำชั้นไม่สำเร็จ';
+			roomError = error instanceof Error ? error.message : 'บันทึกห้องประจำชั้นไม่สำเร็จ';
 		} finally {
-			busy = false;
+			roomBusy = false;
 		}
 	}
 
-	async function addAdvisor(event: SubmitEvent) {
+	async function openAdvisorDialog(room: Homeroom) {
+		advisorRoom = room;
+		advisorDrafts = (advisorsByHomeroom.get(room.id) ?? []).map((advisor) => ({
+			userId: advisor.userId,
+			role: advisor.role
+		}));
+		advisorError = '';
+		advisorDialogOpen = true;
+		if (staffOptions.length > 0) return;
+		loadingStaff = true;
+		try {
+			staffOptions = await onLoadStaffOptions();
+		} catch (error) {
+			advisorError = error instanceof Error ? error.message : 'โหลดรายชื่อครูไม่สำเร็จ';
+		} finally {
+			loadingStaff = false;
+		}
+	}
+
+	function addAdvisorRow() {
+		advisorDrafts = [...advisorDrafts, { userId: '', role: 'primary' }];
+	}
+
+	function removeAdvisorRow(index: number) {
+		advisorDrafts = advisorDrafts.filter((_, itemIndex) => itemIndex !== index);
+	}
+
+	async function saveAdvisors(event: SubmitEvent) {
 		event.preventDefault();
-		if (!advisorDraft.homeroomId || !advisorDraft.userId) {
-			errorMessage = 'กรุณาเลือกห้องและครูที่ปรึกษา';
+		if (!advisorRoom) return;
+		advisorError = '';
+		if (advisorDrafts.some((advisor) => !advisor.userId)) {
+			advisorError = 'กรุณาเลือกครูให้ครบทุกรายการ';
 			return;
 		}
-		const room = homerooms.find((item) => item.id === advisorDraft.homeroomId);
-		if (!room) return;
-		busy = true;
-		errorMessage = '';
+		if (new Set(advisorDrafts.map((advisor) => advisor.userId)).size !== advisorDrafts.length) {
+			advisorError = 'ครูหนึ่งคนไม่ควรถูกเพิ่มซ้ำในห้องเดียวกัน';
+			return;
+		}
+		advisorBusy = true;
 		try {
-			await onAddAdvisor(room, advisorDraft.userId, advisorDraft.role);
-			advisorDraft = { ...advisorDraft, userId: '', role: 'primary' };
+			await onSaveAdvisors(advisorRoom, advisorDrafts);
+			advisorDialogOpen = false;
 		} catch (error) {
-			errorMessage = error instanceof Error ? error.message : 'บันทึกครูที่ปรึกษาไม่สำเร็จ';
+			advisorError = error instanceof Error ? error.message : 'บันทึกครูที่ปรึกษาไม่สำเร็จ';
 		} finally {
-			busy = false;
+			advisorBusy = false;
 		}
 	}
 </script>
 
-<div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-	<section
-		class="grid content-start gap-3 sm:grid-cols-2 2xl:grid-cols-3"
-		aria-label="ห้องประจำชั้นในปีที่เลือก"
+<div class="space-y-4">
+	<div
+		class="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3 sm:p-4"
 	>
-		{#each homerooms as room (room.id)}
-			<article class="rounded-xl border bg-card p-5 shadow-sm">
-				<div class="flex items-start justify-between gap-3">
-					<div class="rounded-lg bg-primary/10 p-2 text-primary"><DoorOpen class="size-5" /></div>
-					<Badge variant="outline">{room.code}</Badge>
-				</div>
-				<h2 class="mt-4 font-semibold">{room.name}</h2>
-				<p class="mt-1 text-xs text-muted-foreground">
-					ห้อง {room.roomNumber ?? 'ยังไม่ระบุ'} · ความจุ {room.capacity} คน
-				</p>
-				<div class="mt-4 flex items-center gap-2 border-t pt-3 text-xs text-muted-foreground">
-					<Users class="size-4" /><span
-						>ระดับชั้น {room.gradeLevelId} · ที่ปรึกษา {advisorsByHomeroom.get(room.id)?.length ??
-							0} คน</span
-					>
-				</div>
-			</article>
-		{:else}
-			<div
-				class="col-span-full rounded-xl border border-dashed p-10 text-center text-sm text-muted-foreground"
+		<div>
+			<p class="text-sm font-semibold">{homerooms.length} ห้องประจำชั้น</p>
+			<p class="text-xs text-muted-foreground">
+				ชื่อห้องและรหัสสร้างจากระดับชั้นกับเลขห้องโดยอัตโนมัติ
+			</p>
+		</div>
+		{#if canManage}
+			<Button type="button" onclick={openCreateDialog}
+				><Plus class="size-4" /> เพิ่มห้องประจำชั้น</Button
 			>
-				ปีที่เลือกยังไม่มีห้องประจำชั้น
-			</div>
-		{/each}
-	</section>
+		{/if}
+	</div>
 
-	{#if canManage}
-		<form class="space-y-3 rounded-xl border bg-card p-5 shadow-sm" onsubmit={submit}>
-			<div>
-				<h2 class="font-semibold">เพิ่มห้องประจำชั้น</h2>
-				<p class="text-xs text-muted-foreground">สร้างเฉพาะในปีที่เลือก: {academicYearId}</p>
+	<div class="overflow-x-auto rounded-xl border bg-card">
+		<Table.Root>
+			<Table.Header>
+				<Table.Row>
+					<Table.Head class="min-w-40 ps-5">ห้อง</Table.Head>
+					<Table.Head class="min-w-44">ระดับชั้น</Table.Head>
+					<Table.Head class="min-w-56">แผนการเรียน</Table.Head>
+					<Table.Head class="text-center">ความจุ</Table.Head>
+					<Table.Head class="text-center">ครูที่ปรึกษา</Table.Head>
+					<Table.Head class="w-28"><span class="sr-only">จัดการ</span></Table.Head>
+				</Table.Row>
+			</Table.Header>
+			<Table.Body>
+				{#each homerooms as room (room.id)}
+					<Table.Row>
+						<Table.Cell class="border-s-4 border-s-primary ps-5">
+							<div class="flex items-center gap-3">
+								<div class="rounded-lg bg-primary/10 p-2 text-primary">
+									<DoorOpen class="size-4" />
+								</div>
+								<div>
+									<p class="font-medium">{room.name}</p>
+									<p class="text-xs text-muted-foreground">เลขห้อง {room.roomNumber}</p>
+								</div>
+							</div>
+						</Table.Cell>
+						<Table.Cell>{gradeLabel(room.gradeLevelId)}</Table.Cell>
+						<Table.Cell class="whitespace-normal">{programLabel(room.studyProgramId)}</Table.Cell>
+						<Table.Cell class="text-center tabular-nums">{room.capacity}</Table.Cell>
+						<Table.Cell class="text-center">
+							<Badge variant="secondary"
+								><Users class="size-3" /> {advisorsByHomeroom.get(room.id)?.length ?? 0} คน</Badge
+							>
+						</Table.Cell>
+						<Table.Cell>
+							{#if canManage}
+								<div class="flex justify-end gap-1">
+									<Button
+										type="button"
+										size="icon-sm"
+										variant="ghost"
+										onclick={() => void openAdvisorDialog(room)}
+										aria-label={`จัดครูที่ปรึกษา ${room.name}`}
+									>
+										<UserRoundCog class="size-4" />
+									</Button>
+									<Button
+										type="button"
+										size="icon-sm"
+										variant="ghost"
+										onclick={() => openEditDialog(room)}
+										aria-label={`แก้ไข ${room.name}`}
+									>
+										<Pencil class="size-4" />
+									</Button>
+								</div>
+							{/if}
+						</Table.Cell>
+					</Table.Row>
+				{:else}
+					<Table.Row
+						><Table.Cell colspan={6} class="h-32 text-center text-muted-foreground"
+							>ปีที่เลือกยังไม่มีห้องประจำชั้น</Table.Cell
+						></Table.Row
+					>
+				{/each}
+			</Table.Body>
+		</Table.Root>
+	</div>
+</div>
+
+<Dialog.Root bind:open={roomDialogOpen}>
+	<Dialog.Content class="sm:max-w-xl">
+		<Dialog.Header>
+			<Dialog.Title>{editingRoom ? `แก้ไข ${editingRoom.name}` : 'เพิ่มห้องประจำชั้น'}</Dialog.Title
+			>
+			<Dialog.Description
+				>เลือกระดับชั้น เลขห้อง และแผนการเรียน ระบบจะสร้างชื่อกับรหัสให้ตรงกัน</Dialog.Description
+			>
+		</Dialog.Header>
+		<form class="space-y-4" onsubmit={saveRoom}>
+			<div class="rounded-xl border border-primary/20 bg-primary/[0.04] p-3">
+				<p class="text-xs font-medium text-primary">ชื่อห้องที่จะแสดง</p>
+				<p class="mt-1 font-semibold">{roomPreview}</p>
 			</div>
-			<div class="grid grid-cols-2 gap-3">
+			<div class="grid gap-4 sm:grid-cols-2">
 				<div class="space-y-1.5">
-					<Label for="homeroom-code">รหัส</Label><Input
-						id="homeroom-code"
-						bind:value={draft.code}
+					<Label for="homeroom-grade">ระดับชั้น</Label>
+					<Select.Root type="single" bind:value={roomDraft.gradeLevelId}>
+						<Select.Trigger id="homeroom-grade" class="w-full"
+							>{selectedGrade?.name ?? 'เลือกระดับชั้น'}</Select.Trigger
+						>
+						<Select.Content
+							>{#each gradeLevelOptions as option (option.id)}<Select.Item value={option.id}
+									>{option.name}</Select.Item
+								>{/each}</Select.Content
+						>
+					</Select.Root>
+				</div>
+				<div class="space-y-1.5">
+					<Label for="homeroom-number">เลขห้อง</Label>
+					<Input id="homeroom-number" bind:value={roomDraft.roomNumber} placeholder="3" required />
+				</div>
+			</div>
+			<div class="space-y-1.5">
+				<Label for="homeroom-program">แผนการเรียน</Label>
+				<Select.Root type="single" bind:value={roomDraft.studyProgramId}>
+					<Select.Trigger id="homeroom-program" class="w-full"
+						>{programLabel(roomDraft.studyProgramId).replace(
+							'ไม่พบแผนการเรียนที่อ้างอิง',
+							'เลือกแผนการเรียน'
+						)}</Select.Trigger
+					>
+					<Select.Content
+						>{#each programOptions as option (option.id)}<Select.Item value={option.id}
+								>{option.curriculumName} · {option.name}</Select.Item
+							>{/each}</Select.Content
+					>
+				</Select.Root>
+			</div>
+			<div class="grid gap-4 sm:grid-cols-2">
+				<div class="space-y-1.5">
+					<Label for="homeroom-capacity">ความจุ</Label>
+					<Input
+						id="homeroom-capacity"
+						type="number"
+						min="1"
+						bind:value={roomDraft.capacity}
 						required
 					/>
 				</div>
 				<div class="space-y-1.5">
-					<Label for="homeroom-number">เลขห้อง</Label><Input
-						id="homeroom-number"
-						bind:value={draft.roomNumber}
+					<Label for="homeroom-custom-name">ชื่ออื่น (ไม่บังคับ)</Label>
+					<Input
+						id="homeroom-custom-name"
+						bind:value={roomDraft.customName}
+						placeholder="เว้นว่างเพื่อใช้ชื่อมาตรฐาน"
 					/>
 				</div>
 			</div>
-			<div class="space-y-1.5">
-				<Label for="homeroom-name">ชื่อห้อง</Label><Input
-					id="homeroom-name"
-					bind:value={draft.name}
-					required
-				/>
-			</div>
-			<div class="space-y-1.5">
-				<Label for="homeroom-grade">ระดับชั้น</Label>
-				<Select.Root type="single" bind:value={draft.gradeLevelId}>
-					<Select.Trigger id="homeroom-grade" class="w-full">
-						{gradeLevelOptions.find((option) => option.id === draft.gradeLevelId)?.name ??
-							'เลือกระดับชั้น'}
-					</Select.Trigger>
-					<Select.Content>
-						{#each gradeLevelOptions as option (option.id)}
-							<Select.Item value={option.id}>{option.name}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-			</div>
-			<div class="space-y-1.5">
-				<Label for="homeroom-program">แผนการเรียน</Label>
-				<Select.Root type="single" bind:value={draft.studyProgramId}>
-					<Select.Trigger id="homeroom-program" class="w-full">
-						{programOptions.find((option) => option.id === draft.studyProgramId)?.name ??
-							'เลือกแผน'}
-					</Select.Trigger>
-					<Select.Content>
-						{#each programOptions as option (option.id)}
-							<Select.Item value={option.id}>{option.name}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-			</div>
-			<div class="space-y-1.5">
-				<Label for="homeroom-capacity">ความจุ</Label><Input
-					id="homeroom-capacity"
-					type="number"
-					min="1"
-					bind:value={draft.capacity}
-					required
-				/>
-			</div>
-			<Button class="w-full" type="submit" disabled={busy}><Plus class="size-4" /> สร้างห้อง</Button
-			>
-			{#if errorMessage}<p role="alert" class="text-sm text-destructive">{errorMessage}</p>{/if}
-		</form>
-		<form class="space-y-3 rounded-xl border bg-card p-5 shadow-sm" onsubmit={addAdvisor}>
-			<h2 class="font-semibold">เพิ่มครูที่ปรึกษา</h2>
-			<label class="space-y-1.5 text-sm">
-				<span class="font-medium">ห้องประจำชั้น</span>
-				<Select.Root type="single" bind:value={advisorDraft.homeroomId}>
-					<Select.Trigger class="w-full">
-						{homerooms.find((room) => room.id === advisorDraft.homeroomId)?.name ?? 'เลือกห้อง'}
-					</Select.Trigger>
-					<Select.Content>
-						{#each homerooms as room (room.id)}
-							<Select.Item value={room.id}>{room.name}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-			</label>
-			<label class="space-y-1.5 text-sm">
-				<span class="font-medium">ครู</span>
-				<Select.Root type="single" bind:value={advisorDraft.userId}>
-					<Select.Trigger class="w-full">
-						{staffOptions.find((staff) => staff.id === advisorDraft.userId)?.name ?? 'เลือกครู'}
-					</Select.Trigger>
-					<Select.Content>
-						{#each staffOptions as staff (staff.id)}
-							<Select.Item value={staff.id}>{staff.name}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-			</label>
-			<div class="space-y-1.5">
-				<Label for="advisor-role">บทบาท</Label><Input
-					id="advisor-role"
-					bind:value={advisorDraft.role}
-					required
-				/>
-			</div>
-			<Button class="w-full" type="submit" variant="outline" disabled={busy}
-				><Plus class="size-4" /> เพิ่มครูที่ปรึกษา</Button
+			{#if roomError}<p role="alert" class="text-sm text-destructive">{roomError}</p>{/if}
+			<Dialog.Footer
+				><Button type="submit" disabled={roomBusy}
+					>{editingRoom ? 'บันทึกห้อง' : 'สร้างห้อง'}</Button
+				></Dialog.Footer
 			>
 		</form>
-	{/if}
-</div>
+	</Dialog.Content>
+</Dialog.Root>
+
+<Dialog.Root bind:open={advisorDialogOpen}>
+	<Dialog.Content class="sm:max-w-2xl">
+		<Dialog.Header>
+			<Dialog.Title>ครูที่ปรึกษา {advisorRoom?.name}</Dialog.Title>
+			<Dialog.Description
+				>กำหนดครูที่ปรึกษาหลักหรือครูที่ปรึกษาร่วม โดยเลือกจากบัญชีบุคลากร</Dialog.Description
+			>
+		</Dialog.Header>
+		<form class="space-y-4" onsubmit={saveAdvisors}>
+			{#if loadingStaff}
+				<p class="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">
+					กำลังโหลดรายชื่อครู…
+				</p>
+			{:else}
+				<div class="space-y-3">
+					{#each advisorDrafts as advisor, index (`advisor-${index}`)}
+						<div class="grid gap-2 rounded-xl border p-3 sm:grid-cols-[minmax(0,1fr)_180px_36px]">
+							<Select.Root type="single" bind:value={advisor.userId}>
+								<Select.Trigger class="w-full"
+									>{staffOptions.find((staff) => staff.id === advisor.userId)?.name ??
+										(advisor.userId ? 'ไม่พบข้อมูลครูที่อ้างอิง' : 'เลือกครู')}</Select.Trigger
+								>
+								<Select.Content
+									>{#each staffOptions as staff (staff.id)}<Select.Item value={staff.id}
+											>{staff.title ? `${staff.title} ` : ''}{staff.name}</Select.Item
+										>{/each}</Select.Content
+								>
+							</Select.Root>
+							<Select.Root type="single" bind:value={advisor.role}>
+								<Select.Trigger class="w-full"
+									>{advisor.role === 'primary'
+										? 'ครูที่ปรึกษาหลัก'
+										: 'ครูที่ปรึกษาร่วม'}</Select.Trigger
+								>
+								<Select.Content
+									><Select.Item value="primary">ครูที่ปรึกษาหลัก</Select.Item><Select.Item
+										value="secondary">ครูที่ปรึกษาร่วม</Select.Item
+									></Select.Content
+								>
+							</Select.Root>
+							<Button
+								type="button"
+								size="icon-sm"
+								variant="ghost"
+								onclick={() => removeAdvisorRow(index)}
+								aria-label={`ลบครูที่ปรึกษารายการ ${index + 1}`}><Trash2 class="size-4" /></Button
+							>
+						</div>
+					{:else}
+						<p class="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">
+							ยังไม่มีครูที่ปรึกษา
+						</p>
+					{/each}
+				</div>
+				<Button type="button" variant="outline" onclick={addAdvisorRow}
+					><Plus class="size-4" /> เพิ่มครูที่ปรึกษา</Button
+				>
+			{/if}
+			{#if advisorError}<p role="alert" class="text-sm text-destructive">{advisorError}</p>{/if}
+			<Dialog.Footer
+				><Button type="submit" disabled={loadingStaff || advisorBusy}>บันทึกครูที่ปรึกษา</Button
+				></Dialog.Footer
+			>
+		</form>
+	</Dialog.Content>
+</Dialog.Root>

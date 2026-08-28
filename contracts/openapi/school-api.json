@@ -7779,6 +7779,9 @@
                 "format": "uuid",
                 "type": "string"
               },
+              "gradeLevelName": {
+                "type": "string"
+              },
               "id": {
                 "format": "uuid",
                 "type": "string"
@@ -7793,12 +7796,24 @@
               "status": {
                 "$ref": "#/components/schemas/StudentAcademicYearStatus"
               },
+              "studentCode": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "studentId": {
                 "format": "uuid",
                 "type": "string"
               },
+              "studentName": {
+                "type": "string"
+              },
               "studyProgramId": {
                 "format": "uuid",
+                "type": "string"
+              },
+              "studyProgramName": {
                 "type": "string"
               },
               "updatedAt": {
@@ -7809,9 +7824,12 @@
             "required": [
               "id",
               "studentId",
+              "studentName",
               "academicYearId",
               "gradeLevelId",
+              "gradeLevelName",
               "studyProgramId",
+              "studyProgramName",
               "status",
               "rowVersion",
               "migrated",
@@ -13634,6 +13652,9 @@
                   "format": "uuid",
                   "type": "string"
                 },
+                "gradeLevelName": {
+                  "type": "string"
+                },
                 "id": {
                   "format": "uuid",
                   "type": "string"
@@ -13648,12 +13669,24 @@
                 "status": {
                   "$ref": "#/components/schemas/StudentAcademicYearStatus"
                 },
+                "studentCode": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "studentId": {
                   "format": "uuid",
                   "type": "string"
                 },
+                "studentName": {
+                  "type": "string"
+                },
                 "studyProgramId": {
                   "format": "uuid",
+                  "type": "string"
+                },
+                "studyProgramName": {
                   "type": "string"
                 },
                 "updatedAt": {
@@ -13664,9 +13697,12 @@
               "required": [
                 "id",
                 "studentId",
+                "studentName",
                 "academicYearId",
                 "gradeLevelId",
+                "gradeLevelName",
                 "studyProgramId",
+                "studyProgramName",
                 "status",
                 "rowVersion",
                 "migrated",
@@ -13777,6 +13813,46 @@
                 },
                 "title": {
                   "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_StudentYearCandidate": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "studentCode": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 }
               },
               "required": [
@@ -18677,8 +18753,11 @@
           "blocksYearClosure": {
             "type": "boolean"
           },
-          "code": {
-            "type": "string"
+          "customName": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "endDate": {
             "format": "date",
@@ -18686,13 +18765,6 @@
           },
           "includedInYearResult": {
             "type": "boolean"
-          },
-          "name": {
-            "type": "string"
-          },
-          "sequence": {
-            "format": "int32",
-            "type": "integer"
           },
           "startDate": {
             "format": "date",
@@ -18704,9 +18776,6 @@
         },
         "required": [
           "academicYearId",
-          "sequence",
-          "code",
-          "name",
           "termType",
           "startDate",
           "endDate",
@@ -18719,11 +18788,14 @@
       "CreateAcademicYearRequest": {
         "additionalProperties": false,
         "properties": {
+          "customName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "endDate": {
             "format": "date",
-            "type": "string"
-          },
-          "name": {
             "type": "string"
           },
           "schoolDays": {
@@ -18743,7 +18815,6 @@
         },
         "required": [
           "year",
-          "name",
           "startDate",
           "endDate",
           "schoolDays"
@@ -19019,12 +19090,6 @@
             "format": "uuid",
             "type": "string"
           },
-          "code": {
-            "type": "string"
-          },
-          "isDefault": {
-            "type": "boolean"
-          },
           "name": {
             "type": "string"
           },
@@ -19038,9 +19103,7 @@
         },
         "required": [
           "academicYearId",
-          "code",
-          "name",
-          "isDefault"
+          "name"
         ],
         "type": "object"
       },
@@ -19356,21 +19419,18 @@
             "format": "int32",
             "type": "integer"
           },
-          "code": {
-            "type": "string"
+          "customName": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "gradeLevelId": {
             "format": "uuid",
             "type": "string"
           },
-          "name": {
-            "type": "string"
-          },
           "roomNumber": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "studyProgramId": {
             "format": "uuid",
@@ -19379,9 +19439,8 @@
         },
         "required": [
           "academicYearId",
-          "code",
-          "name",
           "gradeLevelId",
+          "roomNumber",
           "studyProgramId",
           "capacity"
         ],
@@ -29296,6 +29355,9 @@
             "format": "uuid",
             "type": "string"
           },
+          "gradeLevelName": {
+            "type": "string"
+          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -29310,12 +29372,24 @@
           "status": {
             "$ref": "#/components/schemas/StudentAcademicYearStatus"
           },
+          "studentCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "studentId": {
             "format": "uuid",
             "type": "string"
           },
+          "studentName": {
+            "type": "string"
+          },
           "studyProgramId": {
             "format": "uuid",
+            "type": "string"
+          },
+          "studyProgramName": {
             "type": "string"
           },
           "updatedAt": {
@@ -29326,9 +29400,12 @@
         "required": [
           "id",
           "studentId",
+          "studentName",
           "academicYearId",
           "gradeLevelId",
+          "gradeLevelName",
           "studyProgramId",
+          "studyProgramName",
           "status",
           "rowVersion",
           "migrated",
@@ -29811,6 +29888,28 @@
             "type": "object"
           }
         ]
+      },
+      "StudentYearCandidate": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "studentCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
       },
       "StudyProgram": {
         "properties": {
@@ -31983,8 +32082,11 @@
           "blocksYearClosure": {
             "type": "boolean"
           },
-          "code": {
-            "type": "string"
+          "customName": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "endDate": {
             "format": "date",
@@ -31993,15 +32095,8 @@
           "includedInYearResult": {
             "type": "boolean"
           },
-          "name": {
-            "type": "string"
-          },
           "rowVersion": {
             "format": "int64",
-            "type": "integer"
-          },
-          "sequence": {
-            "format": "int32",
             "type": "integer"
           },
           "startDate": {
@@ -32013,9 +32108,6 @@
           }
         },
         "required": [
-          "sequence",
-          "code",
-          "name",
           "termType",
           "startDate",
           "endDate",
@@ -32029,11 +32121,14 @@
       "UpdateAcademicYearRequest": {
         "additionalProperties": false,
         "properties": {
+          "customName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "endDate": {
             "format": "date",
-            "type": "string"
-          },
-          "name": {
             "type": "string"
           },
           "rowVersion": {
@@ -32057,7 +32152,6 @@
         },
         "required": [
           "year",
-          "name",
           "startDate",
           "endDate",
           "schoolDays",
@@ -32169,9 +32263,6 @@
       "UpdateBellScheduleRequest": {
         "additionalProperties": false,
         "properties": {
-          "code": {
-            "type": "string"
-          },
           "isDefault": {
             "type": "boolean"
           },
@@ -32191,7 +32282,6 @@
           }
         },
         "required": [
-          "code",
           "name",
           "isDefault",
           "rowVersion"
@@ -32575,21 +32665,18 @@
             "format": "int32",
             "type": "integer"
           },
-          "code": {
-            "type": "string"
+          "customName": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "gradeLevelId": {
             "format": "uuid",
             "type": "string"
           },
-          "name": {
-            "type": "string"
-          },
           "roomNumber": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "rowVersion": {
             "format": "int64",
@@ -32601,9 +32688,8 @@
           }
         },
         "required": [
-          "code",
-          "name",
           "gradeLevelId",
+          "roomNumber",
           "studyProgramId",
           "capacity",
           "rowVersion"
@@ -42709,6 +42795,96 @@
               }
             },
             "description": "Homeroom placement conflict"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/student-years/candidates": {
+      "get": {
+        "operationId": "listStudentYearCandidates",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_StudentYearCandidate"
+                }
+              }
+            },
+            "description": "Students available to add to the selected academic year"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid candidate search"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Student academic year management permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year not found"
           }
         },
         "tags": [

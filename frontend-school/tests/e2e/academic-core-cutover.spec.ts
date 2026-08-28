@@ -145,51 +145,49 @@ const term = {
 test('creates a future planning year and configurable regular, summer, and custom terms', async ({
 	page
 }) => {
+	let createYearBody: Record<string, unknown> | null = null;
 	await mockShell(page, async (route, url) => {
-		if (url.pathname === '/api/academic/years' && route.request().method() === 'GET') {
-			await fulfill(route, [year]);
-			return true;
-		}
-		if (url.pathname === '/api/academic/terms') {
-			await fulfill(route, [
-				term,
-				{
-					...term,
-					id: `${ids.term.slice(0, -1)}2`,
-					sequence: 2,
-					code: 'summer',
-					name: 'ภาคฤดูร้อน',
-					termType: 'summer'
-				},
-				{
-					...term,
-					id: `${ids.term.slice(0, -1)}3`,
-					sequence: 3,
-					code: 'special',
-					name: 'รอบพิเศษ',
-					termType: 'custom'
-				}
-			]);
-			return true;
-		}
-		if (url.pathname === '/api/academic/bell-schedules') {
-			await fulfill(route, [
-				{
-					id: ids.bell,
-					academicYearId: ids.year,
-					code: 'DEFAULT',
-					name: 'ตารางเวลาปกติ',
-					isDefault: true,
-					owningOrganizationUnitId: null,
-					status: 'draft',
-					rowVersion: 1,
-					createdAt: '',
-					updatedAt: ''
-				}
-			]);
+		if (url.pathname === '/api/academic/setup/workspace') {
+			await fulfill(route, {
+				years: [year],
+				terms: [
+					term,
+					{
+						...term,
+						id: `${ids.term.slice(0, -1)}2`,
+						sequence: 2,
+						code: 'SUMMER',
+						name: 'ภาคฤดูร้อน',
+						termType: 'summer'
+					},
+					{
+						...term,
+						id: `${ids.term.slice(0, -1)}3`,
+						sequence: 3,
+						code: 'CUSTOM-3',
+						name: 'รอบพิเศษ',
+						termType: 'custom'
+					}
+				],
+				bellSchedules: [
+					{
+						id: ids.bell,
+						academicYearId: ids.year,
+						code: 'DEFAULT',
+						name: 'ตารางเวลาปกติ',
+						isDefault: true,
+						owningOrganizationUnitId: null,
+						status: 'draft',
+						rowVersion: 1,
+						createdAt: '',
+						updatedAt: ''
+					}
+				]
+			});
 			return true;
 		}
 		if (url.pathname === '/api/academic/years' && route.request().method() === 'POST') {
+			createYearBody = route.request().postDataJSON() as Record<string, unknown>;
 			await fulfill(
 				route,
 				{ ...year, id: ids.futureYear, year: 2571, name: 'ปีการศึกษา 2571' },
@@ -202,37 +200,60 @@ test('creates a future planning year and configurable regular, summer, and custo
 	await page.goto('/staff/academic/core');
 	await expect(page.getByText('ภาคฤดูร้อน')).toBeVisible();
 	await expect(page.getByText('รอบพิเศษ')).toBeVisible();
-	await page.getByLabel('ปี พ.ศ.').fill('2571');
-	await page.getByLabel('ชื่อปี').fill('ปีการศึกษา 2571');
-	await page.getByLabel('วันเริ่ม').first().fill('2028-05-01');
-	await page.getByLabel('วันสิ้นสุด').first().fill('2029-04-30');
 	await page.getByRole('button', { name: 'เพิ่มปีการศึกษา' }).click();
-	await expect(page.getByText('ปีการศึกษา 2571')).toBeVisible();
+	await page.getByLabel('ปีการศึกษา (พ.ศ.)').fill('2571');
+	await page.getByRole('button', { name: 'เลือกวันเริ่มปีการศึกษา' }).click();
+	await page
+		.locator('[role="application"]:visible [data-calendar-day]:not([data-outside-month])')
+		.filter({ hasText: /^1$/ })
+		.click();
+	await page.getByRole('button', { name: 'เลือกวันสิ้นสุดปีการศึกษา' }).click();
+	await page
+		.locator('[role="application"]:visible [data-calendar-day]:not([data-outside-month])')
+		.filter({ hasText: /^20$/ })
+		.click();
+	await page.getByRole('button', { name: 'สร้างปีสำหรับวางแผน' }).click();
+	await expect(page.getByRole('heading', { name: 'ปีการศึกษา 2571', exact: true })).toBeVisible();
+	expect(createYearBody).toMatchObject({
+		year: 2571,
+		customName: null,
+		schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI']
+	});
+	expect(createYearBody).not.toHaveProperty('name');
+	await expect(page.getByRole('button', { name: /เปิดใช้|ปิดปี|เลื่อนชั้น/ })).toHaveCount(0);
 });
 
 test('derives term count from rows and exposes no stored count control', async ({ page }) => {
 	await mockShell(page, async (route, url) => {
-		if (url.pathname === '/api/academic/years') {
-			await fulfill(route, [year]);
-			return true;
-		}
-		if (url.pathname === '/api/academic/terms') {
-			await fulfill(route, [
-				term,
-				{ ...term, id: `${ids.term.slice(0, -1)}2`, sequence: 2 },
-				{ ...term, id: `${ids.term.slice(0, -1)}3`, sequence: 3 }
-			]);
-			return true;
-		}
-		if (url.pathname === '/api/academic/bell-schedules') {
-			await fulfill(route, []);
+		if (url.pathname === '/api/academic/setup/workspace') {
+			await fulfill(route, {
+				years: [year],
+				terms: [
+					term,
+					{ ...term, id: `${ids.term.slice(0, -1)}2`, sequence: 2 },
+					{ ...term, id: `${ids.term.slice(0, -1)}3`, sequence: 3 }
+				],
+				bellSchedules: [
+					{
+						id: ids.bell,
+						academicYearId: ids.year,
+						code: 'DEFAULT',
+						name: 'ตารางเวลาปกติ',
+						isDefault: true,
+						owningOrganizationUnitId: null,
+						status: 'draft',
+						rowVersion: 1,
+						createdAt: '',
+						updatedAt: ''
+					}
+				]
+			});
 			return true;
 		}
 		return false;
 	});
 	await page.goto('/staff/academic/core');
-	await expect(page.getByText('3').first()).toBeVisible();
-	await expect(page.getByText('ภาคเรียนจากรายการจริง')).toBeVisible();
+	await expect(page.getByText('3 ภาคเรียน').first()).toBeVisible();
 	await expect(page.getByLabel(/จำนวนภาคเรียน/)).toHaveCount(0);
 });
 

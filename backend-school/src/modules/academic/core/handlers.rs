@@ -2863,6 +2863,36 @@ pub async fn list_student_years(
 }
 
 #[utoipa::path(
+    get,
+    path = "/api/academic/student-years/candidates",
+    operation_id = "listStudentYearCandidates",
+    tag = "academic",
+    params(StudentYearCandidateQuery),
+    responses(
+        (status = 200, description = "Students available to add to the selected academic year", body = ApiResponse<Vec<StudentYearCandidate>>),
+        (status = 400, description = "Invalid candidate search", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Student academic year management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Academic year not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_student_year_candidates(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<StudentYearCandidateQuery>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let pool = context.tenant.pool;
+    context
+        .actor
+        .require_permission(codes::STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL)?;
+    Ok(ok(student_years::list_student_year_candidates(
+        &pool, query,
+    )
+    .await?))
+}
+
+#[utoipa::path(
     post,
     path = "/api/academic/student-years",
     operation_id = "createStudentAcademicYear",

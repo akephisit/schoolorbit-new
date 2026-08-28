@@ -50,7 +50,6 @@ export async function loadStudentYearCollections<
 	StudentYear extends { id: string },
 	Placement extends { studentAcademicYearId: string },
 	Homeroom,
-	Student,
 	GradeLevel,
 	StudyProgram
 >(
@@ -61,7 +60,6 @@ export async function loadStudentYearCollections<
 			options?: RequestOptions
 		) => Promise<Placement[]>;
 		listHomerooms: (yearId: string, options?: RequestOptions) => Promise<Homeroom[]>;
-		listStudentOptions: (search: string, options?: RequestOptions) => Promise<Student[]>;
 		listGradeLevelOptions: (yearId: string, options?: RequestOptions) => Promise<GradeLevel[]>;
 		listStudyProgramOptionsForAcademicYear: (
 			yearId: string,
@@ -72,11 +70,10 @@ export async function loadStudentYearCollections<
 	signal: AbortSignal
 ) {
 	const options = { signal };
-	const [studentYears, placements, homerooms, students, gradeLevels, programs] = await Promise.all([
+	const [studentYears, placements, homerooms, gradeLevels, programs] = await Promise.all([
 		deps.listStudentAcademicYears(yearId, options),
 		deps.listPlacementsForAcademicYear(yearId, options),
 		deps.listHomerooms(yearId, options),
-		deps.listStudentOptions('', options),
 		deps.listGradeLevelOptions(yearId, options),
 		deps.listStudyProgramOptionsForAcademicYear(yearId, options)
 	]);
@@ -85,7 +82,6 @@ export async function loadStudentYearCollections<
 		studentYears,
 		placements,
 		homerooms,
-		students,
 		gradeLevels,
 		programs,
 		placementsByStudentYearId: indexChildren(
@@ -100,8 +96,7 @@ export async function loadHomeroomCollections<
 	Homeroom extends { id: string },
 	Advisor extends { homeroomId: string },
 	GradeLevel,
-	StudyProgram,
-	Staff
+	StudyProgram
 >(
 	deps: {
 		listHomerooms: (yearId: string, options?: RequestOptions) => Promise<Homeroom[]>;
@@ -114,18 +109,16 @@ export async function loadHomeroomCollections<
 			yearId: string,
 			options?: RequestOptions
 		) => Promise<StudyProgram[]>;
-		listStaffOptions: (options?: RequestOptions) => Promise<Staff[]>;
 	},
 	yearId: string,
 	signal: AbortSignal
 ) {
 	const options = { signal };
-	const [homerooms, advisors, gradeLevels, programs, staff] = await Promise.all([
+	const [homerooms, advisors, gradeLevels, programs] = await Promise.all([
 		deps.listHomerooms(yearId, options),
 		deps.listHomeroomAdvisorsForAcademicYear(yearId, options),
 		deps.listGradeLevelOptions(yearId, options),
-		deps.listStudyProgramOptionsForAcademicYear(yearId, options),
-		deps.listStaffOptions(options)
+		deps.listStudyProgramOptionsForAcademicYear(yearId, options)
 	]);
 
 	return {
@@ -133,7 +126,6 @@ export async function loadHomeroomCollections<
 		advisors,
 		gradeLevels,
 		programs,
-		staff,
 		advisorsByHomeroomId: indexChildren(homerooms, advisors, (advisor) => advisor.homeroomId)
 	};
 }

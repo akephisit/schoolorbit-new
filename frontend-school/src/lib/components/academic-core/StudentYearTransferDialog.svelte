@@ -6,10 +6,12 @@
 	} from '$lib/api/academic-core';
 	import { Button } from '$lib/components/ui/button';
 	import { DatePicker } from '$lib/components/ui/date-picker';
+	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
-	import { ArrowRightLeft, X } from 'lucide-svelte';
+	import { Textarea } from '$lib/components/ui/textarea';
+	import { ArrowRightLeft } from 'lucide-svelte';
 
 	let {
 		open,
@@ -31,16 +33,31 @@
 		}) => Promise<HomeroomPlacementTransfer>;
 	} = $props();
 
-	let draft = $state({
-		targetHomeroomId: '',
-		transferDate: '',
-		enrollmentType: 'room_transfer',
-		classNumber: null as number | null,
-		reason: ''
-	});
+	let draft = $state(emptyDraft());
 	let result = $state<HomeroomPlacementTransfer | null>(null);
 	let busy = $state(false);
 	let errorMessage = $state('');
+
+	function emptyDraft() {
+		return {
+			targetHomeroomId: '',
+			transferDate: '',
+			enrollmentType: 'room_transfer',
+			classNumber: null as number | null,
+			reason: ''
+		};
+	}
+
+	function roomName(id: string): string {
+		return homerooms.find((room) => room.id === id)?.name ?? 'ไม่พบห้องประจำชั้นที่อ้างอิง';
+	}
+
+	function close() {
+		draft = emptyDraft();
+		result = null;
+		errorMessage = '';
+		onClose();
+	}
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
@@ -60,62 +77,51 @@
 	}
 </script>
 
-{#if open && placement}
-	<div class="fixed inset-0 z-50 grid place-items-center bg-black/45 p-4" role="presentation">
-		<div
-			role="dialog"
-			aria-modal="true"
-			aria-labelledby="transfer-dialog-title"
-			class="w-full max-w-lg rounded-xl border bg-background shadow-2xl"
-		>
-			<header class="flex items-start justify-between border-b px-5 py-4">
-				<div>
-					<h2 id="transfer-dialog-title" class="font-semibold">ย้ายห้องระหว่างปี</h2>
-					<p class="text-xs text-muted-foreground">
-						รายการเดิมจะสิ้นสุดก่อนวันที่ย้ายหนึ่งวัน และสร้างรายการใหม่ต่อเนื่อง
-					</p>
-				</div>
-				<Button size="icon" variant="ghost" onclick={onClose} aria-label="ปิด"
-					><X class="size-4" /></Button
-				>
-			</header>
+<Dialog.Root {open} onOpenChange={(nextOpen) => !nextOpen && close()}>
+	<Dialog.Content class="sm:max-w-lg">
+		<Dialog.Header>
+			<Dialog.Title>ย้ายห้องระหว่างปี</Dialog.Title>
+			<Dialog.Description
+				>รายการเดิมจะสิ้นสุดก่อนวันที่ย้ายหนึ่งวัน และสร้างรายการใหม่ต่อเนื่อง</Dialog.Description
+			>
+		</Dialog.Header>
+		{#if placement}
 			{#if result}
-				<div class="space-y-4 p-5">
-					<div class="rounded-lg border bg-muted/20 p-4">
+				<div class="space-y-4">
+					<div class="rounded-xl border bg-muted/20 p-4">
 						<p class="text-xs text-muted-foreground">รายการเดิมสิ้นสุด</p>
 						<p class="mt-1 font-medium">
-							{result.endedPlacement.homeroomId} · {result.endedPlacement.endDate}
+							{roomName(result.endedPlacement.homeroomId)} · {result.endedPlacement.endDate}
 						</p>
 					</div>
 					<div class="flex justify-center"><ArrowRightLeft class="size-5 text-primary" /></div>
-					<div class="rounded-lg border border-primary/30 bg-primary/5 p-4">
+					<div class="rounded-xl border border-primary/30 bg-primary/5 p-4">
 						<p class="text-xs text-muted-foreground">รายการใหม่</p>
 						<p class="mt-1 font-medium">
-							{result.newPlacement.homeroomId} · เริ่ม {result.newPlacement.startDate}
+							{roomName(result.newPlacement.homeroomId)} · เริ่ม {result.newPlacement.startDate}
 						</p>
 					</div>
-					<Button class="w-full" onclick={onClose}>เสร็จสิ้น</Button>
+					<Dialog.Footer><Button type="button" onclick={close}>เสร็จสิ้น</Button></Dialog.Footer>
 				</div>
 			{:else}
-				<form class="space-y-4 p-5" onsubmit={submit}>
+				<form class="space-y-4" onsubmit={submit}>
 					<div class="space-y-1.5">
-						<Label for="transfer-target">ห้องใหม่</Label>
-						<Select.Root type="single" bind:value={draft.targetHomeroomId}>
-							<Select.Trigger id="transfer-target" class="w-full">
-								{homerooms.find((room) => room.id === draft.targetHomeroomId)?.name ??
-									'เลือกห้องใหม่'}
-							</Select.Trigger>
-							<Select.Content>
-								{#each homerooms.filter((room) => room.id !== placement.homeroomId) as room (room.id)}
-									<Select.Item value={room.id}>{room.name}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
+						<Label for="transfer-target">ห้องใหม่</Label><Select.Root
+							type="single"
+							bind:value={draft.targetHomeroomId}
+							><Select.Trigger id="transfer-target" class="w-full"
+								>{homerooms.find((room) => room.id === draft.targetHomeroomId)?.name ??
+									'เลือกห้องใหม่'}</Select.Trigger
+							><Select.Content
+								>{#each homerooms.filter((room) => room.id !== placement.homeroomId) as room (room.id)}<Select.Item
+										value={room.id}>{room.name}</Select.Item
+									>{/each}</Select.Content
+							></Select.Root
+						>
 					</div>
 					<div class="grid grid-cols-2 gap-3">
 						<div class="space-y-1.5">
-							<Label for="transfer-date">วันที่ย้าย</Label>
-							<DatePicker
+							<Label for="transfer-date">วันที่ย้าย</Label><DatePicker
 								id="transfer-date"
 								bind:value={draft.transferDate}
 								ariaLabel="เลือกวันที่ย้ายห้อง"
@@ -132,13 +138,13 @@
 						</div>
 					</div>
 					<div class="space-y-1.5">
-						<Label for="transfer-reason">เหตุผลการย้าย</Label><textarea
+						<Label for="transfer-reason">เหตุผลการย้าย</Label><Textarea
 							id="transfer-reason"
-							class="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm"
-							maxlength="500"
+							class="min-h-24"
+							maxlength={500}
 							bind:value={draft.reason}
 							required
-						></textarea>
+						/>
 						<p class="text-right text-xs text-muted-foreground">{draft.reason.length}/500</p>
 					</div>
 					{#if errorMessage}<p
@@ -147,15 +153,15 @@
 						>
 							{errorMessage}
 						</p>{/if}
-					<div class="flex justify-end gap-2">
-						<Button type="button" variant="outline" onclick={onClose}>ยกเลิก</Button><Button
+					<Dialog.Footer
+						><Button type="button" variant="outline" onclick={close}>ยกเลิก</Button><Button
 							type="submit"
 							disabled={busy || !draft.reason.trim()}
 							><ArrowRightLeft class="size-4" /> ยืนยันการย้าย</Button
-						>
-					</div>
+						></Dialog.Footer
+					>
 				</form>
 			{/if}
-		</div>
-	</div>
-{/if}
+		{/if}
+	</Dialog.Content>
+</Dialog.Root>

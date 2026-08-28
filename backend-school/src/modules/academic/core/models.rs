@@ -91,7 +91,7 @@ pub enum GradeProgressionKind {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateAcademicYearRequest {
     pub year: i32,
-    pub name: String,
+    pub custom_name: Option<String>,
     pub start_date: NaiveDate,
     pub end_date: NaiveDate,
     pub school_days: Vec<String>,
@@ -101,7 +101,7 @@ pub struct CreateAcademicYearRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateAcademicYearRequest {
     pub year: i32,
-    pub name: String,
+    pub custom_name: Option<String>,
     pub start_date: NaiveDate,
     pub end_date: NaiveDate,
     pub school_days: Vec<String>,
@@ -112,10 +112,8 @@ pub struct UpdateAcademicYearRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateAcademicTermRequest {
     pub academic_year_id: Uuid,
-    pub sequence: i32,
-    pub code: String,
-    pub name: String,
     pub term_type: AcademicTermType,
+    pub custom_name: Option<String>,
     pub start_date: NaiveDate,
     pub end_date: NaiveDate,
     pub included_in_year_result: bool,
@@ -123,31 +121,11 @@ pub struct CreateAcademicTermRequest {
     pub bell_schedule_id: Uuid,
 }
 
-#[cfg(test)]
-impl CreateAcademicTermRequest {
-    pub fn fixture(academic_year_id: Uuid, sequence: i32, code: &str) -> Self {
-        Self {
-            academic_year_id,
-            sequence,
-            code: code.to_string(),
-            name: code.to_string(),
-            term_type: AcademicTermType::Regular,
-            start_date: NaiveDate::from_ymd_opt(2027, 5, 1).expect("valid fixture date"),
-            end_date: NaiveDate::from_ymd_opt(2027, 9, 30).expect("valid fixture date"),
-            included_in_year_result: true,
-            blocks_year_closure: true,
-            bell_schedule_id: Uuid::new_v4(),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateAcademicTermRequest {
-    pub sequence: i32,
-    pub code: String,
-    pub name: String,
     pub term_type: AcademicTermType,
+    pub custom_name: Option<String>,
     pub start_date: NaiveDate,
     pub end_date: NaiveDate,
     pub included_in_year_result: bool,
@@ -268,16 +246,13 @@ pub struct AcademicContextOptions {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateBellScheduleRequest {
     pub academic_year_id: Uuid,
-    pub code: String,
     pub name: String,
-    pub is_default: bool,
     pub owning_organization_unit_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateBellScheduleRequest {
-    pub code: String,
     pub name: String,
     pub is_default: bool,
     pub owning_organization_unit_id: Option<Uuid>,
@@ -892,10 +867,9 @@ pub struct Homeroom {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateHomeroomRequest {
     pub academic_year_id: Uuid,
-    pub code: String,
-    pub name: String,
+    pub custom_name: Option<String>,
     pub grade_level_id: Uuid,
-    pub room_number: Option<String>,
+    pub room_number: String,
     pub study_program_id: Uuid,
     pub capacity: i32,
 }
@@ -903,10 +877,9 @@ pub struct CreateHomeroomRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateHomeroomRequest {
-    pub code: String,
-    pub name: String,
+    pub custom_name: Option<String>,
     pub grade_level_id: Uuid,
-    pub room_number: Option<String>,
+    pub room_number: String,
     pub study_program_id: Uuid,
     pub capacity: i32,
     pub row_version: i64,
@@ -948,9 +921,13 @@ pub struct ReplaceHomeroomAdvisorsRequest {
 pub struct StudentAcademicYear {
     pub id: Uuid,
     pub student_id: Uuid,
+    pub student_code: Option<String>,
+    pub student_name: String,
     pub academic_year_id: Uuid,
     pub grade_level_id: Uuid,
+    pub grade_level_name: String,
     pub study_program_id: Uuid,
+    pub study_program_name: String,
     pub status: StudentAcademicYearStatus,
     pub row_version: i64,
     pub migrated: bool,
@@ -985,6 +962,24 @@ pub struct StudentAcademicYearFilter {
     pub study_program_id: Option<Uuid>,
     pub homeroom_id: Option<Uuid>,
     pub status: Option<StudentAcademicYearStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct StudentYearCandidate {
+    pub id: Uuid,
+    pub student_code: Option<String>,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Deserialize, IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct StudentYearCandidateQuery {
+    pub academic_year_id: Uuid,
+    pub search: Option<String>,
+    #[param(minimum = 1, maximum = 100)]
+    pub limit: Option<i32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema, sqlx::Type)]

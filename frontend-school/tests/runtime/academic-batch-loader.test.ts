@@ -68,10 +68,6 @@ test('student-year collection batches placements and options once for every pare
 			record('homerooms', yearId, options?.signal);
 			return [];
 		},
-		async listStudentOptions(_search: string, options?: { signal?: AbortSignal }) {
-			record('students', 'all', options?.signal);
-			return [];
-		},
 		async listGradeLevelOptions(yearId: string, options?: { signal?: AbortSignal }) {
 			record('gradeLevels', yearId, options?.signal);
 			return [];
@@ -90,15 +86,13 @@ test('student-year collection batches placements and options once for every pare
 	assert.equal(result.studentYears.length, 300);
 	assert.equal(result.placementsByStudentYearId.size, 300);
 	assert.equal(result.placementsByStudentYearId.get('student-year-299')?.length, 1);
-	for (const name of [
-		'studentYears',
-		'placements',
-		'homerooms',
-		'students',
-		'gradeLevels',
-		'programs'
-	])
+	for (const name of ['studentYears', 'placements', 'homerooms', 'gradeLevels', 'programs'])
 		assert.equal(countCalls(calls, name), 1, name);
+	assert.equal(
+		countCalls(calls, 'students'),
+		0,
+		'candidate students must load only after create opens'
+	);
 	assert.ok(calls.every((call) => call.signal === controller.signal));
 });
 
@@ -145,7 +139,12 @@ test('homeroom collection batches advisor assignments once and indexes them by h
 	assert.equal(result.homerooms.length, 300);
 	assert.equal(result.advisorsByHomeroomId.size, 300);
 	assert.equal(result.advisorsByHomeroomId.get('homeroom-299')?.[0]?.userId, 'staff-299');
-	for (const name of ['homerooms', 'advisors', 'gradeLevels', 'programs', 'staff'])
+	for (const name of ['homerooms', 'advisors', 'gradeLevels', 'programs'])
 		assert.equal(countCalls(calls, name), 1, name);
+	assert.equal(
+		countCalls(calls, 'staff'),
+		0,
+		'staff options must load only after advisor dialog opens'
+	);
 	assert.ok(calls.every((call) => call.signal === controller.signal));
 });
