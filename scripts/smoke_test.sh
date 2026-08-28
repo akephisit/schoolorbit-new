@@ -462,18 +462,22 @@ for candidate in term_rows:
     if len(selected_term_rows) == 2:
         break
 
-if not selected_year_ids or not selected_term_rows:
+if years and not selected_year_ids:
+    raise SystemExit(1)
+if terms and not selected_term_rows:
+    raise SystemExit(1)
+if any(year_id not in year_rows for year_id, _ in selected_term_rows):
     raise SystemExit(1)
 
 with open(years_path, "w", encoding="ascii") as handle:
-    handle.write("\n".join(selected_year_ids) + "\n")
+    handle.writelines(f"{year_id}\n" for year_id in selected_year_ids)
 with open(terms_path, "w", encoding="ascii") as handle:
     handle.writelines(f"{year_id}\t{term_id}\n" for year_id, term_id in selected_term_rows)
 PY
-        fail "academic context options contain canonical year and term contexts"
+        fail "academic context options are canonical and internally consistent"
         return
     fi
-    pass "academic context options contain canonical year and term contexts"
+    pass "academic context options are canonical and internally consistent"
 
     academic_context_get "years" "academic years" "/api/academic/years"
     while IFS= read -r year_id; do

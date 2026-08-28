@@ -4834,6 +4834,10 @@ fn academic_core_smoke_is_private_authenticated_read_only_and_precedes_go_live()
     assert!(smoke.contains("SMOKE_DIRECT_BACKEND"));
     assert!(smoke.contains("expect_cors_header"));
     assert!(smoke.contains(r#"if [[ $SMOKE_DIRECT_BACKEND == false ]]; then"#));
+    assert!(smoke.contains("if years and not selected_year_ids:"));
+    assert!(smoke.contains("if terms and not selected_term_rows:"));
+    assert!(smoke.contains(r#"handle.writelines(f"{year_id}\n" for year_id in selected_year_ids)"#));
+    assert!(!smoke.contains("if not selected_year_ids or not selected_term_rows:"));
 
     let academic_start = smoke
         .find("# Academic Core maintenance read-only smoke start")
