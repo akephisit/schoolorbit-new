@@ -1795,3 +1795,89 @@ async fn migration_048_rejects_unknown_term_codes_before_destructive_cleanup() {
     .unwrap();
     assert!(old_contract_preserved);
 }
+
+#[tokio::test]
+async fn homeroom_delivery_provenance_contract_is_explicit_and_unique() {
+    let pool = phase_a_fixture("academic_core_049_group_provenance").await;
+    record_passing_phase_a_reconciliation_marker(&pool)
+        .await
+        .expect("cleanup marker must exist before the post-cutover migrations");
+    apply_migrations_through(&pool, 49)
+        .await
+        .expect("homeroom delivery provenance migration must apply");
+
+    for column in ["generation_source", "generation_key"] {
+        let exists: bool = sqlx::query_scalar(
+            r#"SELECT EXISTS (
+                   SELECT 1 FROM information_schema.columns
+                   WHERE table_schema = current_schema()
+                     AND table_name = 'learning_groups'
+                     AND column_name = $1
+               )"#,
+        )
+        .bind(column)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(exists, "missing learning_groups.{column}");
+    }
+    let index_exists: bool = sqlx::query_scalar(
+        r#"SELECT EXISTS (
+               SELECT 1 FROM pg_indexes
+               WHERE schemaname = current_schema()
+                 AND indexname = 'learning_groups_curriculum_generation_key'
+           )"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(index_exists);
+
+    for (id, code) in [
+        (
+            Uuid::parse_str("68000000-0000-0000-0000-000000000001").unwrap(),
+            "MANUAL-A",
+        ),
+        (
+            Uuid::parse_str("68000000-0000-0000-0000-000000000002").unwrap(),
+            "MANUAL-B",
+        ),
+    ] {
+        sqlx::query(
+            r#"INSERT INTO learning_groups (
+                   id, learning_offering_id, academic_term_id, academic_year_id,
+                   code, name, status, roster_status, generation_source, generation_key
+               )
+               SELECT $1, learning_offering_id, academic_term_id, academic_year_id,
+                      $2, $2, 'draft', 'draft', 'manual', NULL
+               FROM learning_groups
+               ORDER BY id
+               LIMIT 1"#,
+        )
+        .bind(id)
+        .bind(code)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+
+    sqlx::query(
+        r#"UPDATE learning_groups
+           SET generation_source = 'curriculum_prepare', generation_key = 'same-proposal'
+           WHERE id = '68000000-0000-0000-0000-000000000001'"#,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let duplicate = sqlx::query(
+        r#"UPDATE learning_groups
+           SET generation_source = 'curriculum_prepare', generation_key = 'same-proposal'
+           WHERE id = '68000000-0000-0000-0000-000000000002'"#,
+    )
+    .execute(&pool)
+    .await
+    .expect_err("a generated group key must be unique within an offering and term");
+    assert!(duplicate
+        .to_string()
+        .contains("learning_groups_curriculum_generation_key"));
+}
