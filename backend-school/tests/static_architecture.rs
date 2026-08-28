@@ -1989,12 +1989,16 @@ fn academic_core_curriculum_handlers_enforce_resource_policy_contract() {
         ("get_curriculum_version", "CurriculumAction::Read"),
         ("update_curriculum_version", "CurriculumAction::Manage"),
         ("publish_curriculum_version", "CurriculumAction::Manage"),
+        (
+            "get_curriculum_structure_workspace",
+            "CurriculumAction::Read",
+        ),
+        ("replace_curriculum_term_slots", "CurriculumAction::Manage"),
         ("list_study_programs", "CurriculumAction::Read"),
         ("create_study_program", "CurriculumAction::Manage"),
         ("get_study_program", "CurriculumAction::Read"),
         ("update_study_program", "CurriculumAction::Manage"),
-        ("list_program_requirements", "CurriculumAction::Read"),
-        ("replace_program_requirements", "CurriculumAction::Manage"),
+        ("replace_curriculum_structure", "CurriculumAction::Manage"),
     ];
 
     for (handler_name, action) in cases {
@@ -5781,7 +5785,9 @@ fn academic_core_registers_only_clean_replacement_routes() {
         "/catalog/subjects",
         "/catalog/activities",
         "/curricula",
-        "/study-programs/{id}/requirements",
+        "/curriculum-versions/{curriculum_version_id}/structure",
+        "/curriculum-versions/{curriculum_version_id}/term-slots",
+        "/study-programs/{study_program_id}/structure",
         "/homerooms",
         "/student-years",
         "/placements/{id}/transfer",

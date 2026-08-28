@@ -17,9 +17,10 @@ use super::{
         ActivityAttendanceRequirement, ActivityPassCriteria, ActivityRegistrationType,
         ActivitySchedulingMode, ApplyCurriculumOfferingsRequest, ApplyRosterRequest,
         CourseGradingPolicy, CreateActivityOfferingRequest, CreateCourseOfferingRequest,
-        CreateLearningGroupRequest, CreateLearningOfferingRequest, LearningOfferingKind,
-        LearningOfferingQuery, LearningOfferingSnapshot, LearningOfferingStatus,
-        LearningTeacherRole, OfferingTargetInput, OfferingTargetKind,
+        CreateLearningGroupRequest, CreateLearningOfferingRequest, CurriculumOfferingPreview,
+        CurriculumPreparationChoice, LearningOfferingKind, LearningOfferingQuery,
+        LearningOfferingSnapshot, LearningOfferingStatus, LearningTeacherRole, OfferingTargetInput,
+        OfferingTargetKind, PreparationAction, PreparationGroupingState,
         PreviewCurriculumOfferingsRequest, PublishLearningOfferingRequest, PublishRosterRequest,
         ReplaceLearningGroupHomeroomsRequest, ReplaceLearningGroupTeachersRequest,
         RosterOverrideAction, RosterOverrideInput, StudentActivityRegistrationQuery,
@@ -561,7 +562,7 @@ async fn prepare_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 48).await.unwrap();
+    apply_migrations_through(&pool, 50).await.unwrap();
     pool
 }
 
@@ -669,6 +670,32 @@ fn course_request(context: &RuntimeContext) -> CreateLearningOfferingRequest {
             passing_score: Some("50.00".to_string()),
         },
     })
+}
+
+fn default_preparation_choices(
+    preview: &CurriculumOfferingPreview,
+) -> Vec<CurriculumPreparationChoice> {
+    preview
+        .proposals
+        .iter()
+        .map(|proposal| CurriculumPreparationChoice {
+            proposal_id: proposal.proposal_id.clone(),
+            action: if proposal.grouping_state == PreparationGroupingState::Proposed
+                && proposal.conflicts.is_empty()
+            {
+                PreparationAction::Apply
+            } else {
+                PreparationAction::DeferGroups
+            },
+            groups: if proposal.grouping_state == PreparationGroupingState::Proposed
+                && proposal.conflicts.is_empty()
+            {
+                proposal.default_groups.clone()
+            } else {
+                Vec::new()
+            },
+        })
+        .collect()
 }
 
 #[test]
@@ -1003,7 +1030,12 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     .await
     .unwrap();
     assert!(!preview.source_hash.is_empty());
-    assert!(!preview.items.is_empty());
+    assert!(!preview.proposals.is_empty());
+    assert!(preview
+        .proposals
+        .iter()
+        .any(|proposal| !proposal.default_groups.is_empty()));
+    let choices = default_preparation_choices(&preview);
 
     let mismatched = offerings::apply_from_curriculum(
         &pool,
@@ -1014,6 +1046,7 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
             owning_organization_unit_id: context.owner_id,
             source_hash: "stale-source-hash".to_string(),
             idempotency_key: Uuid::new_v4(),
+            choices: choices.clone(),
         },
     )
     .await;
@@ -1029,6 +1062,7 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
             owning_organization_unit_id: context.owner_id,
             source_hash: preview.source_hash.clone(),
             idempotency_key,
+            choices: choices.clone(),
         },
     )
     .await
@@ -1040,13 +1074,16 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
             owning_organization_unit_id: context.owner_id,
-            source_hash: preview.source_hash,
+            source_hash: preview.source_hash.clone(),
             idempotency_key,
+            choices,
         },
     )
     .await
     .unwrap();
     assert_eq!(retried.offering_ids, applied.offering_ids);
+    assert_eq!(retried.group_ids, applied.group_ids);
+    assert!(!applied.group_ids.is_empty());
     let mut descriptor_ids = applied.offering_ids.clone();
     descriptor_ids.reverse();
     let descriptors = offerings::signal_descriptors(&pool, &descriptor_ids)
@@ -1072,6 +1109,7 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     )
     .await
     .unwrap();
+    let retained_choices = default_preparation_choices(&retained_preview);
     let retained = offerings::apply_from_curriculum(
         &pool,
         context.teacher_id,
@@ -1081,11 +1119,13 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
             owning_organization_unit_id: context.owner_id,
             source_hash: retained_preview.source_hash,
             idempotency_key: Uuid::new_v4(),
+            choices: retained_choices,
         },
     )
     .await
     .unwrap();
-    assert_eq!(retained.created_count, 0);
+    assert_eq!(retained.created_offering_count, 0);
+    assert_eq!(retained.created_group_count, 0);
     assert_eq!(retained.offering_ids, applied.offering_ids);
 
     let closed_term_id: Uuid = sqlx::query_scalar(
@@ -1101,6 +1141,184 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     request.academic_term_id = closed_term_id;
     let closed = offerings::create(&pool, context.teacher_id, closed_request).await;
     assert!(matches!(closed, Err(AppError::ValidationError(_))));
+}
+
+#[tokio::test]
+async fn curriculum_preparation_groups_support_reviewed_combined_split_and_manual_conflicts() {
+    let pool = prepare_delivery_runtime_fixture("academic_delivery_preparation_groups").await;
+    let context = planning_runtime_context(&pool).await;
+    let second_homeroom_id = stable_uuid("preparation-second-homeroom");
+    sqlx::query(
+        r#"INSERT INTO homerooms (
+               id, code, name, academic_year_id, grade_level_id, room_number,
+               is_active, metadata, study_program_id, capacity
+           )
+           SELECT $1, 'PREP-ROOM-2', 'ห้องเตรียมสอง', academic_year_id,
+                  grade_level_id, 'PREP-2', true, '{}'::jsonb,
+                  study_program_id, capacity
+           FROM homerooms
+           WHERE id = $2"#,
+    )
+    .bind(second_homeroom_id)
+    .bind(context.homeroom_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let preview = offerings::preview_from_curriculum(
+        &pool,
+        PreviewCurriculumOfferingsRequest {
+            academic_term_id: context.term_id,
+            study_program_ids: vec![context.study_program_id],
+        },
+    )
+    .await
+    .unwrap();
+    let proposed_ids = preview
+        .proposals
+        .iter()
+        .filter(|proposal| {
+            proposal.grouping_state == PreparationGroupingState::Proposed
+                && proposal.target_homeroom_ids.contains(&context.homeroom_id)
+                && proposal.target_homeroom_ids.contains(&second_homeroom_id)
+        })
+        .map(|proposal| proposal.proposal_id.clone())
+        .take(2)
+        .collect::<Vec<_>>();
+    assert_eq!(proposed_ids.len(), 2);
+
+    let mut empty_apply_choices = default_preparation_choices(&preview);
+    empty_apply_choices
+        .iter_mut()
+        .find(|choice| choice.proposal_id == proposed_ids[0])
+        .unwrap()
+        .groups = Vec::new();
+    let empty_apply = offerings::apply_from_curriculum(
+        &pool,
+        context.teacher_id,
+        ApplyCurriculumOfferingsRequest {
+            academic_term_id: context.term_id,
+            study_program_ids: vec![context.study_program_id],
+            owning_organization_unit_id: context.owner_id,
+            source_hash: preview.source_hash.clone(),
+            idempotency_key: Uuid::new_v4(),
+            choices: empty_apply_choices,
+        },
+    )
+    .await;
+    assert!(matches!(empty_apply, Err(AppError::ValidationError(_))));
+
+    let mut choices = default_preparation_choices(&preview);
+    let combined = choices
+        .iter_mut()
+        .find(|choice| choice.proposal_id == proposed_ids[0])
+        .unwrap();
+    combined.groups = vec![super::models::CurriculumGroupProposal {
+        group_key: "a".repeat(64),
+        name: "กลุ่มเรียนรวมสองห้อง".to_string(),
+        homeroom_ids: vec![context.homeroom_id, second_homeroom_id],
+    }];
+    let split = choices
+        .iter_mut()
+        .find(|choice| choice.proposal_id == proposed_ids[1])
+        .unwrap();
+    split.groups = vec![
+        super::models::CurriculumGroupProposal {
+            group_key: "b".repeat(64),
+            name: "กลุ่มแบ่ง A".to_string(),
+            homeroom_ids: vec![context.homeroom_id],
+        },
+        super::models::CurriculumGroupProposal {
+            group_key: "c".repeat(64),
+            name: "กลุ่มแบ่ง B".to_string(),
+            homeroom_ids: vec![context.homeroom_id],
+        },
+    ];
+
+    let result = offerings::apply_from_curriculum(
+        &pool,
+        context.teacher_id,
+        ApplyCurriculumOfferingsRequest {
+            academic_term_id: context.term_id,
+            study_program_ids: vec![context.study_program_id],
+            owning_organization_unit_id: context.owner_id,
+            source_hash: preview.source_hash,
+            idempotency_key: Uuid::new_v4(),
+            choices,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(result.created_group_count >= 3);
+    let combined_coverage: i64 = sqlx::query_scalar(
+        r#"SELECT count(*)
+           FROM learning_group_homerooms coverage
+           JOIN learning_groups learning_group
+             ON learning_group.id = coverage.learning_group_id
+           WHERE learning_group.generation_key = $1"#,
+    )
+    .bind("a".repeat(64))
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(combined_coverage, 2);
+    let split_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM learning_groups WHERE generation_key = ANY($1)")
+            .bind(vec!["b".repeat(64), "c".repeat(64)])
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(split_count, 2);
+
+    let offering_id: Uuid = sqlx::query_scalar(
+        "SELECT learning_offering_id FROM learning_groups WHERE generation_key = $1",
+    )
+    .bind("a".repeat(64))
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let manual_group = groups::create(
+        &pool,
+        context.teacher_id,
+        offering_id,
+        CreateLearningGroupRequest {
+            code: "MANUAL-CONFLICT".to_string(),
+            name: "กลุ่มที่ครูจัดเอง".to_string(),
+            description: None,
+            capacity: Some(40),
+            preferred_room_ids: Vec::new(),
+        },
+    )
+    .await
+    .unwrap();
+    groups::replace_homerooms(
+        &pool,
+        context.teacher_id,
+        manual_group.id,
+        ReplaceLearningGroupHomeroomsRequest {
+            row_version: manual_group.row_version,
+            homeroom_ids: vec![context.homeroom_id],
+        },
+    )
+    .await
+    .unwrap();
+    let next_preview = offerings::preview_from_curriculum(
+        &pool,
+        PreviewCurriculumOfferingsRequest {
+            academic_term_id: context.term_id,
+            study_program_ids: vec![context.study_program_id],
+        },
+    )
+    .await
+    .unwrap();
+    assert!(next_preview.proposals.iter().any(|proposal| {
+        proposal.existing_offering_id == Some(offering_id)
+            && proposal.grouping_state == PreparationGroupingState::Conflict
+            && proposal
+                .conflicts
+                .iter()
+                .any(|conflict| conflict.code == "manual_group_overlap")
+    }));
 }
 
 #[tokio::test]
@@ -1696,6 +1914,106 @@ async fn delivery_overview_batches_labels_and_group_coverage() {
         .offerings
         .iter()
         .any(|item| item.offering.id == published_offering.id));
+}
+
+#[tokio::test]
+async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverage() {
+    let pool = prepare_delivery_runtime_fixture("academic_delivery_homeroom_workspace").await;
+    let context = planning_runtime_context(&pool).await;
+    let preview = offerings::preview_from_curriculum(
+        &pool,
+        PreviewCurriculumOfferingsRequest {
+            academic_term_id: context.term_id,
+            study_program_ids: vec![context.study_program_id],
+        },
+    )
+    .await
+    .unwrap();
+    let deferred_choices = preview
+        .proposals
+        .iter()
+        .map(|proposal| CurriculumPreparationChoice {
+            proposal_id: proposal.proposal_id.clone(),
+            action: PreparationAction::DeferGroups,
+            groups: Vec::new(),
+        })
+        .collect();
+    offerings::apply_from_curriculum(
+        &pool,
+        context.teacher_id,
+        ApplyCurriculumOfferingsRequest {
+            academic_term_id: context.term_id,
+            study_program_ids: vec![context.study_program_id],
+            owning_organization_unit_id: context.owner_id,
+            source_hash: preview.source_hash,
+            idempotency_key: Uuid::new_v4(),
+            choices: deferred_choices,
+        },
+    )
+    .await
+    .unwrap();
+
+    let filter = AcademicResourceListFilter {
+        includes_school_owned: true,
+        ..Default::default()
+    };
+    let before =
+        workspaces::homeroom_delivery_workspace(&pool, context.year_id, context.term_id, &filter)
+            .await
+            .expect("homeroom workspace should load");
+    let room = before
+        .homerooms
+        .iter()
+        .find(|room| room.homeroom.id == context.homeroom_id)
+        .expect("selected homeroom should appear");
+    assert!(room.expected_count > 0);
+    assert_eq!(room.ready_count, 0);
+    let offering_id = room
+        .items
+        .iter()
+        .find_map(|item| item.offering_id)
+        .expect("curriculum apply should create an applicable offering");
+
+    let group = groups::create(
+        &pool,
+        context.teacher_id,
+        offering_id,
+        CreateLearningGroupRequest {
+            code: "ROOM-WORKSPACE".to_string(),
+            name: "กลุ่มห้องประจำชั้น".to_string(),
+            description: None,
+            capacity: Some(40),
+            preferred_room_ids: Vec::new(),
+        },
+    )
+    .await
+    .unwrap();
+    groups::replace_homerooms(
+        &pool,
+        context.teacher_id,
+        group.id,
+        ReplaceLearningGroupHomeroomsRequest {
+            row_version: group.row_version,
+            homeroom_ids: vec![context.homeroom_id],
+        },
+    )
+    .await
+    .unwrap();
+
+    let after =
+        workspaces::homeroom_delivery_workspace(&pool, context.year_id, context.term_id, &filter)
+            .await
+            .expect("homeroom workspace should refresh");
+    let room = after
+        .homerooms
+        .iter()
+        .find(|room| room.homeroom.id == context.homeroom_id)
+        .unwrap();
+    assert_eq!(room.ready_count, 1);
+    assert!(room
+        .items
+        .iter()
+        .any(|item| item.offering_id == Some(offering_id) && item.groups.len() == 1));
 }
 
 #[tokio::test]

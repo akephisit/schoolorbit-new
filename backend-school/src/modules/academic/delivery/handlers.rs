@@ -220,6 +220,41 @@ pub async fn get_delivery_overview(
 
 #[utoipa::path(
     get,
+    path = "/api/academic/delivery/homerooms",
+    operation_id = "getHomeroomDeliveryWorkspace",
+    tag = "academic",
+    params(HomeroomDeliveryQuery),
+    responses(
+        (status = 200, description = "Homeroom-first curriculum delivery workspace", body = ApiResponse<HomeroomDeliveryWorkspace>),
+        (status = 400, description = "Invalid academic year or term query", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning offering read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Academic term not found in the selected year", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_homeroom_delivery_workspace(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<HomeroomDeliveryQuery>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let filter = learning_offering_access_policy::require_learning_offering_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        OfferingAction::Read,
+    )
+    .await?;
+    Ok(ok(workspaces::homeroom_delivery_workspace(
+        &context.tenant.pool,
+        query.academic_year_id,
+        query.academic_term_id,
+        &filter,
+    )
+    .await?))
+}
+
+#[utoipa::path(
+    get,
     path = "/api/academic/delivery/management-options",
     operation_id = "getLearningDeliveryManagementOptions",
     tag = "academic",

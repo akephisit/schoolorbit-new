@@ -4,20 +4,29 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::modules::academic::core::models::StudyProgramOption;
+use crate::modules::academic::core::models::{RequirementKind, StudyProgramOption};
 use crate::modules::academic::core::services::curriculum;
-use crate::modules::lookup::models::{AcademicLookupQuery, GradeLevelLookupItem, LookupQuery};
+use crate::modules::lookup::models::{
+    AcademicLookupQuery, GradeLevelLookupItem, HomeroomLookupItem, LookupQuery,
+};
 use crate::modules::lookup::services as lookup_services;
 use crate::policies::learning_offering_access_policy::learning_offering_owner_allowed;
 use crate::policies::resource_access_policy::AcademicResourceListFilter;
 
 use super::super::models::{
-    DeliveryCatalogVersionOption, DeliveryManagementOptions, LearningDeliveryOverview,
-    LearningOfferingKind, LearningOfferingOverviewItem, LearningOfferingQuery,
+    DeliveryCatalogVersionOption, DeliveryManagementOptions, DeliveryPrerequisite,
+    HomeroomDeliveryGroupSummary, HomeroomDeliveryItem, HomeroomDeliveryRoom,
+    HomeroomDeliveryWorkspace, HomeroomGroupMode, HomeroomOfferingState, HomeroomTeacherState,
+    HomeroomTimetableState, LearningDeliveryOverview, LearningOfferingKind,
+    LearningOfferingOverviewItem, LearningOfferingQuery, LearningOfferingStatus, RosterStatus,
+    UnlinkedDeliveryItem,
 };
 use super::offerings;
 
 const MAX_WORKSPACE_GROUPS: i64 = 2_000;
+const MAX_WORKSPACE_HOMEROOMS: usize = 500;
+const MAX_WORKSPACE_ITEMS: usize = 50_000;
+const MAX_WORKSPACE_TARGET_ROWS: usize = 20_000;
 const MAX_CATALOG_OPTIONS: usize = 2_000;
 const MAX_LOOKUP_OPTIONS: usize = 500;
 
@@ -44,6 +53,511 @@ struct CatalogVersionRow {
     code: String,
     name: String,
     version_no: i32,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct HomeroomDeliveryBaseRow {
+    homeroom_id: Uuid,
+    homeroom_name: String,
+    grade_level_id: Uuid,
+    grade_level_type: String,
+    grade_level_year: i32,
+    study_program_id: Uuid,
+    study_program_code: String,
+    study_program_name: String,
+    curriculum_id: Uuid,
+    curriculum_name: String,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct ExpectedDeliveryRow {
+    homeroom_id: Uuid,
+    requirement_id: Uuid,
+    resource_kind: LearningOfferingKind,
+    catalog_version_id: Uuid,
+    code: String,
+    name: String,
+    requirement_kind: RequirementKind,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct OfferingTargetRow {
+    offering_id: Uuid,
+    resource_kind: LearningOfferingKind,
+    catalog_version_id: Uuid,
+    status: LearningOfferingStatus,
+    code: String,
+    name: String,
+    target_kind: String,
+    homeroom_id: Option<Uuid>,
+    grade_level_id: Uuid,
+    study_program_id: Uuid,
+}
+
+#[derive(Clone, Debug, sqlx::FromRow)]
+struct DeliveryGroupRow {
+    id: Uuid,
+    learning_offering_id: Uuid,
+    code: String,
+    name: String,
+    status: LearningOfferingStatus,
+    roster_status: RosterStatus,
+    homeroom_ids: Vec<Uuid>,
+    homeroom_names: Vec<String>,
+    primary_teacher_count: i64,
+    timetable_entry_count: i64,
+}
+
+pub async fn homeroom_delivery_workspace(
+    pool: &PgPool,
+    academic_year_id: Uuid,
+    academic_term_id: Uuid,
+    filter: &AcademicResourceListFilter,
+) -> Result<HomeroomDeliveryWorkspace, AppError> {
+    let (term_type, type_occurrence): (String, i64) = sqlx::query_as(
+        r#"SELECT selected.term_type,
+                  count(sibling.id)::bigint AS type_occurrence
+           FROM academic_terms selected
+           JOIN academic_terms sibling
+             ON sibling.academic_year_id = selected.academic_year_id
+            AND sibling.term_type = selected.term_type
+            AND sibling.sequence_no <= selected.sequence_no
+           WHERE selected.id = $1
+             AND selected.academic_year_id = $2
+           GROUP BY selected.id, selected.term_type"#,
+    )
+    .bind(academic_term_id)
+    .bind(academic_year_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียนในปีการศึกษาที่เลือก".to_string()))?;
+
+    let homeroom_rows: Vec<HomeroomDeliveryBaseRow> = sqlx::query_as(
+        r#"SELECT homeroom.id AS homeroom_id,
+                  homeroom.name AS homeroom_name,
+                  grade.id AS grade_level_id,
+                  grade.level_type AS grade_level_type,
+                  grade.year AS grade_level_year,
+                  program.id AS study_program_id,
+                  program.code AS study_program_code,
+                  program.name_th AS study_program_name,
+                  curriculum.id AS curriculum_id,
+                  curriculum.name_th AS curriculum_name
+           FROM homerooms homeroom
+           JOIN grade_levels grade ON grade.id = homeroom.grade_level_id
+           JOIN study_programs program ON program.id = homeroom.study_program_id
+           JOIN curriculum_versions version ON version.id = program.curriculum_version_id
+           JOIN curricula curriculum ON curriculum.id = version.curriculum_id
+           WHERE homeroom.academic_year_id = $1
+             AND homeroom.is_active
+           ORDER BY CASE grade.level_type
+                        WHEN 'kindergarten' THEN 1
+                        WHEN 'primary' THEN 2
+                        WHEN 'secondary' THEN 3
+                        ELSE 4
+                    END,
+                    grade.year,
+                    homeroom.name,
+                    homeroom.id
+           LIMIT $2"#,
+    )
+    .bind(academic_year_id)
+    .bind((MAX_WORKSPACE_HOMEROOMS + 1) as i64)
+    .fetch_all(pool)
+    .await?;
+    ensure_option_size(
+        homeroom_rows.len(),
+        MAX_WORKSPACE_HOMEROOMS,
+        "ห้องประจำชั้นในพื้นที่ทำงาน",
+    )?;
+    let homeroom_ids = homeroom_rows
+        .iter()
+        .map(|homeroom| homeroom.homeroom_id)
+        .collect::<Vec<_>>();
+
+    let expected_rows: Vec<ExpectedDeliveryRow> = sqlx::query_as(
+        r#"SELECT homeroom.id AS homeroom_id,
+                  requirement.id AS requirement_id,
+                  'course'::text AS resource_kind,
+                  requirement.subject_version_id AS catalog_version_id,
+                  subject.code,
+                  version.name_th AS name,
+                  requirement.requirement_kind,
+                  requirement.display_order
+           FROM homerooms homeroom
+           JOIN study_programs program ON program.id = homeroom.study_program_id
+           JOIN curriculum_course_requirements requirement
+             ON requirement.study_program_id = program.id
+            AND requirement.grade_level_id = homeroom.grade_level_id
+           JOIN curriculum_term_slots slot
+             ON slot.id = requirement.term_slot_id
+            AND slot.curriculum_version_id = program.curriculum_version_id
+            AND slot.term_type = $2
+            AND slot.type_occurrence = $3
+           JOIN subject_versions version ON version.id = requirement.subject_version_id
+           JOIN subjects subject ON subject.id = version.subject_id
+           WHERE homeroom.id = ANY($1)
+           UNION ALL
+           SELECT homeroom.id AS homeroom_id,
+                  requirement.id AS requirement_id,
+                  'activity'::text AS resource_kind,
+                  requirement.activity_version_id AS catalog_version_id,
+                  activity.code,
+                  version.name,
+                  requirement.requirement_kind,
+                  requirement.display_order
+           FROM homerooms homeroom
+           JOIN study_programs program ON program.id = homeroom.study_program_id
+           JOIN curriculum_activity_requirements requirement
+             ON requirement.study_program_id = program.id
+            AND requirement.grade_level_id = homeroom.grade_level_id
+           JOIN curriculum_term_slots slot
+             ON slot.id = requirement.term_slot_id
+            AND slot.curriculum_version_id = program.curriculum_version_id
+            AND slot.term_type = $2
+            AND slot.type_occurrence = $3
+           JOIN activity_versions version ON version.id = requirement.activity_version_id
+           JOIN activities activity ON activity.id = version.activity_id
+           WHERE homeroom.id = ANY($1)
+           ORDER BY homeroom_id, display_order, resource_kind, catalog_version_id
+           LIMIT $4"#,
+    )
+    .bind(&homeroom_ids)
+    .bind(&term_type)
+    .bind(type_occurrence as i32)
+    .bind((MAX_WORKSPACE_ITEMS + 1) as i64)
+    .fetch_all(pool)
+    .await?;
+    ensure_option_size(
+        expected_rows.len(),
+        MAX_WORKSPACE_ITEMS,
+        "รายการตามโครงสร้างในพื้นที่ทำงาน",
+    )?;
+
+    let owner_ids = filter.allowed_organization_unit_ids();
+    let offering_rows: Vec<OfferingTargetRow> = sqlx::query_as(
+        r#"SELECT offering.id AS offering_id,
+                  offering.kind AS resource_kind,
+                  CASE offering.kind
+                      WHEN 'course' THEN course_detail.subject_version_id
+                      ELSE activity_detail.activity_version_id
+                  END AS catalog_version_id,
+                  offering.status,
+                  offering.code_snapshot AS code,
+                  offering.name_snapshot AS name,
+                  target.target_kind,
+                  target.homeroom_id,
+                  target.grade_level_id,
+                  target.study_program_id
+           FROM learning_offerings offering
+           LEFT JOIN course_offering_details course_detail
+             ON course_detail.learning_offering_id = offering.id
+           LEFT JOIN activity_offering_details activity_detail
+             ON activity_detail.learning_offering_id = offering.id
+           JOIN learning_offering_targets target
+             ON target.learning_offering_id = offering.id
+            AND target.academic_term_id = offering.academic_term_id
+            AND target.academic_year_id = offering.academic_year_id
+           WHERE offering.academic_term_id = $1
+             AND offering.academic_year_id = $2
+             AND ($3 OR offering.owning_organization_unit_id = ANY($4))
+           ORDER BY offering.code_snapshot, offering.id, target.id
+           LIMIT $5"#,
+    )
+    .bind(academic_term_id)
+    .bind(academic_year_id)
+    .bind(filter.includes_school_owned)
+    .bind(&owner_ids)
+    .bind((MAX_WORKSPACE_TARGET_ROWS + 1) as i64)
+    .fetch_all(pool)
+    .await?;
+    ensure_option_size(
+        offering_rows.len(),
+        MAX_WORKSPACE_TARGET_ROWS,
+        "เป้าหมายรายการเปิดสอนในพื้นที่ทำงาน",
+    )?;
+
+    let group_rows: Vec<DeliveryGroupRow> = sqlx::query_as(
+        r#"SELECT learning_group.id,
+                  learning_group.learning_offering_id,
+                  learning_group.code,
+                  learning_group.name,
+                  learning_group.status,
+                  learning_group.roster_status,
+                  coalesce(
+                      array_agg(homeroom.id ORDER BY homeroom.name, homeroom.id)
+                          FILTER (WHERE homeroom.id IS NOT NULL),
+                      ARRAY[]::uuid[]
+                  ) AS homeroom_ids,
+                  coalesce(
+                      array_agg(homeroom.name ORDER BY homeroom.name, homeroom.id)
+                          FILTER (WHERE homeroom.id IS NOT NULL),
+                      ARRAY[]::text[]
+                  ) AS homeroom_names,
+                  (SELECT count(*)::bigint
+                   FROM learning_group_teachers teacher
+                   JOIN users teacher_user ON teacher_user.id = teacher.teacher_id
+                   WHERE teacher.learning_group_id = learning_group.id
+                     AND teacher.role = 'primary'
+                     AND teacher_user.user_type = 'staff'
+                     AND teacher_user.status = 'active') AS primary_teacher_count,
+                  (SELECT count(*)::bigint
+                   FROM academic_timetable_entries entry
+                   WHERE entry.learning_group_id = learning_group.id
+                     AND entry.academic_term_id = learning_group.academic_term_id
+                     AND entry.academic_year_id = learning_group.academic_year_id
+                     AND entry.is_active) AS timetable_entry_count
+           FROM learning_groups learning_group
+           JOIN learning_offerings offering ON offering.id = learning_group.learning_offering_id
+           LEFT JOIN learning_group_homerooms coverage
+             ON coverage.learning_group_id = learning_group.id
+           LEFT JOIN homerooms homeroom ON homeroom.id = coverage.homeroom_id
+           WHERE learning_group.academic_term_id = $1
+             AND learning_group.academic_year_id = $2
+             AND ($3 OR offering.owning_organization_unit_id = ANY($4))
+           GROUP BY learning_group.id
+           ORDER BY learning_group.code, learning_group.id
+           LIMIT $5"#,
+    )
+    .bind(academic_term_id)
+    .bind(academic_year_id)
+    .bind(filter.includes_school_owned)
+    .bind(&owner_ids)
+    .bind(MAX_WORKSPACE_GROUPS + 1)
+    .fetch_all(pool)
+    .await?;
+    ensure_option_size(
+        group_rows.len(),
+        MAX_WORKSPACE_GROUPS as usize,
+        "กลุ่มเรียนในพื้นที่ทำงาน",
+    )?;
+
+    let mut expected_by_homeroom: HashMap<Uuid, Vec<ExpectedDeliveryRow>> = HashMap::new();
+    for expected in expected_rows {
+        expected_by_homeroom
+            .entry(expected.homeroom_id)
+            .or_default()
+            .push(expected);
+    }
+    let mut offerings_by_resource: HashMap<(LearningOfferingKind, Uuid), Vec<&OfferingTargetRow>> =
+        HashMap::new();
+    for offering in &offering_rows {
+        offerings_by_resource
+            .entry((offering.resource_kind, offering.catalog_version_id))
+            .or_default()
+            .push(offering);
+    }
+    let mut groups_by_offering: HashMap<Uuid, Vec<&DeliveryGroupRow>> = HashMap::new();
+    for group in &group_rows {
+        groups_by_offering
+            .entry(group.learning_offering_id)
+            .or_default()
+            .push(group);
+    }
+
+    let mut matched_offering_ids = HashSet::new();
+    let mut rooms = Vec::with_capacity(homeroom_rows.len());
+    for room in homeroom_rows {
+        let grade_level = grade_level_lookup_item(GradeLevelRow {
+            id: room.grade_level_id,
+            level_type: room.grade_level_type,
+            year: room.grade_level_year,
+        });
+        let homeroom = HomeroomLookupItem {
+            id: room.homeroom_id,
+            name: room.homeroom_name,
+            grade_level: Some(grade_level.name.clone()),
+            grade_level_id: Some(grade_level.id),
+        };
+        let study_program = StudyProgramOption {
+            id: room.study_program_id,
+            code: room.study_program_code,
+            name: room.study_program_name,
+            curriculum_id: room.curriculum_id,
+            curriculum_name: room.curriculum_name,
+        };
+        let mut items = Vec::new();
+        for expected in expected_by_homeroom
+            .remove(&homeroom.id)
+            .unwrap_or_default()
+        {
+            let applicable_offering = offerings_by_resource
+                .get(&(expected.resource_kind, expected.catalog_version_id))
+                .and_then(|candidates| {
+                    candidates.iter().copied().find(|candidate| {
+                        candidate.target_kind == "homeroom"
+                            && candidate.homeroom_id == Some(homeroom.id)
+                            || candidate.target_kind == "grade_program"
+                                && candidate.grade_level_id == grade_level.id
+                                && candidate.study_program_id == study_program.id
+                    })
+                });
+            let offering_id = applicable_offering.map(|offering| offering.offering_id);
+            if let Some(id) = offering_id {
+                matched_offering_ids.insert(id);
+            }
+            let applicable_groups: Vec<&DeliveryGroupRow> = offering_id
+                .and_then(|id| groups_by_offering.get(&id))
+                .into_iter()
+                .flatten()
+                .copied()
+                .filter(|group| group.homeroom_ids.contains(&homeroom.id))
+                .collect();
+            let coverage_counts = applicable_groups
+                .iter()
+                .map(|group| group.homeroom_ids.len() as i64)
+                .collect::<Vec<_>>();
+            let primary_counts = applicable_groups
+                .iter()
+                .map(|group| group.primary_teacher_count)
+                .collect::<Vec<_>>();
+            let timetable_counts = applicable_groups
+                .iter()
+                .map(|group| group.timetable_entry_count)
+                .collect::<Vec<_>>();
+            items.push(HomeroomDeliveryItem {
+                requirement_id: expected.requirement_id,
+                resource_kind: expected.resource_kind,
+                catalog_version_id: expected.catalog_version_id,
+                code: expected.code,
+                name: expected.name,
+                requirement_kind: expected.requirement_kind,
+                offering_id,
+                offering_state: applicable_offering
+                    .map(|offering| offering_state(offering.status))
+                    .unwrap_or(HomeroomOfferingState::Missing),
+                group_mode: classify_group_mode(expected.requirement_kind, &coverage_counts),
+                teacher_state: classify_teacher_state(&primary_counts),
+                timetable_state: classify_timetable_state(&timetable_counts),
+                groups: applicable_groups
+                    .into_iter()
+                    .map(delivery_group_summary)
+                    .collect(),
+            });
+        }
+        let ready_count = items
+            .iter()
+            .filter(|item| item.offering_id.is_some() && !item.groups.is_empty())
+            .count();
+        let blockers = if items.is_empty() {
+            vec![DeliveryPrerequisite {
+                code: "curriculum_structure_empty".to_string(),
+                message: "ยังไม่มีโครงสร้างรายวิชาหรือกิจกรรมสำหรับห้องนี้ในภาคเรียนที่เลือก".to_string(),
+                recovery_path: "/staff/academic/curricula".to_string(),
+            }]
+        } else {
+            Vec::new()
+        };
+        rooms.push(HomeroomDeliveryRoom {
+            homeroom,
+            grade_level,
+            study_program,
+            expected_count: items.len(),
+            ready_count,
+            items,
+            blockers,
+        });
+    }
+
+    let mut unlinked = Vec::new();
+    for group in &group_rows {
+        if group.homeroom_ids.is_empty() {
+            if let Some(offering) = offering_rows
+                .iter()
+                .find(|offering| offering.offering_id == group.learning_offering_id)
+            {
+                unlinked.push(UnlinkedDeliveryItem {
+                    offering_id: offering.offering_id,
+                    group_id: Some(group.id),
+                    code: group.code.clone(),
+                    name: group.name.clone(),
+                    reason: "กลุ่มเรียนยังไม่ได้เชื่อมกับห้องประจำชั้น".to_string(),
+                });
+            }
+        }
+    }
+    for offering in &offering_rows {
+        if !matched_offering_ids.contains(&offering.offering_id)
+            && !unlinked
+                .iter()
+                .any(|item| item.offering_id == offering.offering_id)
+        {
+            unlinked.push(UnlinkedDeliveryItem {
+                offering_id: offering.offering_id,
+                group_id: None,
+                code: offering.code.clone(),
+                name: offering.name.clone(),
+                reason: "รายการเปิดสอนไม่ตรงกับโครงสร้างหรือห้องเป้าหมายในภาคเรียนนี้".to_string(),
+            });
+        }
+    }
+    unlinked.sort_by(|left, right| left.code.cmp(&right.code).then(left.name.cmp(&right.name)));
+
+    Ok(HomeroomDeliveryWorkspace {
+        academic_term_id,
+        academic_year_id,
+        homerooms: rooms,
+        unlinked,
+    })
+}
+
+fn offering_state(status: LearningOfferingStatus) -> HomeroomOfferingState {
+    match status {
+        LearningOfferingStatus::Draft => HomeroomOfferingState::Draft,
+        LearningOfferingStatus::Published => HomeroomOfferingState::Published,
+        LearningOfferingStatus::Closed => HomeroomOfferingState::Closed,
+    }
+}
+
+fn classify_group_mode(
+    requirement_kind: RequirementKind,
+    homeroom_counts: &[i64],
+) -> HomeroomGroupMode {
+    if homeroom_counts.is_empty() {
+        return match requirement_kind {
+            RequirementKind::Required => HomeroomGroupMode::Missing,
+            RequirementKind::Elective | RequirementKind::Optional => HomeroomGroupMode::Deferred,
+        };
+    }
+    if homeroom_counts.len() > 1 {
+        HomeroomGroupMode::Split
+    } else if homeroom_counts[0] > 1 {
+        HomeroomGroupMode::Combined
+    } else {
+        HomeroomGroupMode::Normal
+    }
+}
+
+fn classify_teacher_state(primary_teacher_counts: &[i64]) -> HomeroomTeacherState {
+    if !primary_teacher_counts.is_empty() && primary_teacher_counts.iter().all(|count| *count > 0) {
+        HomeroomTeacherState::Assigned
+    } else {
+        HomeroomTeacherState::MissingPrimary
+    }
+}
+
+fn classify_timetable_state(timetable_entry_counts: &[i64]) -> HomeroomTimetableState {
+    if !timetable_entry_counts.is_empty() && timetable_entry_counts.iter().all(|count| *count > 0) {
+        HomeroomTimetableState::Scheduled
+    } else if timetable_entry_counts.iter().any(|count| *count > 0) {
+        HomeroomTimetableState::PartlyScheduled
+    } else {
+        HomeroomTimetableState::Unscheduled
+    }
+}
+
+fn delivery_group_summary(group: &DeliveryGroupRow) -> HomeroomDeliveryGroupSummary {
+    HomeroomDeliveryGroupSummary {
+        id: group.id,
+        code: group.code.clone(),
+        name: group.name.clone(),
+        status: group.status,
+        roster_status: group.roster_status,
+        homeroom_ids: group.homeroom_ids.clone(),
+        homeroom_names: group.homeroom_names.clone(),
+        primary_teacher_count: group.primary_teacher_count,
+        timetable_entry_count: group.timetable_entry_count,
+    }
 }
 
 pub async fn delivery_overview(
@@ -419,6 +933,10 @@ fn grade_level_lookup_item(row: GradeLevelRow) -> GradeLevelLookupItem {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::modules::academic::core::models::RequirementKind;
+    use crate::modules::academic::delivery::models::{
+        HomeroomGroupMode, HomeroomTeacherState, HomeroomTimetableState,
+    };
 
     #[test]
     fn grade_level_labels_are_human_readable_and_stably_ordered() {
@@ -430,5 +948,53 @@ mod tests {
         assert_eq!(item.name, "มัธยมศึกษาปีที่ 2");
         assert_eq!(item.short_name.as_deref(), Some("ม.2"));
         assert_eq!(item.level_order, 302);
+    }
+
+    #[test]
+    fn group_mode_exposes_missing_deferred_combined_and_split_states() {
+        assert_eq!(
+            classify_group_mode(RequirementKind::Required, &[]),
+            HomeroomGroupMode::Missing
+        );
+        assert_eq!(
+            classify_group_mode(RequirementKind::Elective, &[]),
+            HomeroomGroupMode::Deferred
+        );
+        assert_eq!(
+            classify_group_mode(RequirementKind::Required, &[1]),
+            HomeroomGroupMode::Normal
+        );
+        assert_eq!(
+            classify_group_mode(RequirementKind::Required, &[2]),
+            HomeroomGroupMode::Combined
+        );
+        assert_eq!(
+            classify_group_mode(RequirementKind::Required, &[1, 1]),
+            HomeroomGroupMode::Split
+        );
+    }
+
+    #[test]
+    fn staffing_and_timetable_states_require_every_applicable_group() {
+        assert_eq!(
+            classify_teacher_state(&[1, 2]),
+            HomeroomTeacherState::Assigned
+        );
+        assert_eq!(
+            classify_teacher_state(&[1, 0]),
+            HomeroomTeacherState::MissingPrimary
+        );
+        assert_eq!(
+            classify_timetable_state(&[2, 1]),
+            HomeroomTimetableState::Scheduled
+        );
+        assert_eq!(
+            classify_timetable_state(&[2, 0]),
+            HomeroomTimetableState::PartlyScheduled
+        );
+        assert_eq!(
+            classify_timetable_state(&[0, 0]),
+            HomeroomTimetableState::Unscheduled
+        );
     }
 }

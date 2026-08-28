@@ -12,11 +12,17 @@ type Schemas = components['schemas'];
 export type LearningOffering = Schemas['LearningOffering'];
 export type LearningDeliveryOverview = Schemas['LearningDeliveryOverview'];
 export type LearningOfferingOverviewItem = Schemas['LearningOfferingOverviewItem'];
+export type HomeroomDeliveryWorkspace = Schemas['HomeroomDeliveryWorkspace'];
+export type HomeroomDeliveryRoom = Schemas['HomeroomDeliveryRoom'];
+export type HomeroomDeliveryItem = Schemas['HomeroomDeliveryItem'];
 export type DeliveryManagementOptions = Schemas['DeliveryManagementOptions'];
 export type LearningGroup = Schemas['LearningGroup'];
 export type TeacherAssignment = Schemas['TeacherAssignmentInput'];
 export type RosterPreview = Schemas['RosterPreview'];
 export type CurriculumOfferingPreview = Schemas['CurriculumOfferingPreview'];
+export type CurriculumPreparationProposal = Schemas['CurriculumPreparationProposal'];
+export type CurriculumPreparationChoice = Schemas['CurriculumPreparationChoice'];
+export type CurriculumGroupProposal = Schemas['CurriculumGroupProposal'];
 export type ApplyCurriculumOfferingsResult = Schemas['ApplyCurriculumOfferingsResult'];
 export type CreateLearningOfferingRequest = Schemas['CreateLearningOfferingRequest'];
 export type UpdateLearningOfferingRequest = Schemas['UpdateLearningOfferingRequest'];
@@ -60,6 +66,29 @@ type DeliveryWorkspaceQuery = NonNullable<
 type DeliveryManagementOptionsQuery = NonNullable<
 	operations['getLearningDeliveryManagementOptions']['parameters']['query']
 >;
+type HomeroomDeliveryWorkspaceQuery = NonNullable<
+	operations['getHomeroomDeliveryWorkspace']['parameters']['query']
+>;
+
+export const getHomeroomDeliveryWorkspace = (
+	academicYearId: string,
+	academicTermId: string,
+	options: ApiRequestOptions = {}
+) => {
+	const yearId = academicYearId.trim();
+	if (!yearId) throw new Error('กรุณาเลือกปีการศึกษาก่อน');
+	const query = {
+		academicYearId: yearId,
+		academicTermId: selectedTerm(academicTermId)
+	} satisfies HomeroomDeliveryWorkspaceQuery;
+	return deliveryData(
+		apiClient.get<HomeroomDeliveryWorkspace>('/api/academic/delivery/homerooms', {
+			...options,
+			query
+		}),
+		'ไม่สามารถโหลดภาพรวมรายห้องประจำชั้นได้'
+	);
+};
 
 export const getLearningDeliveryOverview = (
 	academicTermId: string,

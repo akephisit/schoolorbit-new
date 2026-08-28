@@ -188,7 +188,9 @@
 						bind:value={draft.totalValue}
 						required
 					/>
-					<p class="text-xs text-muted-foreground">ใช้เป็นค่าทางการในโครงสร้างหลักสูตรและการเปิดสอน</p>
+					<p class="text-xs text-muted-foreground">
+						ใช้เป็นค่าทางการในโครงสร้างหลักสูตรและการเปิดสอน
+					</p>
 				</div>
 			{/if}
 			<div class="space-y-1.5">

@@ -4,7 +4,7 @@ use sqlx::FromRow;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-use crate::modules::academic::core::models::StudyProgramOption;
+use crate::modules::academic::core::models::{RequirementKind, StudyProgramOption};
 use crate::modules::facility::models::Room;
 use crate::modules::lookup::models::{
     GradeLevelLookupItem, HomeroomLookupItem, OrganizationUnitLookupItem, StaffLookupItem,
@@ -92,6 +92,22 @@ pub enum RosterOverrideAction {
 pub enum CurriculumPreviewAction {
     Create,
     Retain,
+    Conflict,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PreparationAction {
+    Apply,
+    Skip,
+    DeferGroups,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PreparationGroupingState {
+    Proposed,
+    Deferred,
     Conflict,
 }
 
@@ -216,6 +232,14 @@ pub struct LearningOfferingQuery {
 #[derive(Clone, Debug, Deserialize, IntoParams, ToSchema)]
 #[into_params(parameter_in = Query)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HomeroomDeliveryQuery {
+    pub academic_year_id: Uuid,
+    pub academic_term_id: Uuid,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LearningGroupTermQuery {
     pub academic_term_id: Uuid,
 }
@@ -242,6 +266,7 @@ pub struct ApplyCurriculumOfferingsRequest {
     pub owning_organization_unit_id: Uuid,
     pub source_hash: String,
     pub idempotency_key: Uuid,
+    pub choices: Vec<CurriculumPreparationChoice>,
 }
 
 #[derive(Clone, Debug, Serialize, ToSchema)]
@@ -364,6 +389,110 @@ pub struct LearningDeliveryOverview {
     pub offerings: Vec<LearningOfferingOverviewItem>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HomeroomOfferingState {
+    Missing,
+    Draft,
+    Published,
+    Closed,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HomeroomGroupMode {
+    Missing,
+    Normal,
+    Combined,
+    Split,
+    Deferred,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HomeroomTeacherState {
+    MissingPrimary,
+    Assigned,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HomeroomTimetableState {
+    Unscheduled,
+    PartlyScheduled,
+    Scheduled,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DeliveryPrerequisite {
+    pub code: String,
+    pub message: String,
+    pub recovery_path: String,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UnlinkedDeliveryItem {
+    pub offering_id: Uuid,
+    pub group_id: Option<Uuid>,
+    pub code: String,
+    pub name: String,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct HomeroomDeliveryGroupSummary {
+    pub id: Uuid,
+    pub code: String,
+    pub name: String,
+    pub status: LearningOfferingStatus,
+    pub roster_status: RosterStatus,
+    pub homeroom_ids: Vec<Uuid>,
+    pub homeroom_names: Vec<String>,
+    pub primary_teacher_count: i64,
+    pub timetable_entry_count: i64,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct HomeroomDeliveryItem {
+    pub requirement_id: Uuid,
+    pub resource_kind: LearningOfferingKind,
+    pub catalog_version_id: Uuid,
+    pub code: String,
+    pub name: String,
+    pub requirement_kind: RequirementKind,
+    pub offering_id: Option<Uuid>,
+    pub offering_state: HomeroomOfferingState,
+    pub group_mode: HomeroomGroupMode,
+    pub teacher_state: HomeroomTeacherState,
+    pub timetable_state: HomeroomTimetableState,
+    pub groups: Vec<HomeroomDeliveryGroupSummary>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct HomeroomDeliveryRoom {
+    pub homeroom: HomeroomLookupItem,
+    pub grade_level: GradeLevelLookupItem,
+    pub study_program: StudyProgramOption,
+    pub expected_count: usize,
+    pub ready_count: usize,
+    pub items: Vec<HomeroomDeliveryItem>,
+    pub blockers: Vec<DeliveryPrerequisite>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct HomeroomDeliveryWorkspace {
+    pub academic_term_id: Uuid,
+    pub academic_year_id: Uuid,
+    pub homerooms: Vec<HomeroomDeliveryRoom>,
+    pub unlinked: Vec<UnlinkedDeliveryItem>,
+}
+
 #[derive(Clone, Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DeliveryCatalogVersionOption {
@@ -389,21 +518,48 @@ pub struct DeliveryManagementOptions {
     pub rooms: Vec<Room>,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CurriculumGroupProposal {
+    pub group_key: String,
+    pub name: String,
+    pub homeroom_ids: Vec<Uuid>,
+}
+
 #[derive(Clone, Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct CurriculumOfferingPreviewItem {
-    pub action: CurriculumPreviewAction,
+pub struct PreparationConflict {
+    pub code: String,
+    pub message: String,
+    pub offering_id: Option<Uuid>,
+    pub group_id: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CurriculumPreparationProposal {
+    pub proposal_id: String,
+    pub offering_action: CurriculumPreviewAction,
     pub resource_kind: LearningOfferingKind,
     pub catalog_version_id: Uuid,
-    pub requirement_id: Uuid,
-    pub study_program_id: Uuid,
-    pub grade_level_id: Uuid,
+    pub requirement_ids: Vec<Uuid>,
+    pub target_homeroom_ids: Vec<Uuid>,
     pub code: String,
     pub name: String,
     pub credit: Option<String>,
     pub hours: Option<String>,
     pub existing_offering_id: Option<Uuid>,
-    pub conflict_reason: Option<String>,
+    pub grouping_state: PreparationGroupingState,
+    pub default_groups: Vec<CurriculumGroupProposal>,
+    pub conflicts: Vec<PreparationConflict>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CurriculumPreparationChoice {
+    pub proposal_id: String,
+    pub action: PreparationAction,
+    pub groups: Vec<CurriculumGroupProposal>,
 }
 
 #[derive(Clone, Debug, Serialize, ToSchema)]
@@ -411,7 +567,7 @@ pub struct CurriculumOfferingPreviewItem {
 pub struct CurriculumOfferingPreview {
     pub academic_term_id: Uuid,
     pub source_hash: String,
-    pub items: Vec<CurriculumOfferingPreviewItem>,
+    pub proposals: Vec<CurriculumPreparationProposal>,
 }
 
 #[derive(Clone, Debug, Serialize, ToSchema)]
@@ -420,8 +576,12 @@ pub struct ApplyCurriculumOfferingsResult {
     pub academic_term_id: Uuid,
     pub source_hash: String,
     pub offering_ids: Vec<Uuid>,
-    pub created_count: usize,
-    pub retained_count: usize,
+    pub group_ids: Vec<Uuid>,
+    pub created_offering_count: usize,
+    pub retained_offering_count: usize,
+    pub created_group_count: usize,
+    pub retained_group_count: usize,
+    pub skipped_count: usize,
 }
 
 #[derive(Clone, Debug, Deserialize, ToSchema)]

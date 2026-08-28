@@ -10,15 +10,42 @@ const readProjectFile = (relativePath) => readFile(path.join(projectRoot, relati
 test('delivery workspace uses generated term query contracts', async () => {
 	const api = await readProjectFile('src/lib/api/learning-delivery.ts');
 	assert.match(api, /operations\['getLearningDeliveryOverview'\]/);
+	assert.match(api, /operations\['getHomeroomDeliveryWorkspace'\]/);
 	assert.match(api, /operations\['getLearningDeliveryManagementOptions'\]/);
 	assert.match(api, /getLearningDeliveryOverview/);
+	assert.match(api, /getHomeroomDeliveryWorkspace/);
 	assert.match(api, /getLearningDeliveryManagementOptions/);
 	assert.match(api, /getLearningOffering/);
 	assert.match(api, /getLearningGroup/);
 	assert.doesNotMatch(api, /academic_term_id|ApiResponse<unknown>|Record<string, unknown>/);
 });
 
-test('delivery overview is term scoped, filterable, and keeps management options lazy', async () => {
+test('homeroom delivery contract is camelCase and preparation requires reviewed choices', async () => {
+	const openapi = JSON.parse(await readProjectFile('../contracts/openapi/school-api.json'));
+	const operation = openapi.paths['/api/academic/delivery/homerooms'].get;
+	assert.equal(operation.operationId, 'getHomeroomDeliveryWorkspace');
+	assert.deepEqual(operation.parameters.map((parameter) => parameter.name).sort(), [
+		'academicTermId',
+		'academicYearId'
+	]);
+	const preview = openapi.components.schemas.CurriculumOfferingPreview;
+	assert.ok(preview.required.includes('proposals'));
+	assert.equal(preview.properties.items, undefined);
+	const proposal = openapi.components.schemas.CurriculumPreparationProposal;
+	assert.ok(proposal.required.includes('defaultGroups'));
+	const apply = openapi.components.schemas.ApplyCurriculumOfferingsRequest;
+	assert.ok(apply.required.includes('choices'));
+});
+
+test('applying a curriculum proposal always requires at least one reviewed group', async () => {
+	const preview = await readProjectFile(
+		'src/lib/components/learning-delivery/OfferingCurriculumPreview.svelte'
+	);
+
+	assert.match(preview, /choice\.action === 'apply'\s*&&\s*choice\.groups\.length === 0/);
+});
+
+test('delivery workspace is homeroom-first, loads offering overview lazily, and keeps management options lazy', async () => {
 	const page = await readProjectFile('src/routes/(app)/staff/academic/delivery/+page.svelte');
 	const table = await readProjectFile(
 		'src/lib/components/learning-delivery/OfferingOverviewTable.svelte'
@@ -26,12 +53,26 @@ test('delivery overview is term scoped, filterable, and keeps management options
 	const dialog = await readProjectFile(
 		'src/lib/components/learning-delivery/OfferingCreateDialog.svelte'
 	);
+	const homerooms = await readProjectFile(
+		'src/lib/components/learning-delivery/HomeroomDeliveryWorkspace.svelte'
+	);
+	const preparation = await readProjectFile(
+		'src/lib/components/learning-delivery/OfferingCurriculumPreview.svelte'
+	);
+	assert.match(page, /getHomeroomDeliveryWorkspace/);
+	assert.match(page, /viewMode = \$state<'homerooms' \| 'offerings'>\('homerooms'\)/);
 	assert.match(page, /getLearningDeliveryOverview/);
 	assert.match(page, /academicTermId/);
 	assert.match(page, /kind=activity|kindFilter|initialKind/);
 	assert.doesNotMatch(page, /getLearningDeliveryManagementOptions\([\s\S]*onMount/);
 	assert.doesNotMatch(dialog, /catalogVersionId[^\n]*<Input/);
 	assert.doesNotMatch(dialog, /gradeLevelId[^\n]*<Input/);
+	assert.match(homerooms, /room\.items/);
+	assert.match(homerooms, /workspace\.unlinked/);
+	assert.match(preparation, /proposal\.defaultGroups/);
+	assert.match(preparation, /choices/);
+	assert.match(preparation, /combineGroups/);
+	assert.match(preparation, /addSplitGroup/);
 	assert.match(table, /groupsWithoutPrimaryTeacher/);
 	assert.match(table, /publishedRosterCount/);
 });

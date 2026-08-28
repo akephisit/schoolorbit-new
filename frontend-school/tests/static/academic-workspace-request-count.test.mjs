@@ -53,6 +53,18 @@ test('academic core setup uses the bounded setup workspace', async () => {
 	assert.doesNotMatch(page, /listBellSchedules\(year\.id\)/);
 });
 
+test('learning delivery loads one homeroom workspace without per-room requests', async () => {
+	const page = await readPage('delivery');
+	const table = await readFile(
+		path.join(projectRoot, 'src/lib/components/learning-delivery/HomeroomDeliveryWorkspace.svelte'),
+		'utf8'
+	);
+	assertCancellable(page, 'learning delivery');
+	assert.match(page, /getHomeroomDeliveryWorkspace/);
+	assert.match(page, /changeViewMode/);
+	assert.doesNotMatch(table, /getLearningOffering|getLearningGroup|listLearningGroups/);
+});
+
 test('admission workspace loads study programs once for the round year', async () => {
 	const page = await readPage('admission/[id]');
 	assertCancellable(page, 'admission');

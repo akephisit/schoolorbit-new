@@ -92,13 +92,13 @@ test('activity catalog uses the responsive overview information architecture', a
 	}
 });
 
-test('curriculum requirement form reports and focuses a missing program selection', async () => {
+test('curriculum structure editor blocks catalog additions until the target is complete', async () => {
 	const editor = await readSource(
-		'src/lib/components/academic-core/CurriculumProgramEditor.svelte'
+		'src/lib/components/academic-core/CurriculumStructureEditor.svelte'
 	);
 
-	assert.match(editor, /requirementProgramError/);
-	assert.match(editor, /requirementProgramTrigger\?\.focus/);
-	assert.match(editor, /role="alert"/);
-	assert.match(editor, /aria-invalid/);
+	assert.match(editor, /let selectionReady = \$derived/);
+	assert.match(editor, /disabled=\{!selectionReady \|\| selectedCatalogIds\.length === 0\}/);
+	assert.match(editor, /เพิ่มแผนการเรียนก่อนเพิ่มรายวิชาหรือกิจกรรม/);
+	assert.match(editor, /role="status"/);
 });

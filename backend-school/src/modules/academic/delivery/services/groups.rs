@@ -8,11 +8,12 @@ use crate::error::AppError;
 use crate::policies::resource_access_policy::AcademicResourceListFilter;
 
 use super::super::models::{
-    ActivityRegistrationType, ApplyRosterRequest, CreateLearningGroupRequest, LearningGroup,
-    LearningGroupRow, LearningGroupStudent, LearningGroupStudentRow, LearningOfferingKind,
-    LearningOfferingStatus, PublishRosterRequest, ReplaceLearningGroupHomeroomsRequest,
-    ReplaceLearningGroupTeachersRequest, RosterOverrideAction, RosterPreview, RosterPreviewStudent,
-    RosterStatus, TeacherAssignmentInput, UpdateLearningGroupRequest,
+    ActivityRegistrationType, ApplyRosterRequest, CreateLearningGroupRequest,
+    CurriculumGroupProposal, LearningGroup, LearningGroupRow, LearningGroupStudent,
+    LearningGroupStudentRow, LearningOfferingKind, LearningOfferingStatus, PublishRosterRequest,
+    ReplaceLearningGroupHomeroomsRequest, ReplaceLearningGroupTeachersRequest,
+    RosterOverrideAction, RosterPreview, RosterPreviewStudent, RosterStatus,
+    TeacherAssignmentInput, UpdateLearningGroupRequest,
 };
 use super::{append_audit, require_writable_term, stable_hash, validate_row_version};
 
@@ -78,6 +79,105 @@ struct RosterDisplayRow {
     level_type: String,
     grade_year: i32,
     homeroom_name: Option<String>,
+}
+
+pub(super) struct GeneratedGroupApplyOutcome {
+    pub id: Uuid,
+    pub created: bool,
+}
+
+pub(super) async fn apply_curriculum_generated_group(
+    transaction: &mut Transaction<'_, Postgres>,
+    learning_offering_id: Uuid,
+    academic_term_id: Uuid,
+    academic_year_id: Uuid,
+    proposal: &CurriculumGroupProposal,
+) -> Result<GeneratedGroupApplyOutcome, AppError> {
+    if proposal.group_key.trim().is_empty()
+        || proposal.name.trim().is_empty()
+        || proposal.homeroom_ids.is_empty()
+    {
+        return Err(AppError::ValidationError(
+            "กลุ่มที่เตรียมจากหลักสูตรต้องมีรหัสและห้องประจำชั้นอย่างน้อยหนึ่งห้อง".to_string(),
+        ));
+    }
+    let mut homeroom_ids = proposal.homeroom_ids.clone();
+    homeroom_ids.sort_unstable();
+    homeroom_ids.dedup();
+    if homeroom_ids.len() != proposal.homeroom_ids.len() {
+        return Err(AppError::ValidationError(
+            "ห้องประจำชั้นซ้ำกันภายในกลุ่มที่เตรียม".to_string(),
+        ));
+    }
+
+    if let Some((id, row_version)) = sqlx::query_as::<_, (Uuid, i64)>(
+        r#"SELECT id, row_version
+           FROM learning_groups
+           WHERE academic_term_id = $1
+             AND learning_offering_id = $2
+             AND generation_source = 'curriculum_prepare'
+             AND generation_key = $3
+           FOR UPDATE"#,
+    )
+    .bind(academic_term_id)
+    .bind(learning_offering_id)
+    .bind(proposal.group_key.trim())
+    .fetch_optional(&mut **transaction)
+    .await?
+    {
+        let mut existing_homeroom_ids: Vec<Uuid> = sqlx::query_scalar(
+            "SELECT homeroom_id FROM learning_group_homerooms \
+             WHERE learning_group_id = $1 ORDER BY homeroom_id",
+        )
+        .bind(id)
+        .fetch_all(&mut **transaction)
+        .await?;
+        existing_homeroom_ids.sort_unstable();
+        if existing_homeroom_ids != homeroom_ids {
+            return Err(AppError::Conflict(format!(
+                "กลุ่มที่ระบบเคยเตรียมไว้ถูกปรับแต่งแล้ว (rowVersion {row_version}) กรุณาตรวจกลุ่มด้วยตนเอง"
+            )));
+        }
+        return Ok(GeneratedGroupApplyOutcome { id, created: false });
+    }
+
+    let group_id = Uuid::new_v4();
+    let code_suffix = proposal.group_key.chars().take(10).collect::<String>();
+    sqlx::query(
+        r#"INSERT INTO learning_groups (
+               id, learning_offering_id, academic_term_id, academic_year_id,
+               code, name, status, roster_status, generation_source, generation_key
+           ) VALUES ($1, $2, $3, $4, $5, $6, 'draft', 'draft',
+                     'curriculum_prepare', $7)"#,
+    )
+    .bind(group_id)
+    .bind(learning_offering_id)
+    .bind(academic_term_id)
+    .bind(academic_year_id)
+    .bind(format!("PREP-{}", code_suffix.to_uppercase()))
+    .bind(proposal.name.trim())
+    .bind(proposal.group_key.trim())
+    .execute(&mut **transaction)
+    .await?;
+    for homeroom_id in homeroom_ids {
+        sqlx::query(
+            r#"INSERT INTO learning_group_homerooms (
+                   id, learning_group_id, academic_term_id, academic_year_id,
+                   homeroom_id, coverage_source
+               ) VALUES ($1, $2, $3, $4, $5, 'curriculum_prepare')"#,
+        )
+        .bind(Uuid::new_v4())
+        .bind(group_id)
+        .bind(academic_term_id)
+        .bind(academic_year_id)
+        .bind(homeroom_id)
+        .execute(&mut **transaction)
+        .await?;
+    }
+    Ok(GeneratedGroupApplyOutcome {
+        id: group_id,
+        created: true,
+    })
 }
 
 pub async fn list(pool: &PgPool, offering_id: Uuid) -> Result<Vec<LearningGroup>, AppError> {

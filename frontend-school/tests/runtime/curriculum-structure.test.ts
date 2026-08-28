@@ -171,32 +171,30 @@ function workspace(): CurriculumStructureWorkspace {
 }
 
 test('curriculum document keeps dynamic term and section order while summing decimals exactly', () => {
-		const document = buildCurriculumDocument(workspace(), 'program-a', 'grade-1');
+	const document = buildCurriculumDocument(workspace(), 'program-a', 'grade-1');
 
-		assert.deepEqual(document.termPanels.map((panel) => panel.name), [
-			'ภาคเรียนที่ 1',
-			'ภาคเรียนที่ 2',
-			'ภาคฤดูร้อน'
-		]);
-		assert.deepEqual(document.termPanels[0]?.sections.map((section) => section.label), [
-			'รายวิชาพื้นฐาน',
-			'รายวิชาเพิ่มเติม',
-			'กิจกรรมพัฒนาผู้เรียน'
-		]);
-		assert.equal(document.termPanels[0]?.totalCredits, '2.50');
-		assert.equal(document.termPanels[0]?.totalHours, '100.00');
-		assert.equal(document.termPanels[2]?.totalCredits, '0.00');
+	assert.deepEqual(
+		document.termPanels.map((panel) => panel.name),
+		['ภาคเรียนที่ 1', 'ภาคเรียนที่ 2', 'ภาคฤดูร้อน']
+	);
+	assert.deepEqual(
+		document.termPanels[0]?.sections.map((section) => section.label),
+		['รายวิชาพื้นฐาน', 'รายวิชาเพิ่มเติม', 'กิจกรรมพัฒนาผู้เรียน']
+	);
+	assert.equal(document.termPanels[0]?.totalCredits, '2.50');
+	assert.equal(document.termPanels[0]?.totalHours, '100.00');
+	assert.equal(document.termPanels[2]?.totalCredits, '0.00');
 });
 
 test('curriculum comparison keeps program assignments independent', () => {
-		const comparison = buildProgramComparison(workspace(), 'grade-1');
-		const mathematics = comparison.rows.find((row) => row.catalogVersionId === 'subject-1');
+	const comparison = buildProgramComparison(workspace(), 'grade-1');
+	const mathematics = comparison.rows.find((row) => row.catalogVersionId === 'subject-1');
 
-		assert.deepEqual(comparison.programs.map((program) => program.name), [
-			'แผนทั่วไป',
-			'วิทย์–คณิต'
-		]);
-		assert.deepEqual(mathematics?.cells['program-a']?.termNames, ['ภาคเรียนที่ 1']);
-		assert.deepEqual(mathematics?.cells['program-b']?.termNames, ['ภาคเรียนที่ 2']);
-		assert.equal(mathematics?.isDifferent, true);
+	assert.deepEqual(
+		comparison.programs.map((program) => program.name),
+		['แผนทั่วไป', 'วิทย์–คณิต']
+	);
+	assert.deepEqual(mathematics?.cells['program-a']?.termNames, ['ภาคเรียนที่ 1']);
+	assert.deepEqual(mathematics?.cells['program-b']?.termNames, ['ภาคเรียนที่ 2']);
+	assert.equal(mathematics?.isDifferent, true);
 });

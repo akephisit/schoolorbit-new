@@ -5,6 +5,7 @@ use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::error::AppError;
+use crate::modules::academic::core::models::RequirementKind;
 use crate::modules::academic::core::services::validate_canonical_decimal;
 use crate::policies::resource_access_policy::AcademicResourceListFilter;
 
@@ -12,11 +13,13 @@ use super::super::models::{
     ActivityAttendanceRequirement, ActivityOfferingSnapshot, ActivityPassCriteria,
     ApplyCurriculumOfferingsRequest, ApplyCurriculumOfferingsResult, CourseGradingPolicy,
     CourseOfferingSnapshot, CreateActivityOfferingRequest, CreateCourseOfferingRequest,
-    CreateLearningOfferingRequest, CurriculumOfferingPreview, CurriculumOfferingPreviewItem,
-    CurriculumPreviewAction, LearningOffering, LearningOfferingKind, LearningOfferingQuery,
-    LearningOfferingRow, LearningOfferingSnapshot, LearningOfferingStatus, LearningOfferingTarget,
-    OfferingTargetInput, OfferingTargetKind, PreviewCurriculumOfferingsRequest,
-    PublishLearningOfferingRequest, UpdateLearningOfferingRequest,
+    CreateLearningOfferingRequest, CurriculumGroupProposal, CurriculumOfferingPreview,
+    CurriculumPreparationChoice, CurriculumPreparationProposal, CurriculumPreviewAction,
+    LearningOffering, LearningOfferingKind, LearningOfferingQuery, LearningOfferingRow,
+    LearningOfferingSnapshot, LearningOfferingStatus, LearningOfferingTarget, OfferingTargetInput,
+    OfferingTargetKind, PreparationAction, PreparationConflict, PreparationGroupingState,
+    PreviewCurriculumOfferingsRequest, PublishLearningOfferingRequest,
+    UpdateLearningOfferingRequest,
 };
 use super::{
     append_audit, require_active_owner, require_writable_term, stable_hash, validate_row_version,
@@ -91,6 +94,7 @@ struct PreviewRequirementRow {
     requirement_id: Uuid,
     study_program_id: Uuid,
     grade_level_id: Uuid,
+    requirement_kind: RequirementKind,
     code: String,
     name: String,
     credit: Option<String>,
@@ -105,7 +109,24 @@ struct ExistingPreviewOfferingRow {
     resource_kind: LearningOfferingKind,
     catalog_version_id: Uuid,
     offering_id: Uuid,
-    source_requirement_id: Option<Uuid>,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct PreviewHomeroomRow {
+    id: Uuid,
+    name: String,
+    grade_level_id: Uuid,
+    study_program_id: Uuid,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct ExistingPreparationGroupRow {
+    id: Uuid,
+    learning_offering_id: Uuid,
+    name: String,
+    generation_source: String,
+    generation_key: Option<String>,
+    homeroom_ids: Vec<Uuid>,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -123,7 +144,7 @@ struct PreviewHashInput<'a> {
     term_row_version: i64,
     term_code: &'a str,
     study_program_ids: &'a [Uuid],
-    items: &'a [CurriculumOfferingPreviewItem],
+    proposals: &'a [CurriculumPreparationProposal],
 }
 
 #[derive(Serialize)]
@@ -133,6 +154,7 @@ struct ApplyRequestHashInput<'a> {
     study_program_ids: &'a [Uuid],
     owning_organization_unit_id: Uuid,
     source_hash: &'a str,
+    choices: &'a [CurriculumPreparationChoice],
 }
 
 pub async fn list(
@@ -367,21 +389,47 @@ pub async fn apply_from_curriculum(
     request: ApplyCurriculumOfferingsRequest,
 ) -> Result<ApplyCurriculumOfferingsResult, AppError> {
     let program_ids = normalized_program_ids(&request.study_program_ids)?;
+    let choices = normalized_preparation_choices(&request.choices)?;
     let request_hash = stable_hash(&ApplyRequestHashInput {
         academic_term_id: request.academic_term_id,
         study_program_ids: &program_ids,
         owning_organization_unit_id: request.owning_organization_unit_id,
         source_hash: &request.source_hash,
+        choices: &choices,
     })?;
 
-    if let Some((stored_request_hash, source_hash, offering_ids)) =
-        sqlx::query_as::<_, (String, String, Vec<Uuid>)>(
-            "SELECT request_hash::text, source_hash::text, offering_ids \
+    if let Some((
+        stored_request_hash,
+        source_hash,
+        offering_ids,
+        group_ids,
+        created_offering_count,
+        retained_offering_count,
+        created_group_count,
+        retained_group_count,
+        skipped_count,
+    )) = sqlx::query_as::<
+        _,
+        (
+            String,
+            String,
+            Vec<Uuid>,
+            Vec<Uuid>,
+            i32,
+            i32,
+            i32,
+            i32,
+            i32,
+        ),
+    >(
+        "SELECT request_hash::text, source_hash::text, offering_ids, group_ids, \
+                created_offering_count, retained_offering_count, \
+                created_group_count, retained_group_count, skipped_count \
          FROM learning_delivery_apply_runs WHERE idempotency_key = $1",
-        )
-        .bind(request.idempotency_key)
-        .fetch_optional(pool)
-        .await?
+    )
+    .bind(request.idempotency_key)
+    .fetch_optional(pool)
+    .await?
     {
         if stored_request_hash.trim_end() != request_hash {
             return Err(AppError::Conflict(
@@ -391,9 +439,13 @@ pub async fn apply_from_curriculum(
         return Ok(ApplyCurriculumOfferingsResult {
             academic_term_id: request.academic_term_id,
             source_hash: source_hash.trim_end().to_string(),
-            created_count: 0,
-            retained_count: offering_ids.len(),
             offering_ids,
+            group_ids,
+            created_offering_count: created_offering_count as usize,
+            retained_offering_count: retained_offering_count as usize,
+            created_group_count: created_group_count as usize,
+            retained_group_count: retained_group_count as usize,
+            skipped_count: skipped_count as usize,
         });
     }
 
@@ -406,55 +458,93 @@ pub async fn apply_from_curriculum(
             "โครงสร้างหลักสูตรหรือภาคเรียนเปลี่ยนไป กรุณา preview ใหม่".to_string(),
         ));
     }
-    if preview
-        .items
-        .iter()
-        .any(|item| item.action == CurriculumPreviewAction::Conflict)
-    {
-        return Err(AppError::Conflict(
-            "มีรายการเปิดสอนที่ขัดแย้งกับหลักสูตร".to_string(),
-        ));
-    }
+    validate_preparation_choices(&preview.proposals, &choices)?;
 
     let term = require_writable_term(&mut transaction, request.academic_term_id, true).await?;
     let mut offering_ids = Vec::new();
-    let mut created_count = 0_usize;
-    let mut retained_count = 0_usize;
-    let mut resource_offerings = HashMap::new();
-    for item in &preview.items {
-        let key = (item.resource_kind, item.catalog_version_id);
-        let offering_id = if let Some(existing) = resource_offerings.get(&key) {
-            *existing
-        } else if let Some(existing) = item.existing_offering_id {
-            retained_count += 1;
+    let mut group_ids = Vec::new();
+    let mut created_offering_count = 0_usize;
+    let mut retained_offering_count = 0_usize;
+    let mut created_group_count = 0_usize;
+    let mut retained_group_count = 0_usize;
+    let mut skipped_count = 0_usize;
+    for proposal in &preview.proposals {
+        let choice = choices
+            .iter()
+            .find(|choice| choice.proposal_id == proposal.proposal_id)
+            .ok_or_else(|| AppError::ValidationError("ตัวเลือกการเตรียมรายการไม่ครบ".to_string()))?;
+        if choice.action == PreparationAction::Skip {
+            skipped_count += 1;
+            continue;
+        }
+        if proposal.offering_action == CurriculumPreviewAction::Conflict {
+            return Err(AppError::Conflict(format!(
+                "รายการ {} ขัดแย้งกับข้อมูลเปิดสอนเดิม",
+                proposal.code
+            )));
+        }
+        if choice.action == PreparationAction::Apply && !proposal.conflicts.is_empty() {
+            return Err(AppError::Conflict(proposal.conflicts[0].message.clone()));
+        }
+
+        let offering_id = if let Some(existing) = proposal.existing_offering_id {
+            retained_offering_count += 1;
             existing
         } else {
-            created_count += 1;
+            created_offering_count += 1;
             insert_generated_offering(
                 &mut transaction,
                 &term,
-                item,
+                proposal,
                 request.owning_organization_unit_id,
             )
             .await?
         };
-        resource_offerings.insert(key, offering_id);
-        insert_grade_program_target(&mut transaction, offering_id, &term, item).await?;
+        insert_homeroom_targets(&mut transaction, offering_id, &term, proposal).await?;
         offering_ids.push(offering_id);
+
+        if choice.action == PreparationAction::Apply {
+            for group in &choice.groups {
+                let outcome = super::groups::apply_curriculum_generated_group(
+                    &mut transaction,
+                    offering_id,
+                    term.id,
+                    term.academic_year_id,
+                    group,
+                )
+                .await?;
+                group_ids.push(outcome.id);
+                if outcome.created {
+                    created_group_count += 1;
+                } else {
+                    retained_group_count += 1;
+                }
+            }
+        }
     }
     offering_ids.sort_unstable();
     offering_ids.dedup();
+    group_ids.sort_unstable();
+    group_ids.dedup();
     sqlx::query(
         "INSERT INTO learning_delivery_apply_runs (
              idempotency_key, academic_term_id, request_hash, source_hash,
-             offering_ids, actor_user_id
-         ) VALUES ($1, $2, $3, $4, $5, $6)",
+             offering_ids, group_ids, created_offering_count,
+             retained_offering_count, created_group_count, retained_group_count,
+             skipped_count, actor_user_id
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
     )
     .bind(request.idempotency_key)
     .bind(request.academic_term_id)
     .bind(&request_hash)
     .bind(&preview.source_hash)
     .bind(&offering_ids)
+    .bind(&group_ids)
+    .bind(created_offering_count as i32)
+    .bind(retained_offering_count as i32)
+    .bind(created_group_count as i32)
+    .bind(retained_group_count as i32)
+    .bind(skipped_count as i32)
     .bind(actor_user_id)
     .execute(&mut *transaction)
     .await?;
@@ -464,8 +554,12 @@ pub async fn apply_from_curriculum(
         academic_term_id: request.academic_term_id,
         source_hash: preview.source_hash,
         offering_ids,
-        created_count,
-        retained_count,
+        group_ids,
+        created_offering_count,
+        retained_offering_count,
+        created_group_count,
+        retained_group_count,
+        skipped_count,
     })
 }
 
@@ -1151,6 +1245,112 @@ fn normalized_program_ids(ids: &[Uuid]) -> Result<Vec<Uuid>, AppError> {
     Ok(values)
 }
 
+fn normalized_preparation_choices(
+    choices: &[CurriculumPreparationChoice],
+) -> Result<Vec<CurriculumPreparationChoice>, AppError> {
+    let mut values = choices.to_vec();
+    for choice in &mut values {
+        choice.proposal_id = choice.proposal_id.trim().to_string();
+        if choice.proposal_id.is_empty() {
+            return Err(AppError::ValidationError("proposalId ต้องไม่ว่าง".to_string()));
+        }
+        if choice.action != PreparationAction::Apply && !choice.groups.is_empty() {
+            return Err(AppError::ValidationError(
+                "ตัวเลือกข้ามหรือรอจัดกลุ่มต้องไม่ส่งกลุ่มเรียนมาด้วย".to_string(),
+            ));
+        }
+        let mut group_keys = HashSet::new();
+        for group in &mut choice.groups {
+            group.group_key = group.group_key.trim().to_string();
+            group.name = group.name.trim().to_string();
+            group.homeroom_ids.sort_unstable();
+            group.homeroom_ids.dedup();
+            if group.group_key.len() != 64
+                || !group
+                    .group_key
+                    .chars()
+                    .all(|character| character.is_ascii_hexdigit())
+                || group.name.is_empty()
+                || group.homeroom_ids.is_empty()
+            {
+                return Err(AppError::ValidationError(
+                    "กลุ่มที่เตรียมต้องมี groupKey แบบ source hash ชื่อ และห้องประจำชั้น".to_string(),
+                ));
+            }
+            if !group_keys.insert(group.group_key.clone()) {
+                return Err(AppError::ValidationError(
+                    "groupKey ซ้ำกันในข้อเสนอเดียวกัน".to_string(),
+                ));
+            }
+        }
+        choice
+            .groups
+            .sort_by(|left, right| left.group_key.cmp(&right.group_key));
+    }
+    values.sort_by(|left, right| left.proposal_id.cmp(&right.proposal_id));
+    if values
+        .windows(2)
+        .any(|pair| pair[0].proposal_id == pair[1].proposal_id)
+    {
+        return Err(AppError::ValidationError(
+            "proposalId ซ้ำกันในคำขอ".to_string(),
+        ));
+    }
+    Ok(values)
+}
+
+fn validate_preparation_choices(
+    proposals: &[CurriculumPreparationProposal],
+    choices: &[CurriculumPreparationChoice],
+) -> Result<(), AppError> {
+    if proposals.len() != choices.len() {
+        return Err(AppError::ValidationError(
+            "ต้องส่งตัวเลือกให้ครบทุกข้อเสนอจาก preview ล่าสุด".to_string(),
+        ));
+    }
+    for proposal in proposals {
+        let choice = choices
+            .iter()
+            .find(|choice| choice.proposal_id == proposal.proposal_id)
+            .ok_or_else(|| {
+                AppError::ValidationError(format!("ไม่พบตัวเลือกสำหรับรายการ {}", proposal.code))
+            })?;
+        if choice.action == PreparationAction::Apply && choice.groups.is_empty() {
+            return Err(AppError::ValidationError(format!(
+                "รายการ {} ต้องมีกลุ่ม หรือเลือกไว้จัดกลุ่มภายหลัง",
+                proposal.code
+            )));
+        }
+        for group in &choice.groups {
+            if group
+                .homeroom_ids
+                .iter()
+                .any(|id| !proposal.target_homeroom_ids.contains(id))
+            {
+                return Err(AppError::ValidationError(format!(
+                    "กลุ่มของรายการ {} มีห้องที่อยู่นอกเป้าหมายจากหลักสูตร",
+                    proposal.code
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn generated_group_key(proposal_id: &str, homeroom_ids: &[Uuid]) -> Result<String, AppError> {
+    let mut normalized_ids = homeroom_ids.to_vec();
+    normalized_ids.sort_unstable();
+    normalized_ids.dedup();
+    stable_hash(&(proposal_id, normalized_ids))
+}
+
+fn offering_kind_order(kind: LearningOfferingKind) -> u8 {
+    match kind {
+        LearningOfferingKind::Course => 1,
+        LearningOfferingKind::Activity => 2,
+    }
+}
+
 async fn build_curriculum_preview(
     transaction: &mut Transaction<'_, Postgres>,
     academic_term_id: Uuid,
@@ -1182,7 +1382,8 @@ async fn build_curriculum_preview(
         r#"SELECT 'course'::text AS resource_kind,
                   requirement.subject_version_id AS catalog_version_id,
                   requirement.id AS requirement_id, requirement.study_program_id,
-                  requirement.grade_level_id, version.code, version.name_th AS name,
+                  requirement.grade_level_id, requirement.requirement_kind,
+                  version.code, version.name_th AS name,
                   version.credit::text AS credit, version.hours_per_semester::text AS hours,
                   version.status AS version_status, version.effective_from,
                   version.effective_until
@@ -1196,7 +1397,8 @@ async fn build_curriculum_preview(
            SELECT 'activity'::text AS resource_kind,
                   requirement.activity_version_id AS catalog_version_id,
                   requirement.id AS requirement_id, requirement.study_program_id,
-                  requirement.grade_level_id, stable.code, version.name,
+                  requirement.grade_level_id, requirement.requirement_kind,
+                  stable.code, version.name,
                   NULL::text AS credit, version.hours_per_week::text AS hours,
                   version.status AS version_status, version.effective_from,
                   version.effective_until
@@ -1214,9 +1416,33 @@ async fn build_curriculum_preview(
     .bind(term.type_occurrence)
     .fetch_all(&mut **transaction)
     .await?;
+    let homerooms: Vec<PreviewHomeroomRow> = sqlx::query_as(
+        r#"SELECT id, name, grade_level_id, study_program_id
+           FROM homerooms
+           WHERE academic_year_id = $1
+             AND study_program_id = ANY($2)
+             AND is_active
+           ORDER BY grade_level_id, study_program_id, name, id"#,
+    )
+    .bind(term.academic_year_id)
+    .bind(program_ids)
+    .fetch_all(&mut **transaction)
+    .await?;
+    let mut homerooms_by_program_grade: HashMap<(Uuid, Uuid), Vec<&PreviewHomeroomRow>> =
+        HashMap::new();
+    for homeroom in &homerooms {
+        homerooms_by_program_grade
+            .entry((homeroom.study_program_id, homeroom.grade_level_id))
+            .or_default()
+            .push(homeroom);
+    }
     let existing_offerings =
         load_existing_preview_offerings(transaction, academic_term_id, &rows).await?;
-    let mut items = Vec::with_capacity(rows.len());
+    let existing_offering_ids = existing_offerings.values().copied().collect::<Vec<_>>();
+    let existing_groups =
+        load_existing_preparation_groups(transaction, &existing_offering_ids).await?;
+    let mut proposals = Vec::<CurriculumPreparationProposal>::new();
+    let mut proposal_indexes = HashMap::<(LearningOfferingKind, Uuid), usize>::new();
     for row in rows {
         validate_version_for_term(
             &row.version_status,
@@ -1224,47 +1450,167 @@ async fn build_curriculum_preview(
             row.effective_until,
             &term,
         )?;
-        let existing = existing_offerings
-            .get(&(row.resource_kind, row.catalog_version_id))
-            .copied();
-        let (action, existing_offering_id, conflict_reason) = match existing {
-            None => (CurriculumPreviewAction::Create, None, None),
-            Some((id, source_id)) if source_id == Some(row.requirement_id) => {
-                (CurriculumPreviewAction::Retain, Some(id), None)
-            }
-            Some((id, _)) => (
-                CurriculumPreviewAction::Conflict,
-                Some(id),
-                Some("รายการเดิมอ้างอิงข้อกำหนดคนละรายการ".to_string()),
-            ),
+        let key = (row.resource_kind, row.catalog_version_id);
+        let proposal_index = if let Some(index) = proposal_indexes.get(&key) {
+            *index
+        } else {
+            let existing_offering_id = existing_offerings.get(&key).copied();
+            let proposal_id =
+                stable_hash(&(academic_term_id, row.resource_kind, row.catalog_version_id))?;
+            let index = proposals.len();
+            proposals.push(CurriculumPreparationProposal {
+                proposal_id,
+                offering_action: if existing_offering_id.is_some() {
+                    CurriculumPreviewAction::Retain
+                } else {
+                    CurriculumPreviewAction::Create
+                },
+                resource_kind: row.resource_kind,
+                catalog_version_id: row.catalog_version_id,
+                requirement_ids: Vec::new(),
+                target_homeroom_ids: Vec::new(),
+                code: row.code.clone(),
+                name: row.name.clone(),
+                credit: row.credit.clone(),
+                hours: row.hours.clone(),
+                existing_offering_id,
+                grouping_state: PreparationGroupingState::Deferred,
+                default_groups: Vec::new(),
+                conflicts: Vec::new(),
+            });
+            proposal_indexes.insert(key, index);
+            index
         };
-        items.push(CurriculumOfferingPreviewItem {
-            action,
-            resource_kind: row.resource_kind,
-            catalog_version_id: row.catalog_version_id,
-            requirement_id: row.requirement_id,
-            study_program_id: row.study_program_id,
-            grade_level_id: row.grade_level_id,
-            code: row.code,
-            name: row.name,
-            credit: row.credit,
-            hours: row.hours,
-            existing_offering_id,
-            conflict_reason,
-        });
+        let proposal = &mut proposals[proposal_index];
+        proposal.requirement_ids.push(row.requirement_id);
+        let applicable_homerooms = homerooms_by_program_grade
+            .get(&(row.study_program_id, row.grade_level_id))
+            .cloned()
+            .unwrap_or_default();
+        for homeroom in applicable_homerooms {
+            proposal.target_homeroom_ids.push(homeroom.id);
+            if row.requirement_kind == RequirementKind::Required {
+                let group_key = generated_group_key(&proposal.proposal_id, &[homeroom.id])?;
+                if !proposal
+                    .default_groups
+                    .iter()
+                    .any(|group| group.group_key == group_key)
+                {
+                    proposal.default_groups.push(CurriculumGroupProposal {
+                        group_key,
+                        name: format!("{} · {}", proposal.code, homeroom.name),
+                        homeroom_ids: vec![homeroom.id],
+                    });
+                }
+            }
+        }
     }
+
+    proposals.retain(|proposal| !proposal.target_homeroom_ids.is_empty());
+    if proposals.is_empty() {
+        return Err(AppError::ValidationError(
+            "ไม่พบห้องประจำชั้นที่ใช้แผนการเรียนนี้ในปีการศึกษาของภาคเรียนที่เลือก".to_string(),
+        ));
+    }
+    for proposal in &mut proposals {
+        proposal.requirement_ids.sort_unstable();
+        proposal.requirement_ids.dedup();
+        proposal.target_homeroom_ids.sort_unstable();
+        proposal.target_homeroom_ids.dedup();
+        proposal.default_groups.sort_by(|left, right| {
+            left.homeroom_ids
+                .cmp(&right.homeroom_ids)
+                .then(left.group_key.cmp(&right.group_key))
+        });
+        if let Some(offering_id) = proposal.existing_offering_id {
+            let generated_groups = existing_groups
+                .iter()
+                .filter(|group| {
+                    group.learning_offering_id == offering_id
+                        && group.generation_source == "curriculum_prepare"
+                        && group
+                            .homeroom_ids
+                            .iter()
+                            .any(|id| proposal.target_homeroom_ids.contains(id))
+                })
+                .collect::<Vec<_>>();
+            if !generated_groups.is_empty() {
+                proposal.default_groups = generated_groups
+                    .iter()
+                    .filter_map(|group| {
+                        group
+                            .generation_key
+                            .as_ref()
+                            .map(|group_key| CurriculumGroupProposal {
+                                group_key: group_key.clone(),
+                                name: group.name.clone(),
+                                homeroom_ids: group.homeroom_ids.clone(),
+                            })
+                    })
+                    .collect();
+            }
+            for group in existing_groups
+                .iter()
+                .filter(|group| group.learning_offering_id == offering_id)
+            {
+                let overlaps_target = group
+                    .homeroom_ids
+                    .iter()
+                    .any(|id| proposal.target_homeroom_ids.contains(id));
+                if overlaps_target && group.generation_source == "manual" {
+                    proposal.conflicts.push(PreparationConflict {
+                        code: "manual_group_overlap".to_string(),
+                        message: format!(
+                            "รายการ {} มีกลุ่มที่จัดเองครอบคลุมห้องเป้าหมายอยู่แล้ว ระบบจะไม่แก้กลุ่มนี้",
+                            proposal.code
+                        ),
+                        offering_id: Some(offering_id),
+                        group_id: Some(group.id),
+                    });
+                } else if group.generation_source == "curriculum_prepare"
+                    && group
+                        .homeroom_ids
+                        .iter()
+                        .any(|id| !proposal.target_homeroom_ids.contains(id))
+                {
+                    proposal.conflicts.push(PreparationConflict {
+                        code: "generated_group_target_mismatch".to_string(),
+                        message: format!(
+                            "กลุ่มที่ระบบเคยเตรียมสำหรับ {} ครอบคลุมห้องนอกเป้าหมายหลักสูตร กรุณาตรวจด้วยตนเอง",
+                            proposal.code
+                        ),
+                        offering_id: Some(offering_id),
+                        group_id: Some(group.id),
+                    });
+                }
+            }
+        }
+        proposal.grouping_state = if !proposal.conflicts.is_empty() {
+            PreparationGroupingState::Conflict
+        } else if proposal.default_groups.is_empty() {
+            PreparationGroupingState::Deferred
+        } else {
+            PreparationGroupingState::Proposed
+        };
+    }
+    proposals.sort_by(|left, right| {
+        offering_kind_order(left.resource_kind)
+            .cmp(&offering_kind_order(right.resource_kind))
+            .then(left.code.cmp(&right.code))
+            .then(left.catalog_version_id.cmp(&right.catalog_version_id))
+    });
     let source_hash = stable_hash(&PreviewHashInput {
         academic_term_id,
         academic_year_id: term.academic_year_id,
         term_row_version: term.row_version,
         term_code: &term.code,
         study_program_ids: program_ids,
-        items: &items,
+        proposals: &proposals,
     })?;
     Ok(CurriculumOfferingPreview {
         academic_term_id,
         source_hash,
-        items,
+        proposals,
     })
 }
 
@@ -1272,7 +1618,7 @@ async fn load_existing_preview_offerings(
     transaction: &mut Transaction<'_, Postgres>,
     academic_term_id: Uuid,
     requirements: &[PreviewRequirementRow],
-) -> Result<HashMap<(LearningOfferingKind, Uuid), (Uuid, Option<Uuid>)>, AppError> {
+) -> Result<HashMap<(LearningOfferingKind, Uuid), Uuid>, AppError> {
     let course_version_ids: Vec<Uuid> = requirements
         .iter()
         .filter(|row| row.resource_kind == LearningOfferingKind::Course)
@@ -1286,8 +1632,7 @@ async fn load_existing_preview_offerings(
     let rows: Vec<ExistingPreviewOfferingRow> = sqlx::query_as(
         r#"SELECT 'course'::text AS resource_kind,
                   detail.subject_version_id AS catalog_version_id,
-                  offering.id AS offering_id,
-                  offering.source_requirement_id
+                  offering.id AS offering_id
            FROM learning_offerings offering
            JOIN course_offering_details detail
              ON detail.learning_offering_id = offering.id
@@ -1296,8 +1641,7 @@ async fn load_existing_preview_offerings(
            UNION ALL
            SELECT 'activity'::text AS resource_kind,
                   detail.activity_version_id AS catalog_version_id,
-                  offering.id AS offering_id,
-                  offering.source_requirement_id
+                  offering.id AS offering_id
            FROM learning_offerings offering
            JOIN activity_offering_details detail
              ON detail.learning_offering_id = offering.id
@@ -1314,22 +1658,52 @@ async fn load_existing_preview_offerings(
     for row in rows {
         existing
             .entry((row.resource_kind, row.catalog_version_id))
-            .or_insert((row.offering_id, row.source_requirement_id));
+            .or_insert(row.offering_id);
     }
     Ok(existing)
+}
+
+async fn load_existing_preparation_groups(
+    transaction: &mut Transaction<'_, Postgres>,
+    offering_ids: &[Uuid],
+) -> Result<Vec<ExistingPreparationGroupRow>, AppError> {
+    if offering_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    Ok(sqlx::query_as(
+        r#"SELECT learning_group.id,
+                  learning_group.learning_offering_id,
+                  learning_group.name,
+                  learning_group.generation_source,
+                  learning_group.generation_key,
+                  coalesce(
+                      array_agg(coverage.homeroom_id ORDER BY coverage.homeroom_id)
+                          FILTER (WHERE coverage.homeroom_id IS NOT NULL),
+                      ARRAY[]::uuid[]
+                  ) AS homeroom_ids
+           FROM learning_groups learning_group
+           LEFT JOIN learning_group_homerooms coverage
+             ON coverage.learning_group_id = learning_group.id
+           WHERE learning_group.learning_offering_id = ANY($1)
+           GROUP BY learning_group.id
+           ORDER BY learning_group.learning_offering_id, learning_group.id"#,
+    )
+    .bind(offering_ids)
+    .fetch_all(&mut **transaction)
+    .await?)
 }
 
 async fn insert_generated_offering(
     transaction: &mut Transaction<'_, Postgres>,
     term: &TermContext,
-    item: &CurriculumOfferingPreviewItem,
+    proposal: &CurriculumPreparationProposal,
     owner_id: Uuid,
 ) -> Result<Uuid, AppError> {
     let id = Uuid::new_v5(
         &DELIVERY_NAMESPACE,
         format!(
             "offering:{}:{:?}:{}",
-            term.id, item.resource_kind, item.catalog_version_id
+            term.id, proposal.resource_kind, proposal.catalog_version_id
         )
         .as_bytes(),
     );
@@ -1343,20 +1717,20 @@ async fn insert_generated_offering(
     .bind(id)
     .bind(term.id)
     .bind(term.academic_year_id)
-    .bind(item.resource_kind)
-    .bind(&item.code)
-    .bind(&item.name)
-    .bind(match item.resource_kind {
+    .bind(proposal.resource_kind)
+    .bind(&proposal.code)
+    .bind(&proposal.name)
+    .bind(match proposal.resource_kind {
         LearningOfferingKind::Course => "curriculum_course_requirement",
         LearningOfferingKind::Activity => "curriculum_activity_requirement",
     })
-    .bind(item.requirement_id)
+    .bind(proposal.requirement_ids.first().copied())
     .bind(owner_id)
     .execute(&mut **transaction)
     .await?;
-    match item.resource_kind {
+    match proposal.resource_kind {
         LearningOfferingKind::Course => {
-            let source = course_version_source(transaction, item.catalog_version_id).await?;
+            let source = course_version_source(transaction, proposal.catalog_version_id).await?;
             validate_version_for_term(
                 &source.status,
                 source.effective_from,
@@ -1376,13 +1750,14 @@ async fn insert_generated_offering(
             .bind(term.academic_year_id)
             .bind(source.subject_version_id)
             .bind(source.subject_id)
-            .bind(item.requirement_id)
+            .bind(proposal.requirement_ids.first().copied())
             .bind(validate_canonical_decimal(
-                item.credit.as_deref().unwrap_or(&source.credit),
+                proposal.credit.as_deref().unwrap_or(&source.credit),
                 2,
             )?)
             .bind(
-                item.hours
+                proposal
+                    .hours
                     .as_deref()
                     .map(|value| validate_canonical_decimal(value, 2))
                     .transpose()?,
@@ -1391,7 +1766,7 @@ async fn insert_generated_offering(
             .await?;
         }
         LearningOfferingKind::Activity => {
-            let source = activity_version_source(transaction, item.catalog_version_id).await?;
+            let source = activity_version_source(transaction, proposal.catalog_version_id).await?;
             validate_version_for_term(
                 &source.status,
                 source.effective_from,
@@ -1414,10 +1789,10 @@ async fn insert_generated_offering(
             .bind(term.academic_year_id)
             .bind(source.activity_version_id)
             .bind(source.activity_id)
-            .bind(item.requirement_id)
+            .bind(proposal.requirement_ids.first().copied())
             .bind(source.scheduling_mode)
             .bind(validate_canonical_decimal(
-                item.hours.as_deref().unwrap_or(&source.hours),
+                proposal.hours.as_deref().unwrap_or(&source.hours),
                 2,
             )?)
             .execute(&mut **transaction)
@@ -1427,35 +1802,70 @@ async fn insert_generated_offering(
     Ok(id)
 }
 
-async fn insert_grade_program_target(
+async fn insert_homeroom_targets(
     transaction: &mut Transaction<'_, Postgres>,
     offering_id: Uuid,
     term: &TermContext,
-    item: &CurriculumOfferingPreviewItem,
+    proposal: &CurriculumPreparationProposal,
 ) -> Result<(), AppError> {
-    sqlx::query(
-        r#"INSERT INTO learning_offering_targets (
-               id, learning_offering_id, academic_term_id, academic_year_id,
-               target_kind, grade_level_id, study_program_id
-           ) VALUES ($1, $2, $3, $4, 'grade_program', $5, $6)
-           ON CONFLICT (learning_offering_id, grade_level_id, study_program_id)
-           WHERE target_kind = 'grade_program' AND homeroom_id IS NULL
-           DO NOTHING"#,
-    )
-    .bind(Uuid::new_v5(
-        &DELIVERY_NAMESPACE,
-        format!(
-            "target:{offering_id}:{}:{}",
-            item.grade_level_id, item.study_program_id
+    for homeroom_id in &proposal.target_homeroom_ids {
+        sqlx::query(
+            r#"INSERT INTO learning_offering_targets (
+                   id, learning_offering_id, academic_term_id, academic_year_id,
+                   target_kind, homeroom_id, grade_level_id, study_program_id
+               )
+               SELECT $1, $2, $3, $4, 'homeroom', homeroom.id,
+                      homeroom.grade_level_id, homeroom.study_program_id
+               FROM homerooms homeroom
+               WHERE homeroom.id = $5
+                 AND homeroom.academic_year_id = $4
+               ON CONFLICT ON CONSTRAINT learning_offering_targets_unique_key DO NOTHING"#,
         )
-        .as_bytes(),
-    ))
-    .bind(offering_id)
-    .bind(term.id)
-    .bind(term.academic_year_id)
-    .bind(item.grade_level_id)
-    .bind(item.study_program_id)
-    .execute(&mut **transaction)
-    .await?;
+        .bind(Uuid::new_v5(
+            &DELIVERY_NAMESPACE,
+            format!("target:{offering_id}:{homeroom_id}").as_bytes(),
+        ))
+        .bind(offering_id)
+        .bind(term.id)
+        .bind(term.academic_year_id)
+        .bind(homeroom_id)
+        .execute(&mut **transaction)
+        .await?;
+    }
     Ok(())
+}
+
+#[cfg(test)]
+mod preparation_choice_tests {
+    use super::*;
+
+    #[test]
+    fn apply_action_requires_a_reviewed_group_even_when_defaults_are_deferred() {
+        let proposal = CurriculumPreparationProposal {
+            proposal_id: "proposal".to_string(),
+            offering_action: CurriculumPreviewAction::Create,
+            resource_kind: LearningOfferingKind::Course,
+            catalog_version_id: Uuid::new_v4(),
+            requirement_ids: vec![Uuid::new_v4()],
+            target_homeroom_ids: vec![Uuid::new_v4()],
+            code: "ค21101".to_string(),
+            name: "คณิตศาสตร์พื้นฐาน".to_string(),
+            credit: Some("1.00".to_string()),
+            hours: Some("40.00".to_string()),
+            existing_offering_id: None,
+            grouping_state: PreparationGroupingState::Deferred,
+            default_groups: Vec::new(),
+            conflicts: Vec::new(),
+        };
+        let choice = CurriculumPreparationChoice {
+            proposal_id: proposal.proposal_id.clone(),
+            action: PreparationAction::Apply,
+            groups: Vec::new(),
+        };
+
+        assert!(matches!(
+            validate_preparation_choices(&[proposal], &[choice]),
+            Err(AppError::ValidationError(_))
+        ));
+    }
 }

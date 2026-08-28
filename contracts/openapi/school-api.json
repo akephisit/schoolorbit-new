@@ -1634,9 +1634,20 @@
                 "format": "uuid",
                 "type": "string"
               },
-              "createdCount": {
+              "createdGroupCount": {
                 "minimum": 0,
                 "type": "integer"
+              },
+              "createdOfferingCount": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "groupIds": {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
               },
               "offeringIds": {
                 "items": {
@@ -1645,7 +1656,15 @@
                 },
                 "type": "array"
               },
-              "retainedCount": {
+              "retainedGroupCount": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "retainedOfferingCount": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "skippedCount": {
                 "minimum": 0,
                 "type": "integer"
               },
@@ -1657,8 +1676,12 @@
               "academicTermId",
               "sourceHash",
               "offeringIds",
-              "createdCount",
-              "retainedCount"
+              "groupIds",
+              "createdOfferingCount",
+              "retainedOfferingCount",
+              "createdGroupCount",
+              "retainedGroupCount",
+              "skippedCount"
             ],
             "type": "object"
           },
@@ -3384,9 +3407,9 @@
                 "format": "uuid",
                 "type": "string"
               },
-              "items": {
+              "proposals": {
                 "items": {
-                  "$ref": "#/components/schemas/CurriculumOfferingPreviewItem"
+                  "$ref": "#/components/schemas/CurriculumPreparationProposal"
                 },
                 "type": "array"
               },
@@ -3397,7 +3420,7 @@
             "required": [
               "academicTermId",
               "sourceHash",
-              "items"
+              "proposals"
             ],
             "type": "object"
           },
@@ -4641,6 +4664,52 @@
               "migrated",
               "createdAt",
               "updatedAt"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_HomeroomDeliveryWorkspace": {
+        "properties": {
+          "data": {
+            "properties": {
+              "academicTermId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "academicYearId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "homerooms": {
+                "items": {
+                  "$ref": "#/components/schemas/HomeroomDeliveryRoom"
+                },
+                "type": "array"
+              },
+              "unlinked": {
+                "items": {
+                  "$ref": "#/components/schemas/UnlinkedDeliveryItem"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "academicTermId",
+              "academicYearId",
+              "homerooms",
+              "unlinked"
             ],
             "type": "object"
           },
@@ -14689,6 +14758,12 @@
             "format": "uuid",
             "type": "string"
           },
+          "choices": {
+            "items": {
+              "$ref": "#/components/schemas/CurriculumPreparationChoice"
+            },
+            "type": "array"
+          },
           "idempotencyKey": {
             "format": "uuid",
             "type": "string"
@@ -14713,7 +14788,8 @@
           "studyProgramIds",
           "owningOrganizationUnitId",
           "sourceHash",
-          "idempotencyKey"
+          "idempotencyKey",
+          "choices"
         ],
         "type": "object"
       },
@@ -14723,9 +14799,20 @@
             "format": "uuid",
             "type": "string"
           },
-          "createdCount": {
+          "createdGroupCount": {
             "minimum": 0,
             "type": "integer"
+          },
+          "createdOfferingCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "groupIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
           },
           "offeringIds": {
             "items": {
@@ -14734,7 +14821,15 @@
             },
             "type": "array"
           },
-          "retainedCount": {
+          "retainedGroupCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "retainedOfferingCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "skippedCount": {
             "minimum": 0,
             "type": "integer"
           },
@@ -14746,8 +14841,12 @@
           "academicTermId",
           "sourceHash",
           "offeringIds",
-          "createdCount",
-          "retainedCount"
+          "groupIds",
+          "createdOfferingCount",
+          "retainedOfferingCount",
+          "createdGroupCount",
+          "retainedGroupCount",
+          "skippedCount"
         ],
         "type": "object"
       },
@@ -20866,6 +20965,30 @@
         ],
         "type": "string"
       },
+      "CurriculumGroupProposal": {
+        "additionalProperties": false,
+        "properties": {
+          "groupKey": {
+            "type": "string"
+          },
+          "homeroomIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "groupKey",
+          "name",
+          "homeroomIds"
+        ],
+        "type": "object"
+      },
       "CurriculumManagementOptions": {
         "properties": {
           "academicYears": {
@@ -20900,9 +21023,9 @@
             "format": "uuid",
             "type": "string"
           },
-          "items": {
+          "proposals": {
             "items": {
-              "$ref": "#/components/schemas/CurriculumOfferingPreviewItem"
+              "$ref": "#/components/schemas/CurriculumPreparationProposal"
             },
             "type": "array"
           },
@@ -20913,75 +21036,7 @@
         "required": [
           "academicTermId",
           "sourceHash",
-          "items"
-        ],
-        "type": "object"
-      },
-      "CurriculumOfferingPreviewItem": {
-        "properties": {
-          "action": {
-            "$ref": "#/components/schemas/CurriculumPreviewAction"
-          },
-          "catalogVersionId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "code": {
-            "type": "string"
-          },
-          "conflictReason": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "credit": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "existingOfferingId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "gradeLevelId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "hours": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "name": {
-            "type": "string"
-          },
-          "requirementId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "resourceKind": {
-            "$ref": "#/components/schemas/LearningOfferingKind"
-          },
-          "studyProgramId": {
-            "format": "uuid",
-            "type": "string"
-          }
-        },
-        "required": [
-          "action",
-          "resourceKind",
-          "catalogVersionId",
-          "requirementId",
-          "studyProgramId",
-          "gradeLevelId",
-          "code",
-          "name"
+          "proposals"
         ],
         "type": "object"
       },
@@ -21050,6 +21105,114 @@
           "gradeLevels",
           "studyProgramCount",
           "draftCount"
+        ],
+        "type": "object"
+      },
+      "CurriculumPreparationChoice": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/PreparationAction"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/CurriculumGroupProposal"
+            },
+            "type": "array"
+          },
+          "proposalId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposalId",
+          "action",
+          "groups"
+        ],
+        "type": "object"
+      },
+      "CurriculumPreparationProposal": {
+        "properties": {
+          "catalogVersionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "conflicts": {
+            "items": {
+              "$ref": "#/components/schemas/PreparationConflict"
+            },
+            "type": "array"
+          },
+          "credit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "defaultGroups": {
+            "items": {
+              "$ref": "#/components/schemas/CurriculumGroupProposal"
+            },
+            "type": "array"
+          },
+          "existingOfferingId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "groupingState": {
+            "$ref": "#/components/schemas/PreparationGroupingState"
+          },
+          "hours": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "offeringAction": {
+            "$ref": "#/components/schemas/CurriculumPreviewAction"
+          },
+          "proposalId": {
+            "type": "string"
+          },
+          "requirementIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "resourceKind": {
+            "$ref": "#/components/schemas/LearningOfferingKind"
+          },
+          "targetHomeroomIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "proposalId",
+          "offeringAction",
+          "resourceKind",
+          "catalogVersionId",
+          "requirementIds",
+          "targetHomeroomIds",
+          "code",
+          "name",
+          "groupingState",
+          "defaultGroups",
+          "conflicts"
         ],
         "type": "object"
       },
@@ -21941,6 +22104,25 @@
           "homerooms",
           "teachers",
           "rooms"
+        ],
+        "type": "object"
+      },
+      "DeliveryPrerequisite": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "recoveryPath": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "recoveryPath"
         ],
         "type": "object"
       },
@@ -23530,6 +23712,224 @@
         ],
         "type": "object"
       },
+      "HomeroomDeliveryGroupSummary": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "homeroomIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "homeroomNames": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "primaryTeacherCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "rosterStatus": {
+            "$ref": "#/components/schemas/RosterStatus"
+          },
+          "status": {
+            "$ref": "#/components/schemas/LearningOfferingStatus"
+          },
+          "timetableEntryCount": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "status",
+          "rosterStatus",
+          "homeroomIds",
+          "homeroomNames",
+          "primaryTeacherCount",
+          "timetableEntryCount"
+        ],
+        "type": "object"
+      },
+      "HomeroomDeliveryItem": {
+        "properties": {
+          "catalogVersionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "groupMode": {
+            "$ref": "#/components/schemas/HomeroomGroupMode"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/HomeroomDeliveryGroupSummary"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "offeringId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "offeringState": {
+            "$ref": "#/components/schemas/HomeroomOfferingState"
+          },
+          "requirementId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "requirementKind": {
+            "$ref": "#/components/schemas/RequirementKind"
+          },
+          "resourceKind": {
+            "$ref": "#/components/schemas/LearningOfferingKind"
+          },
+          "teacherState": {
+            "$ref": "#/components/schemas/HomeroomTeacherState"
+          },
+          "timetableState": {
+            "$ref": "#/components/schemas/HomeroomTimetableState"
+          }
+        },
+        "required": [
+          "requirementId",
+          "resourceKind",
+          "catalogVersionId",
+          "code",
+          "name",
+          "requirementKind",
+          "offeringState",
+          "groupMode",
+          "teacherState",
+          "timetableState",
+          "groups"
+        ],
+        "type": "object"
+      },
+      "HomeroomDeliveryQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "academicYearId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "academicYearId",
+          "academicTermId"
+        ],
+        "type": "object"
+      },
+      "HomeroomDeliveryRoom": {
+        "properties": {
+          "blockers": {
+            "items": {
+              "$ref": "#/components/schemas/DeliveryPrerequisite"
+            },
+            "type": "array"
+          },
+          "expectedCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "gradeLevel": {
+            "$ref": "#/components/schemas/GradeLevelLookupItem"
+          },
+          "homeroom": {
+            "$ref": "#/components/schemas/HomeroomLookupItem"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/HomeroomDeliveryItem"
+            },
+            "type": "array"
+          },
+          "readyCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "studyProgram": {
+            "$ref": "#/components/schemas/StudyProgramOption"
+          }
+        },
+        "required": [
+          "homeroom",
+          "gradeLevel",
+          "studyProgram",
+          "expectedCount",
+          "readyCount",
+          "items",
+          "blockers"
+        ],
+        "type": "object"
+      },
+      "HomeroomDeliveryWorkspace": {
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "academicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "homerooms": {
+            "items": {
+              "$ref": "#/components/schemas/HomeroomDeliveryRoom"
+            },
+            "type": "array"
+          },
+          "unlinked": {
+            "items": {
+              "$ref": "#/components/schemas/UnlinkedDeliveryItem"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "academicTermId",
+          "academicYearId",
+          "homerooms",
+          "unlinked"
+        ],
+        "type": "object"
+      },
+      "HomeroomGroupMode": {
+        "enum": [
+          "missing",
+          "normal",
+          "combined",
+          "split",
+          "deferred"
+        ],
+        "type": "string"
+      },
       "HomeroomLookupItem": {
         "description": "Homeroom lookup item for a caller-selected academic year.",
         "properties": {
@@ -23553,6 +23953,15 @@
           "name"
         ],
         "type": "object"
+      },
+      "HomeroomOfferingState": {
+        "enum": [
+          "missing",
+          "draft",
+          "published",
+          "closed"
+        ],
+        "type": "string"
       },
       "HomeroomPlacement": {
         "properties": {
@@ -23653,6 +24062,21 @@
           "replayed"
         ],
         "type": "object"
+      },
+      "HomeroomTeacherState": {
+        "enum": [
+          "missing_primary",
+          "assigned"
+        ],
+        "type": "string"
+      },
+      "HomeroomTimetableState": {
+        "enum": [
+          "unscheduled",
+          "partly_scheduled",
+          "scheduled"
+        ],
+        "type": "string"
       },
       "ImageAlignment": {
         "enum": [
@@ -26687,6 +27111,51 @@
           "docType"
         ],
         "type": "object"
+      },
+      "PreparationAction": {
+        "enum": [
+          "apply",
+          "skip",
+          "defer_groups"
+        ],
+        "type": "string"
+      },
+      "PreparationConflict": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "groupId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "offeringId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object"
+      },
+      "PreparationGroupingState": {
+        "enum": [
+          "proposed",
+          "deferred",
+          "conflict"
+        ],
+        "type": "string"
       },
       "PreviewCurriculumOfferingsRequest": {
         "additionalProperties": false,
@@ -32199,6 +32668,37 @@
           "reason",
           "rowVersion",
           "idempotencyKey"
+        ],
+        "type": "object"
+      },
+      "UnlinkedDeliveryItem": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "groupId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "offeringId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "offeringId",
+          "code",
+          "name",
+          "reason"
         ],
         "type": "object"
       },
@@ -38308,6 +38808,86 @@
               }
             },
             "description": "Curriculum version row version conflict"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/delivery/homerooms": {
+      "get": {
+        "operationId": "getHomeroomDeliveryWorkspace",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_HomeroomDeliveryWorkspace"
+                }
+              }
+            },
+            "description": "Homeroom-first curriculum delivery workspace"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid academic year or term query"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Learning offering read permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic term not found in the selected year"
           }
         },
         "tags": [

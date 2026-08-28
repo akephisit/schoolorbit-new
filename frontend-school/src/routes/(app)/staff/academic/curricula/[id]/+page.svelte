@@ -192,9 +192,7 @@
 		rowVersion: number,
 		requirements: CurriculumStructureRequirementInput[]
 	) {
-		applyWorkspace(
-			await replaceCurriculumStructure(studyProgramId, { rowVersion, requirements })
-		);
+		applyWorkspace(await replaceCurriculumStructure(studyProgramId, { rowVersion, requirements }));
 	}
 
 	async function saveTermSlots(slots: CurriculumTermSlotInput[]) {
@@ -306,7 +304,9 @@
 
 						{#if workspace.programs.length === 0 || workspace.gradeLevels.length === 0}
 							<PageState
-								title={workspace.programs.length === 0 ? 'ยังไม่มีแผนการเรียน' : 'หลักสูตรยังไม่มีระดับชั้น'}
+								title={workspace.programs.length === 0
+									? 'ยังไม่มีแผนการเรียน'
+									: 'หลักสูตรยังไม่มีระดับชั้น'}
 								description={workspace.programs.length === 0
 									? 'เปิดตัวจัดโครงสร้างเพื่อเพิ่มแผนการเรียนแรก'
 									: 'แก้ระดับชั้นของหลักสูตรก่อนจัดรายวิชา'}
@@ -324,8 +324,10 @@
 						{#if canManageAcademicCurriculum && selectedVersion.version.status === 'draft'}
 							<div class="flex justify-end">
 								<Button
-									disabled={workspace.validation.blockers.length > 0 || workspace.requirements.length === 0}
-									onclick={() => void publishVersion(selectedVersion!.version.id, workspace!.rowVersion)}
+									disabled={workspace.validation.blockers.length > 0 ||
+										workspace.requirements.length === 0}
+									onclick={() =>
+										void publishVersion(selectedVersion!.version.id, workspace!.rowVersion)}
 								>
 									เผยแพร่รุ่นหลักสูตร
 								</Button>

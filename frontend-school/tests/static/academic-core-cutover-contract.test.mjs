@@ -93,11 +93,7 @@ const operations = [
 	['/api/academic/curriculum-versions/{id}/programs', 'post', 'createStudyProgram'],
 	['/api/academic/study-programs/{id}', 'get', 'getStudyProgram'],
 	['/api/academic/study-programs/{id}', 'patch', 'updateStudyProgram'],
-	[
-		'/api/academic/study-programs/{studyProgramId}/structure',
-		'put',
-		'replaceCurriculumStructure'
-	],
+	['/api/academic/study-programs/{studyProgramId}/structure', 'put', 'replaceCurriculumStructure'],
 	['/api/academic/homerooms', 'get', 'listHomerooms'],
 	['/api/academic/homerooms', 'post', 'createHomeroom'],
 	['/api/academic/homerooms/{id}', 'get', 'getHomeroom'],
@@ -218,8 +214,8 @@ test('academic exact values and offering variants keep their wire semantics', as
 		['CourseOfferingSnapshot', 'credit'],
 		['CourseOfferingSnapshot', 'hours'],
 		['ActivityOfferingSnapshot', 'hours'],
-		['CurriculumOfferingPreviewItem', 'credit'],
-		['CurriculumOfferingPreviewItem', 'hours'],
+		['CurriculumPreparationProposal', 'credit'],
+		['CurriculumPreparationProposal', 'hours'],
 		['ActivityResult', 'attendancePercent']
 	];
 

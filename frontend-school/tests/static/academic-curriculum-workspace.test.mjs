@@ -12,9 +12,7 @@ async function readProjectFile(relativePath) {
 
 test('curriculum workspace clients use generated contracts', async () => {
 	const api = await readProjectFile('src/lib/api/academic-core.ts');
-	const openapi = JSON.parse(
-		await readProjectFile('../contracts/openapi/school-api.json')
-	);
+	const openapi = JSON.parse(await readProjectFile('../contracts/openapi/school-api.json'));
 
 	assert.match(api, /getCurriculumOverview/);
 	assert.match(api, /getCurriculumCreateOptions/);

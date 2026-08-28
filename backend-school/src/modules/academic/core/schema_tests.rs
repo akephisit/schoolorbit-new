@@ -1881,3 +1881,37 @@ async fn homeroom_delivery_provenance_contract_is_explicit_and_unique() {
         .to_string()
         .contains("learning_groups_curriculum_generation_key"));
 }
+
+#[tokio::test]
+async fn curriculum_preparation_apply_results_cover_generated_groups() {
+    let pool = phase_a_fixture("academic_core_050_preparation_results").await;
+    record_passing_phase_a_reconciliation_marker(&pool)
+        .await
+        .expect("cleanup marker must exist before the post-cutover migrations");
+    apply_migrations_through(&pool, 50)
+        .await
+        .expect("curriculum preparation result migration must apply");
+
+    for column in [
+        "group_ids",
+        "created_offering_count",
+        "retained_offering_count",
+        "created_group_count",
+        "retained_group_count",
+        "skipped_count",
+    ] {
+        let exists: bool = sqlx::query_scalar(
+            r#"SELECT EXISTS (
+                   SELECT 1 FROM information_schema.columns
+                   WHERE table_schema = current_schema()
+                     AND table_name = 'learning_delivery_apply_runs'
+                     AND column_name = $1
+               )"#,
+        )
+        .bind(column)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(exists, "missing learning_delivery_apply_runs.{column}");
+    }
+}

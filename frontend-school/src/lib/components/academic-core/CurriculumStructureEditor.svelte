@@ -102,6 +102,16 @@
 	let selectedTermName = $derived(
 		workspace.termSlots.find((slot) => slot.id === selectedTermSlotId)?.name ?? 'เลือกภาคเรียน'
 	);
+	let selectionReady = $derived(
+		Boolean(selectedProgramId && selectedGradeId && selectedTermSlotId)
+	);
+	let selectionGuidance = $derived(
+		!selectedProgramId
+			? 'เพิ่มแผนการเรียนก่อนเพิ่มรายวิชาหรือกิจกรรม'
+			: !selectedGradeId
+				? 'กำหนดระดับชั้นก่อนเพิ่มรายวิชาหรือกิจกรรม'
+				: 'กำหนดภาคเรียนก่อนเพิ่มรายวิชาหรือกิจกรรม'
+	);
 	let filteredCatalog = $derived.by(() => {
 		const query = search.trim().toLocaleLowerCase('th');
 		return managementOptions.catalogVersions.filter((option) => {
@@ -131,13 +141,18 @@
 	let removedCount = $derived(
 		Math.max(0, originalProgramRequirements.length - stagedProgramRequirements.length)
 	);
-	let slotsDirty = $derived(JSON.stringify(stagedSlots) !== JSON.stringify(workspace.termSlots.map((slot) => ({
-		id: slot.id,
-		sequence: slot.sequence,
-		termType: slot.termType,
-		typeOccurrence: slot.typeOccurrence,
-		name: slot.name
-	}))));
+	let slotsDirty = $derived(
+		JSON.stringify(stagedSlots) !==
+			JSON.stringify(
+				workspace.termSlots.map((slot) => ({
+					id: slot.id,
+					sequence: slot.sequence,
+					termType: slot.termType,
+					typeOccurrence: slot.typeOccurrence,
+					name: slot.name
+				}))
+			)
+	);
 
 	function catalogOption(id: string) {
 		return managementOptions.catalogVersions.find((option) => option.id === id);
@@ -145,8 +160,7 @@
 
 	function requirementSource(id: string) {
 		return workspace.requirements.find(
-			(source) =>
-				source.studyProgramId === selectedProgramId && source.catalogVersionId === id
+			(source) => source.studyProgramId === selectedProgramId && source.catalogVersionId === id
 		);
 	}
 
@@ -162,7 +176,7 @@
 	}
 
 	function addSelected() {
-		if (!selectedProgramId || !selectedGradeId || !selectedTermSlotId) return;
+		if (!selectionReady) return;
 		const next = [...stagedRequirements];
 		let order =
 			Math.max(
@@ -303,7 +317,9 @@
 		</Sheet.Header>
 
 		<div class="space-y-5 py-4">
-			<section class="grid gap-2 rounded-xl border bg-card p-3 sm:grid-cols-[10rem_minmax(14rem,1fr)_auto_auto] sm:items-center">
+			<section
+				class="grid gap-2 rounded-xl border bg-card p-3 sm:grid-cols-[10rem_minmax(14rem,1fr)_auto_auto] sm:items-center"
+			>
 				<Input bind:value={programDraft.code} placeholder="รหัสแผน เช่น GENERAL" />
 				<Input bind:value={programDraft.nameTh} placeholder="ชื่อแผนการเรียน" />
 				<label class="flex items-center gap-2 text-sm">
@@ -314,7 +330,9 @@
 
 			<CurriculumTermSlotEditor slots={stagedSlots} onchange={(slots) => (stagedSlots = slots)} />
 			{#if slotsDirty}
-				<div class="flex items-center justify-between rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-900 dark:bg-amber-950/20">
+				<div
+					class="flex items-center justify-between rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-900 dark:bg-amber-950/20"
+				>
 					<span>บันทึกภาคเรียนก่อน แล้วเปิดตัวแก้ไขอีกครั้งเพื่อใช้ช่องภาคเรียนใหม่</span>
 					<LoadingButton loading={saving} onclick={saveTermSlots}>บันทึกภาคเรียน</LoadingButton>
 				</div>
@@ -346,6 +364,11 @@
 					</Select.Content>
 				</Select.Root>
 			</div>
+			{#if !selectionReady}
+				<p role="status" class="text-sm text-amber-700 dark:text-amber-300">
+					{selectionGuidance}
+				</p>
+			{/if}
 
 			<div class="grid gap-4 xl:grid-cols-[minmax(18rem,0.8fr)_minmax(34rem,1.4fr)]">
 				<section class="space-y-3 rounded-xl border p-3">
@@ -359,7 +382,11 @@
 					</div>
 					<Select.Root type="single" bind:value={resourceKind}>
 						<Select.Trigger>
-							{resourceKind === 'all' ? 'ทั้งหมด' : resourceKind === 'course' ? 'รายวิชา' : 'กิจกรรม'}
+							{resourceKind === 'all'
+								? 'ทั้งหมด'
+								: resourceKind === 'course'
+									? 'รายวิชา'
+									: 'กิจกรรม'}
 						</Select.Trigger>
 						<Select.Content>
 							<Select.Item value="all">ทั้งหมด</Select.Item>
@@ -375,7 +402,9 @@
 									onCheckedChange={(checked) => toggleCatalog(option.id, checked === true)}
 								/>
 								<span class="min-w-0">
-									<span class="block font-mono text-xs font-semibold text-primary">{option.code}</span>
+									<span class="block font-mono text-xs font-semibold text-primary"
+										>{option.code}</span
+									>
 									<span class="block text-sm">{option.name}</span>
 								</span>
 							</label>
@@ -383,7 +412,11 @@
 					</div>
 					<Select.Root type="single" bind:value={requirementKind}>
 						<Select.Trigger>
-							{requirementKind === 'required' ? 'บังคับ' : requirementKind === 'elective' ? 'เลือก' : 'เพิ่มเติม'}
+							{requirementKind === 'required'
+								? 'บังคับ'
+								: requirementKind === 'elective'
+									? 'เลือก'
+									: 'เพิ่มเติม'}
 						</Select.Trigger>
 						<Select.Content>
 							<Select.Item value="required">บังคับ</Select.Item>
@@ -391,7 +424,11 @@
 							<Select.Item value="optional">เพิ่มเติม</Select.Item>
 						</Select.Content>
 					</Select.Root>
-					<Button class="w-full" onclick={addSelected} disabled={selectedCatalogIds.length === 0}>
+					<Button
+						class="w-full"
+						onclick={addSelected}
+						disabled={!selectionReady || selectedCatalogIds.length === 0}
+					>
 						<ArrowDownToLine class="size-4" /> เพิ่ม {selectedCatalogIds.length || ''} รายการ
 					</Button>
 				</section>
@@ -400,7 +437,9 @@
 					<div class="flex items-center justify-between border-b bg-muted/30 px-3 py-2">
 						<div>
 							<h3 class="font-semibold">รายการใน {selectedTermName}</h3>
-							<p class="text-xs text-muted-foreground">{selectedProgramName} · {selectedGradeName}</p>
+							<p class="text-xs text-muted-foreground">
+								{selectedProgramName} · {selectedGradeName}
+							</p>
 						</div>
 						<Button variant="ghost" size="sm" onclick={undo} disabled={history.length === 0}>
 							<RotateCcw class="size-3.5" /> ย้อนกลับ
@@ -422,17 +461,28 @@
 									{@const source = requirementSource(requirement.catalogVersionId)}
 									<Table.Row>
 										<Table.Cell>
-											<div class="font-mono text-xs font-semibold text-primary">{option?.code ?? source?.code}</div>
+											<div class="font-mono text-xs font-semibold text-primary">
+												{option?.code ?? source?.code}
+											</div>
 											<div class="font-medium">{option?.name ?? source?.name}</div>
 										</Table.Cell>
 										<Table.Cell>
 											<Select.Root
 												type="single"
 												value={requirement.requirementKind}
-												onValueChange={(value) => value && isRequirementKind(value) && updateRequirement(requirement.catalogVersionId, { requirementKind: value })}
+												onValueChange={(value) =>
+													value &&
+													isRequirementKind(value) &&
+													updateRequirement(requirement.catalogVersionId, {
+														requirementKind: value
+													})}
 											>
 												<Select.Trigger>
-													{requirement.requirementKind === 'required' ? 'บังคับ' : requirement.requirementKind === 'elective' ? 'เลือก' : 'เพิ่มเติม'}
+													{requirement.requirementKind === 'required'
+														? 'บังคับ'
+														: requirement.requirementKind === 'elective'
+															? 'เลือก'
+															: 'เพิ่มเติม'}
 												</Select.Trigger>
 												<Select.Content>
 													<Select.Item value="required">บังคับ</Select.Item>
@@ -443,13 +493,19 @@
 										</Table.Cell>
 										<Table.Cell class="text-xs text-muted-foreground">
 											{#if source}
-												{source.metrics.credit ? `${source.metrics.credit} หน่วยกิต · ` : ''}{source.metrics.totalHours ?? '—'} ชม.
+												{source.metrics.credit ? `${source.metrics.credit} หน่วยกิต · ` : ''}{source
+													.metrics.totalHours ?? '—'} ชม.
 											{:else}
 												จากทะเบียนเมื่อบันทึก
 											{/if}
 										</Table.Cell>
 										<Table.Cell>
-											<Button variant="ghost" size="icon" onclick={() => removeRequirement(requirement.catalogVersionId)} aria-label="นำรายการออก">
+											<Button
+												variant="ghost"
+												size="icon"
+												onclick={() => removeRequirement(requirement.catalogVersionId)}
+												aria-label="นำรายการออก"
+											>
 												<Trash2 class="size-4" />
 											</Button>
 										</Table.Cell>
@@ -461,13 +517,19 @@
 				</section>
 			</div>
 
-			<div class="flex flex-col gap-3 rounded-xl border bg-muted/20 p-3 sm:flex-row sm:items-center">
+			<div
+				class="flex flex-col gap-3 rounded-xl border bg-muted/20 p-3 sm:flex-row sm:items-center"
+			>
 				<div class="flex flex-1 flex-wrap gap-2 text-sm">
 					<Badge variant="secondary">เพิ่ม {addedCount}</Badge>
 					<Badge variant="secondary">นำออก {removedCount}</Badge>
 					<span class="text-muted-foreground">ตรวจรายการแล้วบันทึกครั้งเดียว</span>
 				</div>
-				<LoadingButton loading={saving} onclick={saveStructure} disabled={!selectedProgram || slotsDirty}>
+				<LoadingButton
+					loading={saving}
+					onclick={saveStructure}
+					disabled={!selectedProgram || slotsDirty}
+				>
 					<Save class="size-4" /> บันทึกโครงสร้าง
 				</LoadingButton>
 			</div>

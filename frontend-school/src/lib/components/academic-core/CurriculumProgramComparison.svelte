@@ -4,8 +4,10 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Table from '$lib/components/ui/table';
 
-	let { workspace, gradeLevelId }: { workspace: CurriculumStructureWorkspace; gradeLevelId: string } =
-		$props();
+	let {
+		workspace,
+		gradeLevelId
+	}: { workspace: CurriculumStructureWorkspace; gradeLevelId: string } = $props();
 
 	let comparison = $derived(buildProgramComparison(workspace, gradeLevelId));
 	const kindLabels = { required: 'บังคับ', elective: 'เลือก', optional: 'เพิ่มเติม' } as const;
@@ -36,7 +38,10 @@
 			<Table.Body>
 				{#each comparison.sections as section (section.id)}
 					<Table.Row class="border-y bg-primary/[0.045] hover:bg-primary/[0.045]">
-						<Table.Cell colspan={comparison.programs.length + 1} class="py-2 font-semibold text-primary">
+						<Table.Cell
+							colspan={comparison.programs.length + 1}
+							class="py-2 font-semibold text-primary"
+						>
 							{section.label}
 						</Table.Cell>
 					</Table.Row>
@@ -47,7 +52,9 @@
 								<div class="font-mono text-xs font-semibold text-primary">{row.code}</div>
 								<div class="mt-1 font-medium">{row.name}</div>
 								{#if row.isDifferent}
-									<div class="mt-1 text-xs text-amber-700 dark:text-amber-400">ข้อมูลต่างกันระหว่างแผน</div>
+									<div class="mt-1 text-xs text-amber-700 dark:text-amber-400">
+										ข้อมูลต่างกันระหว่างแผน
+									</div>
 								{/if}
 							</Table.Cell>
 							{#each comparison.programs as program (program.id)}
@@ -61,8 +68,10 @@
 										</div>
 										<div class="mt-2 text-xs text-muted-foreground">
 											{cell.requirementKinds.map((kind) => kindLabels[kind]).join(', ')}
-											{#if cell.credit} · {cell.credit} หน่วยกิต{/if}
-											{#if cell.totalHours} · {cell.totalHours} ชม.{/if}
+											{#if cell.credit}
+												· {cell.credit} หน่วยกิต{/if}
+											{#if cell.totalHours}
+												· {cell.totalHours} ชม.{/if}
 										</div>
 									{:else}
 										<span class="text-sm text-muted-foreground/70">—</span>
@@ -73,7 +82,10 @@
 					{/each}
 					{#if rows.length === 0}
 						<Table.Row>
-							<Table.Cell colspan={comparison.programs.length + 1} class="py-4 text-center text-sm text-muted-foreground">
+							<Table.Cell
+								colspan={comparison.programs.length + 1}
+								class="py-4 text-center text-sm text-muted-foreground"
+							>
 								ยังไม่มีรายการในหมวดนี้
 							</Table.Cell>
 						</Table.Row>

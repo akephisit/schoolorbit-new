@@ -565,6 +565,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/delivery/homerooms': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getHomeroomDeliveryWorkspace'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/delivery/management-options': {
 		parameters: {
 			query?: never;
@@ -4706,9 +4722,13 @@ export interface components {
 			data: {
 				/** Format: uuid */
 				academicTermId: string;
-				createdCount: number;
+				createdGroupCount: number;
+				createdOfferingCount: number;
+				groupIds: string[];
 				offeringIds: string[];
-				retainedCount: number;
+				retainedGroupCount: number;
+				retainedOfferingCount: number;
+				skippedCount: number;
 				sourceHash: string;
 			};
 			message?: string;
@@ -5169,7 +5189,7 @@ export interface components {
 			data: {
 				/** Format: uuid */
 				academicTermId: string;
-				items: components['schemas']['CurriculumOfferingPreviewItem'][];
+				proposals: components['schemas']['CurriculumPreparationProposal'][];
 				sourceHash: string;
 			};
 			message?: string;
@@ -5507,6 +5527,18 @@ export interface components {
 				studyProgramId: string;
 				/** Format: date-time */
 				updatedAt: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_HomeroomDeliveryWorkspace: {
+			data: {
+				/** Format: uuid */
+				academicTermId: string;
+				/** Format: uuid */
+				academicYearId: string;
+				homerooms: components['schemas']['HomeroomDeliveryRoom'][];
+				unlinked: components['schemas']['UnlinkedDeliveryItem'][];
 			};
 			message?: string;
 			success: boolean;
@@ -8205,6 +8237,7 @@ export interface components {
 		ApplyCurriculumOfferingsRequest: {
 			/** Format: uuid */
 			academicTermId: string;
+			choices: components['schemas']['CurriculumPreparationChoice'][];
 			/** Format: uuid */
 			idempotencyKey: string;
 			/** Format: uuid */
@@ -8215,9 +8248,13 @@ export interface components {
 		ApplyCurriculumOfferingsResult: {
 			/** Format: uuid */
 			academicTermId: string;
-			createdCount: number;
+			createdGroupCount: number;
+			createdOfferingCount: number;
+			groupIds: string[];
 			offeringIds: string[];
-			retainedCount: number;
+			retainedGroupCount: number;
+			retainedOfferingCount: number;
+			skippedCount: number;
 			sourceHash: string;
 		};
 		ApplyRosterRequest: {
@@ -9835,6 +9872,11 @@ export interface components {
 		CurriculumDisplayState: 'current' | 'upcoming' | 'expired' | 'unpublished';
 		/** @enum {string} */
 		CurriculumDocumentSection: 'basic_course' | 'additional_course' | 'student_development';
+		CurriculumGroupProposal: {
+			groupKey: string;
+			homeroomIds: string[];
+			name: string;
+		};
 		CurriculumManagementOptions: {
 			academicYears: components['schemas']['AcademicYearLookupItem'][];
 			catalogVersions: components['schemas']['CurriculumCatalogVersionOption'][];
@@ -9843,27 +9885,8 @@ export interface components {
 		CurriculumOfferingPreview: {
 			/** Format: uuid */
 			academicTermId: string;
-			items: components['schemas']['CurriculumOfferingPreviewItem'][];
+			proposals: components['schemas']['CurriculumPreparationProposal'][];
 			sourceHash: string;
-		};
-		CurriculumOfferingPreviewItem: {
-			action: components['schemas']['CurriculumPreviewAction'];
-			/** Format: uuid */
-			catalogVersionId: string;
-			code: string;
-			conflictReason?: string | null;
-			credit?: string | null;
-			/** Format: uuid */
-			existingOfferingId?: string | null;
-			/** Format: uuid */
-			gradeLevelId: string;
-			hours?: string | null;
-			name: string;
-			/** Format: uuid */
-			requirementId: string;
-			resourceKind: components['schemas']['LearningOfferingKind'];
-			/** Format: uuid */
-			studyProgramId: string;
 		};
 		CurriculumOverview: {
 			items: components['schemas']['CurriculumOverviewItem'][];
@@ -9879,6 +9902,29 @@ export interface components {
 			startAcademicYearName?: string | null;
 			/** Format: int64 */
 			studyProgramCount: number;
+		};
+		CurriculumPreparationChoice: {
+			action: components['schemas']['PreparationAction'];
+			groups: components['schemas']['CurriculumGroupProposal'][];
+			proposalId: string;
+		};
+		CurriculumPreparationProposal: {
+			/** Format: uuid */
+			catalogVersionId: string;
+			code: string;
+			conflicts: components['schemas']['PreparationConflict'][];
+			credit?: string | null;
+			defaultGroups: components['schemas']['CurriculumGroupProposal'][];
+			/** Format: uuid */
+			existingOfferingId?: string | null;
+			groupingState: components['schemas']['PreparationGroupingState'];
+			hours?: string | null;
+			name: string;
+			offeringAction: components['schemas']['CurriculumPreviewAction'];
+			proposalId: string;
+			requirementIds: string[];
+			resourceKind: components['schemas']['LearningOfferingKind'];
+			targetHomeroomIds: string[];
 		};
 		/** @enum {string} */
 		CurriculumPreviewAction: 'create' | 'retain' | 'conflict';
@@ -10125,6 +10171,11 @@ export interface components {
 			rooms: components['schemas']['Room'][];
 			studyPrograms: components['schemas']['StudyProgramOption'][];
 			teachers: components['schemas']['StaffLookupItem'][];
+		};
+		DeliveryPrerequisite: {
+			code: string;
+			message: string;
+			recoveryPath: string;
 		};
 		DocumentUploadResponse: {
 			docType: string;
@@ -10606,6 +10657,62 @@ export interface components {
 			/** Format: uuid */
 			userId: string;
 		};
+		HomeroomDeliveryGroupSummary: {
+			code: string;
+			homeroomIds: string[];
+			homeroomNames: string[];
+			/** Format: uuid */
+			id: string;
+			name: string;
+			/** Format: int64 */
+			primaryTeacherCount: number;
+			rosterStatus: components['schemas']['RosterStatus'];
+			status: components['schemas']['LearningOfferingStatus'];
+			/** Format: int64 */
+			timetableEntryCount: number;
+		};
+		HomeroomDeliveryItem: {
+			/** Format: uuid */
+			catalogVersionId: string;
+			code: string;
+			groupMode: components['schemas']['HomeroomGroupMode'];
+			groups: components['schemas']['HomeroomDeliveryGroupSummary'][];
+			name: string;
+			/** Format: uuid */
+			offeringId?: string | null;
+			offeringState: components['schemas']['HomeroomOfferingState'];
+			/** Format: uuid */
+			requirementId: string;
+			requirementKind: components['schemas']['RequirementKind'];
+			resourceKind: components['schemas']['LearningOfferingKind'];
+			teacherState: components['schemas']['HomeroomTeacherState'];
+			timetableState: components['schemas']['HomeroomTimetableState'];
+		};
+		HomeroomDeliveryQuery: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			academicYearId: string;
+		};
+		HomeroomDeliveryRoom: {
+			blockers: components['schemas']['DeliveryPrerequisite'][];
+			expectedCount: number;
+			gradeLevel: components['schemas']['GradeLevelLookupItem'];
+			homeroom: components['schemas']['HomeroomLookupItem'];
+			items: components['schemas']['HomeroomDeliveryItem'][];
+			readyCount: number;
+			studyProgram: components['schemas']['StudyProgramOption'];
+		};
+		HomeroomDeliveryWorkspace: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			academicYearId: string;
+			homerooms: components['schemas']['HomeroomDeliveryRoom'][];
+			unlinked: components['schemas']['UnlinkedDeliveryItem'][];
+		};
+		/** @enum {string} */
+		HomeroomGroupMode: 'missing' | 'normal' | 'combined' | 'split' | 'deferred';
 		/** @description Homeroom lookup item for a caller-selected academic year. */
 		HomeroomLookupItem: {
 			gradeLevel?: string;
@@ -10615,6 +10722,8 @@ export interface components {
 			id: string;
 			name: string;
 		};
+		/** @enum {string} */
+		HomeroomOfferingState: 'missing' | 'draft' | 'published' | 'closed';
 		HomeroomPlacement: {
 			/** Format: uuid */
 			academicYearId: string;
@@ -10647,6 +10756,10 @@ export interface components {
 			newPlacement: components['schemas']['HomeroomPlacement'];
 			replayed: boolean;
 		};
+		/** @enum {string} */
+		HomeroomTeacherState: 'missing_primary' | 'assigned';
+		/** @enum {string} */
+		HomeroomTimetableState: 'unscheduled' | 'partly_scheduled' | 'scheduled';
 		/** @enum {string} */
 		ImageAlignment: 'left' | 'center' | 'right';
 		ImageElement: {
@@ -11469,6 +11582,18 @@ export interface components {
 			fileSize: number;
 			originalFilename: string;
 		};
+		/** @enum {string} */
+		PreparationAction: 'apply' | 'skip' | 'defer_groups';
+		PreparationConflict: {
+			code: string;
+			/** Format: uuid */
+			groupId?: string | null;
+			message: string;
+			/** Format: uuid */
+			offeringId?: string | null;
+		};
+		/** @enum {string} */
+		PreparationGroupingState: 'proposed' | 'deferred' | 'conflict';
 		PreviewCurriculumOfferingsRequest: {
 			/** Format: uuid */
 			academicTermId: string;
@@ -12966,6 +13091,15 @@ export interface components {
 			targetHomeroomId: string;
 			/** Format: date */
 			transferDate: string;
+		};
+		UnlinkedDeliveryItem: {
+			code: string;
+			/** Format: uuid */
+			groupId?: string | null;
+			name: string;
+			/** Format: uuid */
+			offeringId: string;
+			reason: string;
 		};
 		UpdateAcademicTermRequest: {
 			/** Format: uuid */
@@ -16781,6 +16915,65 @@ export interface operations {
 			};
 			/** @description Curriculum version row version conflict */
 			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getHomeroomDeliveryWorkspace: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Homeroom-first curriculum delivery workspace */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_HomeroomDeliveryWorkspace'];
+				};
+			};
+			/** @description Invalid academic year or term query */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning offering read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic term not found in the selected year */
+			404: {
 				headers: {
 					[name: string]: unknown;
 				};

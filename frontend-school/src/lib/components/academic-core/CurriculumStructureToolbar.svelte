@@ -26,7 +26,8 @@
 		workspace.gradeLevels.find((grade) => grade.id === gradeLevelId)?.name ?? 'เลือกระดับชั้น'
 	);
 	let selectedProgram = $derived(
-		workspace.programs.find((program) => program.id === studyProgramId)?.nameTh ?? 'เลือกแผนการเรียน'
+		workspace.programs.find((program) => program.id === studyProgramId)?.nameTh ??
+			'เลือกแผนการเรียน'
 	);
 </script>
 

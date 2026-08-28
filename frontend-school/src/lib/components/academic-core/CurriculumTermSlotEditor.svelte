@@ -35,8 +35,10 @@
 
 	function add(termType: CurriculumTermSlotInput['termType']) {
 		const occurrence =
-			Math.max(0, ...slots.filter((slot) => slot.termType === termType).map((slot) => slot.typeOccurrence)) +
-			1;
+			Math.max(
+				0,
+				...slots.filter((slot) => slot.termType === termType).map((slot) => slot.typeOccurrence)
+			) + 1;
 		const name =
 			termType === 'regular'
 				? `ภาคเรียนที่ ${occurrence}`
@@ -70,7 +72,9 @@
 
 	<div class="space-y-2">
 		{#each slots as slot, index (slot.id ?? `${slot.termType}-${slot.typeOccurrence}`)}
-			<div class="grid gap-2 rounded-lg border bg-background p-2 sm:grid-cols-[4rem_minmax(12rem,1fr)_11rem_5rem_2.5rem] sm:items-center">
+			<div
+				class="grid gap-2 rounded-lg border bg-background p-2 sm:grid-cols-[4rem_minmax(12rem,1fr)_11rem_5rem_2.5rem] sm:items-center"
+			>
 				<Input
 					type="number"
 					min="1"
@@ -86,12 +90,13 @@
 				<Select.Root
 					type="single"
 					value={slot.termType}
-					onValueChange={(value) => value && isTermType(value) && update(index, { termType: value })}
+					onValueChange={(value) =>
+						value && isTermType(value) && update(index, { termType: value })}
 				>
 					<Select.Trigger>{typeLabels[slot.termType]}</Select.Trigger>
 					<Select.Content>
 						{#each termTypes as value (value)}
-							<Select.Item value={value}>{typeLabels[value]}</Select.Item>
+							<Select.Item {value}>{typeLabels[value]}</Select.Item>
 						{/each}
 					</Select.Content>
 				</Select.Root>
@@ -102,7 +107,13 @@
 					oninput={(event) => update(index, { typeOccurrence: Number(event.currentTarget.value) })}
 					aria-label="ลำดับภายในประเภท"
 				/>
-				<Button type="button" variant="ghost" size="icon" onclick={() => remove(index)} aria-label="ลบภาคเรียน">
+				<Button
+					type="button"
+					variant="ghost"
+					size="icon"
+					onclick={() => remove(index)}
+					aria-label="ลบภาคเรียน"
+				>
 					<Trash2 class="size-4" />
 				</Button>
 			</div>
@@ -112,7 +123,8 @@
 	<div class="flex flex-wrap gap-2">
 		{#each termTypes as value (value)}
 			<Button type="button" variant="outline" size="sm" onclick={() => add(value)}>
-				<Plus class="size-3.5" /> {typeLabels[value]}
+				<Plus class="size-3.5" />
+				{typeLabels[value]}
 			</Button>
 		{/each}
 	</div>

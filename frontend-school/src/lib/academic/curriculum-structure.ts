@@ -94,15 +94,12 @@ export function buildCurriculumDocument(
 		workspace.gradeLevels.find((item) => item.id === gradeLevelId)?.name ?? 'ไม่พบระดับชั้น';
 	const selected = workspace.requirements.filter(
 		(requirement) =>
-			requirement.studyProgramId === studyProgramId &&
-			requirement.gradeLevel.id === gradeLevelId
+			requirement.studyProgramId === studyProgramId && requirement.gradeLevel.id === gradeLevelId
 	);
 	const termPanels = [...workspace.termSlots]
 		.sort((left, right) => left.sequence - right.sequence)
 		.map((slot) => {
-			const termRequirements = selected.filter(
-				(requirement) => requirement.termSlotId === slot.id
-			);
+			const termRequirements = selected.filter((requirement) => requirement.termSlotId === slot.id);
 			const sections = sectionDefinitions.map((section) => {
 				const rows = termRequirements
 					.filter((requirement) => requirement.section === section.id)
@@ -160,10 +157,7 @@ export function buildProgramComparison(
 				...(existing?.termNames ?? []),
 				slotNames.get(requirement.termSlotId) ?? 'ไม่พบภาคเรียน'
 			],
-			requirementKinds: [
-				...(existing?.requirementKinds ?? []),
-				requirement.requirementKind
-			],
+			requirementKinds: [...(existing?.requirementKinds ?? []), requirement.requirementKind],
 			credit: requirement.metrics.credit ?? null,
 			totalHours: requirement.metrics.totalHours ?? null
 		};
