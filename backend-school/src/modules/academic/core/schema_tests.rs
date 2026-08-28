@@ -1625,3 +1625,176 @@ async fn migration_045_rejects_source_field_drift_committed_after_the_marker() {
         .to_string()
         .contains("ACADEMIC_CORE_045_RECONCILIATION_FAILED"));
 }
+
+#[tokio::test]
+async fn migration_048_creates_the_clean_curriculum_structure_contract() {
+    let pool = create_named_test_pool("academic_core_048_structure_contract").await;
+
+    apply_migrations_through(&pool, 48)
+        .await
+        .expect("migration 048 must apply to an empty canonical tenant");
+
+    let term_slot_columns: Vec<String> = sqlx::query_scalar(
+        r#"SELECT column_name::text
+           FROM information_schema.columns
+           WHERE table_schema = current_schema()
+             AND table_name = 'curriculum_term_slots'
+           ORDER BY ordinal_position"#,
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("curriculum term slot columns must be queryable");
+    assert!(term_slot_columns.contains(&"type_occurrence".to_string()));
+
+    let activity_has_total_hours: bool = sqlx::query_scalar(
+        r#"SELECT EXISTS (
+               SELECT 1
+               FROM information_schema.columns
+               WHERE table_schema = current_schema()
+                 AND table_name = 'activity_versions'
+                 AND column_name = 'hours_per_term'
+           )"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("activity total-hours column must be inspectable");
+    assert!(activity_has_total_hours);
+
+    for table_name in [
+        "curriculum_course_requirements",
+        "curriculum_activity_requirements",
+    ] {
+        let columns: Vec<String> = sqlx::query_scalar(
+            r#"SELECT column_name::text
+               FROM information_schema.columns
+               WHERE table_schema = current_schema()
+                 AND table_name = $1
+               ORDER BY ordinal_position"#,
+        )
+        .bind(table_name)
+        .fetch_all(&pool)
+        .await
+        .expect("curriculum requirement columns must be queryable");
+
+        assert!(columns.contains(&"term_slot_id".to_string()));
+        assert!(!columns.contains(&"hours".to_string()));
+        assert!(!columns.contains(&"recommended_term_code".to_string()));
+    }
+
+    let course_has_credit: bool = sqlx::query_scalar(
+        r#"SELECT EXISTS (
+               SELECT 1
+               FROM information_schema.columns
+               WHERE table_schema = current_schema()
+                 AND table_name = 'curriculum_course_requirements'
+                 AND column_name = 'credit'
+           )"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("course credit column must be inspectable");
+    assert!(!course_has_credit);
+}
+
+#[tokio::test]
+async fn migration_048_maps_canonical_term_codes_and_keeps_published_slots_immutable() {
+    let pool = phase_a_fixture("academic_core_048_term_mapping").await;
+    record_passing_phase_a_reconciliation_marker(&pool)
+        .await
+        .expect("cleanup marker must exist before the post-cutover migration");
+
+    apply_migrations_through(&pool, 48)
+        .await
+        .expect("canonical TERM-1 requirements must migrate to term slots");
+
+    let slots: Vec<(Uuid, String, i32, i32, String)> = sqlx::query_as(
+        r#"SELECT curriculum_version_id, term_type, type_occurrence, sequence, name
+           FROM curriculum_term_slots
+           ORDER BY curriculum_version_id, sequence"#,
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("migrated term slots must be queryable");
+    assert_eq!(slots.len(), 2);
+    assert!(slots.iter().all(|slot| {
+        slot.1 == "regular"
+            && slot.2 == 1
+            && slot.3 == 1
+            && slot.4 == "ภาคเรียนที่ 1"
+    }));
+
+    let missing_term_links: i64 = sqlx::query_scalar(
+        r#"SELECT
+               (SELECT COUNT(*) FROM curriculum_course_requirements
+                WHERE term_slot_id IS NULL)
+             + (SELECT COUNT(*) FROM curriculum_activity_requirements
+                WHERE term_slot_id IS NULL)"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("requirement term links must be queryable");
+    assert_eq!(missing_term_links, 0);
+
+    let immutable_error = sqlx::query(
+        r#"UPDATE curriculum_term_slots
+           SET name = 'ชื่อที่แก้ไม่ได้'
+           WHERE curriculum_version_id = '31000000-0000-0000-0000-000000000025'"#,
+    )
+    .execute(&pool)
+    .await
+    .expect_err("a published curriculum term slot must be immutable");
+    assert!(immutable_error
+        .to_string()
+        .contains("ACADEMIC_CORE_PUBLISHED_CURRICULUM_IMMUTABLE"));
+}
+
+#[tokio::test]
+async fn migration_048_rejects_unknown_term_codes_before_destructive_cleanup() {
+    let pool = phase_a_fixture("academic_core_048_unknown_term").await;
+    record_passing_phase_a_reconciliation_marker(&pool)
+        .await
+        .expect("cleanup marker must exist before the post-cutover migration");
+    apply_migrations_through(&pool, 47)
+        .await
+        .expect("fixture must reach the pre-048 schema");
+
+    sqlx::query(
+        "ALTER TABLE curriculum_course_requirements DISABLE TRIGGER curriculum_course_requirements_published_immutable",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE curriculum_course_requirements SET recommended_term_code = 'AUTUMN' WHERE id = '32000000-0000-0000-0000-000000000025'",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "ALTER TABLE curriculum_course_requirements ENABLE TRIGGER curriculum_course_requirements_published_immutable",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let error = apply_migrations_through(&pool, 48)
+        .await
+        .expect_err("an unknown curriculum term code must block migration 048");
+    assert!(error
+        .to_string()
+        .contains("ACADEMIC_CORE_048_TERM_CODE_UNMAPPABLE"));
+
+    let old_contract_preserved: bool = sqlx::query_scalar(
+        r#"SELECT EXISTS (
+               SELECT 1
+               FROM information_schema.columns
+               WHERE table_schema = current_schema()
+                 AND table_name = 'curriculum_course_requirements'
+                 AND column_name = 'recommended_term_code'
+           )"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(old_contract_preserved);
+}
