@@ -502,6 +502,19 @@ jobs:
             cleanup_migration_response() {
               rm -f "$migration_response"
             }
+            print_migration_verification_failure() {
+              podman run --rm -i "$jq_image" -r '
+                "tenant_migration_summary latest_version=\(.latest_version // "unknown") total=\(.total // "unknown") success=\(.success // "unknown") failed=\(.failed // "unknown")",
+                (
+                  .results[]?
+                  | "tenant_migration_result subdomain=\(.subdomain // "unknown") status=\(.status // "unknown") version=\(.version // "none") error_code=\(
+                      if .error == null then "none"
+                      else (([.error | scan("ACADEMIC_CORE_[A-Z0-9_]+") ] | first) // "redacted")
+                      end
+                    )"
+                )
+              '
+            }
             trap cleanup_migration_response EXIT
 
             internal_api_secret="$(
@@ -542,6 +555,8 @@ jobs:
                 )
               ' < "$migration_response" >/dev/null
             then
+              print_migration_verification_failure < "$migration_response" ||
+                echo "Tenant migration diagnostic could not be rendered"
               echo "Tenant migration verification failed; maintenance remains enabled"
               exit 1
             fi

@@ -265,6 +265,27 @@ test('backend-school replacement force-removes the stale container without touch
 	assert.doesNotMatch(replacement, /^\s*compose_up_quiet backend-school\s*$/m);
 });
 
+test('backend-school migration failure reports only bounded deployment diagnostics', async () => {
+	const workflow = await readRepo('.github/workflows/deploy-backend-school.yml');
+	const diagnosticStart = workflow.indexOf('            print_migration_verification_failure() {');
+	const verificationFailure = workflow.indexOf(
+		'              echo "Tenant migration verification failed; maintenance remains enabled"'
+	);
+
+	assert.ok(diagnosticStart >= 0, 'migration verification must define a bounded diagnostic');
+	assert.ok(
+		verificationFailure > diagnosticStart,
+		'migration diagnostics must be available before verification can fail'
+	);
+	const diagnostic = workflow.slice(diagnosticStart, verificationFailure);
+	assert.match(diagnostic, /tenant_migration_summary latest_version=/);
+	assert.match(diagnostic, /tenant_migration_result subdomain=/);
+	assert.match(diagnostic, /error_code=/);
+	assert.match(diagnostic, /scan\("ACADEMIC_CORE_\[A-Z0-9_\]\+"\)/);
+	assert.match(diagnostic, /print_migration_verification_failure < "\$migration_response"/);
+	assert.doesNotMatch(diagnostic, /error=\\\(\.error/);
+});
+
 test('backend-school deployment repairs the admin network alias before maintenance activation', async () => {
 	const workflow = await readRepo('.github/workflows/deploy-backend-school.yml');
 	const adminNetworkRepair = workflow.indexOf(
