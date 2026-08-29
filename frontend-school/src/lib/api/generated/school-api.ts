@@ -9342,10 +9342,14 @@ export interface components {
 			curriculumCourseRequirementId?: string | null;
 			gradingPolicy: components['schemas']['CourseGradingPolicy'];
 			hours?: string | null;
+			/** Format: int32 */
+			standardPeriodsPerWeek: number;
 			/** Format: uuid */
 			subjectId: string;
 			/** Format: uuid */
 			subjectVersionId: string;
+			/** Format: int32 */
+			weeklyPeriodTarget: number;
 		};
 		CreateAcademicTermRequest: {
 			/** Format: uuid */
@@ -10685,8 +10689,12 @@ export interface components {
 			requirementId: string;
 			requirementKind: components['schemas']['RequirementKind'];
 			resourceKind: components['schemas']['LearningOfferingKind'];
+			/** Format: int32 */
+			standardPeriodsPerWeek?: number | null;
 			teacherState: components['schemas']['HomeroomTeacherState'];
 			timetableState: components['schemas']['HomeroomTimetableState'];
+			/** Format: int32 */
+			weeklyPeriodTarget?: number | null;
 		};
 		HomeroomDeliveryQuery: {
 			/** Format: uuid */
@@ -13276,6 +13284,8 @@ export interface components {
 			/** Format: int64 */
 			rowVersion: number;
 			targets: components['schemas']['OfferingTargetInput'][];
+			/** Format: int32 */
+			weeklyPeriodTarget?: number | null;
 		};
 		UpdateMemberRequest: {
 			is_primary?: boolean | null;

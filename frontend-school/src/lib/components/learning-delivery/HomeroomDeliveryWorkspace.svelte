@@ -61,6 +61,17 @@
 		if (item.groups.length === 0) return groupLabels[item.groupMode];
 		return item.groups.map((group) => group.name).join(', ');
 	}
+
+	function courseWorkloadSummary(item: HomeroomDeliveryItem) {
+		if (item.resourceKind !== 'course' || item.standardPeriodsPerWeek == null) return '';
+		if (item.weeklyPeriodTarget === item.standardPeriodsPerWeek) {
+			return `ตามหลักสูตรและจัดจริง ${item.standardPeriodsPerWeek} คาบ/สัปดาห์`;
+		}
+		if (item.weeklyPeriodTarget == null) {
+			return `ตามหลักสูตร ${item.standardPeriodsPerWeek} คาบ/สัปดาห์ · จัดจริงภาคเรียนนี้ยังไม่เปิดสอน`;
+		}
+		return `ตามหลักสูตร ${item.standardPeriodsPerWeek} · จัดจริงภาคเรียนนี้ ${item.weeklyPeriodTarget} คาบ/สัปดาห์`;
+	}
 </script>
 
 <div class="space-y-4">
@@ -223,6 +234,11 @@
 																		? 'บังคับ'
 																		: 'เลือก/เพิ่มเติม'}
 																</p>
+																{#if item.resourceKind === 'course'}
+																	<p class="mt-1 text-xs font-medium text-primary">
+																		{courseWorkloadSummary(item)}
+																	</p>
+																{/if}
 															</div>
 														</div>
 													</Table.Cell>

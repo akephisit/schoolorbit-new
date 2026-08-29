@@ -18829,6 +18829,10 @@
               "null"
             ]
           },
+          "standardPeriodsPerWeek": {
+            "format": "int32",
+            "type": "integer"
+          },
           "subjectId": {
             "format": "uuid",
             "type": "string"
@@ -18836,12 +18840,18 @@
           "subjectVersionId": {
             "format": "uuid",
             "type": "string"
+          },
+          "weeklyPeriodTarget": {
+            "format": "int32",
+            "type": "integer"
           }
         },
         "required": [
           "subjectVersionId",
           "subjectId",
           "credit",
+          "standardPeriodsPerWeek",
+          "weeklyPeriodTarget",
           "gradingPolicy"
         ],
         "type": "object"
@@ -23806,11 +23816,25 @@
           "resourceKind": {
             "$ref": "#/components/schemas/LearningOfferingKind"
           },
+          "standardPeriodsPerWeek": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "teacherState": {
             "$ref": "#/components/schemas/HomeroomTeacherState"
           },
           "timetableState": {
             "$ref": "#/components/schemas/HomeroomTimetableState"
+          },
+          "weeklyPeriodTarget": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "required": [
@@ -33391,6 +33415,13 @@
               "$ref": "#/components/schemas/OfferingTargetInput"
             },
             "type": "array"
+          },
+          "weeklyPeriodTarget": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "required": [

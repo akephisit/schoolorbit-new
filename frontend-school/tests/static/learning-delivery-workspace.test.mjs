@@ -106,6 +106,24 @@ test('offering detail keeps selection in the URL and renders named group and ros
 	assert.doesNotMatch(roster, /student\.studentId\s*\}/);
 });
 
+test('delivery workload separates the official standard from the current-term target', async () => {
+	const page = await readProjectFile(
+		'src/routes/(app)/staff/academic/delivery/[offeringId]/+page.svelte'
+	);
+	const homerooms = await readProjectFile(
+		'src/lib/components/learning-delivery/HomeroomDeliveryWorkspace.svelte'
+	);
+	const table = await readProjectFile(
+		'src/lib/components/learning-delivery/OfferingOverviewTable.svelte'
+	);
+
+	assert.match(page, /updateLearningOffering/);
+	for (const source of [page, homerooms, table]) {
+		assert.match(source, /ตามหลักสูตร/);
+		assert.match(source, /จัดจริงภาคเรียนนี้/);
+	}
+});
+
 test('stale roster refresh replaces the group version and preview atomically', async () => {
 	const page = await readProjectFile(
 		'src/routes/(app)/staff/academic/delivery/[offeringId]/+page.svelte'

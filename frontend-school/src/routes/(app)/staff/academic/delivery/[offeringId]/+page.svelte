@@ -16,6 +16,7 @@
 		publishLearningOffering,
 		replaceLearningGroupHomerooms,
 		replaceLearningGroupTeachers,
+		updateLearningOffering,
 		updateLearningGroup,
 		type CreateLearningGroupRequest,
 		type DeliveryManagementOptions,
@@ -34,9 +35,20 @@
 	import RosterPreviewPanel from '$lib/components/learning-delivery/RosterPreviewPanel.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
-	import { ArrowLeft, BookOpenCheck, ClipboardList, Pencil, Send, UsersRound } from 'lucide-svelte';
+	import {
+		ArrowLeft,
+		ArrowRight,
+		BookOpenCheck,
+		ClipboardList,
+		Pencil,
+		Save,
+		Send,
+		UsersRound
+	} from 'lucide-svelte';
 
 	const detailRequest = new LatestRequest();
 	const groupRequest = new LatestRequest();
@@ -52,12 +64,14 @@
 	let optionsLoading = $state(false);
 	let rosterLoading = $state(false);
 	let publishing = $state(false);
+	let savingWeeklyPeriods = $state(false);
 	let initialized = $state(false);
 	let editorVisible = $state(false);
 	let rosterVisible = $state(false);
 	let rosterStale = $state(false);
 	let errorMessage = $state('');
 	let actionError = $state('');
+	let weeklyPeriodTargetDraft = $state('');
 
 	let canManage = $derived(
 		$can.hasAny(
@@ -67,6 +81,7 @@
 			PERMISSIONS.LEARNING_OFFERING_MANAGE_ASSIGNED
 		)
 	);
+	let courseSnapshot = $derived(offering?.snapshot.kind === 'course' ? offering.snapshot : null);
 
 	function offeringKindLabel(kind: LearningOffering['kind']) {
 		return kind === 'course' ? 'รายวิชา' : 'กิจกรรมพัฒนาผู้เรียน';
@@ -119,6 +134,10 @@
 			const loadedGroup = targetGroup ? await getLearningGroup(targetGroup.id, { signal }) : null;
 			if (!detailRequest.isCurrent(revision)) return;
 			offering = loadedOffering;
+			weeklyPeriodTargetDraft =
+				loadedOffering.snapshot.kind === 'course'
+					? String(loadedOffering.snapshot.weeklyPeriodTarget)
+					: '';
 			groups = loadedGroups.map((group) => (group.id === loadedGroup?.id ? loadedGroup : group));
 			selectedGroup = loadedGroup;
 			initialized = true;
@@ -289,6 +308,43 @@
 		}
 	}
 
+	async function saveWeeklyPeriodTarget() {
+		if (!offering || offering.snapshot.kind !== 'course' || offering.status !== 'draft') return;
+		const parsedTarget = Number(weeklyPeriodTargetDraft);
+		if (!Number.isInteger(parsedTarget) || parsedTarget <= 0) {
+			actionError = 'คาบที่จัดจริงต่อสัปดาห์ต้องเป็นจำนวนเต็มมากกว่า 0';
+			return;
+		}
+		const ownerId = offering.owningOrganizationUnitId;
+		if (!ownerId) {
+			actionError = 'รายการเปิดสอนยังไม่มีหน่วยงานเจ้าของ จึงบันทึกจำนวนคาบไม่ได้';
+			return;
+		}
+
+		savingWeeklyPeriods = true;
+		actionError = '';
+		try {
+			const updated = await updateLearningOffering(offering.id, {
+				rowVersion: offering.rowVersion,
+				owningOrganizationUnitId: ownerId,
+				targets: offering.targets.map((target) => ({
+					targetKind: target.targetKind,
+					homeroomId: target.homeroomId ?? null,
+					gradeLevelId: target.gradeLevelId,
+					studyProgramId: target.studyProgramId
+				})),
+				weeklyPeriodTarget: parsedTarget
+			});
+			offering = updated;
+			weeklyPeriodTargetDraft =
+				updated.snapshot.kind === 'course' ? String(updated.snapshot.weeklyPeriodTarget) : '';
+		} catch (error) {
+			actionError = error instanceof Error ? error.message : 'บันทึกจำนวนคาบไม่สำเร็จ';
+		} finally {
+			savingWeeklyPeriods = false;
+		}
+	}
+
 	afterNavigate(({ to }) => {
 		if (!initialized) return;
 		const requestedGroupId = to?.url.searchParams.get('groupId') ?? '';
@@ -372,6 +428,55 @@
 						</div>
 					</div>
 				</div>
+				{#if courseSnapshot}
+					<div class="border-t border-primary/15 bg-primary/[0.045] px-5 py-4">
+						<div
+							class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1.35fr)] sm:items-center"
+						>
+							<div class="rounded-xl border border-primary/15 bg-background/80 px-4 py-3">
+								<p class="text-xs font-medium text-muted-foreground">ตามหลักสูตร</p>
+								<p class="mt-1 font-mono text-lg font-semibold tabular-nums text-foreground">
+									{courseSnapshot.standardPeriodsPerWeek} คาบ/สัปดาห์
+								</p>
+								<p class="mt-0.5 text-xs text-muted-foreground">ค่ามาตรฐานของรหัสวิชา</p>
+							</div>
+							<div class="hidden text-primary sm:block" aria-hidden="true">
+								<ArrowRight class="size-5" />
+							</div>
+							<div class="rounded-xl border border-primary/25 bg-background px-4 py-3 shadow-sm">
+								{#if canManage && offering.status === 'draft'}
+									<Label for="weekly-period-target" class="text-xs text-muted-foreground">
+										จัดจริงภาคเรียนนี้
+									</Label>
+									<div class="mt-1.5 flex flex-wrap items-center gap-2">
+										<Input
+											id="weekly-period-target"
+											type="number"
+											min="1"
+											step="1"
+											bind:value={weeklyPeriodTargetDraft}
+											class="w-24 font-mono tabular-nums"
+										/>
+										<span class="text-sm text-muted-foreground">คาบ/สัปดาห์</span>
+										<Button
+											size="sm"
+											onclick={saveWeeklyPeriodTarget}
+											disabled={savingWeeklyPeriods}
+										>
+											<Save class="size-4" />
+											{savingWeeklyPeriods ? 'กำลังบันทึก' : 'บันทึกจำนวนคาบ'}
+										</Button>
+									</div>
+								{:else}
+									<p class="text-xs font-medium text-muted-foreground">จัดจริงภาคเรียนนี้</p>
+									<p class="mt-1 font-mono text-lg font-semibold tabular-nums text-primary">
+										{courseSnapshot.weeklyPeriodTarget} คาบ/สัปดาห์
+									</p>
+								{/if}
+							</div>
+						</div>
+					</div>
+				{/if}
 			</section>
 
 			<LearningGroupList

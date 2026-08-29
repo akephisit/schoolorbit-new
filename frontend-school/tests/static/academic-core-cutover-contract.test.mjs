@@ -234,6 +234,25 @@ test('academic exact values and offering variants keep their wire semantics', as
 		return tagSchema.properties.kind.enum?.[0];
 	});
 	assert.deepEqual(variantTags.sort(), ['activity', 'course']);
+
+	const courseSnapshot = schemas.CourseOfferingSnapshot;
+	for (const propertyName of ['standardPeriodsPerWeek', 'weeklyPeriodTarget']) {
+		assert.ok(courseSnapshot.required.includes(propertyName));
+		assert.equal(courseSnapshot.properties[propertyName]?.type, 'integer');
+		assert.equal(courseSnapshot.properties[propertyName]?.format, 'int32');
+	}
+
+	const updateOffering = schemas.UpdateLearningOfferingRequest;
+	assert.ok(!updateOffering.required.includes('weeklyPeriodTarget'));
+	assert.deepEqual(updateOffering.properties.weeklyPeriodTarget?.type, ['integer', 'null']);
+	assert.equal(updateOffering.properties.weeklyPeriodTarget?.format, 'int32');
+
+	const homeroomItem = schemas.HomeroomDeliveryItem;
+	for (const propertyName of ['standardPeriodsPerWeek', 'weeklyPeriodTarget']) {
+		assert.ok(!homeroomItem.required.includes(propertyName));
+		assert.deepEqual(homeroomItem.properties[propertyName]?.type, ['integer', 'null']);
+		assert.equal(homeroomItem.properties[propertyName]?.format, 'int32');
+	}
 });
 
 test('academic JSON operations use response envelopes', async () => {

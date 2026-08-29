@@ -86,6 +86,15 @@
 			return item.studyPrograms.map((program) => program.name).join(', ');
 		return `${item.studyPrograms[0].name} และอีก ${item.studyPrograms.length - 1} แผน`;
 	}
+
+	function courseWorkloadSummary(item: LearningOfferingOverviewItem) {
+		if (item.offering.snapshot.kind !== 'course') return '';
+		const snapshot = item.offering.snapshot;
+		if (snapshot.weeklyPeriodTarget === snapshot.standardPeriodsPerWeek) {
+			return `ตามหลักสูตรและจัดจริง ${snapshot.standardPeriodsPerWeek} คาบ/สัปดาห์`;
+		}
+		return `ตามหลักสูตร ${snapshot.standardPeriodsPerWeek} · จัดจริงภาคเรียนนี้ ${snapshot.weeklyPeriodTarget} คาบ/สัปดาห์`;
+	}
 </script>
 
 <div class="border-b bg-muted/15 p-4">
@@ -184,6 +193,11 @@
 									<p class="text-xs text-muted-foreground">
 										{item.offering.kind === 'course' ? 'รายวิชา' : 'กิจกรรมพัฒนาผู้เรียน'}
 									</p>
+									{#if item.offering.kind === 'course'}
+										<p class="mt-1 text-xs font-medium text-primary">
+											{courseWorkloadSummary(item)}
+										</p>
+									{/if}
 								</div>
 							</div>
 						</Table.Cell>
@@ -248,6 +262,9 @@
 							>{statusLabel[item.offering.status]}</Badge
 						>
 					</div>
+					{#if item.offering.kind === 'course'}
+						<p class="text-xs font-medium text-primary">{courseWorkloadSummary(item)}</p>
+					{/if}
 					<p class="text-sm">{gradeSummary(item)} · {programSummary(item)}</p>
 					<div class="grid grid-cols-3 gap-2 text-xs">
 						<div class="rounded-lg bg-muted/50 p-2">
