@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-30
 
-**Status:** Approved in conversation; pending written-spec review
+**Status:** Approved
 
 **Scope:** academic-term dates, term learning offerings and groups, teacher and roster mutation
 rules, timetable versions, curriculum-versus-delivery alignment, typed API contracts, frontend
@@ -125,8 +125,10 @@ The clean academic-term contract owns three different meanings:
 - `closed_on`: actual final date, populated only by the future term-closing transition.
 
 The old required `end_date` is not retained as a second runtime owner. The cutover migrates its value
-to `planned_end_date`, updates every current consumer, and removes the obsolete column only after
-preflight and consumer verification pass. A planning or active term is valid without a planned end.
+to `planned_end_date`; for an already closed historical term it also initializes `closed_on` from
+that same deterministic legacy date. It updates every current consumer and removes the obsolete
+column only after preflight and consumer verification pass. A planning or active term is valid
+without a planned end.
 
 Features that genuinely need a bounded range must validate their own dependency. For example, an
 exam or calendar workflow may require an explicit date inside the owning academic year; term
@@ -202,9 +204,10 @@ end is derived as:
 2. the term's `closed_on`; otherwise
 3. open-ended.
 
-There may be only one published version for a term and effective-from date. A draft is always edited
-through an explicit version ID. A published version and its entries are immutable. Display states
-`current`, `upcoming`, and `historical` are derived from date and term context rather than stored.
+There may be only one live draft or published version for a term and effective-from date; a
+cancelled draft does not reserve that date. A draft is always edited through an explicit version ID.
+A published version and its entries are immutable. Display states `current`, `upcoming`, and
+`historical` are derived from date and term context rather than stored.
 
 Every `academic_timetable_entry` belongs to exactly one timetable version. Conflict uniqueness and
 slot-locking include the version ID, so the same homeroom, group, teacher, or room may occupy a
