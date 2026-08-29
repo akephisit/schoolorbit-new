@@ -6,6 +6,7 @@
 		secondaryName?: string | null;
 		exactValue: string;
 		totalValue?: string | null;
+		standardPeriodsPerWeek?: number | null;
 		effectiveFrom: string;
 		effectiveUntil?: string | null;
 		classification?: string | null;
@@ -19,6 +20,7 @@
 		secondaryName: string;
 		exactValue: string;
 		totalValue: string;
+		standardPeriodsPerWeek: string;
 		effectiveFrom: string;
 		effectiveUntil: string;
 		gradeLevelIds: string[];
@@ -68,6 +70,7 @@
 		secondaryName: '',
 		exactValue: '1.00',
 		totalValue: '20.00',
+		standardPeriodsPerWeek: '1',
 		effectiveFrom: '',
 		effectiveUntil: '',
 		gradeLevelIds: [],
@@ -142,8 +145,14 @@
 								{item.secondaryName}
 							</p>{/if}
 						<div class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-							<span>{kind === 'subject' ? 'หน่วยกิต' : 'ชม./สัปดาห์'} {item.exactValue}</span>
-							{#if kind === 'activity'}<span>รวม {item.totalValue ?? '—'} ชม./ภาคเรียน</span>{/if}
+							{#if kind === 'subject'}
+								<span>หน่วยกิต {item.exactValue}</span>
+								<span>มาตรฐาน {item.standardPeriodsPerWeek ?? '—'} คาบ/สัปดาห์</span>
+								<span>รวม {item.totalValue ?? '—'} ชม./ภาคเรียน</span>
+							{:else}
+								<span>ชม./สัปดาห์ {item.exactValue}</span>
+								<span>รวม {item.totalValue ?? '—'} ชม./ภาคเรียน</span>
+							{/if}
 							{#if item.classification}
 								<span>{optionLabel(classificationOptions, item.classification)}</span>
 							{/if}
@@ -179,35 +188,62 @@
 					required
 				/>
 			</div>
-			{#if kind === 'activity'}
-				<div class="space-y-1.5">
-					<Label for={`${code}-version-total`}>ชั่วโมงรวมต่อภาคเรียน</Label>
-					<Input
-						id={`${code}-version-total`}
-						inputmode="decimal"
-						bind:value={draft.totalValue}
-						required
-					/>
+			<div class="space-y-1.5">
+				<Label for={`${code}-version-en`}
+					>{kind === 'subject' ? 'ชื่อภาษาอังกฤษ' : 'คำอธิบาย'}</Label
+				><Input id={`${code}-version-en`} bind:value={draft.secondaryName} />
+			</div>
+			<div class="space-y-3 rounded-xl border border-primary/15 bg-primary/[0.035] p-3">
+				<div>
+					<p class="text-sm font-medium">
+						{kind === 'subject' ? 'ภาระการเรียนตามหลักสูตร' : 'ชั่วโมงกิจกรรมทางการ'}
+					</p>
 					<p class="text-xs text-muted-foreground">
-						ใช้เป็นค่าทางการในโครงสร้างหลักสูตรและการเปิดสอน
+						ค่าชุดนี้จะแสดงในหลักสูตร และใช้เป็นค่าเริ่มต้นเมื่อเปิดสอน
 					</p>
 				</div>
-			{/if}
-			<div class="space-y-1.5">
-				<Label for={`${code}-version-en`}>ชื่อภาษาอังกฤษ</Label><Input
-					id={`${code}-version-en`}
-					bind:value={draft.secondaryName}
-				/>
-			</div>
-			<div class="space-y-1.5">
-				<Label for={`${code}-version-exact`}
-					>{kind === 'subject' ? 'หน่วยกิต' : 'ชั่วโมงต่อสัปดาห์'}</Label
-				><Input
-					id={`${code}-version-exact`}
-					inputmode="decimal"
-					bind:value={draft.exactValue}
-					required
-				/>
+				<div class="grid gap-3 sm:grid-cols-2">
+					<div class={kind === 'subject' ? 'space-y-1.5 sm:col-span-2' : 'space-y-1.5'}>
+						<Label for={`${code}-version-exact`}>
+							{kind === 'subject' ? 'หน่วยกิต' : 'ชั่วโมงต่อสัปดาห์'}
+						</Label>
+						<Input
+							id={`${code}-version-exact`}
+							type="number"
+							min="0.01"
+							step="0.01"
+							inputmode="decimal"
+							bind:value={draft.exactValue}
+							required
+						/>
+					</div>
+					{#if kind === 'subject'}
+						<div class="space-y-1.5">
+							<Label for={`${code}-version-periods`}>คาบมาตรฐานต่อสัปดาห์</Label>
+							<Input
+								id={`${code}-version-periods`}
+								type="number"
+								min="1"
+								step="1"
+								inputmode="numeric"
+								bind:value={draft.standardPeriodsPerWeek}
+								required
+							/>
+						</div>
+					{/if}
+					<div class="space-y-1.5">
+						<Label for={`${code}-version-total`}>ชั่วโมงรวมต่อภาคเรียน</Label>
+						<Input
+							id={`${code}-version-total`}
+							type="number"
+							min={kind === 'subject' ? '1' : '0.01'}
+							step={kind === 'subject' ? '1' : '0.01'}
+							inputmode={kind === 'subject' ? 'numeric' : 'decimal'}
+							bind:value={draft.totalValue}
+							required
+						/>
+					</div>
+				</div>
 			</div>
 			<div class="space-y-1.5">
 				<Label for={`${code}-version-class`}

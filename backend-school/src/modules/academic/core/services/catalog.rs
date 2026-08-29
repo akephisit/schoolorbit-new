@@ -317,6 +317,33 @@ pub async fn publish_subject_version(
     id: Uuid,
     request: PublishVersionRequest,
 ) -> Result<SubjectVersion, AppError> {
+    let (credit_positive, hours_positive, periods_positive): (bool, Option<bool>, Option<bool>) =
+        sqlx::query_as(
+            r#"SELECT credit > 0,
+                      hours_per_semester > 0,
+                      periods_per_week > 0
+               FROM subject_versions
+               WHERE id = $1"#,
+        )
+        .bind(id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบเวอร์ชันรายวิชา".to_string()))?;
+    if !credit_positive {
+        return Err(AppError::ValidationError(
+            "หน่วยกิตต้องมากกว่า 0 ก่อนเผยแพร่เวอร์ชันรายวิชา".to_string(),
+        ));
+    }
+    if periods_positive != Some(true) {
+        return Err(AppError::ValidationError(
+            "ระบุคาบมาตรฐานต่อสัปดาห์ให้มากกว่า 0 ก่อนเผยแพร่เวอร์ชันรายวิชา".to_string(),
+        ));
+    }
+    if hours_positive != Some(true) {
+        return Err(AppError::ValidationError(
+            "ระบุชั่วโมงรวมต่อภาคเรียนให้มากกว่า 0 ก่อนเผยแพร่เวอร์ชันรายวิชา".to_string(),
+        ));
+    }
     publish_version(pool, "subject_versions", id, request.row_version).await?;
     get_subject_version(pool, id).await
 }
@@ -625,16 +652,21 @@ pub async fn publish_activity_version(
     id: Uuid,
     request: PublishVersionRequest,
 ) -> Result<ActivityVersion, AppError> {
-    let has_total_hours: bool = sqlx::query_scalar(
-        "SELECT hours_per_term IS NOT NULL FROM activity_versions WHERE id = $1",
+    let (weekly_positive, total_positive): (bool, Option<bool>) = sqlx::query_as(
+        "SELECT hours_per_week > 0, hours_per_term > 0 FROM activity_versions WHERE id = $1",
     )
     .bind(id)
     .fetch_optional(pool)
     .await?
     .ok_or_else(|| AppError::NotFound("ไม่พบเวอร์ชันกิจกรรม".to_string()))?;
-    if !has_total_hours {
+    if !weekly_positive {
         return Err(AppError::ValidationError(
-            "ระบุชั่วโมงรวมต่อภาคเรียนก่อนเผยแพร่เวอร์ชันกิจกรรม".to_string(),
+            "ชั่วโมงต่อสัปดาห์ต้องมากกว่า 0 ก่อนเผยแพร่เวอร์ชันกิจกรรม".to_string(),
+        ));
+    }
+    if total_positive != Some(true) {
+        return Err(AppError::ValidationError(
+            "ระบุชั่วโมงรวมต่อภาคเรียนให้มากกว่า 0 ก่อนเผยแพร่เวอร์ชันกิจกรรม".to_string(),
         ));
     }
     publish_version(pool, "activity_versions", id, request.row_version).await?;

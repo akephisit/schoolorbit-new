@@ -45,6 +45,7 @@ test('subject catalog uses the responsive overview information architecture', as
 	const subjects = await readSource(
 		'src/routes/(app)/staff/academic/catalog/subjects/+page.svelte'
 	);
+	const history = await readSource('src/lib/components/academic-core/CatalogVersionHistory.svelte');
 
 	assert.match(subjects, /getCatalogSubjectOverview/);
 	assert.match(subjects, /\* as Table/);
@@ -59,8 +60,17 @@ test('subject catalog uses the responsive overview information architecture', as
 	assert.match(subjects, /md:hidden/);
 	assert.match(subjects, /hidden md:block/);
 	for (const label of ['ชื่อรายวิชา', 'ประเภท', 'ระดับชั้น', 'หน่วยกิต', 'สถานะ']) {
-		assert.match(subjects, new RegExp(label));
+		assert.match(`${subjects}\n${history}`, new RegExp(label));
 	}
+	for (const label of [
+		'ภาระการเรียนตามหลักสูตร',
+		'คาบมาตรฐานต่อสัปดาห์',
+		'ชั่วโมงรวมต่อภาคเรียน'
+	]) {
+		assert.match(`${subjects}\n${history}`, new RegExp(label));
+	}
+	assert.doesNotMatch(subjects, /hoursPerSemester:\s*null/);
+	assert.doesNotMatch(subjects, /periodsPerWeek:\s*null/);
 });
 
 test('activity catalog uses the responsive overview information architecture', async () => {

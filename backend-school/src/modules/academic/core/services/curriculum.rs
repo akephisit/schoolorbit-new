@@ -614,15 +614,19 @@ async fn validate_publishable(
            JOIN subject_versions version ON version.id = requirement.subject_version_id
            WHERE requirement.curriculum_version_id = $1
              AND (version.periods_per_week IS NULL
+                  OR version.periods_per_week <= 0
                   OR version.credit IS NULL
-                  OR version.hours_per_semester IS NULL)"#,
+                  OR version.credit <= 0
+                  OR version.hours_per_semester IS NULL
+                  OR version.hours_per_semester <= 0)"#,
     )
     .bind(version.id)
     .fetch_one(&mut **transaction)
     .await?;
     if incomplete_course_metrics != 0 {
         return Err(AppError::ValidationError(
-            "รายวิชาในโครงสร้างต้องมีหน่วยกิต จำนวนคาบ และชั่วโมงรวมจากบัญชีรายวิชาให้ครบ".to_string(),
+            "รายวิชาในโครงสร้างต้องมีหน่วยกิต จำนวนคาบ และชั่วโมงรวมจากบัญชีรายวิชาให้ครบและมากกว่า 0"
+                .to_string(),
         ));
     }
     let incomplete_activity_metrics: i64 = sqlx::query_scalar(
@@ -630,14 +634,17 @@ async fn validate_publishable(
            FROM curriculum_activity_requirements requirement
            JOIN activity_versions version ON version.id = requirement.activity_version_id
            WHERE requirement.curriculum_version_id = $1
-             AND (version.hours_per_week IS NULL OR version.hours_per_term IS NULL)"#,
+             AND (version.hours_per_week IS NULL
+                  OR version.hours_per_week <= 0
+                  OR version.hours_per_term IS NULL
+                  OR version.hours_per_term <= 0)"#,
     )
     .bind(version.id)
     .fetch_one(&mut **transaction)
     .await?;
     if incomplete_activity_metrics != 0 {
         return Err(AppError::ValidationError(
-            "กิจกรรมในโครงสร้างต้องมีชั่วโมงต่อสัปดาห์และชั่วโมงรวมต่อภาคเรียนให้ครบ".to_string(),
+            "กิจกรรมในโครงสร้างต้องมีชั่วโมงต่อสัปดาห์และชั่วโมงรวมต่อภาคเรียนให้ครบและมากกว่า 0".to_string(),
         ));
     }
     Ok(())

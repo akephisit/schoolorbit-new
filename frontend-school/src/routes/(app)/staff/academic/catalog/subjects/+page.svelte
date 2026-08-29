@@ -41,6 +41,7 @@
 		secondaryName: string;
 		exactValue: string;
 		totalValue: string;
+		standardPeriodsPerWeek: string;
 		effectiveFrom: string;
 		effectiveUntil: string;
 		gradeLevelIds: string[];
@@ -203,8 +204,8 @@
 			effectiveUntil: draft.effectiveUntil || null,
 			gradeLevelIds: draft.gradeLevelIds,
 			groupId: null,
-			hoursPerSemester: null,
-			periodsPerWeek: null,
+			hoursPerSemester: Number.parseInt(draft.totalValue, 10),
+			periodsPerWeek: Number.parseInt(draft.standardPeriodsPerWeek, 10),
 			subjectType: draft.classification,
 			termCode: null
 		});
@@ -364,6 +365,7 @@
 									<Table.Head>ประเภท</Table.Head>
 									<Table.Head>ระดับชั้น</Table.Head>
 									<Table.Head class="text-end">หน่วยกิต</Table.Head>
+									<Table.Head class="min-w-[190px]">ภาระการเรียน</Table.Head>
 									<Table.Head>สถานะ</Table.Head>
 									<Table.Head class="w-12"><span class="sr-only">เปิดรายละเอียด</span></Table.Head>
 								</Table.Row>
@@ -402,6 +404,18 @@
 										<Table.Cell class="text-end font-mono tabular-nums"
 											>{item.displayVersion?.credit ?? '—'}</Table.Cell
 										>
+										<Table.Cell>
+											{#if item.displayVersion}
+												<p class="font-medium tabular-nums">
+													{item.displayVersion.periodsPerWeek ?? '—'} คาบ/สัปดาห์
+												</p>
+												<p class="text-xs text-muted-foreground tabular-nums">
+													รวม {item.displayVersion.hoursPerSemester ?? '—'} ชม./ภาคเรียน
+												</p>
+											{:else}
+												—
+											{/if}
+										</Table.Cell>
 										<Table.Cell>
 											<div class="flex flex-wrap gap-1.5">
 												<Badge variant="outline" class={displayStateClass(item.displayState)}>
@@ -454,6 +468,14 @@
 									<div>
 										<p class="text-xs text-muted-foreground">หน่วยกิต</p>
 										<p class="font-mono">{item.displayVersion?.credit ?? '—'}</p>
+									</div>
+									<div>
+										<p class="text-xs text-muted-foreground">คาบมาตรฐานต่อสัปดาห์</p>
+										<p class="font-mono">{item.displayVersion?.periodsPerWeek ?? '—'}</p>
+									</div>
+									<div>
+										<p class="text-xs text-muted-foreground">ชั่วโมงรวมต่อภาคเรียน</p>
+										<p class="font-mono">{item.displayVersion?.hoursPerSemester ?? '—'}</p>
 									</div>
 									<div class="col-span-2">
 										<p class="text-xs text-muted-foreground">ระดับชั้น</p>
@@ -528,6 +550,8 @@
 					name: item.nameTh,
 					secondaryName: item.nameEn,
 					exactValue: item.credit,
+					totalValue: item.hoursPerSemester?.toString() ?? '',
+					standardPeriodsPerWeek: item.periodsPerWeek,
 					effectiveFrom: item.effectiveFrom,
 					effectiveUntil: item.effectiveUntil,
 					classification: item.subjectType,

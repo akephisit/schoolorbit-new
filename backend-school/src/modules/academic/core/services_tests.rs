@@ -2065,6 +2065,138 @@ async fn activity_catalog_requires_total_hours_before_publishing_a_new_version()
     ));
 }
 
+#[tokio::test]
+async fn catalog_publication_requires_positive_official_workload() {
+    let pool = prepare_core_fixture("academic_core_catalog_workload_publish").await;
+    let grade_level_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM grade_levels ORDER BY level_type, year, id LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+    let missing_period_subject = catalog::create_subject(
+        &pool,
+        CreateCatalogSubjectRequest {
+            code: "WORKLOAD-NO-PERIOD".to_string(),
+            owning_organization_unit_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    let missing_period_version = catalog::create_subject_version(
+        &pool,
+        missing_period_subject.id,
+        CreateSubjectVersionRequest {
+            name_th: "รายวิชาขาดคาบมาตรฐาน".to_string(),
+            name_en: None,
+            credit: "1.00".to_string(),
+            hours_per_semester: Some(40),
+            subject_type: "BASIC".to_string(),
+            group_id: None,
+            description: None,
+            effective_from: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
+            effective_until: None,
+            term_code: None,
+            periods_per_week: None,
+            grade_level_ids: vec![grade_level_id],
+        },
+    )
+    .await
+    .unwrap();
+    let missing_period_error = catalog::publish_subject_version(
+        &pool,
+        missing_period_version.id,
+        PublishVersionRequest {
+            row_version: missing_period_version.row_version,
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(missing_period_error
+        .public_message()
+        .contains("คาบมาตรฐานต่อสัปดาห์"));
+
+    let missing_hours_subject = catalog::create_subject(
+        &pool,
+        CreateCatalogSubjectRequest {
+            code: "WORKLOAD-NO-HOURS".to_string(),
+            owning_organization_unit_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    let missing_hours_version = catalog::create_subject_version(
+        &pool,
+        missing_hours_subject.id,
+        CreateSubjectVersionRequest {
+            name_th: "รายวิชาขาดชั่วโมงรวม".to_string(),
+            name_en: None,
+            credit: "1.00".to_string(),
+            hours_per_semester: None,
+            subject_type: "BASIC".to_string(),
+            group_id: None,
+            description: None,
+            effective_from: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
+            effective_until: None,
+            term_code: None,
+            periods_per_week: Some(2),
+            grade_level_ids: vec![grade_level_id],
+        },
+    )
+    .await
+    .unwrap();
+    let missing_hours_error = catalog::publish_subject_version(
+        &pool,
+        missing_hours_version.id,
+        PublishVersionRequest {
+            row_version: missing_hours_version.row_version,
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(missing_hours_error
+        .public_message()
+        .contains("ชั่วโมงรวมต่อภาคเรียน"));
+
+    let zero_hours_activity = catalog::create_activity(
+        &pool,
+        CreateCatalogActivityRequest {
+            code: "WORKLOAD-ZERO-ACTIVITY".to_string(),
+            activity_type: "guidance".to_string(),
+            owning_organization_unit_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    let zero_hours_activity_version = catalog::create_activity_version(
+        &pool,
+        zero_hours_activity.id,
+        CreateActivityVersionRequest {
+            name: "กิจกรรมชั่วโมงเป็นศูนย์".to_string(),
+            description: None,
+            hours_per_week: "0.00".to_string(),
+            hours_per_term: Some("0.00".to_string()),
+            scheduling_mode: "synchronized".to_string(),
+            effective_from: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
+            effective_until: None,
+            term_code: None,
+            grade_level_ids: vec![grade_level_id],
+        },
+    )
+    .await
+    .unwrap();
+    let zero_hours_error = catalog::publish_activity_version(
+        &pool,
+        zero_hours_activity_version.id,
+        PublishVersionRequest {
+            row_version: zero_hours_activity_version.row_version,
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(zero_hours_error.public_message().contains("มากกว่า 0"));
+}
+
 async fn create_overview_subject_version(
     pool: &PgPool,
     subject_id: Uuid,
@@ -3308,6 +3440,23 @@ async fn curriculum_publication_rejects_missing_official_catalog_metrics() {
            LIMIT 1"#,
     )
     .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "ALTER TABLE activity_versions DISABLE TRIGGER activity_versions_published_immutable",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE activity_versions SET hours_per_term = 0 WHERE id = $1")
+        .bind(activity_version_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "ALTER TABLE activity_versions ENABLE TRIGGER activity_versions_published_immutable",
+    )
+    .execute(&pool)
     .await
     .unwrap();
     let curriculum_row = curriculum::create(

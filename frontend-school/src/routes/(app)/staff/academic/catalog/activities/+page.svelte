@@ -44,6 +44,7 @@
 		secondaryName: string;
 		exactValue: string;
 		totalValue: string;
+		standardPeriodsPerWeek: string;
 		effectiveFrom: string;
 		effectiveUntil: string;
 		gradeLevelIds: string[];
