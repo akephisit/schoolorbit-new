@@ -2020,13 +2020,14 @@ mod tests {
                 "academicYearId",
                 "bellScheduleId",
                 "blocksYearClosure",
+                "closedOn",
                 "code",
                 "createdAt",
-                "endDate",
                 "id",
                 "includedInYearResult",
                 "migrated",
                 "name",
+                "plannedEndDate",
                 "rowVersion",
                 "sequence",
                 "startDate",
@@ -2038,6 +2039,19 @@ mod tests {
         for retired_field in ["semesterId", "classroomCourseId", "isActive"] {
             assert!(schemas["AcademicYear"]["properties"][retired_field].is_null());
             assert!(schemas["AcademicTerm"]["properties"][retired_field].is_null());
+        }
+        for schema_name in ["AcademicTerm", "AcademicTermOption"] {
+            let schema = &schemas[schema_name];
+            assert!(required(schema).contains(&"plannedEndDate"));
+            assert!(required(schema).contains(&"closedOn"));
+            assert!(contains_null(&schema["properties"]["plannedEndDate"]));
+            assert!(contains_null(&schema["properties"]["closedOn"]));
+            assert!(schema["properties"]["endDate"].is_null());
+        }
+        for schema_name in ["CreateAcademicTermRequest", "UpdateAcademicTermRequest"] {
+            let schema = &schemas[schema_name];
+            assert!(contains_null(&schema["properties"]["plannedEndDate"]));
+            assert!(schema["properties"]["endDate"].is_null());
         }
 
         let success = &document["paths"]["/api/academic/offerings"]["get"]["responses"]["200"]

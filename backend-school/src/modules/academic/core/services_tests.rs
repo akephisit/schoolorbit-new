@@ -44,7 +44,7 @@ async fn prepare_core_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 48).await.unwrap();
+    apply_migrations_through(&pool, 52).await.unwrap();
     pool
 }
 
@@ -658,12 +658,23 @@ fn request_dtos_use_camel_case_and_reject_unknown_fields() {
         "termType": "regular",
         "customName": null,
         "startDate": "2027-05-01",
-        "endDate": "2027-09-30",
+        "plannedEndDate": null,
         "includedInYearResult": true,
         "blocksYearClosure": true,
         "bellScheduleId": Uuid::new_v4()
     });
     assert!(serde_json::from_value::<CreateAcademicTermRequest>(term).is_ok());
+    let retired_term = json!({
+        "academicYearId": Uuid::new_v4(),
+        "termType": "regular",
+        "customName": null,
+        "startDate": "2027-05-01",
+        "endDate": "2027-09-30",
+        "includedInYearResult": true,
+        "blocksYearClosure": true,
+        "bellScheduleId": Uuid::new_v4()
+    });
+    assert!(serde_json::from_value::<CreateAcademicTermRequest>(retired_term).is_err());
 
     let schedule = json!({
         "academicYearId": Uuid::new_v4(),
@@ -888,7 +899,7 @@ async fn planning_year_and_term_updates_reject_stale_versions_and_unused_term_de
             term_type: AcademicTermType::Remedial,
             custom_name: None,
             start_date: NaiveDate::from_ymd_opt(2027, 4, 1).unwrap(),
-            end_date: NaiveDate::from_ymd_opt(2027, 4, 15).unwrap(),
+            planned_end_date: Some(NaiveDate::from_ymd_opt(2027, 4, 15).unwrap()),
             included_in_year_result: true,
             blocks_year_closure: true,
             bell_schedule_id,
@@ -900,7 +911,7 @@ async fn planning_year_and_term_updates_reject_stale_versions_and_unused_term_de
         term_type: AcademicTermType::Custom,
         custom_name: Some("ภาคซ่อมเสริมปรับปรุง".to_string()),
         start_date: created.start_date,
-        end_date: created.end_date,
+        planned_end_date: created.planned_end_date,
         included_in_year_result: created.included_in_year_result,
         blocks_year_closure: created.blocks_year_closure,
         bell_schedule_id: created.bell_schedule_id,
@@ -920,7 +931,7 @@ async fn planning_year_and_term_updates_reject_stale_versions_and_unused_term_de
             term_type: created.term_type,
             custom_name: Some("ข้อมูลเก่า".to_string()),
             start_date: created.start_date,
-            end_date: created.end_date,
+            planned_end_date: created.planned_end_date,
             included_in_year_result: created.included_in_year_result,
             blocks_year_closure: created.blocks_year_closure,
             bell_schedule_id: created.bell_schedule_id,
@@ -3435,7 +3446,7 @@ async fn curriculum_publication_rejects_missing_official_catalog_metrics() {
         r#"SELECT version.id, grade.value::uuid
            FROM activity_versions version
            CROSS JOIN LATERAL jsonb_array_elements_text(version.grade_level_ids) grade(value)
-           WHERE version.status = 'published' AND version.hours_per_term IS NULL
+           WHERE version.status = 'published'
            ORDER BY version.id
            LIMIT 1"#,
     )

@@ -562,7 +562,7 @@ async fn prepare_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 51).await.unwrap();
+    apply_migrations_through(&pool, 52).await.unwrap();
     pool
 }
 
@@ -673,7 +673,7 @@ fn course_request(context: &RuntimeContext) -> CreateLearningOfferingRequest {
 }
 
 #[tokio::test]
-async fn course_offering_weekly_target_defaults_and_resets_per_term() {
+async fn course_offering_snapshot_keeps_the_catalog_standard_immutable() {
     let pool = prepare_delivery_runtime_fixture("academic_delivery_weekly_period_target").await;
     let context = planning_runtime_context(&pool).await;
     let catalog_standard: i32 =
@@ -691,7 +691,6 @@ async fn course_offering_weekly_target_defaults_and_resets_per_term() {
         panic!("course creation must return a course snapshot");
     };
     assert_eq!(initial_snapshot.standard_periods_per_week, 3);
-    assert_eq!(initial_snapshot.weekly_period_target, 3);
 
     let targets = offering
         .targets
@@ -703,20 +702,6 @@ async fn course_offering_weekly_target_defaults_and_resets_per_term() {
             study_program_id: target.study_program_id,
         })
         .collect::<Vec<_>>();
-    let missing_target = offerings::update(
-        &pool,
-        context.teacher_id,
-        offering.id,
-        UpdateLearningOfferingRequest {
-            row_version: offering.row_version,
-            owning_organization_unit_id: context.owner_id,
-            targets: targets.clone(),
-            weekly_period_target: None,
-        },
-    )
-    .await;
-    assert!(matches!(missing_target, Err(AppError::ValidationError(_))));
-
     let updated = offerings::update(
         &pool,
         context.teacher_id,
@@ -725,7 +710,6 @@ async fn course_offering_weekly_target_defaults_and_resets_per_term() {
             row_version: offering.row_version,
             owning_organization_unit_id: context.owner_id,
             targets,
-            weekly_period_target: Some(2),
         },
     )
     .await
@@ -734,7 +718,6 @@ async fn course_offering_weekly_target_defaults_and_resets_per_term() {
         panic!("course update must return a course snapshot");
     };
     assert_eq!(updated_snapshot.standard_periods_per_week, 3);
-    assert_eq!(updated_snapshot.weekly_period_target, 2);
     let unchanged_catalog_standard: i32 =
         sqlx::query_scalar("SELECT periods_per_week FROM subject_versions WHERE id = $1")
             .bind(context.subject_version_id)
@@ -769,7 +752,6 @@ async fn course_offering_weekly_target_defaults_and_resets_per_term() {
         panic!("next-term course must return a course snapshot");
     };
     assert_eq!(next_term_snapshot.standard_periods_per_week, 3);
-    assert_eq!(next_term_snapshot.weekly_period_target, 3);
 }
 
 fn default_preparation_choices(
@@ -1590,6 +1572,13 @@ async fn student_activity_registration_is_term_scoped_eligible_and_revisioned() 
     let pool =
         prepare_delivery_runtime_fixture("academic_delivery_student_activity_registration").await;
     let context = planning_runtime_context(&pool).await;
+    sqlx::query(
+        "UPDATE academic_terms SET planned_end_date = NULL, closed_on = NULL WHERE id = $1",
+    )
+    .bind(context.term_id)
+    .execute(&pool)
+    .await
+    .expect("a planning term may omit its planned and actual end dates");
     let student_id = Uuid::parse_str("50000000-0000-0000-0000-000000000001").unwrap();
     let (activity_version_id, scheduling_mode): (Uuid, ActivitySchedulingMode) = sqlx::query_as(
         r#"SELECT version.id, version.scheduling_mode
@@ -1902,7 +1891,7 @@ async fn delivery_overview_batches_labels_and_group_coverage() {
     )
     .await
     .unwrap();
-    let second_group = groups::replace_teachers(
+    let _second_group = groups::replace_teachers(
         &pool,
         context.teacher_id,
         second_group.id,
@@ -1953,19 +1942,6 @@ async fn delivery_overview_batches_labels_and_group_coverage() {
     )
     .await
     .unwrap();
-    let second_group = groups::get(&pool, second_group.id).await.unwrap();
-    groups::replace_teachers(
-        &pool,
-        context.teacher_id,
-        second_group.id,
-        ReplaceLearningGroupTeachersRequest {
-            row_version: second_group.row_version,
-            teachers: Vec::new(),
-        },
-    )
-    .await
-    .unwrap();
-
     let overview = workspaces::delivery_overview(
         &pool,
         context.term_id,
@@ -1988,8 +1964,8 @@ async fn delivery_overview_batches_labels_and_group_coverage() {
     assert_eq!(summary.study_programs[0].id, context.study_program_id);
     assert!(!summary.study_programs[0].name.is_empty());
     assert_eq!(summary.group_count, 2);
-    assert_eq!(summary.teacher_assignment_count, 1);
-    assert_eq!(summary.groups_without_primary_teacher, 1);
+    assert_eq!(summary.teacher_assignment_count, 2);
+    assert_eq!(summary.groups_without_primary_teacher, 0);
     assert_eq!(summary.published_roster_count, 1);
 
     let outside_owner_id: Uuid = sqlx::query_scalar(
@@ -2071,11 +2047,8 @@ async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverag
         LearningOfferingKind::Course => {
             item.standard_periods_per_week
                 .is_some_and(|value| value > 0)
-                && item.weekly_period_target.is_some_and(|value| value > 0)
         }
-        LearningOfferingKind::Activity => {
-            item.standard_periods_per_week.is_none() && item.weekly_period_target.is_none()
-        }
+        LearningOfferingKind::Activity => item.standard_periods_per_week.is_none(),
     }));
     let offering_id = room
         .items

@@ -115,7 +115,7 @@ pub struct CreateAcademicTermRequest {
     pub term_type: AcademicTermType,
     pub custom_name: Option<String>,
     pub start_date: NaiveDate,
-    pub end_date: NaiveDate,
+    pub planned_end_date: Option<NaiveDate>,
     pub included_in_year_result: bool,
     pub blocks_year_closure: bool,
     pub bell_schedule_id: Uuid,
@@ -127,7 +127,7 @@ pub struct UpdateAcademicTermRequest {
     pub term_type: AcademicTermType,
     pub custom_name: Option<String>,
     pub start_date: NaiveDate,
-    pub end_date: NaiveDate,
+    pub planned_end_date: Option<NaiveDate>,
     pub included_in_year_result: bool,
     pub blocks_year_closure: bool,
     pub bell_schedule_id: Uuid,
@@ -195,7 +195,10 @@ pub struct AcademicTerm {
     pub name: String,
     pub term_type: AcademicTermType,
     pub start_date: NaiveDate,
-    pub end_date: NaiveDate,
+    #[schema(required = true)]
+    pub planned_end_date: Option<NaiveDate>,
+    #[schema(required = true)]
+    pub closed_on: Option<NaiveDate>,
     pub included_in_year_result: bool,
     pub blocks_year_closure: bool,
     pub bell_schedule_id: Uuid,
@@ -227,7 +230,10 @@ pub struct AcademicTermOption {
     pub name: String,
     pub term_type: AcademicTermType,
     pub start_date: NaiveDate,
-    pub end_date: NaiveDate,
+    #[schema(required = true)]
+    pub planned_end_date: Option<NaiveDate>,
+    #[schema(required = true)]
+    pub closed_on: Option<NaiveDate>,
     pub included_in_year_result: bool,
     pub blocks_year_closure: bool,
     pub status: AcademicTermStatus,

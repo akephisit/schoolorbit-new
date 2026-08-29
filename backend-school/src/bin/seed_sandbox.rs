@@ -626,7 +626,9 @@ async fn upsert_terms(
 
     sqlx::query(
         "UPDATE academic_terms
-         SET status = 'closed', row_version = row_version + 1, updated_at = NOW()
+         SET status = 'closed',
+             closed_on = COALESCE(closed_on, planned_end_date, CURRENT_DATE),
+             row_version = row_version + 1, updated_at = NOW()
          WHERE status = 'active' AND academic_year_id <> $1",
     )
     .bind(academic_year_id)
@@ -636,7 +638,7 @@ async fn upsert_terms(
     let active_term_id = sqlx::query_scalar::<_, Uuid>(
         r#"
         INSERT INTO academic_terms (
-            academic_year_id, sequence_no, code, name, term_type, start_date, end_date,
+            academic_year_id, sequence_no, code, name, term_type, start_date, planned_end_date,
             included_in_year_result, blocks_year_closure, bell_schedule_id, status, metadata
         )
         VALUES ($1, 1, 'TERM-1', 'ภาคเรียนที่ 1', 'regular', $2, $3,
@@ -647,7 +649,7 @@ async fn upsert_terms(
             name = EXCLUDED.name,
             term_type = EXCLUDED.term_type,
             start_date = EXCLUDED.start_date,
-            end_date = EXCLUDED.end_date,
+            planned_end_date = EXCLUDED.planned_end_date,
             included_in_year_result = true,
             blocks_year_closure = true,
             bell_schedule_id = EXCLUDED.bell_schedule_id,
@@ -668,7 +670,7 @@ async fn upsert_terms(
     sqlx::query(
         r#"
         INSERT INTO academic_terms (
-            academic_year_id, sequence_no, code, name, term_type, start_date, end_date,
+            academic_year_id, sequence_no, code, name, term_type, start_date, planned_end_date,
             included_in_year_result, blocks_year_closure, bell_schedule_id, status, metadata
         )
         VALUES ($1, 2, 'TERM-2', 'ภาคเรียนที่ 2', 'regular', $2, $3,
@@ -679,7 +681,7 @@ async fn upsert_terms(
             name = EXCLUDED.name,
             term_type = EXCLUDED.term_type,
             start_date = EXCLUDED.start_date,
-            end_date = EXCLUDED.end_date,
+            planned_end_date = EXCLUDED.planned_end_date,
             included_in_year_result = true,
             blocks_year_closure = true,
             bell_schedule_id = EXCLUDED.bell_schedule_id,

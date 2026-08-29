@@ -116,7 +116,8 @@ struct AcademicTermRow {
     name: String,
     term_type: AcademicTermType,
     start_date: NaiveDate,
-    end_date: NaiveDate,
+    planned_end_date: Option<NaiveDate>,
+    closed_on: Option<NaiveDate>,
     included_in_year_result: bool,
     blocks_year_closure: bool,
     bell_schedule_id: Uuid,
@@ -137,7 +138,8 @@ impl From<AcademicTermRow> for AcademicTerm {
             name: row.name,
             term_type: row.term_type,
             start_date: row.start_date,
-            end_date: row.end_date,
+            planned_end_date: row.planned_end_date,
+            closed_on: row.closed_on,
             included_in_year_result: row.included_in_year_result,
             blocks_year_closure: row.blocks_year_closure,
             bell_schedule_id: row.bell_schedule_id,
@@ -157,7 +159,7 @@ const YEAR_COLUMNS: &str = r#"
 
 const TERM_COLUMNS: &str = r#"
     id, academic_year_id, sequence_no AS sequence, code, name, term_type,
-    start_date, end_date, included_in_year_result, blocks_year_closure,
+    start_date, planned_end_date, closed_on, included_in_year_result, blocks_year_closure,
     bell_schedule_id, status, row_version,
     migration_provenance <> '{}'::jsonb AS migrated, created_at, updated_at
 "#;
@@ -326,7 +328,7 @@ pub async fn create_term(
         request.academic_year_id,
         request.bell_schedule_id,
         request.start_date,
-        request.end_date,
+        request.planned_end_date,
     )
     .await?;
     let sequence: i32 = sqlx::query_scalar(
@@ -337,7 +339,7 @@ pub async fn create_term(
     .await?;
     let identity =
         derive_term_identity(request.term_type, sequence, request.custom_name.as_deref())?;
-    validate_term_fields(&identity.name, request.start_date, request.end_date)?;
+    validate_term_fields(&identity.name, request.start_date, request.planned_end_date)?;
     let code = unique_term_code(
         &mut transaction,
         request.academic_year_id,
@@ -348,7 +350,7 @@ pub async fn create_term(
     let id = Uuid::new_v4();
     let sql = format!(
         "INSERT INTO academic_terms (id, academic_year_id, sequence_no, code, name, term_type, \
-         start_date, end_date, included_in_year_result, blocks_year_closure, bell_schedule_id, status) \
+         start_date, planned_end_date, included_in_year_result, blocks_year_closure, bell_schedule_id, status) \
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'planning') \
          RETURNING {TERM_COLUMNS}"
     );
@@ -360,7 +362,7 @@ pub async fn create_term(
         .bind(&identity.name)
         .bind(request.term_type)
         .bind(request.start_date)
-        .bind(request.end_date)
+        .bind(request.planned_end_date)
         .bind(request.included_in_year_result)
         .bind(request.blocks_year_closure)
         .bind(request.bell_schedule_id)
@@ -402,14 +404,14 @@ pub async fn update_term(
         academic_year_id,
         request.bell_schedule_id,
         request.start_date,
-        request.end_date,
+        request.planned_end_date,
     )
     .await?;
     let identity =
         derive_term_identity(request.term_type, sequence, request.custom_name.as_deref())?;
-    validate_term_fields(&identity.name, request.start_date, request.end_date)?;
+    validate_term_fields(&identity.name, request.start_date, request.planned_end_date)?;
     let sql = format!(
-        "UPDATE academic_terms SET name = $1, term_type = $2, start_date = $3, end_date = $4, \
+        "UPDATE academic_terms SET name = $1, term_type = $2, start_date = $3, planned_end_date = $4, \
          included_in_year_result = $5, blocks_year_closure = $6, bell_schedule_id = $7, \
          row_version = row_version + 1, updated_at = now() \
          WHERE id = $8 AND row_version = $9 AND status = 'planning' RETURNING {TERM_COLUMNS}"
@@ -418,7 +420,7 @@ pub async fn update_term(
         .bind(identity.name)
         .bind(request.term_type)
         .bind(request.start_date)
-        .bind(request.end_date)
+        .bind(request.planned_end_date)
         .bind(request.included_in_year_result)
         .bind(request.blocks_year_closure)
         .bind(request.bell_schedule_id)
@@ -533,9 +535,9 @@ fn validate_year_fields(
 fn validate_term_fields(
     name: &str,
     start_date: NaiveDate,
-    end_date: NaiveDate,
+    planned_end_date: Option<NaiveDate>,
 ) -> Result<(), AppError> {
-    if name.trim().is_empty() || start_date > end_date {
+    if name.trim().is_empty() || planned_end_date.is_some_and(|end| start_date > end) {
         return Err(AppError::ValidationError("ข้อมูลภาคเรียนไม่ถูกต้อง".to_string()));
     }
     Ok(())
@@ -546,7 +548,7 @@ async fn validate_term_context(
     academic_year_id: Uuid,
     bell_schedule_id: Uuid,
     start_date: NaiveDate,
-    end_date: NaiveDate,
+    planned_end_date: Option<NaiveDate>,
 ) -> Result<(), AppError> {
     let (year_start, year_end, status): (NaiveDate, NaiveDate, AcademicYearStatus) =
         sqlx::query_as(
@@ -561,7 +563,13 @@ async fn validate_term_context(
             "แก้ไขภาคเรียนได้เฉพาะปีการศึกษาสถานะ planning".to_string(),
         ));
     }
-    validate_date_containment(year_start, year_end, start_date, end_date)?;
+    if let Some(planned_end_date) = planned_end_date {
+        validate_date_containment(year_start, year_end, start_date, planned_end_date)?;
+    } else if start_date < year_start || start_date > year_end {
+        return Err(AppError::ValidationError(
+            "วันที่เริ่มภาคเรียนต้องอยู่ภายในปีการศึกษา".to_string(),
+        ));
+    }
     let schedule_matches: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM bell_schedules WHERE id = $1 AND academic_year_id = $2)",
     )
@@ -605,7 +613,7 @@ async fn ensure_terms_fit_year(
 ) -> Result<(), AppError> {
     let invalid: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM academic_terms WHERE academic_year_id = $1 \
-         AND (start_date < $2 OR end_date > $3))",
+         AND (start_date < $2 OR planned_end_date > $3 OR closed_on > $3))",
     )
     .bind(academic_year_id)
     .bind(start_date)
@@ -684,6 +692,23 @@ fn map_term_write_error(error: sqlx::Error) -> AppError {
         };
     }
     AppError::DbError(error)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_term_fields;
+    use chrono::NaiveDate;
+
+    #[test]
+    fn term_validation_accepts_an_absent_planned_end_and_rejects_reverse_dates() {
+        let start = NaiveDate::from_ymd_opt(2027, 5, 1).unwrap();
+
+        assert!(validate_term_fields("ภาคเรียนที่ 1", start, None).is_ok());
+        assert!(validate_term_fields("ภาคเรียนที่ 1", start, Some(start)).is_ok());
+        assert!(
+            validate_term_fields("ภาคเรียนที่ 1", start, Some(start.pred_opt().unwrap())).is_err()
+        );
+    }
 }
 
 pub(super) async fn append_audit<T: serde::Serialize>(

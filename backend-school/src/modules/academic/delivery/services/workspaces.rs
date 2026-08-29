@@ -89,7 +89,6 @@ struct OfferingTargetRow {
     status: LearningOfferingStatus,
     code: String,
     name: String,
-    weekly_period_target: Option<i32>,
     target_kind: String,
     homeroom_id: Option<Uuid>,
     grade_level_id: Uuid,
@@ -249,10 +248,6 @@ pub async fn homeroom_delivery_workspace(
                   offering.status,
                   offering.code_snapshot AS code,
                   offering.name_snapshot AS name,
-                  CASE offering.kind
-                      WHEN 'course' THEN course_detail.weekly_period_target
-                      ELSE NULL
-                  END AS weekly_period_target,
                   target.target_kind,
                   target.homeroom_id,
                   target.grade_level_id,
@@ -431,8 +426,6 @@ pub async fn homeroom_delivery_workspace(
                 name: expected.name,
                 requirement_kind: expected.requirement_kind,
                 standard_periods_per_week: expected.standard_periods_per_week,
-                weekly_period_target: applicable_offering
-                    .and_then(|offering| offering.weekly_period_target),
                 offering_id,
                 offering_state: applicable_offering
                     .map(|offering| offering_state(offering.status))

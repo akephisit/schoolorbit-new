@@ -61,7 +61,8 @@ pub async fn list_options(pool: &PgPool) -> Result<AcademicContextOptions, AppEr
                         'name', term.name,
                         'termType', term.term_type,
                         'startDate', term.start_date,
-                        'endDate', term.end_date,
+                        'plannedEndDate', term.planned_end_date,
+                        'closedOn', term.closed_on,
                         'includedInYearResult', term.included_in_year_result,
                         'blocksYearClosure', term.blocks_year_closure,
                         'status', term.status
@@ -130,7 +131,8 @@ pub async fn list_options_for_student(
                         'name', term.name,
                         'termType', term.term_type,
                         'startDate', term.start_date,
-                        'endDate', term.end_date,
+                        'plannedEndDate', term.planned_end_date,
+                        'closedOn', term.closed_on,
                         'includedInYearResult', term.included_in_year_result,
                         'blocksYearClosure', term.blocks_year_closure,
                         'status', term.status
@@ -238,7 +240,8 @@ pub async fn list_options_for_parent(
                         'name', term.name,
                         'termType', term.term_type,
                         'startDate', term.start_date,
-                        'endDate', term.end_date,
+                        'plannedEndDate', term.planned_end_date,
+                        'closedOn', term.closed_on,
                         'includedInYearResult', term.included_in_year_result,
                         'blocksYearClosure', term.blocks_year_closure,
                         'status', term.status

@@ -28,12 +28,18 @@ pub async fn list_registration_options(
                JOIN academic_terms selected_term
                  ON selected_term.id = $1
                 AND selected_term.academic_year_id = student_year.academic_year_id
+               JOIN academic_years selected_year
+                 ON selected_year.id = selected_term.academic_year_id
                LEFT JOIN LATERAL (
                    SELECT candidate.homeroom_id
                    FROM homeroom_placements candidate
                    WHERE candidate.student_academic_year_id = student_year.id
                      AND candidate.status IN ('current', 'planned')
-                     AND candidate.start_date <= selected_term.end_date
+                     AND candidate.start_date <= COALESCE(
+                         selected_term.closed_on,
+                         selected_term.planned_end_date,
+                         selected_year.end_date
+                     )
                      AND (candidate.end_date IS NULL
                           OR candidate.end_date >= selected_term.start_date)
                    ORDER BY (candidate.status = 'current') DESC,
@@ -533,7 +539,7 @@ async fn require_eligible_student(
     )
     .bind(student_id)
     .bind(term.start_date)
-    .bind(term.end_date)
+    .bind(term.date_upper_bound())
     .bind(context.academic_year_id)
     .fetch_optional(&mut **transaction)
     .await?
@@ -583,7 +589,7 @@ fn registration_date(term: &TermContext) -> chrono::NaiveDate {
     Utc::now()
         .date_naive()
         .max(term.start_date)
-        .min(term.end_date)
+        .min(term.date_upper_bound())
 }
 
 async fn increment_group_revision(
