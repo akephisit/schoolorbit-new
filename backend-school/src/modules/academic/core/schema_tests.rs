@@ -23,9 +23,9 @@ fn stable_uuid(name: &str) -> Uuid {
 async fn migration_chain_supports_an_empty_new_tenant() {
     let pool = create_named_test_pool("academic_core_empty_tenant").await;
 
-    apply_migrations_through(&pool, 45)
+    apply_migrations_through(&pool, 52)
         .await
-        .expect("an empty newly provisioned tenant must migrate through Phase B");
+        .expect("an empty newly provisioned tenant must migrate through the active timeline");
 
     let (year_count, term_count): (i64, i64) = sqlx::query_as(
         r#"SELECT (SELECT COUNT(*) FROM academic_years),
@@ -41,7 +41,7 @@ async fn migration_chain_supports_an_empty_new_tenant() {
             .fetch_one(&pool)
             .await
             .expect("migration history must be queryable");
-    assert_eq!(latest_version, 45);
+    assert_eq!(latest_version, 52);
 }
 
 #[tokio::test]
@@ -1246,6 +1246,38 @@ async fn phase_a_fixture_with_connections(name: &str, max_connections: u32) -> s
     pool
 }
 
+async fn column_exists(pool: &sqlx::PgPool, table_name: &str, column_name: &str) -> bool {
+    sqlx::query_scalar(
+        r#"SELECT EXISTS (
+               SELECT 1
+               FROM information_schema.columns
+               WHERE table_schema = current_schema()
+                 AND table_name = $1
+                 AND column_name = $2
+           )"#,
+    )
+    .bind(table_name)
+    .bind(column_name)
+    .fetch_one(pool)
+    .await
+    .expect("schema columns must be queryable")
+}
+
+async fn table_exists(pool: &sqlx::PgPool, table_name: &str) -> bool {
+    sqlx::query_scalar(
+        r#"SELECT EXISTS (
+               SELECT 1
+               FROM information_schema.tables
+               WHERE table_schema = current_schema()
+                 AND table_name = $1
+           )"#,
+    )
+    .bind(table_name)
+    .fetch_one(pool)
+    .await
+    .expect("schema tables must be queryable")
+}
+
 #[tokio::test]
 async fn migration_045_removes_legacy_schema() {
     let pool = phase_a_fixture("academic_core_045_cleanup_manifest").await;
@@ -2195,4 +2227,325 @@ async fn migration_051_rejects_non_divisible_referenced_subject_hours_atomically
     .await
     .unwrap();
     assert_eq!(subject_trigger_enabled, "O");
+}
+
+#[tokio::test]
+async fn migration_052_versions_timetables_and_removes_obsolete_owners() {
+    let pool = phase_a_fixture("academic_core_052_timetable_versions").await;
+    record_passing_phase_a_reconciliation_marker(&pool)
+        .await
+        .expect("cleanup marker must exist before the post-cutover migrations");
+    apply_migrations_through(&pool, 51)
+        .await
+        .expect("fixture must reach the pre-052 schema");
+
+    let entry_count: i64 = sqlx::query_scalar("SELECT count(*) FROM academic_timetable_entries")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let course_target_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM course_offering_details")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+    apply_migrations_through(&pool, 52)
+        .await
+        .expect("migration 052 must perform the hard cutover");
+
+    let versioned_entry_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM academic_timetable_entries WHERE timetable_version_id IS NOT NULL",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let migrated_target_count: i64 = sqlx::query_scalar(
+        r#"SELECT count(*)
+           FROM academic_timetable_version_targets target
+           JOIN learning_offerings offering ON offering.id = target.learning_offering_id
+           WHERE offering.kind = 'course'"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(versioned_entry_count, entry_count);
+    assert_eq!(migrated_target_count, course_target_count);
+    assert!(!column_exists(&pool, "academic_terms", "end_date").await);
+    assert!(column_exists(&pool, "academic_terms", "planned_end_date").await);
+    assert!(column_exists(&pool, "academic_terms", "closed_on").await);
+    assert!(!column_exists(&pool, "course_offering_details", "weekly_period_target").await);
+}
+
+#[tokio::test]
+async fn migration_052_rejects_ambiguous_activity_targets_atomically() {
+    let pool = phase_a_fixture("academic_core_052_ambiguous_activity_target").await;
+    record_passing_phase_a_reconciliation_marker(&pool)
+        .await
+        .expect("cleanup marker must exist before the post-cutover migrations");
+    apply_migrations_through(&pool, 51)
+        .await
+        .expect("fixture must reach the pre-052 schema");
+
+    let (offering_id, existing_group_id, academic_term_id, academic_year_id, bell_schedule_id): (
+        Uuid,
+        Uuid,
+        Uuid,
+        Uuid,
+        Uuid,
+    ) = sqlx::query_as(
+        r#"SELECT offering.id, learning_group.id, offering.academic_term_id,
+                  offering.academic_year_id, term.bell_schedule_id
+           FROM learning_offerings offering
+           JOIN learning_groups learning_group
+             ON learning_group.learning_offering_id = offering.id
+           JOIN academic_terms term ON term.id = offering.academic_term_id
+           WHERE offering.kind = 'activity'
+             AND offering.status = 'published'
+             AND learning_group.status = 'published'
+           ORDER BY offering.id, learning_group.id
+           LIMIT 1"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("fixture must include one published activity group");
+
+    let first_period_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM bell_schedule_periods WHERE bell_schedule_id = $1 ORDER BY order_index LIMIT 1",
+    )
+    .bind(bell_schedule_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let second_period_id = stable_uuid("migration-052:ambiguous-activity:period-2");
+    let third_period_id = stable_uuid("migration-052:ambiguous-activity:period-3");
+    sqlx::query(
+        r#"INSERT INTO bell_schedule_periods (
+               id, name, start_time, end_time, order_index, applicable_days,
+               bell_schedule_id
+           ) VALUES
+               ($1, 'คาบ 2', '09:20', '10:10', 2, 'MON,TUE,WED,THU,FRI', $3),
+               ($2, 'คาบ 3', '10:10', '11:00', 3, 'MON,TUE,WED,THU,FRI', $3)"#,
+    )
+    .bind(second_period_id)
+    .bind(third_period_id)
+    .bind(bell_schedule_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let second_group_id = stable_uuid("migration-052:ambiguous-activity:group-2");
+    sqlx::query(
+        r#"INSERT INTO learning_groups (
+               id, learning_offering_id, academic_term_id, academic_year_id,
+               code, name, status, roster_status
+           ) VALUES ($1, $2, $3, $4, 'ACTIVITY-SECOND', 'กิจกรรมกลุ่มที่สอง',
+                     'published', 'published')"#,
+    )
+    .bind(second_group_id)
+    .bind(offering_id)
+    .bind(academic_term_id)
+    .bind(academic_year_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    for (entry_id, group_id, day, period_id) in [
+        (
+            stable_uuid("migration-052:ambiguous-activity:entry-1"),
+            existing_group_id,
+            "MON",
+            first_period_id,
+        ),
+        (
+            stable_uuid("migration-052:ambiguous-activity:entry-2"),
+            second_group_id,
+            "TUE",
+            second_period_id,
+        ),
+        (
+            stable_uuid("migration-052:ambiguous-activity:entry-3"),
+            second_group_id,
+            "WED",
+            third_period_id,
+        ),
+    ] {
+        sqlx::query(
+            r#"INSERT INTO academic_timetable_entries (
+                   id, day_of_week, bell_schedule_period_id, entry_type,
+                   academic_term_id, academic_year_id, learning_offering_id,
+                   learning_group_id, bell_schedule_id
+               ) VALUES ($1, $2, $3, 'ACTIVITY', $4, $5, $6, $7, $8)"#,
+        )
+        .bind(entry_id)
+        .bind(day)
+        .bind(period_id)
+        .bind(academic_term_id)
+        .bind(academic_year_id)
+        .bind(offering_id)
+        .bind(group_id)
+        .bind(bell_schedule_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+
+    let error = apply_migrations_through(&pool, 52)
+        .await
+        .expect_err("unequal group counts must not invent one activity target");
+    assert!(error
+        .to_string()
+        .contains("ACADEMIC_052_ACTIVITY_TARGET_AMBIGUOUS"));
+    let applied: i64 = sqlx::query_scalar("SELECT coalesce(max(version), 0) FROM _sqlx_migrations")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(applied, 51);
+    assert!(!table_exists(&pool, "academic_timetable_versions").await);
+}
+
+#[tokio::test]
+async fn migration_052_rejects_published_teacher_mutability_after_cutover() {
+    let pool = phase_a_fixture("academic_core_052_teacher_lock").await;
+    record_passing_phase_a_reconciliation_marker(&pool)
+        .await
+        .expect("cleanup marker must exist before the post-cutover migrations");
+    apply_migrations_through(&pool, 52)
+        .await
+        .expect("migration 052 must install the teacher lock");
+
+    let (published_group_id, learning_offering_id, academic_term_id, academic_year_id): (
+        Uuid,
+        Uuid,
+        Uuid,
+        Uuid,
+    ) = sqlx::query_as(
+        r#"SELECT learning_group.id, learning_group.learning_offering_id,
+                      learning_group.academic_term_id, learning_group.academic_year_id
+               FROM learning_groups learning_group
+               WHERE learning_group.status = 'published'
+                 AND EXISTS (
+                     SELECT 1 FROM learning_group_teachers teacher
+                     WHERE teacher.learning_group_id = learning_group.id
+                 )
+               ORDER BY learning_group.id
+               LIMIT 1"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("fixture must include a published group with a teacher");
+    let before: Vec<(Uuid, Uuid, String)> = sqlx::query_as(
+        r#"SELECT id, teacher_id, role
+           FROM learning_group_teachers
+           WHERE learning_group_id = $1
+           ORDER BY id"#,
+    )
+    .bind(published_group_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    let additional_teacher_id: Uuid = sqlx::query_scalar(
+        r#"SELECT user_account.id
+           FROM users user_account
+           WHERE user_account.user_type = 'staff'
+             AND NOT EXISTS (
+                 SELECT 1 FROM learning_group_teachers teacher
+                 WHERE teacher.learning_group_id = $1
+                   AND teacher.teacher_id = user_account.id
+             )
+           ORDER BY user_account.id
+           LIMIT 1"#,
+    )
+    .bind(published_group_id)
+    .fetch_one(&pool)
+    .await
+    .expect("fixture must include an unassigned staff user");
+
+    let published_insert = sqlx::query(
+        r#"INSERT INTO learning_group_teachers (
+               id, learning_group_id, academic_term_id, academic_year_id, teacher_id, role
+           ) VALUES ($1, $2, $3, $4, $5, 'assistant')"#,
+    )
+    .bind(stable_uuid("migration-052:published-group:teacher-insert"))
+    .bind(published_group_id)
+    .bind(academic_term_id)
+    .bind(academic_year_id)
+    .bind(additional_teacher_id)
+    .execute(&pool)
+    .await
+    .expect_err("published-group teacher insert must fail");
+    assert!(published_insert
+        .to_string()
+        .contains("ACADEMIC_PUBLISHED_GROUP_TEACHERS_IMMUTABLE"));
+
+    let published_update =
+        sqlx::query("UPDATE learning_group_teachers SET role = 'assistant' WHERE id = $1")
+            .bind(before[0].0)
+            .execute(&pool)
+            .await
+            .expect_err("published-group teacher update must fail");
+    assert!(published_update
+        .to_string()
+        .contains("ACADEMIC_PUBLISHED_GROUP_TEACHERS_IMMUTABLE"));
+
+    let published_delete = sqlx::query("DELETE FROM learning_group_teachers WHERE id = $1")
+        .bind(before[0].0)
+        .execute(&pool)
+        .await
+        .expect_err("published-group teacher delete must fail");
+    assert!(published_delete
+        .to_string()
+        .contains("ACADEMIC_PUBLISHED_GROUP_TEACHERS_IMMUTABLE"));
+
+    let draft_group_id = stable_uuid("migration-052:draft-group");
+    let draft_teacher_row_id = stable_uuid("migration-052:draft-group:teacher");
+    sqlx::query(
+        r#"INSERT INTO learning_groups (
+               id, learning_offering_id, academic_term_id, academic_year_id,
+               code, name, status, roster_status
+           ) VALUES ($1, $2, $3, $4, 'DRAFT-GROUP', 'กลุ่มเรียนฉบับร่าง',
+                     'draft', 'draft')"#,
+    )
+    .bind(draft_group_id)
+    .bind(learning_offering_id)
+    .bind(academic_term_id)
+    .bind(academic_year_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"INSERT INTO learning_group_teachers (
+               id, learning_group_id, academic_term_id, academic_year_id, teacher_id, role
+           ) VALUES ($1, $2, $3, $4, $5, 'primary')"#,
+    )
+    .bind(draft_teacher_row_id)
+    .bind(draft_group_id)
+    .bind(academic_term_id)
+    .bind(academic_year_id)
+    .bind(additional_teacher_id)
+    .execute(&pool)
+    .await
+    .expect("draft-group teacher insert must remain writable");
+    sqlx::query("UPDATE learning_group_teachers SET role = 'assistant' WHERE id = $1")
+        .bind(draft_teacher_row_id)
+        .execute(&pool)
+        .await
+        .expect("draft-group teacher update must remain writable");
+    sqlx::query("DELETE FROM learning_group_teachers WHERE id = $1")
+        .bind(draft_teacher_row_id)
+        .execute(&pool)
+        .await
+        .expect("draft-group teacher delete must remain writable");
+
+    let after: Vec<(Uuid, Uuid, String)> = sqlx::query_as(
+        r#"SELECT id, teacher_id, role
+           FROM learning_group_teachers
+           WHERE learning_group_id = $1
+           ORDER BY id"#,
+    )
+    .bind(published_group_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(after, before);
 }
