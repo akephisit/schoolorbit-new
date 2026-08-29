@@ -1915,3 +1915,277 @@ async fn curriculum_preparation_apply_results_cover_generated_groups() {
         assert!(exists, "missing learning_delivery_apply_runs.{column}");
     }
 }
+
+#[tokio::test]
+async fn migration_051_repairs_legacy_workload_and_backfills_offering_targets() {
+    let pool = phase_a_fixture("academic_core_051_workload_repair").await;
+    record_passing_phase_a_reconciliation_marker(&pool)
+        .await
+        .expect("cleanup marker must exist before the post-cutover migrations");
+    apply_migrations_through(&pool, 50)
+        .await
+        .expect("fixture must reach the pre-051 schema");
+
+    let repaired_subject_id: Uuid = sqlx::query_scalar(
+        r#"SELECT detail.subject_version_id
+           FROM course_offering_details detail
+           JOIN learning_offerings offering ON offering.id = detail.learning_offering_id
+           WHERE offering.status = 'published'
+           ORDER BY detail.learning_offering_id
+           LIMIT 1"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("fixture must include a published course offering");
+    let unchanged_subject: (Uuid, i32) = sqlx::query_as(
+        r#"SELECT id, periods_per_week
+           FROM subject_versions
+           WHERE id <> $1 AND periods_per_week IS NOT NULL
+           ORDER BY id
+           LIMIT 1"#,
+    )
+    .bind(repaired_subject_id)
+    .fetch_one(&pool)
+    .await
+    .expect("fixture must include another complete subject version");
+    let activity_ids: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM activity_versions WHERE status = 'published' ORDER BY id LIMIT 2",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("fixture activity versions must be queryable");
+    assert_eq!(activity_ids.len(), 2);
+
+    sqlx::query(
+        "ALTER TABLE subject_versions DISABLE TRIGGER subject_versions_published_immutable",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE subject_versions SET hours_per_semester = 40, periods_per_week = NULL WHERE id = $1",
+    )
+    .bind(repaired_subject_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("ALTER TABLE subject_versions ENABLE TRIGGER subject_versions_published_immutable")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    sqlx::query(
+        "ALTER TABLE activity_versions DISABLE TRIGGER activity_versions_published_immutable",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE activity_versions SET hours_per_term = NULL WHERE id = $1")
+        .bind(activity_ids[0])
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE activity_versions SET hours_per_term = 22.00 WHERE id = $1")
+        .bind(activity_ids[1])
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "ALTER TABLE activity_versions ENABLE TRIGGER activity_versions_published_immutable",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    apply_migrations_through(&pool, 51)
+        .await
+        .expect("migration 051 must repair the valid legacy workload fixture");
+
+    let repaired_subject: (i32, serde_json::Value) = sqlx::query_as(
+        "SELECT periods_per_week, migration_provenance FROM subject_versions WHERE id = $1",
+    )
+    .bind(repaired_subject_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(repaired_subject.0, 2);
+    assert_eq!(repaired_subject.1["migration"], 41);
+    assert_eq!(repaired_subject.1["workloadRepair"]["migration"], 51);
+    assert_eq!(
+        repaired_subject.1["workloadRepair"]["instructionalWeeks"],
+        20
+    );
+
+    let unchanged_periods: i32 =
+        sqlx::query_scalar("SELECT periods_per_week FROM subject_versions WHERE id = $1")
+            .bind(unchanged_subject.0)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(unchanged_periods, unchanged_subject.1);
+
+    let repaired_activity: (String, serde_json::Value) = sqlx::query_as(
+        "SELECT hours_per_term::text, migration_provenance FROM activity_versions WHERE id = $1",
+    )
+    .bind(activity_ids[0])
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(repaired_activity.0, "20.00");
+    assert_eq!(repaired_activity.1["migration"], 41);
+    assert_eq!(repaired_activity.1["workloadRepair"]["migration"], 51);
+    let preserved_activity_total: String =
+        sqlx::query_scalar("SELECT hours_per_term::text FROM activity_versions WHERE id = $1")
+            .bind(activity_ids[1])
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(preserved_activity_total, "22.00");
+
+    let offering_target: (i32, serde_json::Value) = sqlx::query_as(
+        r#"SELECT detail.weekly_period_target, detail.migration_provenance
+           FROM course_offering_details detail
+           WHERE detail.subject_version_id = $1
+           ORDER BY detail.learning_offering_id
+           LIMIT 1"#,
+    )
+    .bind(repaired_subject_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(offering_target.0, 2);
+    assert_eq!(offering_target.1["workloadRepair"]["migration"], 51);
+
+    let target_nullability: String = sqlx::query_scalar(
+        r#"SELECT is_nullable
+           FROM information_schema.columns
+           WHERE table_schema = current_schema()
+             AND table_name = 'course_offering_details'
+             AND column_name = 'weekly_period_target'"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(target_nullability, "NO");
+    let enabled_trigger_count: i64 = sqlx::query_scalar(
+        r#"SELECT count(*)
+           FROM pg_trigger
+           WHERE tgname = ANY($1)
+             AND tgenabled = 'O'"#,
+    )
+    .bind(vec![
+        "subject_versions_published_immutable",
+        "activity_versions_published_immutable",
+        "course_offering_details_published_immutable",
+    ])
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(enabled_trigger_count, 3);
+
+    let subject_immutable = sqlx::query(
+        "UPDATE subject_versions SET periods_per_week = periods_per_week + 1 WHERE id = $1",
+    )
+    .bind(repaired_subject_id)
+    .execute(&pool)
+    .await
+    .expect_err("repaired published subjects must remain immutable");
+    assert!(subject_immutable
+        .to_string()
+        .contains("ACADEMIC_CORE_PUBLISHED_VERSION_IMMUTABLE"));
+    let activity_immutable =
+        sqlx::query("UPDATE activity_versions SET hours_per_term = 21 WHERE id = $1")
+            .bind(activity_ids[0])
+            .execute(&pool)
+            .await
+            .expect_err("repaired published activities must remain immutable");
+    assert!(activity_immutable
+        .to_string()
+        .contains("ACADEMIC_CORE_PUBLISHED_VERSION_IMMUTABLE"));
+    let offering_immutable = sqlx::query(
+        r#"UPDATE course_offering_details
+           SET weekly_period_target = weekly_period_target + 1
+           WHERE subject_version_id = $1"#,
+    )
+    .bind(repaired_subject_id)
+    .execute(&pool)
+    .await
+    .expect_err("repaired published course offerings must remain immutable");
+    assert!(offering_immutable
+        .to_string()
+        .contains("ACADEMIC_CORE_PUBLISHED_OFFERING_IMMUTABLE"));
+}
+
+#[tokio::test]
+async fn migration_051_rejects_non_divisible_referenced_subject_hours_atomically() {
+    let pool = phase_a_fixture("academic_core_051_non_divisible_hours").await;
+    record_passing_phase_a_reconciliation_marker(&pool)
+        .await
+        .expect("cleanup marker must exist before the post-cutover migrations");
+    apply_migrations_through(&pool, 50)
+        .await
+        .expect("fixture must reach the pre-051 schema");
+
+    let subject_version_id: Uuid = sqlx::query_scalar(
+        r#"SELECT detail.subject_version_id
+           FROM course_offering_details detail
+           JOIN learning_offerings offering ON offering.id = detail.learning_offering_id
+           WHERE offering.status = 'published'
+           ORDER BY detail.learning_offering_id
+           LIMIT 1"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "ALTER TABLE subject_versions DISABLE TRIGGER subject_versions_published_immutable",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE subject_versions SET hours_per_semester = 45, periods_per_week = NULL WHERE id = $1",
+    )
+    .bind(subject_version_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("ALTER TABLE subject_versions ENABLE TRIGGER subject_versions_published_immutable")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let error = apply_migrations_through(&pool, 51)
+        .await
+        .expect_err("non-divisible referenced subject hours must block migration 051");
+    assert!(error
+        .to_string()
+        .contains("ACADEMIC_CORE_051_SUBJECT_HOURS_NOT_DIVISIBLE"));
+
+    let applied_version: i64 =
+        sqlx::query_scalar("SELECT COALESCE(max(version), 0) FROM _sqlx_migrations")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(applied_version, 50);
+    let target_column_exists: bool = sqlx::query_scalar(
+        r#"SELECT EXISTS (
+               SELECT 1
+               FROM information_schema.columns
+               WHERE table_schema = current_schema()
+                 AND table_name = 'course_offering_details'
+                 AND column_name = 'weekly_period_target'
+           )"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(!target_column_exists);
+    let subject_trigger_enabled: String = sqlx::query_scalar(
+        "SELECT tgenabled::text FROM pg_trigger WHERE tgname = 'subject_versions_published_immutable'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(subject_trigger_enabled, "O");
+}
