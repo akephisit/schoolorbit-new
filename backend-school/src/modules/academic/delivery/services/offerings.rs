@@ -44,6 +44,7 @@ struct CourseVersionSource {
     name: String,
     credit: String,
     hours: Option<String>,
+    standard_periods_per_week: Option<i32>,
     effective_from: chrono::NaiveDate,
     effective_until: Option<chrono::NaiveDate>,
     status: String,
@@ -70,6 +71,8 @@ struct CourseDetailRow {
     curriculum_course_requirement_id: Option<Uuid>,
     credit: String,
     hours: Option<String>,
+    standard_periods_per_week: i32,
+    weekly_period_target: i32,
     grading_policy: sqlx::types::Json<CourseGradingPolicy>,
 }
 
@@ -244,20 +247,26 @@ pub async fn update(
 ) -> Result<LearningOffering, AppError> {
     validate_row_version(request.row_version)?;
     let mut transaction = pool.begin().await?;
-    let row: (Uuid, Uuid, LearningOfferingStatus, i64) = sqlx::query_as(
-        "SELECT academic_term_id, academic_year_id, status, row_version \
+    let row: (
+        Uuid,
+        Uuid,
+        LearningOfferingKind,
+        LearningOfferingStatus,
+        i64,
+    ) = sqlx::query_as(
+        "SELECT academic_term_id, academic_year_id, kind, status, row_version \
          FROM learning_offerings WHERE id = $1 FOR UPDATE",
     )
     .bind(id)
     .fetch_optional(&mut *transaction)
     .await?
     .ok_or_else(|| AppError::NotFound("ไม่พบรายวิชาหรือกิจกรรมที่เปิดสอน".to_string()))?;
-    if row.2 != LearningOfferingStatus::Draft {
+    if row.3 != LearningOfferingStatus::Draft {
         return Err(AppError::Conflict(
             "ข้อมูล snapshot ที่เผยแพร่แล้วแก้ไขไม่ได้".to_string(),
         ));
     }
-    if row.3 != request.row_version {
+    if row.4 != request.row_version {
         return Err(AppError::Conflict(
             "รายการเปิดสอนถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string(),
         ));
@@ -265,6 +274,31 @@ pub async fn update(
     let term = require_writable_term(&mut transaction, row.0, false).await?;
     require_active_owner(&mut transaction, request.owning_organization_unit_id).await?;
     validate_targets(&mut transaction, &term, &request.targets).await?;
+    match row.2 {
+        LearningOfferingKind::Course => {
+            let weekly_period_target = request
+                .weekly_period_target
+                .filter(|value| *value > 0)
+                .ok_or_else(|| {
+                    AppError::ValidationError("คาบที่จัดจริงต่อสัปดาห์ต้องเป็นจำนวนเต็มมากกว่า 0".to_string())
+                })?;
+            sqlx::query(
+                "UPDATE course_offering_details SET weekly_period_target = $1 \
+                 WHERE learning_offering_id = $2",
+            )
+            .bind(weekly_period_target)
+            .bind(id)
+            .execute(&mut *transaction)
+            .await?;
+        }
+        LearningOfferingKind::Activity => {
+            if request.weekly_period_target.is_some() {
+                return Err(AppError::ValidationError(
+                    "กิจกรรมใช้ชั่วโมงต่อสัปดาห์จากทะเบียนกิจกรรม ไม่ใช้คาบจัดจริงของรายวิชา".to_string(),
+                ));
+            }
+        }
+    }
     sqlx::query("DELETE FROM learning_offering_targets WHERE learning_offering_id = $1")
         .bind(id)
         .execute(&mut *transaction)
@@ -627,9 +661,14 @@ async fn hydrate_many(
     }
 
     let course_rows: Vec<CourseDetailRow> = sqlx::query_as(
-        "SELECT learning_offering_id, subject_version_id, subject_id, \
-         curriculum_course_requirement_id, credit::text AS credit, hours::text AS hours, \
-         grading_policy FROM course_offering_details WHERE learning_offering_id = ANY($1)",
+        "SELECT detail.learning_offering_id, detail.subject_version_id, detail.subject_id, \
+         detail.curriculum_course_requirement_id, detail.credit::text AS credit, \
+         detail.hours::text AS hours, \
+         version.periods_per_week AS standard_periods_per_week, \
+         detail.weekly_period_target, detail.grading_policy \
+         FROM course_offering_details detail \
+         JOIN subject_versions version ON version.id = detail.subject_version_id \
+         WHERE detail.learning_offering_id = ANY($1)",
     )
     .bind(&offering_ids)
     .fetch_all(pool)
@@ -666,6 +705,8 @@ async fn hydrate_many(
                         curriculum_course_requirement_id: detail.curriculum_course_requirement_id,
                         credit: detail.credit,
                         hours: detail.hours,
+                        standard_periods_per_week: detail.standard_periods_per_week,
+                        weekly_period_target: detail.weekly_period_target,
                         grading_policy: detail.grading_policy.0,
                     })
                 }
@@ -764,6 +805,8 @@ async fn insert_course(
         source.effective_until,
         term,
     )?;
+    let weekly_period_target =
+        required_standard_periods_per_week(source.standard_periods_per_week)?;
     let (credit, hours) = if let Some(requirement_id) = request.curriculum_course_requirement_id {
         let requirement: (Uuid, Uuid, Uuid, String, i32, String, Option<String>) = sqlx::query_as(
             "SELECT requirement.subject_version_id, requirement.grade_level_id, \
@@ -817,8 +860,8 @@ async fn insert_course(
         r#"INSERT INTO course_offering_details (
                learning_offering_id, academic_term_id, academic_year_id,
                subject_version_id, subject_id, curriculum_course_requirement_id,
-               credit, hours, grading_policy
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#,
+               credit, hours, weekly_period_target, grading_policy
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"#,
     )
     .bind(id)
     .bind(term.id)
@@ -833,6 +876,7 @@ async fn insert_course(
             .map(|value| validate_canonical_decimal(value, 2))
             .transpose()?,
     )
+    .bind(weekly_period_target)
     .bind(sqlx::types::Json(request.grading_policy))
     .execute(&mut **transaction)
     .await?;
@@ -942,7 +986,8 @@ async fn course_version_source(
     sqlx::query_as(
         r#"SELECT version.id AS subject_version_id, version.subject_id,
                   version.code, version.name_th AS name, version.credit::text AS credit,
-                  version.hours_per_semester::text AS hours, version.effective_from,
+                  version.hours_per_semester::text AS hours,
+                  version.periods_per_week AS standard_periods_per_week, version.effective_from,
                   version.effective_until, version.status
            FROM subject_versions version WHERE version.id = $1"#,
     )
@@ -950,6 +995,12 @@ async fn course_version_source(
     .fetch_optional(&mut **transaction)
     .await?
     .ok_or_else(|| AppError::ValidationError("ไม่พบเวอร์ชันรายวิชา".to_string()))
+}
+
+fn required_standard_periods_per_week(value: Option<i32>) -> Result<i32, AppError> {
+    value.filter(|periods| *periods > 0).ok_or_else(|| {
+        AppError::ValidationError("เวอร์ชันรายวิชาต้องมีคาบมาตรฐานต่อสัปดาห์มากกว่า 0 ก่อนเปิดสอน".to_string())
+    })
 }
 
 async fn activity_version_source(
@@ -1201,17 +1252,27 @@ async fn validate_publishable(
     }
     match kind {
         LearningOfferingKind::Course => {
-            let (status, from, until): (String, chrono::NaiveDate, Option<chrono::NaiveDate>) =
-                sqlx::query_as(
-                    "SELECT version.status, version.effective_from, version.effective_until \
+            let (status, from, until, weekly_period_target): (
+                String,
+                chrono::NaiveDate,
+                Option<chrono::NaiveDate>,
+                i32,
+            ) = sqlx::query_as(
+                "SELECT version.status, version.effective_from, version.effective_until, \
+                            detail.weekly_period_target \
                      FROM course_offering_details detail \
                      JOIN subject_versions version ON version.id = detail.subject_version_id \
                      WHERE detail.learning_offering_id = $1",
-                )
-                .bind(offering_id)
-                .fetch_one(&mut **transaction)
-                .await?;
+            )
+            .bind(offering_id)
+            .fetch_one(&mut **transaction)
+            .await?;
             validate_version_for_term(&status, from, until, term)?;
+            if weekly_period_target <= 0 {
+                return Err(AppError::ValidationError(
+                    "ต้องกำหนดคาบที่จัดจริงต่อสัปดาห์มากกว่า 0 ก่อนเผยแพร่".to_string(),
+                ));
+            }
         }
         LearningOfferingKind::Activity => {
             let (status, from, until): (String, chrono::NaiveDate, Option<chrono::NaiveDate>) =
@@ -1737,12 +1798,14 @@ async fn insert_generated_offering(
                 source.effective_until,
                 term,
             )?;
+            let weekly_period_target =
+                required_standard_periods_per_week(source.standard_periods_per_week)?;
             sqlx::query(
                 r#"INSERT INTO course_offering_details (
                        learning_offering_id, academic_term_id, academic_year_id,
                        subject_version_id, subject_id, curriculum_course_requirement_id,
-                       credit, hours, grading_policy
-                   ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
+                       credit, hours, weekly_period_target, grading_policy
+                   ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
                              '{"policyCode":"school_default","passingScore":null}'::jsonb)"#,
             )
             .bind(id)
@@ -1762,6 +1825,7 @@ async fn insert_generated_offering(
                     .map(|value| validate_canonical_decimal(value, 2))
                     .transpose()?,
             )
+            .bind(weekly_period_target)
             .execute(&mut **transaction)
             .await?;
         }

@@ -78,6 +78,7 @@ struct ExpectedDeliveryRow {
     code: String,
     name: String,
     requirement_kind: RequirementKind,
+    standard_periods_per_week: Option<i32>,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -88,6 +89,7 @@ struct OfferingTargetRow {
     status: LearningOfferingStatus,
     code: String,
     name: String,
+    weekly_period_target: Option<i32>,
     target_kind: String,
     homeroom_id: Option<Uuid>,
     grade_level_id: Uuid,
@@ -183,6 +185,7 @@ pub async fn homeroom_delivery_workspace(
                   subject.code,
                   version.name_th AS name,
                   requirement.requirement_kind,
+                  version.periods_per_week AS standard_periods_per_week,
                   requirement.display_order
            FROM homerooms homeroom
            JOIN study_programs program ON program.id = homeroom.study_program_id
@@ -205,6 +208,7 @@ pub async fn homeroom_delivery_workspace(
                   activity.code,
                   version.name,
                   requirement.requirement_kind,
+                  NULL::integer AS standard_periods_per_week,
                   requirement.display_order
            FROM homerooms homeroom
            JOIN study_programs program ON program.id = homeroom.study_program_id
@@ -245,6 +249,10 @@ pub async fn homeroom_delivery_workspace(
                   offering.status,
                   offering.code_snapshot AS code,
                   offering.name_snapshot AS name,
+                  CASE offering.kind
+                      WHEN 'course' THEN course_detail.weekly_period_target
+                      ELSE NULL
+                  END AS weekly_period_target,
                   target.target_kind,
                   target.homeroom_id,
                   target.grade_level_id,
@@ -422,6 +430,9 @@ pub async fn homeroom_delivery_workspace(
                 code: expected.code,
                 name: expected.name,
                 requirement_kind: expected.requirement_kind,
+                standard_periods_per_week: expected.standard_periods_per_week,
+                weekly_period_target: applicable_offering
+                    .and_then(|offering| offering.weekly_period_target),
                 offering_id,
                 offering_state: applicable_offering
                     .map(|offering| offering_state(offering.status))

@@ -213,6 +213,7 @@ pub struct UpdateLearningOfferingRequest {
     pub row_version: i64,
     pub owning_organization_unit_id: Uuid,
     pub targets: Vec<OfferingTargetInput>,
+    pub weekly_period_target: Option<i32>,
 }
 
 #[derive(Clone, Debug, Deserialize, ToSchema)]
@@ -287,6 +288,8 @@ pub struct CourseOfferingSnapshot {
     pub curriculum_course_requirement_id: Option<Uuid>,
     pub credit: String,
     pub hours: Option<String>,
+    pub standard_periods_per_week: i32,
+    pub weekly_period_target: i32,
     pub grading_policy: CourseGradingPolicy,
 }
 
@@ -464,6 +467,8 @@ pub struct HomeroomDeliveryItem {
     pub code: String,
     pub name: String,
     pub requirement_kind: RequirementKind,
+    pub standard_periods_per_week: Option<i32>,
+    pub weekly_period_target: Option<i32>,
     pub offering_id: Option<Uuid>,
     pub offering_state: HomeroomOfferingState,
     pub group_mode: HomeroomGroupMode,

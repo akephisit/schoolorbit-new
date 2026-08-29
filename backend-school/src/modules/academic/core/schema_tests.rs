@@ -2071,6 +2071,11 @@ async fn migration_051_repairs_legacy_workload_and_backfills_offering_targets() 
         r#"SELECT count(*)
            FROM pg_trigger
            WHERE tgname = ANY($1)
+             AND tgrelid = ANY(ARRAY[
+                 'subject_versions'::regclass,
+                 'activity_versions'::regclass,
+                 'course_offering_details'::regclass
+             ])
              AND tgenabled = 'O'"#,
     )
     .bind(vec![
@@ -2182,7 +2187,9 @@ async fn migration_051_rejects_non_divisible_referenced_subject_hours_atomically
     .unwrap();
     assert!(!target_column_exists);
     let subject_trigger_enabled: String = sqlx::query_scalar(
-        "SELECT tgenabled::text FROM pg_trigger WHERE tgname = 'subject_versions_published_immutable'",
+        "SELECT tgenabled::text FROM pg_trigger \
+         WHERE tgname = 'subject_versions_published_immutable' \
+           AND tgrelid = 'subject_versions'::regclass",
     )
     .fetch_one(&pool)
     .await

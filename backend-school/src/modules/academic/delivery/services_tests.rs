@@ -24,7 +24,7 @@ use super::{
         PreviewCurriculumOfferingsRequest, PublishLearningOfferingRequest, PublishRosterRequest,
         ReplaceLearningGroupHomeroomsRequest, ReplaceLearningGroupTeachersRequest,
         RosterOverrideAction, RosterOverrideInput, StudentActivityRegistrationQuery,
-        TeacherAssignmentInput,
+        TeacherAssignmentInput, UpdateLearningOfferingRequest,
     },
     services::{activities, groups, offerings, workspaces},
 };
@@ -562,7 +562,7 @@ async fn prepare_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 50).await.unwrap();
+    apply_migrations_through(&pool, 51).await.unwrap();
     pool
 }
 
@@ -670,6 +670,106 @@ fn course_request(context: &RuntimeContext) -> CreateLearningOfferingRequest {
             passing_score: Some("50.00".to_string()),
         },
     })
+}
+
+#[tokio::test]
+async fn course_offering_weekly_target_defaults_and_resets_per_term() {
+    let pool = prepare_delivery_runtime_fixture("academic_delivery_weekly_period_target").await;
+    let context = planning_runtime_context(&pool).await;
+    let catalog_standard: i32 =
+        sqlx::query_scalar("SELECT periods_per_week FROM subject_versions WHERE id = $1")
+            .bind(context.subject_version_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(catalog_standard, 3);
+
+    let offering = offerings::create(&pool, context.teacher_id, course_request(&context))
+        .await
+        .unwrap();
+    let LearningOfferingSnapshot::Course(initial_snapshot) = &offering.snapshot else {
+        panic!("course creation must return a course snapshot");
+    };
+    assert_eq!(initial_snapshot.standard_periods_per_week, 3);
+    assert_eq!(initial_snapshot.weekly_period_target, 3);
+
+    let targets = offering
+        .targets
+        .iter()
+        .map(|target| OfferingTargetInput {
+            target_kind: target.target_kind,
+            homeroom_id: target.homeroom_id,
+            grade_level_id: target.grade_level_id,
+            study_program_id: target.study_program_id,
+        })
+        .collect::<Vec<_>>();
+    let missing_target = offerings::update(
+        &pool,
+        context.teacher_id,
+        offering.id,
+        UpdateLearningOfferingRequest {
+            row_version: offering.row_version,
+            owning_organization_unit_id: context.owner_id,
+            targets: targets.clone(),
+            weekly_period_target: None,
+        },
+    )
+    .await;
+    assert!(matches!(missing_target, Err(AppError::ValidationError(_))));
+
+    let updated = offerings::update(
+        &pool,
+        context.teacher_id,
+        offering.id,
+        UpdateLearningOfferingRequest {
+            row_version: offering.row_version,
+            owning_organization_unit_id: context.owner_id,
+            targets,
+            weekly_period_target: Some(2),
+        },
+    )
+    .await
+    .unwrap();
+    let LearningOfferingSnapshot::Course(updated_snapshot) = &updated.snapshot else {
+        panic!("course update must return a course snapshot");
+    };
+    assert_eq!(updated_snapshot.standard_periods_per_week, 3);
+    assert_eq!(updated_snapshot.weekly_period_target, 2);
+    let unchanged_catalog_standard: i32 =
+        sqlx::query_scalar("SELECT periods_per_week FROM subject_versions WHERE id = $1")
+            .bind(context.subject_version_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(unchanged_catalog_standard, 3);
+
+    let next_term_id: Uuid = sqlx::query_scalar(
+        r#"SELECT id
+           FROM academic_terms
+           WHERE academic_year_id = $1
+             AND id <> $2
+             AND status = 'planning'
+           ORDER BY start_date
+           LIMIT 1"#,
+    )
+    .bind(context.year_id)
+    .bind(context.term_id)
+    .fetch_one(&pool)
+    .await
+    .expect("fixture must include another planning term in the same academic year");
+    let mut next_term_request = course_request(&context);
+    let CreateLearningOfferingRequest::Course(request) = &mut next_term_request else {
+        unreachable!();
+    };
+    request.academic_term_id = next_term_id;
+    let next_term_offering = offerings::create(&pool, context.teacher_id, next_term_request)
+        .await
+        .unwrap();
+    let LearningOfferingSnapshot::Course(next_term_snapshot) = &next_term_offering.snapshot else {
+        panic!("next-term course must return a course snapshot");
+    };
+    assert_eq!(next_term_snapshot.standard_periods_per_week, 3);
+    assert_eq!(next_term_snapshot.weekly_period_target, 3);
 }
 
 fn default_preparation_choices(
@@ -1697,8 +1797,7 @@ async fn student_activity_registration_is_term_scoped_eligible_and_revisioned() 
 
 #[tokio::test]
 async fn offering_list_batch_hydrates_mixed_snapshots_and_targets() {
-    let pool = prepare_delivery_fixture("academic_delivery_batch_list", false).await;
-    apply_phase_b_runtime_migrations(&pool).await.unwrap();
+    let pool = prepare_delivery_runtime_fixture("academic_delivery_batch_list").await;
     let academic_term_id: Uuid = sqlx::query_scalar(
         r#"SELECT academic_term_id
            FROM learning_offerings
@@ -1968,6 +2067,16 @@ async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverag
         .expect("selected homeroom should appear");
     assert!(room.expected_count > 0);
     assert_eq!(room.ready_count, 0);
+    assert!(room.items.iter().all(|item| match item.resource_kind {
+        LearningOfferingKind::Course => {
+            item.standard_periods_per_week
+                .is_some_and(|value| value > 0)
+                && item.weekly_period_target.is_some_and(|value| value > 0)
+        }
+        LearningOfferingKind::Activity => {
+            item.standard_periods_per_week.is_none() && item.weekly_period_target.is_none()
+        }
+    }));
     let offering_id = room
         .items
         .iter()
