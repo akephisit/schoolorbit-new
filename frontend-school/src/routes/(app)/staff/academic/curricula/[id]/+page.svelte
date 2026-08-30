@@ -6,6 +6,7 @@
 	import { SvelteMap } from 'svelte/reactivity';
 	import { buildCurriculumValidationNoticeViews } from '$lib/academic/curriculum-structure';
 	import {
+		cloneCurriculumVersionDraft,
 		createCurriculumVersion,
 		createStudyProgram,
 		getCurriculum,
@@ -17,6 +18,7 @@
 		replaceCurriculumStructure,
 		replaceCurriculumTermSlots,
 		type CreateCurriculumVersionRequest,
+		type CloneCurriculumVersionRequest,
 		type CreateStudyProgramRequest,
 		type Curriculum,
 		type CurriculumCreateOptions,
@@ -26,8 +28,13 @@
 		type CurriculumTermSlotInput,
 		type CurriculumVersionView
 	} from '$lib/api/academic-core';
+	import {
+		getHomeroomDeliveryWorkspace,
+		type HomeroomDeliveryWorkspace
+	} from '$lib/api/learning-delivery';
 	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
 	import CurriculumProgramComparison from '$lib/components/academic-core/CurriculumProgramComparison.svelte';
+	import CurriculumDeliveryAlignmentPanel from '$lib/components/academic-core/CurriculumDeliveryAlignmentPanel.svelte';
 	import CurriculumStructureEditor from '$lib/components/academic-core/CurriculumStructureEditor.svelte';
 	import CurriculumStructureToolbar from '$lib/components/academic-core/CurriculumStructureToolbar.svelte';
 	import CurriculumTermDocument from '$lib/components/academic-core/CurriculumTermDocument.svelte';
@@ -41,6 +48,7 @@
 
 	const detailRequest = new LatestRequest();
 	const versionRequest = new LatestRequest();
+	const alignmentRequest = new LatestRequest();
 	const managementCache = new SvelteMap<string, CurriculumManagementOptions>();
 
 	let curriculum = $state.raw<Curriculum | null>(null);
@@ -48,16 +56,21 @@
 	let selectedVersion = $state.raw<CurriculumVersionView | null>(null);
 	let workspace = $state.raw<CurriculumStructureWorkspace | null>(null);
 	let createOptions = $state.raw<CurriculumCreateOptions | null>(null);
+	let alignmentWorkspace = $state.raw<HomeroomDeliveryWorkspace | null>(null);
 	let loading = $state(true);
 	let workspaceLoading = $state(false);
+	let alignmentLoading = $state(false);
 	let initialized = $state(false);
 	let errorMessage = $state('');
 	let workspaceError = $state('');
+	let alignmentError = $state('');
 	let editorOpen = $state(false);
 	let viewMode = $state<'comparison' | 'document'>('comparison');
 	let selectedGradeLevelId = $state('');
 	let selectedStudyProgramId = $state('');
+	let loadedAlignmentContextKey = '';
 	let curriculumId = $derived(page.params.id ?? '');
+	let deliveryContext = $derived(readDeliveryContext(page.url));
 	let canManageAcademicCurriculum = $derived(
 		$can.hasAny(
 			PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_SCHOOL,
@@ -71,6 +84,34 @@
 	let validationBlockers = $derived(
 		buildCurriculumValidationNoticeViews(workspace?.validation.blockers ?? [])
 	);
+
+	function readDeliveryContext(url: URL) {
+		const academicYearId = url.searchParams.get('academicYearId')?.trim() ?? '';
+		const academicTermId = url.searchParams.get('academicTermId')?.trim() ?? '';
+		if (!academicYearId || !academicTermId) return null;
+		return {
+			academicYearId,
+			academicTermId,
+			studyProgramId: url.searchParams.get('studyProgramId')?.trim() || undefined,
+			timetableVersionId: url.searchParams.get('timetableVersionId')?.trim() || undefined
+		};
+	}
+
+	function deliveryContextKey(url: URL): string {
+		const context = readDeliveryContext(url);
+		return context
+			? `${context.academicYearId}:${context.academicTermId}:${context.studyProgramId ?? ''}:${context.timetableVersionId ?? ''}`
+			: '';
+	}
+
+	function curriculumVersionUrl(
+		versionId: string,
+		currentUrl: URL = page.url
+	): `/staff/academic/curricula/${string}?${string}` {
+		const query = new URLSearchParams(currentUrl.searchParams);
+		query.set('versionId', versionId);
+		return `/staff/academic/curricula/${encodeURIComponent(curriculumId)}?${query.toString()}`;
+	}
 
 	function applyWorkspace(value: CurriculumStructureWorkspace | null) {
 		workspace = value;
@@ -106,9 +147,7 @@
 			initialized = true;
 			if (version && requestedVersionId !== version.version.id) {
 				await goto(
-					resolve(
-						`/staff/academic/curricula/${curriculumId}?versionId=${encodeURIComponent(version.version.id)}`
-					),
+					resolve(curriculumVersionUrl(version.version.id)),
 					{ replaceState: true, keepFocus: true, noScroll: true }
 				);
 			}
@@ -133,9 +172,7 @@
 			applyWorkspace(loadedWorkspace);
 			if (updateUrl) {
 				await goto(
-					resolve(
-						`/staff/academic/curricula/${curriculumId}?versionId=${encodeURIComponent(version.version.id)}`
-					),
+					resolve(curriculumVersionUrl(version.version.id)),
 					{ keepFocus: true, noScroll: true }
 				);
 			}
@@ -146,6 +183,36 @@
 			}
 		} finally {
 			if (versionRequest.isCurrent(revision)) workspaceLoading = false;
+		}
+	}
+
+	async function loadAlignment(url: URL = page.url) {
+		const context = readDeliveryContext(url);
+		if (!context) {
+			alignmentRequest.abort();
+			alignmentWorkspace = null;
+			alignmentError = '';
+			alignmentLoading = false;
+			return;
+		}
+		const { revision, signal } = alignmentRequest.begin();
+		alignmentLoading = true;
+		alignmentError = '';
+		try {
+			const loaded = await getHomeroomDeliveryWorkspace(
+				context.academicYearId,
+				context.academicTermId,
+				{ signal, timetableVersionId: context.timetableVersionId }
+			);
+			if (alignmentRequest.isCurrent(revision)) alignmentWorkspace = loaded;
+		} catch (error) {
+			if (isAbortError(error)) return;
+			if (alignmentRequest.isCurrent(revision)) {
+				alignmentError =
+					error instanceof Error ? error.message : 'โหลดข้อมูลเทียบการเปิดสอนไม่สำเร็จ';
+			}
+		} finally {
+			if (alignmentRequest.isCurrent(revision)) alignmentLoading = false;
 		}
 	}
 
@@ -179,6 +246,22 @@
 			endAcademicYearName: end?.name ?? null
 		};
 		versions = [createdView, ...versions];
+		await loadVersion(createdView);
+	}
+
+	async function cloneVersion(sourceVersionId: string, draft: CloneCurriculumVersionRequest) {
+		const options = await requestCreateOptions();
+		if (!options) throw new Error('ไม่มีสิทธิ์สร้างรุ่นหลักสูตร');
+		const created = await cloneCurriculumVersionDraft(sourceVersionId, draft);
+		const start = options.academicYears.find((year) => year.id === created.startAcademicYearId);
+		const end = options.academicYears.find((year) => year.id === created.endAcademicYearId);
+		if (!start) throw new Error('สร้างรุ่นสำเร็จแต่ไม่พบชื่อปีเริ่มใช้ กรุณาโหลดหน้าใหม่');
+		const createdView: CurriculumVersionView = {
+			version: created,
+			startAcademicYearName: start.name,
+			endAcademicYearName: end?.name ?? null
+		};
+		versions = [createdView, ...versions.filter((view) => view.version.id !== created.id)];
 		await loadVersion(createdView);
 	}
 
@@ -224,6 +307,12 @@
 	}
 
 	afterNavigate(({ to }) => {
+		const targetUrl = to?.url ?? page.url;
+		const nextAlignmentContextKey = deliveryContextKey(targetUrl);
+		if (nextAlignmentContextKey !== loadedAlignmentContextKey) {
+			loadedAlignmentContextKey = nextAlignmentContextKey;
+			void loadAlignment(targetUrl);
+		}
 		const requestedVersionId = to?.url.searchParams.get('versionId') ?? null;
 		if (!initialized || versions.length === 0) return;
 		const target =
@@ -233,10 +322,13 @@
 	});
 
 	onMount(() => {
+		loadedAlignmentContextKey = deliveryContextKey(page.url);
 		void loadDetail();
+		void loadAlignment(page.url);
 		return () => {
 			detailRequest.abort();
 			versionRequest.abort();
+			alignmentRequest.abort();
 		};
 	});
 </script>
@@ -271,7 +363,30 @@
 				onSelectVersion={loadVersion}
 				onRequestCreateOptions={requestCreateOptions}
 				onCreateVersion={createVersion}
+				onCloneVersion={cloneVersion}
 			/>
+
+			{#if deliveryContext}
+				{#if alignmentLoading && !alignmentWorkspace}
+					<PageSkeleton variant="cards" rows={3} />
+				{:else if alignmentError && !alignmentWorkspace}
+					<PageState
+						variant="error"
+						title="โหลดข้อมูลเทียบหลักสูตรไม่สำเร็จ"
+						description={alignmentError}
+						actionLabel="ลองอีกครั้ง"
+						onaction={() => loadAlignment(page.url)}
+					/>
+				{:else if alignmentWorkspace}
+					<CurriculumDeliveryAlignmentPanel
+						workspace={alignmentWorkspace}
+						{curriculumId}
+						studyProgramId={deliveryContext.studyProgramId}
+						academicYearId={deliveryContext.academicYearId}
+						academicTermId={deliveryContext.academicTermId}
+					/>
+				{/if}
+			{/if}
 
 			{#if workspaceLoading}
 				<PageSkeleton variant="cards" rows={4} />

@@ -26,7 +26,8 @@ test('homeroom delivery contract is camelCase and preparation requires reviewed 
 	assert.equal(operation.operationId, 'getHomeroomDeliveryWorkspace');
 	assert.deepEqual(operation.parameters.map((parameter) => parameter.name).sort(), [
 		'academicTermId',
-		'academicYearId'
+		'academicYearId',
+		'timetableVersionId'
 	]);
 	const preview = openapi.components.schemas.CurriculumOfferingPreview;
 	assert.ok(preview.required.includes('proposals'));

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type {
+		CurriculumDeliveryAlignmentState,
 		HomeroomDeliveryItem,
 		HomeroomDeliveryWorkspace as Workspace
 	} from '$lib/api/learning-delivery';
@@ -47,14 +48,45 @@
 		partly_scheduled: 'ลงตารางบางส่วน',
 		scheduled: 'ลงตารางแล้ว'
 	} as const;
+	const alignmentLabels: Record<CurriculumDeliveryAlignmentState, string> = {
+		matches_curriculum: 'ตรงกับหลักสูตร',
+		curriculum_requirement_not_offered: 'หลักสูตรกำหนดไว้แต่ยังไม่เปิดสอน',
+		extra_offering: 'เปิดสอนเพิ่มเติมนอกหลักสูตร',
+		ended_early: 'หยุดสอนก่อนรุ่นตารางนี้มีผล',
+		operational_periods_differ: 'คาบจริงต่างจากค่ามาตรฐานในหลักสูตร'
+	};
 
 	function itemNeedsAttention(item: HomeroomDeliveryItem) {
 		return (
+			!item.alignmentStates.includes('matches_curriculum') ||
 			item.offeringState === 'missing' ||
 			item.groupMode === 'missing' ||
 			(item.groupMode !== 'deferred' && item.teacherState === 'missing_primary') ||
 			(item.groupMode !== 'deferred' && item.timetableState !== 'scheduled')
 		);
+	}
+
+	function alignmentBadgeClass(state: CurriculumDeliveryAlignmentState): string {
+		if (state === 'matches_curriculum') {
+			return 'border-emerald-500/35 text-emerald-700 dark:text-emerald-300';
+		}
+		if (state === 'curriculum_requirement_not_offered' || state === 'ended_early') {
+			return 'border-amber-500/40 text-amber-800 dark:text-amber-200';
+		}
+		return 'border-sky-500/35 text-sky-800 dark:text-sky-200';
+	}
+
+	function curriculumHref(room: Workspace['homerooms'][number]): string {
+		const query = new URLSearchParams({
+			versionId: room.curriculumVersionId,
+			academicYearId: workspace.academicYearId,
+			academicTermId: workspace.academicTermId,
+			studyProgramId: room.studyProgram.id
+		});
+		if (workspace.timetableVersionId) {
+			query.set('timetableVersionId', workspace.timetableVersionId);
+		}
+		return `/staff/academic/curricula/${room.studyProgram.curriculumId}?${query.toString()}`;
 	}
 
 	function groupSummary(item: HomeroomDeliveryItem) {
@@ -191,6 +223,17 @@
 						</summary>
 
 						<div class="border-t bg-background">
+							<div class="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/[0.12] px-4 py-3">
+								<div>
+									<p class="text-sm font-medium">ความสอดคล้องกับหลักสูตร</p>
+									<p class="text-xs text-muted-foreground">
+										ดูเหตุผลและสร้างหลักสูตรรุ่นใหม่เมื่อการเปลี่ยนแปลงนี้ต้องใช้ต่อในปีถัดไป
+									</p>
+								</div>
+								<Button href={curriculumHref(room)} size="sm" variant="outline">
+									ตรวจในหลักสูตร <ArrowUpRight class="size-3.5" />
+								</Button>
+							</div>
 							{#each room.blockers as blocker (blocker.code)}
 								<div class="m-4 rounded-xl border border-amber-500/30 bg-amber-500/[0.06] p-4">
 									<p class="font-medium text-amber-800 dark:text-amber-200">{blocker.message}</p>
@@ -206,6 +249,7 @@
 										<Table.Header>
 											<Table.Row>
 												<Table.Head class="min-w-[260px] ps-5">ตามโครงสร้างหลักสูตร</Table.Head>
+												<Table.Head class="min-w-[220px]">เทียบหลักสูตร</Table.Head>
 												<Table.Head class="min-w-[140px]">รายการเปิดสอน</Table.Head>
 												<Table.Head class="min-w-[190px]">กลุ่มเรียน</Table.Head>
 												<Table.Head class="min-w-[130px]">ครูหลัก</Table.Head>
@@ -240,6 +284,15 @@
 																	</p>
 																{/if}
 															</div>
+														</div>
+													</Table.Cell>
+													<Table.Cell>
+														<div class="flex max-w-[260px] flex-wrap gap-1.5">
+															{#each item.alignmentStates as state (state)}
+																<Badge variant="outline" class={alignmentBadgeClass(state)}>
+																	{alignmentLabels[state]}
+																</Badge>
+															{/each}
 														</div>
 													</Table.Cell>
 													<Table.Cell>
@@ -292,6 +345,46 @@
 											{/each}
 										</Table.Body>
 									</Table.Root>
+								</div>
+							{/if}
+
+							{#if room.extraOfferings.length > 0}
+								<div class="border-t border-sky-500/20 bg-sky-500/[0.035] p-4">
+									<div class="mb-3">
+										<h4 class="font-semibold">เปิดสอนเพิ่มเติมนอกหลักสูตร</h4>
+										<p class="text-sm text-muted-foreground">
+											รายการเหล่านี้มีเป้าหมายมายังห้องนี้ แต่ไม่มีในโครงสร้างหลักสูตรของภาคเรียน
+										</p>
+									</div>
+									<div class="grid gap-2 md:grid-cols-2">
+										{#each room.extraOfferings as item (item.offeringId)}
+											<div class="rounded-xl border border-sky-500/25 bg-background p-3">
+												<div class="flex items-start justify-between gap-3">
+													<div>
+														<p class="font-mono text-xs font-semibold text-sky-700 dark:text-sky-300">
+															{item.code}
+														</p>
+														<p class="font-medium">{item.name}</p>
+														<div class="mt-2 flex flex-wrap gap-1.5">
+															{#each item.alignmentStates as state (state)}
+																<Badge variant="outline" class={alignmentBadgeClass(state)}>
+																	{alignmentLabels[state]}
+																</Badge>
+															{/each}
+														</div>
+													</div>
+													<Button
+														href={`/staff/academic/delivery/${item.offeringId}`}
+														size="icon"
+														variant="ghost"
+														aria-label={`จัดการ ${item.name}`}
+													>
+														<ArrowUpRight class="size-4" />
+													</Button>
+												</div>
+											</div>
+										{/each}
+									</div>
 								</div>
 							{/if}
 						</div>

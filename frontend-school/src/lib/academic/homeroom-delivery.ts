@@ -6,10 +6,21 @@ type DeliveryRoomShape = {
 	studyProgram: { code: string; name: string; curriculumName: string };
 	expectedCount: number;
 	readyCount: number;
+	items?: ReadonlyArray<{ alignmentStates: readonly string[] }>;
+	extraOfferings?: readonly unknown[];
 };
 
 function normalize(value: string): string {
 	return value.trim().toLocaleLowerCase('th-TH');
+}
+
+function needsAttention(room: DeliveryRoomShape): boolean {
+	return (
+		room.expectedCount === 0 ||
+		room.readyCount < room.expectedCount ||
+		(room.extraOfferings?.length ?? 0) > 0 ||
+		(room.items?.some((item) => !item.alignmentStates.includes('matches_curriculum')) ?? false)
+	);
 }
 
 export function filterHomeroomDeliveryRooms<T extends DeliveryRoomShape>(
@@ -21,9 +32,8 @@ export function filterHomeroomDeliveryRooms<T extends DeliveryRoomShape>(
 	return rooms.filter((room) => {
 		const matchesReadiness =
 			readiness === 'all' ||
-			(readiness === 'ready' && room.readyCount === room.expectedCount && room.expectedCount > 0) ||
-			(readiness === 'attention' &&
-				(room.expectedCount === 0 || room.readyCount < room.expectedCount));
+			(readiness === 'ready' && !needsAttention(room)) ||
+			(readiness === 'attention' && needsAttention(room));
 		if (!matchesReadiness) return false;
 		if (!needle) return true;
 		return normalize(
@@ -46,7 +56,7 @@ export function summarizeHomeroomDelivery(rooms: readonly DeliveryRoomShape[]) {
 			readyCount: summary.readyCount + room.readyCount,
 			attentionRoomCount:
 				summary.attentionRoomCount +
-				(room.expectedCount === 0 || room.readyCount < room.expectedCount ? 1 : 0)
+				(needsAttention(room) ? 1 : 0)
 		}),
 		{ roomCount: 0, expectedCount: 0, readyCount: 0, attentionRoomCount: 0 }
 	);

@@ -18,6 +18,8 @@ test('curriculum workspace clients use generated contracts', async () => {
 	assert.match(api, /getCurriculumCreateOptions/);
 	assert.match(api, /getCurriculumManagementOptions/);
 	assert.match(api, /operations\['getCurriculumOverview'\]/);
+	assert.match(api, /operations\['cloneCurriculumVersionDraft'\]/);
+	assert.match(api, /cloneCurriculumVersionDraft/);
 	assert.doesNotMatch(api, /ApiResponse<unknown>|Record<string, unknown>| as Curriculum/);
 	assert.ok(openapi.paths['/api/academic/curriculum-versions/{curriculumVersionId}/structure']);
 	assert.ok(openapi.paths['/api/academic/curriculum-versions/{curriculumVersionId}/term-slots']);
@@ -67,6 +69,9 @@ test('curriculum detail is deep-linked and uses labeled management options', asy
 	const createDialog = await readProjectFile(
 		'src/lib/components/academic-core/CurriculumCreateDialog.svelte'
 	);
+	const alignment = await readProjectFile(
+		'src/lib/components/academic-core/CurriculumDeliveryAlignmentPanel.svelte'
+	).catch(() => '');
 
 	assert.match(meta, /_meta\s*=\s*\{[\s\S]*access:/);
 	assert.doesNotMatch(meta, /menu:/);
@@ -76,6 +81,18 @@ test('curriculum detail is deep-linked and uses labeled management options', asy
 	assert.match(page, /CurriculumVersionView/);
 	assert.match(versionPanel, /startAcademicYearName/);
 	assert.match(versionPanel, /endAcademicYearName/);
+	assert.match(versionPanel, /สร้างหลักสูตรรุ่นใหม่แบบร่าง/);
+	assert.match(versionPanel, /ต้นฉบับที่เผยแพร่จะไม่เปลี่ยน/);
+	assert.match(versionPanel, /sourceRowVersion/);
+	assert.match(page, /getHomeroomDeliveryWorkspace/);
+	assert.match(page, /CurriculumDeliveryAlignmentPanel/);
+	assert.match(page, /cloneCurriculumVersionDraft/);
+	assert.match(alignment, /ตรงกับหลักสูตร/);
+	assert.match(alignment, /หลักสูตรกำหนดไว้แต่ยังไม่เปิดสอน/);
+	assert.match(alignment, /เปิดสอนเพิ่มเติมนอกหลักสูตร/);
+	assert.match(alignment, /หยุดสอนก่อนรุ่นตารางนี้มีผล/);
+	assert.match(alignment, /คาบจริงต่างจากค่ามาตรฐานในหลักสูตร/);
+	assert.doesNotMatch(alignment, /getLearningOffering|getLearningGroup|listLearningGroups/);
 	assert.match(editor, /selectedCatalogIds/);
 	assert.match(editor, /CurriculumTermSlotEditor/);
 	assert.match(editor, /ย้อนกลับ/);

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type {
+		CloneCurriculumVersionRequest,
 		CreateCurriculumVersionRequest,
 		Curriculum,
 		CurriculumCreateOptions,
@@ -21,7 +22,8 @@
 		canManage,
 		onSelectVersion,
 		onRequestCreateOptions,
-		onCreateVersion
+		onCreateVersion,
+		onCloneVersion
 	}: {
 		curriculum: Curriculum;
 		versions: CurriculumVersionView[];
@@ -30,6 +32,10 @@
 		onSelectVersion: (version: CurriculumVersionView) => Promise<void>;
 		onRequestCreateOptions: () => Promise<CurriculumCreateOptions | null>;
 		onCreateVersion: (draft: CreateCurriculumVersionRequest) => Promise<void>;
+		onCloneVersion: (
+			sourceVersionId: string,
+			draft: CloneCurriculumVersionRequest
+		) => Promise<void>;
 	} = $props();
 
 	const noEndYear = 'no-end';
@@ -38,6 +44,7 @@
 	let saving = $state(false);
 	let errorMessage = $state('');
 	let createYears = $state.raw<CurriculumCreateOptions['academicYears']>([]);
+	let cloneSource = $state.raw<CurriculumVersionView | null>(null);
 	let draft = $state({
 		versionName: '',
 		startAcademicYearId: '',
@@ -62,6 +69,13 @@
 	let selectedStartYear = $derived(
 		createYears.find((year) => year.id === draft.startAcademicYearId) ?? null
 	);
+	let availableYears = $derived.by(() => {
+		if (!cloneSource) return createYears;
+		const sourceYear = createYears.find(
+			(year) => year.id === cloneSource?.version.startAcademicYearId
+		);
+		return sourceYear ? createYears.filter((year) => year.year > sourceYear.year) : [];
+	});
 	let selectedEndYear = $derived(
 		createYears.find((year) => year.id === draft.endAcademicYearId) ?? null
 	);
@@ -70,15 +84,23 @@
 	);
 
 	async function showCreateDialog() {
+		cloneSource = selectedVersion?.version.status === 'published' ? selectedVersion : null;
 		createOpen = true;
 		errorMessage = '';
 		optionsLoading = true;
 		try {
 			const options = await onRequestCreateOptions();
 			createYears = options?.academicYears ?? [];
-			if (!draft.startAcademicYearId && createYears[0]) {
-				draft.startAcademicYearId = createYears[0].id;
-			}
+			const sourceYear = cloneSource
+				? createYears.find((year) => year.id === cloneSource?.version.startAcademicYearId)
+				: null;
+			const eligibleYears = sourceYear
+				? createYears.filter((year) => year.year > sourceYear.year)
+				: createYears;
+			draft.startAcademicYearId = eligibleYears[0]?.id ?? '';
+			draft.endAcademicYearId = noEndYear;
+			draft.versionName = cloneSource ? `${cloneSource.version.versionName} รุ่นใหม่` : '';
+			draft.description = '';
 		} catch (error) {
 			errorMessage =
 				error instanceof Error ? error.message : 'โหลดปีการศึกษาสำหรับสร้างรุ่นไม่สำเร็จ';
@@ -93,15 +115,23 @@
 		saving = true;
 		errorMessage = '';
 		try {
-			await onCreateVersion({
+			const versionDraft: CreateCurriculumVersionRequest = {
 				versionName: draft.versionName.trim(),
 				startAcademicYearId: draft.startAcademicYearId,
 				endAcademicYearId: draft.endAcademicYearId === noEndYear ? null : draft.endAcademicYearId,
 				description: draft.description.trim() || null
-			});
+			};
+			if (cloneSource) {
+				await onCloneVersion(cloneSource.version.id, {
+					...versionDraft,
+					sourceRowVersion: cloneSource.version.rowVersion
+				});
+			} else {
+				await onCreateVersion(versionDraft);
+			}
 			draft = {
 				versionName: '',
-				startAcademicYearId: createYears[0]?.id ?? '',
+				startAcademicYearId: availableYears[0]?.id ?? '',
 				endAcademicYearId: noEndYear,
 				description: ''
 			};
@@ -132,7 +162,7 @@
 			<Button variant="outline" onclick={showCreateDialog}>
 				<GitBranchPlus class="size-4" />
 				{selectedVersion?.version.status === 'published'
-					? 'สร้างแบบร่างรุ่นใหม่'
+					? 'สร้างหลักสูตรรุ่นใหม่แบบร่าง'
 					: 'เพิ่มรุ่นหลักสูตร'}
 			</Button>
 		{/if}
@@ -171,9 +201,16 @@
 <Dialog.Root bind:open={createOpen}>
 	<Dialog.Content class="sm:max-w-xl">
 		<Dialog.Header>
-			<Dialog.Title>สร้างรุ่นหลักสูตรแบบร่าง</Dialog.Title>
+			<Dialog.Title>
+				{cloneSource ? 'สร้างหลักสูตรรุ่นใหม่แบบร่าง' : 'สร้างรุ่นหลักสูตรแบบร่าง'}
+			</Dialog.Title>
 			<Dialog.Description>
-				กำหนดช่วงปีการศึกษาที่ตั้งใจจะใช้ รุ่นใหม่จะยังแก้ไขได้จนกว่าจะเผยแพร่
+				{#if cloneSource}
+					ระบบจะคัดลอกภาคเรียน แผนการเรียน รายวิชา และกิจกรรมทั้งหมดไปเป็นแบบร่างใหม่
+					ต้นฉบับที่เผยแพร่จะไม่เปลี่ยน
+				{:else}
+					กำหนดช่วงปีการศึกษาที่ตั้งใจจะใช้ รุ่นใหม่จะยังแก้ไขได้จนกว่าจะเผยแพร่
+				{/if}
 			</Dialog.Description>
 		</Dialog.Header>
 		{#if optionsLoading}
@@ -181,9 +218,11 @@
 				<div class="h-10 animate-pulse rounded-md bg-muted"></div>
 				<div class="h-10 animate-pulse rounded-md bg-muted"></div>
 			</div>
-		{:else if createYears.length === 0}
+		{:else if availableYears.length === 0}
 			<div class="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">
-				ยังไม่มีปีการศึกษาสำหรับสร้างรุ่นหลักสูตร
+				{cloneSource
+					? 'ยังไม่มีปีการศึกษาถัดจากรุ่นต้นทาง กรุณาสร้างปีการศึกษาก่อน'
+					: 'ยังไม่มีปีการศึกษาสำหรับสร้างรุ่นหลักสูตร'}
 			</div>
 		{:else}
 			<form class="space-y-4 py-2" onsubmit={createVersion}>
@@ -201,11 +240,11 @@
 						<span class="font-medium">เริ่มใช้ในปีการศึกษา</span>
 						<Select.Root type="single" bind:value={draft.startAcademicYearId}>
 							<Select.Trigger class="w-full">
-								{createYears.find((year) => year.id === draft.startAcademicYearId)?.name ??
+								{availableYears.find((year) => year.id === draft.startAcademicYearId)?.name ??
 									'เลือกปีเริ่มใช้'}
 							</Select.Trigger>
 							<Select.Content>
-								{#each createYears as year (year.id)}
+								{#each availableYears as year (year.id)}
 									<Select.Item value={year.id}>{year.name}</Select.Item>
 								{/each}
 							</Select.Content>
@@ -252,7 +291,7 @@
 				</Dialog.Footer>
 			</form>
 		{/if}
-		{#if errorMessage && (optionsLoading || createYears.length === 0)}
+		{#if errorMessage && (optionsLoading || availableYears.length === 0)}
 			<p role="alert" class="text-sm text-destructive">{errorMessage}</p>
 		{/if}
 	</Dialog.Content>
