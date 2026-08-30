@@ -517,7 +517,7 @@ test('version selector shows current upcoming history and a draft with editing i
 	await page.getByRole('option', { name: /แบบร่าง · 2026-09-15/ }).click();
 
 	await expect(page.getByText('แก้ไขคาบได้')).toBeVisible();
-	await expect(page.getByRole('heading', { name: 'ขั้นตอนของรุ่นตารางสอนนี้' })).toBeVisible();
+	await expect(page.getByText('ขั้นตอนของรุ่นตารางสอนนี้', { exact: true })).toBeVisible();
 	await expect(page.getByTitle('เพิ่มคาบ').first()).toBeEnabled();
 });
 
