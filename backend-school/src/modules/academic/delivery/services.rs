@@ -6,6 +6,7 @@ use uuid::Uuid;
 use crate::error::AppError;
 
 pub mod activities;
+pub mod change_sets;
 pub mod groups;
 pub mod offerings;
 pub mod workspaces;

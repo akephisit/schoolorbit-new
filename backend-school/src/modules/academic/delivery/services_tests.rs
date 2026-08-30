@@ -14,19 +14,21 @@ use uuid::Uuid;
 
 use super::{
     models::{
-        ActivityAttendanceRequirement, ActivityPassCriteria, ActivityRegistrationType,
-        ActivitySchedulingMode, ApplyCurriculumOfferingsRequest, ApplyRosterRequest,
-        CourseGradingPolicy, CreateActivityOfferingRequest, CreateCourseOfferingRequest,
-        CreateLearningGroupRequest, CreateLearningOfferingRequest, CurriculumOfferingPreview,
-        CurriculumPreparationChoice, LearningOfferingKind, LearningOfferingQuery,
-        LearningOfferingSnapshot, LearningOfferingStatus, LearningTeacherRole, OfferingTargetInput,
-        OfferingTargetKind, PreparationAction, PreparationGroupingState,
-        PreviewCurriculumOfferingsRequest, PublishLearningOfferingRequest, PublishRosterRequest,
-        ReplaceLearningGroupHomeroomsRequest, ReplaceLearningGroupTeachersRequest,
-        RosterOverrideAction, RosterOverrideInput, StudentActivityRegistrationQuery,
-        TeacherAssignmentInput, UpdateLearningOfferingRequest,
+        AcademicTermChangeSetStatus, ActivityAttendanceRequirement, ActivityPassCriteria,
+        ActivityRegistrationType, ActivitySchedulingMode, ApplyCurriculumOfferingsRequest,
+        ApplyRosterRequest, CancelAcademicTermChangeSetRequest, CourseGradingPolicy,
+        CreateAcademicTermChangeSetRequest, CreateActivityOfferingRequest,
+        CreateCourseOfferingRequest, CreateLearningGroupRequest, CreateLearningOfferingRequest,
+        CurriculumOfferingPreview, CurriculumPreparationChoice, LearningOfferingKind,
+        LearningOfferingQuery, LearningOfferingSnapshot, LearningOfferingStatus,
+        LearningTeacherRole, OfferingTargetInput, OfferingTargetKind, PreparationAction,
+        PreparationGroupingState, PreviewCurriculumOfferingsRequest,
+        PublishLearningOfferingRequest, PublishRosterRequest, ReplaceLearningGroupHomeroomsRequest,
+        ReplaceLearningGroupTeachersRequest, RosterOverrideAction, RosterOverrideInput,
+        StudentActivityRegistrationQuery, TeacherAssignmentInput,
+        UpdateAcademicTermChangeSetRequest, UpdateLearningOfferingRequest,
     },
-    services::{activities, groups, offerings, workspaces},
+    services::{activities, change_sets, groups, offerings, workspaces},
 };
 use crate::error::AppError;
 use crate::policies::resource_access_policy::AcademicResourceListFilter;
@@ -562,7 +564,7 @@ async fn prepare_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 52).await.unwrap();
+    apply_migrations_through(&pool, 53).await.unwrap();
     pool
 }
 
@@ -650,6 +652,339 @@ async fn planning_runtime_context(pool: &PgPool) -> RuntimeContext {
         owner_id,
         teacher_id,
     }
+}
+
+async fn operational_change_runtime_context(pool: &PgPool) -> RuntimeContext {
+    let term_id: Uuid = sqlx::query_scalar(
+        r#"SELECT term.id
+           FROM academic_terms term
+           WHERE term.status = 'active'
+             AND EXISTS (
+                 SELECT 1
+                 FROM academic_timetable_versions version
+                 WHERE version.academic_term_id = term.id
+                   AND version.status = 'published'
+             )
+           ORDER BY term.start_date, term.id
+           LIMIT 1"#,
+    )
+    .fetch_one(pool)
+    .await
+    .expect("fixture must contain an active term with a published timetable base");
+    sqlx::query("UPDATE academic_terms SET status = 'planning' WHERE id = $1")
+        .bind(term_id)
+        .execute(pool)
+        .await
+        .unwrap();
+    let context = planning_runtime_context(pool).await;
+    assert_eq!(context.term_id, term_id);
+    context
+}
+
+async fn create_runtime_change_set(
+    pool: &PgPool,
+    actor_id: Uuid,
+    term_id: Uuid,
+    offset_days: i64,
+    idempotency_name: &str,
+) -> super::models::AcademicTermChangeSet {
+    let term_start: NaiveDate =
+        sqlx::query_scalar("SELECT start_date FROM academic_terms WHERE id = $1")
+            .bind(term_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    change_sets::create_change_set(
+        pool,
+        actor_id,
+        CreateAcademicTermChangeSetRequest {
+            academic_term_id: term_id,
+            effective_from: term_start
+                .checked_add_signed(chrono::Duration::days(offset_days))
+                .unwrap(),
+            reason: "  ปรับการเปิดสอนระหว่างภาคเรียน  ".to_string(),
+            idempotency_key: stable_uuid(idempotency_name),
+        },
+    )
+    .await
+    .expect("a planning term must accept a draft operational change")
+}
+
+#[tokio::test]
+async fn change_set_creation_clones_the_effective_base_and_is_idempotent() {
+    let pool = prepare_delivery_runtime_fixture("academic_change_set_create").await;
+    let context = operational_change_runtime_context(&pool).await;
+    let term_start: NaiveDate =
+        sqlx::query_scalar("SELECT start_date FROM academic_terms WHERE id = $1")
+            .bind(context.term_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let effective_from = term_start
+        .checked_add_signed(chrono::Duration::days(10))
+        .unwrap();
+    let idempotency_key = stable_uuid("change-set:create:idempotency");
+    let request = CreateAcademicTermChangeSetRequest {
+        academic_term_id: context.term_id,
+        effective_from,
+        reason: "  ปรับการเปิดสอนระหว่างภาคเรียน  ".to_string(),
+        idempotency_key,
+    };
+
+    let base_version_id: Uuid = sqlx::query_scalar(
+        r#"SELECT id
+           FROM academic_timetable_versions
+           WHERE academic_term_id = $1
+             AND status = 'published'
+             AND effective_from <= $2
+           ORDER BY effective_from DESC, id
+           LIMIT 1"#,
+    )
+    .bind(context.term_id)
+    .bind(effective_from)
+    .fetch_one(&pool)
+    .await
+    .expect("fixture must contain an effective published base version");
+    let base_counts: (i64, i64, i64) = sqlx::query_as(
+        r#"SELECT
+               (SELECT count(*) FROM academic_timetable_version_targets WHERE timetable_version_id = $1),
+               (SELECT count(*) FROM academic_timetable_entries WHERE timetable_version_id = $1 AND is_active),
+               (SELECT count(*) FROM timetable_entry_instructors instructor
+                  JOIN academic_timetable_entries entry ON entry.id = instructor.entry_id
+                 WHERE entry.timetable_version_id = $1 AND entry.is_active)"#,
+    )
+    .bind(base_version_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let created = change_sets::create_change_set(&pool, context.teacher_id, request.clone())
+        .await
+        .expect("change set creation must clone the effective base");
+
+    assert_eq!(created.status, AcademicTermChangeSetStatus::Draft);
+    assert_eq!(created.reason, "ปรับการเปิดสอนระหว่างภาคเรียน");
+    assert_eq!(created.base_timetable_version_id, base_version_id);
+    assert_ne!(created.target_timetable_version_id, base_version_id);
+    assert_eq!(created.effective_from, effective_from);
+    assert!(created.items.is_empty());
+
+    let target_context: (Uuid, Uuid, NaiveDate, String, Option<Uuid>) = sqlx::query_as(
+        r#"SELECT academic_term_id, source_version_id, effective_from, status, change_set_id
+           FROM academic_timetable_versions
+           WHERE id = $1"#,
+    )
+    .bind(created.target_timetable_version_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(target_context.0, context.term_id);
+    assert_eq!(target_context.1, base_version_id);
+    assert_eq!(target_context.2, effective_from);
+    assert_eq!(target_context.3, "draft");
+    assert_eq!(target_context.4, Some(created.id));
+
+    let target_counts: (i64, i64, i64) = sqlx::query_as(
+        r#"SELECT
+               (SELECT count(*) FROM academic_timetable_version_targets WHERE timetable_version_id = $1),
+               (SELECT count(*) FROM academic_timetable_entries WHERE timetable_version_id = $1 AND is_active),
+               (SELECT count(*) FROM timetable_entry_instructors instructor
+                  JOIN academic_timetable_entries entry ON entry.id = instructor.entry_id
+                 WHERE entry.timetable_version_id = $1 AND entry.is_active)"#,
+    )
+    .bind(created.target_timetable_version_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(target_counts, base_counts);
+
+    let retried = change_sets::create_change_set(&pool, context.teacher_id, request.clone())
+        .await
+        .expect("same normalized input and idempotency key must be retry-safe");
+    assert_eq!(retried.id, created.id);
+
+    let mismatched = change_sets::create_change_set(
+        &pool,
+        context.teacher_id,
+        CreateAcademicTermChangeSetRequest {
+            reason: "คนละเหตุผล".to_string(),
+            ..request
+        },
+    )
+    .await
+    .expect_err("the same idempotency key must reject different normalized input");
+    assert!(matches!(mismatched, AppError::Conflict(_)));
+
+    let listed = change_sets::list_change_sets(&pool, context.term_id)
+        .await
+        .unwrap();
+    assert!(listed.iter().any(|item| item.id == created.id));
+    let fetched = change_sets::get_change_set(&pool, created.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        fetched.target_timetable_version_id,
+        created.target_timetable_version_id
+    );
+}
+
+#[tokio::test]
+async fn draft_change_set_update_uses_row_versions_and_cancel_preserves_the_base() {
+    let pool = prepare_delivery_runtime_fixture("academic_change_set_update_cancel").await;
+    let context = operational_change_runtime_context(&pool).await;
+    let created = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        11,
+        "change-set:update:idempotency",
+    )
+    .await;
+    let revised_effective_from = created
+        .effective_from
+        .checked_add_signed(chrono::Duration::days(1))
+        .unwrap();
+
+    let updated = change_sets::update_change_set(
+        &pool,
+        context.teacher_id,
+        created.id,
+        UpdateAcademicTermChangeSetRequest {
+            row_version: created.row_version,
+            effective_from: revised_effective_from,
+            reason: "เหตุผลที่ปรับแล้ว".to_string(),
+        },
+    )
+    .await
+    .expect("a draft reason must remain editable");
+    assert_eq!(updated.reason, "เหตุผลที่ปรับแล้ว");
+    assert_eq!(updated.effective_from, revised_effective_from);
+    assert_eq!(updated.row_version, created.row_version + 1);
+    let target_effective_from: NaiveDate =
+        sqlx::query_scalar("SELECT effective_from FROM academic_timetable_versions WHERE id = $1")
+            .bind(created.target_timetable_version_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(target_effective_from, revised_effective_from);
+
+    let stale = change_sets::update_change_set(
+        &pool,
+        context.teacher_id,
+        created.id,
+        UpdateAcademicTermChangeSetRequest {
+            row_version: created.row_version,
+            effective_from: created.effective_from,
+            reason: "ข้อมูลล้าสมัย".to_string(),
+        },
+    )
+    .await
+    .expect_err("a stale draft update must conflict");
+    assert!(matches!(stale, AppError::Conflict(_)));
+
+    let cancelled = change_sets::cancel_change_set(
+        &pool,
+        context.teacher_id,
+        created.id,
+        CancelAcademicTermChangeSetRequest {
+            row_version: updated.row_version,
+        },
+    )
+    .await
+    .expect("a draft change set must be cancellable");
+    assert_eq!(cancelled.status, AcademicTermChangeSetStatus::Cancelled);
+
+    let (target_status, base_status): (String, String) = sqlx::query_as(
+        r#"SELECT target.status, base.status
+           FROM academic_timetable_versions target
+           JOIN academic_timetable_versions base ON base.id = $2
+           WHERE target.id = $1"#,
+    )
+    .bind(created.target_timetable_version_id)
+    .bind(created.base_timetable_version_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(target_status, "cancelled");
+    assert_eq!(base_status, "published");
+
+    let immutable = change_sets::update_change_set(
+        &pool,
+        context.teacher_id,
+        created.id,
+        UpdateAcademicTermChangeSetRequest {
+            row_version: cancelled.row_version,
+            effective_from: cancelled.effective_from,
+            reason: "ห้ามแก้".to_string(),
+        },
+    )
+    .await
+    .expect_err("a cancelled set must remain immutable");
+    assert!(matches!(immutable, AppError::Conflict(_)));
+}
+
+#[tokio::test]
+async fn change_set_creation_rejects_unwritable_terms_and_out_of_range_dates() {
+    let pool = prepare_delivery_runtime_fixture("academic_change_set_date_guards").await;
+    let context = operational_change_runtime_context(&pool).await;
+    let (term_start, year_end): (NaiveDate, NaiveDate) = sqlx::query_as(
+        r#"SELECT term.start_date, year.end_date
+           FROM academic_terms term
+           JOIN academic_years year ON year.id = term.academic_year_id
+           WHERE term.id = $1"#,
+    )
+    .bind(context.term_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    for (name, date) in [
+        (
+            "change-set:before-term",
+            term_start
+                .checked_sub_signed(chrono::Duration::days(1))
+                .unwrap(),
+        ),
+        (
+            "change-set:after-year",
+            year_end
+                .checked_add_signed(chrono::Duration::days(1))
+                .unwrap(),
+        ),
+    ] {
+        let error = change_sets::create_change_set(
+            &pool,
+            context.teacher_id,
+            CreateAcademicTermChangeSetRequest {
+                academic_term_id: context.term_id,
+                effective_from: date,
+                reason: "วันที่ไม่ถูกต้อง".to_string(),
+                idempotency_key: stable_uuid(name),
+            },
+        )
+        .await
+        .expect_err("dates outside the term/year context must fail");
+        assert!(matches!(error, AppError::ValidationError(_)));
+    }
+
+    sqlx::query("UPDATE academic_terms SET status = 'closing' WHERE id = $1")
+        .bind(context.term_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let closed = change_sets::create_change_set(
+        &pool,
+        context.teacher_id,
+        CreateAcademicTermChangeSetRequest {
+            academic_term_id: context.term_id,
+            effective_from: term_start,
+            reason: "ภาคเรียนกำลังปิด".to_string(),
+            idempotency_key: stable_uuid("change-set:closing-term"),
+        },
+    )
+    .await
+    .expect_err("a closing term must reject change-set creation");
+    assert!(matches!(closed, AppError::ValidationError(_)));
 }
 
 fn course_request(context: &RuntimeContext) -> CreateLearningOfferingRequest {

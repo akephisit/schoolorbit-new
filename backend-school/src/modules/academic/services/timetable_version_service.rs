@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use chrono::{NaiveDate, Utc};
-use sqlx::{FromRow, PgPool};
+use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::error::AppError;
@@ -152,13 +152,34 @@ pub async fn clone_draft(
     source_id: Uuid,
     request: CloneTimetableVersionRequest,
 ) -> Result<TimetableVersion, AppError> {
-    if request.source_row_version <= 0 {
+    let mut transaction = pool.begin().await?;
+    let new_version_id = clone_draft_in_transaction(
+        &mut transaction,
+        actor_id,
+        source_id,
+        request.source_row_version,
+        request.effective_from,
+        None,
+    )
+    .await?;
+    transaction.commit().await?;
+    get_version(pool, new_version_id, Utc::now().date_naive()).await
+}
+
+pub(crate) async fn clone_draft_in_transaction(
+    transaction: &mut Transaction<'_, Postgres>,
+    actor_id: Uuid,
+    source_id: Uuid,
+    source_row_version: i64,
+    effective_from: NaiveDate,
+    change_set_id: Option<Uuid>,
+) -> Result<Uuid, AppError> {
+    if source_row_version <= 0 {
         return Err(AppError::ValidationError(
             "sourceRowVersion ต้องมากกว่าศูนย์".to_string(),
         ));
     }
 
-    let mut transaction = pool.begin().await?;
     let source: CloneSourceRow = sqlx::query_as(
         r#"SELECT source.id,
                   source.academic_term_id,
@@ -176,7 +197,7 @@ pub async fn clone_draft(
            FOR UPDATE OF source, term"#,
     )
     .bind(source_id)
-    .fetch_optional(&mut *transaction)
+    .fetch_optional(&mut **transaction)
     .await?
     .ok_or_else(|| AppError::NotFound("ไม่พบรุ่นตารางเรียนต้นทาง".to_string()))?;
 
@@ -185,10 +206,10 @@ pub async fn clone_draft(
             "สร้างแบบร่างใหม่ได้จากรุ่นตารางเรียนที่เผยแพร่แล้วเท่านั้น".to_string(),
         ));
     }
-    if source.row_version != request.source_row_version {
+    if source.row_version != source_row_version {
         return Err(AppError::Conflict(format!(
             "รุ่นตารางเรียนต้นทางถูกแก้ไขแล้ว (expected {}, actual {})",
-            request.source_row_version, source.row_version
+            source_row_version, source.row_version
         )));
     }
     if matches!(
@@ -199,9 +220,7 @@ pub async fn clone_draft(
             "ภาคเรียนนี้ปิดรับการสร้างรุ่นตารางเรียนใหม่แล้ว".to_string(),
         ));
     }
-    if request.effective_from < source.term_start_date
-        || request.effective_from > source.academic_year_end_date
-    {
+    if effective_from < source.term_start_date || effective_from > source.academic_year_end_date {
         return Err(AppError::ValidationError(
             "วันที่เริ่มใช้ตารางต้องอยู่ตั้งแต่วันเปิดภาคเรียนถึงวันสิ้นสุดปีการศึกษา".to_string(),
         ));
@@ -217,8 +236,8 @@ pub async fn clone_draft(
            )"#,
     )
     .bind(source.academic_term_id)
-    .bind(request.effective_from)
-    .fetch_one(&mut *transaction)
+    .bind(effective_from)
+    .fetch_one(&mut **transaction)
     .await?;
     if duplicate {
         return Err(AppError::Conflict(
@@ -230,17 +249,18 @@ pub async fn clone_draft(
     sqlx::query(
         r#"INSERT INTO academic_timetable_versions (
                id, academic_term_id, academic_year_id, effective_from, status,
-               source_version_id, bell_schedule_id, created_by
-           ) VALUES ($1, $2, $3, $4, 'draft', $5, $6, $7)"#,
+               source_version_id, change_set_id, bell_schedule_id, created_by
+           ) VALUES ($1, $2, $3, $4, 'draft', $5, $6, $7, $8)"#,
     )
     .bind(new_version_id)
     .bind(source.academic_term_id)
     .bind(source.academic_year_id)
-    .bind(request.effective_from)
+    .bind(effective_from)
     .bind(source.id)
+    .bind(change_set_id)
     .bind(source.bell_schedule_id)
     .bind(actor_id)
-    .execute(&mut *transaction)
+    .execute(&mut **transaction)
     .await
     .map_err(map_clone_write_error)?;
 
@@ -259,7 +279,7 @@ pub async fn clone_draft(
     )
     .bind(new_version_id)
     .bind(source.id)
-    .execute(&mut *transaction)
+    .execute(&mut **transaction)
     .await?;
 
     sqlx::query(
@@ -327,11 +347,9 @@ pub async fn clone_draft(
     .bind(new_version_id)
     .bind(source.id)
     .bind(actor_id)
-    .execute(&mut *transaction)
+    .execute(&mut **transaction)
     .await?;
-
-    transaction.commit().await?;
-    get_version(pool, new_version_id, Utc::now().date_naive()).await
+    Ok(new_version_id)
 }
 
 async fn get_version(

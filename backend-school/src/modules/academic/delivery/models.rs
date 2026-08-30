@@ -111,6 +111,107 @@ pub enum PreparationGroupingState {
     Conflict,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, sqlx::Type, ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "text", rename_all = "snake_case")]
+pub enum AcademicTermChangeSetStatus {
+    Draft,
+    Published,
+    Cancelled,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, sqlx::Type, ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "text", rename_all = "snake_case")]
+pub enum AcademicTermChangeActionKind {
+    AddOffering,
+    StopOffering,
+    AdjustWeeklyPeriodTarget,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(tag = "actionKind", rename_all = "snake_case")]
+pub enum AcademicTermChangeItem {
+    AddOffering {
+        id: Uuid,
+        learning_offering_id: Uuid,
+        weekly_period_target: i32,
+        row_version: i64,
+        created_by: Uuid,
+        created_at: DateTime<Utc>,
+        updated_at: DateTime<Utc>,
+    },
+    StopOffering {
+        id: Uuid,
+        learning_offering_id: Uuid,
+        row_version: i64,
+        created_by: Uuid,
+        created_at: DateTime<Utc>,
+        updated_at: DateTime<Utc>,
+    },
+    AdjustWeeklyPeriodTarget {
+        id: Uuid,
+        learning_offering_id: Uuid,
+        weekly_period_target: i32,
+        row_version: i64,
+        created_by: Uuid,
+        created_at: DateTime<Utc>,
+        updated_at: DateTime<Utc>,
+    },
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AcademicTermChangeSet {
+    pub id: Uuid,
+    pub academic_term_id: Uuid,
+    pub academic_year_id: Uuid,
+    pub effective_from: NaiveDate,
+    pub reason: String,
+    pub status: AcademicTermChangeSetStatus,
+    pub base_timetable_version_id: Uuid,
+    pub target_timetable_version_id: Uuid,
+    pub row_version: i64,
+    pub created_by: Uuid,
+    pub published_by: Option<Uuid>,
+    pub published_at: Option<DateTime<Utc>>,
+    pub cancelled_by: Option<Uuid>,
+    pub cancelled_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub items: Vec<AcademicTermChangeItem>,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateAcademicTermChangeSetRequest {
+    pub academic_term_id: Uuid,
+    pub effective_from: NaiveDate,
+    pub reason: String,
+    pub idempotency_key: Uuid,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdateAcademicTermChangeSetRequest {
+    pub row_version: i64,
+    pub effective_from: NaiveDate,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CancelAcademicTermChangeSetRequest {
+    pub row_version: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AcademicTermChangeSetQuery {
+    pub academic_term_id: Uuid,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CourseGradingPolicy {
