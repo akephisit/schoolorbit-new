@@ -19,7 +19,7 @@
 		purpose = 'operational_change'
 	}: {
 		academicTermId: string;
-		onCreated: (changeSet: AcademicTermChangeSet) => void;
+		onCreated: (changeSet: AcademicTermChangeSet) => void | Promise<void>;
 		purpose?: ChangePurpose;
 	} = $props();
 
@@ -41,7 +41,7 @@
 				reason: reason.trim(),
 				idempotencyKey: crypto.randomUUID()
 			});
-			onCreated(changeSet);
+			await onCreated(changeSet);
 			effectiveFrom = '';
 			reason = '';
 			open = false;

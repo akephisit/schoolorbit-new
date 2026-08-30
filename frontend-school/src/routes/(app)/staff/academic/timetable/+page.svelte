@@ -16,8 +16,10 @@
 		type Homeroom
 	} from '$lib/api/academic-core';
 	import {
+		listAcademicTermChangeSets,
 		listLearningGroupsForTerm,
 		listLearningOfferings,
+		type AcademicTermChangeSet,
 		type LearningGroup,
 		type LearningOffering
 	} from '$lib/api/learning-delivery';
@@ -39,6 +41,8 @@
 		AcademicPrerequisiteNotice,
 		type AcademicPrerequisite
 	} from '$lib/components/academic-workflow';
+	import AcademicChangeReadiness from '$lib/components/learning-delivery/AcademicChangeReadiness.svelte';
+	import AcademicChangeSetDialog from '$lib/components/learning-delivery/AcademicChangeSetDialog.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
@@ -136,6 +140,7 @@
 	let rooms = $state<RoomLookupItem[]>([]);
 	let entries = $state<TimetableEntry[]>([]);
 	let versions = $state<TimetableVersion[]>([]);
+	let changeSets = $state<AcademicTermChangeSet[]>([]);
 	let selectedVersion = $state.raw<TimetableVersion | null>(null);
 	let versionSelectValue = $state('');
 	let selectedScheduleId = $state('');
@@ -151,6 +156,7 @@
 	let formNote = $state('');
 	let loading = $state(false);
 	let busy = $state(false);
+	let draftRevision = $state(0);
 	let isTeacherLoadExporting = $state(false);
 	let dirty = $state(false);
 	let errorMessage = $state('');
@@ -177,6 +183,14 @@
 		)
 	);
 	const canEditSelected = $derived(canManage && selectedVersion?.status === 'draft');
+	const selectedChangeSet = $derived(
+		changeSets.find(
+			(changeSet) => changeSet.targetTimetableVersionId === selectedVersion?.id
+		) ?? null
+	);
+	const activeDraftChangeSet = $derived(
+		changeSets.find((changeSet) => changeSet.status === 'draft') ?? null
+	);
 	const selectedEntry = $derived(entries.find((entry) => entry.id === selectedEntryId) ?? null);
 	const selectedSchedule = $derived(
 		schedules.find((schedule) => schedule.id === selectedScheduleId) ?? null
@@ -288,12 +302,25 @@
 		);
 	}
 
+	async function loadVersionOptions(
+		termId: string,
+		signal?: AbortSignal
+	): Promise<TimetableVersion[]> {
+		return listTimetableVersions(termId, { signal });
+	}
+
 	async function loadWorkspace(termId: string, yearId: string): Promise<void> {
 		const { revision, signal } = request.begin();
 		loading = true;
 		errorMessage = '';
 		try {
-			const [collections, loadedSchedules, loadedRooms, loadedVersions] = await Promise.all([
+			const [
+				collections,
+				loadedSchedules,
+				loadedRooms,
+				loadedVersions,
+				loadedChangeSets
+			] = await Promise.all([
 				loadTimetableCollections(
 					{ listLearningOfferings, listLearningGroupsForTerm, listHomerooms },
 					termId,
@@ -302,7 +329,8 @@
 				),
 				listBellSchedules(yearId, { signal }),
 				lookupRooms({ activeOnly: true, limit: 500 }, { signal }),
-				listTimetableVersions(termId, { signal })
+				loadVersionOptions(termId, signal),
+				listAcademicTermChangeSets(termId, { signal })
 			]);
 			const preferredVersion = selectPreferredVersion(loadedVersions);
 			const preferredSchedule = loadedSchedules.find(
@@ -329,6 +357,8 @@
 			homerooms = collections.homerooms;
 			rooms = loadedRooms;
 			entries = loadedEntries;
+			changeSets = loadedChangeSets;
+			draftRevision += 1;
 			if (preferredVersion) syncVersionUrl(preferredVersion.id);
 			viewKind = groups.length > 0 ? 'learning_group' : 'homeroom';
 			selectedTargetId = groups[0]?.id ?? homerooms[0]?.id ?? '';
@@ -392,6 +422,37 @@
 				loading = false;
 			}
 		}
+	}
+
+	function storeChangeSet(updated: AcademicTermChangeSet): void {
+		changeSets = changeSets.some((changeSet) => changeSet.id === updated.id)
+			? changeSets.map((changeSet) => (changeSet.id === updated.id ? updated : changeSet))
+			: [updated, ...changeSets];
+	}
+
+	async function handleRevisionCreated(created: AcademicTermChangeSet): Promise<void> {
+		if (!academicTermId) return;
+		storeChangeSet(created);
+		versions = await loadVersionOptions(academicTermId);
+		if (!versions.some((version) => version.id === created.targetTimetableVersionId)) {
+			throw new Error('สร้างแบบร่างแล้ว แต่ไม่พบรุ่นตารางสอนใหม่ กรุณาโหลดหน้าอีกครั้ง');
+		}
+		await changeVersion(created.targetTimetableVersionId);
+		toast.success('สร้างรุ่นตารางสอนแบบร่างแล้ว');
+	}
+
+	async function handleChangeSetChanged(updated: AcademicTermChangeSet): Promise<void> {
+		storeChangeSet(updated);
+		if (
+			!academicTermId ||
+			selectedVersion?.id !== updated.targetTimetableVersionId ||
+			selectedVersion.status === updated.status
+		)
+			return;
+		versions = await loadVersionOptions(academicTermId);
+		await changeVersion(updated.targetTimetableVersionId);
+		if (updated.status === 'published') toast.success('เผยแพร่รุ่นตารางสอนใหม่แล้ว');
+		if (updated.status === 'cancelled') toast.success('ยกเลิกรุ่นตารางสอนแบบร่างแล้ว');
 	}
 
 	function changeViewKind(nextKind: ViewKind): void {
@@ -492,6 +553,7 @@
 				});
 			}
 			await refreshEntries();
+			draftRevision += 1;
 			resetForm();
 			toast.success('บันทึกคาบในตารางแล้ว');
 		} catch (error) {
@@ -508,6 +570,7 @@
 		try {
 			await deleteTimetableEntry(selectedEntry.id, selectedEntry.rowVersion, selectedVersion.id);
 			await refreshEntries();
+			draftRevision += 1;
 			resetForm();
 			toast.success('ลบคาบออกจากตารางแล้ว');
 		} catch (error) {
@@ -729,6 +792,25 @@
 	description="จัดคาบตามกลุ่มเรียนหรือห้องประจำชั้น โดยใช้ตารางเวลาและรายการเปิดสอนของภาคเรียนที่เลือก"
 >
 	{#snippet actions()}
+		{#if canManage && academicTermId && !dirty}
+			{#if activeDraftChangeSet}
+				<Button
+					variant="outline"
+					disabled={selectedVersion?.id === activeDraftChangeSet.targetTimetableVersionId}
+					onclick={() => changeVersion(activeDraftChangeSet.targetTimetableVersionId)}
+				>
+					<History /> {selectedVersion?.id === activeDraftChangeSet.targetTimetableVersionId
+						? 'กำลังแก้รุ่นแบบร่าง'
+						: 'เปิดรุ่นแบบร่าง'}
+				</Button>
+			{:else}
+				<AcademicChangeSetDialog
+					academicTermId={academicTermId}
+					purpose="timetable_revision"
+					onCreated={handleRevisionCreated}
+				/>
+			{/if}
+		{/if}
 		<Button
 			variant="outline"
 			disabled={isTeacherLoadExporting || loading || entries.length === 0 || !academicTermId}
@@ -823,6 +905,39 @@
 					</div>
 				</Card.Content>
 			</Card.Root>
+
+			{#if selectedChangeSet}
+				<Card.Root class="gap-0 overflow-hidden border-amber-500/25 py-0">
+					<Card.Header class="border-b border-amber-500/20 bg-amber-500/5 py-4">
+						<div class="flex flex-wrap items-start justify-between gap-3">
+							<div>
+								<Card.Title class="text-base">ขั้นตอนของรุ่นตารางสอนนี้</Card.Title>
+								<Card.Description class="mt-1">{selectedChangeSet.reason}</Card.Description>
+							</div>
+							<Badge variant="outline" class="bg-background">
+								เริ่มใช้ {selectedChangeSet.effectiveFrom}
+							</Badge>
+						</div>
+					</Card.Header>
+					<Card.Content class="p-4 sm:p-5">
+						{#if dirty}
+							<p
+								class="rounded-xl border border-amber-500/30 bg-amber-500/8 p-3 text-sm text-amber-900"
+							>
+								บันทึกหรือยกเลิกคาบที่กำลังแก้ก่อนตรวจความพร้อมและเผยแพร่รุ่นนี้
+							</p>
+						{:else}
+							{#key `${selectedChangeSet.id}:${draftRevision}`}
+								<AcademicChangeReadiness
+									changeSet={selectedChangeSet}
+									{canManage}
+									onChanged={handleChangeSetChanged}
+								/>
+							{/key}
+						{/if}
+					</Card.Content>
+				</Card.Root>
+			{/if}
 
 			{#if groups.length === 0}
 				<AcademicPrerequisiteNotice prerequisite={missingGroupsPrerequisite} />
