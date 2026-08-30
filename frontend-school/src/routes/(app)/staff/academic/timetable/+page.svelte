@@ -184,9 +184,8 @@
 	);
 	const canEditSelected = $derived(canManage && selectedVersion?.status === 'draft');
 	const selectedChangeSet = $derived(
-		changeSets.find(
-			(changeSet) => changeSet.targetTimetableVersionId === selectedVersion?.id
-		) ?? null
+		changeSets.find((changeSet) => changeSet.targetTimetableVersionId === selectedVersion?.id) ??
+			null
 	);
 	const activeDraftChangeSet = $derived(
 		changeSets.find((changeSet) => changeSet.status === 'draft') ?? null
@@ -314,24 +313,19 @@
 		loading = true;
 		errorMessage = '';
 		try {
-			const [
-				collections,
-				loadedSchedules,
-				loadedRooms,
-				loadedVersions,
-				loadedChangeSets
-			] = await Promise.all([
-				loadTimetableCollections(
-					{ listLearningOfferings, listLearningGroupsForTerm, listHomerooms },
-					termId,
-					yearId,
-					signal
-				),
-				listBellSchedules(yearId, { signal }),
-				lookupRooms({ activeOnly: true, limit: 500 }, { signal }),
-				loadVersionOptions(termId, signal),
-				listAcademicTermChangeSets(termId, { signal })
-			]);
+			const [collections, loadedSchedules, loadedRooms, loadedVersions, loadedChangeSets] =
+				await Promise.all([
+					loadTimetableCollections(
+						{ listLearningOfferings, listLearningGroupsForTerm, listHomerooms },
+						termId,
+						yearId,
+						signal
+					),
+					listBellSchedules(yearId, { signal }),
+					lookupRooms({ activeOnly: true, limit: 500 }, { signal }),
+					loadVersionOptions(termId, signal),
+					listAcademicTermChangeSets(termId, { signal })
+				]);
 			const preferredVersion = selectPreferredVersion(loadedVersions);
 			const preferredSchedule = loadedSchedules.find(
 				(schedule) => schedule.id === preferredVersion?.bellScheduleId
@@ -537,7 +531,6 @@
 					title: formTitle.trim() || null
 				});
 			} else {
-				const selectedGroup = groups.find((group) => group.id === selectedTargetId);
 				await createTimetableEntry({
 					academicTermId,
 					timetableVersionId: selectedVersion.id,
@@ -549,7 +542,7 @@
 					note: formNote.trim() || null,
 					entryType: formEntryType,
 					title: formTitle.trim() || null,
-					instructorIds: selectedGroup?.teacherAssignments.map((teacher) => teacher.teacherId) ?? []
+					instructorIds: []
 				});
 			}
 			await refreshEntries();
@@ -799,13 +792,14 @@
 					disabled={selectedVersion?.id === activeDraftChangeSet.targetTimetableVersionId}
 					onclick={() => changeVersion(activeDraftChangeSet.targetTimetableVersionId)}
 				>
-					<History /> {selectedVersion?.id === activeDraftChangeSet.targetTimetableVersionId
+					<History />
+					{selectedVersion?.id === activeDraftChangeSet.targetTimetableVersionId
 						? 'กำลังแก้รุ่นแบบร่าง'
 						: 'เปิดรุ่นแบบร่าง'}
 				</Button>
 			{:else}
 				<AcademicChangeSetDialog
-					academicTermId={academicTermId}
+					{academicTermId}
 					purpose="timetable_revision"
 					onCreated={handleRevisionCreated}
 				/>
@@ -875,7 +869,9 @@
 							<p class="mt-1 text-xs text-muted-foreground">
 								{#if selectedVersion}
 									มีผล {versionPeriodLabel(selectedVersion)} · {selectedVersion.status === 'draft'
-										? 'แก้ไขคาบได้'
+										? canManage
+											? 'แก้ไขคาบได้'
+											: 'อ่านอย่างเดียว คุณไม่มีสิทธิ์แก้ไขคาบ'
 										: 'อ่านอย่างเดียว ข้อมูลที่เผยแพร่แล้วไม่ถูกแก้ย้อนหลัง'}
 								{:else}
 									เลือกรุ่นตารางสอน
@@ -1028,7 +1024,9 @@
 						<Card.Description>
 							{canEditSelected
 								? 'คลิกช่องว่างเพื่อเพิ่มคาบ หรือคลิกคาบเดิมเพื่อแก้ไข'
-								: 'รุ่นที่เผยแพร่แล้วเป็นข้อมูลอ่านอย่างเดียว'}
+								: selectedVersion?.status === 'draft'
+									? 'คุณดูแบบร่างนี้ได้ แต่ไม่มีสิทธิ์เพิ่ม แก้ไข หรือลบคาบ'
+									: 'รุ่นที่เผยแพร่แล้วเป็นข้อมูลอ่านอย่างเดียว'}
 						</Card.Description>
 					</Card.Header>
 					<Card.Content class="overflow-x-auto">

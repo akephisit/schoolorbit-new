@@ -76,9 +76,7 @@
 	<Dialog.Content class="sm:max-w-xl">
 		<Dialog.Header>
 			<Dialog.Title>
-				{purpose === 'timetable_revision'
-					? 'สร้างรุ่นตารางสอนใหม่'
-					: 'เริ่มการเปลี่ยนแปลงกลางภาค'}
+				{purpose === 'timetable_revision' ? 'สร้างรุ่นตารางสอนใหม่' : 'เริ่มการเปลี่ยนแปลงกลางภาค'}
 			</Dialog.Title>
 			<Dialog.Description>
 				{purpose === 'timetable_revision'
@@ -91,7 +89,8 @@
 			<TriangleAlert class="mt-0.5 size-4 shrink-0 text-amber-700" />
 			<p class="leading-relaxed">
 				{#if purpose === 'timetable_revision'}
-					ระบบจะสร้างรุ่นแบบร่างจากตารางที่มีผลในวันนั้น รุ่นเดิมยังใช้งานต่อจนถึงวันก่อนเริ่มใช้รุ่นใหม่
+					ระบบจะสร้างรุ่นแบบร่างจากตารางที่มีผลในวันนั้น
+					รุ่นเดิมยังใช้งานต่อจนถึงวันก่อนเริ่มใช้รุ่นใหม่
 				{:else}
 					การทำงานนี้มีผลเฉพาะภาคเรียนนี้และ <strong>ไม่เปลี่ยนหลักสูตร</strong>
 					ระบบจะสร้างรุ่นตารางสอนแบบร่างสำหรับวันที่เริ่มใช้โดยอัตโนมัติ
@@ -107,8 +106,12 @@
 				<DatePicker
 					id="academic-change-effective-date"
 					bind:value={effectiveFrom}
-					placeholder="เลือกวันที่เริ่มใช้จริง"
-					ariaLabel="เลือกวันที่เริ่มใช้จริง"
+					placeholder={purpose === 'timetable_revision'
+						? 'เลือกวันที่เริ่มใช้รุ่นใหม่'
+						: 'เลือกวันที่เริ่มใช้จริง'}
+					ariaLabel={purpose === 'timetable_revision'
+						? 'เลือกวันที่เริ่มใช้รุ่นใหม่'
+						: 'เลือกวันที่เริ่มใช้จริง'}
 					required
 				/>
 				<p class="text-xs text-muted-foreground">

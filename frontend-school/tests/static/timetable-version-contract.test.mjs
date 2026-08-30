@@ -89,6 +89,8 @@ test('timetable workspace links one change set to the selected version and inval
 	assert.match(page, /<AcademicChangeReadiness/);
 	assert.match(page, /draftRevision\s*\+=\s*1/);
 	assert.match(page, /timetableVersionId:\s*selectedVersion\.id/);
+	assert.match(page, /instructorIds:\s*\[\]/);
+	assert.doesNotMatch(page, /instructorIds:[^\n]*teacherAssignments\.map/);
 	assert.doesNotMatch(page, /cloneTimetableVersion/);
 });
 

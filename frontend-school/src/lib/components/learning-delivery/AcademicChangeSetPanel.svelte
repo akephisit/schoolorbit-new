@@ -16,14 +16,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
-	import {
-		ArrowRight,
-		CalendarClock,
-		ExternalLink,
-		Plus,
-		Trash2,
-		X
-	} from 'lucide-svelte';
+	import { ArrowRight, CalendarClock, ExternalLink, Plus, Trash2, X } from 'lucide-svelte';
 	import AcademicChangeReadiness from './AcademicChangeReadiness.svelte';
 	import DeliveryOptionCombobox from './DeliveryOptionCombobox.svelte';
 
@@ -254,7 +247,6 @@
 			deletingItemId = '';
 		}
 	}
-
 </script>
 
 <section class="overflow-hidden rounded-2xl border border-amber-500/30 bg-card">
@@ -295,264 +287,262 @@
 	</header>
 
 	<div class="min-w-0 space-y-5 p-4 sm:p-5">
-			<section class="space-y-3">
-				<div class="flex flex-wrap items-center justify-between gap-3">
+		<section class="space-y-3">
+			<div class="flex flex-wrap items-center justify-between gap-3">
+				<div>
+					<h3 class="font-medium">รายการที่จะเปลี่ยน</h3>
+					<p class="text-xs text-muted-foreground">
+						หลักสูตรไม่เปลี่ยน รายการเหล่านี้มีผลเฉพาะภาคเรียนนี้
+					</p>
+				</div>
+				{#if canManage && changeSet.status === 'draft'}
+					<Button size="sm" variant="outline" onclick={showItemForm}>
+						<Plus class="size-4" /> เพิ่มรายการ
+					</Button>
+				{/if}
+			</div>
+
+			{#if changeSet.items.length === 0}
+				<div class="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+					ยังไม่มีรายการเพิ่ม ปรับคาบ หรือหยุดสอน
+				</div>
+			{:else}
+				<div class="divide-y rounded-xl border">
+					{#each changeSet.items as item (item.id)}
+						<div class="flex items-center justify-between gap-3 p-3">
+							<div class="min-w-0">
+								<p class="font-medium">
+									{item.actionKind === 'add_offering'
+										? 'เพิ่มรายการเปิดสอน'
+										: item.actionKind === 'stop_offering'
+											? 'หยุดรายการเปิดสอน'
+											: 'ปรับจำนวนคาบต่อสัปดาห์'}
+								</p>
+								<p class="truncate text-sm text-muted-foreground">
+									{offerings.find((entry) => entry.offering.id === item.learningOfferingId)
+										?.offering.nameSnapshot ?? item.learningOfferingId}
+									{#if 'weeklyPeriodTarget' in item}
+										· {item.weeklyPeriodTarget} คาบ/สัปดาห์
+									{/if}
+								</p>
+							</div>
+							<div class="flex shrink-0 gap-1">
+								{#if item.actionKind === 'add_offering'}
+									<Button
+										href={`/staff/academic/delivery/${item.learningOfferingId}?timetableVersionId=${changeSet.targetTimetableVersionId}`}
+										size="sm"
+										variant="ghost"
+									>
+										{changeSet.status === 'draft' ? 'จัดกลุ่มและครู' : 'ดูรายละเอียด'}
+										<ExternalLink class="size-3.5" />
+									</Button>
+								{/if}
+								{#if canManage && changeSet.status === 'draft'}
+									<Button
+										size="icon"
+										variant="ghost"
+										disabled={deletingItemId === item.id}
+										onclick={() => removeItem(item.id, item.rowVersion)}
+										aria-label="ลบรายการเปลี่ยนแปลง"
+									>
+										<Trash2 class="size-4" />
+									</Button>
+								{/if}
+							</div>
+						</div>
+					{/each}
+				</div>
+			{/if}
+		</section>
+
+		{#if itemFormOpen && canManage && changeSet.status === 'draft'}
+			<form
+				class="space-y-4 rounded-xl border border-primary/20 bg-primary/[0.025] p-4"
+				onsubmit={saveItem}
+			>
+				<div class="flex items-center justify-between gap-3">
 					<div>
-						<h3 class="font-medium">รายการที่จะเปลี่ยน</h3>
-						<p class="text-xs text-muted-foreground">
-							หลักสูตรไม่เปลี่ยน รายการเหล่านี้มีผลเฉพาะภาคเรียนนี้
-						</p>
+						<h3 class="font-medium">เพิ่มรายการเปลี่ยนแปลง</h3>
+						<p class="text-xs text-muted-foreground">เลือกเฉพาะสิ่งที่เริ่มมีผลในวันที่กำหนด</p>
 					</div>
-					{#if canManage && changeSet.status === 'draft'}
-						<Button size="sm" variant="outline" onclick={showItemForm}>
-							<Plus class="size-4" /> เพิ่มรายการ
-						</Button>
-					{/if}
+					<Button
+						type="button"
+						size="icon"
+						variant="ghost"
+						onclick={() => (itemFormOpen = false)}
+						aria-label="ปิดแบบฟอร์ม"
+					>
+						<X class="size-4" />
+					</Button>
+				</div>
+				<div class="space-y-2">
+					<Label>ประเภทการเปลี่ยนแปลง</Label>
+					<Select.Root
+						type="single"
+						value={action}
+						onValueChange={(value) => resetItemForm(value as ChangeAction)}
+					>
+						<Select.Trigger class="w-full">
+							{action === 'add_course'
+								? 'เพิ่มรายวิชา'
+								: action === 'add_activity'
+									? 'เพิ่มกิจกรรมพัฒนาผู้เรียน'
+									: action === 'stop_offering'
+										? 'หยุดรายการเปิดสอน'
+										: 'ปรับคาบต่อสัปดาห์'}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="add_course">เพิ่มรายวิชา</Select.Item>
+							<Select.Item value="add_activity">เพิ่มกิจกรรมพัฒนาผู้เรียน</Select.Item>
+							<Select.Item value="stop_offering">หยุดรายการเปิดสอน</Select.Item>
+							<Select.Item value="adjust_weekly_period_target">ปรับคาบต่อสัปดาห์</Select.Item>
+						</Select.Content>
+					</Select.Root>
 				</div>
 
-				{#if changeSet.items.length === 0}
-					<div
-						class="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground"
-					>
-						ยังไม่มีรายการเพิ่ม ปรับคาบ หรือหยุดสอน
-					</div>
-				{:else}
-					<div class="divide-y rounded-xl border">
-						{#each changeSet.items as item (item.id)}
-							<div class="flex items-center justify-between gap-3 p-3">
-								<div class="min-w-0">
-									<p class="font-medium">
-										{item.actionKind === 'add_offering'
-											? 'เพิ่มรายการเปิดสอน'
-											: item.actionKind === 'stop_offering'
-												? 'หยุดรายการเปิดสอน'
-												: 'ปรับจำนวนคาบต่อสัปดาห์'}
-									</p>
-									<p class="truncate text-sm text-muted-foreground">
-										{offerings.find((entry) => entry.offering.id === item.learningOfferingId)
-											?.offering.nameSnapshot ?? item.learningOfferingId}
-										{#if 'weeklyPeriodTarget' in item}
-											· {item.weeklyPeriodTarget} คาบ/สัปดาห์
-										{/if}
-									</p>
-								</div>
-								<div class="flex shrink-0 gap-1">
-									{#if item.actionKind === 'add_offering'}
-										<Button
-											href={`/staff/academic/delivery/${item.learningOfferingId}?timetableVersionId=${changeSet.targetTimetableVersionId}`}
-											size="sm"
-											variant="ghost"
-										>
-											{changeSet.status === 'draft' ? 'จัดกลุ่มและครู' : 'ดูรายละเอียด'}
-											<ExternalLink class="size-3.5" />
-										</Button>
-									{/if}
-									{#if canManage && changeSet.status === 'draft'}
-										<Button
-											size="icon"
-											variant="ghost"
-											disabled={deletingItemId === item.id}
-											onclick={() => removeItem(item.id, item.rowVersion)}
-											aria-label="ลบรายการเปลี่ยนแปลง"
-										>
-											<Trash2 class="size-4" />
-										</Button>
-									{/if}
-								</div>
+				{#if loadingOptions}
+					<div class="h-28 animate-pulse rounded-xl bg-muted"></div>
+				{:else if action === 'add_course' || action === 'add_activity'}
+					{#if managementOptions}
+						<div class="grid gap-4 sm:grid-cols-2">
+							<div class="space-y-2 sm:col-span-2">
+								<Label>{action === 'add_course' ? 'รายวิชา' : 'กิจกรรม'}</Label>
+								<DeliveryOptionCombobox
+									bind:value={catalogVersionId}
+									options={catalogOptions}
+									placeholder={action === 'add_course' ? 'เลือกรายวิชา' : 'เลือกกิจกรรม'}
+									searchPlaceholder="ค้นหารหัสหรือชื่อ..."
+								/>
 							</div>
-						{/each}
-					</div>
-				{/if}
-			</section>
-
-			{#if itemFormOpen && canManage && changeSet.status === 'draft'}
-				<form
-					class="space-y-4 rounded-xl border border-primary/20 bg-primary/[0.025] p-4"
-					onsubmit={saveItem}
-				>
-					<div class="flex items-center justify-between gap-3">
-						<div>
-							<h3 class="font-medium">เพิ่มรายการเปลี่ยนแปลง</h3>
-							<p class="text-xs text-muted-foreground">เลือกเฉพาะสิ่งที่เริ่มมีผลในวันที่กำหนด</p>
-						</div>
-						<Button
-							type="button"
-							size="icon"
-							variant="ghost"
-							onclick={() => (itemFormOpen = false)}
-							aria-label="ปิดแบบฟอร์ม"
-						>
-							<X class="size-4" />
-						</Button>
-					</div>
-					<div class="space-y-2">
-						<Label>ประเภทการเปลี่ยนแปลง</Label>
-						<Select.Root
-							type="single"
-							value={action}
-							onValueChange={(value) => resetItemForm(value as ChangeAction)}
-						>
-							<Select.Trigger class="w-full">
-								{action === 'add_course'
-									? 'เพิ่มรายวิชา'
-									: action === 'add_activity'
-										? 'เพิ่มกิจกรรมพัฒนาผู้เรียน'
-										: action === 'stop_offering'
-											? 'หยุดรายการเปิดสอน'
-											: 'ปรับคาบต่อสัปดาห์'}
-							</Select.Trigger>
-							<Select.Content>
-								<Select.Item value="add_course">เพิ่มรายวิชา</Select.Item>
-								<Select.Item value="add_activity">เพิ่มกิจกรรมพัฒนาผู้เรียน</Select.Item>
-								<Select.Item value="stop_offering">หยุดรายการเปิดสอน</Select.Item>
-								<Select.Item value="adjust_weekly_period_target">ปรับคาบต่อสัปดาห์</Select.Item>
-							</Select.Content>
-						</Select.Root>
-					</div>
-
-					{#if loadingOptions}
-						<div class="h-28 animate-pulse rounded-xl bg-muted"></div>
-					{:else if action === 'add_course' || action === 'add_activity'}
-						{#if managementOptions}
-							<div class="grid gap-4 sm:grid-cols-2">
-								<div class="space-y-2 sm:col-span-2">
-									<Label>{action === 'add_course' ? 'รายวิชา' : 'กิจกรรม'}</Label>
-									<DeliveryOptionCombobox
-										bind:value={catalogVersionId}
-										options={catalogOptions}
-										placeholder={action === 'add_course' ? 'เลือกรายวิชา' : 'เลือกกิจกรรม'}
-										searchPlaceholder="ค้นหารหัสหรือชื่อ..."
-									/>
-								</div>
-								<div class="space-y-2">
-									<Label>ระดับชั้น</Label>
-									<DeliveryOptionCombobox
-										bind:value={gradeLevelId}
-										options={managementOptions.gradeLevels.map((grade) => ({
-											id: grade.id,
-											label: grade.name,
-											description: grade.short_name ?? grade.code
-										}))}
-										placeholder="เลือกระดับชั้น"
-									/>
-								</div>
-								<div class="space-y-2">
-									<Label>แผนการเรียน</Label>
-									<DeliveryOptionCombobox
-										bind:value={studyProgramId}
-										options={managementOptions.studyPrograms.map((program) => ({
-											id: program.id,
-											label: program.name,
-											description: `${program.curriculumName} · ${program.code}`
-										}))}
-										placeholder="เลือกแผนการเรียน"
-									/>
-								</div>
-								<div class="space-y-2 sm:col-span-2">
-									<Label>หน่วยงานเจ้าของรายการ</Label>
-									<DeliveryOptionCombobox
-										bind:value={owningOrganizationUnitId}
-										options={managementOptions.organizationUnits.map((unit) => ({
-											id: unit.id,
-											label: unit.name,
-											description: unit.code
-										}))}
-										placeholder="เลือกหน่วยงานเจ้าของ"
-									/>
-								</div>
+							<div class="space-y-2">
+								<Label>ระดับชั้น</Label>
+								<DeliveryOptionCombobox
+									bind:value={gradeLevelId}
+									options={managementOptions.gradeLevels.map((grade) => ({
+										id: grade.id,
+										label: grade.name,
+										description: grade.short_name ?? grade.code
+									}))}
+									placeholder="เลือกระดับชั้น"
+								/>
 							</div>
-							{#if action === 'add_course' && selectedCatalogVersion}
-								<div
-									class="grid gap-2 rounded-xl border bg-background p-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center"
-								>
-									<div>
-										<p class="text-xs text-muted-foreground">ตามหลักสูตร</p>
-										<p class="font-semibold">
-											{selectedCatalogVersion.standardPeriodsPerWeek ?? '—'} คาบ/สัปดาห์
-										</p>
-									</div>
-									<ArrowRight class="hidden size-4 text-primary sm:block" />
-									<div>
-										<p class="text-xs text-muted-foreground">จัดจริงภาคเรียนนี้</p>
-										<p class="font-semibold text-primary">
-											เริ่มต้น {selectedCatalogVersion.standardPeriodsPerWeek ?? '—'} คาบ/สัปดาห์
-										</p>
-										<p class="text-[11px] text-muted-foreground">
-											หากต้องการต่างจากมาตรฐาน ให้เพิ่มรายการ “ปรับคาบ” ต่อจากนี้
-										</p>
-									</div>
-								</div>
-							{:else if action === 'add_activity'}
-								<div class="space-y-2">
-									<Label for="activity-weekly-period-target">คาบที่จัดจริงภาคเรียนนี้</Label>
-									<Input
-										id="activity-weekly-period-target"
-										type="number"
-										min="1"
-										bind:value={weeklyPeriodTarget}
-									/>
-									<p class="text-xs text-muted-foreground">
-										กิจกรรมไม่มีค่าคาบมาตรฐาน จึงต้องกำหนดเป้าหมายก่อนจัดตาราง
-									</p>
-								</div>
-							{/if}
-						{/if}
-					{:else}
-						<div class="space-y-2">
-							<Label>รายการเปิดสอน</Label>
-							<DeliveryOptionCombobox
-								bind:value={learningOfferingId}
-								options={offeringOptions}
-								placeholder="เลือกรายวิชาหรือกิจกรรม"
-								searchPlaceholder="ค้นหารหัสหรือชื่อ..."
-							/>
+							<div class="space-y-2">
+								<Label>แผนการเรียน</Label>
+								<DeliveryOptionCombobox
+									bind:value={studyProgramId}
+									options={managementOptions.studyPrograms.map((program) => ({
+										id: program.id,
+										label: program.name,
+										description: `${program.curriculumName} · ${program.code}`
+									}))}
+									placeholder="เลือกแผนการเรียน"
+								/>
+							</div>
+							<div class="space-y-2 sm:col-span-2">
+								<Label>หน่วยงานเจ้าของรายการ</Label>
+								<DeliveryOptionCombobox
+									bind:value={owningOrganizationUnitId}
+									options={managementOptions.organizationUnits.map((unit) => ({
+										id: unit.id,
+										label: unit.name,
+										description: unit.code
+									}))}
+									placeholder="เลือกหน่วยงานเจ้าของ"
+								/>
+							</div>
 						</div>
-						{#if action === 'adjust_weekly_period_target'}
-							<div class="grid gap-2 rounded-xl border bg-background p-3 sm:grid-cols-2">
+						{#if action === 'add_course' && selectedCatalogVersion}
+							<div
+								class="grid gap-2 rounded-xl border bg-background p-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center"
+							>
 								<div>
 									<p class="text-xs text-muted-foreground">ตามหลักสูตร</p>
 									<p class="font-semibold">
-										{selectedOffering?.snapshot.kind === 'course'
-											? selectedOffering.snapshot.standardPeriodsPerWeek
-											: 'ไม่มีค่ามาตรฐาน'}
-										{selectedOffering?.snapshot.kind === 'course' ? 'คาบ/สัปดาห์' : ''}
+										{selectedCatalogVersion.standardPeriodsPerWeek ?? '—'} คาบ/สัปดาห์
 									</p>
 								</div>
-								<div class="space-y-1">
-									<Label for="adjust-weekly-period-target">จัดจริงภาคเรียนนี้</Label>
-									<Input
-										id="adjust-weekly-period-target"
-										type="number"
-										min="1"
-										bind:value={weeklyPeriodTarget}
-									/>
+								<ArrowRight class="hidden size-4 text-primary sm:block" />
+								<div>
+									<p class="text-xs text-muted-foreground">จัดจริงภาคเรียนนี้</p>
+									<p class="font-semibold text-primary">
+										เริ่มต้น {selectedCatalogVersion.standardPeriodsPerWeek ?? '—'} คาบ/สัปดาห์
+									</p>
+									<p class="text-[11px] text-muted-foreground">
+										หากต้องการต่างจากมาตรฐาน ให้เพิ่มรายการ “ปรับคาบ” ต่อจากนี้
+									</p>
 								</div>
 							</div>
-						{:else if selectedOffering}
-							<p
-								class="rounded-lg border border-rose-500/25 bg-rose-500/5 px-3 py-2 text-sm text-rose-800"
-							>
-								หยุดสอนตั้งแต่ {formatDate(changeSet.effectiveFrom)} โดยข้อมูลคะแนน ผลการเรียน และประวัติเดิมยังคงอยู่
-							</p>
+						{:else if action === 'add_activity'}
+							<div class="space-y-2">
+								<Label for="activity-weekly-period-target">คาบที่จัดจริงภาคเรียนนี้</Label>
+								<Input
+									id="activity-weekly-period-target"
+									type="number"
+									min="1"
+									bind:value={weeklyPeriodTarget}
+								/>
+								<p class="text-xs text-muted-foreground">
+									กิจกรรมไม่มีค่าคาบมาตรฐาน จึงต้องกำหนดเป้าหมายก่อนจัดตาราง
+								</p>
+							</div>
 						{/if}
 					{/if}
-
-					{#if errorMessage}<p role="alert" class="text-sm text-destructive">{errorMessage}</p>{/if}
-					<div class="flex justify-end gap-2">
-						<Button type="button" variant="outline" onclick={() => (itemFormOpen = false)}
-							>ยกเลิก</Button
-						>
-						<LoadingButton
-							type="submit"
-							loading={savingItem}
-							loadingLabel="กำลังบันทึก"
-							disabled={!itemRequest()}
-						>
-							บันทึกรายการ
-						</LoadingButton>
+				{:else}
+					<div class="space-y-2">
+						<Label>รายการเปิดสอน</Label>
+						<DeliveryOptionCombobox
+							bind:value={learningOfferingId}
+							options={offeringOptions}
+							placeholder="เลือกรายวิชาหรือกิจกรรม"
+							searchPlaceholder="ค้นหารหัสหรือชื่อ..."
+						/>
 					</div>
-				</form>
-			{/if}
+					{#if action === 'adjust_weekly_period_target'}
+						<div class="grid gap-2 rounded-xl border bg-background p-3 sm:grid-cols-2">
+							<div>
+								<p class="text-xs text-muted-foreground">ตามหลักสูตร</p>
+								<p class="font-semibold">
+									{selectedOffering?.snapshot.kind === 'course'
+										? selectedOffering.snapshot.standardPeriodsPerWeek
+										: 'ไม่มีค่ามาตรฐาน'}
+									{selectedOffering?.snapshot.kind === 'course' ? 'คาบ/สัปดาห์' : ''}
+								</p>
+							</div>
+							<div class="space-y-1">
+								<Label for="adjust-weekly-period-target">จัดจริงภาคเรียนนี้</Label>
+								<Input
+									id="adjust-weekly-period-target"
+									type="number"
+									min="1"
+									bind:value={weeklyPeriodTarget}
+								/>
+							</div>
+						</div>
+					{:else if selectedOffering}
+						<p
+							class="rounded-lg border border-rose-500/25 bg-rose-500/5 px-3 py-2 text-sm text-rose-800"
+						>
+							หยุดสอนตั้งแต่ {formatDate(changeSet.effectiveFrom)} โดยข้อมูลคะแนน ผลการเรียน และประวัติเดิมยังคงอยู่
+						</p>
+					{/if}
+				{/if}
+
+				{#if errorMessage}<p role="alert" class="text-sm text-destructive">{errorMessage}</p>{/if}
+				<div class="flex justify-end gap-2">
+					<Button type="button" variant="outline" onclick={() => (itemFormOpen = false)}
+						>ยกเลิก</Button
+					>
+					<LoadingButton
+						type="submit"
+						loading={savingItem}
+						loadingLabel="กำลังบันทึก"
+						disabled={!itemRequest()}
+					>
+						บันทึกรายการ
+					</LoadingButton>
+				</div>
+			</form>
+		{/if}
 
 		{#if errorMessage && !itemFormOpen}
 			<p
