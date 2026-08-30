@@ -70,37 +70,45 @@ test('change panel separates readiness, impacts, scheduling, and warning acknowl
 	const panel = await readProjectFile(
 		'src/lib/components/learning-delivery/AcademicChangeSetPanel.svelte'
 	);
+	const readiness = await readProjectFile(
+		'src/lib/components/learning-delivery/AcademicChangeReadiness.svelte'
+	);
 
 	assert.match(panel, /DeliveryOptionCombobox/);
 	assert.match(panel, /standardPeriodsPerWeek/);
 	assert.match(panel, /ตามหลักสูตร/);
 	assert.match(panel, /จัดจริงภาคเรียนนี้/);
 	assert.match(panel, /weeklyPeriodTarget/);
-	assert.match(panel, /blockingFindings/);
-	assert.match(panel, /warningFindings/);
-	assert.match(panel, /acknowledgedWarnings/);
-	assert.match(panel, /onCheckedChange/);
-	assert.doesNotMatch(panel, /<Checkbox[\s\S]{0,300}\sonchange=/);
-	assert.match(panel, /new Set\(warningFindings\.map\(\(finding\) => finding\.code\)\)/);
-	assert.match(panel, /weekly_period_excess/);
-	assert.match(
+	assert.match(panel, /AcademicChangeReadiness/);
+	assert.doesNotMatch(
 		panel,
+		/previewAcademicTermChangeSet|publishAcademicTermChangeSet|cancelAcademicTermChangeSet/
+	);
+	assert.match(readiness, /blockingFindings/);
+	assert.match(readiness, /warningFindings/);
+	assert.match(readiness, /acknowledgedWarnings/);
+	assert.match(readiness, /onCheckedChange/);
+	assert.doesNotMatch(readiness, /<Checkbox[\s\S]{0,300}\sonchange=/);
+	assert.match(readiness, /new Set\(warningFindings\.map\(\(finding\) => finding\.code\)\)/);
+	assert.match(readiness, /weekly_period_excess/);
+	assert.match(
+		readiness,
 		/getAcademicTermChangeSet\(changeSet\.id\)[\s\S]*previewAcademicTermChangeSet\(changeSet\.id\)/
 	);
-	assert.match(panel, /{#if changeSet\.status === 'draft'}[\s\S]*ตรวจผลกระทบและความพร้อม/);
-	assert.match(panel, /ชุดนี้เผยแพร่แล้ว/);
-	assert.match(panel, /แบบร่างนี้ยกเลิกแล้ว/);
+	assert.match(readiness, /{#if changeSet\.status === 'draft'}[\s\S]*ตรวจผลกระทบและความพร้อม/);
+	assert.match(readiness, /ชุดนี้เผยแพร่แล้ว/);
+	assert.match(readiness, /แบบร่างนี้ยกเลิกแล้ว/);
 	assert.match(
-		panel,
+		readiness,
 		/recoverFromConflict[\s\S]*preview = null;[\s\S]*acknowledgedWarnings = \[\]/
 	);
 	assert.match(
-		panel,
+		readiness,
 		/ตาราง|กลุ่มเรียน|รายชื่อนักเรียน|ครูผู้สอน|โครงสร้างคะแนน|ผลการเรียน|ตารางสอบ|นิเทศ/
 	);
-	assert.match(panel, /ข้อมูลเดิมยังคงอยู่/);
-	assert.match(panel, /\/staff\/academic\/timetable\?timetableVersionId=/);
-	assert.match(panel, /blockingFindings\.length > 0|warningsAcknowledged/);
+	assert.match(readiness, /ข้อมูลเดิมยังคงอยู่/);
+	assert.match(readiness, /\/staff\/academic\/timetable\?timetableVersionId=/);
+	assert.match(readiness, /blockingFindings\.length > 0|warningsAcknowledged/);
 });
 
 test('post-publication roster uses dated interval history with inclusive end semantics', async () => {
