@@ -894,6 +894,39 @@ pub struct LearningGroupStudent {
 
 #[derive(Clone, Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
+pub struct DatedRosterMembership {
+    pub id: Uuid,
+    pub learning_group_id: Uuid,
+    pub student_academic_year_id: Uuid,
+    pub student_id: Uuid,
+    pub student_code: Option<String>,
+    pub display_name: String,
+    pub membership_status: MembershipStatus,
+    pub roster_source: String,
+    pub joined_at: NaiveDate,
+    pub left_at: Option<NaiveDate>,
+    pub published_at: Option<DateTime<Utc>>,
+    pub row_version: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AddDatedRosterMembershipRequest {
+    pub group_row_version: i64,
+    pub student_academic_year_id: Uuid,
+    pub joined_at: NaiveDate,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RemoveDatedRosterMembershipRequest {
+    pub group_row_version: i64,
+    pub membership_row_version: i64,
+    pub left_at: NaiveDate,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct ActivityResult {
     pub learning_result_id: Uuid,
     pub learning_group_student_id: Uuid,

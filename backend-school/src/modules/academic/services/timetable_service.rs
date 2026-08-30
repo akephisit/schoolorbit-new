@@ -269,6 +269,7 @@ pub async fn list_student_entries(
     timetable_version_id: Uuid,
     academic_term_id: Uuid,
     student_id: Uuid,
+    on_date: chrono::NaiveDate,
 ) -> Result<Vec<TimetableEntry>, AppError> {
     require_timetable_version(pool, timetable_version_id, Some(academic_term_id), false).await?;
     let rows: Vec<EntryRow> = sqlx::query_as(&format!(
@@ -286,7 +287,9 @@ pub async fn list_student_entries(
                        ON roster_group.id = membership.learning_group_id
                      WHERE membership.learning_group_id = entry.learning_group_id
                        AND student_year.student_id = $3
-                       AND membership.membership_status = 'active'
+                       AND membership.published_at IS NOT NULL
+                       AND membership.joined_at <= $4
+                       AND (membership.left_at IS NULL OR membership.left_at >= $4)
                        AND roster_group.roster_status IN ('published', 'closed')
                  )
                  OR (
@@ -309,6 +312,7 @@ pub async fn list_student_entries(
     .bind(timetable_version_id)
     .bind(academic_term_id)
     .bind(student_id)
+    .bind(on_date)
     .fetch_all(pool)
     .await?;
     hydrate_rows(pool, rows).await

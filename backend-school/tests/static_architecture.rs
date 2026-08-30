@@ -336,6 +336,35 @@ fn timetable_service_uses_only_canonical_delivery_identity() {
 }
 
 #[test]
+fn student_timetable_uses_requested_date_for_roster_membership() {
+    let service = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/services/timetable_service.rs"),
+    ));
+    let student_entries = service
+        .split("pub async fn list_student_entries")
+        .nth(1)
+        .and_then(|source| source.split("pub async fn ").next())
+        .expect("timetable service must define list_student_entries");
+
+    for required in [
+        "on_date: chrono::NaiveDate",
+        "membership.joined_at <= $4",
+        "(membership.left_at IS NULL OR membership.left_at >= $4)",
+        ".bind(on_date)",
+    ] {
+        assert!(
+            student_entries.contains(required),
+            "student timetable membership query must contain `{required}`"
+        );
+    }
+
+    assert!(
+        !student_entries.contains("membership.membership_status = 'active'"),
+        "student timetable history must be selected by the requested date, not current membership status"
+    );
+}
+
+#[test]
 fn calendar_service_uses_private_child_modules() {
     let facade = read_source(manifest_dir().join("src/modules/calendar/services.rs"));
     let service_dir = manifest_dir().join("src/modules/calendar/services");

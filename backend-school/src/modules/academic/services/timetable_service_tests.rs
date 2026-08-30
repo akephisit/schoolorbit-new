@@ -23,7 +23,7 @@ async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 52).await.unwrap();
+    apply_migrations_through(&pool, 53).await.unwrap();
     sqlx::query(
         r#"INSERT INTO bell_schedule_periods (
                id, bell_schedule_id, name,
@@ -246,6 +246,79 @@ async fn course_and_activity_groups_share_homeroom_conflict_detection() {
     assert!(
         matches!(result, Err(AppError::Conflict(message)) if message.contains("ห้องประจำชั้น") || message.contains("ครู"))
     );
+}
+
+#[tokio::test]
+async fn student_timetable_uses_the_membership_interval_for_the_requested_date() {
+    let pool = migrated_pool("timetable_student_membership_interval").await;
+    let (version_id, academic_term_id, learning_group_id, student_id, membership_id, joined_at): (
+        Uuid,
+        Uuid,
+        Uuid,
+        Uuid,
+        Uuid,
+        NaiveDate,
+    ) = sqlx::query_as(
+        r#"SELECT version.id, entry.academic_term_id, entry.learning_group_id,
+                  membership.student_id, membership.id, membership.joined_at
+           FROM academic_timetable_versions version
+           JOIN academic_timetable_entries entry
+             ON entry.timetable_version_id = version.id
+            AND entry.learning_group_id IS NOT NULL
+            AND entry.is_active
+           JOIN learning_group_students membership
+             ON membership.learning_group_id = entry.learning_group_id
+            AND membership.membership_status = 'active'
+           JOIN learning_groups learning_group ON learning_group.id = entry.learning_group_id
+           WHERE version.status = 'published'
+             AND learning_group.roster_status IN ('published', 'closed')
+           ORDER BY version.effective_from, entry.id, membership.id
+           LIMIT 1"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("fixture must contain a scheduled group with a published membership");
+    let left_at = joined_at
+        .checked_add_signed(chrono::Duration::days(1))
+        .unwrap();
+    sqlx::query(
+        "UPDATE learning_group_students \
+         SET membership_status = 'ended', left_at = $1, row_version = row_version + 1 \
+         WHERE id = $2",
+    )
+    .bind(left_at)
+    .bind(membership_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let on_inclusive_end = timetable_service::list_student_entries(
+        &pool,
+        version_id,
+        academic_term_id,
+        student_id,
+        left_at,
+    )
+    .await
+    .unwrap();
+    assert!(on_inclusive_end
+        .iter()
+        .any(|entry| entry.learning_group_id == Some(learning_group_id)));
+
+    let after_end = timetable_service::list_student_entries(
+        &pool,
+        version_id,
+        academic_term_id,
+        student_id,
+        left_at
+            .checked_add_signed(chrono::Duration::days(1))
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+    assert!(!after_end
+        .iter()
+        .any(|entry| entry.learning_group_id == Some(learning_group_id)));
 }
 
 #[tokio::test]

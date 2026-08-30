@@ -15,21 +15,22 @@ use uuid::Uuid;
 use super::{
     models::{
         AcademicTermChangeSetStatus, ActivityAttendanceRequirement, ActivityPassCriteria,
-        ActivityRegistrationType, ActivitySchedulingMode, ApplyCurriculumOfferingsRequest,
-        ApplyRosterRequest, CancelAcademicTermChangeSetRequest, CourseGradingPolicy,
-        CreateAcademicTermChangeSetRequest, CreateActivityOfferingRequest,
+        ActivityRegistrationType, ActivitySchedulingMode, AddDatedRosterMembershipRequest,
+        ApplyCurriculumOfferingsRequest, ApplyRosterRequest, CancelAcademicTermChangeSetRequest,
+        CourseGradingPolicy, CreateAcademicTermChangeSetRequest, CreateActivityOfferingRequest,
         CreateCourseOfferingRequest, CreateLearningGroupRequest, CreateLearningOfferingRequest,
         CurriculumOfferingPreview, CurriculumPreparationChoice,
         DeleteAcademicTermChangeItemRequest, LearningOfferingKind, LearningOfferingQuery,
         LearningOfferingSnapshot, LearningOfferingStatus, LearningTeacherRole, OfferingTargetInput,
         OfferingTargetKind, PreparationAction, PreparationGroupingState,
         PreviewCurriculumOfferingsRequest, PublishLearningOfferingRequest, PublishRosterRequest,
-        ReplaceLearningGroupHomeroomsRequest, ReplaceLearningGroupTeachersRequest,
-        RosterOverrideAction, RosterOverrideInput, StudentActivityRegistrationQuery,
-        TeacherAssignmentInput, UpdateAcademicTermChangeSetRequest, UpdateLearningOfferingRequest,
+        RemoveDatedRosterMembershipRequest, ReplaceLearningGroupHomeroomsRequest,
+        ReplaceLearningGroupTeachersRequest, RosterOverrideAction, RosterOverrideInput,
+        StudentActivityRegistrationQuery, TeacherAssignmentInput,
+        UpdateAcademicTermChangeSetRequest, UpdateLearningOfferingRequest,
         UpsertAcademicTermChangeItemRequest,
     },
-    services::{activities, change_sets, groups, offerings, workspaces},
+    services::{activities, change_sets, groups, offerings, roster_memberships, workspaces},
 };
 use crate::error::AppError;
 use crate::policies::resource_access_policy::AcademicResourceListFilter;
@@ -1389,6 +1390,196 @@ async fn adjust_and_stop_items_mutate_only_the_target_version_and_delete_restore
     .await
     .unwrap();
     assert_eq!(restored_entry_count, base_entry_count);
+}
+
+#[tokio::test]
+async fn dated_roster_remove_and_readd_preserve_inclusive_membership_history() {
+    let pool = prepare_delivery_runtime_fixture("academic_dated_roster_history").await;
+    let context = operational_change_runtime_context(&pool).await;
+    let (group_id, membership_id, student_year_id, joined_at): (Uuid, Uuid, Uuid, NaiveDate) =
+        sqlx::query_as(
+            r#"SELECT learning_group.id, membership.id,
+                      membership.student_academic_year_id, membership.joined_at
+               FROM learning_groups learning_group
+               JOIN learning_group_students membership
+                 ON membership.learning_group_id = learning_group.id
+                AND membership.membership_status = 'active'
+               WHERE learning_group.academic_term_id = $1
+                 AND learning_group.status = 'published'
+                 AND learning_group.roster_status = 'published'
+               ORDER BY learning_group.id, membership.id
+               LIMIT 1"#,
+        )
+        .bind(context.term_id)
+        .fetch_one(&pool)
+        .await
+        .expect("fixture must contain a published roster membership");
+    let group = groups::get(&pool, group_id).await.unwrap();
+    let membership = roster_memberships::list_memberships(&pool, group_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|value| value.id == membership_id)
+        .unwrap();
+    let left_at = joined_at
+        .checked_add_signed(chrono::Duration::days(5))
+        .unwrap();
+
+    let ended = roster_memberships::remove_membership(
+        &pool,
+        context.teacher_id,
+        group_id,
+        membership_id,
+        RemoveDatedRosterMembershipRequest {
+            group_row_version: group.row_version,
+            membership_row_version: membership.row_version,
+            left_at,
+        },
+    )
+    .await
+    .expect("a published roster membership must accept an inclusive end date");
+    assert_eq!(ended.joined_at, joined_at);
+    assert_eq!(ended.left_at, Some(left_at));
+    assert_eq!(
+        ended.membership_status,
+        super::models::MembershipStatus::Ended
+    );
+
+    let refreshed_group = groups::get(&pool, group_id).await.unwrap();
+    let same_day = roster_memberships::add_membership(
+        &pool,
+        context.teacher_id,
+        group_id,
+        AddDatedRosterMembershipRequest {
+            group_row_version: refreshed_group.row_version,
+            student_academic_year_id: student_year_id,
+            joined_at: left_at,
+        },
+    )
+    .await
+    .expect_err("inclusive end means a same-day re-add overlaps");
+    assert!(matches!(
+        same_day,
+        AppError::Conflict(_) | AppError::ValidationError(_)
+    ));
+
+    let rejoined_at = left_at
+        .checked_add_signed(chrono::Duration::days(1))
+        .unwrap();
+    let rejoined = roster_memberships::add_membership(
+        &pool,
+        context.teacher_id,
+        group_id,
+        AddDatedRosterMembershipRequest {
+            group_row_version: refreshed_group.row_version,
+            student_academic_year_id: student_year_id,
+            joined_at: rejoined_at,
+        },
+    )
+    .await
+    .expect("a strictly later re-add must create a new interval");
+    assert_ne!(rejoined.id, membership_id);
+    assert_eq!(rejoined.joined_at, rejoined_at);
+    assert_eq!(rejoined.left_at, None);
+
+    let history = roster_memberships::list_memberships(&pool, group_id)
+        .await
+        .unwrap();
+    let earlier = history
+        .iter()
+        .find(|value| value.id == membership_id)
+        .unwrap();
+    assert_eq!(earlier.joined_at, joined_at);
+    assert_eq!(earlier.left_at, Some(left_at));
+    assert!(history.iter().any(|value| value.id == rejoined.id));
+
+    let stale = roster_memberships::remove_membership(
+        &pool,
+        context.teacher_id,
+        group_id,
+        rejoined.id,
+        RemoveDatedRosterMembershipRequest {
+            group_row_version: refreshed_group.row_version,
+            membership_row_version: rejoined.row_version,
+            left_at: rejoined_at,
+        },
+    )
+    .await
+    .expect_err("the group revision changes after re-adding a student");
+    assert!(matches!(stale, AppError::Conflict(_)));
+}
+
+#[tokio::test]
+async fn dated_roster_rejects_closed_groups_and_dates_outside_availability() {
+    let pool = prepare_delivery_runtime_fixture("academic_dated_roster_guards").await;
+    let context = operational_change_runtime_context(&pool).await;
+    let (group_id, membership_id): (Uuid, Uuid) = sqlx::query_as(
+        r#"SELECT learning_group.id, membership.id
+           FROM learning_groups learning_group
+           JOIN learning_group_students membership
+             ON membership.learning_group_id = learning_group.id
+            AND membership.membership_status = 'active'
+           WHERE learning_group.academic_term_id = $1
+             AND learning_group.status = 'published'
+             AND learning_group.roster_status = 'published'
+           ORDER BY learning_group.id, membership.id
+           LIMIT 1"#,
+    )
+    .bind(context.term_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let group = groups::get(&pool, group_id).await.unwrap();
+    let membership = roster_memberships::list_memberships(&pool, group_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|value| value.id == membership_id)
+        .unwrap();
+    let before_offering: NaiveDate = sqlx::query_scalar(
+        r#"SELECT offering.starts_on - 1
+           FROM learning_groups learning_group
+           JOIN learning_offerings offering ON offering.id = learning_group.learning_offering_id
+           WHERE learning_group.id = $1"#,
+    )
+    .bind(group_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let invalid_date = roster_memberships::remove_membership(
+        &pool,
+        context.teacher_id,
+        group_id,
+        membership_id,
+        RemoveDatedRosterMembershipRequest {
+            group_row_version: group.row_version,
+            membership_row_version: membership.row_version,
+            left_at: before_offering,
+        },
+    )
+    .await
+    .expect_err("membership dates before offering availability must fail");
+    assert!(matches!(invalid_date, AppError::ValidationError(_)));
+
+    sqlx::query("UPDATE learning_groups SET status = 'closed' WHERE id = $1")
+        .bind(group_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let closed = roster_memberships::remove_membership(
+        &pool,
+        context.teacher_id,
+        group_id,
+        membership_id,
+        RemoveDatedRosterMembershipRequest {
+            group_row_version: group.row_version,
+            membership_row_version: membership.row_version,
+            left_at: membership.joined_at,
+        },
+    )
+    .await
+    .expect_err("closed groups must reject dated roster changes");
+    assert!(matches!(closed, AppError::Conflict(_)));
 }
 
 fn course_request(context: &RuntimeContext) -> CreateLearningOfferingRequest {

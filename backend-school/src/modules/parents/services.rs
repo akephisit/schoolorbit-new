@@ -127,7 +127,8 @@ pub async fn get_child_timetable(
     ensure_parent_student_link(pool, parent_id, student_id).await?;
 
     let version = timetable_version_service::resolve_for_date(pool, academic_term_id, date).await?;
-    timetable_service::list_student_entries(pool, version.id, academic_term_id, student_id).await
+    timetable_service::list_student_entries(pool, version.id, academic_term_id, student_id, date)
+        .await
 }
 
 pub async fn get_child_academic_context_options(

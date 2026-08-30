@@ -83,6 +83,7 @@ pub async fn get_my_timetable(
             version.id,
             query.academic_term_id,
             session.user_id,
+            query.date,
         )
         .await?;
         return Ok(Json(ApiResponse::ok(entries)).into_response());
