@@ -799,7 +799,7 @@
 						? 'กำลังแก้รุ่นแบบร่าง'
 						: 'เปิดรุ่นแบบร่าง'}
 				</Button>
-			{:else}
+			{:else if selectedVersion?.status === 'published'}
 				<AcademicChangeSetDialog
 					{academicTermId}
 					purpose="timetable_revision"

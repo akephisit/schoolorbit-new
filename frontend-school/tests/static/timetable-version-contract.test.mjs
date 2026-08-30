@@ -85,7 +85,10 @@ test('timetable workspace links one change set to the selected version and inval
 
 	assert.equal((page.match(/getAcademicTermChangeSet\(/g) ?? []).length, 1);
 	assert.match(page, /version\.changeSetId/);
-	assert.match(page, /<AcademicChangeSetDialog[\s\S]*purpose="timetable_revision"/);
+	assert.match(
+		page,
+		/{:else if selectedVersion\?\.status === 'published'}[\s\S]*<AcademicChangeSetDialog[\s\S]*purpose="timetable_revision"/
+	);
 	assert.match(page, /<AcademicChangeReadiness/);
 	assert.match(page, /draftRevision\s*\+=\s*1/);
 	assert.match(page, /timetableVersionId:\s*selectedVersion\.id/);
