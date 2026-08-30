@@ -848,7 +848,7 @@ pub async fn replace_group_homerooms(
     tag = "academic",
     params(("id" = Uuid, Path, description = "Learning group ID")),
     responses(
-        (status = 200, description = "Learning group teachers", body = ApiResponse<Vec<TeacherAssignmentInput>>),
+        (status = 200, description = "Learning group teachers", body = ApiResponse<Vec<LearningGroupTeacherAssignment>>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Learning group read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Learning group not found", body = ApiErrorResponse)

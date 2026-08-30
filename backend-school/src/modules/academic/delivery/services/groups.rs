@@ -10,10 +10,10 @@ use crate::policies::resource_access_policy::AcademicResourceListFilter;
 use super::super::models::{
     ActivityRegistrationType, ApplyRosterRequest, CreateLearningGroupRequest,
     CurriculumGroupProposal, LearningGroup, LearningGroupRow, LearningGroupStudent,
-    LearningGroupStudentRow, LearningOfferingKind, LearningOfferingStatus, PublishRosterRequest,
-    ReplaceLearningGroupHomeroomsRequest, ReplaceLearningGroupTeachersRequest,
-    RosterOverrideAction, RosterPreview, RosterPreviewStudent, RosterStatus,
-    TeacherAssignmentInput, UpdateLearningGroupRequest,
+    LearningGroupStudentRow, LearningGroupTeacherAssignment, LearningOfferingKind,
+    LearningOfferingStatus, PublishRosterRequest, ReplaceLearningGroupHomeroomsRequest,
+    ReplaceLearningGroupTeachersRequest, RosterOverrideAction, RosterPreview, RosterPreviewStudent,
+    RosterStatus, TeacherAssignmentInput, UpdateLearningGroupRequest,
 };
 use super::{append_audit, require_writable_term, stable_hash, validate_row_version};
 
@@ -375,6 +375,11 @@ pub async fn replace_teachers(
             ));
         }
     }
+    let offering_starts_on: chrono::NaiveDate =
+        sqlx::query_scalar("SELECT starts_on FROM learning_offerings WHERE id = $1")
+            .bind(group.learning_offering_id)
+            .fetch_one(&mut *transaction)
+            .await?;
     sqlx::query("DELETE FROM learning_group_teachers WHERE learning_group_id = $1")
         .bind(id)
         .execute(&mut *transaction)
@@ -383,8 +388,8 @@ pub async fn replace_teachers(
         sqlx::query(
             r#"INSERT INTO learning_group_teachers (
                    id, learning_group_id, academic_term_id, academic_year_id,
-                   teacher_id, role
-               ) VALUES ($1, $2, $3, $4, $5, $6)"#,
+                   teacher_id, role, starts_on, created_by, updated_by
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)"#,
         )
         .bind(Uuid::new_v4())
         .bind(id)
@@ -392,6 +397,8 @@ pub async fn replace_teachers(
         .bind(group.academic_year_id)
         .bind(teacher.teacher_id)
         .bind(teacher.role)
+        .bind(offering_starts_on)
+        .bind(actor_user_id)
         .execute(&mut *transaction)
         .await?;
     }
@@ -693,9 +700,21 @@ async fn hydrate_many(
 
     let group_ids: Vec<Uuid> = rows.iter().map(|row| row.id).collect();
     let teacher_rows: Vec<GroupTeacherRow> = sqlx::query_as(
-        "SELECT learning_group_id, teacher_id, role FROM learning_group_teachers \
-         WHERE learning_group_id = ANY($1) \
-         ORDER BY learning_group_id, role, teacher_id",
+        r#"SELECT teacher.learning_group_id, teacher.id, teacher.teacher_id,
+                  concat_ws(' ',
+                      nullif(concat(coalesce(user_account.title, ''), user_account.first_name), ''),
+                      nullif(user_account.last_name, '')) AS display_name,
+                  teacher.role, teacher.starts_on, teacher.ends_on, teacher.row_version
+           FROM learning_group_teachers teacher
+           JOIN users user_account ON user_account.id = teacher.teacher_id
+           WHERE teacher.learning_group_id = ANY($1)
+           ORDER BY teacher.learning_group_id,
+                    CASE teacher.role
+                        WHEN 'primary' THEN 1
+                        WHEN 'secondary' THEN 2
+                        ELSE 3
+                    END,
+                    teacher.starts_on, teacher.id"#,
     )
     .bind(&group_ids)
     .fetch_all(pool)
@@ -717,7 +736,7 @@ async fn hydrate_many(
     .fetch_all(pool)
     .await?;
 
-    let mut teachers_by_group: HashMap<Uuid, Vec<TeacherAssignmentInput>> = HashMap::new();
+    let mut teachers_by_group: HashMap<Uuid, Vec<LearningGroupTeacherAssignment>> = HashMap::new();
     for teacher in teacher_rows {
         teachers_by_group
             .entry(teacher.learning_group_id)
@@ -771,15 +790,25 @@ async fn hydrate_many(
 #[derive(sqlx::FromRow)]
 struct GroupTeacherRow {
     learning_group_id: Uuid,
+    id: Uuid,
     teacher_id: Uuid,
+    display_name: String,
     role: super::super::models::LearningTeacherRole,
+    starts_on: chrono::NaiveDate,
+    ends_on: Option<chrono::NaiveDate>,
+    row_version: i64,
 }
 
-impl From<GroupTeacherRow> for TeacherAssignmentInput {
+impl From<GroupTeacherRow> for LearningGroupTeacherAssignment {
     fn from(row: GroupTeacherRow) -> Self {
         Self {
+            id: row.id,
             teacher_id: row.teacher_id,
+            display_name: row.display_name,
             role: row.role,
+            starts_on: row.starts_on,
+            ends_on: row.ends_on,
+            row_version: row.row_version,
         }
     }
 }

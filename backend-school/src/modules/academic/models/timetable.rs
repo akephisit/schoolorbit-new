@@ -90,6 +90,7 @@ pub struct UpdateTimetableEntryRequest {
     pub note: Option<String>,
     pub clear_note: Option<bool>,
     pub title: Option<String>,
+    pub instructor_ids: Option<Vec<Uuid>>,
 }
 
 #[derive(Debug, Clone, Deserialize, IntoParams)]

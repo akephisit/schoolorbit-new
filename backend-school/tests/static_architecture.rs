@@ -336,6 +336,30 @@ fn timetable_service_uses_only_canonical_delivery_identity() {
 }
 
 #[test]
+fn timetable_relationship_indexes_use_exact_entry_instructors() {
+    let service = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/services/timetable_service.rs"),
+    ));
+    let relationship_struct = service
+        .split("struct RelationshipIndexes")
+        .nth(1)
+        .and_then(|source| source.split("pub async fn list_entries").next())
+        .expect("timetable service must define its relationship-index structure");
+    let relationship_loaders = service
+        .split("async fn load_relationship_indexes(")
+        .nth(1)
+        .and_then(|source| source.split("fn relationship_owner_ids").next())
+        .expect("timetable service must define its relationship-index loaders");
+
+    assert!(!relationship_struct.contains("instructors_by_group"));
+    assert!(!relationship_loaders.contains("FROM learning_group_teachers"));
+    assert!(
+        relationship_loaders.contains("FROM timetable_entry_instructors"),
+        "timetable relationship indexes must hydrate exact entry instructors"
+    );
+}
+
+#[test]
 fn student_timetable_uses_requested_date_for_roster_membership() {
     let service = strip_comments(&read_source(
         manifest_dir().join("src/modules/academic/services/timetable_service.rs"),
@@ -6328,7 +6352,19 @@ fn academic_delivery_and_timetable_collection_reads_are_set_based() {
         .unwrap()
         .is_match(&apply_handler));
 
-    for function_name in ["pub async fn create_batch", "pub async fn deactivate_batch"] {
+    for (public_name, implementation_name) in [
+        ("pub async fn create_batch", "async fn create_batch_impl"),
+        (
+            "pub async fn deactivate_batch",
+            "async fn deactivate_batch_impl",
+        ),
+    ] {
+        let public_body = extract_braced_block(&timetable, public_name, false);
+        assert!(
+            public_body.contains(implementation_name.trim_start_matches("async fn ")),
+            "{public_name} must delegate to its guarded implementation"
+        );
+        let function_name = implementation_name;
         let body = extract_braced_block(&timetable, function_name, false);
         assert!(body.contains("get_entries(pool"), "{function_name}");
         assert!(!Regex::new(r"(?s)for\s+.*?get_entry\(pool")

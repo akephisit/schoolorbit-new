@@ -572,8 +572,161 @@ async fn prepare_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 53).await.unwrap();
+    apply_migrations_through(&pool, 54).await.unwrap();
     pool
+}
+
+#[tokio::test]
+async fn group_read_model_returns_effective_teacher_episodes() {
+    let pool = prepare_delivery_runtime_fixture("academic_group_teacher_episode_read").await;
+    let (offering_id, term_id, year_id, starts_on, teacher_id, display_name): (
+        Uuid,
+        Uuid,
+        Uuid,
+        NaiveDate,
+        Uuid,
+        String,
+    ) = sqlx::query_as(
+        r#"SELECT offering.id, offering.academic_term_id, offering.academic_year_id,
+                  offering.starts_on, teacher.teacher_id,
+                  concat_ws(' ',
+                      nullif(concat(coalesce(user_account.title, ''), user_account.first_name), ''),
+                      nullif(user_account.last_name, '')) AS display_name
+           FROM learning_offerings offering
+           JOIN learning_groups learning_group
+             ON learning_group.learning_offering_id = offering.id
+           JOIN learning_group_teachers teacher
+             ON teacher.learning_group_id = learning_group.id
+           JOIN users user_account ON user_account.id = teacher.teacher_id
+           WHERE teacher.role = 'primary'
+           ORDER BY offering.id, teacher.starts_on, teacher.id
+           LIMIT 1"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("fixture must contain a migrated teacher episode");
+
+    let group_id = Uuid::new_v4();
+    let assignment_id = Uuid::new_v4();
+    let second_teacher_id = Uuid::new_v4();
+    let third_teacher_id = Uuid::new_v4();
+    let fourth_teacher_id = Uuid::new_v4();
+    let second_assignment_id = Uuid::parse_str("f1000000-0000-0000-0000-000000000001").unwrap();
+    let third_assignment_id = Uuid::parse_str("f1000000-0000-0000-0000-000000000003").unwrap();
+    let fourth_assignment_id = Uuid::parse_str("f1000000-0000-0000-0000-000000000002").unwrap();
+    let actor_user_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
+    let early_secondary_starts_on = starts_on.succ_opt().unwrap();
+    let late_secondary_starts_on = early_secondary_starts_on.succ_opt().unwrap();
+    sqlx::query(
+        r#"INSERT INTO learning_groups (
+               id, learning_offering_id, academic_term_id, academic_year_id,
+               code, name, status, roster_status
+           ) VALUES ($1, $2, $3, $4, $5, 'กลุ่มทดสอบ episode ครู', 'draft', 'draft')"#,
+    )
+    .bind(group_id)
+    .bind(offering_id)
+    .bind(term_id)
+    .bind(year_id)
+    .bind(format!("EPISODE-{}", &group_id.to_string()[..8]))
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"INSERT INTO users (
+               id, email, username, password_hash, first_name, last_name,
+               user_type, status
+           ) VALUES
+               ($1, $4, $7, 'fixture-not-a-login', 'ครูรองหนึ่ง', 'ทดสอบ', 'staff', 'active'),
+               ($2, $5, $8, 'fixture-not-a-login', 'ครูรองสอง', 'ทดสอบ', 'staff', 'active'),
+               ($3, $6, $9, 'fixture-not-a-login', 'ครูรองสาม', 'ทดสอบ', 'staff', 'active')"#,
+    )
+    .bind(second_teacher_id)
+    .bind(third_teacher_id)
+    .bind(fourth_teacher_id)
+    .bind(format!("{second_teacher_id}@example.invalid"))
+    .bind(format!("{third_teacher_id}@example.invalid"))
+    .bind(format!("{fourth_teacher_id}@example.invalid"))
+    .bind(format!("teacher-{second_teacher_id}"))
+    .bind(format!("teacher-{third_teacher_id}"))
+    .bind(format!("teacher-{fourth_teacher_id}"))
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"INSERT INTO learning_group_teachers (
+               id, learning_group_id, academic_term_id, academic_year_id,
+               teacher_id, role, starts_on, created_by, updated_by
+           ) VALUES
+               ($1, $5, $6, $7, $8, 'primary', $12, $13, $13),
+               ($2, $5, $6, $7, $9, 'secondary', $14, $13, $13),
+               ($3, $5, $6, $7, $10, 'secondary', $15, $13, $13),
+               ($4, $5, $6, $7, $11, 'secondary', $15, $13, $13)"#,
+    )
+    .bind(assignment_id)
+    .bind(second_assignment_id)
+    .bind(third_assignment_id)
+    .bind(fourth_assignment_id)
+    .bind(group_id)
+    .bind(term_id)
+    .bind(year_id)
+    .bind(teacher_id)
+    .bind(second_teacher_id)
+    .bind(third_teacher_id)
+    .bind(fourth_teacher_id)
+    .bind(starts_on)
+    .bind(actor_user_id)
+    .bind(late_secondary_starts_on)
+    .bind(early_secondary_starts_on)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let group = groups::get(&pool, group_id).await.unwrap();
+    let assignment = group
+        .teacher_assignments
+        .iter()
+        .find(|assignment| assignment.id == assignment_id)
+        .expect("group read model must expose the assignment identity");
+    assert_eq!(assignment.teacher_id, teacher_id);
+    assert_eq!(assignment.display_name, display_name);
+    assert_eq!(assignment.role, LearningTeacherRole::Primary);
+    assert_eq!(assignment.starts_on, starts_on);
+    assert_eq!(assignment.ends_on, None);
+    assert_eq!(assignment.row_version, 1);
+    let second_assignment = group
+        .teacher_assignments
+        .iter()
+        .find(|assignment| assignment.id == second_assignment_id)
+        .expect("group read model must expose every teacher episode");
+    assert_eq!(second_assignment.teacher_id, second_teacher_id);
+    assert_eq!(second_assignment.role, LearningTeacherRole::Secondary);
+    assert_eq!(second_assignment.starts_on, late_secondary_starts_on);
+    assert_eq!(second_assignment.ends_on, None);
+    assert_eq!(second_assignment.row_version, 1);
+    assert_eq!(
+        group
+            .teacher_assignments
+            .iter()
+            .map(|assignment| assignment.id)
+            .collect::<Vec<_>>(),
+        vec![
+            assignment_id,
+            fourth_assignment_id,
+            third_assignment_id,
+            second_assignment_id
+        ]
+    );
+    let primary_position = group
+        .teacher_assignments
+        .iter()
+        .position(|assignment| assignment.id == assignment_id)
+        .unwrap();
+    let secondary_position = group
+        .teacher_assignments
+        .iter()
+        .position(|assignment| assignment.id == second_assignment_id)
+        .unwrap();
+    assert!(primary_position < secondary_position);
 }
 
 #[derive(Debug)]
@@ -1743,6 +1896,7 @@ async fn schedule_only_change_set_can_preview_and_publish_after_a_draft_entry_ch
             note: Some("ปรับหมายเหตุในรุ่นใหม่".to_string()),
             clear_note: None,
             title: None,
+            instructor_ids: None,
         },
     )
     .await
@@ -3126,6 +3280,38 @@ async fn offering_group_and_roster_publish_are_revisioned_and_idempotent() {
     .await
     .unwrap();
     assert!(!group.teachers_locked);
+    let assignment = group
+        .teacher_assignments
+        .first()
+        .expect("teacher replacement must return the created episode");
+    let (
+        offering_starts_on,
+        stored_starts_on,
+        stored_ends_on,
+        stored_row_version,
+        created_by,
+        updated_by,
+    ): (NaiveDate, NaiveDate, Option<NaiveDate>, i64, Uuid, Uuid) = sqlx::query_as(
+        r#"SELECT offering.starts_on, teacher.starts_on, teacher.ends_on,
+                  teacher.row_version, teacher.created_by, teacher.updated_by
+           FROM learning_group_teachers teacher
+           JOIN learning_groups learning_group ON learning_group.id = teacher.learning_group_id
+           JOIN learning_offerings offering ON offering.id = learning_group.learning_offering_id
+           WHERE teacher.id = $1"#,
+    )
+    .bind(assignment.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(assignment.teacher_id, context.teacher_id);
+    assert_eq!(assignment.starts_on, offering_starts_on);
+    assert_eq!(assignment.ends_on, None);
+    assert_eq!(assignment.row_version, 1);
+    assert_eq!(stored_starts_on, offering_starts_on);
+    assert_eq!(stored_ends_on, None);
+    assert_eq!(stored_row_version, 1);
+    assert_eq!(created_by, context.teacher_id);
+    assert_eq!(updated_by, context.teacher_id);
 
     let wrong_year_homeroom_id: Uuid = sqlx::query_scalar(
         "SELECT id FROM homerooms WHERE academic_year_id <> $1 ORDER BY id LIMIT 1",

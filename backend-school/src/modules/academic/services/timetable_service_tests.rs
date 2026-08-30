@@ -14,16 +14,25 @@ use crate::modules::academic::models::timetable::{
 use crate::modules::academic::models::timetable_version::CloneTimetableVersionRequest;
 use crate::modules::academic::models::timetable_version::TimetableVersion;
 use crate::policies::resource_access_policy::AcademicResourceListFilter;
-use crate::test_helpers::create_named_test_pool;
+use crate::test_helpers::{create_named_test_pool, create_named_test_pool_with_max_connections};
 
 async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
     let pool = create_named_test_pool(test_name).await;
+    prepare_migrated_pool(pool).await
+}
+
+async fn concurrent_migrated_pool(test_name: &str) -> sqlx::PgPool {
+    let pool = create_named_test_pool_with_max_connections(test_name, 3).await;
+    prepare_migrated_pool(pool).await
+}
+
+async fn prepare_migrated_pool(pool: sqlx::PgPool) -> sqlx::PgPool {
     apply_migrations_through(&pool, 40).await.unwrap();
     seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 53).await.unwrap();
+    apply_migrations_through(&pool, 54).await.unwrap();
     sqlx::query(
         r#"INSERT INTO bell_schedule_periods (
                id, bell_schedule_id, name,
@@ -68,6 +77,754 @@ async fn clone_editable_version(pool: &sqlx::PgPool) -> TimetableVersion {
     )
     .await
     .unwrap()
+}
+
+struct ExactInstructorFixture {
+    draft: TimetableVersion,
+    actor_id: Uuid,
+    term_id: Uuid,
+    group_id: Uuid,
+    period_id: Uuid,
+    teacher_a: Uuid,
+    teacher_b: Uuid,
+}
+
+async fn exact_instructor_fixture(pool: &sqlx::PgPool) -> ExactInstructorFixture {
+    let draft = clone_editable_version(pool).await;
+    let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
+    let (offering_id, term_id, year_id, starts_on, period_id): (Uuid, Uuid, Uuid, NaiveDate, Uuid) =
+        sqlx::query_as(
+            r#"SELECT offering.id, offering.academic_term_id, offering.academic_year_id,
+                  offering.starts_on, period.id
+           FROM learning_offerings offering
+           JOIN academic_terms term ON term.id = offering.academic_term_id
+           JOIN bell_schedule_periods period
+             ON period.bell_schedule_id = term.bell_schedule_id
+           WHERE offering.academic_term_id = $1
+             AND offering.kind = 'course'
+             AND period.is_active
+           ORDER BY offering.id, period.order_index, period.id
+           LIMIT 1"#,
+        )
+        .bind(draft.academic_term_id)
+        .fetch_one(pool)
+        .await
+        .expect("fixture must contain a course offering and an active bell period");
+    let group_id = Uuid::new_v4();
+    let teacher_a = Uuid::new_v4();
+    let teacher_b = Uuid::new_v4();
+    sqlx::query(
+        r#"INSERT INTO users (
+               id, email, username, password_hash, first_name, last_name,
+               user_type, status
+           ) VALUES
+               ($1, $3, $4, 'fixture-not-a-login', 'ครูเอ', 'ทดสอบ', 'staff', 'active'),
+               ($2, $5, $6, 'fixture-not-a-login', 'ครูบี', 'ทดสอบ', 'staff', 'active')"#,
+    )
+    .bind(teacher_a)
+    .bind(teacher_b)
+    .bind(format!("{teacher_a}@example.invalid"))
+    .bind(format!("teacher-{teacher_a}"))
+    .bind(format!("{teacher_b}@example.invalid"))
+    .bind(format!("teacher-{teacher_b}"))
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"INSERT INTO learning_groups (
+               id, learning_offering_id, academic_term_id, academic_year_id,
+               code, name, status, roster_status
+           ) VALUES ($1, $2, $3, $4, $5, 'กลุ่มทดสอบครูรายคาบ', 'draft', 'draft')"#,
+    )
+    .bind(group_id)
+    .bind(offering_id)
+    .bind(term_id)
+    .bind(year_id)
+    .bind(format!("EXACT-{}", &group_id.to_string()[..8]))
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"INSERT INTO learning_group_teachers (
+               id, learning_group_id, academic_term_id, academic_year_id,
+               teacher_id, role, starts_on, created_by, updated_by
+           ) VALUES
+               (gen_random_uuid(), $1, $2, $3, $4, 'primary', $6, $7, $7),
+               (gen_random_uuid(), $1, $2, $3, $5, 'secondary', $6, $7, $7)"#,
+    )
+    .bind(group_id)
+    .bind(term_id)
+    .bind(year_id)
+    .bind(teacher_a)
+    .bind(teacher_b)
+    .bind(starts_on)
+    .bind(actor_id)
+    .execute(pool)
+    .await
+    .unwrap();
+
+    ExactInstructorFixture {
+        draft,
+        actor_id,
+        term_id,
+        group_id,
+        period_id,
+        teacher_a,
+        teacher_b,
+    }
+}
+
+fn instructor_ids(
+    entry: &crate::modules::academic::models::timetable::TimetableEntry,
+) -> Vec<Uuid> {
+    let mut ids = entry
+        .instructors
+        .iter()
+        .map(|instructor| instructor.user_id)
+        .collect::<Vec<_>>();
+    ids.sort_unstable();
+    ids
+}
+
+fn instructor_roles_json(
+    entry: &crate::modules::academic::models::timetable::TimetableEntry,
+) -> serde_json::Value {
+    let mut instructors = entry
+        .instructors
+        .iter()
+        .map(|instructor| {
+            (
+                instructor.user_id,
+                serde_json::json!({
+                    "instructorId": instructor.user_id,
+                    "role": instructor.role
+                }),
+            )
+        })
+        .collect::<Vec<_>>();
+    instructors.sort_by_key(|(instructor_id, _)| *instructor_id);
+    serde_json::Value::Array(
+        instructors
+            .into_iter()
+            .map(|(_, instructor)| instructor)
+            .collect(),
+    )
+}
+
+#[tokio::test]
+async fn timetable_entries_split_and_coteach_with_exact_instructors() {
+    let pool = migrated_pool("timetable_exact_instructor_split_coteach").await;
+    let fixture = exact_instructor_fixture(&pool).await;
+    let mut created = Vec::new();
+    for (day, selected) in [
+        ("MON", vec![fixture.teacher_a]),
+        ("WED", vec![fixture.teacher_b]),
+        ("FRI", vec![fixture.teacher_a, fixture.teacher_b]),
+    ] {
+        created.push(
+            timetable_service::create_entry(
+                &pool,
+                fixture.actor_id,
+                CreateTimetableEntryRequest {
+                    timetable_version_id: fixture.draft.id,
+                    academic_term_id: fixture.term_id,
+                    learning_group_id: Some(fixture.group_id),
+                    homeroom_id: None,
+                    day_of_week: day.to_string(),
+                    bell_schedule_period_id: fixture.period_id,
+                    room_id: None,
+                    note: None,
+                    entry_type: "COURSE".to_string(),
+                    title: None,
+                    instructor_ids: selected,
+                },
+            )
+            .await
+            .unwrap(),
+        );
+    }
+
+    assert_eq!(instructor_ids(&created[0]), vec![fixture.teacher_a]);
+    assert_eq!(instructor_ids(&created[1]), vec![fixture.teacher_b]);
+    let mut expected_coteachers = vec![fixture.teacher_a, fixture.teacher_b];
+    expected_coteachers.sort_unstable();
+    assert_eq!(instructor_ids(&created[2]), expected_coteachers);
+
+    let teacher_a_entries = timetable_service::list_entries(
+        &pool,
+        &TimetableQuery {
+            timetable_version_id: fixture.draft.id,
+            academic_term_id: fixture.term_id,
+            learning_group_id: Some(fixture.group_id),
+            homeroom_id: None,
+            instructor_id: Some(fixture.teacher_a),
+            room_id: None,
+            day_of_week: None,
+            entry_type: None,
+        },
+        &school_access(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        teacher_a_entries
+            .iter()
+            .map(|entry| entry.day_of_week.as_str())
+            .collect::<Vec<_>>(),
+        vec!["FRI", "MON"]
+    );
+    let teacher_b_entries = timetable_service::list_entries(
+        &pool,
+        &TimetableQuery {
+            timetable_version_id: fixture.draft.id,
+            academic_term_id: fixture.term_id,
+            learning_group_id: Some(fixture.group_id),
+            homeroom_id: None,
+            instructor_id: Some(fixture.teacher_b),
+            room_id: None,
+            day_of_week: None,
+            entry_type: None,
+        },
+        &school_access(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        teacher_b_entries
+            .iter()
+            .map(|entry| entry.day_of_week.as_str())
+            .collect::<Vec<_>>(),
+        vec!["FRI", "WED"]
+    );
+
+    let candidate_for_unscheduled_group_teacher = CreateTimetableEntryRequest {
+        timetable_version_id: fixture.draft.id,
+        academic_term_id: fixture.term_id,
+        learning_group_id: None,
+        homeroom_id: None,
+        day_of_week: "WED".to_string(),
+        bell_schedule_period_id: fixture.period_id,
+        room_id: None,
+        note: None,
+        entry_type: "ACADEMIC".to_string(),
+        title: Some("งานครูเอต่างหาก".to_string()),
+        instructor_ids: vec![fixture.teacher_a],
+    };
+    assert!(
+        timetable_service::validate_candidate(&pool, &candidate_for_unscheduled_group_teacher)
+            .await
+            .unwrap()
+            .is_valid,
+        "a teacher assigned to the group but not to its Wednesday entry remains available"
+    );
+    let teacher_b_conflict = timetable_service::validate_candidate(
+        &pool,
+        &CreateTimetableEntryRequest {
+            instructor_ids: vec![fixture.teacher_b],
+            title: Some("งานครูบีชนคาบ".to_string()),
+            ..candidate_for_unscheduled_group_teacher.clone()
+        },
+    )
+    .await
+    .unwrap();
+    assert!(!teacher_b_conflict.is_valid);
+    assert!(teacher_b_conflict
+        .conflicts
+        .iter()
+        .any(|conflict| conflict.conflict_type == "INSTRUCTOR_CONFLICT"));
+
+    let occupancy = timetable_service::occupancy(&pool, fixture.draft.id, fixture.term_id)
+        .await
+        .unwrap();
+    for entry in &created {
+        let cell = occupancy
+            .iter()
+            .find(|cell| cell.entry_id == entry.id)
+            .unwrap();
+        assert_eq!(cell.instructor_ids, instructor_ids(entry));
+    }
+}
+
+#[tokio::test]
+async fn timetable_create_maps_a_concurrent_database_guard_to_conflict() {
+    let pool = concurrent_migrated_pool("timetable_concurrent_guard_mapping").await;
+    let fixture = exact_instructor_fixture(&pool).await;
+    let trigger_lock_key = format!("{}:{}:{}", fixture.draft.id, "MON", fixture.period_id);
+    let mut guard_transaction = pool.begin().await.unwrap();
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+        .bind(&trigger_lock_key)
+        .execute(&mut *guard_transaction)
+        .await
+        .unwrap();
+
+    let service_pool = pool.clone();
+    let timetable_version_id = fixture.draft.id;
+    let academic_term_id = fixture.term_id;
+    let learning_group_id = fixture.group_id;
+    let bell_schedule_period_id = fixture.period_id;
+    let actor_user_id = fixture.actor_id;
+    let create_task = tokio::spawn(async move {
+        timetable_service::create_entry(
+            &service_pool,
+            actor_user_id,
+            CreateTimetableEntryRequest {
+                timetable_version_id,
+                academic_term_id,
+                learning_group_id: Some(learning_group_id),
+                homeroom_id: None,
+                day_of_week: "MON".to_string(),
+                bell_schedule_period_id,
+                room_id: None,
+                note: None,
+                entry_type: "COURSE".to_string(),
+                title: None,
+                instructor_ids: vec![fixture.teacher_a],
+            },
+        )
+        .await
+    });
+
+    let mut service_is_waiting_on_guard = false;
+    for _ in 0..100 {
+        service_is_waiting_on_guard = sqlx::query_scalar(
+            r#"SELECT EXISTS (
+                   SELECT 1
+                   FROM pg_stat_activity
+                   WHERE pid <> pg_backend_pid()
+                     AND wait_event_type = 'Lock'
+                     AND wait_event = 'advisory'
+               )"#,
+        )
+        .fetch_one(&mut *guard_transaction)
+        .await
+        .unwrap();
+        if service_is_waiting_on_guard {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert!(
+        service_is_waiting_on_guard,
+        "service must reach the database guard after its preflight"
+    );
+
+    sqlx::query(
+        r#"INSERT INTO academic_timetable_entries (
+               id, day_of_week, bell_schedule_period_id,
+               room_id, note, is_active, created_by, updated_by, entry_type, title,
+               homeroom_id, academic_term_id, batch_id,
+               academic_year_id, learning_offering_id, learning_group_id,
+               bell_schedule_id, migration_provenance, row_version,
+               timetable_version_id
+           )
+           SELECT gen_random_uuid(), 'MON', $2,
+                  NULL, NULL, true, $3, $3, 'COURSE', 'concurrent guard fixture',
+                  NULL, learning_group.academic_term_id, NULL,
+                  learning_group.academic_year_id, learning_group.learning_offering_id,
+                  learning_group.id, term.bell_schedule_id, '{}'::jsonb, 1, $4
+           FROM learning_groups learning_group
+           JOIN academic_terms term ON term.id = learning_group.academic_term_id
+           WHERE learning_group.id = $1"#,
+    )
+    .bind(fixture.group_id)
+    .bind(fixture.period_id)
+    .bind(fixture.actor_id)
+    .bind(fixture.draft.id)
+    .execute(&mut *guard_transaction)
+    .await
+    .unwrap();
+    guard_transaction.commit().await.unwrap();
+
+    let result = create_task.await.unwrap();
+    assert!(matches!(result, Err(AppError::Conflict(_))));
+}
+
+#[tokio::test]
+async fn timetable_update_replaces_the_complete_instructor_set_atomically() {
+    let pool = migrated_pool("timetable_exact_instructor_update").await;
+    let fixture = exact_instructor_fixture(&pool).await;
+    let created = timetable_service::create_entry(
+        &pool,
+        fixture.actor_id,
+        CreateTimetableEntryRequest {
+            timetable_version_id: fixture.draft.id,
+            academic_term_id: fixture.term_id,
+            learning_group_id: Some(fixture.group_id),
+            homeroom_id: None,
+            day_of_week: "MON".to_string(),
+            bell_schedule_period_id: fixture.period_id,
+            room_id: None,
+            note: None,
+            entry_type: "COURSE".to_string(),
+            title: None,
+            instructor_ids: vec![fixture.teacher_a],
+        },
+    )
+    .await
+    .unwrap();
+    let created_payload: serde_json::Value = sqlx::query_scalar(
+        r#"SELECT payload
+           FROM academic_audit_events
+           WHERE event_code = 'academic_timetable_entry.created'
+             AND entity_id = $1
+           ORDER BY created_at DESC, id DESC
+           LIMIT 1"#,
+    )
+    .bind(created.id)
+    .fetch_one(&pool)
+    .await
+    .expect("entry creation must append one atomic audit event");
+    assert_eq!(created_payload["actorUserId"], fixture.actor_id.to_string());
+    assert_eq!(
+        created_payload["academicTermId"],
+        fixture.term_id.to_string()
+    );
+    assert_eq!(created_payload["oldRowVersion"], 0);
+    assert_eq!(created_payload["newRowVersion"], created.row_version);
+    assert_eq!(created_payload["before"]["isActive"], false);
+    assert_eq!(created_payload["after"]["isActive"], true);
+    assert_eq!(
+        created_payload["after"]["instructors"],
+        serde_json::json!([{
+            "instructorId": fixture.teacher_a,
+            "role": "primary"
+        }])
+    );
+    let updated = timetable_service::update_entry(
+        &pool,
+        created.id,
+        fixture.actor_id,
+        UpdateTimetableEntryRequest {
+            timetable_version_id: fixture.draft.id,
+            row_version: created.row_version,
+            day_of_week: None,
+            bell_schedule_period_id: None,
+            room_id: None,
+            clear_room: None,
+            note: None,
+            clear_note: None,
+            title: None,
+            instructor_ids: Some(vec![fixture.teacher_a, fixture.teacher_b]),
+        },
+    )
+    .await
+    .unwrap();
+
+    let mut expected = vec![fixture.teacher_a, fixture.teacher_b];
+    expected.sort_unstable();
+    assert_eq!(instructor_ids(&updated), expected);
+    assert_eq!(updated.row_version, created.row_version + 1);
+
+    let cleared = timetable_service::update_entry(
+        &pool,
+        created.id,
+        fixture.actor_id,
+        UpdateTimetableEntryRequest {
+            timetable_version_id: fixture.draft.id,
+            row_version: updated.row_version,
+            day_of_week: None,
+            bell_schedule_period_id: None,
+            room_id: None,
+            clear_room: None,
+            note: None,
+            clear_note: None,
+            title: None,
+            instructor_ids: Some(Vec::new()),
+        },
+    )
+    .await
+    .unwrap();
+    assert!(cleared.instructors.is_empty());
+    assert_eq!(cleared.row_version, updated.row_version + 1);
+}
+
+#[tokio::test]
+async fn timetable_update_moves_slot_and_hands_off_to_an_available_instructor_atomically() {
+    let pool = migrated_pool("timetable_exact_instructor_move_handoff").await;
+    let fixture = exact_instructor_fixture(&pool).await;
+    let blocker = timetable_service::create_entry(
+        &pool,
+        fixture.actor_id,
+        CreateTimetableEntryRequest {
+            timetable_version_id: fixture.draft.id,
+            academic_term_id: fixture.term_id,
+            learning_group_id: None,
+            homeroom_id: None,
+            day_of_week: "WED".to_string(),
+            bell_schedule_period_id: fixture.period_id,
+            room_id: None,
+            note: None,
+            entry_type: "ACADEMIC".to_string(),
+            title: Some("งานครูเอ".to_string()),
+            instructor_ids: vec![fixture.teacher_a],
+        },
+    )
+    .await
+    .unwrap();
+    let movable = timetable_service::create_entry(
+        &pool,
+        fixture.actor_id,
+        CreateTimetableEntryRequest {
+            timetable_version_id: fixture.draft.id,
+            academic_term_id: fixture.term_id,
+            learning_group_id: Some(fixture.group_id),
+            homeroom_id: None,
+            day_of_week: "MON".to_string(),
+            bell_schedule_period_id: fixture.period_id,
+            room_id: None,
+            note: None,
+            entry_type: "COURSE".to_string(),
+            title: None,
+            instructor_ids: vec![fixture.teacher_a],
+        },
+    )
+    .await
+    .unwrap();
+
+    let moved = timetable_service::update_entry(
+        &pool,
+        movable.id,
+        fixture.actor_id,
+        UpdateTimetableEntryRequest {
+            timetable_version_id: fixture.draft.id,
+            row_version: movable.row_version,
+            day_of_week: Some("WED".to_string()),
+            bell_schedule_period_id: None,
+            room_id: None,
+            clear_room: None,
+            note: None,
+            clear_note: None,
+            title: None,
+            instructor_ids: Some(vec![fixture.teacher_b]),
+        },
+    )
+    .await
+    .expect("moving and replacing the complete teacher set must be one atomic change");
+
+    assert_eq!(moved.day_of_week, "WED");
+    assert_eq!(instructor_ids(&moved), vec![fixture.teacher_b]);
+    assert_eq!(instructor_ids(&blocker), vec![fixture.teacher_a]);
+}
+
+#[tokio::test]
+async fn timetable_update_rejects_empty_structural_scope_without_homeroom() {
+    let pool = migrated_pool("timetable_structural_scope_update_guard").await;
+    let fixture = exact_instructor_fixture(&pool).await;
+    let created = timetable_service::create_entry(
+        &pool,
+        fixture.actor_id,
+        CreateTimetableEntryRequest {
+            timetable_version_id: fixture.draft.id,
+            academic_term_id: fixture.term_id,
+            learning_group_id: None,
+            homeroom_id: None,
+            day_of_week: "MON".to_string(),
+            bell_schedule_period_id: fixture.period_id,
+            room_id: None,
+            note: None,
+            entry_type: "ACADEMIC".to_string(),
+            title: Some("งานครู".to_string()),
+            instructor_ids: vec![fixture.teacher_a],
+        },
+    )
+    .await
+    .unwrap();
+
+    let result = timetable_service::update_entry(
+        &pool,
+        created.id,
+        fixture.actor_id,
+        UpdateTimetableEntryRequest {
+            timetable_version_id: fixture.draft.id,
+            row_version: created.row_version,
+            day_of_week: None,
+            bell_schedule_period_id: None,
+            room_id: None,
+            clear_room: None,
+            note: None,
+            clear_note: None,
+            title: None,
+            instructor_ids: Some(Vec::new()),
+        },
+    )
+    .await;
+
+    assert!(matches!(result, Err(AppError::ValidationError(_))));
+}
+
+#[tokio::test]
+async fn timetable_rejects_instructor_outside_group_effective_date() {
+    let pool = migrated_pool("timetable_exact_instructor_effective_date").await;
+    let fixture = exact_instructor_fixture(&pool).await;
+    let starts_after_version = fixture
+        .draft
+        .effective_from
+        .checked_add_signed(chrono::Duration::days(1))
+        .unwrap();
+    sqlx::query(
+        "UPDATE learning_group_teachers SET starts_on = $1 WHERE learning_group_id = $2 AND teacher_id = $3",
+    )
+    .bind(starts_after_version)
+    .bind(fixture.group_id)
+    .bind(fixture.teacher_b)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let result = timetable_service::create_entry(
+        &pool,
+        fixture.actor_id,
+        CreateTimetableEntryRequest {
+            timetable_version_id: fixture.draft.id,
+            academic_term_id: fixture.term_id,
+            learning_group_id: Some(fixture.group_id),
+            homeroom_id: None,
+            day_of_week: "MON".to_string(),
+            bell_schedule_period_id: fixture.period_id,
+            room_id: None,
+            note: None,
+            entry_type: "COURSE".to_string(),
+            title: None,
+            instructor_ids: vec![fixture.teacher_b],
+        },
+    )
+    .await;
+    assert!(matches!(result, Err(AppError::ValidationError(_))));
+}
+
+#[tokio::test]
+async fn timetable_teacher_set_change_audits_exact_before_and_after_sets() {
+    let pool = migrated_pool("timetable_exact_instructor_audit").await;
+    let fixture = exact_instructor_fixture(&pool).await;
+    let created = timetable_service::create_entry(
+        &pool,
+        fixture.actor_id,
+        CreateTimetableEntryRequest {
+            timetable_version_id: fixture.draft.id,
+            academic_term_id: fixture.term_id,
+            learning_group_id: Some(fixture.group_id),
+            homeroom_id: None,
+            day_of_week: "MON".to_string(),
+            bell_schedule_period_id: fixture.period_id,
+            room_id: None,
+            note: None,
+            entry_type: "COURSE".to_string(),
+            title: None,
+            instructor_ids: vec![fixture.teacher_a],
+        },
+    )
+    .await
+    .unwrap();
+    let updated = timetable_service::update_entry(
+        &pool,
+        created.id,
+        fixture.actor_id,
+        UpdateTimetableEntryRequest {
+            timetable_version_id: fixture.draft.id,
+            row_version: created.row_version,
+            day_of_week: None,
+            bell_schedule_period_id: None,
+            room_id: None,
+            clear_room: None,
+            note: None,
+            clear_note: None,
+            title: None,
+            instructor_ids: Some(vec![fixture.teacher_b, fixture.teacher_a]),
+        },
+    )
+    .await
+    .unwrap();
+    let (actor_user_id, payload): (Uuid, serde_json::Value) = sqlx::query_as(
+        r#"SELECT actor_user_id, payload
+           FROM academic_audit_events
+           WHERE event_code = 'academic_timetable_entry.updated'
+             AND entity_id = $1
+           ORDER BY created_at DESC, id DESC
+           LIMIT 1"#,
+    )
+    .bind(created.id)
+    .fetch_one(&pool)
+    .await
+    .expect("entry update must append one atomic audit event");
+
+    let mut expected_after = vec![fixture.teacher_a.to_string(), fixture.teacher_b.to_string()];
+    expected_after.sort_unstable();
+    let mut expected_after_instructors = vec![
+        (fixture.teacher_a, "primary"),
+        (fixture.teacher_b, "secondary"),
+    ];
+    expected_after_instructors.sort_by_key(|(instructor_id, _)| *instructor_id);
+    let expected_after_instructors = expected_after_instructors
+        .iter()
+        .map(|(instructor_id, role)| {
+            serde_json::json!({
+                "instructorId": instructor_id,
+                "role": role
+            })
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(actor_user_id, fixture.actor_id);
+    assert_eq!(payload["entryId"], created.id.to_string());
+    assert_eq!(payload["timetableVersionId"], fixture.draft.id.to_string());
+    assert_eq!(payload["actorUserId"], fixture.actor_id.to_string());
+    assert_eq!(payload["oldRowVersion"], created.row_version);
+    assert_eq!(payload["newRowVersion"], updated.row_version);
+    assert_eq!(
+        payload["before"]["instructorIds"],
+        serde_json::json!([fixture.teacher_a])
+    );
+    assert_eq!(
+        payload["after"]["instructorIds"],
+        serde_json::json!(expected_after)
+    );
+    assert_eq!(
+        payload["before"]["instructors"],
+        serde_json::json!([{
+            "instructorId": fixture.teacher_a,
+            "role": "primary"
+        }])
+    );
+    assert_eq!(
+        payload["after"]["instructors"],
+        serde_json::json!(expected_after_instructors)
+    );
+
+    let deactivated = timetable_service::deactivate_entry(
+        &pool,
+        updated.id,
+        fixture.draft.id,
+        updated.row_version,
+        fixture.actor_id,
+    )
+    .await
+    .unwrap();
+    let deactivated_payload: serde_json::Value = sqlx::query_scalar(
+        r#"SELECT payload
+           FROM academic_audit_events
+           WHERE event_code = 'academic_timetable_entry.deactivated'
+             AND entity_id = $1
+           ORDER BY created_at DESC, id DESC
+           LIMIT 1"#,
+    )
+    .bind(created.id)
+    .fetch_one(&pool)
+    .await
+    .expect("entry deactivation must append one atomic audit event");
+    assert_eq!(
+        deactivated_payload["actorUserId"],
+        fixture.actor_id.to_string()
+    );
+    assert_eq!(deactivated_payload["oldRowVersion"], updated.row_version);
+    assert_eq!(
+        deactivated_payload["newRowVersion"],
+        deactivated.row_version
+    );
+    assert_eq!(deactivated_payload["before"]["isActive"], true);
+    assert_eq!(deactivated_payload["after"]["isActive"], false);
+    assert_eq!(
+        deactivated_payload["before"]["instructors"],
+        deactivated_payload["after"]["instructors"]
+    );
 }
 
 #[tokio::test]
@@ -356,6 +1113,7 @@ async fn timetable_entry_accepts_a_room_with_active_status() {
             note: None,
             clear_note: None,
             title: None,
+            instructor_ids: None,
         },
     )
     .await
@@ -368,19 +1126,31 @@ async fn listing_occupancy_and_swaps_are_explicitly_term_and_group_scoped() {
     let pool = migrated_pool("timetable_term_group_swap").await;
     let draft = clone_editable_version(&pool).await;
     let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
-    let (entry_id, term_id, group_id, first_period_id, row_version): (Uuid, Uuid, Uuid, Uuid, i64) =
-        sqlx::query_as(
-            r#"SELECT id, academic_term_id, learning_group_id,
+    let (entry_id, term_id, group_id, first_day, first_period_id, row_version): (
+        Uuid,
+        Uuid,
+        Uuid,
+        String,
+        Uuid,
+        i64,
+    ) = sqlx::query_as(
+        r#"SELECT id, academic_term_id, learning_group_id, day_of_week,
                   bell_schedule_period_id, row_version
            FROM academic_timetable_entries
            WHERE timetable_version_id = $1
              AND learning_group_id IS NOT NULL AND entry_type = 'COURSE'
+             AND EXISTS (
+                 SELECT 1 FROM timetable_entry_instructors instructor
+                 WHERE instructor.entry_id = academic_timetable_entries.id
+             )
            ORDER BY id LIMIT 1"#,
-        )
-        .bind(draft.id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+    )
+    .bind(draft.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let original_entry = timetable_service::get_entry(&pool, entry_id).await.unwrap();
+    assert!(!original_entry.instructors.is_empty());
     let second_period_id: Uuid = sqlx::query_scalar(
         r#"SELECT period.id
            FROM academic_terms term
@@ -407,7 +1177,7 @@ async fn listing_occupancy_and_swaps_are_explicitly_term_and_group_scoped() {
             note: Some("canonical".to_string()),
             entry_type: "course".to_string(),
             title: None,
-            instructor_ids: Vec::new(),
+            instructor_ids: instructor_ids(&original_entry),
         },
     )
     .await
@@ -475,29 +1245,77 @@ async fn listing_occupancy_and_swaps_are_explicitly_term_and_group_scoped() {
     assert_eq!(swapped.entry_b.academic_term_id, term_id);
     assert!(swapped.entry_a.row_version > row_version);
     assert!(swapped.entry_b.row_version > created.row_version);
+
+    let swapped_ids = vec![entry_id, created.id];
+    let swap_audits: Vec<(Uuid, serde_json::Value)> = sqlx::query_as(
+        r#"SELECT entity_id, payload
+           FROM academic_audit_events
+           WHERE event_code = 'academic_timetable_entry.updated'
+             AND entity_id = ANY($1)
+           ORDER BY entity_id, created_at DESC, id DESC"#,
+    )
+    .bind(&swapped_ids)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    let entry_a_audit = swap_audits
+        .iter()
+        .find(|(audit_entry_id, payload)| {
+            *audit_entry_id == entry_id && payload["newRowVersion"] == swapped.entry_a.row_version
+        })
+        .map(|(_, payload)| payload)
+        .expect("swap must audit the first entry atomically");
+    let entry_b_audit = swap_audits
+        .iter()
+        .find(|(audit_entry_id, payload)| {
+            *audit_entry_id == created.id && payload["newRowVersion"] == swapped.entry_b.row_version
+        })
+        .map(|(_, payload)| payload)
+        .expect("swap must audit the second entry atomically");
+    let expected_entry_a_instructors = instructor_roles_json(&original_entry);
+    let expected_entry_b_instructors = instructor_roles_json(&created);
+    assert_ne!(expected_entry_a_instructors, serde_json::json!([]));
+    assert_ne!(expected_entry_b_instructors, serde_json::json!([]));
+    for (payload, expected_instructors) in [
+        (entry_a_audit, &expected_entry_a_instructors),
+        (entry_b_audit, &expected_entry_b_instructors),
+    ] {
+        assert_eq!(payload["actorUserId"], actor_id.to_string());
+        assert_eq!(payload["timetableVersionId"], draft.id.to_string());
+        assert_eq!(payload["academicTermId"], term_id.to_string());
+        assert_eq!(payload["before"]["instructors"], *expected_instructors);
+        assert_eq!(payload["after"]["instructors"], *expected_instructors);
+    }
+    assert_eq!(entry_a_audit["oldRowVersion"], row_version);
+    assert_eq!(entry_a_audit["before"]["dayOfWeek"], first_day);
+    assert_eq!(
+        entry_a_audit["before"]["bellSchedulePeriodId"],
+        first_period_id.to_string()
+    );
+    assert_eq!(entry_a_audit["after"]["dayOfWeek"], "TUE");
+    assert_eq!(
+        entry_a_audit["after"]["bellSchedulePeriodId"],
+        second_period_id.to_string()
+    );
+    assert_eq!(entry_b_audit["oldRowVersion"], created.row_version);
+    assert_eq!(entry_b_audit["before"]["dayOfWeek"], "TUE");
+    assert_eq!(
+        entry_b_audit["after"]["bellSchedulePeriodId"],
+        first_period_id.to_string()
+    );
 }
 
 #[tokio::test]
 async fn batch_and_conflict_reads_preserve_results() {
     let pool = migrated_pool("timetable_batch_conflict_bulk_reads").await;
-    let draft = clone_editable_version(&pool).await;
-    let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
-    let (term_id, group_id, period_id): (Uuid, Uuid, Uuid) = sqlx::query_as(
-        r#"SELECT entry.academic_term_id, entry.learning_group_id, period.id
-           FROM academic_timetable_entries entry
-           JOIN academic_terms term ON term.id = entry.academic_term_id
-           JOIN bell_schedule_periods period
-             ON period.bell_schedule_id = term.bell_schedule_id
-            AND period.order_index = 2
-           WHERE entry.timetable_version_id = $1
-             AND entry.learning_group_id IS NOT NULL
-           ORDER BY entry.id
-           LIMIT 1"#,
-    )
-    .bind(draft.id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let fixture = exact_instructor_fixture(&pool).await;
+    let draft = fixture.draft;
+    let actor_id = fixture.actor_id;
+    let term_id = fixture.term_id;
+    let group_id = fixture.group_id;
+    let period_id = fixture.period_id;
+    let teacher_a = fixture.teacher_a;
+    let teacher_b = fixture.teacher_b;
 
     let created = timetable_service::create_batch(
         &pool,
@@ -513,7 +1331,7 @@ async fn batch_and_conflict_reads_preserve_results() {
             title: Some("bulk".to_string()),
             room_id: None,
             note: None,
-            instructor_ids: Vec::new(),
+            instructor_ids: vec![teacher_a, teacher_b],
         },
     )
     .await
@@ -523,6 +1341,12 @@ async fn batch_and_conflict_reads_preserve_results() {
         .entries
         .iter()
         .all(|entry| entry.learning_group_id == Some(group_id)));
+    let expected_instructors = instructor_roles_json(&created.entries[0]);
+    assert_ne!(expected_instructors, serde_json::json!([]));
+    assert!(created
+        .entries
+        .iter()
+        .all(|entry| instructor_roles_json(entry) == expected_instructors));
 
     let moves = timetable_service::validate_moves(&pool, draft.id, term_id, created.entries[0].id)
         .await
@@ -548,6 +1372,56 @@ async fn batch_and_conflict_reads_preserve_results() {
         expected_deactivated_ids
     );
     assert!(deactivated.iter().all(|entry| !entry.is_active));
+
+    let audit_rows: Vec<(String, Uuid, Uuid, serde_json::Value)> = sqlx::query_as(
+        r#"SELECT event_code, entity_id, actor_user_id, payload
+           FROM academic_audit_events
+           WHERE entity_id = ANY($1)
+             AND event_code IN (
+                 'academic_timetable_entry.created',
+                 'academic_timetable_entry.deactivated'
+             )
+           ORDER BY event_code, entity_id"#,
+    )
+    .bind(&expected_deactivated_ids)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(audit_rows.len(), 4);
+    assert_eq!(
+        audit_rows
+            .iter()
+            .filter(|(event_code, _, _, _)| { event_code == "academic_timetable_entry.created" })
+            .count(),
+        2
+    );
+    assert_eq!(
+        audit_rows
+            .iter()
+            .filter(|(event_code, _, _, _)| {
+                event_code == "academic_timetable_entry.deactivated"
+            })
+            .count(),
+        2
+    );
+    for (event_code, entity_id, audit_actor_id, payload) in audit_rows {
+        assert_eq!(audit_actor_id, actor_id);
+        assert_eq!(payload["entryId"], entity_id.to_string());
+        assert_eq!(payload["timetableVersionId"], draft.id.to_string());
+        assert_eq!(payload["academicTermId"], term_id.to_string());
+        assert_eq!(payload["actorUserId"], actor_id.to_string());
+        if event_code == "academic_timetable_entry.created" {
+            assert_eq!(payload["before"]["instructors"], serde_json::json!([]));
+            assert_eq!(payload["after"]["instructors"], expected_instructors);
+            assert_eq!(payload["oldRowVersion"], 0);
+            assert_eq!(payload["newRowVersion"], 1);
+        } else {
+            assert_eq!(payload["before"]["instructors"], expected_instructors);
+            assert_eq!(payload["after"]["instructors"], expected_instructors);
+            assert_eq!(payload["oldRowVersion"], 1);
+            assert_eq!(payload["newRowVersion"], 2);
+        }
+    }
 }
 
 #[tokio::test]

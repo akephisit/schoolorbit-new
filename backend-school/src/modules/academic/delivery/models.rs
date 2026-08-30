@@ -979,6 +979,18 @@ pub struct TeacherAssignmentInput {
     pub role: LearningTeacherRole,
 }
 
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LearningGroupTeacherAssignment {
+    pub id: Uuid,
+    pub teacher_id: Uuid,
+    pub display_name: String,
+    pub role: LearningTeacherRole,
+    pub starts_on: NaiveDate,
+    pub ends_on: Option<NaiveDate>,
+    pub row_version: i64,
+}
+
 #[derive(Clone, Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReplaceLearningGroupTeachersRequest {
@@ -1016,7 +1028,7 @@ pub struct LearningGroup {
     pub migrated: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    pub teacher_assignments: Vec<TeacherAssignmentInput>,
+    pub teacher_assignments: Vec<LearningGroupTeacherAssignment>,
     pub homeroom_ids: Vec<Uuid>,
     pub preferred_room_ids: Vec<Uuid>,
 }
