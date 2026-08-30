@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use chrono::{DateTime, Datelike, FixedOffset, Utc, Weekday};
+use chrono::{DateTime, Datelike, NaiveDate, Utc, Weekday};
 use sqlx::types::Json;
 use sqlx::{PgPool, Postgres, QueryBuilder, Row};
 use uuid::Uuid;
@@ -17,6 +17,7 @@ use crate::modules::supervision::models::{
     UpdateSupervisionObservationRequest,
 };
 use crate::policies::resource_access_policy::AcademicResourceListFilter;
+use crate::scheduling::SCHOOL_TIMEZONE;
 
 use super::cycles::SupervisionCycleTargetRow;
 use super::evaluations::{
@@ -201,7 +202,7 @@ pub async fn observation_timetable_options(
     let version = timetable_version_service::resolve_for_date(
         pool,
         observation.academic_term_id,
-        observation.observed_at.date_naive(),
+        bangkok_observation_date(observation.observed_at),
     )
     .await?;
 
@@ -1135,9 +1136,7 @@ async fn resolve_lesson_input(
     match (timetable_entry_id, observed_at, manual_lesson) {
         (Some(entry_id), Some(observed_at), None) => {
             validate_observed_at_in_cycle(cycle, observed_at)?;
-            let observed_date = observed_at
-                .with_timezone(&FixedOffset::east_opt(7 * 60 * 60).expect("valid Bangkok offset"))
-                .date_naive();
+            let observed_date = bangkok_observation_date(observed_at);
             let timetable_version =
                 timetable_version_service::resolve_for_date(pool, academic_term_id, observed_date)
                     .await?;
@@ -1206,11 +1205,12 @@ fn validate_observed_at_in_cycle(
     Ok(())
 }
 
+fn bangkok_observation_date(observed_at: DateTime<Utc>) -> NaiveDate {
+    observed_at.with_timezone(&SCHOOL_TIMEZONE).date_naive()
+}
+
 fn day_of_week_matches_observed_at(day_of_week: &str, observed_at: DateTime<Utc>) -> bool {
-    let Some(bangkok_offset) = FixedOffset::east_opt(7 * 60 * 60) else {
-        return false;
-    };
-    let observed_weekday = observed_at.with_timezone(&bangkok_offset).weekday();
+    let observed_weekday = observed_at.with_timezone(&SCHOOL_TIMEZONE).weekday();
     matches!(
         (day_of_week, observed_weekday),
         ("MON", Weekday::Mon)
@@ -1259,17 +1259,11 @@ async fn load_timetable_entry_context_for_teacher(
           AND e.timetable_version_id = $2
           AND e.academic_year_id = $4
           AND e.academic_term_id = $5
-          AND (
-              EXISTS (
-                  SELECT 1 FROM learning_group_teachers teacher
-                  WHERE teacher.learning_group_id = e.learning_group_id
-                    AND teacher.teacher_id = $3
-              )
-              OR EXISTS (
-                  SELECT 1 FROM timetable_entry_instructors instructor
-                  WHERE instructor.entry_id = e.id
-                    AND instructor.instructor_id = $3
-              )
+          AND e.is_active
+          AND EXISTS (
+              SELECT 1 FROM timetable_entry_instructors instructor
+              WHERE instructor.entry_id = e.id
+                AND instructor.instructor_id = $3
           )
         "#,
     )
@@ -1413,4 +1407,106 @@ pub(super) async fn insert_observation_action(
     })?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::{DateTime, NaiveDate, Utc};
+    use uuid::Uuid;
+
+    use super::{bangkok_observation_date, load_timetable_entry_context_for_teacher};
+    use crate::error::AppError;
+    use crate::modules::academic::cutover_test_support::{
+        apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
+        CutoverFixture,
+    };
+    use crate::modules::academic::models::timetable_version::CloneTimetableVersionRequest;
+    use crate::modules::academic::services::timetable_version_service;
+    use crate::test_helpers::create_named_test_pool;
+
+    #[test]
+    fn timetable_version_date_uses_bangkok_across_local_midnight() {
+        let observed_at = DateTime::parse_from_rfc3339("2026-08-31T18:30:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        assert_eq!(
+            bangkok_observation_date(observed_at),
+            NaiveDate::from_ymd_opt(2026, 9, 1).unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn exact_timetable_entry_context_rejects_inactive_entries() {
+        let pool = create_named_test_pool("supervision_exact_active_timetable_entry").await;
+        apply_migrations_through(&pool, 40).await.unwrap();
+        seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
+            .await
+            .unwrap();
+        apply_phase_b_runtime_migrations(&pool).await.unwrap();
+        apply_migrations_through(&pool, 54).await.unwrap();
+        let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
+        let (source_id, source_row_version, term_start): (Uuid, i64, NaiveDate) = sqlx::query_as(
+            r#"SELECT version.id, version.row_version, term.start_date
+                   FROM academic_timetable_versions version
+                   JOIN academic_terms term ON term.id = version.academic_term_id
+                   WHERE version.status = 'published' AND term.status = 'active'
+                   ORDER BY version.effective_from, version.id
+                   LIMIT 1"#,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let draft = timetable_version_service::clone_draft(
+            &pool,
+            actor_id,
+            source_id,
+            CloneTimetableVersionRequest {
+                effective_from: term_start.succ_opt().unwrap(),
+                source_row_version,
+            },
+        )
+        .await
+        .unwrap();
+        let (entry_id, teacher_id, academic_year_id, academic_term_id): (Uuid, Uuid, Uuid, Uuid) =
+            sqlx::query_as(
+                r#"SELECT entry.id, instructor.instructor_id,
+                      entry.academic_year_id, entry.academic_term_id
+               FROM academic_timetable_entries entry
+               JOIN timetable_entry_instructors instructor ON instructor.entry_id = entry.id
+               WHERE entry.timetable_version_id = $1 AND entry.is_active
+               ORDER BY entry.id, instructor.instructor_id
+               LIMIT 1"#,
+            )
+            .bind(draft.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        load_timetable_entry_context_for_teacher(
+            &pool,
+            entry_id,
+            draft.id,
+            teacher_id,
+            academic_year_id,
+            academic_term_id,
+        )
+        .await
+        .expect("active exact timetable entry must be selectable");
+        sqlx::query("UPDATE academic_timetable_entries SET is_active = false WHERE id = $1")
+            .bind(entry_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let inactive = load_timetable_entry_context_for_teacher(
+            &pool,
+            entry_id,
+            draft.id,
+            teacher_id,
+            academic_year_id,
+            academic_term_id,
+        )
+        .await;
+        assert!(matches!(inactive, Err(AppError::Forbidden(_))));
+    }
 }

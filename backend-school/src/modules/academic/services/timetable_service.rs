@@ -1196,7 +1196,29 @@ pub(super) async fn create_entry_in_tx(
     batch_id: Option<Uuid>,
     request: &CreateTimetableEntryRequest,
 ) -> Result<Uuid, AppError> {
-    let (term, group, entry_type, scope) = resolve_create_scope(transaction, request).await?;
+    create_entry_in_tx_impl(transaction, actor_user_id, batch_id, request, false).await
+}
+
+pub(super) async fn create_entry_in_tx_preserving_instructor_order(
+    transaction: &mut Transaction<'_, Postgres>,
+    actor_user_id: Uuid,
+    batch_id: Option<Uuid>,
+    request: &CreateTimetableEntryRequest,
+) -> Result<Uuid, AppError> {
+    create_entry_in_tx_impl(transaction, actor_user_id, batch_id, request, true).await
+}
+
+async fn create_entry_in_tx_impl(
+    transaction: &mut Transaction<'_, Postgres>,
+    actor_user_id: Uuid,
+    batch_id: Option<Uuid>,
+    request: &CreateTimetableEntryRequest,
+    preserve_instructor_order: bool,
+) -> Result<Uuid, AppError> {
+    let (term, group, entry_type, mut scope) = resolve_create_scope(transaction, request).await?;
+    if preserve_instructor_order {
+        scope.instructor_ids = ordered_unique_ids(&request.instructor_ids);
+    }
     require_period_in_tx(transaction, term.id, request.bell_schedule_period_id).await?;
     let day = normalize_day(&request.day_of_week)?;
     lock_slot(
@@ -1457,6 +1479,16 @@ fn validate_batch_shape(request: &CreateBatchTimetableEntriesRequest) -> Result<
         ));
     }
     Ok(())
+}
+
+fn ordered_unique_ids(ids: &[Uuid]) -> Vec<Uuid> {
+    let mut ordered = Vec::with_capacity(ids.len());
+    for id in ids {
+        if !ordered.contains(id) {
+            ordered.push(*id);
+        }
+    }
+    ordered
 }
 
 async fn require_timetable_version(
@@ -2327,7 +2359,7 @@ fn stale_entry() -> AppError {
     AppError::Conflict("ตารางสอนมีการแก้ไขจากผู้ใช้อื่น กรุณาโหลดใหม่".to_string())
 }
 
-pub(super) fn map_timetable_write_error(error: AppError) -> AppError {
+pub(crate) fn map_timetable_write_error(error: AppError) -> AppError {
     let guard_message = match &error {
         AppError::DbError(sqlx::Error::Database(database)) => {
             timetable_guard_conflict_message(database.code().as_deref(), database.message())

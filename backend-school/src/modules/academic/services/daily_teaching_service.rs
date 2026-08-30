@@ -156,22 +156,14 @@ pub async fn get_daily_teaching_overview(
                   ) AS display_name
            FROM users user_account
            WHERE user_account.status = 'active'
-             AND (
-                 EXISTS (
-                     SELECT 1
-                     FROM learning_group_teachers teacher
-                     WHERE teacher.teacher_id = user_account.id
-                       AND teacher.academic_term_id = $1
-                 )
-                 OR EXISTS (
-                     SELECT 1
-                     FROM timetable_entry_instructors instructor
-                     JOIN academic_timetable_entries entry ON entry.id = instructor.entry_id
-                     WHERE instructor.instructor_id = user_account.id
-                       AND entry.academic_term_id = $1
-                       AND entry.timetable_version_id = $2
-                       AND entry.is_active
-                 )
+             AND EXISTS (
+                 SELECT 1
+                 FROM timetable_entry_instructors instructor
+                 JOIN academic_timetable_entries entry ON entry.id = instructor.entry_id
+                 WHERE instructor.instructor_id = user_account.id
+                   AND entry.academic_term_id = $1
+                   AND entry.timetable_version_id = $2
+                   AND entry.is_active
              )
            ORDER BY display_name, user_account.id"#,
     )
@@ -181,22 +173,12 @@ pub async fn get_daily_teaching_overview(
     .await?;
     let entries: Vec<EntrySeed> = sqlx::query_as(
         r#"WITH effective_teacher AS (
-               SELECT entry.id AS entry_id, teacher.teacher_id
-               FROM academic_timetable_entries entry
-               JOIN learning_group_teachers teacher
-                 ON teacher.learning_group_id = entry.learning_group_id
-               WHERE entry.academic_term_id = $1
-                 AND entry.timetable_version_id = $3
-                 AND entry.day_of_week = $2
-                 AND entry.is_active
-               UNION ALL
-               SELECT entry.id, instructor.instructor_id
+               SELECT entry.id AS entry_id, instructor.instructor_id AS teacher_id
                FROM academic_timetable_entries entry
                JOIN timetable_entry_instructors instructor ON instructor.entry_id = entry.id
                WHERE entry.academic_term_id = $1
                  AND entry.timetable_version_id = $3
                  AND entry.day_of_week = $2
-                 AND entry.learning_group_id IS NULL
                  AND entry.is_active
            )
            SELECT effective_teacher.teacher_id,

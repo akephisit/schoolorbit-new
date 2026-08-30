@@ -9,6 +9,7 @@ use crate::modules::academic::models::timetable_version::{
     CloneTimetableVersionRequest, TimetableVersion, TimetableVersionDisplayState,
     TimetableVersionStatus, TimetableVersionTarget,
 };
+use crate::modules::academic::services::timetable_service;
 
 #[derive(Debug, Clone, FromRow)]
 struct TimetableVersionRow {
@@ -348,7 +349,41 @@ pub(crate) async fn clone_draft_in_transaction(
     .bind(source.id)
     .bind(actor_id)
     .execute(&mut **transaction)
+    .await
+    .map_err(|error| timetable_service::map_timetable_write_error(AppError::DbError(error)))?;
+    let (source_entry_count, cloned_entry_count, source_instructor_count, cloned_instructor_count): (
+        i64,
+        i64,
+        i64,
+        i64,
+    ) = sqlx::query_as(
+        r#"SELECT
+               (SELECT count(*)
+                FROM academic_timetable_entries
+                WHERE timetable_version_id = $1 AND is_active),
+               (SELECT count(*)
+                FROM academic_timetable_entries
+                WHERE timetable_version_id = $2 AND is_active),
+               (SELECT count(*)
+                FROM timetable_entry_instructors instructor
+                JOIN academic_timetable_entries entry ON entry.id = instructor.entry_id
+                WHERE entry.timetable_version_id = $1 AND entry.is_active),
+               (SELECT count(*)
+                FROM timetable_entry_instructors instructor
+                JOIN academic_timetable_entries entry ON entry.id = instructor.entry_id
+                WHERE entry.timetable_version_id = $2 AND entry.is_active)"#,
+    )
+    .bind(source.id)
+    .bind(new_version_id)
+    .fetch_one(&mut **transaction)
     .await?;
+    if source_entry_count != cloned_entry_count
+        || source_instructor_count != cloned_instructor_count
+    {
+        return Err(AppError::InternalServerError(
+            "คัดลอกรุ่นตารางสอนไม่ครบถ้วน กรุณาลองใหม่".to_string(),
+        ));
+    }
     Ok(new_version_id)
 }
 

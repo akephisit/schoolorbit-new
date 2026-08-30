@@ -349,6 +349,8 @@ pub enum AcademicChangeFindingCode {
     ResourceStale,
     DraftGroup,
     MissingPrimaryTeacher,
+    MissingEntryInstructor,
+    IneligibleEntryInstructor,
     UnpublishedRoster,
     OfferingUnavailable,
     MissingWeeklyPeriodTarget,

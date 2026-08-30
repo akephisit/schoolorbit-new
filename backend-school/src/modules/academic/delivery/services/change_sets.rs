@@ -15,7 +15,7 @@ use crate::modules::academic::delivery::models::{
     LearningOfferingStatus, PublishAcademicTermChangeSetRequest,
     UpdateAcademicTermChangeSetRequest, UpsertAcademicTermChangeItemRequest,
 };
-use crate::modules::academic::services::timetable_version_service;
+use crate::modules::academic::services::{timetable_service, timetable_version_service};
 
 use super::{
     append_audit, offerings, require_active_owner, require_writable_term, stable_hash,
@@ -1043,6 +1043,11 @@ async fn append_resource_readiness_findings(
                       JOIN users teacher ON teacher.id = teacher_assignment.teacher_id
                       WHERE teacher_assignment.learning_group_id = learning_group.id
                         AND teacher_assignment.role = 'primary'
+                        AND teacher_assignment.starts_on <= $3
+                        AND (
+                            teacher_assignment.ends_on IS NULL
+                            OR teacher_assignment.ends_on >= $3
+                        )
                         AND teacher.status = 'active'
                   ) AS has_active_primary,
                   EXISTS (
@@ -1060,6 +1065,7 @@ async fn append_resource_readiness_findings(
     )
     .bind(target_version_id)
     .bind(change_set.id)
+    .bind(change_set.effective_from)
     .fetch_all(&mut **transaction)
     .await?;
     for row in group_rows {
@@ -1153,6 +1159,80 @@ async fn append_resource_readiness_findings(
                 Some(offering_id),
             ));
         }
+    }
+
+    let entries_without_instructors: Vec<(Uuid, Option<Uuid>, Option<Uuid>)> = sqlx::query_as(
+        r#"SELECT entry.id, entry.learning_offering_id, entry.learning_group_id
+           FROM academic_timetable_entries entry
+           WHERE entry.timetable_version_id = $1
+             AND entry.is_active
+             AND entry.entry_type IN ('COURSE', 'ACTIVITY')
+             AND NOT EXISTS (
+                 SELECT 1
+                 FROM timetable_entry_instructors instructor
+                 WHERE instructor.entry_id = entry.id
+             )
+           ORDER BY entry.id"#,
+    )
+    .bind(target_version_id)
+    .fetch_all(&mut **transaction)
+    .await?;
+    for (entry_id, offering_id, group_id) in entries_without_instructors {
+        findings.push(change_finding(
+            AcademicChangeFindingCode::MissingEntryInstructor,
+            AcademicChangeFindingSeverity::Blocking,
+            "คาบเรียนยังไม่มีครูผู้สอน",
+            "กำหนดครูผู้สอนให้คาบนี้ในรุ่นตารางแบบร่างก่อนเผยแพร่",
+            1,
+            offering_id,
+            group_id,
+            Some(entry_id),
+        ));
+    }
+
+    let entries_with_ineligible_instructors: Vec<(Uuid, Option<Uuid>, Option<Uuid>)> =
+        sqlx::query_as(
+            r#"SELECT DISTINCT entry.id, entry.learning_offering_id, entry.learning_group_id
+               FROM academic_timetable_entries entry
+               JOIN academic_timetable_versions version
+                 ON version.id = entry.timetable_version_id
+               JOIN timetable_entry_instructors instructor ON instructor.entry_id = entry.id
+               LEFT JOIN users teacher ON teacher.id = instructor.instructor_id
+               WHERE entry.timetable_version_id = $1
+                 AND entry.is_active
+                 AND entry.entry_type IN ('COURSE', 'ACTIVITY')
+                 AND entry.learning_group_id IS NOT NULL
+                 AND (
+                     teacher.id IS NULL
+                     OR teacher.status <> 'active'
+                     OR NOT EXISTS (
+                         SELECT 1
+                         FROM learning_group_teachers assignment
+                         WHERE assignment.learning_group_id = entry.learning_group_id
+                           AND assignment.teacher_id = instructor.instructor_id
+                           AND assignment.starts_on <= version.effective_from
+                           AND (
+                               assignment.ends_on IS NULL
+                               OR assignment.ends_on >= version.effective_from
+                           )
+                     )
+                 )
+               ORDER BY entry.id"#,
+        )
+        .bind(target_version_id)
+        .fetch_all(&mut **transaction)
+        .await?;
+    for (entry_id, offering_id, group_id) in entries_with_ineligible_instructors {
+        findings.push(change_finding(
+            AcademicChangeFindingCode::IneligibleEntryInstructor,
+            AcademicChangeFindingSeverity::Blocking,
+            "คาบเรียนมีครูที่ไม่อยู่ในทีมสอนของกลุ่มเรียน",
+            "แก้ครูประจำคาบ หรือเพิ่มช่วงการสอนของครูในกลุ่มเรียนให้ครอบคลุมวันที่เริ่มใช้รุ่นตาราง",
+            1,
+            offering_id,
+            group_id,
+            Some(entry_id),
+        ));
     }
 
     for count in schedule_counts {
@@ -1351,6 +1431,8 @@ fn finding_code_text(code: AcademicChangeFindingCode) -> &'static str {
         AcademicChangeFindingCode::ResourceStale => "resource_stale",
         AcademicChangeFindingCode::DraftGroup => "draft_group",
         AcademicChangeFindingCode::MissingPrimaryTeacher => "missing_primary_teacher",
+        AcademicChangeFindingCode::MissingEntryInstructor => "missing_entry_instructor",
+        AcademicChangeFindingCode::IneligibleEntryInstructor => "ineligible_entry_instructor",
         AcademicChangeFindingCode::UnpublishedRoster => "unpublished_roster",
         AcademicChangeFindingCode::OfferingUnavailable => "offering_unavailable",
         AcademicChangeFindingCode::MissingWeeklyPeriodTarget => "missing_weekly_period_target",
@@ -2439,7 +2521,50 @@ async fn restore_version_entries(
     .bind(offering_id)
     .bind(actor_user_id)
     .execute(&mut **transaction)
+    .await
+    .map_err(|error| timetable_service::map_timetable_write_error(AppError::DbError(error)))?;
+    let (
+        source_entry_count,
+        restored_entry_count,
+        source_instructor_count,
+        restored_instructor_count,
+    ): (i64, i64, i64, i64) = sqlx::query_as(
+        r#"SELECT
+               (SELECT count(*)
+                FROM academic_timetable_entries
+                WHERE timetable_version_id = $1
+                  AND learning_offering_id = $3
+                  AND is_active),
+               (SELECT count(*)
+                FROM academic_timetable_entries
+                WHERE timetable_version_id = $2
+                  AND learning_offering_id = $3
+                  AND is_active),
+               (SELECT count(*)
+                FROM timetable_entry_instructors instructor
+                JOIN academic_timetable_entries entry ON entry.id = instructor.entry_id
+                WHERE entry.timetable_version_id = $1
+                  AND entry.learning_offering_id = $3
+                  AND entry.is_active),
+               (SELECT count(*)
+                FROM timetable_entry_instructors instructor
+                JOIN academic_timetable_entries entry ON entry.id = instructor.entry_id
+                WHERE entry.timetable_version_id = $2
+                  AND entry.learning_offering_id = $3
+                  AND entry.is_active)"#,
+    )
+    .bind(base_version_id)
+    .bind(target_version_id)
+    .bind(offering_id)
+    .fetch_one(&mut **transaction)
     .await?;
+    if source_entry_count != restored_entry_count
+        || source_instructor_count != restored_instructor_count
+    {
+        return Err(AppError::InternalServerError(
+            "คืนค่าคาบและครูผู้สอนจากรุ่นตารางต้นทางไม่ครบถ้วน กรุณาลองใหม่".to_string(),
+        ));
+    }
     Ok(())
 }
 

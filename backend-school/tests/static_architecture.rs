@@ -360,6 +360,41 @@ fn timetable_relationship_indexes_use_exact_entry_instructors() {
 }
 
 #[test]
+fn timetable_exact_instructor_consumers_do_not_fallback_to_group_teachers() {
+    let daily_teaching = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/services/daily_teaching_service.rs"),
+    ));
+    let supervision = strip_comments(&read_source(
+        manifest_dir().join("src/modules/supervision/services/observations.rs"),
+    ));
+    let supervision_entry_lookup = supervision
+        .split_once("async fn load_timetable_entry_context_for_teacher")
+        .expect("supervision timetable entry lookup must exist")
+        .1
+        .split_once("async fn load_timetable_lesson_snapshot")
+        .expect("supervision timetable entry lookup must remain isolated")
+        .0;
+    let parents = strip_comments(&read_source(
+        manifest_dir().join("src/modules/parents/services.rs"),
+    ));
+
+    assert!(daily_teaching.contains("FROM timetable_entry_instructors"));
+    assert!(
+        !daily_teaching.contains("learning_group_teachers"),
+        "daily teaching must derive period teachers only from exact entry children"
+    );
+    assert!(supervision_entry_lookup.contains("FROM timetable_entry_instructors"));
+    assert!(
+        !supervision_entry_lookup.contains("learning_group_teachers"),
+        "supervision timetable validation must not authorize a group teacher who is absent from the entry"
+    );
+    assert!(
+        parents.contains("timetable_service::list_student_entries"),
+        "parent timetable must remain on the canonical exact-instructor timetable reader"
+    );
+}
+
+#[test]
 fn student_timetable_uses_requested_date_for_roster_membership() {
     let service = strip_comments(&read_source(
         manifest_dir().join("src/modules/academic/services/timetable_service.rs"),
@@ -1939,7 +1974,10 @@ fn daily_teaching_overview_endpoint_is_read_only_and_pii_safe() {
     assert!(service.contains("timetable_version_service::resolve_for_date"));
     assert!(!service.contains("FROM academic_terms"));
     assert!(service.contains("bell_schedule_periods"));
-    assert!(service.contains("learning_group_teachers"));
+    assert!(
+        !service.contains("learning_group_teachers"),
+        "daily teaching must use exact timetable entry instructors"
+    );
     assert!(service.contains("course_offering_details"));
     assert!(service.contains("activity_offering_details"));
     assert!(service.contains("subject_versions"));

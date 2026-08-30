@@ -17,7 +17,7 @@ async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 52).await.unwrap();
+    apply_migrations_through(&pool, 54).await.unwrap();
     pool
 }
 
@@ -144,6 +144,69 @@ async fn list_resolve_and_clone_preserve_version_isolation_and_targets() {
     )
     .await;
     assert!(matches!(closed, Err(AppError::Conflict(_))));
+}
+
+#[tokio::test]
+async fn cloned_timetable_version_preserves_exact_instructor_sets() {
+    let pool = migrated_pool("timetable_version_clone_exact_instructors").await;
+    let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
+    let (source_id, source_row_version, term_start): (Uuid, i64, NaiveDate) = sqlx::query_as(
+        r#"SELECT version.id, version.row_version, term.start_date
+           FROM academic_timetable_versions version
+           JOIN academic_terms term ON term.id = version.academic_term_id
+           WHERE version.status = 'published' AND term.status = 'active'
+           ORDER BY version.effective_from, version.id LIMIT 1"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let cloned = timetable_version_service::clone_draft(
+        &pool,
+        actor_id,
+        source_id,
+        CloneTimetableVersionRequest {
+            effective_from: term_start.succ_opt().unwrap(),
+            source_row_version,
+        },
+    )
+    .await
+    .unwrap();
+
+    let (source_entry_count, mapped_entry_count, mismatched_instructor_sets): (i64, i64, i64) =
+        sqlx::query_as(
+            r#"SELECT (
+                      SELECT count(*)
+                      FROM academic_timetable_entries
+                      WHERE timetable_version_id = $1 AND is_active
+                  ),
+                  count(*),
+                  count(*) FILTER (
+                      WHERE ARRAY(
+                          SELECT concat(instructor.instructor_id::text, ':', instructor.role::text)
+                          FROM timetable_entry_instructors instructor
+                          WHERE instructor.entry_id = source.id
+                          ORDER BY instructor.instructor_id
+                      ) <> ARRAY(
+                          SELECT concat(instructor.instructor_id::text, ':', instructor.role::text)
+                          FROM timetable_entry_instructors instructor
+                          WHERE instructor.entry_id = target.id
+                          ORDER BY instructor.instructor_id
+                      )
+                  )
+           FROM academic_timetable_entries source
+           JOIN academic_timetable_entries target
+             ON target.timetable_version_id = $2
+            AND target.migration_provenance ->> 'clonedFromEntryId' = source.id::text
+           WHERE source.timetable_version_id = $1 AND source.is_active"#,
+        )
+        .bind(source_id)
+        .bind(cloned.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(source_entry_count > 0);
+    assert_eq!(mapped_entry_count, source_entry_count);
+    assert_eq!(mismatched_instructor_sets, 0);
 }
 
 #[test]

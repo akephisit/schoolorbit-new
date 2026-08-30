@@ -346,6 +346,106 @@ async fn timetable_entries_split_and_coteach_with_exact_instructors() {
 }
 
 #[tokio::test]
+async fn daily_teaching_returns_only_periods_the_staff_member_exactly_teaches() {
+    let pool = migrated_pool("daily_teaching_exact_entry_instructors").await;
+    let fixture = exact_instructor_fixture(&pool).await;
+    let created = timetable_service::create_entry(
+        &pool,
+        fixture.actor_id,
+        CreateTimetableEntryRequest {
+            timetable_version_id: fixture.draft.id,
+            academic_term_id: fixture.term_id,
+            learning_group_id: Some(fixture.group_id),
+            homeroom_id: None,
+            day_of_week: "WED".to_string(),
+            bell_schedule_period_id: fixture.period_id,
+            room_id: None,
+            note: None,
+            entry_type: "COURSE".to_string(),
+            title: None,
+            instructor_ids: vec![fixture.teacher_b],
+        },
+    )
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"UPDATE academic_timetable_versions
+           SET status = 'published', published_by = $2, published_at = now()
+           WHERE id = $1"#,
+    )
+    .bind(fixture.draft.id)
+    .bind(fixture.actor_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let mut observed_date = fixture.draft.effective_from;
+    while daily_teaching_service::day_code_from_date(observed_date) != "WED" {
+        observed_date = observed_date.succ_opt().unwrap();
+    }
+
+    let overview = daily_teaching_service::get_daily_teaching_overview(
+        &pool,
+        daily_teaching_service::DailyTeachingQuery {
+            academic_term_id: fixture.term_id,
+            date: Some(observed_date),
+            include_empty_teachers: Some(false),
+        },
+    )
+    .await
+    .unwrap();
+    assert!(!overview
+        .teachers
+        .iter()
+        .any(|teacher| teacher.id == fixture.teacher_a));
+    let teacher_b = overview
+        .teachers
+        .iter()
+        .find(|teacher| teacher.id == fixture.teacher_b)
+        .expect("the exact Wednesday teacher must be present");
+    assert!(teacher_b
+        .periods
+        .iter()
+        .flat_map(|period| &period.entries)
+        .any(|entry| entry.entry_id == created.id));
+}
+
+#[tokio::test]
+async fn template_entry_creation_preserves_validated_selected_instructor_order() {
+    let pool = migrated_pool("template_entry_preserves_selected_instructor_order").await;
+    let fixture = exact_instructor_fixture(&pool).await;
+    let request = CreateTimetableEntryRequest {
+        timetable_version_id: fixture.draft.id,
+        academic_term_id: fixture.term_id,
+        learning_group_id: Some(fixture.group_id),
+        homeroom_id: None,
+        day_of_week: "THU".to_string(),
+        bell_schedule_period_id: fixture.period_id,
+        room_id: None,
+        note: None,
+        entry_type: "COURSE".to_string(),
+        title: None,
+        instructor_ids: vec![fixture.teacher_b, fixture.teacher_a],
+    };
+    let mut transaction = pool.begin().await.unwrap();
+    let entry_id = timetable_service::create_entry_in_tx_preserving_instructor_order(
+        &mut transaction,
+        fixture.actor_id,
+        None,
+        &request,
+    )
+    .await
+    .unwrap();
+    transaction.commit().await.unwrap();
+
+    let created = timetable_service::get_entry(&pool, entry_id).await.unwrap();
+    assert_eq!(created.instructors.len(), 2);
+    assert_eq!(created.instructors[0].user_id, fixture.teacher_b);
+    assert_eq!(created.instructors[0].role, "primary");
+    assert_eq!(created.instructors[1].user_id, fixture.teacher_a);
+    assert_eq!(created.instructors[1].role, "secondary");
+}
+
+#[tokio::test]
 async fn timetable_create_maps_a_concurrent_database_guard_to_conflict() {
     let pool = concurrent_migrated_pool("timetable_concurrent_guard_mapping").await;
     let fixture = exact_instructor_fixture(&pool).await;

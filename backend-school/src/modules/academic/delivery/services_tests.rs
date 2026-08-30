@@ -1549,6 +1549,37 @@ async fn adjust_and_stop_items_mutate_only_the_target_version_and_delete_restore
     .await
     .unwrap();
     assert_eq!(restored_entry_count, base_entry_count);
+    let (mapped_entry_count, mismatched_instructor_sets): (i64, i64) = sqlx::query_as(
+        r#"SELECT count(*),
+                  count(*) FILTER (
+                      WHERE ARRAY(
+                          SELECT concat(instructor.instructor_id::text, ':', instructor.role::text)
+                          FROM timetable_entry_instructors instructor
+                          WHERE instructor.entry_id = source.id
+                          ORDER BY instructor.instructor_id
+                      ) <> ARRAY(
+                          SELECT concat(instructor.instructor_id::text, ':', instructor.role::text)
+                          FROM timetable_entry_instructors instructor
+                          WHERE instructor.entry_id = restored.id
+                          ORDER BY instructor.instructor_id
+                      )
+                  )
+           FROM academic_timetable_entries source
+           JOIN academic_timetable_entries restored
+             ON restored.timetable_version_id = $2
+            AND restored.migration_provenance ->> 'restoredFromEntryId' = source.id::text
+           WHERE source.timetable_version_id = $1
+             AND source.learning_offering_id = $3
+             AND source.is_active"#,
+    )
+    .bind(change_set.base_timetable_version_id)
+    .bind(change_set.target_timetable_version_id)
+    .bind(offering_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(mapped_entry_count, base_entry_count);
+    assert_eq!(mismatched_instructor_sets, 0);
 }
 
 #[tokio::test]
@@ -1778,6 +1809,155 @@ async fn change_set_preview_blocks_an_empty_change_set_with_a_stable_hash() {
 }
 
 #[tokio::test]
+async fn readiness_blocks_missing_and_ineligible_exact_entry_instructors() {
+    let pool =
+        prepare_delivery_runtime_fixture("academic_change_set_exact_instructor_readiness").await;
+    let context = operational_change_runtime_context(&pool).await;
+    let change_set = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        14,
+        "change-set:exact-instructor-readiness:create",
+    )
+    .await;
+    let (target_entry_id, target_group_id, target_term_id, target_year_id, effective_from): (
+        Uuid,
+        Uuid,
+        Uuid,
+        Uuid,
+        chrono::NaiveDate,
+    ) = sqlx::query_as(
+        r#"SELECT entry.id, entry.learning_group_id, entry.academic_term_id,
+                  entry.academic_year_id, version.effective_from
+           FROM academic_timetable_entries entry
+           JOIN academic_timetable_versions version
+             ON version.id = entry.timetable_version_id
+           WHERE entry.timetable_version_id = $1
+             AND entry.is_active
+             AND entry.entry_type IN ('COURSE', 'ACTIVITY')
+             AND entry.learning_group_id IS NOT NULL
+             AND EXISTS (
+                 SELECT 1 FROM timetable_entry_instructors instructor
+                 WHERE instructor.entry_id = entry.id
+             )
+           ORDER BY entry.id
+           LIMIT 1"#,
+    )
+    .bind(change_set.target_timetable_version_id)
+    .fetch_one(&pool)
+    .await
+    .expect("cloned draft must contain one taught course or activity entry");
+    sqlx::query("UPDATE learning_groups SET status = 'draft' WHERE id = $1")
+        .bind(target_group_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM timetable_entry_instructors WHERE entry_id = $1")
+        .bind(target_entry_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let missing_preview = change_sets::preview_change_set(&pool, change_set.id)
+        .await
+        .unwrap();
+    assert!(missing_preview.findings.iter().any(|finding| {
+        finding.code == AcademicChangeFindingCode::MissingEntryInstructor
+            && finding.severity == AcademicChangeFindingSeverity::Blocking
+            && finding.resource_id == Some(target_entry_id)
+    }));
+
+    let ineligible_teacher_id = Uuid::new_v4();
+    sqlx::query(
+        r#"INSERT INTO users (
+               id, email, username, password_hash, first_name, last_name,
+               user_type, status
+           ) VALUES ($1, $2, $3, 'fixture-not-a-login', 'ครูนอกกลุ่ม', 'ทดสอบ', 'staff', 'active')"#,
+    )
+    .bind(ineligible_teacher_id)
+    .bind(format!("{ineligible_teacher_id}@example.invalid"))
+    .bind(format!("teacher-{ineligible_teacher_id}"))
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"INSERT INTO learning_group_teachers (
+               id, learning_group_id, academic_term_id, academic_year_id,
+               teacher_id, role, starts_on, ends_on, created_by, updated_by
+           ) VALUES (
+               gen_random_uuid(), $1, $2, $3, $4, 'secondary', $5, $6, $7, $7
+           )"#,
+    )
+    .bind(target_group_id)
+    .bind(target_term_id)
+    .bind(target_year_id)
+    .bind(ineligible_teacher_id)
+    .bind(effective_from - chrono::Duration::days(10))
+    .bind(effective_from - chrono::Duration::days(1))
+    .bind(context.teacher_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE learning_groups SET status = 'published' WHERE id = $1")
+        .bind(target_group_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        r#"INSERT INTO timetable_entry_instructors (id, entry_id, instructor_id, role)
+           VALUES (gen_random_uuid(), $1, $2, 'primary')"#,
+    )
+    .bind(target_entry_id)
+    .bind(ineligible_teacher_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let ineligible_preview = change_sets::preview_change_set(&pool, change_set.id)
+        .await
+        .unwrap();
+    assert!(ineligible_preview.findings.iter().any(|finding| {
+        finding.code == AcademicChangeFindingCode::IneligibleEntryInstructor
+            && finding.severity == AcademicChangeFindingSeverity::Blocking
+            && finding.resource_id == Some(target_entry_id)
+    }));
+    assert!(!ineligible_preview.findings.iter().any(|finding| {
+        finding.code == AcademicChangeFindingCode::MissingPrimaryTeacher
+            && finding.resource_id == Some(target_group_id)
+    }));
+
+    sqlx::query("UPDATE learning_groups SET status = 'draft' WHERE id = $1")
+        .bind(target_group_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        r#"UPDATE learning_group_teachers
+           SET starts_on = $2, ends_on = NULL
+           WHERE learning_group_id = $1 AND role = 'primary'"#,
+    )
+    .bind(target_group_id)
+    .bind(effective_from + chrono::Duration::days(1))
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE learning_groups SET status = 'published' WHERE id = $1")
+        .bind(target_group_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let missing_primary_preview = change_sets::preview_change_set(&pool, change_set.id)
+        .await
+        .unwrap();
+    assert!(missing_primary_preview.findings.iter().any(|finding| {
+        finding.code == AcademicChangeFindingCode::MissingPrimaryTeacher
+            && finding.severity == AcademicChangeFindingSeverity::Blocking
+            && finding.resource_id == Some(target_group_id)
+    }));
+}
+
+#[tokio::test]
 async fn schedule_only_change_set_can_preview_and_publish_after_a_draft_entry_changes() {
     let pool = prepare_delivery_runtime_fixture("academic_change_set_schedule_only").await;
     let context = operational_change_runtime_context(&pool).await;
@@ -1818,6 +1998,28 @@ async fn schedule_only_change_set_can_preview_and_publish_after_a_draft_entry_ch
         .fetch_one(&pool)
         .await
         .unwrap();
+        let instructor_id: Uuid = sqlx::query_scalar(
+            r#"SELECT assignment.teacher_id
+               FROM learning_group_teachers assignment
+               JOIN academic_timetable_versions version ON version.id = $2
+               JOIN users teacher ON teacher.id = assignment.teacher_id
+               WHERE assignment.learning_group_id = $1
+                 AND assignment.starts_on <= version.effective_from
+                 AND (
+                     assignment.ends_on IS NULL
+                     OR assignment.ends_on >= version.effective_from
+                 )
+                 AND teacher.status = 'active'
+               ORDER BY CASE assignment.role WHEN 'primary' THEN 1 ELSE 2 END,
+                        assignment.starts_on,
+                        assignment.teacher_id
+               LIMIT 1"#,
+        )
+        .bind(count.learning_group_id)
+        .bind(change_set.target_timetable_version_id)
+        .fetch_one(&pool)
+        .await
+        .expect("fixture learning group must have an eligible teacher");
         let mut actual_periods = count.actual_periods;
         for (day_of_week, period_id) in &candidate_slots {
             if actual_periods >= i64::from(count.target_periods) {
@@ -1837,7 +2039,7 @@ async fn schedule_only_change_set_can_preview_and_publish_after_a_draft_entry_ch
                     note: None,
                     entry_type: entry_type.clone(),
                     title: None,
-                    instructor_ids: Vec::new(),
+                    instructor_ids: vec![instructor_id],
                 },
             )
             .await;
@@ -2463,6 +2665,28 @@ async fn publication_requires_the_exact_current_warning_acknowledgements() {
             .await
             .unwrap();
     for (learning_group_id, actual_periods) in group_counts {
+        let instructor_id: Uuid = sqlx::query_scalar(
+            r#"SELECT assignment.teacher_id
+               FROM learning_group_teachers assignment
+               JOIN academic_timetable_versions version ON version.id = $2
+               JOIN users teacher ON teacher.id = assignment.teacher_id
+               WHERE assignment.learning_group_id = $1
+                 AND assignment.starts_on <= version.effective_from
+                 AND (
+                     assignment.ends_on IS NULL
+                     OR assignment.ends_on >= version.effective_from
+                 )
+                 AND teacher.status = 'active'
+               ORDER BY CASE assignment.role WHEN 'primary' THEN 1 ELSE 2 END,
+                        assignment.starts_on,
+                        assignment.teacher_id
+               LIMIT 1"#,
+        )
+        .bind(learning_group_id)
+        .bind(change_set.target_timetable_version_id)
+        .fetch_one(&pool)
+        .await
+        .expect("fixture learning group must have an eligible teacher");
         for _ in actual_periods..desired_periods {
             let (day_of_week, bell_schedule_period_id): (String, Uuid) = sqlx::query_as(
                 r#"SELECT day.code, period.id
@@ -2500,7 +2724,7 @@ async fn publication_requires_the_exact_current_warning_acknowledgements() {
                     note: Some("ทดสอบคำเตือนคาบเกิน".to_string()),
                     entry_type: entry_type.clone(),
                     title: None,
-                    instructor_ids: Vec::new(),
+                    instructor_ids: vec![instructor_id],
                 },
             )
             .await
@@ -2837,7 +3061,7 @@ async fn publishing_an_added_course_publishes_its_prepared_groups_and_rosters_to
                 note: None,
                 entry_type: "COURSE".to_string(),
                 title: None,
-                instructor_ids: Vec::new(),
+                instructor_ids: vec![context.teacher_id],
             },
         )
         .await

@@ -201,11 +201,20 @@ pub async fn from_current(
                learning_group_code, target_selector, migration_provenance
            )
            SELECT gen_random_uuid(), $2, entry.day_of_week, entry.entry_type, entry.title,
-                  CASE WHEN entry.learning_group_id IS NULL THEN coalesce((
-                      SELECT jsonb_agg(instructor.instructor_id ORDER BY instructor.instructor_id)
+                  coalesce((
+                      SELECT jsonb_agg(
+                          instructor.instructor_id
+                          ORDER BY CASE instructor.role
+                                       WHEN 'primary' THEN 1
+                                       WHEN 'secondary' THEN 2
+                                       ELSE 3
+                                   END,
+                                   instructor.created_at,
+                                   instructor.instructor_id
+                      )
                       FROM timetable_entry_instructors instructor
                       WHERE instructor.entry_id = entry.id
-                  ), '[]'::jsonb) ELSE '[]'::jsonb END,
+                  ), '[]'::jsonb),
                   entry.room_id, period.order_index,
                   CASE
                       WHEN entry.learning_group_id IS NULL THEN 'structural'
@@ -263,6 +272,11 @@ pub async fn apply_template(
         request.academic_term_id,
     )
     .await?;
+    let version_effective_from: chrono::NaiveDate =
+        sqlx::query_scalar("SELECT effective_from FROM academic_timetable_versions WHERE id = $1")
+            .bind(request.timetable_version_id)
+            .fetch_one(&mut *transaction)
+            .await?;
     let mut entry_ids = Vec::with_capacity(template.entries.len());
     for entry in template.entries {
         let period_id: Uuid = sqlx::query_scalar(
@@ -304,6 +318,18 @@ pub async fn apply_template(
         } else {
             None
         };
+        let instructor_ids = match learning_group_id {
+            Some(group_id) => {
+                eligible_template_group_instructors(
+                    &mut transaction,
+                    group_id,
+                    version_effective_from,
+                    &entry.instructor_ids,
+                )
+                .await?
+            }
+            None => entry.instructor_ids,
+        };
         let create_request =
             crate::modules::academic::models::timetable::CreateTimetableEntryRequest {
                 timetable_version_id: request.timetable_version_id,
@@ -316,16 +342,17 @@ pub async fn apply_template(
                 note: None,
                 entry_type: entry.entry_type,
                 title: entry.title,
-                instructor_ids: entry.instructor_ids,
+                instructor_ids,
             };
         entry_ids.push(
-            timetable_service::create_entry_in_tx(
+            timetable_service::create_entry_in_tx_preserving_instructor_order(
                 &mut transaction,
                 actor_user_id,
                 Some(batch_id),
                 &create_request,
             )
-            .await?,
+            .await
+            .map_err(timetable_service::map_timetable_write_error)?,
         );
     }
     transaction.commit().await?;
@@ -333,6 +360,45 @@ pub async fn apply_template(
         applied: entry_ids.len(),
         entry_ids,
     })
+}
+
+async fn eligible_template_group_instructors(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    learning_group_id: Uuid,
+    effective_from: chrono::NaiveDate,
+    selected_ids: &[Uuid],
+) -> Result<Vec<Uuid>, AppError> {
+    let mut requested_ids = Vec::new();
+    for requested_id in selected_ids.iter().copied() {
+        if !requested_ids.contains(&requested_id) {
+            requested_ids.push(requested_id);
+        }
+    }
+    if requested_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let eligible_ids: Vec<Uuid> = sqlx::query_scalar(
+        r#"SELECT DISTINCT assignment.teacher_id
+           FROM learning_group_teachers assignment
+           JOIN users teacher ON teacher.id = assignment.teacher_id
+           WHERE assignment.learning_group_id = $1
+             AND assignment.starts_on <= $2
+             AND (assignment.ends_on IS NULL OR assignment.ends_on >= $2)
+             AND assignment.teacher_id = ANY($3)
+             AND teacher.user_type = 'staff'
+             AND teacher.status = 'active'
+           ORDER BY assignment.teacher_id"#,
+    )
+    .bind(learning_group_id)
+    .bind(effective_from)
+    .bind(&requested_ids)
+    .fetch_all(&mut **transaction)
+    .await?;
+    if eligible_ids.len() == requested_ids.len() {
+        Ok(requested_ids)
+    } else {
+        Ok(Vec::new())
+    }
 }
 
 pub async fn clear_timetable(
@@ -373,7 +439,8 @@ pub async fn clear_timetable(
     .bind(actor_user_id)
     .bind(request.timetable_version_id)
     .execute(&mut *transaction)
-    .await?;
+    .await
+    .map_err(|error| timetable_service::map_timetable_write_error(AppError::DbError(error)))?;
     transaction.commit().await?;
     timetable_service::get_entries(pool, &ids).await
 }
