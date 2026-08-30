@@ -289,6 +289,19 @@ mod tests {
         .unwrap();
 
         apply_phase_b_runtime_migrations(&pool).await.unwrap();
+        sqlx::query(
+            r#"DELETE FROM learning_group_teachers teacher
+			   USING learning_groups learning_group, learning_offerings offering
+			   WHERE teacher.learning_group_id = learning_group.id
+			     AND learning_group.learning_offering_id = offering.id
+			     AND offering.owning_organization_unit_id IS NULL
+			     AND teacher.teacher_id = $1"#,
+        )
+        .bind(Uuid::parse_str(ACTOR_ID).unwrap())
+        .execute(&pool)
+        .await
+        .unwrap();
+        apply_migrations_through(&pool, 53).await.unwrap();
 
         sqlx::raw_sql(
             r#"
@@ -485,18 +498,6 @@ mod tests {
             AcademicResourceAccess::School
         );
 
-        sqlx::query(
-            r#"DELETE FROM learning_group_teachers teacher
-               USING learning_groups learning_group
-               WHERE teacher.learning_group_id = learning_group.id
-                 AND learning_group.learning_offering_id = $1
-                 AND teacher.teacher_id = $2"#,
-        )
-        .bind(school_offering_id)
-        .bind(assigned_manager.user_id)
-        .execute(&pool)
-        .await
-        .unwrap();
         let unassigned_offering_id = school_offering_id;
         assert!(matches!(
             require_learning_offering_batch_access(
