@@ -109,6 +109,19 @@ pub fn academic_routes() -> Router<AppState> {
                 "/exam-schedules/{round_id}/publish",
                 post(handlers::exam_schedule::publish_round),
             )
+            // Timetable versions: register literal paths before timetable entry IDs.
+            .route(
+                "/timetable-versions/resolve",
+                get(handlers::timetable_versions::resolve_version),
+            )
+            .route(
+                "/timetable-versions",
+                get(handlers::timetable_versions::list_versions),
+            )
+            .route(
+                "/timetable-versions/{source_id}/clone",
+                post(handlers::timetable_versions::clone_version),
+            )
             // Timetable: Entries
             .route(
                 "/timetable",

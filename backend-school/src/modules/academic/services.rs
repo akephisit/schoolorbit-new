@@ -6,9 +6,12 @@ pub mod exam_schedule_service;
 pub mod timetable_realtime_service;
 pub mod timetable_service;
 pub mod timetable_template_service;
+pub mod timetable_version_service;
 
 #[cfg(test)]
 mod exam_schedule_service_tests;
 
 #[cfg(test)]
 mod timetable_service_tests;
+#[cfg(test)]
+mod timetable_version_service_tests;
