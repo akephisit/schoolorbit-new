@@ -383,22 +383,25 @@ async function mockWorkspace(
 }
 
 test('manager creates a dated midterm draft without changing curriculum', async ({ page }) => {
+	await page.clock.setFixedTime(new Date('2026-08-30T08:00:00+07:00'));
 	const mocked = await mockWorkspace(page, ['*']);
 	await page.goto(`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}`);
 
 	await page.getByRole('button', { name: 'เพิ่ม/ปรับ/หยุดกลางภาค' }).click();
 	await expect(page.getByText('ไม่เปลี่ยนหลักสูตร')).toBeVisible();
 	await page.getByRole('button', { name: 'เลือกวันที่เริ่มใช้จริง' }).click();
-	await page.getByRole('button', { name: '30', exact: true }).click();
+	await page.getByRole('button', { name: 'วันอาทิตย์ที่ 30 สิงหาคม 2569', exact: true }).click();
 	await page.getByLabel('เหตุผลการเปลี่ยนแปลง').fill('เพิ่มรายวิชาเสริมตามมติฝ่ายวิชาการ');
 	await page.getByRole('button', { name: 'สร้างแบบร่าง' }).click();
 
-	await expect(page.getByRole('heading', { name: 'การเปลี่ยนแปลงกลางภาค' })).toBeVisible();
+	await expect(
+		page.getByRole('heading', { name: 'การเปลี่ยนแปลงกลางภาค', exact: true })
+	).toBeVisible();
 	expect(mocked.createdRequest()).toMatchObject({
 		academicTermId: ids.term,
+		effectiveFrom: '2026-08-30',
 		reason: 'เพิ่มรายวิชาเสริมตามมติฝ่ายวิชาการ'
 	});
-	expect(mocked.createdRequest()?.effectiveFrom).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 });
 
 test('read-only staff never loads management options or sees mutation controls', async ({

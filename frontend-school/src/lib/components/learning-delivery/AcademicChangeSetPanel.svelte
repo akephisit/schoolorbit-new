@@ -80,9 +80,19 @@
 	let blockingFindings = $derived(
 		preview?.findings.filter((finding) => finding.severity === 'blocking') ?? []
 	);
-	let warningFindings = $derived(
-		preview?.findings.filter((finding) => finding.severity === 'warning') ?? []
-	);
+	let warningFindings = $derived.by(() => {
+		return (preview?.findings ?? [])
+			.filter((finding) => finding.severity === 'warning')
+			.reduce<AcademicChangeFinding[]>((findings, finding) => {
+				const existingIndex = findings.findIndex((existing) => existing.code === finding.code);
+				if (existingIndex === -1) return [...findings, finding];
+				return findings.map((existing, index) =>
+					index === existingIndex
+						? { ...existing, affectedCount: existing.affectedCount + finding.affectedCount }
+						: existing
+				);
+			}, []);
+	});
 	let warningsAcknowledged = $derived(
 		warningFindings.every((finding) => acknowledgedWarnings.includes(finding.code))
 	);
@@ -737,7 +747,7 @@
 									<TriangleAlert class="size-4" /> คำเตือน {warningFindings.length}
 								</p>
 								<div class="mt-2 space-y-2">
-									{#each warningFindings as finding (`${finding.code}:${finding.resourceId ?? ''}`)}
+									{#each warningFindings as finding (finding.code)}
 										<label
 											class="flex cursor-pointer items-start gap-2 rounded-lg bg-background/80 p-2 text-sm"
 										>
