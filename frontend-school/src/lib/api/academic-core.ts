@@ -77,6 +77,9 @@ export type PublishVersionRequest = Schemas['PublishVersionRequest'];
 export type CreateCurriculumRequest = Schemas['CreateCurriculumRequest'];
 export type UpdateCurriculumRequest = Schemas['UpdateCurriculumRequest'];
 export type CreateCurriculumVersionRequest = Schemas['CreateCurriculumVersionRequest'];
+type CloneCurriculumVersionOperation = operations['cloneCurriculumVersionDraft'];
+export type CloneCurriculumVersionRequest =
+	CloneCurriculumVersionOperation['requestBody']['content']['application/json'];
 export type UpdateCurriculumVersionRequest = Schemas['UpdateCurriculumVersionRequest'];
 export type CreateStudyProgramRequest = Schemas['CreateStudyProgramRequest'];
 export type UpdateStudyProgramRequest = Schemas['UpdateStudyProgramRequest'];
@@ -348,6 +351,17 @@ export const createCurriculumVersion = (
 	academicData(
 		apiClient.post<CurriculumVersion>(`/api/academic/curricula/${curriculumId}/versions`, body),
 		'สร้างรุ่นหลักสูตรไม่สำเร็จ'
+	);
+export const cloneCurriculumVersionDraft = (
+	sourceVersionId: CloneCurriculumVersionOperation['parameters']['path']['id'],
+	body: CloneCurriculumVersionRequest
+) =>
+	academicData(
+		apiClient.post<CurriculumVersion>(
+			`/api/academic/curriculum-versions/${requiredContext(sourceVersionId, 'รุ่นหลักสูตรต้นทาง')}/clone-draft`,
+			body
+		),
+		'สร้างหลักสูตรรุ่นใหม่จากรุ่นที่เผยแพร่ไม่สำเร็จ'
 	);
 export const updateCurriculumVersion = (id: string, body: UpdateCurriculumVersionRequest) =>
 	academicData(

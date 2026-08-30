@@ -517,6 +517,22 @@ export interface paths {
 		patch: operations['updateCurriculumVersion'];
 		trace?: never;
 	};
+	'/api/academic/curriculum-versions/{id}/clone-draft': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['cloneCurriculumVersionDraft'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/curriculum-versions/{id}/management-options': {
 		parameters: {
 			query?: never;
@@ -6012,6 +6028,8 @@ export interface components {
 				/** Format: uuid */
 				academicYearId: string;
 				homerooms: components['schemas']['HomeroomDeliveryRoom'][];
+				/** Format: date */
+				timetableVersionEffectiveFrom: string | null;
 				/** Format: uuid */
 				timetableVersionId: string | null;
 				timetableVersionStatus: null | components['schemas']['TimetableVersionStatus'];
@@ -9973,6 +9991,16 @@ export interface components {
 			/** Format: uuid */
 			timetableVersionId: string;
 		};
+		CloneCurriculumVersionRequest: {
+			description?: string | null;
+			/** Format: uuid */
+			endAcademicYearId?: string | null;
+			/** Format: int64 */
+			sourceRowVersion: number;
+			/** Format: uuid */
+			startAcademicYearId: string;
+			versionName: string;
+		};
 		CloneTimetableVersionRequest: {
 			/** Format: date */
 			effectiveFrom: string;
@@ -10530,6 +10558,29 @@ export interface components {
 			academicYears: components['schemas']['AcademicYearLookupItem'][];
 			gradeLevels: components['schemas']['GradeLevelLookupItem'][];
 			ownerOptions: components['schemas']['CatalogOwnerOption'][];
+		};
+		/** @enum {string} */
+		CurriculumDeliveryAlignmentState:
+			| 'matches_curriculum'
+			| 'curriculum_requirement_not_offered'
+			| 'extra_offering'
+			| 'ended_early'
+			| 'operational_periods_differ';
+		CurriculumDeliveryExtraOffering: {
+			alignmentStates: components['schemas']['CurriculumDeliveryAlignmentState'][];
+			/** Format: uuid */
+			catalogVersionId: string;
+			code: string;
+			/** Format: date */
+			endsOn: string | null;
+			name: string;
+			/** Format: uuid */
+			offeringId: string;
+			resourceKind: components['schemas']['LearningOfferingKind'];
+			/** Format: date */
+			startsOn: string | null;
+			/** Format: int32 */
+			weeklyPeriodTarget: number | null;
 		};
 		/** @enum {string} */
 		CurriculumDisplayState: 'current' | 'upcoming' | 'expired' | 'unpublished';
@@ -11368,6 +11419,7 @@ export interface components {
 			timetableEntryCount: number;
 		};
 		HomeroomDeliveryItem: {
+			alignmentStates: components['schemas']['CurriculumDeliveryAlignmentState'][];
 			/** Format: uuid */
 			catalogVersionId: string;
 			code: string;
@@ -11393,10 +11445,15 @@ export interface components {
 			academicTermId: string;
 			/** Format: uuid */
 			academicYearId: string;
+			/** Format: uuid */
+			timetableVersionId?: string | null;
 		};
 		HomeroomDeliveryRoom: {
 			blockers: components['schemas']['DeliveryPrerequisite'][];
+			/** Format: uuid */
+			curriculumVersionId: string;
 			expectedCount: number;
+			extraOfferings: components['schemas']['CurriculumDeliveryExtraOffering'][];
 			gradeLevel: components['schemas']['GradeLevelLookupItem'];
 			homeroom: components['schemas']['HomeroomLookupItem'];
 			items: components['schemas']['HomeroomDeliveryItem'][];
@@ -11409,6 +11466,8 @@ export interface components {
 			/** Format: uuid */
 			academicYearId: string;
 			homerooms: components['schemas']['HomeroomDeliveryRoom'][];
+			/** Format: date */
+			timetableVersionEffectiveFrom: string | null;
 			/** Format: uuid */
 			timetableVersionId: string | null;
 			timetableVersionStatus: null | components['schemas']['TimetableVersionStatus'];
@@ -17501,6 +17560,78 @@ export interface operations {
 			};
 		};
 	};
+	cloneCurriculumVersionDraft: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Published source curriculum version ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CloneCurriculumVersionRequest'];
+			};
+		};
+		responses: {
+			/** @description Complete curriculum structure cloned into a future draft */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CurriculumVersion'];
+				};
+			};
+			/** @description Invalid future curriculum effectiveness */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic curriculum management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Source curriculum version not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Source version is stale or not published */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	getCurriculumManagementOptions: {
 		parameters: {
 			query?: never;
@@ -17759,6 +17890,7 @@ export interface operations {
 			query: {
 				academicTermId: string;
 				academicYearId: string;
+				timetableVersionId?: string;
 			};
 			header?: never;
 			path?: never;

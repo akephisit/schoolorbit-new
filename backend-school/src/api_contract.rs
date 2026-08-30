@@ -2832,6 +2832,60 @@ mod tests {
     }
 
     #[test]
+    fn curriculum_alignment_and_clone_handoff_are_typed() {
+        let document = school_api_value().expect("document should serialize");
+        assert_eq!(
+            query_contract(&document, "/api/academic/delivery/homerooms", "get"),
+            BTreeSet::from([
+                ("academicTermId".to_string(), true),
+                ("academicYearId".to_string(), true),
+                ("timetableVersionId".to_string(), false),
+            ])
+        );
+        assert_eq!(
+            document["components"]["schemas"]["CurriculumDeliveryAlignmentState"]["enum"],
+            serde_json::json!([
+                "matches_curriculum",
+                "curriculum_requirement_not_offered",
+                "extra_offering",
+                "ended_early",
+                "operational_periods_differ"
+            ])
+        );
+        for schema in [
+            "CurriculumDeliveryExtraOffering",
+            "HomeroomDeliveryItem",
+            "HomeroomDeliveryRoom",
+            "HomeroomDeliveryWorkspace",
+            "CloneCurriculumVersionRequest",
+        ] {
+            assert!(
+                !document["components"]["schemas"][schema].is_null(),
+                "missing schema {schema}"
+            );
+        }
+
+        let operation =
+            &document["paths"]["/api/academic/curriculum-versions/{id}/clone-draft"]["post"];
+        assert_eq!(operation["operationId"], "cloneCurriculumVersionDraft");
+        assert_eq!(
+            operation["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/CloneCurriculumVersionRequest"
+        );
+        assert_eq!(
+            operation["responses"]["201"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_CurriculumVersion"
+        );
+        for status in ["400", "401", "403", "404", "409"] {
+            assert_eq!(
+                operation["responses"][status]["content"]["application/json"]["schema"]["$ref"],
+                "#/components/schemas/ApiErrorResponse",
+                "status {status}"
+            );
+        }
+    }
+
+    #[test]
     fn supervision_routes_are_fully_documented() {
         let document = school_api_value().expect("document should serialize");
         let expected = [

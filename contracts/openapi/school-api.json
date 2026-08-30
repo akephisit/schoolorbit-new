@@ -5535,6 +5535,13 @@
                 },
                 "type": "array"
               },
+              "timetableVersionEffectiveFrom": {
+                "format": "date",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "timetableVersionId": {
                 "format": "uuid",
                 "type": [
@@ -5564,6 +5571,7 @@
               "academicYearId",
               "timetableVersionId",
               "timetableVersionStatus",
+              "timetableVersionEffectiveFrom",
               "homerooms",
               "unlinked"
             ],
@@ -20216,6 +20224,41 @@
         ],
         "type": "object"
       },
+      "CloneCurriculumVersionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "endAcademicYearId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "startAcademicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "versionName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "versionName",
+          "startAcademicYearId",
+          "sourceRowVersion"
+        ],
+        "type": "object"
+      },
       "CloneTimetableVersionRequest": {
         "additionalProperties": false,
         "properties": {
@@ -22438,6 +22481,76 @@
           "academicYears",
           "gradeLevels",
           "ownerOptions"
+        ],
+        "type": "object"
+      },
+      "CurriculumDeliveryAlignmentState": {
+        "enum": [
+          "matches_curriculum",
+          "curriculum_requirement_not_offered",
+          "extra_offering",
+          "ended_early",
+          "operational_periods_differ"
+        ],
+        "type": "string"
+      },
+      "CurriculumDeliveryExtraOffering": {
+        "properties": {
+          "alignmentStates": {
+            "items": {
+              "$ref": "#/components/schemas/CurriculumDeliveryAlignmentState"
+            },
+            "type": "array"
+          },
+          "catalogVersionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "endsOn": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "offeringId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "resourceKind": {
+            "$ref": "#/components/schemas/LearningOfferingKind"
+          },
+          "startsOn": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "weeklyPeriodTarget": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "offeringId",
+          "resourceKind",
+          "catalogVersionId",
+          "code",
+          "name",
+          "weeklyPeriodTarget",
+          "startsOn",
+          "endsOn",
+          "alignmentStates"
         ],
         "type": "object"
       },
@@ -25364,6 +25477,12 @@
       },
       "HomeroomDeliveryItem": {
         "properties": {
+          "alignmentStates": {
+            "items": {
+              "$ref": "#/components/schemas/CurriculumDeliveryAlignmentState"
+            },
+            "type": "array"
+          },
           "catalogVersionId": {
             "format": "uuid",
             "type": "string"
@@ -25436,6 +25555,7 @@
           "groupMode",
           "teacherState",
           "timetableState",
+          "alignmentStates",
           "groups"
         ],
         "type": "object"
@@ -25450,6 +25570,13 @@
           "academicYearId": {
             "format": "uuid",
             "type": "string"
+          },
+          "timetableVersionId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -25466,9 +25593,19 @@
             },
             "type": "array"
           },
+          "curriculumVersionId": {
+            "format": "uuid",
+            "type": "string"
+          },
           "expectedCount": {
             "minimum": 0,
             "type": "integer"
+          },
+          "extraOfferings": {
+            "items": {
+              "$ref": "#/components/schemas/CurriculumDeliveryExtraOffering"
+            },
+            "type": "array"
           },
           "gradeLevel": {
             "$ref": "#/components/schemas/GradeLevelLookupItem"
@@ -25494,9 +25631,11 @@
           "homeroom",
           "gradeLevel",
           "studyProgram",
+          "curriculumVersionId",
           "expectedCount",
           "readyCount",
           "items",
+          "extraOfferings",
           "blockers"
         ],
         "type": "object"
@@ -25516,6 +25655,13 @@
               "$ref": "#/components/schemas/HomeroomDeliveryRoom"
             },
             "type": "array"
+          },
+          "timetableVersionEffectiveFrom": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "timetableVersionId": {
             "format": "uuid",
@@ -25546,6 +25692,7 @@
           "academicYearId",
           "timetableVersionId",
           "timetableVersionStatus",
+          "timetableVersionEffectiveFrom",
           "homerooms",
           "unlinked"
         ],
@@ -40548,6 +40695,98 @@
         ]
       }
     },
+    "/api/academic/curriculum-versions/{id}/clone-draft": {
+      "post": {
+        "operationId": "cloneCurriculumVersionDraft",
+        "parameters": [
+          {
+            "description": "Published source curriculum version ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloneCurriculumVersionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CurriculumVersion"
+                }
+              }
+            },
+            "description": "Complete curriculum structure cloned into a future draft"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid future curriculum effectiveness"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic curriculum management permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Source curriculum version not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Source version is stale or not published"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
     "/api/academic/curriculum-versions/{id}/management-options": {
       "get": {
         "operationId": "getCurriculumManagementOptions",
@@ -40881,6 +41120,15 @@
             "in": "query",
             "name": "academicTermId",
             "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "timetableVersionId",
+            "required": false,
             "schema": {
               "format": "uuid",
               "type": "string"

@@ -15,6 +15,8 @@ export type LearningOfferingOverviewItem = Schemas['LearningOfferingOverviewItem
 export type HomeroomDeliveryWorkspace = Schemas['HomeroomDeliveryWorkspace'];
 export type HomeroomDeliveryRoom = Schemas['HomeroomDeliveryRoom'];
 export type HomeroomDeliveryItem = Schemas['HomeroomDeliveryItem'];
+export type CurriculumDeliveryAlignmentState = Schemas['CurriculumDeliveryAlignmentState'];
+export type CurriculumDeliveryExtraOffering = Schemas['CurriculumDeliveryExtraOffering'];
 export type DeliveryManagementOptions = Schemas['DeliveryManagementOptions'];
 export type LearningGroup = Schemas['LearningGroup'];
 export type TeacherAssignment = Schemas['TeacherAssignmentInput'];
@@ -82,6 +84,7 @@ type DeliveryManagementOptionsQuery = NonNullable<
 type HomeroomDeliveryWorkspaceQuery = NonNullable<
 	operations['getHomeroomDeliveryWorkspace']['parameters']['query']
 >;
+type HomeroomDeliveryRequestOptions = ApiRequestOptions & { timetableVersionId?: string };
 type ListAcademicTermChangeSetsQuery = NonNullable<
 	operations['listAcademicTermChangeSets']['parameters']['query']
 >;
@@ -107,17 +110,20 @@ function changeSetPath(id: OperationPath<GetAcademicTermChangeSetOperation>['id'
 export const getHomeroomDeliveryWorkspace = (
 	academicYearId: string,
 	academicTermId: string,
-	options: ApiRequestOptions = {}
+	options: HomeroomDeliveryRequestOptions = {}
 ) => {
 	const yearId = academicYearId.trim();
 	if (!yearId) throw new Error('กรุณาเลือกปีการศึกษาก่อน');
+	const timetableVersionId = options.timetableVersionId?.trim();
+	const { timetableVersionId: _selectedVersion, ...requestOptions } = options;
 	const query = {
 		academicYearId: yearId,
-		academicTermId: selectedTerm(academicTermId)
+		academicTermId: selectedTerm(academicTermId),
+		...(timetableVersionId ? { timetableVersionId } : {})
 	} satisfies HomeroomDeliveryWorkspaceQuery;
 	return deliveryData(
 		apiClient.get<HomeroomDeliveryWorkspace>('/api/academic/delivery/homerooms', {
-			...options,
+			...requestOptions,
 			query
 		}),
 		'ไม่สามารถโหลดภาพรวมรายห้องประจำชั้นได้'
