@@ -148,6 +148,10 @@ pub fn routes() -> Router<AppState> {
             get(handlers::get_curriculum_management_options),
         )
         .route(
+            "/curriculum-versions/{id}/clone-draft",
+            post(handlers::clone_curriculum_version_draft),
+        )
+        .route(
             "/curriculum-versions/{id}/publish",
             post(handlers::publish_curriculum_version),
         )

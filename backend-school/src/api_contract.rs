@@ -392,6 +392,7 @@ use utoipa::OpenApi;
         crate::modules::academic::core::handlers::update_curriculum,
         crate::modules::academic::core::handlers::list_curriculum_versions,
         crate::modules::academic::core::handlers::create_curriculum_version,
+        crate::modules::academic::core::handlers::clone_curriculum_version_draft,
         crate::modules::academic::core::handlers::get_curriculum_version,
         crate::modules::academic::core::handlers::get_curriculum_management_options,
         crate::modules::academic::core::handlers::update_curriculum_version,

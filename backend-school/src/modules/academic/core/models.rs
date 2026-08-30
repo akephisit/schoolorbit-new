@@ -682,6 +682,16 @@ pub struct CreateCurriculumVersionRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CloneCurriculumVersionRequest {
+    pub version_name: String,
+    pub start_academic_year_id: Uuid,
+    pub end_academic_year_id: Option<Uuid>,
+    pub description: Option<String>,
+    pub source_row_version: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateCurriculumVersionRequest {
     pub version_name: String,
     pub start_academic_year_id: Uuid,

@@ -1,18 +1,18 @@
 use super::models::{
     AcademicTermStatus, AcademicTermType, AcademicYearStatus, BellSchedulePeriodInput,
-    CatalogDisplayState, CreateAcademicTermRequest, CreateActivityVersionRequest,
-    CreateBellScheduleRequest, CreateCatalogActivityRequest, CreateCatalogSubjectRequest,
-    CreateCurriculumRequest, CreateCurriculumVersionRequest, CreateHomeroomPlacementRequest,
-    CreateHomeroomRequest, CreateStudentAcademicYearRequest, CreateStudyProgramRequest,
-    CreateSubjectGroupRequest, CreateSubjectVersionRequest, CurriculumDisplayState,
-    CurriculumStructureRequirementInput, CurriculumTermSlotInput, HomeroomPlacementStatus,
-    PublishVersionRequest, ReplaceBellSchedulePeriodsRequest, ReplaceCurriculumStructureRequest,
-    ReplaceCurriculumTermSlotsRequest, ReplaceGradeProgressionsRequest, RequirementKind,
-    RequirementResourceKind, StudentAcademicYearFilter, StudentYearCandidateQuery,
-    TransferHomeroomPlacementRequest, UpdateAcademicTermRequest, UpdateAcademicYearRequest,
-    UpdateActivityVersionRequest, UpdateCatalogActivityRequest, UpdateCatalogSubjectRequest,
-    UpdateStudyProgramRequest, UpdateSubjectGroupRequest, UpdateSubjectVersionRequest,
-    VersionStatus,
+    CatalogDisplayState, CloneCurriculumVersionRequest, CreateAcademicTermRequest,
+    CreateActivityVersionRequest, CreateBellScheduleRequest, CreateCatalogActivityRequest,
+    CreateCatalogSubjectRequest, CreateCurriculumRequest, CreateCurriculumVersionRequest,
+    CreateHomeroomPlacementRequest, CreateHomeroomRequest, CreateStudentAcademicYearRequest,
+    CreateStudyProgramRequest, CreateSubjectGroupRequest, CreateSubjectVersionRequest,
+    CurriculumDisplayState, CurriculumStructureRequirementInput, CurriculumTermSlotInput,
+    HomeroomPlacementStatus, PublishVersionRequest, ReplaceBellSchedulePeriodsRequest,
+    ReplaceCurriculumStructureRequest, ReplaceCurriculumTermSlotsRequest,
+    ReplaceGradeProgressionsRequest, RequirementKind, RequirementResourceKind,
+    StudentAcademicYearFilter, StudentYearCandidateQuery, TransferHomeroomPlacementRequest,
+    UpdateAcademicTermRequest, UpdateAcademicYearRequest, UpdateActivityVersionRequest,
+    UpdateCatalogActivityRequest, UpdateCatalogSubjectRequest, UpdateStudyProgramRequest,
+    UpdateSubjectGroupRequest, UpdateSubjectVersionRequest, VersionStatus,
 };
 use super::services::{
     bell_schedules, catalog, context, curriculum, curriculum_structure, ensure_draft_version,
@@ -282,6 +282,257 @@ async fn create_curriculum_overview_fixture(
         .unwrap();
     }
     (curriculum_row.id, version.id)
+}
+
+#[tokio::test]
+async fn published_curriculum_clone_copies_the_complete_structure_into_a_future_draft() {
+    let pool = prepare_core_fixture("academic_core_curriculum_clone_draft").await;
+    let owner_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM organization_units WHERE is_active ORDER BY id LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let grade_level_id: Uuid = sqlx::query_scalar(
+        r#"SELECT grade.value::uuid
+           FROM activity_versions version
+           CROSS JOIN LATERAL jsonb_array_elements_text(
+               COALESCE(version.grade_level_ids, '[]'::jsonb)
+           ) grade(value)
+           WHERE version.status = 'published'
+           ORDER BY grade.value LIMIT 1"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("fixture must include a published activity with a supported grade");
+    let subject_version_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM subject_versions WHERE status = 'published' ORDER BY id LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let activity_version_id: Uuid = sqlx::query_scalar(
+        r#"SELECT version.id
+           FROM activity_versions version
+           WHERE version.status = 'published'
+             AND EXISTS (
+                 SELECT 1
+                 FROM jsonb_array_elements_text(
+                     COALESCE(version.grade_level_ids, '[]'::jsonb)
+                 ) grade(value)
+                 WHERE grade.value::uuid = $1
+             )
+           ORDER BY version.id LIMIT 1"#,
+    )
+    .bind(grade_level_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let (curriculum_id, source_version_id) = create_curriculum_overview_fixture(
+        &pool,
+        owner_id,
+        grade_level_id,
+        subject_version_id,
+        "CLONE-SOURCE",
+        CURRENT_YEAR_ID,
+        None,
+        false,
+        2,
+    )
+    .await;
+    let source_before_activity = curriculum_structure::get_workspace(&pool, source_version_id)
+        .await
+        .unwrap();
+    let first_program = source_before_activity.programs[0].clone();
+    let first_slot_id = source_before_activity.term_slots[0].id;
+    curriculum_structure::replace_program_structure(
+        &pool,
+        first_program.id,
+        ReplaceCurriculumStructureRequest {
+            requirements: vec![
+                CurriculumStructureRequirementInput {
+                    resource_kind: RequirementResourceKind::Course,
+                    catalog_version_id: subject_version_id,
+                    grade_level_id,
+                    term_slot_id: first_slot_id,
+                    requirement_kind: RequirementKind::Required,
+                    display_order: 1,
+                },
+                CurriculumStructureRequirementInput {
+                    resource_kind: RequirementResourceKind::Activity,
+                    catalog_version_id: activity_version_id,
+                    grade_level_id,
+                    term_slot_id: first_slot_id,
+                    requirement_kind: RequirementKind::Optional,
+                    display_order: 2,
+                },
+            ],
+            row_version: first_program.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    let published = curriculum::publish_version(
+        &pool,
+        source_version_id,
+        PublishVersionRequest {
+            row_version: source_before_activity.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    let source_workspace = curriculum_structure::get_workspace(&pool, source_version_id)
+        .await
+        .unwrap();
+    assert_eq!(source_workspace.programs.len(), 2);
+    assert_eq!(source_workspace.requirements.len(), 3);
+    assert!(source_workspace
+        .requirements
+        .iter()
+        .any(|requirement| requirement.resource_kind == RequirementResourceKind::Activity));
+
+    let stale = curriculum::clone_version_draft(
+        &pool,
+        source_version_id,
+        CloneCurriculumVersionRequest {
+            version_name: "ฉบับอนาคต stale".to_string(),
+            start_academic_year_id: FUTURE_YEAR_ID,
+            end_academic_year_id: None,
+            description: Some("ไม่ควรถูกสร้าง".to_string()),
+            source_row_version: published.row_version + 1,
+        },
+    )
+    .await
+    .expect_err("stale source row version must be rejected");
+    assert!(matches!(stale, crate::error::AppError::Conflict(_)));
+
+    let cloned = curriculum::clone_version_draft(
+        &pool,
+        source_version_id,
+        CloneCurriculumVersionRequest {
+            version_name: "ฉบับอนาคต".to_string(),
+            start_academic_year_id: FUTURE_YEAR_ID,
+            end_academic_year_id: None,
+            description: Some("คัดลอกจากฉบับที่เผยแพร่".to_string()),
+            source_row_version: published.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(cloned.curriculum_id, curriculum_id);
+    assert_eq!(cloned.status, VersionStatus::Draft);
+    assert_eq!(cloned.start_academic_year_id, FUTURE_YEAR_ID);
+    let cloned_workspace = curriculum_structure::get_workspace(&pool, cloned.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        cloned_workspace.term_slots.len(),
+        source_workspace.term_slots.len()
+    );
+    assert_eq!(
+        cloned_workspace.programs.len(),
+        source_workspace.programs.len()
+    );
+    assert_eq!(
+        cloned_workspace.requirements.len(),
+        source_workspace.requirements.len()
+    );
+    assert!(cloned_workspace
+        .term_slots
+        .iter()
+        .all(|slot| !source_workspace
+            .term_slots
+            .iter()
+            .any(|source| source.id == slot.id)));
+    assert!(cloned_workspace
+        .programs
+        .iter()
+        .all(|program| !source_workspace
+            .programs
+            .iter()
+            .any(|source| source.id == program.id)));
+    let source_shape = source_workspace
+        .requirements
+        .iter()
+        .map(|requirement| {
+            (
+                requirement.resource_kind,
+                requirement.catalog_version_id,
+                requirement.grade_level.id,
+                requirement.requirement_kind,
+                requirement.display_order,
+            )
+        })
+        .collect::<Vec<_>>();
+    let cloned_shape = cloned_workspace
+        .requirements
+        .iter()
+        .map(|requirement| {
+            (
+                requirement.resource_kind,
+                requirement.catalog_version_id,
+                requirement.grade_level.id,
+                requirement.requirement_kind,
+                requirement.display_order,
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(cloned_shape, source_shape);
+    let editable_program = cloned_workspace.programs[0].clone();
+    let editable_requirements = cloned_workspace
+        .requirements
+        .iter()
+        .filter(|requirement| requirement.study_program_id == editable_program.id)
+        .map(|requirement| CurriculumStructureRequirementInput {
+            resource_kind: requirement.resource_kind,
+            catalog_version_id: requirement.catalog_version_id,
+            grade_level_id: requirement.grade_level.id,
+            term_slot_id: requirement.term_slot_id,
+            requirement_kind: requirement.requirement_kind,
+            display_order: requirement.display_order,
+        })
+        .collect::<Vec<_>>();
+    let edited_clone = curriculum_structure::replace_program_structure(
+        &pool,
+        editable_program.id,
+        ReplaceCurriculumStructureRequest {
+            requirements: editable_requirements,
+            row_version: editable_program.row_version,
+        },
+    )
+    .await
+    .expect("the cloned structure must remain editable through the existing draft service");
+    assert_eq!(
+        edited_clone.requirements.len(),
+        cloned_workspace.requirements.len()
+    );
+    assert_eq!(
+        serde_json::to_value(
+            curriculum_structure::get_workspace(&pool, source_version_id)
+                .await
+                .unwrap()
+                .requirements
+        )
+        .unwrap(),
+        serde_json::to_value(&source_workspace.requirements).unwrap()
+    );
+
+    let draft_source_error = curriculum::clone_version_draft(
+        &pool,
+        cloned.id,
+        CloneCurriculumVersionRequest {
+            version_name: "ซ้อนแบบร่าง".to_string(),
+            start_academic_year_id: FUTURE_YEAR_ID,
+            end_academic_year_id: None,
+            description: None,
+            source_row_version: cloned.row_version,
+        },
+    )
+    .await
+    .expect_err("a draft cannot be cloned as the permanent-change source");
+    assert!(matches!(
+        draft_source_error,
+        crate::error::AppError::Conflict(_)
+    ));
 }
 
 #[tokio::test]

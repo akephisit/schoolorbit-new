@@ -2167,6 +2167,52 @@ pub async fn create_curriculum_version(
 }
 
 #[utoipa::path(
+    post,
+    path = "/api/academic/curriculum-versions/{id}/clone-draft",
+    operation_id = "cloneCurriculumVersionDraft",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Published source curriculum version ID")),
+    request_body = CloneCurriculumVersionRequest,
+    responses(
+        (status = 201, description = "Complete curriculum structure cloned into a future draft", body = ApiResponse<CurriculumVersion>),
+        (status = 400, description = "Invalid future curriculum effectiveness", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic curriculum management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Source curriculum version not found", body = ApiErrorResponse),
+        (status = 409, description = "Source version is stale or not published", body = ApiErrorResponse)
+    )
+)]
+pub async fn clone_curriculum_version_draft(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<CloneCurriculumVersionRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    let source = curriculum::get_version(&pool, id).await?;
+    academic_curriculum_access_policy::require_academic_curriculum_access(
+        &pool,
+        &actor,
+        source.curriculum_id,
+        CurriculumAction::Manage,
+    )
+    .await?;
+    let value = curriculum::clone_version_draft(&pool, id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "curriculum_version",
+        Some(value.id),
+        None,
+        None,
+    );
+    Ok(created(value))
+}
+
+#[utoipa::path(
     get,
     path = "/api/academic/curriculum-versions/{id}",
     operation_id = "getCurriculumVersion",

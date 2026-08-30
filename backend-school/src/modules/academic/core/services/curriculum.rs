@@ -5,10 +5,10 @@ use crate::error::AppError;
 use crate::policies::resource_access_policy::AcademicResourceListFilter;
 
 use super::super::models::{
-    CreateCurriculumRequest, CreateCurriculumVersionRequest, CreateStudyProgramRequest, Curriculum,
-    CurriculumVersion, PublishVersionRequest, StudyProgram, StudyProgramOption,
-    UpdateCurriculumRequest, UpdateCurriculumVersionRequest, UpdateStudyProgramRequest,
-    VersionStatus,
+    CloneCurriculumVersionRequest, CreateCurriculumRequest, CreateCurriculumVersionRequest,
+    CreateStudyProgramRequest, Curriculum, CurriculumVersion, PublishVersionRequest, StudyProgram,
+    StudyProgramOption, UpdateCurriculumRequest, UpdateCurriculumVersionRequest,
+    UpdateStudyProgramRequest, VersionStatus,
 };
 use super::{ensure_draft_version, parse_row_version};
 
@@ -22,6 +22,7 @@ const PROGRAM_COLUMNS: &str = r#"
     owning_organization_unit_id, row_version, created_at, updated_at
 "#;
 const MAX_STUDY_PROGRAM_OPTIONS: usize = 2_000;
+const MAX_CLONED_CURRICULUM_CHILDREN: i64 = 50_000;
 
 pub async fn list(
     pool: &PgPool,
@@ -192,6 +193,174 @@ pub async fn create_version(
     .await?;
     transaction.commit().await?;
     get_version(pool, id).await
+}
+
+pub async fn clone_version_draft(
+    pool: &PgPool,
+    source_version_id: Uuid,
+    request: CloneCurriculumVersionRequest,
+) -> Result<CurriculumVersion, AppError> {
+    parse_row_version(request.source_row_version)?;
+    let version_fields = CreateCurriculumVersionRequest {
+        version_name: request.version_name,
+        start_academic_year_id: request.start_academic_year_id,
+        end_academic_year_id: request.end_academic_year_id,
+        description: request.description,
+    };
+    validate_version_fields(pool, &version_fields).await?;
+
+    let mut transaction = pool.begin().await?;
+    let source: CurriculumVersion = {
+        let sql =
+            format!("SELECT {VERSION_COLUMNS} FROM curriculum_versions WHERE id = $1 FOR UPDATE");
+        sqlx::query_as(&sql)
+            .bind(source_version_id)
+            .fetch_optional(&mut *transaction)
+            .await?
+            .ok_or_else(|| AppError::NotFound("ไม่พบรุ่นหลักสูตรต้นทาง".to_string()))?
+    };
+    if source.status != VersionStatus::Published {
+        return Err(AppError::Conflict(
+            "สร้างหลักสูตรรุ่นใหม่ได้จากรุ่นที่เผยแพร่แล้วเท่านั้น".to_string(),
+        ));
+    }
+    if source.row_version != request.source_row_version {
+        return Err(AppError::Conflict(format!(
+            "รุ่นหลักสูตรต้นทางถูกแก้ไขแล้ว (expected {}, actual {})",
+            request.source_row_version, source.row_version
+        )));
+    }
+    let (source_start, requested_start): (chrono::NaiveDate, chrono::NaiveDate) = sqlx::query_as(
+        r#"SELECT source_year.start_date, requested_year.start_date
+               FROM academic_years source_year
+               JOIN academic_years requested_year ON requested_year.id = $2
+               WHERE source_year.id = $1"#,
+    )
+    .bind(source.start_academic_year_id)
+    .bind(version_fields.start_academic_year_id)
+    .fetch_one(&mut *transaction)
+    .await?;
+    if requested_start <= source_start {
+        return Err(AppError::ValidationError(
+            "ปีเริ่มใช้ของรุ่นใหม่ต้องอยู่หลังปีเริ่มใช้ของหลักสูตรต้นทาง".to_string(),
+        ));
+    }
+
+    let child_count: i64 = sqlx::query_scalar(
+        r#"SELECT
+               (SELECT count(*) FROM curriculum_term_slots WHERE curriculum_version_id = $1)
+             + (SELECT count(*) FROM study_programs
+                WHERE curriculum_version_id = $1 AND status <> 'archived')
+             + (SELECT count(*) FROM curriculum_course_requirements
+                WHERE curriculum_version_id = $1)
+             + (SELECT count(*) FROM curriculum_activity_requirements
+                WHERE curriculum_version_id = $1)"#,
+    )
+    .bind(source.id)
+    .fetch_one(&mut *transaction)
+    .await?;
+    if child_count > MAX_CLONED_CURRICULUM_CHILDREN {
+        return Err(AppError::ValidationError(format!(
+            "โครงสร้างหลักสูตรมีมากกว่า {MAX_CLONED_CURRICULUM_CHILDREN} รายการ กรุณาติดต่อผู้ดูแลระบบ"
+        )));
+    }
+
+    let cloned_id = Uuid::new_v4();
+    sqlx::query(
+        r#"INSERT INTO curriculum_versions (
+               id, curriculum_id, version_name, start_academic_year_id,
+               end_academic_year_id, description, is_active, status
+           ) VALUES ($1, $2, $3, $4, $5, $6, true, 'draft')"#,
+    )
+    .bind(cloned_id)
+    .bind(source.curriculum_id)
+    .bind(version_fields.version_name.trim())
+    .bind(version_fields.start_academic_year_id)
+    .bind(version_fields.end_academic_year_id)
+    .bind(version_fields.description)
+    .execute(&mut *transaction)
+    .await?;
+
+    sqlx::query(
+        r#"INSERT INTO curriculum_term_slots (
+               id, curriculum_version_id, sequence, term_type, type_occurrence, name
+           )
+           SELECT uuid_generate_v5($1, 'term-slot:' || source.id::text),
+                  $1, source.sequence, source.term_type, source.type_occurrence, source.name
+           FROM curriculum_term_slots source
+           WHERE source.curriculum_version_id = $2
+           ORDER BY source.sequence, source.id"#,
+    )
+    .bind(cloned_id)
+    .bind(source.id)
+    .execute(&mut *transaction)
+    .await?;
+    sqlx::query(
+        r#"INSERT INTO study_programs (
+               id, curriculum_version_id, code, name_th, name_en, is_default,
+               status, owning_organization_unit_id
+           )
+           SELECT uuid_generate_v5($1, 'study-program:' || source.id::text),
+                  $1, source.code, source.name_th, source.name_en, source.is_default,
+                  'draft', source.owning_organization_unit_id
+           FROM study_programs source
+           WHERE source.curriculum_version_id = $2
+             AND source.status <> 'archived'
+           ORDER BY source.is_default DESC, source.code, source.id"#,
+    )
+    .bind(cloned_id)
+    .bind(source.id)
+    .execute(&mut *transaction)
+    .await?;
+    sqlx::query(
+        r#"INSERT INTO curriculum_course_requirements (
+               id, curriculum_version_id, study_program_id, subject_version_id,
+               grade_level_id, term_slot_id, requirement_kind, display_order
+           )
+           SELECT uuid_generate_v5($1, 'course-requirement:' || requirement.id::text),
+                  $1,
+                  uuid_generate_v5($1, 'study-program:' || requirement.study_program_id::text),
+                  requirement.subject_version_id,
+                  requirement.grade_level_id,
+                  uuid_generate_v5($1, 'term-slot:' || requirement.term_slot_id::text),
+                  requirement.requirement_kind,
+                  requirement.display_order
+           FROM curriculum_course_requirements requirement
+           JOIN study_programs source_program ON source_program.id = requirement.study_program_id
+           WHERE requirement.curriculum_version_id = $2
+             AND source_program.status <> 'archived'
+           ORDER BY requirement.study_program_id, requirement.display_order, requirement.id"#,
+    )
+    .bind(cloned_id)
+    .bind(source.id)
+    .execute(&mut *transaction)
+    .await?;
+    sqlx::query(
+        r#"INSERT INTO curriculum_activity_requirements (
+               id, curriculum_version_id, study_program_id, activity_version_id,
+               grade_level_id, term_slot_id, requirement_kind, display_order
+           )
+           SELECT uuid_generate_v5($1, 'activity-requirement:' || requirement.id::text),
+                  $1,
+                  uuid_generate_v5($1, 'study-program:' || requirement.study_program_id::text),
+                  requirement.activity_version_id,
+                  requirement.grade_level_id,
+                  uuid_generate_v5($1, 'term-slot:' || requirement.term_slot_id::text),
+                  requirement.requirement_kind,
+                  requirement.display_order
+           FROM curriculum_activity_requirements requirement
+           JOIN study_programs source_program ON source_program.id = requirement.study_program_id
+           WHERE requirement.curriculum_version_id = $2
+             AND source_program.status <> 'archived'
+           ORDER BY requirement.study_program_id, requirement.display_order, requirement.id"#,
+    )
+    .bind(cloned_id)
+    .bind(source.id)
+    .execute(&mut *transaction)
+    .await?;
+
+    transaction.commit().await?;
+    get_version(pool, cloned_id).await
 }
 
 pub async fn update_version(
