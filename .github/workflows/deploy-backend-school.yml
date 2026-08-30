@@ -509,7 +509,7 @@ jobs:
                   .results[]?
                   | "tenant_migration_result subdomain=\(.subdomain // "unknown") status=\(.status // "unknown") version=\(.version // "none") error_code=\(
                       if .error == null then "none"
-                      else (([.error | scan("ACADEMIC_CORE_[A-Z0-9_]+") ] | first) // "redacted")
+                      else (([.error | scan("ACADEMIC_[A-Z0-9_]+") ] | first) // "redacted")
                       end
                     )"
                 )

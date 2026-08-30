@@ -281,7 +281,7 @@ test('backend-school migration failure reports only bounded deployment diagnosti
 	assert.match(diagnostic, /tenant_migration_summary latest_version=/);
 	assert.match(diagnostic, /tenant_migration_result subdomain=/);
 	assert.match(diagnostic, /error_code=/);
-	assert.match(diagnostic, /scan\("ACADEMIC_CORE_\[A-Z0-9_\]\+"\)/);
+	assert.match(diagnostic, /scan\("ACADEMIC_\[A-Z0-9_\]\+"\)/);
 	assert.match(diagnostic, /print_migration_verification_failure < "\$migration_response"/);
 	assert.doesNotMatch(diagnostic, /error=\\\(\.error/);
 });
