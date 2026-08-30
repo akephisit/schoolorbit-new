@@ -5,12 +5,15 @@ use crate::{
             apply_migrations_through, apply_phase_b_runtime_migrations,
             seed_academic_cutover_fixture, CutoverFixture,
         },
-        models::timetable::{CreateTimetableEntryRequest, UpdateTimetableEntryRequest},
-        services::timetable_service,
+        models::{
+            timetable::{CreateTimetableEntryRequest, UpdateTimetableEntryRequest},
+            timetable_version::CloneTimetableVersionRequest,
+        },
+        services::{timetable_service, timetable_version_service},
     },
     test_helpers::create_named_test_pool,
 };
-use chrono::{NaiveDate, Utc};
+use chrono::{Duration, NaiveDate, Utc};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -22,7 +25,7 @@ use super::{
         ApplyCurriculumOfferingsRequest, ApplyRosterRequest, CancelAcademicTermChangeSetRequest,
         CourseGradingPolicy, CreateAcademicTermChangeSetRequest, CreateActivityOfferingRequest,
         CreateCourseOfferingRequest, CreateLearningGroupRequest, CreateLearningOfferingRequest,
-        CurriculumOfferingPreview, CurriculumPreparationChoice,
+        CurriculumDeliveryAlignmentState, CurriculumOfferingPreview, CurriculumPreparationChoice,
         DeleteAcademicTermChangeItemRequest, LearningOfferingKind, LearningOfferingQuery,
         LearningOfferingSnapshot, LearningOfferingStatus, LearningTeacherRole, OfferingTargetInput,
         OfferingTargetKind, PreparationAction, PreparationGroupingState,
@@ -4346,6 +4349,240 @@ async fn active_homeroom_workspace_projects_the_effective_version_targets() {
         .flat_map(|room| &room.items)
         .filter(|item| item.offering_id.is_some())
         .any(|item| item.weekly_period_target.is_some_and(|target| target > 0)));
+}
+
+#[tokio::test]
+async fn homeroom_alignment_uses_the_explicit_timetable_version_target() {
+    let pool =
+        prepare_delivery_runtime_fixture("academic_delivery_workspace_alignment_version").await;
+    let (year_id, term_id): (Uuid, Uuid) = sqlx::query_as(
+        r#"SELECT academic_year_id, id
+           FROM academic_terms
+           WHERE status = 'active'
+           ORDER BY start_date, id LIMIT 1"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let source = timetable_version_service::list_versions(&pool, term_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|version| {
+            version.status
+                == crate::modules::academic::models::timetable_version::TimetableVersionStatus::Published
+        })
+        .expect("active fixture must have a published timetable version");
+    let effective_from = source.effective_from + Duration::days(1);
+    let draft = timetable_version_service::clone_draft(
+        &pool,
+        source.created_by.or(source.published_by).unwrap(),
+        source.id,
+        CloneTimetableVersionRequest {
+            effective_from,
+            source_row_version: source.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    let (offering_id, standard_periods): (Uuid, i32) = sqlx::query_as(
+        r#"SELECT target.learning_offering_id, subject.periods_per_week
+           FROM academic_timetable_version_targets target
+           JOIN course_offering_details detail
+             ON detail.learning_offering_id = target.learning_offering_id
+           JOIN subject_versions subject ON subject.id = detail.subject_version_id
+           WHERE target.timetable_version_id = $1
+             AND subject.periods_per_week IS NOT NULL
+           ORDER BY target.learning_offering_id
+           LIMIT 1"#,
+    )
+    .bind(draft.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"UPDATE academic_timetable_version_targets
+           SET weekly_period_target = $1
+           WHERE timetable_version_id = $2 AND learning_offering_id = $3"#,
+    )
+    .bind(standard_periods + 1)
+    .bind(draft.id)
+    .bind(offering_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let workspace = workspaces::homeroom_delivery_workspace_for_version(
+        &pool,
+        year_id,
+        term_id,
+        Some(draft.id),
+        &AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(workspace.timetable_version_id, Some(draft.id));
+    assert_eq!(
+        workspace.timetable_version_effective_from,
+        Some(effective_from)
+    );
+    let aligned = workspace
+        .homerooms
+        .iter()
+        .flat_map(|room| &room.items)
+        .find(|item| item.offering_id == Some(offering_id))
+        .expect("the selected offering should align to a curriculum requirement");
+    assert_eq!(aligned.weekly_period_target, Some(standard_periods + 1));
+    assert!(aligned
+        .alignment_states
+        .contains(&CurriculumDeliveryAlignmentState::OperationalPeriodsDiffer));
+    assert!(!aligned
+        .alignment_states
+        .contains(&CurriculumDeliveryAlignmentState::MatchesCurriculum));
+
+    let other_version_id: Uuid = sqlx::query_scalar(
+        r#"SELECT id
+           FROM academic_timetable_versions
+           WHERE academic_term_id <> $1
+           ORDER BY id LIMIT 1"#,
+    )
+    .bind(term_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let error = workspaces::homeroom_delivery_workspace_for_version(
+        &pool,
+        year_id,
+        term_id,
+        Some(other_version_id),
+        &AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..Default::default()
+        },
+    )
+    .await
+    .expect_err("a timetable version from another term must be rejected");
+    assert!(matches!(error, AppError::ValidationError(_)));
+}
+
+#[tokio::test]
+async fn homeroom_alignment_reports_missing_and_extra_delivery_per_room() {
+    let pool =
+        prepare_delivery_runtime_fixture("academic_delivery_workspace_alignment_states").await;
+    let mut context = planning_runtime_context(&pool).await;
+    context.subject_version_id = sqlx::query_scalar(
+        r#"SELECT version.id
+           FROM subject_versions version
+           JOIN subjects subject ON subject.id = version.subject_id
+           JOIN academic_terms term ON term.id = $1
+           WHERE version.status = 'published'
+             AND version.periods_per_week IS NOT NULL
+             AND version.effective_from <= term.start_date
+             AND (version.effective_until IS NULL OR version.effective_until > term.start_date)
+             AND NOT EXISTS (
+                 SELECT 1
+                 FROM curriculum_course_requirements requirement
+                 JOIN curriculum_term_slots slot ON slot.id = requirement.term_slot_id
+                 WHERE requirement.study_program_id = $2
+                   AND requirement.grade_level_id = $3
+                   AND requirement.subject_version_id = version.id
+                   AND slot.term_type = term.term_type
+                   AND slot.type_occurrence = (
+                       SELECT count(*)::integer
+                       FROM academic_terms occurrence
+                       WHERE occurrence.academic_year_id = term.academic_year_id
+                         AND occurrence.term_type = term.term_type
+                         AND occurrence.sequence_no <= term.sequence_no
+                   )
+             )
+           ORDER BY subject.code, version.id
+           LIMIT 1"#,
+    )
+    .bind(context.term_id)
+    .bind(context.study_program_id)
+    .bind(context.grade_level_id)
+    .fetch_one(&pool)
+    .await
+    .expect("fixture must expose a published catalog version outside this program term");
+    let extra = offerings::create(&pool, context.teacher_id, course_request(&context))
+        .await
+        .unwrap();
+    let (term_start, bell_schedule_id): (NaiveDate, Uuid) =
+        sqlx::query_as("SELECT start_date, bell_schedule_id FROM academic_terms WHERE id = $1")
+            .bind(context.term_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let base_version_id = Uuid::new_v4();
+    sqlx::query(
+        r#"INSERT INTO academic_timetable_versions (
+               id, academic_term_id, academic_year_id, effective_from, status,
+               bell_schedule_id, created_by, published_by, published_at
+           ) VALUES ($1, $2, $3, $4, 'published', $5, $6, $6, now())"#,
+    )
+    .bind(base_version_id)
+    .bind(context.term_id)
+    .bind(context.year_id)
+    .bind(term_start)
+    .bind(bell_schedule_id)
+    .bind(context.teacher_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let source = timetable_version_service::list_versions(&pool, context.term_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|version| {
+            version.status
+                == crate::modules::academic::models::timetable_version::TimetableVersionStatus::Published
+        })
+        .expect("test setup must have a published timetable version");
+    let effective_from = source.effective_from + Duration::days(7);
+    let draft = timetable_version_service::clone_draft(
+        &pool,
+        context.teacher_id,
+        source.id,
+        CloneTimetableVersionRequest {
+            effective_from,
+            source_row_version: source.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    let workspace = workspaces::homeroom_delivery_workspace_for_version(
+        &pool,
+        context.year_id,
+        context.term_id,
+        Some(draft.id),
+        &AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let room = workspace
+        .homerooms
+        .iter()
+        .find(|room| room.homeroom.id == context.homeroom_id)
+        .expect("target homeroom should be present");
+    assert!(room.items.iter().any(|item| item
+        .alignment_states
+        .contains(&CurriculumDeliveryAlignmentState::CurriculumRequirementNotOffered)));
+    let extra_alignment = room
+        .extra_offerings
+        .iter()
+        .find(|item| item.offering_id == extra.id)
+        .expect("extra offering should be reported inside its targeted homeroom");
+    assert_eq!(
+        extra_alignment.alignment_states,
+        vec![CurriculumDeliveryAlignmentState::ExtraOffering]
+    );
 }
 
 #[tokio::test]

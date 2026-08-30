@@ -15,6 +15,7 @@ use crate::policies::learning_offering_access_policy::learning_offering_owner_al
 use crate::policies::resource_access_policy::AcademicResourceListFilter;
 
 use super::super::models::{
+    CurriculumDeliveryAlignmentState, CurriculumDeliveryExtraOffering,
     DeliveryCatalogVersionOption, DeliveryManagementOptions, DeliveryPrerequisite,
     HomeroomDeliveryGroupSummary, HomeroomDeliveryItem, HomeroomDeliveryRoom,
     HomeroomDeliveryWorkspace, HomeroomGroupMode, HomeroomOfferingState, HomeroomTeacherState,
@@ -69,6 +70,7 @@ struct HomeroomDeliveryBaseRow {
     study_program_name: String,
     curriculum_id: Uuid,
     curriculum_name: String,
+    curriculum_version_id: Uuid,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -92,6 +94,8 @@ struct OfferingTargetRow {
     code: String,
     name: String,
     weekly_period_target: Option<i32>,
+    starts_on: Option<chrono::NaiveDate>,
+    ends_on: Option<chrono::NaiveDate>,
     target_kind: String,
     homeroom_id: Option<Uuid>,
     grade_level_id: Uuid,
@@ -116,12 +120,24 @@ struct DeliveryGroupRow {
 struct WorkspaceTimetableVersionRow {
     id: Uuid,
     status: TimetableVersionStatus,
+    effective_from: chrono::NaiveDate,
 }
 
 pub async fn homeroom_delivery_workspace(
     pool: &PgPool,
     academic_year_id: Uuid,
     academic_term_id: Uuid,
+    filter: &AcademicResourceListFilter,
+) -> Result<HomeroomDeliveryWorkspace, AppError> {
+    homeroom_delivery_workspace_for_version(pool, academic_year_id, academic_term_id, None, filter)
+        .await
+}
+
+pub async fn homeroom_delivery_workspace_for_version(
+    pool: &PgPool,
+    academic_year_id: Uuid,
+    academic_term_id: Uuid,
+    requested_timetable_version_id: Option<Uuid>,
     filter: &AcademicResourceListFilter,
 ) -> Result<HomeroomDeliveryWorkspace, AppError> {
     let (term_type, type_occurrence, term_status): (String, i64, String) = sqlx::query_as(
@@ -143,57 +159,82 @@ pub async fn homeroom_delivery_workspace(
     .await?
     .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียนในปีการศึกษาที่เลือก".to_string()))?;
 
-    let timetable_version: Option<WorkspaceTimetableVersionRow> = match term_status.as_str() {
-        "planning" | "ready" => {
-            sqlx::query_as(
-                r#"SELECT id, status
+    let timetable_version: Option<WorkspaceTimetableVersionRow> =
+        if let Some(version_id) = requested_timetable_version_id {
+            let selected = sqlx::query_as(
+                r#"SELECT id, status, effective_from
+               FROM academic_timetable_versions
+               WHERE id = $1
+                 AND academic_term_id = $2
+                 AND academic_year_id = $3"#,
+            )
+            .bind(version_id)
+            .bind(academic_term_id)
+            .bind(academic_year_id)
+            .fetch_optional(pool)
+            .await?;
+            if selected.is_none() {
+                return Err(AppError::ValidationError(
+                    "รุ่นตารางเรียนที่เลือกไม่ได้อยู่ในปีการศึกษาและภาคเรียนนี้".to_string(),
+                ));
+            }
+            selected
+        } else {
+            match term_status.as_str() {
+                "planning" | "ready" => {
+                    sqlx::query_as(
+                        r#"SELECT id, status, effective_from
                FROM academic_timetable_versions
                WHERE academic_term_id = $1 AND status = 'published'
                ORDER BY effective_from, id LIMIT 1"#,
-            )
-            .bind(academic_term_id)
-            .fetch_optional(pool)
-            .await?
-        }
-        "active" => {
-            let current: Option<WorkspaceTimetableVersionRow> = sqlx::query_as(
-                r#"SELECT id, status
+                    )
+                    .bind(academic_term_id)
+                    .fetch_optional(pool)
+                    .await?
+                }
+                "active" => {
+                    let current: Option<WorkspaceTimetableVersionRow> = sqlx::query_as(
+                        r#"SELECT id, status, effective_from
                    FROM academic_timetable_versions
                    WHERE academic_term_id = $1
                      AND status = 'published'
                      AND effective_from <= CURRENT_DATE
                    ORDER BY effective_from DESC, id LIMIT 1"#,
-            )
-            .bind(academic_term_id)
-            .fetch_optional(pool)
-            .await?;
-            if current.is_some() {
-                current
-            } else {
-                sqlx::query_as(
-                    r#"SELECT id, status
+                    )
+                    .bind(academic_term_id)
+                    .fetch_optional(pool)
+                    .await?;
+                    if current.is_some() {
+                        current
+                    } else {
+                        sqlx::query_as(
+                            r#"SELECT id, status, effective_from
                        FROM academic_timetable_versions
                        WHERE academic_term_id = $1 AND status = 'published'
                        ORDER BY effective_from, id LIMIT 1"#,
-                )
-                .bind(academic_term_id)
-                .fetch_optional(pool)
-                .await?
-            }
-        }
-        _ => {
-            sqlx::query_as(
-                r#"SELECT id, status
+                        )
+                        .bind(academic_term_id)
+                        .fetch_optional(pool)
+                        .await?
+                    }
+                }
+                _ => {
+                    sqlx::query_as(
+                        r#"SELECT id, status, effective_from
                    FROM academic_timetable_versions
                    WHERE academic_term_id = $1 AND status = 'published'
                    ORDER BY effective_from DESC, id DESC LIMIT 1"#,
-            )
-            .bind(academic_term_id)
-            .fetch_optional(pool)
-            .await?
-        }
-    };
+                    )
+                    .bind(academic_term_id)
+                    .fetch_optional(pool)
+                    .await?
+                }
+            }
+        };
     let timetable_version_id = timetable_version.as_ref().map(|version| version.id);
+    let timetable_version_effective_from = timetable_version
+        .as_ref()
+        .map(|version| version.effective_from);
 
     let homeroom_rows: Vec<HomeroomDeliveryBaseRow> = sqlx::query_as(
         r#"SELECT homeroom.id AS homeroom_id,
@@ -205,7 +246,8 @@ pub async fn homeroom_delivery_workspace(
                   program.code AS study_program_code,
                   program.name_th AS study_program_name,
                   curriculum.id AS curriculum_id,
-                  curriculum.name_th AS curriculum_name
+                  curriculum.name_th AS curriculum_name,
+                  version.id AS curriculum_version_id
            FROM homerooms homeroom
            JOIN grade_levels grade ON grade.id = homeroom.grade_level_id
            JOIN study_programs program ON program.id = homeroom.study_program_id
@@ -311,6 +353,8 @@ pub async fn homeroom_delivery_workspace(
                   offering.code_snapshot AS code,
                   offering.name_snapshot AS name,
                   timetable_target.weekly_period_target,
+                  offering.starts_on,
+                  offering.ends_on,
                   target.target_kind,
                   target.homeroom_id,
                   target.grade_level_id,
@@ -449,20 +493,24 @@ pub async fn homeroom_delivery_workspace(
             curriculum_name: room.curriculum_name,
         };
         let mut items = Vec::new();
-        for expected in expected_by_homeroom
+        let expected_rows_for_room = expected_by_homeroom
             .remove(&homeroom.id)
-            .unwrap_or_default()
-        {
+            .unwrap_or_default();
+        let expected_resources = expected_rows_for_room
+            .iter()
+            .map(|expected| (expected.resource_kind, expected.catalog_version_id))
+            .collect::<HashSet<_>>();
+        for expected in expected_rows_for_room {
             let applicable_offering = offerings_by_resource
                 .get(&(expected.resource_kind, expected.catalog_version_id))
                 .and_then(|candidates| {
-                    candidates.iter().copied().find(|candidate| {
-                        candidate.target_kind == "homeroom"
-                            && candidate.homeroom_id == Some(homeroom.id)
-                            || candidate.target_kind == "grade_program"
-                                && candidate.grade_level_id == grade_level.id
-                                && candidate.study_program_id == study_program.id
-                    })
+                    select_applicable_offering(
+                        candidates,
+                        homeroom.id,
+                        grade_level.id,
+                        study_program.id,
+                        timetable_version_effective_from,
+                    )
                 });
             let offering_id = applicable_offering.map(|offering| offering.offering_id);
             if let Some(id) = offering_id {
@@ -504,12 +552,48 @@ pub async fn homeroom_delivery_workspace(
                 group_mode: classify_group_mode(expected.requirement_kind, &coverage_counts),
                 teacher_state: classify_teacher_state(&primary_counts),
                 timetable_state: classify_timetable_state(&timetable_counts),
+                alignment_states: classify_expected_alignment(
+                    applicable_offering,
+                    expected.standard_periods_per_week,
+                    timetable_version_effective_from,
+                ),
                 groups: applicable_groups
                     .into_iter()
                     .map(delivery_group_summary)
                     .collect(),
             });
         }
+        let mut extra_offerings = Vec::new();
+        let mut extra_offering_ids = HashSet::new();
+        for offering in &offering_rows {
+            if expected_resources.contains(&(offering.resource_kind, offering.catalog_version_id))
+                || !target_applies_to_room(offering, homeroom.id, grade_level.id, study_program.id)
+                || !offering_has_started(offering, timetable_version_effective_from)
+                || !extra_offering_ids.insert(offering.offering_id)
+            {
+                continue;
+            }
+            extra_offerings.push(CurriculumDeliveryExtraOffering {
+                offering_id: offering.offering_id,
+                resource_kind: offering.resource_kind,
+                catalog_version_id: offering.catalog_version_id,
+                code: offering.code.clone(),
+                name: offering.name.clone(),
+                weekly_period_target: offering.weekly_period_target,
+                starts_on: offering.starts_on,
+                ends_on: offering.ends_on,
+                alignment_states: classify_extra_alignment(
+                    offering,
+                    timetable_version_effective_from,
+                ),
+            });
+        }
+        extra_offerings.sort_by(|left, right| {
+            left.code
+                .cmp(&right.code)
+                .then(left.name.cmp(&right.name))
+                .then(left.offering_id.cmp(&right.offering_id))
+        });
         let ready_count = items
             .iter()
             .filter(|item| item.offering_id.is_some() && !item.groups.is_empty())
@@ -527,9 +611,11 @@ pub async fn homeroom_delivery_workspace(
             homeroom,
             grade_level,
             study_program,
+            curriculum_version_id: room.curriculum_version_id,
             expected_count: items.len(),
             ready_count,
             items,
+            extra_offerings,
             blockers,
         });
     }
@@ -573,9 +659,94 @@ pub async fn homeroom_delivery_workspace(
         academic_year_id,
         timetable_version_id,
         timetable_version_status: timetable_version.map(|version| version.status),
+        timetable_version_effective_from,
         homerooms: rooms,
         unlinked,
     })
+}
+
+fn target_applies_to_room(
+    offering: &OfferingTargetRow,
+    homeroom_id: Uuid,
+    grade_level_id: Uuid,
+    study_program_id: Uuid,
+) -> bool {
+    (offering.target_kind == "homeroom" && offering.homeroom_id == Some(homeroom_id))
+        || (offering.target_kind == "grade_program"
+            && offering.grade_level_id == grade_level_id
+            && offering.study_program_id == study_program_id)
+}
+
+fn offering_has_started(
+    offering: &OfferingTargetRow,
+    effective_from: Option<chrono::NaiveDate>,
+) -> bool {
+    effective_from.is_none_or(|date| offering.starts_on.is_none_or(|start| start <= date))
+}
+
+fn offering_ended_before(
+    offering: &OfferingTargetRow,
+    effective_from: Option<chrono::NaiveDate>,
+) -> bool {
+    effective_from.is_some_and(|date| offering.ends_on.is_some_and(|end| end < date))
+}
+
+fn select_applicable_offering<'a>(
+    candidates: &'a [&'a OfferingTargetRow],
+    homeroom_id: Uuid,
+    grade_level_id: Uuid,
+    study_program_id: Uuid,
+    effective_from: Option<chrono::NaiveDate>,
+) -> Option<&'a OfferingTargetRow> {
+    candidates
+        .iter()
+        .copied()
+        .filter(|offering| {
+            target_applies_to_room(offering, homeroom_id, grade_level_id, study_program_id)
+                && offering_has_started(offering, effective_from)
+        })
+        .max_by_key(|offering| {
+            (
+                !offering_ended_before(offering, effective_from),
+                offering.starts_on,
+                offering.offering_id,
+            )
+        })
+}
+
+fn classify_expected_alignment(
+    offering: Option<&OfferingTargetRow>,
+    standard_periods_per_week: Option<i32>,
+    effective_from: Option<chrono::NaiveDate>,
+) -> Vec<CurriculumDeliveryAlignmentState> {
+    let Some(offering) = offering else {
+        return vec![CurriculumDeliveryAlignmentState::CurriculumRequirementNotOffered];
+    };
+    let mut states = Vec::new();
+    if offering_ended_before(offering, effective_from) {
+        states.push(CurriculumDeliveryAlignmentState::EndedEarly);
+    }
+    if standard_periods_per_week.is_some()
+        && offering.weekly_period_target.is_some()
+        && standard_periods_per_week != offering.weekly_period_target
+    {
+        states.push(CurriculumDeliveryAlignmentState::OperationalPeriodsDiffer);
+    }
+    if states.is_empty() {
+        states.push(CurriculumDeliveryAlignmentState::MatchesCurriculum);
+    }
+    states
+}
+
+fn classify_extra_alignment(
+    offering: &OfferingTargetRow,
+    effective_from: Option<chrono::NaiveDate>,
+) -> Vec<CurriculumDeliveryAlignmentState> {
+    let mut states = vec![CurriculumDeliveryAlignmentState::ExtraOffering];
+    if offering_ended_before(offering, effective_from) {
+        states.push(CurriculumDeliveryAlignmentState::EndedEarly);
+    }
+    states
 }
 
 fn offering_state(status: LearningOfferingStatus) -> HomeroomOfferingState {
@@ -1078,6 +1249,71 @@ mod tests {
         assert_eq!(
             classify_timetable_state(&[0, 0]),
             HomeroomTimetableState::Unscheduled
+        );
+    }
+
+    fn alignment_offering(
+        weekly_period_target: Option<i32>,
+        starts_on: Option<chrono::NaiveDate>,
+        ends_on: Option<chrono::NaiveDate>,
+    ) -> OfferingTargetRow {
+        OfferingTargetRow {
+            offering_id: Uuid::new_v4(),
+            resource_kind: LearningOfferingKind::Course,
+            catalog_version_id: Uuid::new_v4(),
+            status: LearningOfferingStatus::Published,
+            code: "TEST101".to_string(),
+            name: "รายวิชาทดสอบ".to_string(),
+            weekly_period_target,
+            starts_on,
+            ends_on,
+            target_kind: "homeroom".to_string(),
+            homeroom_id: Some(Uuid::new_v4()),
+            grade_level_id: Uuid::new_v4(),
+            study_program_id: Uuid::new_v4(),
+        }
+    }
+
+    #[test]
+    fn alignment_states_distinguish_missing_matching_ended_period_difference_and_extra() {
+        let effective_from = chrono::NaiveDate::from_ymd_opt(2026, 8, 15).unwrap();
+        assert_eq!(
+            classify_expected_alignment(None, Some(2), Some(effective_from)),
+            vec![CurriculumDeliveryAlignmentState::CurriculumRequirementNotOffered]
+        );
+
+        let matching = alignment_offering(
+            Some(2),
+            Some(chrono::NaiveDate::from_ymd_opt(2026, 5, 1).unwrap()),
+            None,
+        );
+        assert_eq!(
+            classify_expected_alignment(Some(&matching), Some(2), Some(effective_from)),
+            vec![CurriculumDeliveryAlignmentState::MatchesCurriculum]
+        );
+
+        let ended_with_different_periods = alignment_offering(
+            Some(3),
+            Some(chrono::NaiveDate::from_ymd_opt(2026, 5, 1).unwrap()),
+            Some(chrono::NaiveDate::from_ymd_opt(2026, 8, 14).unwrap()),
+        );
+        assert_eq!(
+            classify_expected_alignment(
+                Some(&ended_with_different_periods),
+                Some(2),
+                Some(effective_from)
+            ),
+            vec![
+                CurriculumDeliveryAlignmentState::EndedEarly,
+                CurriculumDeliveryAlignmentState::OperationalPeriodsDiffer,
+            ]
+        );
+        assert_eq!(
+            classify_extra_alignment(&ended_with_different_periods, Some(effective_from)),
+            vec![
+                CurriculumDeliveryAlignmentState::ExtraOffering,
+                CurriculumDeliveryAlignmentState::EndedEarly,
+            ]
         );
     }
 }

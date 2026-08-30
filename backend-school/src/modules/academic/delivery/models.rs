@@ -551,6 +551,7 @@ pub struct LearningOfferingQuery {
 pub struct HomeroomDeliveryQuery {
     pub academic_year_id: Uuid,
     pub academic_term_id: Uuid,
+    pub timetable_version_id: Option<Uuid>,
 }
 
 #[derive(Clone, Debug, Deserialize, IntoParams, ToSchema)]
@@ -746,6 +747,16 @@ pub enum HomeroomTimetableState {
     Scheduled,
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CurriculumDeliveryAlignmentState {
+    MatchesCurriculum,
+    CurriculumRequirementNotOffered,
+    ExtraOffering,
+    EndedEarly,
+    OperationalPeriodsDiffer,
+}
+
 #[derive(Clone, Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DeliveryPrerequisite {
@@ -796,7 +807,25 @@ pub struct HomeroomDeliveryItem {
     pub group_mode: HomeroomGroupMode,
     pub teacher_state: HomeroomTeacherState,
     pub timetable_state: HomeroomTimetableState,
+    pub alignment_states: Vec<CurriculumDeliveryAlignmentState>,
     pub groups: Vec<HomeroomDeliveryGroupSummary>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CurriculumDeliveryExtraOffering {
+    pub offering_id: Uuid,
+    pub resource_kind: LearningOfferingKind,
+    pub catalog_version_id: Uuid,
+    pub code: String,
+    pub name: String,
+    #[schema(required = true)]
+    pub weekly_period_target: Option<i32>,
+    #[schema(required = true)]
+    pub starts_on: Option<NaiveDate>,
+    #[schema(required = true)]
+    pub ends_on: Option<NaiveDate>,
+    pub alignment_states: Vec<CurriculumDeliveryAlignmentState>,
 }
 
 #[derive(Clone, Debug, Serialize, ToSchema)]
@@ -805,9 +834,11 @@ pub struct HomeroomDeliveryRoom {
     pub homeroom: HomeroomLookupItem,
     pub grade_level: GradeLevelLookupItem,
     pub study_program: StudyProgramOption,
+    pub curriculum_version_id: Uuid,
     pub expected_count: usize,
     pub ready_count: usize,
     pub items: Vec<HomeroomDeliveryItem>,
+    pub extra_offerings: Vec<CurriculumDeliveryExtraOffering>,
     pub blockers: Vec<DeliveryPrerequisite>,
 }
 
@@ -821,6 +852,8 @@ pub struct HomeroomDeliveryWorkspace {
     #[schema(required = true)]
     pub timetable_version_status:
         Option<crate::modules::academic::models::timetable_version::TimetableVersionStatus>,
+    #[schema(required = true)]
+    pub timetable_version_effective_from: Option<NaiveDate>,
     pub homerooms: Vec<HomeroomDeliveryRoom>,
     pub unlinked: Vec<UnlinkedDeliveryItem>,
 }

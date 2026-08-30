@@ -298,10 +298,11 @@ pub async fn get_homeroom_delivery_workspace(
         OfferingAction::Read,
     )
     .await?;
-    Ok(ok(workspaces::homeroom_delivery_workspace(
+    Ok(ok(workspaces::homeroom_delivery_workspace_for_version(
         &context.tenant.pool,
         query.academic_year_id,
         query.academic_term_id,
+        query.timetable_version_id,
         &filter,
     )
     .await?))
