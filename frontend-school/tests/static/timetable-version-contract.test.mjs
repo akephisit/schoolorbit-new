@@ -83,8 +83,8 @@ test('timetable revision creation reuses the date-effective academic change work
 test('timetable workspace links one change set to the selected version and invalidates readiness after edits', async () => {
 	const page = await readProjectFile('src/routes/(app)/staff/academic/timetable/+page.svelte');
 
-	assert.equal((page.match(/listAcademicTermChangeSets\(/g) ?? []).length, 1);
-	assert.match(page, /targetTimetableVersionId\s*===\s*selectedVersion\?\.id/);
+	assert.equal((page.match(/getAcademicTermChangeSet\(/g) ?? []).length, 1);
+	assert.match(page, /version\.changeSetId/);
 	assert.match(page, /<AcademicChangeSetDialog[\s\S]*purpose="timetable_revision"/);
 	assert.match(page, /<AcademicChangeReadiness/);
 	assert.match(page, /draftRevision\s*\+=\s*1/);

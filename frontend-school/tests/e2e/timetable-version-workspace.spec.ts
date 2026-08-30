@@ -19,7 +19,8 @@ const ids = {
 	historicalVersion: 'a1000000-0000-4000-8000-000000000203',
 	draftVersion: 'a1000000-0000-4000-8000-000000000204',
 	changeSet: 'b1000000-0000-4000-8000-000000000201',
-	entry: 'c1000000-0000-4000-8000-000000000201'
+	entry: 'c1000000-0000-4000-8000-000000000201',
+	createdEntry: 'c1000000-0000-4000-8000-000000000202'
 };
 
 function fulfill(route: Route, data: unknown, status = 200) {
@@ -204,8 +205,11 @@ async function mockTimetable(page: Page, options: MockOptions = {}) {
 	let entries: Record<string, unknown>[] = [...(options.entries ?? [])];
 	let createdChangeBody: Record<string, unknown> | null = null;
 	let createdEntryBody: Record<string, unknown> | null = null;
+	let updatedEntryBody: Record<string, unknown> | null = null;
+	let deletedEntryVersionId: string | null = null;
 	let publishedBody: Record<string, unknown> | null = null;
 	let previewRequests = 0;
+	let managementRequests = 0;
 
 	await page.route(
 		(url) => url.pathname.startsWith('/api/'),
@@ -416,10 +420,34 @@ async function mockTimetable(page: Page, options: MockOptions = {}) {
 				createdEntryBody = route.request().postDataJSON() as Record<string, unknown>;
 				const created = timetableEntry(
 					String(createdEntryBody.timetableVersionId),
-					crypto.randomUUID()
+					ids.createdEntry
 				);
 				entries = [...entries, created];
 				await fulfill(route, created, 201);
+				return;
+			}
+			if (url.pathname === `/api/academic/timetable/${ids.createdEntry}` && method === 'PUT') {
+				updatedEntryBody = route.request().postDataJSON() as Record<string, unknown>;
+				const updated = {
+					...timetableEntry(String(updatedEntryBody.timetableVersionId), ids.createdEntry),
+					dayOfWeek: updatedEntryBody.dayOfWeek,
+					note: updatedEntryBody.note,
+					rowVersion: 2
+				};
+				entries = entries.map((entry) => (entry.id === ids.createdEntry ? updated : entry));
+				await fulfill(route, updated);
+				return;
+			}
+			if (url.pathname === `/api/academic/timetable/${ids.createdEntry}` && method === 'DELETE') {
+				deletedEntryVersionId = url.searchParams.get('timetableVersionId');
+				const deleted = entries.find((entry) => entry.id === ids.createdEntry) ?? null;
+				entries = entries.filter((entry) => entry.id !== ids.createdEntry);
+				await fulfill(route, deleted);
+				return;
+			}
+			if (url.pathname === '/api/academic/delivery/management-options') {
+				managementRequests += 1;
+				await fulfill(route, {});
 				return;
 			}
 			if (url.pathname === '/api/menu/user') {
@@ -452,8 +480,11 @@ async function mockTimetable(page: Page, options: MockOptions = {}) {
 	return {
 		createdChangeRequest: () => createdChangeBody,
 		createdEntryRequest: () => createdEntryBody,
+		updatedEntryRequest: () => updatedEntryBody,
+		deletedEntryVersion: () => deletedEntryVersionId,
 		publishedRequest: () => publishedBody,
-		previewRequestCount: () => previewRequests
+		previewRequestCount: () => previewRequests,
+		managementRequestCount: () => managementRequests
 	};
 }
 
@@ -513,7 +544,7 @@ test('manager creates a date-effective timetable revision and lands on its draft
 	});
 });
 
-test('draft entry mutation sends the selected version and invalidates the previous readiness result', async ({
+test('draft create move and deactivate use the selected version and invalidate readiness', async ({
 	page
 }) => {
 	const mocked = await mockTimetable(page, {
@@ -537,6 +568,21 @@ test('draft entry mutation sends the selected version and invalidates the previo
 		learningGroupId: ids.group,
 		instructorIds: []
 	});
+
+	await page.getByRole('button', { name: /ค21101/ }).click();
+	await page.getByLabel('วัน').click();
+	await page.getByRole('option', { name: 'อังคาร' }).click();
+	await page.getByLabel('หมายเหตุ').fill('ย้ายคาบในรุ่นแบบร่าง');
+	await page.getByRole('button', { name: 'บันทึก', exact: true }).click();
+	expect(mocked.updatedEntryRequest()).toMatchObject({
+		timetableVersionId: ids.draftVersion,
+		dayOfWeek: 'TUE',
+		note: 'ย้ายคาบในรุ่นแบบร่าง'
+	});
+
+	await page.getByRole('button', { name: /ค21101/ }).click();
+	await page.getByRole('button', { name: 'ลบคาบ' }).click();
+	expect(mocked.deletedEntryVersion()).toBe(ids.draftVersion);
 });
 
 test('readiness shows per-group target completion and blocks publication when a deficit remains', async ({
@@ -589,7 +635,7 @@ test('warning acknowledgement publishes the exact preview and makes the version 
 test('read-only staff can inspect a draft but cannot create revisions or mutate entries', async ({
 	page
 }) => {
-	await mockTimetable(page, {
+	const mocked = await mockTimetable(page, {
 		permissions: ['learning_offering.read.school'],
 		versions: allVersions(),
 		changeSets: [draftChangeSet()]
@@ -604,4 +650,5 @@ test('read-only staff can inspect a draft but cannot create revisions or mutate 
 	).toBeVisible();
 	await expect(page.getByRole('button', { name: 'สร้างรุ่นตารางสอนใหม่' })).toHaveCount(0);
 	await expect(page.getByTitle('เพิ่มคาบ').first()).toBeDisabled();
+	expect(mocked.managementRequestCount()).toBe(0);
 });

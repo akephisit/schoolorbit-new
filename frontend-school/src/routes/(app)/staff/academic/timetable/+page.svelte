@@ -16,7 +16,7 @@
 		type Homeroom
 	} from '$lib/api/academic-core';
 	import {
-		listAcademicTermChangeSets,
+		getAcademicTermChangeSet,
 		listLearningGroupsForTerm,
 		listLearningOfferings,
 		type AcademicTermChangeSet,
@@ -140,8 +140,8 @@
 	let rooms = $state<RoomLookupItem[]>([]);
 	let entries = $state<TimetableEntry[]>([]);
 	let versions = $state<TimetableVersion[]>([]);
-	let changeSets = $state<AcademicTermChangeSet[]>([]);
 	let selectedVersion = $state.raw<TimetableVersion | null>(null);
+	let selectedChangeSet = $state.raw<AcademicTermChangeSet | null>(null);
 	let versionSelectValue = $state('');
 	let selectedScheduleId = $state('');
 	let viewKind = $state<ViewKind>('learning_group');
@@ -183,12 +183,8 @@
 		)
 	);
 	const canEditSelected = $derived(canManage && selectedVersion?.status === 'draft');
-	const selectedChangeSet = $derived(
-		changeSets.find((changeSet) => changeSet.targetTimetableVersionId === selectedVersion?.id) ??
-			null
-	);
-	const activeDraftChangeSet = $derived(
-		changeSets.find((changeSet) => changeSet.status === 'draft') ?? null
+	const activeDraftVersion = $derived(
+		versions.find((version) => version.status === 'draft' && version.changeSetId) ?? null
 	);
 	const selectedEntry = $derived(entries.find((entry) => entry.id === selectedEntryId) ?? null);
 	const selectedSchedule = $derived(
@@ -308,24 +304,31 @@
 		return listTimetableVersions(termId, { signal });
 	}
 
+	async function loadSelectedChangeSet(
+		version: TimetableVersion,
+		signal?: AbortSignal
+	): Promise<AcademicTermChangeSet | null> {
+		return version.changeSetId
+			? getAcademicTermChangeSet(version.changeSetId, { signal })
+			: Promise.resolve(null);
+	}
+
 	async function loadWorkspace(termId: string, yearId: string): Promise<void> {
 		const { revision, signal } = request.begin();
 		loading = true;
 		errorMessage = '';
 		try {
-			const [collections, loadedSchedules, loadedRooms, loadedVersions, loadedChangeSets] =
-				await Promise.all([
-					loadTimetableCollections(
-						{ listLearningOfferings, listLearningGroupsForTerm, listHomerooms },
-						termId,
-						yearId,
-						signal
-					),
-					listBellSchedules(yearId, { signal }),
-					lookupRooms({ activeOnly: true, limit: 500 }, { signal }),
-					loadVersionOptions(termId, signal),
-					listAcademicTermChangeSets(termId, { signal })
-				]);
+			const [collections, loadedSchedules, loadedRooms, loadedVersions] = await Promise.all([
+				loadTimetableCollections(
+					{ listLearningOfferings, listLearningGroupsForTerm, listHomerooms },
+					termId,
+					yearId,
+					signal
+				),
+				listBellSchedules(yearId, { signal }),
+				lookupRooms({ activeOnly: true, limit: 500 }, { signal }),
+				loadVersionOptions(termId, signal)
+			]);
 			const preferredVersion = selectPreferredVersion(loadedVersions);
 			const preferredSchedule = loadedSchedules.find(
 				(schedule) => schedule.id === preferredVersion?.bellScheduleId
@@ -339,6 +342,9 @@
 						{ signal }
 					)
 				: [];
+			const loadedChangeSet = preferredVersion
+				? await loadSelectedChangeSet(preferredVersion, signal)
+				: null;
 			if (!request.isCurrent(revision)) return;
 			schedules = loadedSchedules;
 			versions = loadedVersions;
@@ -351,7 +357,7 @@
 			homerooms = collections.homerooms;
 			rooms = loadedRooms;
 			entries = loadedEntries;
-			changeSets = loadedChangeSets;
+			selectedChangeSet = loadedChangeSet;
 			draftRevision += 1;
 			if (preferredVersion) syncVersionUrl(preferredVersion.id);
 			viewKind = groups.length > 0 ? 'learning_group' : 'homeroom';
@@ -398,8 +404,10 @@
 				{ academicTermId, timetableVersionId: nextVersion.id },
 				{ signal }
 			);
+			const loadedChangeSet = await loadSelectedChangeSet(nextVersion, signal);
 			if (!request.isCurrent(revision)) return;
 			selectedVersion = nextVersion;
+			selectedChangeSet = loadedChangeSet;
 			versionSelectValue = nextVersion.id;
 			selectedScheduleId = nextVersion.bellScheduleId;
 			periods = loadedPeriods;
@@ -418,15 +426,9 @@
 		}
 	}
 
-	function storeChangeSet(updated: AcademicTermChangeSet): void {
-		changeSets = changeSets.some((changeSet) => changeSet.id === updated.id)
-			? changeSets.map((changeSet) => (changeSet.id === updated.id ? updated : changeSet))
-			: [updated, ...changeSets];
-	}
-
 	async function handleRevisionCreated(created: AcademicTermChangeSet): Promise<void> {
 		if (!academicTermId) return;
-		storeChangeSet(created);
+		selectedChangeSet = created;
 		versions = await loadVersionOptions(academicTermId);
 		if (!versions.some((version) => version.id === created.targetTimetableVersionId)) {
 			throw new Error('สร้างแบบร่างแล้ว แต่ไม่พบรุ่นตารางสอนใหม่ กรุณาโหลดหน้าอีกครั้ง');
@@ -436,7 +438,7 @@
 	}
 
 	async function handleChangeSetChanged(updated: AcademicTermChangeSet): Promise<void> {
-		storeChangeSet(updated);
+		selectedChangeSet = updated;
 		if (
 			!academicTermId ||
 			selectedVersion?.id !== updated.targetTimetableVersionId ||
@@ -786,14 +788,14 @@
 >
 	{#snippet actions()}
 		{#if canManage && academicTermId && !dirty}
-			{#if activeDraftChangeSet}
+			{#if activeDraftVersion}
 				<Button
 					variant="outline"
-					disabled={selectedVersion?.id === activeDraftChangeSet.targetTimetableVersionId}
-					onclick={() => changeVersion(activeDraftChangeSet.targetTimetableVersionId)}
+					disabled={selectedVersion?.id === activeDraftVersion.id}
+					onclick={() => changeVersion(activeDraftVersion.id)}
 				>
 					<History />
-					{selectedVersion?.id === activeDraftChangeSet.targetTimetableVersionId
+					{selectedVersion?.id === activeDraftVersion.id
 						? 'กำลังแก้รุ่นแบบร่าง'
 						: 'เปิดรุ่นแบบร่าง'}
 				</Button>
