@@ -11,6 +11,8 @@ use crate::modules::academic::models::timetable::{
     CreateBatchTimetableEntriesRequest, CreateTimetableEntryRequest, SwapTimetableEntriesRequest,
     TimetableQuery,
 };
+use crate::modules::academic::models::timetable_version::CloneTimetableVersionRequest;
+use crate::modules::academic::models::timetable_version::TimetableVersion;
 use crate::policies::resource_access_policy::AcademicResourceListFilter;
 use crate::test_helpers::create_named_test_pool;
 
@@ -21,6 +23,7 @@ async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
+    apply_migrations_through(&pool, 52).await.unwrap();
     sqlx::query(
         r#"INSERT INTO bell_schedule_periods (
                id, bell_schedule_id, name,
@@ -42,6 +45,142 @@ async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
     pool
 }
 
+async fn clone_editable_version(pool: &sqlx::PgPool) -> TimetableVersion {
+    let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
+    let (source_id, source_row_version, term_start): (Uuid, i64, NaiveDate) = sqlx::query_as(
+        r#"SELECT version.id, version.row_version, term.start_date
+           FROM academic_timetable_versions version
+           JOIN academic_terms term ON term.id = version.academic_term_id
+           WHERE version.status = 'published' AND term.status = 'active'
+           ORDER BY version.effective_from, version.id LIMIT 1"#,
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    super::timetable_version_service::clone_draft(
+        pool,
+        actor_id,
+        source_id,
+        CloneTimetableVersionRequest {
+            effective_from: term_start.succ_opt().unwrap(),
+            source_row_version,
+        },
+    )
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn timetable_mutations_and_reads_are_isolated_by_version() {
+    let pool = migrated_pool("timetable_version_isolation").await;
+    let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
+    let draft = clone_editable_version(&pool).await;
+    let source_version_id = draft.source_version_id.unwrap();
+    let (term_id, group_id, day, period_id): (Uuid, Uuid, String, Uuid) = sqlx::query_as(
+        r#"SELECT entry.academic_term_id, entry.learning_group_id,
+                  entry.day_of_week, entry.bell_schedule_period_id
+           FROM academic_timetable_entries entry
+           WHERE entry.timetable_version_id = $1
+             AND entry.learning_group_id IS NOT NULL
+             AND entry.is_active
+           ORDER BY entry.id LIMIT 1"#,
+    )
+    .bind(draft.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let draft_entry_id: Uuid = sqlx::query_scalar(
+        r#"SELECT id FROM academic_timetable_entries
+           WHERE timetable_version_id = $1
+             AND learning_group_id = $2
+             AND day_of_week = $3
+             AND bell_schedule_period_id = $4
+             AND is_active
+           ORDER BY id LIMIT 1"#,
+    )
+    .bind(draft.id)
+    .bind(group_id)
+    .bind(&day)
+    .bind(period_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE academic_timetable_entries SET is_active = false WHERE id = $1")
+        .bind(draft_entry_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let request = CreateTimetableEntryRequest {
+        timetable_version_id: draft.id,
+        academic_term_id: term_id,
+        learning_group_id: Some(group_id),
+        homeroom_id: None,
+        day_of_week: day.clone(),
+        bell_schedule_period_id: period_id,
+        room_id: None,
+        note: Some("version isolated".to_string()),
+        entry_type: "course".to_string(),
+        title: None,
+        instructor_ids: Vec::new(),
+    };
+    let created = timetable_service::create_entry(&pool, actor_id, request.clone())
+        .await
+        .unwrap();
+    assert_eq!(created.timetable_version_id, draft.id);
+
+    let conflict = timetable_service::create_entry(&pool, actor_id, request).await;
+    assert!(matches!(conflict, Err(AppError::Conflict(_))));
+
+    let published_mutation = timetable_service::create_entry(
+        &pool,
+        actor_id,
+        CreateTimetableEntryRequest {
+            timetable_version_id: source_version_id,
+            academic_term_id: term_id,
+            learning_group_id: Some(group_id),
+            homeroom_id: None,
+            day_of_week: "SUN".to_string(),
+            bell_schedule_period_id: period_id,
+            room_id: None,
+            note: None,
+            entry_type: "course".to_string(),
+            title: None,
+            instructor_ids: Vec::new(),
+        },
+    )
+    .await;
+    assert!(matches!(published_mutation, Err(AppError::Conflict(_))));
+
+    let listed = timetable_service::list_entries(
+        &pool,
+        &TimetableQuery {
+            timetable_version_id: draft.id,
+            academic_term_id: term_id,
+            learning_group_id: Some(group_id),
+            homeroom_id: None,
+            instructor_id: None,
+            room_id: None,
+            day_of_week: None,
+            entry_type: None,
+        },
+        &school_access(),
+    )
+    .await
+    .unwrap();
+    assert!(listed
+        .iter()
+        .all(|entry| entry.timetable_version_id == draft.id));
+    let occupancy = timetable_service::occupancy(&pool, draft.id, term_id)
+        .await
+        .unwrap();
+    assert!(occupancy.iter().any(|cell| cell.entry_id == created.id));
+    assert!(!occupancy.iter().any(|cell| {
+        listed.iter().all(|entry| entry.id != cell.entry_id) && cell.entry_id == draft_entry_id
+    }));
+}
+
 fn school_access() -> AcademicResourceListFilter {
     AcademicResourceListFilter {
         includes_school_owned: true,
@@ -52,6 +191,7 @@ fn school_access() -> AcademicResourceListFilter {
 #[tokio::test]
 async fn course_and_activity_groups_share_homeroom_conflict_detection() {
     let pool = migrated_pool("timetable_group_conflict").await;
+    let draft = clone_editable_version(&pool).await;
     let (term_id, day, period_id, homeroom_id): (Uuid, String, Uuid, Uuid) = sqlx::query_as(
         r#"SELECT entry.academic_term_id, entry.day_of_week,
                   entry.bell_schedule_period_id,
@@ -59,10 +199,12 @@ async fn course_and_activity_groups_share_homeroom_conflict_detection() {
            FROM academic_timetable_entries entry
            LEFT JOIN learning_group_homerooms coverage
              ON coverage.learning_group_id = entry.learning_group_id
-           WHERE entry.entry_type = 'COURSE' AND entry.is_active
+           WHERE entry.timetable_version_id = $1
+             AND entry.entry_type = 'COURSE' AND entry.is_active
            ORDER BY entry.id, coverage.homeroom_id
            LIMIT 1"#,
     )
+    .bind(draft.id)
     .fetch_one(&pool)
     .await
     .unwrap();
@@ -87,6 +229,7 @@ async fn course_and_activity_groups_share_homeroom_conflict_detection() {
         &pool,
         Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap(),
         CreateTimetableEntryRequest {
+            timetable_version_id: draft.id,
             academic_term_id: term_id,
             learning_group_id: Some(activity_group_id),
             homeroom_id: None,
@@ -108,15 +251,18 @@ async fn course_and_activity_groups_share_homeroom_conflict_detection() {
 #[tokio::test]
 async fn listing_occupancy_and_swaps_are_explicitly_term_and_group_scoped() {
     let pool = migrated_pool("timetable_term_group_swap").await;
+    let draft = clone_editable_version(&pool).await;
     let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
     let (entry_id, term_id, group_id, first_period_id, row_version): (Uuid, Uuid, Uuid, Uuid, i64) =
         sqlx::query_as(
             r#"SELECT id, academic_term_id, learning_group_id,
                   bell_schedule_period_id, row_version
            FROM academic_timetable_entries
-           WHERE learning_group_id IS NOT NULL AND entry_type = 'COURSE'
+           WHERE timetable_version_id = $1
+             AND learning_group_id IS NOT NULL AND entry_type = 'COURSE'
            ORDER BY id LIMIT 1"#,
         )
+        .bind(draft.id)
         .fetch_one(&pool)
         .await
         .unwrap();
@@ -136,6 +282,7 @@ async fn listing_occupancy_and_swaps_are_explicitly_term_and_group_scoped() {
         &pool,
         actor_id,
         CreateTimetableEntryRequest {
+            timetable_version_id: draft.id,
             academic_term_id: term_id,
             learning_group_id: Some(group_id),
             homeroom_id: None,
@@ -154,6 +301,7 @@ async fn listing_occupancy_and_swaps_are_explicitly_term_and_group_scoped() {
     let listed = timetable_service::list_entries(
         &pool,
         &TimetableQuery {
+            timetable_version_id: draft.id,
             academic_term_id: term_id,
             learning_group_id: Some(group_id),
             homeroom_id: None,
@@ -186,7 +334,9 @@ async fn listing_occupancy_and_swaps_are_explicitly_term_and_group_scoped() {
             .collect::<Vec<_>>()
     );
 
-    let occupancy = timetable_service::occupancy(&pool, term_id).await.unwrap();
+    let occupancy = timetable_service::occupancy(&pool, draft.id, term_id)
+        .await
+        .unwrap();
     let created_cell = occupancy
         .iter()
         .find(|cell| cell.entry_id == created.id)
@@ -197,6 +347,7 @@ async fn listing_occupancy_and_swaps_are_explicitly_term_and_group_scoped() {
         &pool,
         actor_id,
         SwapTimetableEntriesRequest {
+            timetable_version_id: draft.id,
             entry_a_id: entry_id,
             entry_a_row_version: row_version,
             entry_b_id: created.id,
@@ -214,6 +365,7 @@ async fn listing_occupancy_and_swaps_are_explicitly_term_and_group_scoped() {
 #[tokio::test]
 async fn batch_and_conflict_reads_preserve_results() {
     let pool = migrated_pool("timetable_batch_conflict_bulk_reads").await;
+    let draft = clone_editable_version(&pool).await;
     let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
     let (term_id, group_id, period_id): (Uuid, Uuid, Uuid) = sqlx::query_as(
         r#"SELECT entry.academic_term_id, entry.learning_group_id, period.id
@@ -222,10 +374,12 @@ async fn batch_and_conflict_reads_preserve_results() {
            JOIN bell_schedule_periods period
              ON period.bell_schedule_id = term.bell_schedule_id
             AND period.order_index = 2
-           WHERE entry.learning_group_id IS NOT NULL
+           WHERE entry.timetable_version_id = $1
+             AND entry.learning_group_id IS NOT NULL
            ORDER BY entry.id
            LIMIT 1"#,
     )
+    .bind(draft.id)
     .fetch_one(&pool)
     .await
     .unwrap();
@@ -234,6 +388,7 @@ async fn batch_and_conflict_reads_preserve_results() {
         &pool,
         actor_id,
         CreateBatchTimetableEntriesRequest {
+            timetable_version_id: draft.id,
             academic_term_id: term_id,
             learning_group_ids: vec![group_id],
             homeroom_ids: Vec::new(),
@@ -254,7 +409,7 @@ async fn batch_and_conflict_reads_preserve_results() {
         .iter()
         .all(|entry| entry.learning_group_id == Some(group_id)));
 
-    let moves = timetable_service::validate_moves(&pool, term_id, created.entries[0].id)
+    let moves = timetable_service::validate_moves(&pool, draft.id, term_id, created.entries[0].id)
         .await
         .unwrap();
     assert_eq!(
@@ -263,9 +418,10 @@ async fn batch_and_conflict_reads_preserve_results() {
     );
     assert!(moves.len() >= 14);
 
-    let deactivated = timetable_service::deactivate_batch(&pool, created.batch_id, actor_id)
-        .await
-        .unwrap();
+    let deactivated =
+        timetable_service::deactivate_batch(&pool, created.batch_id, draft.id, actor_id)
+            .await
+            .unwrap();
     let mut expected_deactivated_ids = created
         .entries
         .iter()
@@ -315,6 +471,7 @@ async fn daily_teaching_uses_group_and_offering_snapshots_in_requested_term() {
 #[test]
 fn timetable_request_rejects_legacy_identity_fields() {
     let payload = serde_json::json!({
+        "timetableVersionId": Uuid::new_v4(),
         "academicTermId": Uuid::new_v4(),
         "classroomCourseId": Uuid::new_v4(),
         "dayOfWeek": "MON",

@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::modules::academic::models::timetable::{TimetableEntry, TimetableQuery};
-use crate::modules::academic::services::timetable_service;
+use crate::modules::academic::services::{timetable_service, timetable_version_service};
 use crate::modules::supervision::models::{
     ApproveObservationRequest, CancelObservationRequest, LessonSnapshot, ManualLesson,
     ManualLessonInput, RequestSupervisionObservationRequest, ReturnObservationRequest,
@@ -198,10 +198,17 @@ pub async fn observation_timetable_options(
     observation_id: Uuid,
 ) -> Result<Vec<TimetableEntry>, AppError> {
     let observation = get_observation(pool, observation_id).await?;
+    let version = timetable_version_service::resolve_for_date(
+        pool,
+        observation.academic_term_id,
+        observation.observed_at.date_naive(),
+    )
+    .await?;
 
     timetable_service::list_entries(
         pool,
         &TimetableQuery {
+            timetable_version_id: version.id,
             academic_term_id: observation.academic_term_id,
             learning_group_id: None,
             homeroom_id: None,
@@ -1128,9 +1135,19 @@ async fn resolve_lesson_input(
     match (timetable_entry_id, observed_at, manual_lesson) {
         (Some(entry_id), Some(observed_at), None) => {
             validate_observed_at_in_cycle(cycle, observed_at)?;
+            let observed_date = observed_at
+                .with_timezone(&FixedOffset::east_opt(7 * 60 * 60).expect("valid Bangkok offset"))
+                .date_naive();
+            let timetable_version = timetable_version_service::resolve_for_date(
+                pool,
+                academic_term_id,
+                observed_date,
+            )
+            .await?;
             let entry = load_timetable_entry_context_for_teacher(
                 pool,
                 entry_id,
+                timetable_version.id,
                 actor_user_id,
                 cycle.academic_year_id,
                 academic_term_id,
@@ -1232,6 +1249,7 @@ struct TimetableEntryLessonContext {
 async fn load_timetable_entry_context_for_teacher(
     pool: &PgPool,
     entry_id: Uuid,
+    timetable_version_id: Uuid,
     teacher_user_id: Uuid,
     academic_year_id: Uuid,
     academic_term_id: Uuid,
@@ -1241,23 +1259,25 @@ async fn load_timetable_entry_context_for_teacher(
         SELECT e.day_of_week, e.learning_group_id, e.homeroom_id
         FROM academic_timetable_entries e
         WHERE e.id = $1
-          AND e.academic_year_id = $3
-          AND e.academic_term_id = $4
+          AND e.timetable_version_id = $2
+          AND e.academic_year_id = $4
+          AND e.academic_term_id = $5
           AND (
               EXISTS (
                   SELECT 1 FROM learning_group_teachers teacher
                   WHERE teacher.learning_group_id = e.learning_group_id
-                    AND teacher.teacher_id = $2
+                    AND teacher.teacher_id = $3
               )
               OR EXISTS (
                   SELECT 1 FROM timetable_entry_instructors instructor
                   WHERE instructor.entry_id = e.id
-                    AND instructor.instructor_id = $2
+                    AND instructor.instructor_id = $3
               )
           )
         "#,
     )
     .bind(entry_id)
+    .bind(timetable_version_id)
     .bind(teacher_user_id)
     .bind(academic_year_id)
     .bind(academic_term_id)

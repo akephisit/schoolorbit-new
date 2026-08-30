@@ -10,10 +10,12 @@ use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
 use crate::modules::academic::models::timetable::{
     CreateBatchTimetableEntriesRequest, CreateTimetableEntryRequest, DeleteTimetableEntryQuery,
-    SwapTimetableEntriesRequest, TimetableOccupancyQuery, TimetableQuery,
-    UpdateTimetableEntryRequest, ValidateMovesRequest,
+    PersonalTimetableQuery, SwapTimetableEntriesRequest, TimetableBatchMutationQuery,
+    TimetableOccupancyQuery, TimetableQuery, UpdateTimetableEntryRequest, ValidateMovesRequest,
 };
-use crate::modules::academic::services::{daily_teaching_service, timetable_service};
+use crate::modules::academic::services::{
+    daily_teaching_service, timetable_service, timetable_version_service,
+};
 use crate::modules::academic::websockets::TimetableEvent;
 use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::permissions::registry::codes;
@@ -28,7 +30,7 @@ use crate::AppState;
     get,
     path = "/api/academic/timetable",
     operation_id = "listTimetableEntries",
-    params(TimetableQuery),
+    params(PersonalTimetableQuery),
     responses(
         (status = 200, description = "Timetable entries in the selected term", body = ApiResponse<Vec<crate::modules::academic::models::timetable::TimetableEntry>>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -67,11 +69,18 @@ pub async fn list_timetable_entries(
 pub async fn get_my_timetable(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
-    Query(mut query): Query<TimetableQuery>,
+    Query(query): Query<PersonalTimetableQuery>,
 ) -> Result<impl IntoResponse, AppError> {
+    let version = timetable_version_service::resolve_for_date(
+        &session.tenant.pool,
+        query.academic_term_id,
+        query.date,
+    )
+    .await?;
     if session.user_type == "student" {
         let entries = timetable_service::list_student_entries(
             &session.tenant.pool,
+            version.id,
             query.academic_term_id,
             session.user_id,
         )
@@ -90,8 +99,18 @@ pub async fn get_my_timetable(
         OfferingAction::Read,
     )
     .await?;
-    query.instructor_id = Some(context.actor.user_id);
-    let entries = timetable_service::list_entries(&context.tenant.pool, &query, &access).await?;
+    let timetable_query = TimetableQuery {
+        timetable_version_id: version.id,
+        academic_term_id: query.academic_term_id,
+        learning_group_id: None,
+        homeroom_id: None,
+        instructor_id: Some(context.actor.user_id),
+        room_id: None,
+        day_of_week: None,
+        entry_type: None,
+    };
+    let entries =
+        timetable_service::list_entries(&context.tenant.pool, &timetable_query, &access).await?;
     Ok(Json(ApiResponse::ok(entries)).into_response())
 }
 
@@ -234,6 +253,7 @@ pub async fn delete_timetable_entry(
     let entry = timetable_service::deactivate_entry(
         &context.tenant.pool,
         entry_id,
+        query.timetable_version_id,
         query.row_version,
         context.actor.user_id,
     )
@@ -246,7 +266,10 @@ pub async fn delete_timetable_entry(
     delete,
     path = "/api/academic/timetable/batch-group/{batch_id}",
     operation_id = "deleteTimetableBatch",
-    params(("batch_id" = Uuid, Path, description = "Timetable batch ID")),
+    params(
+        ("batch_id" = Uuid, Path, description = "Timetable batch ID"),
+        TimetableBatchMutationQuery
+    ),
     responses(
         (status = 200, description = "Deactivated timetable batch", body = ApiResponse<Vec<crate::modules::academic::models::timetable::TimetableEntry>>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -259,14 +282,19 @@ pub async fn delete_batch_group(
     Extension(session): Extension<AuthenticatedSession>,
     headers: HeaderMap,
     Path(batch_id): Path<Uuid>,
+    Query(query): Query<TimetableBatchMutationQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
         .require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
-    let entries =
-        timetable_service::deactivate_batch(&context.tenant.pool, batch_id, context.actor.user_id)
-            .await?;
+    let entries = timetable_service::deactivate_batch(
+        &context.tenant.pool,
+        batch_id,
+        query.timetable_version_id,
+        context.actor.user_id,
+    )
+    .await?;
     for entry in &entries {
         broadcast_entry_changed(&state, &headers, context.actor.user_id, entry);
     }
@@ -325,6 +353,7 @@ pub async fn validate_timetable_moves(
     require_existing_entry_manage_access(&context, payload.entry_id).await?;
     let cells = timetable_service::validate_moves(
         &context.tenant.pool,
+        payload.timetable_version_id,
         payload.academic_term_id,
         payload.entry_id,
     )
@@ -353,8 +382,12 @@ pub async fn get_timetable_occupancy(
     context
         .actor
         .require_permission(codes::LEARNING_OFFERING_READ_SCHOOL)?;
-    let occupancy =
-        timetable_service::occupancy(&context.tenant.pool, query.academic_term_id).await?;
+    let occupancy = timetable_service::occupancy(
+        &context.tenant.pool,
+        query.timetable_version_id,
+        query.academic_term_id,
+    )
+    .await?;
     Ok(Json(ApiResponse::ok(occupancy)).into_response())
 }
 

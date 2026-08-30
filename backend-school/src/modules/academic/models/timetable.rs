@@ -1,4 +1,4 @@
-use chrono::{DateTime, NaiveTime, Utc};
+use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -20,6 +20,7 @@ pub struct TimetableInstructor {
 #[serde(rename_all = "camelCase")]
 pub struct TimetableEntry {
     pub id: Uuid,
+    pub timetable_version_id: Uuid,
     pub academic_term_id: Uuid,
     pub academic_year_id: Uuid,
     pub bell_schedule_id: Uuid,
@@ -63,6 +64,7 @@ pub struct TimetableEntry {
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateTimetableEntryRequest {
+    pub timetable_version_id: Uuid,
     pub academic_term_id: Uuid,
     pub learning_group_id: Option<Uuid>,
     pub homeroom_id: Option<Uuid>,
@@ -79,6 +81,7 @@ pub struct CreateTimetableEntryRequest {
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateTimetableEntryRequest {
+    pub timetable_version_id: Uuid,
     pub row_version: i64,
     pub day_of_week: Option<String>,
     pub bell_schedule_period_id: Option<Uuid>,
@@ -93,13 +96,22 @@ pub struct UpdateTimetableEntryRequest {
 #[into_params(parameter_in = Query)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DeleteTimetableEntryQuery {
+    pub timetable_version_id: Uuid,
     pub row_version: i64,
 }
 
 #[derive(Debug, Clone, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TimetableBatchMutationQuery {
+    pub timetable_version_id: Uuid,
+}
+
+#[derive(Debug, Clone, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TimetableQuery {
+    pub timetable_version_id: Uuid,
     pub academic_term_id: Uuid,
     pub learning_group_id: Option<Uuid>,
     pub homeroom_id: Option<Uuid>,
@@ -109,9 +121,18 @@ pub struct TimetableQuery {
     pub entry_type: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PersonalTimetableQuery {
+    pub academic_term_id: Uuid,
+    pub date: NaiveDate,
+}
+
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateBatchTimetableEntriesRequest {
+    pub timetable_version_id: Uuid,
     pub academic_term_id: Uuid,
     #[serde(default)]
     pub learning_group_ids: Vec<Uuid>,
@@ -137,6 +158,7 @@ pub struct BatchTimetableResult {
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SwapTimetableEntriesRequest {
+    pub timetable_version_id: Uuid,
     pub entry_a_id: Uuid,
     pub entry_a_row_version: i64,
     pub entry_b_id: Uuid,
@@ -154,6 +176,7 @@ pub struct SwapTimetableEntriesResponse {
 #[into_params(parameter_in = Query)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TimetableOccupancyQuery {
+    pub timetable_version_id: Uuid,
     pub academic_term_id: Uuid,
 }
 
@@ -172,6 +195,7 @@ pub struct TimetableOccupancyCell {
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ValidateMovesRequest {
+    pub timetable_version_id: Uuid,
     pub academic_term_id: Uuid,
     pub entry_id: Uuid,
 }
@@ -260,6 +284,7 @@ pub struct UpdateTemplateRequest {
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FromCurrentRequest {
+    pub timetable_version_id: Uuid,
     pub academic_term_id: Uuid,
     pub name: String,
     pub description: Option<String>,
@@ -269,12 +294,14 @@ pub struct FromCurrentRequest {
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ApplyTemplateRequest {
+    pub timetable_version_id: Uuid,
     pub academic_term_id: Uuid,
 }
 
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ClearTimetableRequest {
+    pub timetable_version_id: Uuid,
     pub academic_term_id: Uuid,
     pub entry_types: Option<Vec<String>>,
 }

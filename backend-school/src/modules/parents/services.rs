@@ -1,3 +1,4 @@
+use chrono::NaiveDate;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -7,7 +8,7 @@ use crate::modules::academic::core::services::context as academic_context_servic
 use crate::modules::academic::models::exam_schedule::PersonalExamScheduleRound;
 use crate::modules::academic::models::timetable::TimetableEntry;
 use crate::modules::academic::services::exam_schedule_service;
-use crate::modules::academic::services::timetable_service;
+use crate::modules::academic::services::{timetable_service, timetable_version_service};
 use crate::modules::calendar::models::{CalendarEventQuery, CalendarViewerEvent};
 use crate::modules::students::models::{ParentDto, StudentDbRow, StudentProfile};
 use crate::utils::field_encryption;
@@ -120,11 +121,13 @@ pub async fn get_child_timetable(
     parent_id: Uuid,
     student_id: Uuid,
     academic_term_id: Uuid,
+    date: NaiveDate,
 ) -> Result<Vec<TimetableEntry>, AppError> {
     ensure_parent_user(pool, parent_id).await?;
     ensure_parent_student_link(pool, parent_id, student_id).await?;
 
-    timetable_service::list_student_entries(pool, academic_term_id, student_id).await
+    let version = timetable_version_service::resolve_for_date(pool, academic_term_id, date).await?;
+    timetable_service::list_student_entries(pool, version.id, academic_term_id, student_id).await
 }
 
 pub async fn get_child_academic_context_options(

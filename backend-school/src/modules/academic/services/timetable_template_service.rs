@@ -168,13 +168,20 @@ pub async fn from_current(
     let name = require_name(&request.name)?;
     let entry_types = canonical_entry_types(request.entry_types)?;
     let mut transaction = pool.begin().await?;
-    let term_exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM academic_terms WHERE id = $1)")
-            .bind(request.academic_term_id)
-            .fetch_one(&mut *transaction)
-            .await?;
-    if !term_exists {
-        return Err(AppError::NotFound("ไม่พบภาคเรียน".to_string()));
+    let version_exists: bool = sqlx::query_scalar(
+        r#"SELECT EXISTS(
+               SELECT 1 FROM academic_timetable_versions
+               WHERE id = $1 AND academic_term_id = $2 AND status <> 'cancelled'
+           )"#,
+    )
+    .bind(request.timetable_version_id)
+    .bind(request.academic_term_id)
+    .fetch_one(&mut *transaction)
+    .await?;
+    if !version_exists {
+        return Err(AppError::NotFound(
+            "ไม่พบรุ่นตารางสอนในภาคเรียนที่ระบุ".to_string(),
+        ));
     }
     let template_id = Uuid::new_v4();
     sqlx::query(
@@ -227,12 +234,14 @@ pub async fn from_current(
              ON activity_detail.learning_offering_id = offering.id
            LEFT JOIN homerooms homeroom ON homeroom.id = entry.homeroom_id
            WHERE entry.academic_term_id = $1
+             AND entry.timetable_version_id = $4
              AND entry.is_active
              AND entry.entry_type = ANY($3)"#,
     )
     .bind(request.academic_term_id)
     .bind(template_id)
     .bind(&entry_types)
+    .bind(request.timetable_version_id)
     .execute(&mut *transaction)
     .await?;
     transaction.commit().await?;
@@ -248,6 +257,12 @@ pub async fn apply_template(
     let template = get_template(pool, template_id).await?;
     let batch_id = Uuid::new_v4();
     let mut transaction = pool.begin().await?;
+    timetable_service::require_draft_version_in_tx(
+        &mut transaction,
+        request.timetable_version_id,
+        request.academic_term_id,
+    )
+    .await?;
     let mut entry_ids = Vec::with_capacity(template.entries.len());
     for entry in template.entries {
         let period_id: Uuid = sqlx::query_scalar(
@@ -291,6 +306,7 @@ pub async fn apply_template(
         };
         let create_request =
             crate::modules::academic::models::timetable::CreateTimetableEntryRequest {
+                timetable_version_id: request.timetable_version_id,
                 academic_term_id: request.academic_term_id,
                 learning_group_id,
                 homeroom_id,
@@ -326,35 +342,36 @@ pub async fn clear_timetable(
 ) -> Result<Vec<crate::modules::academic::models::timetable::TimetableEntry>, AppError> {
     let entry_types = canonical_entry_types(request.entry_types)?;
     let mut transaction = pool.begin().await?;
-    let term_status: String =
-        sqlx::query_scalar("SELECT status FROM academic_terms WHERE id = $1 FOR SHARE")
-            .bind(request.academic_term_id)
-            .fetch_optional(&mut *transaction)
-            .await?
-            .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียน".to_string()))?;
-    if matches!(term_status.as_str(), "closed" | "archived") {
-        return Err(AppError::Conflict(
-            "ภาคเรียนนี้ปิดแล้ว ไม่สามารถล้างตารางสอนได้".to_string(),
-        ));
-    }
+    timetable_service::require_draft_version_in_tx(
+        &mut transaction,
+        request.timetable_version_id,
+        request.academic_term_id,
+    )
+    .await?;
     let ids: Vec<Uuid> = sqlx::query_scalar(
         r#"SELECT id FROM academic_timetable_entries
-           WHERE academic_term_id = $1 AND entry_type = ANY($2) AND is_active
+           WHERE academic_term_id = $1
+             AND timetable_version_id = $3
+             AND entry_type = ANY($2) AND is_active
            ORDER BY id FOR UPDATE"#,
     )
     .bind(request.academic_term_id)
     .bind(&entry_types)
+    .bind(request.timetable_version_id)
     .fetch_all(&mut *transaction)
     .await?;
     sqlx::query(
         r#"UPDATE academic_timetable_entries
            SET is_active = false, updated_by = $3,
                row_version = row_version + 1, updated_at = now()
-           WHERE academic_term_id = $1 AND entry_type = ANY($2) AND is_active"#,
+           WHERE academic_term_id = $1
+             AND timetable_version_id = $4
+             AND entry_type = ANY($2) AND is_active"#,
     )
     .bind(request.academic_term_id)
     .bind(&entry_types)
     .bind(actor_user_id)
+    .bind(request.timetable_version_id)
     .execute(&mut *transaction)
     .await?;
     transaction.commit().await?;

@@ -14,4 +14,6 @@ mod exam_schedule_service_tests;
 #[cfg(test)]
 mod timetable_service_tests;
 #[cfg(test)]
+mod timetable_template_service_tests;
+#[cfg(test)]
 mod timetable_version_service_tests;

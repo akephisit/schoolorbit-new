@@ -1,0 +1,126 @@
+use chrono::NaiveDate;
+use uuid::Uuid;
+
+use super::{timetable_template_service, timetable_version_service};
+use crate::error::AppError;
+use crate::modules::academic::cutover_test_support::{
+    apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
+    CutoverFixture,
+};
+use crate::modules::academic::models::timetable::{
+    ApplyTemplateRequest, ClearTimetableRequest, FromCurrentRequest,
+};
+use crate::modules::academic::models::timetable_version::CloneTimetableVersionRequest;
+use crate::test_helpers::create_named_test_pool;
+
+#[tokio::test]
+async fn template_source_apply_and_clear_are_version_scoped() {
+    let pool = create_named_test_pool("timetable_template_version_scope").await;
+    apply_migrations_through(&pool, 40).await.unwrap();
+    seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
+        .await
+        .unwrap();
+    apply_phase_b_runtime_migrations(&pool).await.unwrap();
+    apply_migrations_through(&pool, 52).await.unwrap();
+
+    let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
+    let (source_id, source_row_version, term_id, term_start): (Uuid, i64, Uuid, NaiveDate) =
+        sqlx::query_as(
+            r#"SELECT version.id, version.row_version, term.id, term.start_date
+               FROM academic_timetable_versions version
+               JOIN academic_terms term ON term.id = version.academic_term_id
+               WHERE version.status = 'published' AND term.status = 'active'
+               ORDER BY version.effective_from, version.id LIMIT 1"#,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let draft = timetable_version_service::clone_draft(
+        &pool,
+        actor_id,
+        source_id,
+        CloneTimetableVersionRequest {
+            effective_from: term_start.succ_opt().unwrap(),
+            source_row_version,
+        },
+    )
+    .await
+    .unwrap();
+
+    let template = timetable_template_service::from_current(
+        &pool,
+        actor_id,
+        FromCurrentRequest {
+            timetable_version_id: source_id,
+            academic_term_id: term_id,
+            name: "แม่แบบจากรุ่นเผยแพร่".to_string(),
+            description: None,
+            entry_types: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(!template.entries.is_empty());
+
+    let published_before: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM academic_timetable_entries WHERE timetable_version_id = $1 AND is_active",
+    )
+    .bind(source_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let cleared = timetable_template_service::clear_timetable(
+        &pool,
+        actor_id,
+        ClearTimetableRequest {
+            timetable_version_id: draft.id,
+            academic_term_id: term_id,
+            entry_types: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(!cleared.is_empty());
+    let published_after: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM academic_timetable_entries WHERE timetable_version_id = $1 AND is_active",
+    )
+    .bind(source_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(published_after, published_before);
+
+    let applied = timetable_template_service::apply_template(
+        &pool,
+        actor_id,
+        template.template.id,
+        ApplyTemplateRequest {
+            timetable_version_id: draft.id,
+            academic_term_id: term_id,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(applied.applied, template.entries.len());
+    let wrong_version_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM academic_timetable_entries WHERE id = ANY($1) AND timetable_version_id <> $2",
+    )
+    .bind(&applied.entry_ids)
+    .bind(draft.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(wrong_version_count, 0);
+
+    let published_apply = timetable_template_service::apply_template(
+        &pool,
+        actor_id,
+        template.template.id,
+        ApplyTemplateRequest {
+            timetable_version_id: source_id,
+            academic_term_id: term_id,
+        },
+    )
+    .await;
+    assert!(matches!(published_apply, Err(AppError::Conflict(_))));
+}

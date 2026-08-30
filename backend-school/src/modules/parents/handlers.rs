@@ -13,6 +13,7 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use chrono::NaiveDate;
 use uuid::Uuid;
 
 /// GET /api/parent/profile - ผู้ปกครองดูข้อมูลตนเองและบุตรหลาน
@@ -82,6 +83,7 @@ pub async fn get_child_profile(
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ChildTimetableQuery {
     pub academic_term_id: Uuid,
+    pub date: NaiveDate,
 }
 
 #[derive(Debug, serde::Deserialize, utoipa::IntoParams)]
@@ -173,6 +175,7 @@ pub async fn get_child_timetable(
         actor.user_id,
         student_id,
         query.academic_term_id,
+        query.date,
     )
     .await?;
 

@@ -491,6 +491,11 @@ pub struct HomeroomDeliveryRoom {
 pub struct HomeroomDeliveryWorkspace {
     pub academic_term_id: Uuid,
     pub academic_year_id: Uuid,
+    #[schema(required = true)]
+    pub timetable_version_id: Option<Uuid>,
+    #[schema(required = true)]
+    pub timetable_version_status:
+        Option<crate::modules::academic::models::timetable_version::TimetableVersionStatus>,
     pub homerooms: Vec<HomeroomDeliveryRoom>,
     pub unlinked: Vec<UnlinkedDeliveryItem>,
 }

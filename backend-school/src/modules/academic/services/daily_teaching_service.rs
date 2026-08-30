@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::modules::academic::delivery::models::ActivitySchedulingMode;
+use crate::modules::academic::services::timetable_version_service;
 
 #[derive(Debug, Clone, Deserialize, IntoParams)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -136,19 +137,15 @@ pub async fn get_daily_teaching_overview(
 ) -> Result<DailyTeachingOverview, AppError> {
     let date = query.date.unwrap_or_else(|| Local::now().date_naive());
     let day = day_code_from_date(date).to_string();
-    let bell_schedule_id: Uuid =
-        sqlx::query_scalar("SELECT bell_schedule_id FROM academic_terms WHERE id = $1")
-            .bind(query.academic_term_id)
-            .fetch_optional(pool)
-            .await?
-            .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียน".to_string()))?;
+    let version =
+        timetable_version_service::resolve_for_date(pool, query.academic_term_id, date).await?;
     let periods: Vec<DailyTeachingPeriod> = sqlx::query_as(
         r#"SELECT id, name, start_time, end_time, order_index
            FROM bell_schedule_periods
            WHERE bell_schedule_id = $1 AND is_active
            ORDER BY order_index, start_time, id"#,
     )
-    .bind(bell_schedule_id)
+    .bind(version.bell_schedule_id)
     .fetch_all(pool)
     .await?;
     let teachers: Vec<TeacherSeed> = sqlx::query_as(
@@ -172,12 +169,14 @@ pub async fn get_daily_teaching_overview(
                      JOIN academic_timetable_entries entry ON entry.id = instructor.entry_id
                      WHERE instructor.instructor_id = user_account.id
                        AND entry.academic_term_id = $1
+                       AND entry.timetable_version_id = $2
                        AND entry.is_active
                  )
              )
            ORDER BY display_name, user_account.id"#,
     )
     .bind(query.academic_term_id)
+    .bind(version.id)
     .fetch_all(pool)
     .await?;
     let entries: Vec<EntrySeed> = sqlx::query_as(
@@ -187,6 +186,7 @@ pub async fn get_daily_teaching_overview(
                JOIN learning_group_teachers teacher
                  ON teacher.learning_group_id = entry.learning_group_id
                WHERE entry.academic_term_id = $1
+                 AND entry.timetable_version_id = $3
                  AND entry.day_of_week = $2
                  AND entry.is_active
                UNION ALL
@@ -194,6 +194,7 @@ pub async fn get_daily_teaching_overview(
                FROM academic_timetable_entries entry
                JOIN timetable_entry_instructors instructor ON instructor.entry_id = entry.id
                WHERE entry.academic_term_id = $1
+                 AND entry.timetable_version_id = $3
                  AND entry.day_of_week = $2
                  AND entry.learning_group_id IS NULL
                  AND entry.is_active
@@ -254,6 +255,7 @@ pub async fn get_daily_teaching_overview(
     )
     .bind(query.academic_term_id)
     .bind(&day)
+    .bind(version.id)
     .fetch_all(pool)
     .await?;
 

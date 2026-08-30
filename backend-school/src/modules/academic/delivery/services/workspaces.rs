@@ -6,6 +6,7 @@ use uuid::Uuid;
 use crate::error::AppError;
 use crate::modules::academic::core::models::{RequirementKind, StudyProgramOption};
 use crate::modules::academic::core::services::curriculum;
+use crate::modules::academic::models::timetable_version::TimetableVersionStatus;
 use crate::modules::lookup::models::{
     AcademicLookupQuery, GradeLevelLookupItem, HomeroomLookupItem, LookupQuery,
 };
@@ -109,15 +110,22 @@ struct DeliveryGroupRow {
     timetable_entry_count: i64,
 }
 
+#[derive(Debug, sqlx::FromRow)]
+struct WorkspaceTimetableVersionRow {
+    id: Uuid,
+    status: TimetableVersionStatus,
+}
+
 pub async fn homeroom_delivery_workspace(
     pool: &PgPool,
     academic_year_id: Uuid,
     academic_term_id: Uuid,
     filter: &AcademicResourceListFilter,
 ) -> Result<HomeroomDeliveryWorkspace, AppError> {
-    let (term_type, type_occurrence): (String, i64) = sqlx::query_as(
+    let (term_type, type_occurrence, term_status): (String, i64, String) = sqlx::query_as(
         r#"SELECT selected.term_type,
-                  count(sibling.id)::bigint AS type_occurrence
+                  count(sibling.id)::bigint AS type_occurrence,
+                  selected.status
            FROM academic_terms selected
            JOIN academic_terms sibling
              ON sibling.academic_year_id = selected.academic_year_id
@@ -125,13 +133,63 @@ pub async fn homeroom_delivery_workspace(
             AND sibling.sequence_no <= selected.sequence_no
            WHERE selected.id = $1
              AND selected.academic_year_id = $2
-           GROUP BY selected.id, selected.term_type"#,
+           GROUP BY selected.id, selected.term_type, selected.status"#,
     )
     .bind(academic_term_id)
     .bind(academic_year_id)
     .fetch_optional(pool)
     .await?
     .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียนในปีการศึกษาที่เลือก".to_string()))?;
+
+    let timetable_version: Option<WorkspaceTimetableVersionRow> = match term_status.as_str() {
+        "planning" | "ready" => sqlx::query_as(
+            r#"SELECT id, status
+               FROM academic_timetable_versions
+               WHERE academic_term_id = $1 AND status = 'published'
+               ORDER BY effective_from, id LIMIT 1"#,
+        )
+        .bind(academic_term_id)
+        .fetch_optional(pool)
+        .await?,
+        "active" => {
+            let current: Option<WorkspaceTimetableVersionRow> = sqlx::query_as(
+                r#"SELECT id, status
+                   FROM academic_timetable_versions
+                   WHERE academic_term_id = $1
+                     AND status = 'published'
+                     AND effective_from <= CURRENT_DATE
+                   ORDER BY effective_from DESC, id LIMIT 1"#,
+            )
+            .bind(academic_term_id)
+            .fetch_optional(pool)
+            .await?;
+            if current.is_some() {
+                current
+            } else {
+                sqlx::query_as(
+                    r#"SELECT id, status
+                       FROM academic_timetable_versions
+                       WHERE academic_term_id = $1 AND status = 'published'
+                       ORDER BY effective_from, id LIMIT 1"#,
+                )
+                .bind(academic_term_id)
+                .fetch_optional(pool)
+                .await?
+            }
+        }
+        _ => {
+            sqlx::query_as(
+                r#"SELECT id, status
+                   FROM academic_timetable_versions
+                   WHERE academic_term_id = $1 AND status = 'published'
+                   ORDER BY effective_from DESC, id DESC LIMIT 1"#,
+            )
+            .bind(academic_term_id)
+            .fetch_optional(pool)
+            .await?
+        }
+    };
+    let timetable_version_id = timetable_version.as_ref().map(|version| version.id);
 
     let homeroom_rows: Vec<HomeroomDeliveryBaseRow> = sqlx::query_as(
         r#"SELECT homeroom.id AS homeroom_id,
@@ -309,6 +367,7 @@ pub async fn homeroom_delivery_workspace(
                    WHERE entry.learning_group_id = learning_group.id
                      AND entry.academic_term_id = learning_group.academic_term_id
                      AND entry.academic_year_id = learning_group.academic_year_id
+                     AND entry.timetable_version_id = $5
                      AND entry.is_active) AS timetable_entry_count
            FROM learning_groups learning_group
            JOIN learning_offerings offering ON offering.id = learning_group.learning_offering_id
@@ -320,12 +379,13 @@ pub async fn homeroom_delivery_workspace(
              AND ($3 OR offering.owning_organization_unit_id = ANY($4))
            GROUP BY learning_group.id
            ORDER BY learning_group.code, learning_group.id
-           LIMIT $5"#,
+           LIMIT $6"#,
     )
     .bind(academic_term_id)
     .bind(academic_year_id)
     .bind(filter.includes_school_owned)
     .bind(&owner_ids)
+    .bind(timetable_version_id)
     .bind(MAX_WORKSPACE_GROUPS + 1)
     .fetch_all(pool)
     .await?;
@@ -500,6 +560,8 @@ pub async fn homeroom_delivery_workspace(
     Ok(HomeroomDeliveryWorkspace {
         academic_term_id,
         academic_year_id,
+        timetable_version_id,
+        timetable_version_status: timetable_version.map(|version| version.status),
         homerooms: rooms,
         unlinked,
     })
