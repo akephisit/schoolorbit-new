@@ -54,9 +54,7 @@ export function summarizeHomeroomDelivery(rooms: readonly DeliveryRoomShape[]) {
 			roomCount: summary.roomCount + 1,
 			expectedCount: summary.expectedCount + room.expectedCount,
 			readyCount: summary.readyCount + room.readyCount,
-			attentionRoomCount:
-				summary.attentionRoomCount +
-				(needsAttention(room) ? 1 : 0)
+			attentionRoomCount: summary.attentionRoomCount + (needsAttention(room) ? 1 : 0)
 		}),
 		{ roomCount: 0, expectedCount: 0, readyCount: 0, attentionRoomCount: 0 }
 	);

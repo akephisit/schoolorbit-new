@@ -4,6 +4,7 @@
 		HomeroomDeliveryItem,
 		HomeroomDeliveryWorkspace as Workspace
 	} from '$lib/api/learning-delivery';
+	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import {
 		filterHomeroomDeliveryRooms,
 		summarizeHomeroomDelivery,
@@ -77,7 +78,7 @@
 	}
 
 	function curriculumHref(room: Workspace['homerooms'][number]): string {
-		const query = new URLSearchParams({
+		const query = new SvelteURLSearchParams({
 			versionId: room.curriculumVersionId,
 			academicYearId: workspace.academicYearId,
 			academicTermId: workspace.academicTermId,
@@ -223,7 +224,9 @@
 						</summary>
 
 						<div class="border-t bg-background">
-							<div class="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/[0.12] px-4 py-3">
+							<div
+								class="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/[0.12] px-4 py-3"
+							>
 								<div>
 									<p class="text-sm font-medium">ความสอดคล้องกับหลักสูตร</p>
 									<p class="text-xs text-muted-foreground">
@@ -361,7 +364,9 @@
 											<div class="rounded-xl border border-sky-500/25 bg-background p-3">
 												<div class="flex items-start justify-between gap-3">
 													<div>
-														<p class="font-mono text-xs font-semibold text-sky-700 dark:text-sky-300">
+														<p
+															class="font-mono text-xs font-semibold text-sky-700 dark:text-sky-300"
+														>
 															{item.code}
 														</p>
 														<p class="font-medium">{item.name}</p>

@@ -3,6 +3,7 @@
 		CurriculumDeliveryAlignmentState,
 		HomeroomDeliveryWorkspace
 	} from '$lib/api/learning-delivery';
+	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { ArrowLeft, BookCheck, ChevronDown, CircleAlert, Clock3 } from 'lucide-svelte';
@@ -46,7 +47,7 @@
 			extraItems.length
 	);
 	let backHref = $derived.by(() => {
-		const query = new URLSearchParams({ academicYearId, academicTermId });
+		const query = new SvelteURLSearchParams({ academicYearId, academicTermId });
 		if (workspace.timetableVersionId) {
 			query.set('timetableVersionId', workspace.timetableVersionId);
 		}
@@ -130,7 +131,8 @@
 						<div>
 							<div class="flex flex-wrap items-center gap-2">
 								<h3 class="font-semibold">{room.homeroom.name}</h3>
-								<Badge variant="outline">{room.gradeLevel.short_name ?? room.gradeLevel.name}</Badge>
+								<Badge variant="outline">{room.gradeLevel.short_name ?? room.gradeLevel.name}</Badge
+								>
 							</div>
 							<p class="mt-1 text-sm text-muted-foreground">{room.studyProgram.name}</p>
 						</div>

@@ -7,9 +7,10 @@ const projectRoot = path.resolve(import.meta.dirname, '../..');
 const readProjectFile = (relativePath) => readFile(path.join(projectRoot, relativePath), 'utf8');
 
 test('delivery renders set-based curriculum alignment and exact context links', async () => {
-	const page = await readProjectFile(
+	const workspace = await readProjectFile(
 		'src/lib/components/learning-delivery/HomeroomDeliveryWorkspace.svelte'
 	);
+	const page = await readProjectFile('src/routes/(app)/staff/academic/delivery/+page.svelte');
 
 	for (const copy of [
 		'ตรงกับหลักสูตร',
@@ -18,22 +19,25 @@ test('delivery renders set-based curriculum alignment and exact context links', 
 		'หยุดสอนก่อนรุ่นตารางนี้มีผล',
 		'คาบจริงต่างจากค่ามาตรฐานในหลักสูตร'
 	]) {
-		assert.match(page, new RegExp(copy));
+		assert.match(workspace, new RegExp(copy));
 	}
-	assert.match(page, /room\.extraOfferings/);
-	assert.match(page, /room\.curriculumVersionId/);
-	assert.match(page, /workspace\.timetableVersionId/);
-	assert.match(page, /academicYearId/);
-	assert.match(page, /academicTermId/);
-	assert.match(page, /studyProgramId/);
-	assert.match(page, /versionId/);
-	assert.doesNotMatch(page, /getLearningOffering|getLearningGroup|listLearningGroups/);
+	assert.match(workspace, /room\.extraOfferings/);
+	assert.match(workspace, /room\.curriculumVersionId/);
+	assert.match(workspace, /workspace\.timetableVersionId/);
+	assert.match(workspace, /academicYearId/);
+	assert.match(workspace, /academicTermId/);
+	assert.match(workspace, /studyProgramId/);
+	assert.match(workspace, /versionId/);
+	assert.match(page, /page\.url\.searchParams\.get\('timetableVersionId'\)/);
+	assert.match(page, /getHomeroomDeliveryWorkspace\([\s\S]*timetableVersionId/);
+	assert.doesNotMatch(
+		`${page}\n${workspace}`,
+		/getLearningOffering|getLearningGroup|listLearningGroups/
+	);
 });
 
 test('curriculum alignment context remains read-only and cloning is an explicit handoff', async () => {
-	const page = await readProjectFile(
-		'src/routes/(app)/staff/academic/curricula/[id]/+page.svelte'
-	);
+	const page = await readProjectFile('src/routes/(app)/staff/academic/curricula/[id]/+page.svelte');
 	const panel = await readProjectFile(
 		'src/lib/components/academic-core/CurriculumDeliveryAlignmentPanel.svelte'
 	);

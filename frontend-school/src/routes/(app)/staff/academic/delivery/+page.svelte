@@ -101,7 +101,12 @@
 		loading = true;
 		errorMessage = '';
 		try {
-			const homeroomResult = await getHomeroomDeliveryWorkspace(yearId, termId, { signal });
+			const timetableVersionId =
+				page.url.searchParams.get('timetableVersionId')?.trim() || undefined;
+			const homeroomResult = await getHomeroomDeliveryWorkspace(yearId, termId, {
+				signal,
+				timetableVersionId
+			});
 			const loadedChangeSets = await listAcademicTermChangeSets(termId, { signal });
 			if (!workspaceRequest.isCurrent(revision)) return;
 			workspace = homeroomResult;

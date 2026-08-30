@@ -3,7 +3,7 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
-	import { SvelteMap } from 'svelte/reactivity';
+	import { SvelteMap, SvelteURLSearchParams } from 'svelte/reactivity';
 	import { buildCurriculumValidationNoticeViews } from '$lib/academic/curriculum-structure';
 	import {
 		cloneCurriculumVersionDraft,
@@ -108,7 +108,7 @@
 		versionId: string,
 		currentUrl: URL = page.url
 	): `/staff/academic/curricula/${string}?${string}` {
-		const query = new URLSearchParams(currentUrl.searchParams);
+		const query = new SvelteURLSearchParams(currentUrl.searchParams);
 		query.set('versionId', versionId);
 		return `/staff/academic/curricula/${encodeURIComponent(curriculumId)}?${query.toString()}`;
 	}
@@ -146,10 +146,11 @@
 			applyWorkspace(loadedWorkspace);
 			initialized = true;
 			if (version && requestedVersionId !== version.version.id) {
-				await goto(
-					resolve(curriculumVersionUrl(version.version.id)),
-					{ replaceState: true, keepFocus: true, noScroll: true }
-				);
+				await goto(resolve(curriculumVersionUrl(version.version.id)), {
+					replaceState: true,
+					keepFocus: true,
+					noScroll: true
+				});
 			}
 		} catch (error) {
 			if (isAbortError(error)) return;
@@ -171,10 +172,10 @@
 			selectedVersion = version;
 			applyWorkspace(loadedWorkspace);
 			if (updateUrl) {
-				await goto(
-					resolve(curriculumVersionUrl(version.version.id)),
-					{ keepFocus: true, noScroll: true }
-				);
+				await goto(resolve(curriculumVersionUrl(version.version.id)), {
+					keepFocus: true,
+					noScroll: true
+				});
 			}
 		} catch (error) {
 			if (isAbortError(error)) return;
