@@ -9,7 +9,7 @@ use crate::modules::academic::cutover_test_support::{
 };
 use crate::modules::academic::models::timetable::{
     CreateBatchTimetableEntriesRequest, CreateTimetableEntryRequest, SwapTimetableEntriesRequest,
-    TimetableQuery,
+    TimetableQuery, UpdateTimetableEntryRequest,
 };
 use crate::modules::academic::models::timetable_version::CloneTimetableVersionRequest;
 use crate::modules::academic::models::timetable_version::TimetableVersion;
@@ -319,6 +319,48 @@ async fn student_timetable_uses_the_membership_interval_for_the_requested_date()
     assert!(!after_end
         .iter()
         .any(|entry| entry.learning_group_id == Some(learning_group_id)));
+}
+
+#[tokio::test]
+async fn timetable_entry_accepts_a_room_with_active_status() {
+    let pool = migrated_pool("timetable_active_room_status").await;
+    let draft = clone_editable_version(&pool).await;
+    let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
+    let (entry_id, row_version): (Uuid, i64) = sqlx::query_as(
+        r#"SELECT id, row_version
+           FROM academic_timetable_entries
+           WHERE timetable_version_id = $1 AND is_active
+           ORDER BY id LIMIT 1"#,
+    )
+    .bind(draft.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let room_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM rooms WHERE status = 'ACTIVE' ORDER BY id LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .expect("fixture must contain an active room");
+
+    let updated = timetable_service::update_entry(
+        &pool,
+        entry_id,
+        actor_id,
+        UpdateTimetableEntryRequest {
+            timetable_version_id: draft.id,
+            row_version,
+            day_of_week: None,
+            bell_schedule_period_id: None,
+            room_id: Some(room_id),
+            clear_room: None,
+            note: None,
+            clear_note: None,
+            title: None,
+        },
+    )
+    .await
+    .expect("a room with ACTIVE status must be accepted by timetable mutations");
+    assert_eq!(updated.room_id, Some(room_id));
 }
 
 #[tokio::test]

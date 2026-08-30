@@ -276,6 +276,108 @@ pub struct DeleteAcademicTermChangeItemRequest {
     pub item_row_version: i64,
 }
 
+#[derive(
+    Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, ToSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum AcademicChangeFindingSeverity {
+    Blocking,
+    Warning,
+}
+
+#[derive(
+    Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, ToSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum AcademicChangeFindingCode {
+    ChangeSetNoItems,
+    ChangeSetStale,
+    TermNotWritable,
+    EffectiveDateInvalid,
+    BaseTimetableVersionStale,
+    TargetTimetableVersionStale,
+    ChangeItemStale,
+    ResourceStale,
+    DraftGroup,
+    MissingPrimaryTeacher,
+    UnpublishedRoster,
+    OfferingUnavailable,
+    MissingWeeklyPeriodTarget,
+    WeeklyPeriodDeficit,
+    WeeklyPeriodExcess,
+    HomeroomConflict,
+    LearningGroupConflict,
+    TeacherConflict,
+    RoomConflict,
+    StoppedOfferingStillScheduled,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AcademicChangeFinding {
+    pub code: AcademicChangeFindingCode,
+    pub severity: AcademicChangeFindingSeverity,
+    pub title: String,
+    pub guidance: String,
+    pub affected_count: i64,
+    pub route: Option<String>,
+    pub resource_id: Option<Uuid>,
+    pub learning_group_id: Option<Uuid>,
+    pub learning_offering_id: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AcademicChangeImpactCounts {
+    pub groups: i64,
+    pub homerooms: i64,
+    pub membership_intervals: i64,
+    pub teacher_assignments: i64,
+    pub target_timetable_entries: i64,
+    pub course_assessment_plans: i64,
+    pub course_assessment_categories: i64,
+    pub course_assessment_items: i64,
+    pub learning_results: i64,
+    pub exam_schedule_items: i64,
+    pub supervision_observations: i64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AcademicOfferingScheduleCount {
+    pub learning_offering_id: Uuid,
+    pub learning_group_id: Uuid,
+    pub offering_label: String,
+    pub learning_group_label: String,
+    pub actual_periods: i64,
+    pub target_periods: i32,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AcademicTermChangeSetPreview {
+    pub change_set_id: Uuid,
+    pub change_set_row_version: i64,
+    pub target_timetable_version_id: Uuid,
+    pub target_timetable_version_row_version: i64,
+    pub effective_from: NaiveDate,
+    pub impact_counts: AcademicChangeImpactCounts,
+    pub schedule_counts: Vec<AcademicOfferingScheduleCount>,
+    pub findings: Vec<AcademicChangeFinding>,
+    pub preview_hash: String,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PublishAcademicTermChangeSetRequest {
+    pub row_version: i64,
+    pub target_timetable_version_row_version: i64,
+    pub preview_hash: String,
+    #[serde(default)]
+    pub acknowledged_warning_codes: Vec<AcademicChangeFindingCode>,
+    pub idempotency_key: Uuid,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CourseGradingPolicy {

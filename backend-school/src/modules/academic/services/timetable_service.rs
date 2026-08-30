@@ -464,11 +464,12 @@ pub async fn update_entry(
         request.room_id.or(existing.room_id)
     };
     if let Some(room_id) = room_id {
-        let room_exists: bool =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM rooms WHERE id = $1 AND is_active)")
-                .bind(room_id)
-                .fetch_one(&mut *transaction)
-                .await?;
+        let room_exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM rooms WHERE id = $1 AND status = 'ACTIVE')",
+        )
+        .bind(room_id)
+        .fetch_one(&mut *transaction)
+        .await?;
         if !room_exists {
             return Err(AppError::ValidationError("ไม่พบห้องที่เปิดใช้งาน".to_string()));
         }
@@ -1008,11 +1009,12 @@ async fn resolve_create_scope(
     let entry_type = normalize_entry_type(&request.entry_type)?;
     let room_id = request.room_id;
     if let Some(room_id) = room_id {
-        let exists: bool =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM rooms WHERE id = $1 AND is_active)")
-                .bind(room_id)
-                .fetch_one(&mut **transaction)
-                .await?;
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM rooms WHERE id = $1 AND status = 'ACTIVE')",
+        )
+        .bind(room_id)
+        .fetch_one(&mut **transaction)
+        .await?;
         if !exists {
             return Err(AppError::ValidationError("ไม่พบห้องที่เปิดใช้งาน".to_string()));
         }
