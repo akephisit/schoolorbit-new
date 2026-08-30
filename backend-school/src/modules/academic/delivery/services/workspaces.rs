@@ -581,6 +581,7 @@ fn offering_state(status: LearningOfferingStatus) -> HomeroomOfferingState {
     match status {
         LearningOfferingStatus::Draft => HomeroomOfferingState::Draft,
         LearningOfferingStatus::Published => HomeroomOfferingState::Published,
+        LearningOfferingStatus::Cancelled => HomeroomOfferingState::Closed,
         LearningOfferingStatus::Closed => HomeroomOfferingState::Closed,
     }
 }

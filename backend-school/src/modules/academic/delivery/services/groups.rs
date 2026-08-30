@@ -255,7 +255,10 @@ pub async fn create(
     .fetch_optional(&mut *transaction)
     .await?
     .ok_or_else(|| AppError::NotFound("ไม่พบรายการเปิดสอน".to_string()))?;
-    if offering_status == LearningOfferingStatus::Closed {
+    if matches!(
+        offering_status,
+        LearningOfferingStatus::Cancelled | LearningOfferingStatus::Closed
+    ) {
         return Err(AppError::Conflict("รายการเปิดสอนปิดแล้ว".to_string()));
     }
     require_writable_term(&mut transaction, term_id, false).await?;

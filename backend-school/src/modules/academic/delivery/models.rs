@@ -24,6 +24,7 @@ pub enum LearningOfferingKind {
 pub enum LearningOfferingStatus {
     Draft,
     Published,
+    Cancelled,
     Closed,
 }
 
@@ -130,7 +131,11 @@ pub enum AcademicTermChangeActionKind {
 }
 
 #[derive(Clone, Debug, Serialize, ToSchema)]
-#[serde(tag = "actionKind", rename_all = "snake_case")]
+#[serde(
+    tag = "actionKind",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
 pub enum AcademicTermChangeItem {
     AddOffering {
         id: Uuid,
@@ -210,6 +215,65 @@ pub struct CancelAcademicTermChangeSetRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AcademicTermChangeSetQuery {
     pub academic_term_id: Uuid,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(
+    tag = "action",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
+pub enum UpsertAcademicTermChangeItemRequest {
+    AddCourse {
+        change_set_row_version: i64,
+        offering: CreateCourseOfferingRequest,
+    },
+    AddActivity {
+        change_set_row_version: i64,
+        weekly_period_target: i32,
+        offering: CreateActivityOfferingRequest,
+    },
+    StopOffering {
+        change_set_row_version: i64,
+        item_row_version: Option<i64>,
+        learning_offering_id: Uuid,
+    },
+    AdjustWeeklyPeriodTarget {
+        change_set_row_version: i64,
+        item_row_version: Option<i64>,
+        learning_offering_id: Uuid,
+        weekly_period_target: i32,
+    },
+}
+
+impl UpsertAcademicTermChangeItemRequest {
+    pub fn change_set_row_version(&self) -> i64 {
+        match self {
+            Self::AddCourse {
+                change_set_row_version,
+                ..
+            }
+            | Self::AddActivity {
+                change_set_row_version,
+                ..
+            }
+            | Self::StopOffering {
+                change_set_row_version,
+                ..
+            }
+            | Self::AdjustWeeklyPeriodTarget {
+                change_set_row_version,
+                ..
+            } => *change_set_row_version,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DeleteAcademicTermChangeItemRequest {
+    pub change_set_row_version: i64,
+    pub item_row_version: i64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

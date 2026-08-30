@@ -19,14 +19,15 @@ use super::{
         ApplyRosterRequest, CancelAcademicTermChangeSetRequest, CourseGradingPolicy,
         CreateAcademicTermChangeSetRequest, CreateActivityOfferingRequest,
         CreateCourseOfferingRequest, CreateLearningGroupRequest, CreateLearningOfferingRequest,
-        CurriculumOfferingPreview, CurriculumPreparationChoice, LearningOfferingKind,
-        LearningOfferingQuery, LearningOfferingSnapshot, LearningOfferingStatus,
-        LearningTeacherRole, OfferingTargetInput, OfferingTargetKind, PreparationAction,
-        PreparationGroupingState, PreviewCurriculumOfferingsRequest,
-        PublishLearningOfferingRequest, PublishRosterRequest, ReplaceLearningGroupHomeroomsRequest,
-        ReplaceLearningGroupTeachersRequest, RosterOverrideAction, RosterOverrideInput,
-        StudentActivityRegistrationQuery, TeacherAssignmentInput,
-        UpdateAcademicTermChangeSetRequest, UpdateLearningOfferingRequest,
+        CurriculumOfferingPreview, CurriculumPreparationChoice,
+        DeleteAcademicTermChangeItemRequest, LearningOfferingKind, LearningOfferingQuery,
+        LearningOfferingSnapshot, LearningOfferingStatus, LearningTeacherRole, OfferingTargetInput,
+        OfferingTargetKind, PreparationAction, PreparationGroupingState,
+        PreviewCurriculumOfferingsRequest, PublishLearningOfferingRequest, PublishRosterRequest,
+        ReplaceLearningGroupHomeroomsRequest, ReplaceLearningGroupTeachersRequest,
+        RosterOverrideAction, RosterOverrideInput, StudentActivityRegistrationQuery,
+        TeacherAssignmentInput, UpdateAcademicTermChangeSetRequest, UpdateLearningOfferingRequest,
+        UpsertAcademicTermChangeItemRequest,
     },
     services::{activities, change_sets, groups, offerings, workspaces},
 };
@@ -710,6 +711,102 @@ async fn create_runtime_change_set(
     .expect("a planning term must accept a draft operational change")
 }
 
+async fn add_operational_change_catalog_fixture(
+    pool: &PgPool,
+    context: &RuntimeContext,
+) -> (Uuid, Uuid, ActivitySchedulingMode) {
+    let subject_id = stable_uuid("change-set:catalog:subject");
+    let subject_version_id = stable_uuid("change-set:catalog:subject-version");
+    sqlx::query(
+        r#"INSERT INTO subjects (id, code, identity_key, owning_organization_unit_id)
+           VALUES ($1, 'ท99999', 'change-set-test-subject', $2)"#,
+    )
+    .bind(subject_id)
+    .bind(context.owner_id)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"INSERT INTO subject_versions (
+               id, subject_id, version_no, code, name_th, name_en, credit,
+               hours_per_semester, type, group_id, description, effective_from,
+               effective_until, start_academic_year_id, term, is_active,
+               periods_per_week, status, published_at
+           )
+           SELECT $1, $2, 1, 'ท99999', 'รายวิชาทดสอบกลางภาค', NULL, credit,
+                  hours_per_semester, type, group_id, 'fixture', effective_from,
+                  effective_until, start_academic_year_id, term, true,
+                  periods_per_week, 'published', now()
+           FROM subject_versions
+           WHERE id = $3"#,
+    )
+    .bind(subject_version_id)
+    .bind(subject_id)
+    .bind(context.subject_version_id)
+    .execute(pool)
+    .await
+    .unwrap();
+
+    let source_activity_version_id: Uuid = sqlx::query_scalar(
+        r#"SELECT version.id
+           FROM activity_versions version
+           JOIN academic_terms term ON term.id = $1
+           WHERE version.status = 'published'
+             AND version.effective_from <= term.start_date
+             AND (version.effective_until IS NULL OR version.effective_until > term.start_date)
+           ORDER BY version.id
+           LIMIT 1"#,
+    )
+    .bind(context.term_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let activity_id = stable_uuid("change-set:catalog:activity");
+    let activity_version_id = stable_uuid("change-set:catalog:activity-version");
+    sqlx::query(
+        r#"INSERT INTO activities (
+               id, code, identity_key, activity_type, owning_organization_unit_id
+           )
+           SELECT $1, 'ACT-CHANGE', 'change-set-test-activity', activity.activity_type, $2
+           FROM activity_versions version
+           JOIN activities activity ON activity.id = version.activity_id
+           WHERE version.id = $3"#,
+    )
+    .bind(activity_id)
+    .bind(context.owner_id)
+    .bind(source_activity_version_id)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"INSERT INTO activity_versions (
+               id, activity_id, version_no, name, activity_type, description,
+               periods_per_week, hours_per_week, hours_per_term, scheduling_mode,
+               is_active, term, grade_level_ids, start_academic_year_id,
+               effective_from, effective_until, status, published_at
+           )
+           SELECT $1, $2, 1, 'กิจกรรมทดสอบกลางภาค', activity_type, 'fixture',
+                  periods_per_week, hours_per_week, hours_per_term, scheduling_mode,
+                  true, term, grade_level_ids, start_academic_year_id,
+                  effective_from, effective_until, 'published', now()
+           FROM activity_versions
+           WHERE id = $3"#,
+    )
+    .bind(activity_version_id)
+    .bind(activity_id)
+    .bind(source_activity_version_id)
+    .execute(pool)
+    .await
+    .unwrap();
+    let scheduling_mode: ActivitySchedulingMode =
+        sqlx::query_scalar("SELECT scheduling_mode FROM activity_versions WHERE id = $1")
+            .bind(activity_version_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    (subject_version_id, activity_version_id, scheduling_mode)
+}
+
 #[tokio::test]
 async fn change_set_creation_clones_the_effective_base_and_is_idempotent() {
     let pool = prepare_delivery_runtime_fixture("academic_change_set_create").await;
@@ -985,6 +1082,313 @@ async fn change_set_creation_rejects_unwritable_terms_and_out_of_range_dates() {
     .await
     .expect_err("a closing term must reject change-set creation");
     assert!(matches!(closed, AppError::ValidationError(_)));
+}
+
+#[tokio::test]
+async fn add_change_items_create_draft_course_and_activity_delivery_then_delete_cleanly() {
+    let pool = prepare_delivery_runtime_fixture("academic_change_set_add_items").await;
+    let context = operational_change_runtime_context(&pool).await;
+    let change_set = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        12,
+        "change-set:add-items:idempotency",
+    )
+    .await;
+    let (subject_version_id, activity_version_id, scheduling_mode) =
+        add_operational_change_catalog_fixture(&pool, &context).await;
+    let CreateLearningOfferingRequest::Course(mut course) = course_request(&context) else {
+        unreachable!();
+    };
+    course.subject_version_id = subject_version_id;
+
+    let with_course = change_sets::upsert_change_item(
+        &pool,
+        context.teacher_id,
+        change_set.id,
+        UpsertAcademicTermChangeItemRequest::AddCourse {
+            change_set_row_version: change_set.row_version,
+            offering: course,
+        },
+    )
+    .await
+    .expect("a course add item must create draft delivery resources");
+    let (course_item_id, course_offering_id, course_item_row_version) = with_course
+        .items
+        .iter()
+        .find_map(|item| match item {
+            super::models::AcademicTermChangeItem::AddOffering {
+                id,
+                learning_offering_id,
+                row_version,
+                ..
+            } => Some((*id, *learning_offering_id, *row_version)),
+            _ => None,
+        })
+        .expect("the change set must expose the added course item");
+    let (course_status, starts_on): (String, NaiveDate) =
+        sqlx::query_as("SELECT status, starts_on FROM learning_offerings WHERE id = $1")
+            .bind(course_offering_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(course_status, "draft");
+    assert_eq!(starts_on, change_set.effective_from);
+    let course_target: i32 = sqlx::query_scalar(
+        "SELECT weekly_period_target FROM academic_timetable_version_targets \
+         WHERE timetable_version_id = $1 AND learning_offering_id = $2",
+    )
+    .bind(change_set.target_timetable_version_id)
+    .bind(course_offering_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let catalog_standard: i32 =
+        sqlx::query_scalar("SELECT periods_per_week FROM subject_versions WHERE id = $1")
+            .bind(subject_version_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(course_target, catalog_standard);
+    let course_group_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM learning_groups WHERE learning_offering_id = $1")
+            .bind(course_offering_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(course_group_count, 1);
+
+    let without_course = change_sets::delete_change_item(
+        &pool,
+        context.teacher_id,
+        change_set.id,
+        course_item_id,
+        DeleteAcademicTermChangeItemRequest {
+            change_set_row_version: with_course.row_version,
+            item_row_version: course_item_row_version,
+        },
+    )
+    .await
+    .expect("deleting a draft-only add item must remove its resource graph");
+    let course_still_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM learning_offerings WHERE id = $1)")
+            .bind(course_offering_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(!course_still_exists);
+
+    let with_activity = change_sets::upsert_change_item(
+        &pool,
+        context.teacher_id,
+        change_set.id,
+        UpsertAcademicTermChangeItemRequest::AddActivity {
+            change_set_row_version: without_course.row_version,
+            weekly_period_target: 2,
+            offering: CreateActivityOfferingRequest {
+                academic_term_id: context.term_id,
+                activity_version_id,
+                curriculum_activity_requirement_id: None,
+                owning_organization_unit_id: context.owner_id,
+                targets: vec![OfferingTargetInput {
+                    target_kind: OfferingTargetKind::Homeroom,
+                    homeroom_id: Some(context.homeroom_id),
+                    grade_level_id: context.grade_level_id,
+                    study_program_id: context.study_program_id,
+                }],
+                registration_type: ActivityRegistrationType::Assigned,
+                scheduling_mode,
+                capacity: None,
+                attendance_requirement: ActivityAttendanceRequirement {
+                    minimum_percent: None,
+                    required_sessions: None,
+                },
+                pass_criteria: ActivityPassCriteria {
+                    require_attendance: false,
+                    require_teacher_confirmation: true,
+                    outcomes: vec!["pass".to_string(), "fail".to_string()],
+                },
+            },
+        },
+    )
+    .await
+    .expect("an activity add item must require and store an explicit period target");
+    let activity_target: i32 = sqlx::query_scalar(
+        r#"SELECT target.weekly_period_target
+           FROM academic_timetable_version_targets target
+           JOIN academic_term_change_items item
+             ON item.learning_offering_id = target.learning_offering_id
+           WHERE target.timetable_version_id = $1
+             AND item.change_set_id = $2
+             AND item.action_kind = 'add_offering'"#,
+    )
+    .bind(change_set.target_timetable_version_id)
+    .bind(change_set.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(activity_target, 2);
+    assert_eq!(with_activity.items.len(), 1);
+}
+
+#[tokio::test]
+async fn adjust_and_stop_items_mutate_only_the_target_version_and_delete_restores_it() {
+    let pool = prepare_delivery_runtime_fixture("academic_change_set_adjust_stop").await;
+    let context = operational_change_runtime_context(&pool).await;
+    let change_set = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        13,
+        "change-set:adjust-stop:idempotency",
+    )
+    .await;
+    let (offering_id, base_target): (Uuid, i32) = sqlx::query_as(
+        r#"SELECT learning_offering_id, weekly_period_target
+           FROM academic_timetable_version_targets
+           WHERE timetable_version_id = $1
+           ORDER BY learning_offering_id
+           LIMIT 1"#,
+    )
+    .bind(change_set.base_timetable_version_id)
+    .fetch_one(&pool)
+    .await
+    .expect("base version must contain an offering target");
+
+    let adjusted = change_sets::upsert_change_item(
+        &pool,
+        context.teacher_id,
+        change_set.id,
+        UpsertAcademicTermChangeItemRequest::AdjustWeeklyPeriodTarget {
+            change_set_row_version: change_set.row_version,
+            item_row_version: None,
+            learning_offering_id: offering_id,
+            weekly_period_target: base_target + 1,
+        },
+    )
+    .await
+    .expect("a draft version target must be adjustable");
+    let (adjust_item_id, adjust_item_row_version) = adjusted
+        .items
+        .iter()
+        .find_map(|item| match item {
+            super::models::AcademicTermChangeItem::AdjustWeeklyPeriodTarget {
+                id,
+                row_version,
+                ..
+            } => Some((*id, *row_version)),
+            _ => None,
+        })
+        .unwrap();
+    let target_after_adjust: i32 = sqlx::query_scalar(
+        "SELECT weekly_period_target FROM academic_timetable_version_targets \
+         WHERE timetable_version_id = $1 AND learning_offering_id = $2",
+    )
+    .bind(change_set.target_timetable_version_id)
+    .bind(offering_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(target_after_adjust, base_target + 1);
+    let base_after_adjust: i32 = sqlx::query_scalar(
+        "SELECT weekly_period_target FROM academic_timetable_version_targets \
+         WHERE timetable_version_id = $1 AND learning_offering_id = $2",
+    )
+    .bind(change_set.base_timetable_version_id)
+    .bind(offering_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(base_after_adjust, base_target);
+
+    let restored_adjust = change_sets::delete_change_item(
+        &pool,
+        context.teacher_id,
+        change_set.id,
+        adjust_item_id,
+        DeleteAcademicTermChangeItemRequest {
+            change_set_row_version: adjusted.row_version,
+            item_row_version: adjust_item_row_version,
+        },
+    )
+    .await
+    .expect("deleting an adjustment must restore the base target");
+    let target_after_restore: i32 = sqlx::query_scalar(
+        "SELECT weekly_period_target FROM academic_timetable_version_targets \
+         WHERE timetable_version_id = $1 AND learning_offering_id = $2",
+    )
+    .bind(change_set.target_timetable_version_id)
+    .bind(offering_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(target_after_restore, base_target);
+
+    let base_entry_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM academic_timetable_entries \
+         WHERE timetable_version_id = $1 AND learning_offering_id = $2 AND is_active",
+    )
+    .bind(change_set.base_timetable_version_id)
+    .bind(offering_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let stopped = change_sets::upsert_change_item(
+        &pool,
+        context.teacher_id,
+        change_set.id,
+        UpsertAcademicTermChangeItemRequest::StopOffering {
+            change_set_row_version: restored_adjust.row_version,
+            item_row_version: None,
+            learning_offering_id: offering_id,
+        },
+    )
+    .await
+    .expect("a published offering must be stoppable in the target version");
+    let (stop_item_id, stop_item_row_version) = stopped
+        .items
+        .iter()
+        .find_map(|item| match item {
+            super::models::AcademicTermChangeItem::StopOffering {
+                id, row_version, ..
+            } => Some((*id, *row_version)),
+            _ => None,
+        })
+        .unwrap();
+    let stopped_target_exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM academic_timetable_version_targets \
+         WHERE timetable_version_id = $1 AND learning_offering_id = $2)",
+    )
+    .bind(change_set.target_timetable_version_id)
+    .bind(offering_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(!stopped_target_exists);
+
+    change_sets::delete_change_item(
+        &pool,
+        context.teacher_id,
+        change_set.id,
+        stop_item_id,
+        DeleteAcademicTermChangeItemRequest {
+            change_set_row_version: stopped.row_version,
+            item_row_version: stop_item_row_version,
+        },
+    )
+    .await
+    .expect("deleting a stop item must restore the base target and entries");
+    let restored_entry_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM academic_timetable_entries \
+         WHERE timetable_version_id = $1 AND learning_offering_id = $2 AND is_active",
+    )
+    .bind(change_set.target_timetable_version_id)
+    .bind(offering_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(restored_entry_count, base_entry_count);
 }
 
 fn course_request(context: &RuntimeContext) -> CreateLearningOfferingRequest {

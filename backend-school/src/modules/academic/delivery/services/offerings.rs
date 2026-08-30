@@ -168,6 +168,7 @@ pub async fn list(
     let sql = format!(
         "SELECT {OFFERING_COLUMNS} FROM learning_offerings \
          WHERE academic_term_id = $1 \
+           AND status <> 'cancelled' \
            AND ($2 OR owning_organization_unit_id = ANY($3) OR EXISTS (\
                SELECT 1 FROM learning_groups learning_group \
                JOIN learning_group_teachers teacher \
@@ -746,7 +747,7 @@ impl From<TargetRow> for LearningOfferingTarget {
     }
 }
 
-async fn insert_course(
+pub(super) async fn insert_course(
     transaction: &mut Transaction<'_, Postgres>,
     id: Uuid,
     term: &TermContext,
@@ -854,7 +855,7 @@ async fn insert_course(
     insert_targets(transaction, id, term, &request.targets).await
 }
 
-async fn insert_activity(
+pub(super) async fn insert_activity(
     transaction: &mut Transaction<'_, Postgres>,
     id: Uuid,
     term: &TermContext,
@@ -1046,7 +1047,7 @@ fn validate_requirement_target(
     Ok(())
 }
 
-async fn validate_targets(
+pub(super) async fn validate_targets(
     transaction: &mut Transaction<'_, Postgres>,
     term: &TermContext,
     targets: &[OfferingTargetInput],
