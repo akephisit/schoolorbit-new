@@ -5,6 +5,8 @@ use crate::{
             apply_migrations_through, apply_phase_b_runtime_migrations,
             seed_academic_cutover_fixture, CutoverFixture,
         },
+        models::timetable::{CreateTimetableEntryRequest, UpdateTimetableEntryRequest},
+        services::timetable_service,
     },
     test_helpers::create_named_test_pool,
 };
@@ -1617,6 +1619,198 @@ async fn change_set_preview_blocks_an_empty_change_set_with_a_stable_hash() {
         .await
         .unwrap();
     assert_eq!(repeated.preview_hash, preview.preview_hash);
+}
+
+#[tokio::test]
+async fn schedule_only_change_set_can_preview_and_publish_after_a_draft_entry_changes() {
+    let pool = prepare_delivery_runtime_fixture("academic_change_set_schedule_only").await;
+    let context = operational_change_runtime_context(&pool).await;
+    let change_set = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        14,
+        "change-set:schedule-only:create",
+    )
+    .await;
+    let schedule = change_sets::preview_change_set(&pool, change_set.id)
+        .await
+        .expect("cloned draft must expose target counts")
+        .schedule_counts;
+    let candidate_slots: Vec<(String, Uuid)> = sqlx::query_as(
+        r#"SELECT day.day_of_week, period.id
+           FROM academic_terms term
+           JOIN bell_schedule_periods period
+             ON period.bell_schedule_id = term.bell_schedule_id
+            AND period.is_active
+           CROSS JOIN (VALUES
+               ('MON', 1), ('TUE', 2), ('WED', 3), ('THU', 4), ('FRI', 5)
+           ) AS day(day_of_week, sort_order)
+           WHERE term.id = $1
+           ORDER BY day.sort_order, period.order_index, period.id"#,
+    )
+    .bind(context.term_id)
+    .fetch_all(&pool)
+    .await
+    .expect("fixture term must expose timetable slots");
+    for count in schedule {
+        let entry_type: String = sqlx::query_scalar(
+            r#"SELECT CASE offering.kind WHEN 'course' THEN 'COURSE' ELSE 'ACTIVITY' END
+               FROM learning_offerings offering WHERE offering.id = $1"#,
+        )
+        .bind(count.learning_offering_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let mut actual_periods = count.actual_periods;
+        for (day_of_week, period_id) in &candidate_slots {
+            if actual_periods >= i64::from(count.target_periods) {
+                break;
+            }
+            let result = timetable_service::create_entry(
+                &pool,
+                context.teacher_id,
+                CreateTimetableEntryRequest {
+                    timetable_version_id: change_set.target_timetable_version_id,
+                    academic_term_id: context.term_id,
+                    learning_group_id: Some(count.learning_group_id),
+                    homeroom_id: None,
+                    day_of_week: day_of_week.clone(),
+                    bell_schedule_period_id: *period_id,
+                    room_id: None,
+                    note: None,
+                    entry_type: entry_type.clone(),
+                    title: None,
+                    instructor_ids: Vec::new(),
+                },
+            )
+            .await;
+            match result {
+                Ok(_) => actual_periods += 1,
+                Err(AppError::Conflict(_)) => {}
+                Err(error) => panic!("unexpected timetable fixture error: {error:?}"),
+            }
+        }
+        assert_eq!(
+            actual_periods,
+            i64::from(count.target_periods),
+            "fixture must provide enough conflict-free periods for {}",
+            count.learning_group_label
+        );
+    }
+    let target_entry_id: Uuid = sqlx::query_scalar(
+        r#"SELECT id FROM academic_timetable_entries
+           WHERE timetable_version_id = $1 AND is_active
+             AND migration_provenance ? 'clonedFromEntryId'
+           ORDER BY id LIMIT 1"#,
+    )
+    .bind(change_set.target_timetable_version_id)
+    .fetch_one(&pool)
+    .await
+    .expect("fixture must contain a cloned draft entry");
+    let target_entry = timetable_service::get_entry(&pool, target_entry_id)
+        .await
+        .expect("cloned draft entry must be readable");
+    let source_entry_id: Uuid = sqlx::query_scalar(
+        r#"SELECT (migration_provenance ->> 'clonedFromEntryId')::uuid
+           FROM academic_timetable_entries WHERE id = $1"#,
+    )
+    .bind(target_entry_id)
+    .fetch_one(&pool)
+    .await
+    .expect("cloned entry must retain its source identity");
+    let source_note_before: Option<String> =
+        sqlx::query_scalar("SELECT note FROM academic_timetable_entries WHERE id = $1")
+            .bind(source_entry_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+    timetable_service::update_entry(
+        &pool,
+        target_entry.id,
+        context.teacher_id,
+        UpdateTimetableEntryRequest {
+            timetable_version_id: change_set.target_timetable_version_id,
+            row_version: target_entry.row_version,
+            day_of_week: None,
+            bell_schedule_period_id: None,
+            room_id: None,
+            clear_room: None,
+            note: Some("ปรับหมายเหตุในรุ่นใหม่".to_string()),
+            clear_note: None,
+            title: None,
+        },
+    )
+    .await
+    .expect("a draft-version entry must remain editable");
+
+    let preview = change_sets::preview_change_set(&pool, change_set.id)
+        .await
+        .expect("a schedule-only revision must return readiness");
+    assert!(!preview
+        .findings
+        .iter()
+        .any(|finding| finding.code == AcademicChangeFindingCode::ChangeSetNoItems));
+    let blocking = preview
+        .findings
+        .iter()
+        .filter(|finding| finding.severity == AcademicChangeFindingSeverity::Blocking)
+        .collect::<Vec<_>>();
+    assert!(blocking.is_empty(), "blocking findings: {blocking:#?}");
+    let warning_codes = preview
+        .findings
+        .iter()
+        .filter(|finding| finding.severity == AcademicChangeFindingSeverity::Warning)
+        .map(|finding| finding.code)
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+
+    let published = change_sets::publish_change_set(
+        &pool,
+        context.teacher_id,
+        change_set.id,
+        PublishAcademicTermChangeSetRequest {
+            row_version: preview.change_set_row_version,
+            target_timetable_version_row_version: preview.target_timetable_version_row_version,
+            preview_hash: preview.preview_hash,
+            acknowledged_warning_codes: warning_codes,
+            idempotency_key: stable_uuid("change-set:schedule-only:publish"),
+        },
+    )
+    .await
+    .expect("a ready schedule-only revision must publish atomically");
+    assert_eq!(published.status, AcademicTermChangeSetStatus::Published);
+
+    let (target_status, target_note): (String, Option<String>) = sqlx::query_as(
+        r#"SELECT version.status, entry.note
+           FROM academic_timetable_versions version
+           JOIN academic_timetable_entries entry
+             ON entry.timetable_version_id = version.id
+           WHERE version.id = $1 AND entry.id = $2"#,
+    )
+    .bind(change_set.target_timetable_version_id)
+    .bind(target_entry_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let (source_status, source_note): (String, Option<String>) = sqlx::query_as(
+        r#"SELECT version.status, entry.note
+           FROM academic_timetable_versions version
+           JOIN academic_timetable_entries entry
+             ON entry.timetable_version_id = version.id
+           WHERE version.id = $1 AND entry.id = $2"#,
+    )
+    .bind(change_set.base_timetable_version_id)
+    .bind(source_entry_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(target_status, "published");
+    assert_eq!(target_note.as_deref(), Some("ปรับหมายเหตุในรุ่นใหม่"));
+    assert_eq!(source_status, "published");
+    assert_eq!(source_note, source_note_before);
 }
 
 #[tokio::test]

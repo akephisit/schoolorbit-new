@@ -487,6 +487,13 @@ async fn build_preview_in_transaction(
         .bind(change_set.id)
         .fetch_all(&mut **transaction)
         .await?;
+    let target_pristine = target_is_pristine(
+        transaction,
+        change_set.id,
+        base_version_id,
+        target_version_id,
+    )
+    .await?;
     if lock_for_publication {
         lock_publication_resources(transaction, target_version_id, &items).await?;
     }
@@ -538,12 +545,12 @@ async fn build_preview_in_transaction(
         .collect::<Vec<_>>();
 
     let mut findings = Vec::new();
-    if items.is_empty() {
+    if items.is_empty() && target_pristine {
         findings.push(change_finding(
             AcademicChangeFindingCode::ChangeSetNoItems,
             AcademicChangeFindingSeverity::Blocking,
-            "ยังไม่มีรายการเปลี่ยนแปลง",
-            "เพิ่มอย่างน้อยหนึ่งรายการก่อนตรวจและเผยแพร่",
+            "ยังไม่มีการเปลี่ยนแปลง",
+            "แก้ตารางในรุ่นแบบร่าง หรือเพิ่มรายการเปลี่ยนแปลงอย่างน้อยหนึ่งรายการก่อนเผยแพร่",
             1,
             None,
             None,
