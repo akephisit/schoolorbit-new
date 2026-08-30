@@ -67,6 +67,19 @@ test('academic timetable selects one URL-backed version and disables published e
 	assert.match(page, /timetableVersionId:\s*selectedVersion\.id/);
 });
 
+test('timetable revision creation reuses the date-effective academic change workflow', async () => {
+	const dialog = await readProjectFile(
+		'src/lib/components/learning-delivery/AcademicChangeSetDialog.svelte'
+	);
+
+	assert.match(dialog, /'operational_change'\s*\|\s*'timetable_revision'/);
+	assert.match(dialog, /purpose\s*=\s*'operational_change'/);
+	assert.match(dialog, /สร้างรุ่นตารางสอนใหม่/);
+	assert.match(dialog, /วันที่เริ่มใช้รุ่นใหม่/);
+	assert.match(dialog, /createAcademicTermChangeSet/);
+	assert.doesNotMatch(dialog, /cloneTimetableVersion/);
+});
+
 test('date-based personal timetable reads carry the selected date', async () => {
 	const api = await readProjectFile('src/lib/api/timetable.ts');
 	const parents = await readProjectFile('src/lib/api/parents.ts');
