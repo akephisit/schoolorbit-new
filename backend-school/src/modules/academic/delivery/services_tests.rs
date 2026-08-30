@@ -954,6 +954,7 @@ async fn offering_group_and_roster_publish_are_revisioned_and_idempotent() {
     )
     .await
     .unwrap();
+    assert!(!group.teachers_locked);
 
     let wrong_year_homeroom_id: Uuid = sqlx::query_scalar(
         "SELECT id FROM homerooms WHERE academic_year_id <> $1 ORDER BY id LIMIT 1",
@@ -1003,6 +1004,48 @@ async fn offering_group_and_roster_publish_are_revisioned_and_idempotent() {
     assert_eq!(published.status, LearningOfferingStatus::Published);
 
     let group = groups::get(&pool, group.id).await.unwrap();
+    assert!(group.teachers_locked);
+    let teachers_before: Vec<(Uuid, Uuid, String)> = sqlx::query_as(
+        r#"SELECT id, teacher_id, role::text
+           FROM learning_group_teachers
+           WHERE learning_group_id = $1
+           ORDER BY id"#,
+    )
+    .bind(group.id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    let locked_replacement = groups::replace_teachers(
+        &pool,
+        context.teacher_id,
+        group.id,
+        ReplaceLearningGroupTeachersRequest {
+            row_version: group.row_version,
+            teachers: vec![TeacherAssignmentInput {
+                teacher_id: context.teacher_id,
+                role: LearningTeacherRole::Primary,
+            }],
+        },
+    )
+    .await;
+    assert!(
+        matches!(locked_replacement, Err(AppError::Conflict(message)) if message == "เผยแพร่กลุ่มเรียนแล้ว ไม่สามารถเปลี่ยนครูผู้สอนได้")
+    );
+    let teachers_after: Vec<(Uuid, Uuid, String)> = sqlx::query_as(
+        r#"SELECT id, teacher_id, role::text
+           FROM learning_group_teachers
+           WHERE learning_group_id = $1
+           ORDER BY id"#,
+    )
+    .bind(group.id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(teachers_after, teachers_before);
+    assert_eq!(
+        groups::get(&pool, group.id).await.unwrap().row_version,
+        group.row_version
+    );
     let preview = groups::preview_roster(&pool, group.id).await.unwrap();
     assert!(!preview.source_hash.is_empty());
     assert!(preview.added > 0);

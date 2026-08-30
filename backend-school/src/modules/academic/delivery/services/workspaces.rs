@@ -628,6 +628,7 @@ fn delivery_group_summary(group: &DeliveryGroupRow) -> HomeroomDeliveryGroupSumm
         code: group.code.clone(),
         name: group.name.clone(),
         status: group.status,
+        teachers_locked: group.status != LearningOfferingStatus::Draft,
         roster_status: group.roster_status,
         homeroom_ids: group.homeroom_ids.clone(),
         homeroom_names: group.homeroom_names.clone(),

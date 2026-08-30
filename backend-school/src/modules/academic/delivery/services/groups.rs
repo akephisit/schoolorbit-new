@@ -356,6 +356,7 @@ pub async fn replace_teachers(
     let mut transaction = pool.begin().await?;
     let group = lock_group(&mut transaction, id).await?;
     require_mutable_group(&group, request.row_version, false)?;
+    require_draft_group_teachers(&group)?;
     require_writable_term(&mut transaction, group.academic_term_id, false).await?;
     if !teacher_ids.is_empty() {
         let count: i64 = sqlx::query_scalar(
@@ -737,25 +738,29 @@ async fn hydrate_many(
 
     Ok(rows
         .into_iter()
-        .map(|row| LearningGroup {
-            id: row.id,
-            learning_offering_id: row.learning_offering_id,
-            academic_term_id: row.academic_term_id,
-            academic_year_id: row.academic_year_id,
-            code: row.code,
-            name: row.name,
-            description: row.description,
-            capacity: row.capacity,
-            status: row.status,
-            roster_status: row.roster_status,
-            roster_published_at: row.roster_published_at,
-            row_version: row.row_version,
-            migrated: row.migrated,
-            created_at: row.created_at,
-            updated_at: row.updated_at,
-            teacher_assignments: teachers_by_group.remove(&row.id).unwrap_or_default(),
-            homeroom_ids: homerooms_by_group.remove(&row.id).unwrap_or_default(),
-            preferred_room_ids: preferred_rooms_by_group.remove(&row.id).unwrap_or_default(),
+        .map(|row| {
+            let teachers_locked = row.status != LearningOfferingStatus::Draft;
+            LearningGroup {
+                id: row.id,
+                learning_offering_id: row.learning_offering_id,
+                academic_term_id: row.academic_term_id,
+                academic_year_id: row.academic_year_id,
+                code: row.code,
+                name: row.name,
+                description: row.description,
+                capacity: row.capacity,
+                status: row.status,
+                teachers_locked,
+                roster_status: row.roster_status,
+                roster_published_at: row.roster_published_at,
+                row_version: row.row_version,
+                migrated: row.migrated,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+                teacher_assignments: teachers_by_group.remove(&row.id).unwrap_or_default(),
+                homeroom_ids: homerooms_by_group.remove(&row.id).unwrap_or_default(),
+                preferred_room_ids: preferred_rooms_by_group.remove(&row.id).unwrap_or_default(),
+            }
         })
         .collect())
 }
@@ -821,6 +826,16 @@ fn require_mutable_group(
         return Err(AppError::Conflict("กลุ่มเรียนถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string()));
     }
     Ok(())
+}
+
+fn require_draft_group_teachers(group: &GroupLockRow) -> Result<(), AppError> {
+    if group.status != LearningOfferingStatus::Draft {
+        Err(AppError::Conflict(
+            "เผยแพร่กลุ่มเรียนแล้ว ไม่สามารถเปลี่ยนครูผู้สอนได้".to_string(),
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 fn validate_group_fields(code: &str, name: &str, capacity: Option<i32>) -> Result<(), AppError> {
