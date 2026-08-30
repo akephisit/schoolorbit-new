@@ -10,6 +10,9 @@ const ids = {
 	period: '41000000-0000-4000-8000-000000000201',
 	user: '51000000-0000-4000-8000-000000000201',
 	teacher: '51000000-0000-4000-8000-000000000202',
+	teacherB: '51000000-0000-4000-8000-000000000203',
+	teacherAssignmentA: '52000000-0000-4000-8000-000000000201',
+	teacherAssignmentB: '52000000-0000-4000-8000-000000000202',
 	offering: '61000000-0000-4000-8000-000000000201',
 	group: '71000000-0000-4000-8000-000000000201',
 	homeroom: '81000000-0000-4000-8000-000000000201',
@@ -65,6 +68,39 @@ function timetableVersion(
 			}
 		]
 	};
+}
+
+interface MockTeacherAssignment {
+	id: string;
+	teacherId: string;
+	displayName: string;
+	role: 'primary' | 'secondary' | 'assistant';
+	startsOn: string;
+	endsOn: string | null;
+	rowVersion: number;
+}
+
+function teacherAssignments(): MockTeacherAssignment[] {
+	return [
+		{
+			id: ids.teacherAssignmentA,
+			teacherId: ids.teacher,
+			displayName: 'ครูคณิตศาสตร์ A',
+			role: 'primary',
+			startsOn: '2026-05-01',
+			endsOn: null,
+			rowVersion: 1
+		},
+		{
+			id: ids.teacherAssignmentB,
+			teacherId: ids.teacherB,
+			displayName: 'ครูคณิตศาสตร์ B',
+			role: 'secondary',
+			startsOn: '2026-05-01',
+			endsOn: null,
+			rowVersion: 1
+		}
+	];
 }
 
 function draftChangeSet(effectiveFrom = '2026-09-15') {
@@ -156,7 +192,34 @@ function readinessPreview(
 	};
 }
 
-function timetableEntry(versionId: string, id = ids.entry) {
+function timetableInstructors(instructorIds: string[]) {
+	return instructorIds.map((userId, index) => ({
+		userId,
+		displayName: userId === ids.teacher ? 'ครูคณิตศาสตร์ A' : 'ครูคณิตศาสตร์ B',
+		role: index === 0 ? 'primary' : 'secondary',
+		subjectGroupId: null,
+		subjectGroupName: null,
+		subjectGroupDisplayOrder: null
+	}));
+}
+
+function homeroomTimetableEntry(versionId: string, instructorIds: string[]) {
+	return {
+		...timetableEntry(versionId, ids.createdEntry, instructorIds),
+		learningGroupId: null,
+		learningGroupCode: null,
+		learningGroupName: null,
+		offeringId: null,
+		offeringCode: null,
+		offeringName: null,
+		homeroomId: ids.homeroom,
+		homeroomName: 'ม.1/1',
+		entryType: 'HOMEROOM',
+		title: 'โฮมรูม'
+	};
+}
+
+function timetableEntry(versionId: string, id = ids.entry, instructorIds: string[] = []) {
 	return {
 		id,
 		timetableVersionId: versionId,
@@ -182,7 +245,7 @@ function timetableEntry(versionId: string, id = ids.entry) {
 		title: null,
 		note: null,
 		isActive: true,
-		instructors: [],
+		instructors: timetableInstructors(instructorIds),
 		rowVersion: 1,
 		createdAt: '2026-08-30T00:00:00Z',
 		updatedAt: '2026-08-30T00:00:00Z'
@@ -195,6 +258,7 @@ interface MockOptions {
 	changeSets?: ReturnType<typeof draftChangeSet>[];
 	preview?: Record<string, unknown>;
 	entries?: Record<string, unknown>[];
+	teacherAssignments?: MockTeacherAssignment[];
 }
 
 async function mockTimetable(page: Page, options: MockOptions = {}) {
@@ -294,9 +358,7 @@ async function mockTimetable(page: Page, options: MockOptions = {}) {
 						status: 'published',
 						rosterStatus: 'published',
 						rowVersion: 1,
-						teacherAssignments: [
-							{ teacherId: ids.teacher, role: 'primary', teacherName: 'ครูคณิตศาสตร์' }
-						],
+						teacherAssignments: options.teacherAssignments ?? teacherAssignments(),
 						homeroomIds: [ids.homeroom],
 						preferredRoomIds: [ids.room]
 					}
@@ -420,7 +482,8 @@ async function mockTimetable(page: Page, options: MockOptions = {}) {
 				createdEntryBody = route.request().postDataJSON() as Record<string, unknown>;
 				const created = timetableEntry(
 					String(createdEntryBody.timetableVersionId),
-					ids.createdEntry
+					ids.createdEntry,
+					createdEntryBody.instructorIds as string[]
 				);
 				entries = [...entries, created];
 				await fulfill(route, created, 201);
@@ -429,7 +492,11 @@ async function mockTimetable(page: Page, options: MockOptions = {}) {
 			if (url.pathname === `/api/academic/timetable/${ids.createdEntry}` && method === 'PUT') {
 				updatedEntryBody = route.request().postDataJSON() as Record<string, unknown>;
 				const updated = {
-					...timetableEntry(String(updatedEntryBody.timetableVersionId), ids.createdEntry),
+					...timetableEntry(
+						String(updatedEntryBody.timetableVersionId),
+						ids.createdEntry,
+						updatedEntryBody.instructorIds as string[]
+					),
 					dayOfWeek: updatedEntryBody.dayOfWeek,
 					note: updatedEntryBody.note,
 					rowVersion: 2
@@ -559,6 +626,12 @@ test('draft create move and deactivate use the selected version and invalidate r
 	await expect(page.getByText('ไม่มีจุดบล็อกการเผยแพร่')).toBeVisible();
 
 	await page.getByTitle('เพิ่มคาบ').first().click();
+	const teacherA = page.getByRole('button', { name: 'ครูคณิตศาสตร์ A ครูหลัก' });
+	const teacherB = page.getByRole('button', { name: 'ครูคณิตศาสตร์ B ครูร่วมสอน' });
+	await expect(teacherA).toHaveAttribute('aria-pressed', 'false');
+	await expect(teacherB).toHaveAttribute('aria-pressed', 'false');
+	await teacherA.click();
+	await teacherB.click();
 	await page.getByRole('button', { name: 'บันทึก', exact: true }).click();
 
 	await expect(page.getByText('ยังไม่ได้ตรวจความพร้อม')).toBeVisible();
@@ -566,10 +639,11 @@ test('draft create move and deactivate use the selected version and invalidate r
 	expect(mocked.createdEntryRequest()).toMatchObject({
 		timetableVersionId: ids.draftVersion,
 		learningGroupId: ids.group,
-		instructorIds: []
+		instructorIds: [ids.teacher, ids.teacherB]
 	});
 
 	await page.getByRole('button', { name: /ค21101/ }).click();
+	await page.getByRole('button', { name: 'ครูคณิตศาสตร์ A ครูหลัก' }).click();
 	await page.getByLabel('วัน').click();
 	await page.getByRole('option', { name: 'อังคาร' }).click();
 	await page.getByLabel('หมายเหตุ').fill('ย้ายคาบในรุ่นแบบร่าง');
@@ -577,12 +651,88 @@ test('draft create move and deactivate use the selected version and invalidate r
 	expect(mocked.updatedEntryRequest()).toMatchObject({
 		timetableVersionId: ids.draftVersion,
 		dayOfWeek: 'TUE',
-		note: 'ย้ายคาบในรุ่นแบบร่าง'
+		note: 'ย้ายคาบในรุ่นแบบร่าง',
+		instructorIds: [ids.teacherB]
 	});
 
 	await page.getByRole('button', { name: /ค21101/ }).click();
 	await page.getByRole('button', { name: 'ลบคาบ' }).click();
 	expect(mocked.deletedEntryVersion()).toBe(ids.draftVersion);
+});
+
+test('sole effective teacher is selected when a new period form opens', async ({ page }) => {
+	const onlyTeacherB = teacherAssignments().slice(1);
+	const mocked = await mockTimetable(page, {
+		versions: allVersions(),
+		changeSets: [draftChangeSet()],
+		teacherAssignments: onlyTeacherB
+	});
+	await page.goto(
+		`/staff/academic/timetable?academicYearId=${ids.year}&academicTermId=${ids.term}&timetableVersionId=${ids.draftVersion}`
+	);
+
+	await page.getByTitle('เพิ่มคาบ').first().click();
+	await expect(page.getByRole('button', { name: 'ครูคณิตศาสตร์ B ครูร่วมสอน' })).toHaveAttribute(
+		'aria-pressed',
+		'true'
+	);
+	await page.getByRole('button', { name: 'บันทึก', exact: true }).click();
+	expect(mocked.createdEntryRequest()).toMatchObject({ instructorIds: [ids.teacherB] });
+});
+
+test('expired cloned instructor stays visible until explicitly removed', async ({ page }) => {
+	const [expiredTeacherA, activeTeacherB] = teacherAssignments();
+	expiredTeacherA.endsOn = '2026-07-31';
+	activeTeacherB.startsOn = '2026-08-01';
+	const mocked = await mockTimetable(page, {
+		versions: allVersions(),
+		changeSets: [draftChangeSet()],
+		teacherAssignments: [expiredTeacherA, activeTeacherB],
+		entries: [timetableEntry(ids.draftVersion, ids.createdEntry, [ids.teacher])]
+	});
+	await page.goto(
+		`/staff/academic/timetable?academicYearId=${ids.year}&academicTermId=${ids.term}&timetableVersionId=${ids.draftVersion}`
+	);
+
+	await page.getByRole('button', { name: /ค21101/ }).click();
+	await expect(page.getByText(/ไม่ได้อยู่ในช่วงวันที่ของรุ่นตารางสอนนี้/)).toBeVisible();
+	await expect(page.getByRole('button', { name: 'บันทึก', exact: true })).toBeDisabled();
+	await page.getByRole('button', { name: 'นำ ครูคณิตศาสตร์ A ออกจากคาบ' }).click();
+	await page.getByRole('button', { name: 'ครูคณิตศาสตร์ B ครูร่วมสอน' }).click();
+	await page.getByRole('button', { name: 'บันทึก', exact: true }).click();
+	expect(mocked.updatedEntryRequest()).toMatchObject({ instructorIds: [ids.teacherB] });
+});
+
+test('editing a structural period preserves its hidden exact instructors', async ({ page }) => {
+	const mocked = await mockTimetable(page, {
+		versions: allVersions(),
+		changeSets: [draftChangeSet()],
+		entries: [homeroomTimetableEntry(ids.draftVersion, [ids.teacher])]
+	});
+	await page.goto(
+		`/staff/academic/timetable?academicYearId=${ids.year}&academicTermId=${ids.term}&timetableVersionId=${ids.draftVersion}`
+	);
+
+	await page.getByRole('button', { name: 'ห้องประจำชั้น', exact: true }).click();
+	await page.getByRole('button', { name: /โฮมรูม/ }).click();
+	await page.getByLabel('หมายเหตุ').fill('คงครูของคาบโครงสร้างไว้');
+	await page.getByRole('button', { name: 'บันทึก', exact: true }).click();
+	expect(mocked.updatedEntryRequest()).toMatchObject({ instructorIds: [ids.teacher] });
+});
+
+test('published entry shows its exact instructors as read-only details', async ({ page }) => {
+	await mockTimetable(page, {
+		entries: [timetableEntry(ids.currentVersion, ids.entry, [ids.teacher, ids.teacherB])]
+	});
+	await page.goto(
+		`/staff/academic/timetable?academicYearId=${ids.year}&academicTermId=${ids.term}&timetableVersionId=${ids.currentVersion}`
+	);
+
+	await page.getByRole('button', { name: /ค21101/ }).click();
+	await expect(page.getByText('ครูผู้สอนของคาบนี้', { exact: true })).toBeVisible();
+	await expect(page.getByText(/ครูคณิตศาสตร์ A/).first()).toBeVisible();
+	await expect(page.getByText(/ครูคณิตศาสตร์ B/).first()).toBeVisible();
+	await expect(page.getByRole('button', { name: 'ครูคณิตศาสตร์ A ครูหลัก' })).toHaveCount(0);
 });
 
 test('readiness shows per-group target completion and blocks publication when a deficit remains', async ({

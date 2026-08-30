@@ -4495,6 +4495,8 @@ export interface components {
 			| 'resource_stale'
 			| 'draft_group'
 			| 'missing_primary_teacher'
+			| 'missing_entry_instructor'
+			| 'ineligible_entry_instructor'
 			| 'unpublished_roster'
 			| 'offering_unavailable'
 			| 'missing_weekly_period_target'
@@ -6389,7 +6391,7 @@ export interface components {
 				/** Format: int64 */
 				rowVersion: number;
 				status: components['schemas']['LearningOfferingStatus'];
-				teacherAssignments: components['schemas']['TeacherAssignmentInput'][];
+				teacherAssignments: components['schemas']['LearningGroupTeacherAssignment'][];
 				teachersLocked: boolean;
 				/** Format: date-time */
 				updatedAt: string;
@@ -8212,10 +8214,28 @@ export interface components {
 				/** Format: int64 */
 				rowVersion: number;
 				status: components['schemas']['LearningOfferingStatus'];
-				teacherAssignments: components['schemas']['TeacherAssignmentInput'][];
+				teacherAssignments: components['schemas']['LearningGroupTeacherAssignment'][];
 				teachersLocked: boolean;
 				/** Format: date-time */
 				updatedAt: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_LearningGroupTeacherAssignment: {
+			data: {
+				displayName: string;
+				/** Format: date */
+				endsOn?: string | null;
+				/** Format: uuid */
+				id: string;
+				role: components['schemas']['LearningTeacherRole'];
+				/** Format: int64 */
+				rowVersion: number;
+				/** Format: date */
+				startsOn: string;
+				/** Format: uuid */
+				teacherId: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -8711,15 +8731,6 @@ export interface components {
 				updatedAt: string;
 				/** Format: int32 */
 				versionNo: number;
-			}[];
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_Vec_TeacherAssignmentInput: {
-			data: {
-				role: components['schemas']['LearningTeacherRole'];
-				/** Format: uuid */
-				teacherId: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -11878,7 +11889,7 @@ export interface components {
 			/** Format: int64 */
 			rowVersion: number;
 			status: components['schemas']['LearningOfferingStatus'];
-			teacherAssignments: components['schemas']['TeacherAssignmentInput'][];
+			teacherAssignments: components['schemas']['LearningGroupTeacherAssignment'][];
 			teachersLocked: boolean;
 			/** Format: date-time */
 			updatedAt: string;
@@ -11903,6 +11914,20 @@ export interface components {
 			studentAcademicYearId: string;
 			/** Format: uuid */
 			studentId: string;
+		};
+		LearningGroupTeacherAssignment: {
+			displayName: string;
+			/** Format: date */
+			endsOn?: string | null;
+			/** Format: uuid */
+			id: string;
+			role: components['schemas']['LearningTeacherRole'];
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: date */
+			startsOn: string;
+			/** Format: uuid */
+			teacherId: string;
 		};
 		LearningGroupTermQuery: {
 			/** Format: uuid */
@@ -14350,6 +14375,7 @@ export interface components {
 			clearNote?: boolean | null;
 			clearRoom?: boolean | null;
 			dayOfWeek?: string | null;
+			instructorIds?: string[] | null;
 			note?: string | null;
 			/** Format: uuid */
 			roomId?: string | null;
@@ -20289,7 +20315,7 @@ export interface operations {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_TeacherAssignmentInput'];
+					'application/json': components['schemas']['ApiResponse_Vec_LearningGroupTeacherAssignment'];
 				};
 			};
 			/** @description Authentication required */

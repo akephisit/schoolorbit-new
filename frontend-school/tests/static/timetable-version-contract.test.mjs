@@ -38,6 +38,18 @@ test('generated timetable editing operations require an explicit version', async
 			`${schemaName} must require timetableVersionId`
 		);
 	}
+	assert.ok(
+		openapi.components.schemas.UpdateTimetableEntryRequest.properties.instructorIds,
+		'UpdateTimetableEntryRequest must expose instructorIds'
+	);
+	assert.ok(
+		openapi.components.schemas.LearningGroupTeacherAssignment.required.includes('startsOn'),
+		'LearningGroupTeacherAssignment must require startsOn'
+	);
+	assert.ok(
+		openapi.components.schemas.LearningGroupTeacherAssignment.required.includes('displayName'),
+		'LearningGroupTeacherAssignment must require displayName'
+	);
 });
 
 test('typed timetable wrapper owns version list resolve clone and version-scoped queries', async () => {
@@ -92,8 +104,7 @@ test('timetable workspace links one change set to the selected version and inval
 	assert.match(page, /<AcademicChangeReadiness/);
 	assert.match(page, /draftRevision\s*\+=\s*1/);
 	assert.match(page, /timetableVersionId:\s*selectedVersion\.id/);
-	assert.match(page, /instructorIds:\s*\[\]/);
-	assert.doesNotMatch(page, /instructorIds:[^\n]*teacherAssignments\.map/);
+	assert.match(page, /instructorIds:\s*formInstructorIds/);
 	assert.doesNotMatch(page, /cloneTimetableVersion/);
 });
 

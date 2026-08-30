@@ -43,6 +43,7 @@
 	} from '$lib/components/academic-workflow';
 	import AcademicChangeReadiness from '$lib/components/learning-delivery/AcademicChangeReadiness.svelte';
 	import AcademicChangeSetDialog from '$lib/components/learning-delivery/AcademicChangeSetDialog.svelte';
+	import TimetableInstructorPicker from '$lib/components/academic/timetable/TimetableInstructorPicker.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
@@ -66,6 +67,7 @@
 		type TeacherLoadExportRows
 	} from '$lib/utils/timetable-teacher-load-export';
 	import {
+		AlertTriangle,
 		CalendarClock,
 		FileSpreadsheet,
 		History,
@@ -152,6 +154,7 @@
 	let formPeriodId = $state('');
 	let formRoomId = $state('');
 	let formEntryType = $state<EntryType>('COURSE');
+	let formInstructorIds = $state<string[]>([]);
 	let formTitle = $state('');
 	let formNote = $state('');
 	let loading = $state(false);
@@ -193,6 +196,38 @@
 	const groupsWithoutTeachers = $derived(
 		groups.filter((group) => group.teacherAssignments.length === 0).length
 	);
+	const selectedGroupInstructorOptions = $derived.by(() => {
+		if (viewKind !== 'learning_group' || !selectedVersion) return [];
+		const group = groups.find((item) => item.id === selectedTargetId);
+		if (!group) return [];
+		const effectiveOn = selectedVersion.effectiveFrom;
+		return group.teacherAssignments
+			.filter(
+				(assignment) =>
+					assignment.startsOn <= effectiveOn &&
+					(!assignment.endsOn || assignment.endsOn >= effectiveOn)
+			)
+			.filter(
+				(assignment, index, assignments) =>
+					assignments.findIndex((item) => item.teacherId === assignment.teacherId) === index
+			)
+			.map((assignment) => ({
+				id: assignment.teacherId,
+				displayName: assignment.displayName,
+				role: assignment.role
+			}));
+	});
+	const showsInstructorPicker = $derived(
+		viewKind === 'learning_group' && (formEntryType === 'COURSE' || formEntryType === 'ACTIVITY')
+	);
+	const unavailableSelectedInstructors = $derived.by(() => {
+		if (!selectedEntry || !showsInstructorPicker) return [];
+		return selectedEntry.instructors.filter(
+			(instructor) =>
+				formInstructorIds.includes(instructor.userId) &&
+				!selectedGroupInstructorOptions.some((option) => option.id === instructor.userId)
+		);
+	});
 	const activeDays = $derived.by(() => {
 		const selectedYear = $academicContext.options?.years.find((year) => year.id === academicYearId);
 		void selectedYear;
@@ -234,6 +269,18 @@
 			entry.subjectVersionDisplayLabel ??
 			entry.entryType
 		);
+	}
+
+	function instructorRoleLabel(role: string): string {
+		if (role === 'primary') return 'ครูหลัก';
+		if (role === 'secondary') return 'ครูร่วมสอน';
+		if (role === 'assistant') return 'ครูผู้ช่วย';
+		return 'ครูผู้สอน';
+	}
+
+	function defaultInstructorIds(): string[] {
+		const teacherAssignments = selectedGroupInstructorOptions;
+		return teacherAssignments.length === 1 ? [teacherAssignments[0].id] : [];
 	}
 
 	function entriesForCell(day: string, periodId: string): TimetableEntry[] {
@@ -479,7 +526,14 @@
 		formDay = activeDays[0]?.value ?? 'MON';
 		formPeriodId = periods[0]?.id ?? '';
 		formRoomId = '';
-		formEntryType = viewKind === 'learning_group' ? 'COURSE' : 'HOMEROOM';
+		const selectedGroup = groups.find((group) => group.id === selectedTargetId);
+		formEntryType =
+			viewKind === 'learning_group'
+				? selectedGroup && offeringForGroup(selectedGroup)?.kind === 'activity'
+					? 'ACTIVITY'
+					: 'COURSE'
+				: 'HOMEROOM';
+		formInstructorIds = defaultInstructorIds();
 		formTitle = '';
 		formNote = '';
 		dirty = false;
@@ -499,6 +553,7 @@
 		formPeriodId = entry.bellSchedulePeriodId;
 		formRoomId = entry.roomId ?? '';
 		formEntryType = entry.entryType as EntryType;
+		formInstructorIds = entry.instructors.map((item) => item.userId);
 		formTitle = entry.title ?? '';
 		formNote = entry.note ?? '';
 		dirty = false;
@@ -508,13 +563,25 @@
 		dirty = true;
 	}
 
+	function changeEntryType(value: string): void {
+		formEntryType = value as EntryType;
+		formInstructorIds = showsInstructorPicker ? defaultInstructorIds() : [];
+		markDirty();
+	}
+
+	function removeUnavailableInstructor(instructorId: string): void {
+		formInstructorIds = formInstructorIds.filter((id) => id !== instructorId);
+		markDirty();
+	}
+
 	async function saveEntry(): Promise<void> {
 		if (
 			!academicTermId ||
 			!selectedVersion ||
 			!canEditSelected ||
 			!selectedTargetId ||
-			!formPeriodId
+			!formPeriodId ||
+			unavailableSelectedInstructors.length > 0
 		)
 			return;
 		busy = true;
@@ -530,7 +597,8 @@
 					clearRoom: !formRoomId,
 					note: formNote.trim() || null,
 					clearNote: !formNote.trim(),
-					title: formTitle.trim() || null
+					title: formTitle.trim() || null,
+					instructorIds: formInstructorIds
 				});
 			} else {
 				await createTimetableEntry({
@@ -544,7 +612,7 @@
 					note: formNote.trim() || null,
 					entryType: formEntryType,
 					title: formTitle.trim() || null,
-					instructorIds: []
+					instructorIds: formInstructorIds
 				});
 			}
 			await refreshEntries();
@@ -1081,6 +1149,13 @@
 																		entry.homeroomName ??
 																		'ไม่ระบุห้อง'}
 																</p>
+																{#if entry.instructors.length > 0}
+																	<p class="mt-1 truncate text-[0.7rem] text-primary/80">
+																		{entry.instructors
+																			.map((instructor) => instructor.displayName)
+																			.join(', ')}
+																	</p>
+																{/if}
 															</button>
 														{/each}
 													</div>
@@ -1158,7 +1233,7 @@
 								type="single"
 								bind:value={formEntryType}
 								disabled={!canEditSelected || Boolean(selectedEntry)}
-								onValueChange={markDirty}
+								onValueChange={changeEntryType}
 							>
 								<Select.Trigger id="entry-type" class="w-full">
 									{entryTypeOptions.find((option) => option.value === formEntryType)?.label ??
@@ -1171,6 +1246,73 @@
 								</Select.Content>
 							</Select.Root>
 						</div>
+						{#if canEditSelected && showsInstructorPicker}
+							<TimetableInstructorPicker
+								options={selectedGroupInstructorOptions}
+								bind:value={
+									() => formInstructorIds,
+									(value) => {
+										formInstructorIds = value;
+										markDirty();
+									}
+								}
+								disabled={busy}
+								label="ครูผู้สอนของคาบนี้"
+							/>
+							{#if unavailableSelectedInstructors.length > 0}
+								<div
+									class="space-y-3 rounded-lg border border-amber-500/35 bg-amber-500/8 p-3 text-amber-950 dark:text-amber-100"
+									role="alert"
+								>
+									<div class="flex items-start gap-2">
+										<AlertTriangle class="mt-0.5 size-4 shrink-0" />
+										<div>
+											<p class="text-sm font-medium">มีครูเดิมที่ใช้กับรุ่นนี้ไม่ได้</p>
+											<p class="mt-0.5 text-xs text-amber-900/80 dark:text-amber-100/75">
+												รายชื่อต่อไปนี้ไม่ได้อยู่ในช่วงวันที่ของรุ่นตารางสอนนี้
+												ต้องนำออกแล้วเลือกครูที่มีผลก่อนบันทึก
+											</p>
+										</div>
+									</div>
+									<div class="flex flex-wrap gap-2">
+										{#each unavailableSelectedInstructors as instructor (instructor.userId)}
+											<Button
+												type="button"
+												size="sm"
+												variant="outline"
+												class="h-auto border-amber-500/40 bg-background py-1.5"
+												aria-label={`นำ ${instructor.displayName} ออกจากคาบ`}
+												onclick={() => removeUnavailableInstructor(instructor.userId)}
+											>
+												นำ {instructor.displayName} ออก
+											</Button>
+										{/each}
+									</div>
+								</div>
+							{/if}
+						{:else if selectedEntry && !canEditSelected}
+							<div class="space-y-2">
+								<Label>ครูผู้สอนของคาบนี้</Label>
+								{#if selectedEntry.instructors.length === 0}
+									<p
+										class="rounded-lg border border-dashed px-3 py-2 text-sm text-muted-foreground"
+									>
+										ยังไม่ได้ระบุครูผู้สอนสำหรับคาบนี้
+									</p>
+								{:else}
+									<div class="flex flex-wrap gap-2">
+										{#each selectedEntry.instructors as instructor (instructor.userId)}
+											<Badge variant="outline" class="gap-1.5 py-1">
+												{instructor.displayName}
+												<span class="text-muted-foreground text-[0.7rem]">
+													{instructorRoleLabel(instructor.role)}
+												</span>
+											</Badge>
+										{/each}
+									</div>
+								{/if}
+							</div>
+						{/if}
 						<div class="space-y-2">
 							<Label for="entry-room">ห้องเรียน</Label>
 							<Select.Root
@@ -1217,7 +1359,11 @@
 						{#if canEditSelected}
 							<div class="flex flex-wrap gap-2 pt-2">
 								<Button
-									disabled={busy || !dirty || !selectedTargetId || !formPeriodId}
+									disabled={busy ||
+										!dirty ||
+										!selectedTargetId ||
+										!formPeriodId ||
+										unavailableSelectedInstructors.length > 0}
 									onclick={saveEntry}
 									>{#if busy}<Loader2 class="animate-spin" />{:else}<Save />{/if} บันทึก</Button
 								>

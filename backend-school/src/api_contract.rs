@@ -1008,6 +1008,7 @@ use utoipa::OpenApi;
         CreateLearningGroupRequest,
         UpdateLearningGroupRequest,
         TeacherAssignmentInput,
+        LearningGroupTeacherAssignment,
         ReplaceLearningGroupTeachersRequest,
         ReplaceLearningGroupHomeroomsRequest,
         LearningGroupHomeroomIds,
@@ -1053,7 +1054,7 @@ use utoipa::OpenApi;
         ApiResponse<Vec<LearningGroup>>,
         ApiResponse<LearningGroup>,
         ApiResponse<LearningGroupHomeroomIds>,
-        ApiResponse<Vec<TeacherAssignmentInput>>,
+        ApiResponse<Vec<LearningGroupTeacherAssignment>>,
         ApiResponse<RosterPreview>,
         ApiResponse<Vec<AcademicTermChangeSet>>,
         ApiResponse<AcademicTermChangeSet>,
@@ -3316,6 +3317,9 @@ mod tests {
             );
         }
         assert!(required(&schemas["LearningGroup"]).contains(&"teachersLocked"));
+        assert!(schemas["UpdateTimetableEntryRequest"]["properties"]["instructorIds"].is_object());
+        assert!(required(&schemas["LearningGroupTeacherAssignment"]).contains(&"startsOn"));
+        assert!(required(&schemas["LearningGroupTeacherAssignment"]).contains(&"displayName"));
         assert!(required(&schemas["HomeroomDeliveryWorkspace"]).contains(&"timetableVersionId"));
         assert!(contains_null(
             &schemas["HomeroomDeliveryWorkspace"]["properties"]["timetableVersionId"]

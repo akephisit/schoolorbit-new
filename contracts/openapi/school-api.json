@@ -68,6 +68,8 @@
           "resource_stale",
           "draft_group",
           "missing_primary_teacher",
+          "missing_entry_instructor",
+          "ineligible_entry_instructor",
           "unpublished_roster",
           "offering_unavailable",
           "missing_weekly_period_target",
@@ -6861,7 +6863,7 @@
               },
               "teacherAssignments": {
                 "items": {
-                  "$ref": "#/components/schemas/TeacherAssignmentInput"
+                  "$ref": "#/components/schemas/LearningGroupTeacherAssignment"
                 },
                 "type": "array"
               },
@@ -13598,7 +13600,7 @@
                 },
                 "teacherAssignments": {
                   "items": {
-                    "$ref": "#/components/schemas/TeacherAssignmentInput"
+                    "$ref": "#/components/schemas/LearningGroupTeacherAssignment"
                   },
                   "type": "array"
                 },
@@ -13627,6 +13629,66 @@
                 "teacherAssignments",
                 "homeroomIds",
                 "preferredRoomIds"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_LearningGroupTeacherAssignment": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "displayName": {
+                  "type": "string"
+                },
+                "endsOn": {
+                  "format": "date",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "role": {
+                  "$ref": "#/components/schemas/LearningTeacherRole"
+                },
+                "rowVersion": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "startsOn": {
+                  "format": "date",
+                  "type": "string"
+                },
+                "teacherId": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "teacherId",
+                "displayName",
+                "role",
+                "startsOn",
+                "rowVersion"
               ],
               "type": "object"
             },
@@ -15512,41 +15574,6 @@
                 "migrated",
                 "createdAt",
                 "updatedAt"
-              ],
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "message": {
-            "type": "string"
-          },
-          "success": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "success",
-          "data"
-        ],
-        "type": "object"
-      },
-      "ApiResponse_Vec_TeacherAssignmentInput": {
-        "properties": {
-          "data": {
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "role": {
-                  "$ref": "#/components/schemas/LearningTeacherRole"
-                },
-                "teacherId": {
-                  "format": "uuid",
-                  "type": "string"
-                }
-              },
-              "required": [
-                "teacherId",
-                "role"
               ],
               "type": "object"
             },
@@ -27166,7 +27193,7 @@
           },
           "teacherAssignments": {
             "items": {
-              "$ref": "#/components/schemas/TeacherAssignmentInput"
+              "$ref": "#/components/schemas/LearningGroupTeacherAssignment"
             },
             "type": "array"
           },
@@ -27260,6 +27287,48 @@
           "membershipStatus",
           "rosterSource",
           "joinedAt",
+          "rowVersion"
+        ],
+        "type": "object"
+      },
+      "LearningGroupTeacherAssignment": {
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "endsOn": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/LearningTeacherRole"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "startsOn": {
+            "format": "date",
+            "type": "string"
+          },
+          "teacherId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "teacherId",
+          "displayName",
+          "role",
+          "startsOn",
           "rowVersion"
         ],
         "type": "object"
@@ -36490,6 +36559,16 @@
               "null"
             ]
           },
+          "instructorIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "note": {
             "type": [
               "string",
@@ -44161,7 +44240,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_TeacherAssignmentInput"
+                  "$ref": "#/components/schemas/ApiResponse_Vec_LearningGroupTeacherAssignment"
                 }
               }
             },
