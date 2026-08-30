@@ -2263,6 +2263,14 @@ mod tests {
             );
             assert!(contains_null(&offering["properties"][field]));
         }
+        let catalog_option = &schemas["DeliveryCatalogVersionOption"];
+        assert!(
+            required(catalog_option).contains(&"standardPeriodsPerWeek"),
+            "delivery catalog options must expose the course scheduling standard"
+        );
+        assert!(contains_null(
+            &catalog_option["properties"]["standardPeriodsPerWeek"]
+        ));
         for (schema_name, camel_fields, snake_fields) in [
             (
                 "AcademicTermChangeItem",

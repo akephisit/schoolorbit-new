@@ -10848,6 +10848,8 @@ export interface components {
 			label: string;
 			name: string;
 			/** Format: int32 */
+			standardPeriodsPerWeek: number | null;
+			/** Format: int32 */
 			versionNo: number;
 		};
 		DeliveryManagementOptions: {

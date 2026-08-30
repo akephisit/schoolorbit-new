@@ -54,6 +54,7 @@ struct CatalogVersionRow {
     code: String,
     name: String,
     version_no: i32,
+    standard_periods_per_week: Option<i32>,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -852,10 +853,12 @@ pub async fn delivery_management_options(
     let owner_ids = filter.allowed_organization_unit_ids();
     let catalog_rows: Vec<CatalogVersionRow> = sqlx::query_as(
         r#"
-        SELECT option.id, option.kind, option.code, option.name, option.version_no
+        SELECT option.id, option.kind, option.code, option.name, option.version_no,
+               option.standard_periods_per_week
         FROM (
             SELECT version.id, 'course'::text AS kind, subject.code,
-                   version.name_th AS name, version.version_no
+                   version.name_th AS name, version.version_no,
+                   version.periods_per_week AS standard_periods_per_week
             FROM subject_versions version
             JOIN subjects subject ON subject.id = version.subject_id
             WHERE version.status = 'published'
@@ -864,7 +867,8 @@ pub async fn delivery_management_options(
               AND ($2 OR subject.owning_organization_unit_id = ANY($3))
             UNION ALL
             SELECT version.id, 'activity'::text AS kind, activity.code,
-                   version.name, version.version_no
+                   version.name, version.version_no,
+                   NULL::integer AS standard_periods_per_week
             FROM activity_versions version
             JOIN activities activity ON activity.id = version.activity_id
             WHERE version.status = 'published'
@@ -896,6 +900,7 @@ pub async fn delivery_management_options(
             code: row.code,
             name: row.name,
             version_no: row.version_no,
+            standard_periods_per_week: row.standard_periods_per_week,
         })
         .collect();
 

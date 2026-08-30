@@ -834,6 +834,8 @@ pub struct DeliveryCatalogVersionOption {
     pub name: String,
     pub version_no: i32,
     pub label: String,
+    #[schema(required = true)]
+    pub standard_periods_per_week: Option<i32>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

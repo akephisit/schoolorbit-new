@@ -23606,6 +23606,13 @@
           "name": {
             "type": "string"
           },
+          "standardPeriodsPerWeek": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "versionNo": {
             "format": "int32",
             "type": "integer"
@@ -23617,7 +23624,8 @@
           "code",
           "name",
           "versionNo",
-          "label"
+          "label",
+          "standardPeriodsPerWeek"
         ],
         "type": "object"
       },

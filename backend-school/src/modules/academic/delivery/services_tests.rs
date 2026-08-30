@@ -4178,7 +4178,15 @@ async fn delivery_management_options_are_scoped_and_human_readable() {
         .iter()
         .any(|item| item.id == context.subject_version_id
             && item.label.contains(&item.code)
-            && item.label.contains(&item.name)));
+            && item.label.contains(&item.name)
+            && item
+                .standard_periods_per_week
+                .is_some_and(|periods| periods > 0)));
+    assert!(options
+        .catalog_versions
+        .iter()
+        .filter(|item| item.kind == LearningOfferingKind::Activity)
+        .all(|item| item.standard_periods_per_week.is_none()));
     assert!(options
         .grade_levels
         .iter()
