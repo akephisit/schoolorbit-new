@@ -400,7 +400,7 @@ git commit -m "feat(academic): publish effective teacher changes"
 - Create: `frontend-school/src/lib/components/learning-delivery/AcademicTeacherChangeForm.svelte`
 - Create: `frontend-school/src/lib/components/learning-delivery/TeacherHandoffPanel.svelte`
 - Modify: `frontend-school/src/lib/components/learning-delivery/AcademicChangeReadiness.svelte`
-- Modify: `frontend-school/src/lib/components/timetable/TimetableIssueSummary.svelte`
+- Modify: `frontend-school/src/lib/components/academic/timetable/TimetableIssueSummary.svelte`
 - Modify: `frontend-school/src/routes/(app)/staff/academic/delivery/+page.svelte`
 - Create: `frontend-school/tests/static/academic-teacher-change-contract.test.mjs`
 - Create: `frontend-school/tests/e2e/academic-teacher-change-handoff.spec.ts`
@@ -486,7 +486,7 @@ git add contracts/openapi/school-api.json \
   frontend-school/src/lib/api/generated/school-api.ts \
   frontend-school/src/lib/api/learning-delivery.ts \
   frontend-school/src/lib/components/learning-delivery \
-  frontend-school/src/lib/components/timetable/TimetableIssueSummary.svelte \
+  frontend-school/src/lib/components/academic/timetable/TimetableIssueSummary.svelte \
   'frontend-school/src/routes/(app)/staff/academic/delivery/+page.svelte' \
   frontend-school/tests/static/academic-teacher-change-contract.test.mjs \
   frontend-school/tests/e2e/academic-teacher-change-handoff.spec.ts

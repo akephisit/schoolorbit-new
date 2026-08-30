@@ -265,11 +265,11 @@ git commit -m "feat(timetable): project schedules by teacher"
 ### Task 4: Add the editable teacher board
 
 **Files:**
-- Create: `frontend-school/src/lib/components/timetable/TimetableTeacherView.svelte`
-- Modify: `frontend-school/src/lib/components/timetable/TimetableViewSelector.svelte`
-- Modify: `frontend-school/src/lib/components/timetable/TimetableBoard.svelte`
-- Modify: `frontend-school/src/lib/components/timetable/TimetableLessonCard.svelte`
-- Modify: `frontend-school/src/lib/components/timetable/TimetableEntryInspector.svelte`
+- Create: `frontend-school/src/lib/components/academic/timetable/TimetableTeacherView.svelte`
+- Modify: `frontend-school/src/lib/components/academic/timetable/TimetableViewSelector.svelte`
+- Modify: `frontend-school/src/lib/components/academic/timetable/TimetableBoard.svelte`
+- Modify: `frontend-school/src/lib/components/academic/timetable/TimetableLessonCard.svelte`
+- Modify: `frontend-school/src/lib/components/academic/timetable/TimetableEntryInspector.svelte`
 - Modify: `frontend-school/src/routes/(app)/staff/academic/timetable/+page.svelte`
 - Modify: `frontend-school/tests/static/timetable-drag-board-components.test.mjs`
 - Create: `frontend-school/tests/e2e/timetable-teacher-board.spec.ts`
@@ -331,7 +331,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit the teacher board**
 
 ```bash
-git add frontend-school/src/lib/components/timetable \
+git add frontend-school/src/lib/components/academic/timetable \
   'frontend-school/src/routes/(app)/staff/academic/timetable/+page.svelte' \
   frontend-school/tests/static/timetable-drag-board-components.test.mjs \
   frontend-school/tests/e2e/timetable-teacher-board.spec.ts
@@ -343,9 +343,9 @@ git commit -m "feat(timetable): arrange schedules by teacher"
 ### Task 5: Build the read-only whole-school overview
 
 **Files:**
-- Create: `frontend-school/src/lib/components/timetable/TimetableWholeSchoolOverview.svelte`
-- Create: `frontend-school/src/lib/components/timetable/TimetableIssueSummary.svelte`
-- Modify: `frontend-school/src/lib/components/timetable/TimetableViewSelector.svelte`
+- Create: `frontend-school/src/lib/components/academic/timetable/TimetableWholeSchoolOverview.svelte`
+- Create: `frontend-school/src/lib/components/academic/timetable/TimetableIssueSummary.svelte`
+- Modify: `frontend-school/src/lib/components/academic/timetable/TimetableViewSelector.svelte`
 - Modify: `frontend-school/src/routes/(app)/staff/academic/timetable/+page.svelte`
 - Create: `frontend-school/tests/static/timetable-whole-school-overview.test.mjs`
 - Create: `frontend-school/tests/e2e/timetable-whole-school-overview.spec.ts`
@@ -394,7 +394,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit the whole-school overview**
 
 ```bash
-git add frontend-school/src/lib/components/timetable \
+git add frontend-school/src/lib/components/academic/timetable \
   'frontend-school/src/routes/(app)/staff/academic/timetable/+page.svelte' \
   frontend-school/tests/static/timetable-whole-school-overview.test.mjs \
   frontend-school/tests/e2e/timetable-whole-school-overview.spec.ts
@@ -458,7 +458,7 @@ git diff --check
 git status --short
 rg -n "JOIN learning_group_teachers.*entry|effective_teacher" \
   backend-school/src/modules/academic/services/{timetable_service.rs,daily_teaching_service.rs}
-rg -n "view=wholeSchool|wholeSchool" frontend-school/src/lib/components/timetable \
+rg -n "view=wholeSchool|wholeSchool" frontend-school/src/lib/components/academic/timetable \
   'frontend-school/src/routes/(app)/staff/academic/timetable/+page.svelte'
 ```
 

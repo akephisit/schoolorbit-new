@@ -287,15 +287,15 @@ Use the actual test path in `git add` if Step 3 required the static-test fallbac
 ### Task 4: Build the reusable accessible drag board components
 
 **Files:**
-- Create: `frontend-school/src/lib/components/timetable/TimetableWorkspaceHeader.svelte`
-- Create: `frontend-school/src/lib/components/timetable/TimetableViewSelector.svelte`
-- Create: `frontend-school/src/lib/components/timetable/TimetableUnscheduledTray.svelte`
-- Create: `frontend-school/src/lib/components/timetable/TimetableBoard.svelte`
-- Create: `frontend-school/src/lib/components/timetable/TimetableCell.svelte`
-- Create: `frontend-school/src/lib/components/timetable/TimetableLessonCard.svelte`
-- Create: `frontend-school/src/lib/components/timetable/TimetableEntryInspector.svelte`
-- Create: `frontend-school/src/lib/components/timetable/TimetableMoveDialog.svelte`
-- Reuse: `frontend-school/src/lib/components/timetable/TimetableInstructorPicker.svelte`
+- Create: `frontend-school/src/lib/components/academic/timetable/TimetableWorkspaceHeader.svelte`
+- Create: `frontend-school/src/lib/components/academic/timetable/TimetableViewSelector.svelte`
+- Create: `frontend-school/src/lib/components/academic/timetable/TimetableUnscheduledTray.svelte`
+- Create: `frontend-school/src/lib/components/academic/timetable/TimetableBoard.svelte`
+- Create: `frontend-school/src/lib/components/academic/timetable/TimetableCell.svelte`
+- Create: `frontend-school/src/lib/components/academic/timetable/TimetableLessonCard.svelte`
+- Create: `frontend-school/src/lib/components/academic/timetable/TimetableEntryInspector.svelte`
+- Create: `frontend-school/src/lib/components/academic/timetable/TimetableMoveDialog.svelte`
+- Reuse: `frontend-school/src/lib/components/academic/timetable/TimetableInstructorPicker.svelte`
 - Modify: `frontend-school/src/lib/components/MobileDragDropPolyfill.svelte`
 - Modify: `frontend-school/tests/static/mobile-drag-drop-loading.test.mjs`
 - Create: `frontend-school/tests/static/timetable-drag-board-components.test.mjs`
@@ -355,7 +355,7 @@ Expected: PASS with 0 Svelte errors and 0 warnings.
 - [ ] **Step 7: Commit reusable components**
 
 ```bash
-git add frontend-school/src/lib/components/timetable \
+git add frontend-school/src/lib/components/academic/timetable \
   frontend-school/src/lib/components/MobileDragDropPolyfill.svelte \
   frontend-school/tests/static/timetable-drag-board-components.test.mjs \
   frontend-school/tests/static/mobile-drag-drop-loading.test.mjs
