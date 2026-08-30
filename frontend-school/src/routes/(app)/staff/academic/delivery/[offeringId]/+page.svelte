@@ -36,6 +36,7 @@
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import LearningGroupEditor from '$lib/components/learning-delivery/LearningGroupEditor.svelte';
 	import LearningGroupList from '$lib/components/learning-delivery/LearningGroupList.svelte';
+	import DatedRosterMemberships from '$lib/components/learning-delivery/DatedRosterMemberships.svelte';
 	import RosterPreviewPanel from '$lib/components/learning-delivery/RosterPreviewPanel.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -84,6 +85,10 @@
 			PERMISSIONS.LEARNING_OFFERING_MANAGE_ASSIGNED
 		)
 	);
+	let offeringIsReadOnly = $derived(
+		offering?.status === 'cancelled' || offering?.status === 'closed'
+	);
+	let canMutateOffering = $derived(canManage && offering !== null && !offeringIsReadOnly);
 	let courseSnapshot = $derived(offering?.snapshot.kind === 'course' ? offering.snapshot : null);
 	let selectedTimetableTarget = $derived<TimetableVersionTarget | null>(
 		selectedTimetableVersion?.targets.find(
@@ -133,6 +138,7 @@
 	function offeringStatusLabel(status: LearningOffering['status']) {
 		if (status === 'published') return 'เผยแพร่แล้ว';
 		if (status === 'closed') return 'ปิดแล้ว';
+		if (status === 'cancelled') return 'ยกเลิกแล้ว';
 		return 'ฉบับร่าง';
 	}
 
@@ -227,7 +233,7 @@
 	}
 
 	async function requestManagementOptions() {
-		if (!canManage || !offering) return null;
+		if (!canMutateOffering || !offering) return null;
 		if (managementOptions) return managementOptions;
 		if (optionsLoading) return null;
 		optionsLoading = true;
@@ -265,6 +271,7 @@
 	}
 
 	async function createGroup(request: CreateLearningGroupRequest) {
+		if (!canMutateOffering) return;
 		const created = await createLearningGroup(offeringId, request);
 		groups = [...groups, created].sort((left, right) =>
 			left.code.localeCompare(right.code, 'th-TH', { numeric: true })
@@ -273,13 +280,13 @@
 	}
 
 	async function saveGroup(request: UpdateLearningGroupRequest) {
-		if (!selectedGroup) return;
+		if (!canMutateOffering || !selectedGroup) return;
 		const updated = await updateLearningGroup(selectedGroup.id, request);
 		updateGroupState(updated);
 	}
 
 	async function replaceTeachers(request: ReplaceLearningGroupTeachersRequest) {
-		if (!selectedGroup) return;
+		if (!canMutateOffering || !selectedGroup) return;
 		if (selectedGroup.teachersLocked) {
 			actionError = 'เผยแพร่กลุ่มเรียนแล้ว ไม่สามารถเปลี่ยนครูผู้สอนได้';
 			return;
@@ -289,14 +296,14 @@
 	}
 
 	async function replaceHomerooms(request: ReplaceLearningGroupHomeroomsRequest) {
-		if (!selectedGroup) return;
+		if (!canMutateOffering || !selectedGroup) return;
 		const updated = await replaceLearningGroupHomerooms(selectedGroup.id, request);
 		updateGroupState(updated);
 		rosterStale = rosterPreview !== null;
 	}
 
 	async function refreshRoster() {
-		if (!selectedGroup) return;
+		if (!canMutateOffering || !selectedGroup) return;
 		const groupId = selectedGroup.id;
 		rosterLoading = true;
 		try {
@@ -312,7 +319,7 @@
 	}
 
 	async function applyRoster(sourceHash: string) {
-		if (!selectedGroup) return;
+		if (!canMutateOffering || !selectedGroup) return;
 		rosterLoading = true;
 		try {
 			const updated = await applyLearningGroupRoster(selectedGroup.id, {
@@ -330,7 +337,7 @@
 	}
 
 	async function publishRoster() {
-		if (!selectedGroup) return;
+		if (!canMutateOffering || !selectedGroup) return;
 		rosterLoading = true;
 		try {
 			const updated = await publishLearningGroupRoster(selectedGroup.id, {
@@ -346,8 +353,14 @@
 		}
 	}
 
+	async function refreshSelectedGroupAfterMembership() {
+		if (!selectedGroup) return;
+		const refreshed = await getLearningGroup(selectedGroup.id);
+		updateGroupState(refreshed);
+	}
+
 	async function publishOfferingNow() {
-		if (!offering) return;
+		if (!canMutateOffering || !offering || offering.status !== 'draft') return;
 		publishing = true;
 		actionError = '';
 		try {
@@ -501,10 +514,23 @@
 				</div>
 			</section>
 
+			{#if offeringIsReadOnly}
+				<section class="rounded-xl border bg-muted/30 px-4 py-3 text-sm">
+					<p class="font-medium">
+						{offering.status === 'cancelled'
+							? 'รายการเปิดสอนนี้ยกเลิกแล้ว'
+							: 'รายการเปิดสอนนี้ปิดแล้ว'}
+					</p>
+					<p class="mt-1 text-xs text-muted-foreground">
+						เปิดดูข้อมูลและประวัติได้ แต่ไม่สามารถเพิ่มหรือแก้ไขกลุ่ม ครู ห้อง และรายชื่อนักเรียน
+					</p>
+				</section>
+			{/if}
+
 			<LearningGroupList
 				{groups}
 				selectedGroupId={selectedGroup?.id}
-				{canManage}
+				canManage={canMutateOffering}
 				onSelect={navigateToGroup}
 				onRequestManagementOptions={requestManagementOptions}
 				onCreate={createGroup}
@@ -534,18 +560,20 @@
 								</p>
 							</div>
 						</div>
-						{#if canManage}
+						{#if canMutateOffering}
 							<div class="flex flex-wrap gap-2">
 								<Button variant="outline" onclick={showEditor} disabled={optionsLoading}>
 									<Pencil class="size-4" />
 									{optionsLoading ? 'กำลังโหลด' : 'จัดการกลุ่ม'}
 								</Button>
-								<Button
-									onclick={showRoster}
-									disabled={optionsLoading || selectedGroup.homeroomIds.length === 0}
-								>
-									<ClipboardList class="size-4" /> ตรวจรายชื่อนักเรียน
-								</Button>
+								{#if selectedGroup.rosterStatus !== 'published'}
+									<Button
+										onclick={showRoster}
+										disabled={optionsLoading || selectedGroup.homeroomIds.length === 0}
+									>
+										<ClipboardList class="size-4" /> ตรวจรายชื่อนักเรียน
+									</Button>
+								{/if}
 							</div>
 						{/if}
 					</div>
@@ -563,7 +591,7 @@
 						<LearningGroupEditor
 							group={selectedGroup}
 							{managementOptions}
-							{canManage}
+							canManage={canMutateOffering}
 							onSaveGroup={saveGroup}
 							onReplaceTeachers={replaceTeachers}
 							onReplaceHomerooms={replaceHomerooms}
@@ -571,13 +599,21 @@
 					{/key}
 				{/if}
 
-				{#if rosterVisible}
+				{#if selectedGroup.rosterStatus === 'published'}
+					{#key `${selectedGroup.id}:${selectedGroup.rowVersion}`}
+						<DatedRosterMemberships
+							group={selectedGroup}
+							canManage={canMutateOffering}
+							onGroupChanged={refreshSelectedGroupAfterMembership}
+						/>
+					{/key}
+				{:else if rosterVisible}
 					<RosterPreviewPanel
 						group={selectedGroup}
 						preview={rosterPreview}
 						loading={rosterLoading}
 						stale={rosterStale}
-						{canManage}
+						canManage={canMutateOffering}
 						onRefresh={refreshRoster}
 						onApply={applyRoster}
 						onPublish={publishRoster}

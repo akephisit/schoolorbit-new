@@ -35,6 +35,19 @@ export type ReplaceLearningGroupHomeroomsRequest = Schemas['ReplaceLearningGroup
 export type ReplaceLearningGroupTeachersRequest = Schemas['ReplaceLearningGroupTeachersRequest'];
 export type ApplyRosterRequest = Schemas['ApplyRosterRequest'];
 export type PublishRosterRequest = Schemas['PublishRosterRequest'];
+export type AcademicTermChangeSet = Schemas['AcademicTermChangeSet'];
+export type AcademicTermChangeSetPreview = Schemas['AcademicTermChangeSetPreview'];
+export type AcademicChangeFinding = Schemas['AcademicChangeFinding'];
+export type AcademicChangeFindingCode = Schemas['AcademicChangeFindingCode'];
+export type CreateAcademicTermChangeSetRequest = Schemas['CreateAcademicTermChangeSetRequest'];
+export type UpdateAcademicTermChangeSetRequest = Schemas['UpdateAcademicTermChangeSetRequest'];
+export type CancelAcademicTermChangeSetRequest = Schemas['CancelAcademicTermChangeSetRequest'];
+export type UpsertAcademicTermChangeItemRequest = Schemas['UpsertAcademicTermChangeItemRequest'];
+export type DeleteAcademicTermChangeItemRequest = Schemas['DeleteAcademicTermChangeItemRequest'];
+export type PublishAcademicTermChangeSetRequest = Schemas['PublishAcademicTermChangeSetRequest'];
+export type DatedRosterMembership = Schemas['DatedRosterMembership'];
+export type AddDatedRosterMembershipRequest = Schemas['AddDatedRosterMembershipRequest'];
+export type RemoveDatedRosterMembershipRequest = Schemas['RemoveDatedRosterMembershipRequest'];
 
 async function deliveryData<T>(request: Promise<ApiResponse<T>>, fallback: string): Promise<T> {
 	const response = await request;
@@ -69,6 +82,27 @@ type DeliveryManagementOptionsQuery = NonNullable<
 type HomeroomDeliveryWorkspaceQuery = NonNullable<
 	operations['getHomeroomDeliveryWorkspace']['parameters']['query']
 >;
+type ListAcademicTermChangeSetsQuery = NonNullable<
+	operations['listAcademicTermChangeSets']['parameters']['query']
+>;
+
+type CreateAcademicTermChangeSetOperation = operations['createAcademicTermChangeSet'];
+type GetAcademicTermChangeSetOperation = operations['getAcademicTermChangeSet'];
+type UpdateAcademicTermChangeSetOperation = operations['updateAcademicTermChangeSet'];
+type CancelAcademicTermChangeSetOperation = operations['cancelAcademicTermChangeSet'];
+type UpsertAcademicTermChangeItemOperation = operations['upsertAcademicTermChangeItem'];
+type DeleteAcademicTermChangeItemOperation = operations['deleteAcademicTermChangeItem'];
+type PreviewAcademicTermChangeSetOperation = operations['previewAcademicTermChangeSet'];
+type PublishAcademicTermChangeSetOperation = operations['publishAcademicTermChangeSet'];
+type ListDatedRosterMembershipsOperation = operations['listDatedRosterMemberships'];
+type AddDatedRosterMembershipOperation = operations['addDatedRosterMembership'];
+type EndDatedRosterMembershipOperation = operations['endDatedRosterMembership'];
+
+type OperationPath<T> = T extends { parameters: { path: infer Path } } ? Path : never;
+
+function changeSetPath(id: OperationPath<GetAcademicTermChangeSetOperation>['id']): string {
+	return `/api/academic/term-change-sets/${id}`;
+}
 
 export const getHomeroomDeliveryWorkspace = (
 	academicYearId: string,
@@ -230,4 +264,134 @@ export const publishLearningGroupRoster = (id: string, body: PublishRosterReques
 	deliveryData(
 		apiClient.post<LearningGroup>(`/api/academic/learning-groups/${id}/roster/publish`, body),
 		'เผยแพร่รายชื่อนักเรียนไม่สำเร็จ'
+	);
+
+export const listAcademicTermChangeSets = (
+	academicTermId: string,
+	options: ApiRequestOptions = {}
+) => {
+	const query = {
+		academicTermId: selectedTerm(academicTermId)
+	} satisfies ListAcademicTermChangeSetsQuery;
+	return deliveryData(
+		apiClient.get<AcademicTermChangeSet[]>('/api/academic/term-change-sets', {
+			...options,
+			query
+		}),
+		'ไม่สามารถโหลดรายการเปลี่ยนแปลงกลางภาคได้'
+	);
+};
+
+export const createAcademicTermChangeSet = (
+	body: CreateAcademicTermChangeSetRequest &
+		CreateAcademicTermChangeSetOperation['requestBody']['content']['application/json']
+) =>
+	deliveryData(
+		apiClient.post<AcademicTermChangeSet>('/api/academic/term-change-sets', body),
+		'สร้างแบบร่างการเปลี่ยนแปลงกลางภาคไม่สำเร็จ'
+	);
+
+export const getAcademicTermChangeSet = (
+	id: OperationPath<GetAcademicTermChangeSetOperation>['id'],
+	options: ApiRequestOptions = {}
+) =>
+	deliveryData(
+		apiClient.get<AcademicTermChangeSet>(changeSetPath(id), options),
+		'ไม่สามารถโหลดแบบร่างการเปลี่ยนแปลงกลางภาคได้'
+	);
+
+export const updateAcademicTermChangeSet = (
+	id: OperationPath<UpdateAcademicTermChangeSetOperation>['id'],
+	body: UpdateAcademicTermChangeSetRequest &
+		UpdateAcademicTermChangeSetOperation['requestBody']['content']['application/json']
+) =>
+	deliveryData(
+		apiClient.patch<AcademicTermChangeSet>(changeSetPath(id), body),
+		'แก้ไขแบบร่างการเปลี่ยนแปลงกลางภาคไม่สำเร็จ'
+	);
+
+export const cancelAcademicTermChangeSet = (
+	id: OperationPath<CancelAcademicTermChangeSetOperation>['id'],
+	body: CancelAcademicTermChangeSetRequest &
+		CancelAcademicTermChangeSetOperation['requestBody']['content']['application/json']
+) =>
+	deliveryData(
+		apiClient.post<AcademicTermChangeSet>(`${changeSetPath(id)}/cancel`, body),
+		'ยกเลิกแบบร่างการเปลี่ยนแปลงกลางภาคไม่สำเร็จ'
+	);
+
+export const upsertAcademicTermChangeItem = (
+	id: OperationPath<UpsertAcademicTermChangeItemOperation>['id'],
+	body: UpsertAcademicTermChangeItemRequest &
+		UpsertAcademicTermChangeItemOperation['requestBody']['content']['application/json']
+) =>
+	deliveryData(
+		apiClient.put<AcademicTermChangeSet>(`${changeSetPath(id)}/items`, body),
+		'บันทึกรายการเปลี่ยนแปลงไม่สำเร็จ'
+	);
+
+export const deleteAcademicTermChangeItem = (
+	id: OperationPath<DeleteAcademicTermChangeItemOperation>['id'],
+	itemId: OperationPath<DeleteAcademicTermChangeItemOperation>['itemId'],
+	body: DeleteAcademicTermChangeItemRequest &
+		DeleteAcademicTermChangeItemOperation['requestBody']['content']['application/json']
+) =>
+	deliveryData(
+		apiClient.deleteWithBody<AcademicTermChangeSet>(`${changeSetPath(id)}/items/${itemId}`, body),
+		'ลบรายการเปลี่ยนแปลงไม่สำเร็จ'
+	);
+
+export const previewAcademicTermChangeSet = (
+	id: OperationPath<PreviewAcademicTermChangeSetOperation>['id'],
+	options: ApiRequestOptions = {}
+) =>
+	deliveryData(
+		apiClient.get<AcademicTermChangeSetPreview>(`${changeSetPath(id)}/preview`, options),
+		'ตรวจความพร้อมของการเปลี่ยนแปลงไม่สำเร็จ'
+	);
+
+export const publishAcademicTermChangeSet = (
+	id: OperationPath<PublishAcademicTermChangeSetOperation>['id'],
+	body: PublishAcademicTermChangeSetRequest &
+		PublishAcademicTermChangeSetOperation['requestBody']['content']['application/json']
+) =>
+	deliveryData(
+		apiClient.post<AcademicTermChangeSet>(`${changeSetPath(id)}/publish`, body),
+		'เผยแพร่การเปลี่ยนแปลงกลางภาคไม่สำเร็จ'
+	);
+
+export const listDatedRosterMemberships = (
+	id: OperationPath<ListDatedRosterMembershipsOperation>['id'],
+	options: ApiRequestOptions = {}
+) =>
+	deliveryData(
+		apiClient.get<DatedRosterMembership[]>(
+			`/api/academic/learning-groups/${id}/memberships`,
+			options
+		),
+		'ไม่สามารถโหลดประวัติรายชื่อนักเรียนได้'
+	);
+
+export const addDatedRosterMembership = (
+	id: OperationPath<AddDatedRosterMembershipOperation>['id'],
+	body: AddDatedRosterMembershipRequest &
+		AddDatedRosterMembershipOperation['requestBody']['content']['application/json']
+) =>
+	deliveryData(
+		apiClient.post<DatedRosterMembership>(`/api/academic/learning-groups/${id}/memberships`, body),
+		'เพิ่มนักเรียนเข้ากลุ่มไม่สำเร็จ'
+	);
+
+export const endDatedRosterMembership = (
+	id: OperationPath<EndDatedRosterMembershipOperation>['id'],
+	membershipId: OperationPath<EndDatedRosterMembershipOperation>['membershipId'],
+	body: RemoveDatedRosterMembershipRequest &
+		EndDatedRosterMembershipOperation['requestBody']['content']['application/json']
+) =>
+	deliveryData(
+		apiClient.post<DatedRosterMembership>(
+			`/api/academic/learning-groups/${id}/memberships/${membershipId}/end`,
+			body
+		),
+		'กำหนดวันสิ้นสุดสมาชิกกลุ่มไม่สำเร็จ'
 	);

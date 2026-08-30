@@ -146,6 +146,10 @@ async function mockDelivery(page: Page) {
 				});
 				return;
 			}
+			if (url.pathname === '/api/academic/term-change-sets') {
+				await fulfill(route, []);
+				return;
+			}
 			if (url.pathname === '/api/academic/delivery/workspace') {
 				offeringOverviewRequests += 1;
 				await fulfill(route, { academicTermId: ids.term, offerings: [] });

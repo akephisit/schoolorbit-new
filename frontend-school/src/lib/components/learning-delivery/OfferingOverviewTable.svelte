@@ -24,7 +24,8 @@
 
 	let search = $state('');
 	let kindFilter = $derived(initialKind);
-	let statusFilter = $state<'all' | 'draft' | 'published' | 'closed'>('all');
+	type AvailabilityState = 'draft' | 'upcoming' | 'active' | 'ended' | 'cancelled' | 'closed';
+	let statusFilter = $state<'all' | AvailabilityState>('all');
 	let gradeFilter = $state('all');
 	let programFilter = $state('all');
 	let gradeOptions = $derived.by(() => {
@@ -51,7 +52,7 @@
 		const query = search.trim().toLocaleLowerCase('th-TH');
 		return items.filter((item) => {
 			if (kindFilter !== 'all' && item.offering.kind !== kindFilter) return false;
-			if (statusFilter !== 'all' && item.offering.status !== statusFilter) return false;
+			if (statusFilter !== 'all' && availabilityState(item) !== statusFilter) return false;
 			if (gradeFilter !== 'all' && !item.gradeLevels.some((grade) => grade.id === gradeFilter))
 				return false;
 			if (
@@ -69,12 +70,46 @@
 		});
 	});
 
-	const statusLabel = { draft: 'ฉบับร่าง', published: 'เผยแพร่แล้ว', closed: 'ปิดแล้ว' } as const;
-	const statusClass = {
+	const statusLabel: Record<AvailabilityState, string> = {
+		draft: 'ฉบับร่าง',
+		upcoming: 'กำลังจะเริ่ม',
+		active: 'กำลังสอน',
+		ended: 'สิ้นสุดแล้ว',
+		cancelled: 'ยกเลิกแล้ว',
+		closed: 'ปิดแล้ว'
+	};
+	const statusClass: Record<AvailabilityState, string> = {
 		draft: 'border-amber-500/35 bg-amber-500/10 text-amber-700 dark:text-amber-300',
-		published: 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+		upcoming: 'border-blue-500/35 bg-blue-500/10 text-blue-700 dark:text-blue-300',
+		active: 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+		ended: 'border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300',
+		cancelled: 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300',
 		closed: 'border-muted-foreground/25 bg-muted text-muted-foreground'
-	} as const;
+	};
+
+	function todayIso(): string {
+		const now = new Date();
+		return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+	}
+
+	function availabilityState(item: LearningOfferingOverviewItem): AvailabilityState {
+		const offering = item.offering;
+		if (offering.status === 'draft') return 'draft';
+		if (offering.status === 'cancelled') return 'cancelled';
+		if (offering.status === 'closed') return 'closed';
+		const today = todayIso();
+		if (offering.startsOn && offering.startsOn > today) return 'upcoming';
+		if (offering.endsOn && offering.endsOn < today) return 'ended';
+		return 'active';
+	}
+
+	function availabilityRange(item: LearningOfferingOverviewItem): string {
+		const { startsOn, endsOn } = item.offering;
+		if (!startsOn && !endsOn) return 'ใช้ตลอดภาคเรียน';
+		if (startsOn && endsOn) return `${startsOn} – ${endsOn}`;
+		if (startsOn) return `เริ่ม ${startsOn}`;
+		return `ถึง ${endsOn}`;
+	}
 
 	function gradeSummary(item: LearningOfferingOverviewItem) {
 		return item.gradeLevels.map((grade) => grade.short_name ?? grade.name).join(', ') || '—';
@@ -118,12 +153,15 @@
 		</Select.Root>
 		<Select.Root type="single" bind:value={statusFilter}>
 			<Select.Trigger class="w-full" aria-label="กรองสถานะรายการเปิดสอน">
-				{statusFilter === 'all' ? 'ทุกสถานะ' : statusLabel[statusFilter]}
+				{statusFilter === 'all' ? 'ทุกช่วงการใช้งาน' : statusLabel[statusFilter]}
 			</Select.Trigger>
 			<Select.Content>
-				<Select.Item value="all">ทุกสถานะ</Select.Item>
+				<Select.Item value="all">ทุกช่วงการใช้งาน</Select.Item>
 				<Select.Item value="draft">ฉบับร่าง</Select.Item>
-				<Select.Item value="published">เผยแพร่แล้ว</Select.Item>
+				<Select.Item value="upcoming">กำลังจะเริ่ม</Select.Item>
+				<Select.Item value="active">กำลังสอน</Select.Item>
+				<Select.Item value="ended">สิ้นสุดแล้ว</Select.Item>
+				<Select.Item value="cancelled">ยกเลิกแล้ว</Select.Item>
 				<Select.Item value="closed">ปิดแล้ว</Select.Item>
 			</Select.Content>
 		</Select.Root>
@@ -168,7 +206,7 @@
 					<Table.Head class="text-center">กลุ่มเรียน</Table.Head>
 					<Table.Head class="text-center">ครูหลัก</Table.Head>
 					<Table.Head class="text-center">รายชื่อเผยแพร่</Table.Head>
-					<Table.Head>สถานะ</Table.Head>
+					<Table.Head class="min-w-[145px]">ช่วงการใช้งาน</Table.Head>
 					<Table.Head class="w-12"><span class="sr-only">เปิดรายละเอียด</span></Table.Head>
 				</Table.Row>
 			</Table.Header>
@@ -214,11 +252,12 @@
 						<Table.Cell class="text-center font-mono tabular-nums"
 							>{item.publishedRosterCount}/{item.groupCount}</Table.Cell
 						>
-						<Table.Cell
-							><Badge variant="outline" class={statusClass[item.offering.status]}
-								>{statusLabel[item.offering.status]}</Badge
-							></Table.Cell
-						>
+						<Table.Cell>
+							<Badge variant="outline" class={statusClass[availabilityState(item)]}>
+								{statusLabel[availabilityState(item)]}
+							</Badge>
+							<p class="mt-1 text-[11px] text-muted-foreground">{availabilityRange(item)}</p>
+						</Table.Cell>
 						<Table.Cell>
 							<Button
 								href={`/staff/academic/delivery/${item.offering.id}`}
@@ -255,10 +294,11 @@
 					<div class="flex flex-wrap gap-1.5">
 						<Badge variant="secondary"
 							>{item.offering.kind === 'course' ? 'รายวิชา' : 'กิจกรรม'}</Badge
-						><Badge variant="outline" class={statusClass[item.offering.status]}
-							>{statusLabel[item.offering.status]}</Badge
+						><Badge variant="outline" class={statusClass[availabilityState(item)]}
+							>{statusLabel[availabilityState(item)]}</Badge
 						>
 					</div>
+					<p class="text-xs text-muted-foreground">{availabilityRange(item)}</p>
 					{#if item.offering.kind === 'course'}
 						<p class="text-xs font-medium text-primary">{courseWorkloadSummary(item)}</p>
 					{/if}

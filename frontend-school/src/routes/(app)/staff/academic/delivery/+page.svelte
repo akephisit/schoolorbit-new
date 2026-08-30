@@ -5,6 +5,8 @@
 	import {
 		getHomeroomDeliveryWorkspace,
 		getLearningDeliveryOverview,
+		listAcademicTermChangeSets,
+		type AcademicTermChangeSet,
 		type HomeroomDeliveryWorkspace as HomeroomWorkspace,
 		type LearningDeliveryOverview,
 		type LearningOfferingOverviewItem
@@ -16,9 +18,12 @@
 		AcademicPrerequisiteNotice,
 		type AcademicPrerequisite
 	} from '$lib/components/academic-workflow';
+	import AcademicChangeSetDialog from '$lib/components/learning-delivery/AcademicChangeSetDialog.svelte';
+	import AcademicChangeSetPanel from '$lib/components/learning-delivery/AcademicChangeSetPanel.svelte';
 	import HomeroomDeliveryWorkspace from '$lib/components/learning-delivery/HomeroomDeliveryWorkspace.svelte';
 	import OfferingCreateDialog from '$lib/components/learning-delivery/OfferingCreateDialog.svelte';
 	import OfferingOverviewTable from '$lib/components/learning-delivery/OfferingOverviewTable.svelte';
+	import * as Select from '$lib/components/ui/select';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
@@ -30,6 +35,8 @@
 	const overviewRequest = new LatestRequest();
 	let workspace = $state.raw<HomeroomWorkspace | null>(null);
 	let overview = $state.raw<LearningDeliveryOverview | null>(null);
+	let changeSets = $state.raw<AcademicTermChangeSet[]>([]);
+	let selectedChangeSetId = $state('');
 	let loading = $state(false);
 	let overviewLoading = $state(false);
 	let errorMessage = $state('');
@@ -46,6 +53,15 @@
 		)
 	);
 	let items = $derived(overview?.offerings ?? []);
+	let activeChangeSet = $derived(
+		changeSets.find((changeSet) => changeSet.id === selectedChangeSetId) ??
+			changeSets.find((changeSet) => changeSet.status === 'draft') ??
+			changeSets[0] ??
+			null
+	);
+	let activeChangeSetLabel = $derived(
+		activeChangeSet ? formatChangeSetOption(activeChangeSet) : 'เลือกชุดการเปลี่ยนแปลง'
+	);
 
 	const missingTermPrerequisite: AcademicPrerequisite = {
 		key: 'academic-term',
@@ -64,14 +80,45 @@
 		href: '/staff/academic/curricula'
 	};
 
+	function formatDate(value: string): string {
+		return new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium' }).format(
+			new Date(`${value}T00:00:00`)
+		);
+	}
+
+	function formatChangeSetOption(changeSet: AcademicTermChangeSet): string {
+		const status =
+			changeSet.status === 'draft'
+				? 'แบบร่าง'
+				: changeSet.status === 'published'
+					? 'เผยแพร่แล้ว'
+					: 'ยกเลิกแล้ว';
+		return `${formatDate(changeSet.effectiveFrom)} · ${status} · ${changeSet.reason}`;
+	}
+
 	async function loadWorkspace(yearId: string, termId: string) {
 		const { revision, signal } = workspaceRequest.begin();
 		loading = true;
 		errorMessage = '';
 		try {
 			const homeroomResult = await getHomeroomDeliveryWorkspace(yearId, termId, { signal });
+			const loadedChangeSets = await listAcademicTermChangeSets(termId, { signal });
 			if (!workspaceRequest.isCurrent(revision)) return;
 			workspace = homeroomResult;
+			changeSets = loadedChangeSets;
+			if (!loadedChangeSets.some((changeSet) => changeSet.id === selectedChangeSetId)) {
+				selectedChangeSetId =
+					loadedChangeSets.find((changeSet) => changeSet.status === 'draft')?.id ??
+					loadedChangeSets[0]?.id ??
+					'';
+			}
+			if (
+				(loadedChangeSets.some((changeSet) => changeSet.items.length > 0) ||
+					(canManage && loadedChangeSets.some((changeSet) => changeSet.status === 'draft'))) &&
+				!overview &&
+				!overviewLoading
+			)
+				void loadOverview(termId);
 		} catch (error) {
 			if (isAbortError(error)) return;
 			if (workspaceRequest.isCurrent(revision))
@@ -125,6 +172,22 @@
 		if (viewMode === 'offerings' || overview) await loadOverview(academicTermId);
 	}
 
+	function addChangeSet(created: AcademicTermChangeSet) {
+		changeSets = [created, ...changeSets.filter((changeSet) => changeSet.id !== created.id)];
+		selectedChangeSetId = created.id;
+		if (academicTermId && !overviewLoading) void loadOverview(academicTermId);
+	}
+
+	async function updateChangeSet(updated: AcademicTermChangeSet) {
+		selectedChangeSetId = updated.id;
+		changeSets = changeSets
+			.map((changeSet) => (changeSet.id === updated.id ? updated : changeSet))
+			.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+		if (!academicYearId || !academicTermId) return;
+		await loadOverview(academicTermId);
+		await loadWorkspace(academicYearId, academicTermId);
+	}
+
 	onMount(() => {
 		let loadedContext = '';
 		const unsubscribe = academicContext.subscribe((state) => {
@@ -133,8 +196,13 @@
 			const contextKey = yearId && termId ? `${yearId}:${termId}` : '';
 			if (yearId && termId && contextKey !== loadedContext) {
 				loadedContext = contextKey;
-				overview = null;
+				workspaceRequest.abort();
 				overviewRequest.abort();
+				workspace = null;
+				overview = null;
+				changeSets = [];
+				selectedChangeSetId = '';
+				errorMessage = '';
 				void loadWorkspace(yearId, termId).then(() => {
 					if (viewMode === 'offerings') void loadOverview(termId);
 				});
@@ -142,6 +210,8 @@
 				loadedContext = '';
 				workspace = null;
 				overview = null;
+				changeSets = [];
+				selectedChangeSetId = '';
 				loading = false;
 				errorMessage = '';
 				workspaceRequest.abort();
@@ -163,6 +233,7 @@
 	{#snippet actions()}
 		{#if canManage && academicTermId}
 			<OfferingCreateDialog {academicTermId} onCreated={addCreated} onApplied={reloadAfterApply} />
+			<AcademicChangeSetDialog {academicTermId} onCreated={addChangeSet} />
 		{/if}
 	{/snippet}
 
@@ -180,6 +251,55 @@
 		/>
 	{:else}
 		<div class="space-y-4">
+			{#if changeSets.length > 1}
+				<section
+					class="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3"
+				>
+					<div>
+						<p class="text-sm font-medium">ชุดการเปลี่ยนแปลงกลางภาค</p>
+						<p class="text-xs text-muted-foreground">
+							เลือกดูแบบร่างที่กำลังทำหรือประวัติที่เผยแพร่และยกเลิกแล้ว
+						</p>
+					</div>
+					<Select.Root
+						type="single"
+						value={activeChangeSet?.id ?? ''}
+						onValueChange={(value) => (selectedChangeSetId = value)}
+					>
+						<Select.Trigger class="w-full sm:w-[430px]">
+							<span class="truncate">{activeChangeSetLabel}</span>
+						</Select.Trigger>
+						<Select.Content>
+							{#each changeSets as changeSet (changeSet.id)}
+								<Select.Item value={changeSet.id}>
+									{formatChangeSetOption(changeSet)}
+								</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</section>
+			{/if}
+			{#if activeChangeSet}
+				{#key `${activeChangeSet.id}:${activeChangeSet.rowVersion}`}
+					<AcademicChangeSetPanel
+						changeSet={activeChangeSet}
+						offerings={items}
+						{canManage}
+						onChanged={updateChangeSet}
+					/>
+				{/key}
+			{:else if canManage}
+				<section
+					class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-amber-500/35 bg-amber-500/5 p-3 text-sm"
+				>
+					<div>
+						<p class="font-medium text-amber-900">เมื่อเปิดสอนแล้วและต้องเปลี่ยนกลางภาค</p>
+						<p class="text-xs text-muted-foreground">
+							ใช้ปุ่ม “เพิ่ม/ปรับ/หยุดกลางภาค” ด้านบน ระบบจะแยกรุ่นตารางและเก็บประวัติเดิมให้
+						</p>
+					</div>
+				</section>
+			{/if}
 			<Tabs.Root value={viewMode} onValueChange={changeViewMode}>
 				<Tabs.List class="grid w-full grid-cols-2 sm:w-[430px]">
 					<Tabs.Trigger value="homerooms">มุมมองรายห้อง</Tabs.Trigger>

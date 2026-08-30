@@ -62,6 +62,8 @@ test('delivery workspace is homeroom-first, loads offering overview lazily, and 
 	assert.match(page, /getHomeroomDeliveryWorkspace/);
 	assert.match(page, /viewMode = \$state<'homerooms' \| 'offerings'>\('homerooms'\)/);
 	assert.match(page, /getLearningDeliveryOverview/);
+	assert.match(page, /listAcademicTermChangeSets/);
+	assert.match(page, /{#if canManage[\s\S]*AcademicChangeSetDialog/);
 	assert.match(page, /academicTermId/);
 	assert.match(page, /kind=activity|kindFilter|initialKind/);
 	assert.doesNotMatch(page, /getLearningDeliveryManagementOptions\([\s\S]*onMount/);
@@ -96,6 +98,7 @@ test('offering detail keeps selection in the URL and renders named group and ros
 	assert.match(page, /getLearningGroup/);
 	assert.match(page, /listLearningGroups/);
 	assert.match(page, /groupId/);
+	assert.match(page, /rosterStatus === 'published'[\s\S]*DatedRosterMemberships/);
 	assert.match(editor, /managementOptions\.teachers/);
 	assert.match(editor, /managementOptions\.homerooms/);
 	assert.match(editor, /managementOptions\.rooms/);
