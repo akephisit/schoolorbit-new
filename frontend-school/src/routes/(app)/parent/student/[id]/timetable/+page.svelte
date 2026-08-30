@@ -15,6 +15,7 @@
 	import { getChildProfile, getChildTimetable } from '$lib/api/parents';
 	import type { Student } from '$lib/api/students';
 	import {
+		currentLocalDate,
 		periodsFromTimetableEntries,
 		type TimetableEntry,
 		type TimetablePeriodSummary
@@ -130,7 +131,7 @@
 	}
 
 	async function loadTimetable(termId: string, current = ++revision): Promise<void> {
-		const loaded = await getChildTimetable(studentId, termId);
+		const loaded = await getChildTimetable(studentId, termId, currentLocalDate());
 		if (current !== revision) return;
 		periods = periodsFromTimetableEntries(loaded);
 		entries = loaded;

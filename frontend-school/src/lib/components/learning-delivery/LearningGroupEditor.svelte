@@ -256,10 +256,17 @@
 
 		<div class="space-y-4 xl:border-s xl:ps-6">
 			<div>
-				<h3 class="font-medium">ครูผู้สอน</h3>
-				<p class="text-xs text-muted-foreground">เลือกครูจากบัญชีบุคลากรและกำหนดบทบาท</p>
+				<div class="flex flex-wrap items-center gap-2">
+					<h3 class="font-medium">ครูผู้สอน</h3>
+					{#if group.teachersLocked}<Badge variant="outline">ล็อกแล้ว</Badge>{/if}
+				</div>
+				<p class="text-xs text-muted-foreground">
+					{group.teachersLocked
+						? 'เผยแพร่กลุ่มเรียนแล้ว ไม่สามารถเปลี่ยนครูผู้สอนได้'
+						: 'เลือกครูจากบัญชีบุคลากรและกำหนดบทบาท'}
+				</p>
 			</div>
-			{#if canManage}
+			{#if canManage && !group.teachersLocked}
 				<div class="space-y-2">
 					<DeliveryOptionCombobox
 						bind:value={selectedTeacherId}
@@ -296,7 +303,7 @@
 							<p class="truncate text-sm font-medium">{teacherName(assignment.teacherId)}</p>
 							<p class="text-xs text-muted-foreground">{roleName(assignment.role)}</p>
 						</div>
-						{#if canManage}
+						{#if canManage && !group.teachersLocked}
 							<Button
 								type="button"
 								size="icon"
@@ -317,7 +324,7 @@
 					</div>
 				{/each}
 			</div>
-			{#if canManage}
+			{#if canManage && !group.teachersLocked}
 				<LoadingButton
 					variant="outline"
 					loading={busySection === 'teachers'}

@@ -41,13 +41,17 @@ export async function getChildProfile(studentId: string, academicYearId: string)
  */
 export async function getChildTimetable(
 	studentId: string,
-	academicTermId: string
+	academicTermId: string,
+	date: string
 ): Promise<TimetableEntry[]> {
 	const trimmedAcademicTermId = academicTermId.trim();
 	if (!trimmedAcademicTermId) throw new Error('กรุณาเลือกภาคเรียนก่อน');
-	const query = { academicTermId: trimmedAcademicTermId } satisfies NonNullable<
-		operations['getParentChildTimetable']['parameters']['query']
-	>;
+	const requiredDate = date.trim();
+	if (!requiredDate) throw new Error('กรุณาเลือกวันที่ก่อน');
+	const query = {
+		academicTermId: trimmedAcademicTermId,
+		date: requiredDate
+	} satisfies NonNullable<operations['getParentChildTimetable']['parameters']['query']>;
 	return requireApiData(
 		await apiClient.get<TimetableEntry[]>(
 			`/api/parent/students/${encodeURIComponent(studentId)}/timetable`,

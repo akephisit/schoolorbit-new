@@ -11,6 +11,11 @@ type Schemas = components['schemas'];
 
 export type TimetableEntry = Schemas['TimetableEntry'];
 export type TimetableInstructor = Schemas['TimetableInstructor'];
+export type TimetableVersion = Schemas['TimetableVersion'];
+export type TimetableVersionStatus = Schemas['TimetableVersionStatus'];
+export type TimetableVersionTarget = Schemas['TimetableVersionTarget'];
+export type CloneTimetableVersionRequest =
+	operations['cloneTimetableVersion']['requestBody']['content']['application/json'];
 export type CreateTimetableEntryRequest = Schemas['CreateTimetableEntryRequest'];
 export type UpdateTimetableEntryRequest = Schemas['UpdateTimetableEntryRequest'];
 export type CreateBatchTimetableEntriesRequest = Schemas['CreateBatchTimetableEntriesRequest'];
@@ -37,12 +42,34 @@ export type DailyTeachingOverview = Schemas['DailyTeachingOverview'];
 export type TimetableFilters = operations['listTimetableEntries']['parameters']['query'];
 export type MyTimetableFilters = operations['getMyTimetable']['parameters']['query'];
 export type DailyTeachingFilters = operations['getDailyTeachingOverview']['parameters']['query'];
+type ListTimetableVersionsQuery = NonNullable<
+	operations['listTimetableVersions']['parameters']['query']
+>;
+type ResolveTimetableVersionQuery = NonNullable<
+	operations['resolveTimetableVersion']['parameters']['query']
+>;
+type DeleteTimetableEntryQuery = NonNullable<
+	operations['deleteTimetableEntry']['parameters']['query']
+>;
+type DeleteTimetableBatchQuery = NonNullable<
+	operations['deleteTimetableBatch']['parameters']['query']
+>;
+type TimetableOccupancyQuery = NonNullable<
+	operations['getTimetableOccupancy']['parameters']['query']
+>;
 
 export interface TimetablePeriodSummary {
 	id: string;
 	name: string | null;
 	startTime: string;
 	endTime: string;
+}
+
+export function currentLocalDate(date = new Date()): string {
+	const year = date.getFullYear();
+	const month = String(date.getMonth() + 1).padStart(2, '0');
+	const day = String(date.getDate()).padStart(2, '0');
+	return `${year}-${month}-${day}`;
 }
 
 async function timetableData<T>(request: Promise<ApiResponse<T>>, fallback: string): Promise<T> {
@@ -62,14 +89,37 @@ function requiredTerm(academicTermId: string): string {
 	return selected;
 }
 
+function requiredVersion(timetableVersionId: string): string {
+	const selected = timetableVersionId.trim();
+	if (!selected) throw new Error('กรุณาเลือกรุ่นตารางสอนก่อน');
+	return selected;
+}
+
+function requiredDate(date: string): string {
+	const selected = date.trim();
+	if (!selected) throw new Error('กรุณาเลือกวันที่ก่อน');
+	return selected;
+}
+
 function timetableQuery(filters: TimetableFilters): string {
-	const params = new URLSearchParams({ academicTermId: requiredTerm(filters.academicTermId) });
+	const params = new URLSearchParams({
+		academicTermId: requiredTerm(filters.academicTermId),
+		timetableVersionId: requiredVersion(filters.timetableVersionId)
+	});
 	if (filters.learningGroupId) params.set('learningGroupId', filters.learningGroupId);
 	if (filters.homeroomId) params.set('homeroomId', filters.homeroomId);
 	if (filters.instructorId) params.set('instructorId', filters.instructorId);
 	if (filters.roomId) params.set('roomId', filters.roomId);
 	if (filters.dayOfWeek) params.set('dayOfWeek', filters.dayOfWeek);
 	if (filters.entryType) params.set('entryType', filters.entryType);
+	return `?${params.toString()}`;
+}
+
+function personalTimetableQuery(filters: MyTimetableFilters): string {
+	const params = new URLSearchParams({
+		academicTermId: requiredTerm(filters.academicTermId),
+		date: requiredDate(filters.date)
+	});
 	return `?${params.toString()}`;
 }
 
@@ -101,8 +151,45 @@ export const listTimetableEntries = (filters: TimetableFilters, options: ApiRequ
 
 export const getMyTimetable = (filters: MyTimetableFilters, options: ApiRequestOptions = {}) =>
 	timetableData(
-		apiClient.get<TimetableEntry[]>(`/api/me/timetable${timetableQuery(filters)}`, options),
+		apiClient.get<TimetableEntry[]>(`/api/me/timetable${personalTimetableQuery(filters)}`, options),
 		'ไม่สามารถโหลดตารางสอนของฉันได้'
+	);
+
+export const listTimetableVersions = (academicTermId: string, options: ApiRequestOptions = {}) => {
+	const query = {
+		academicTermId: requiredTerm(academicTermId)
+	} satisfies ListTimetableVersionsQuery;
+	return timetableData(
+		apiClient.get<TimetableVersion[]>('/api/academic/timetable-versions', { ...options, query }),
+		'ไม่สามารถโหลดรุ่นตารางสอนได้'
+	);
+};
+
+export const resolveTimetableVersion = (
+	academicTermId: string,
+	date: string,
+	options: ApiRequestOptions = {}
+) => {
+	const query = {
+		academicTermId: requiredTerm(academicTermId),
+		date: requiredDate(date)
+	} satisfies ResolveTimetableVersionQuery;
+	return timetableData(
+		apiClient.get<TimetableVersion>('/api/academic/timetable-versions/resolve', {
+			...options,
+			query
+		}),
+		'ไม่พบรุ่นตารางสอนที่ใช้ในวันที่เลือก'
+	);
+};
+
+export const cloneTimetableVersion = (sourceId: string, body: CloneTimetableVersionRequest) =>
+	timetableData(
+		apiClient.post<TimetableVersion>(
+			`/api/academic/timetable-versions/${encodeURIComponent(sourceId)}/clone`,
+			body
+		),
+		'สร้างแบบร่างตารางสอนไม่สำเร็จ'
 	);
 
 export const createTimetableEntry = (body: CreateTimetableEntryRequest) =>
@@ -123,21 +210,39 @@ export const updateTimetableEntry = (id: string, body: UpdateTimetableEntryReque
 		'แก้ไขคาบในตารางไม่สำเร็จ'
 	);
 
-export const deleteTimetableEntry = (id: string, rowVersion: number) =>
-	timetableData(
+export const deleteTimetableEntry = (
+	id: string,
+	rowVersion: number,
+	timetableVersionId: string
+) => {
+	const query = {
+		rowVersion,
+		timetableVersionId: requiredVersion(timetableVersionId)
+	} satisfies DeleteTimetableEntryQuery;
+	const params = new URLSearchParams({
+		rowVersion: String(query.rowVersion),
+		timetableVersionId: query.timetableVersionId
+	});
+	return timetableData(
 		apiClient.delete<TimetableEntry>(
-			`/api/academic/timetable/${encodeURIComponent(id)}?rowVersion=${rowVersion}`
+			`/api/academic/timetable/${encodeURIComponent(id)}?${params.toString()}`
 		),
 		'ลบคาบในตารางไม่สำเร็จ'
 	);
+};
 
-export const deleteTimetableBatch = (batchId: string) =>
-	timetableData(
+export const deleteTimetableBatch = (batchId: string, timetableVersionId: string) => {
+	const query = {
+		timetableVersionId: requiredVersion(timetableVersionId)
+	} satisfies DeleteTimetableBatchQuery;
+	const params = new URLSearchParams(query);
+	return timetableData(
 		apiClient.delete<TimetableEntry[]>(
-			`/api/academic/timetable/batch-group/${encodeURIComponent(batchId)}`
+			`/api/academic/timetable/batch-group/${encodeURIComponent(batchId)}?${params.toString()}`
 		),
 		'ลบชุดคาบในตารางไม่สำเร็จ'
 	);
+};
 
 export const swapTimetableEntries = (body: SwapTimetableEntriesRequest) =>
 	timetableData(
@@ -145,23 +250,38 @@ export const swapTimetableEntries = (body: SwapTimetableEntriesRequest) =>
 		'สลับคาบไม่สำเร็จ'
 	);
 
-export const validateTimetableMoves = (academicTermId: string, entryId: string) =>
+export const validateTimetableMoves = (
+	academicTermId: string,
+	timetableVersionId: string,
+	entryId: string
+) =>
 	timetableData(
 		apiClient.post<MoveValidityCell[]>('/api/academic/timetable/validate-moves', {
 			academicTermId: requiredTerm(academicTermId),
+			timetableVersionId: requiredVersion(timetableVersionId),
 			entryId
 		}),
 		'ตรวจสอบตำแหน่งย้ายคาบไม่สำเร็จ'
 	);
 
-export const getTimetableOccupancy = (academicTermId: string, options: ApiRequestOptions = {}) =>
-	timetableData(
+export const getTimetableOccupancy = (
+	academicTermId: string,
+	timetableVersionId: string,
+	options: ApiRequestOptions = {}
+) => {
+	const query = {
+		academicTermId: requiredTerm(academicTermId),
+		timetableVersionId: requiredVersion(timetableVersionId)
+	} satisfies TimetableOccupancyQuery;
+	const params = new URLSearchParams(query);
+	return timetableData(
 		apiClient.get<TimetableOccupancyCell[]>(
-			`/api/academic/timetable/occupancy?academicTermId=${encodeURIComponent(requiredTerm(academicTermId))}`,
+			`/api/academic/timetable/occupancy?${params.toString()}`,
 			options
 		),
 		'โหลดข้อมูลการใช้คาบไม่สำเร็จ'
 	);
+};
 
 export const getDailyTeachingOverview = (filters: DailyTeachingFilters) => {
 	const params = new URLSearchParams({ academicTermId: requiredTerm(filters.academicTermId) });

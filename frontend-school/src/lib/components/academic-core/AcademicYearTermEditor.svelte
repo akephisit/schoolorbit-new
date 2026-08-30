@@ -389,7 +389,11 @@
 						<div class="flex items-center justify-between gap-3 p-4 text-sm sm:px-5">
 							<div>
 								<strong>{term.name}</strong>
-								<p class="text-xs text-muted-foreground">{term.startDate} – {term.endDate}</p>
+								<p class="text-xs text-muted-foreground">
+									เริ่ม {term.startDate} · คาดว่าจะปิด {term.plannedEndDate ?? 'ยังไม่กำหนด'}
+									{#if term.closedOn}
+										· ปิดจริง {term.closedOn}{/if}
+								</p>
 							</div>
 							<ChevronRight class="size-4 text-muted-foreground" />
 						</div>

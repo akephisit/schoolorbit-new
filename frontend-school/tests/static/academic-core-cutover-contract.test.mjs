@@ -236,23 +236,56 @@ test('academic exact values and offering variants keep their wire semantics', as
 	assert.deepEqual(variantTags.sort(), ['activity', 'course']);
 
 	const courseSnapshot = schemas.CourseOfferingSnapshot;
-	for (const propertyName of ['standardPeriodsPerWeek', 'weeklyPeriodTarget']) {
-		assert.ok(courseSnapshot.required.includes(propertyName));
-		assert.equal(courseSnapshot.properties[propertyName]?.type, 'integer');
-		assert.equal(courseSnapshot.properties[propertyName]?.format, 'int32');
-	}
+	assert.ok(courseSnapshot.required.includes('standardPeriodsPerWeek'));
+	assert.equal(courseSnapshot.properties.standardPeriodsPerWeek?.type, 'integer');
+	assert.equal(courseSnapshot.properties.standardPeriodsPerWeek?.format, 'int32');
+	assert.equal(courseSnapshot.properties.weeklyPeriodTarget, undefined);
 
 	const updateOffering = schemas.UpdateLearningOfferingRequest;
-	assert.ok(!updateOffering.required.includes('weeklyPeriodTarget'));
-	assert.deepEqual(updateOffering.properties.weeklyPeriodTarget?.type, ['integer', 'null']);
-	assert.equal(updateOffering.properties.weeklyPeriodTarget?.format, 'int32');
+	assert.equal(updateOffering.properties.weeklyPeriodTarget, undefined);
 
 	const homeroomItem = schemas.HomeroomDeliveryItem;
+	assert.ok(!homeroomItem.required.includes('standardPeriodsPerWeek'));
+	assert.deepEqual(homeroomItem.properties.standardPeriodsPerWeek?.type, ['integer', 'null']);
+	assert.ok(homeroomItem.required.includes('weeklyPeriodTarget'));
+	assert.deepEqual(homeroomItem.properties.weeklyPeriodTarget?.type, ['integer', 'null']);
 	for (const propertyName of ['standardPeriodsPerWeek', 'weeklyPeriodTarget']) {
-		assert.ok(!homeroomItem.required.includes(propertyName));
-		assert.deepEqual(homeroomItem.properties[propertyName]?.type, ['integer', 'null']);
 		assert.equal(homeroomItem.properties[propertyName]?.format, 'int32');
 	}
+});
+
+test('academic terms use optional planned end and read-only actual close semantics', async () => {
+	const { contract } = await readContractArtifacts();
+	const schemas = contract.components.schemas;
+
+	for (const responseName of ['AcademicTerm', 'AcademicTermOption']) {
+		const response = schemas[responseName];
+		assert.ok(response.required.includes('plannedEndDate'));
+		assert.ok(response.required.includes('closedOn'));
+		assert.deepEqual(response.properties.plannedEndDate.type, ['string', 'null']);
+		assert.deepEqual(response.properties.closedOn.type, ['string', 'null']);
+		assert.equal(response.properties.endDate, undefined);
+	}
+
+	for (const requestName of ['CreateAcademicTermRequest', 'UpdateAcademicTermRequest']) {
+		const request = schemas[requestName];
+		assert.ok(!request.required.includes('plannedEndDate'));
+		assert.deepEqual(request.properties.plannedEndDate.type, ['string', 'null']);
+		assert.equal(request.properties.endDate, undefined);
+		assert.equal(request.properties.closedOn, undefined);
+	}
+
+	const editor = await readFile(
+		path.join(
+			repoRoot,
+			'frontend-school/src/lib/components/academic-core/setup/AcademicTermSetupStep.svelte'
+		),
+		'utf8'
+	);
+	assert.match(editor, /วันที่คาดว่าจะปิดภาคเรียน \(ไม่บังคับ\)/);
+	assert.match(editor, /plannedEndDate:\s*plannedEndDate\s*\|\|\s*null/);
+	assert.match(editor, /closedOn/);
+	assert.doesNotMatch(editor, /term\.endDate|\bendDate\s*[,=]/);
 });
 
 test('academic JSON operations use response envelopes', async () => {

@@ -20,7 +20,7 @@
 	import { toast } from 'svelte-sonner';
 	import { getAcademicContextStore } from '$lib/academic-context/store';
 	import { isAbortError, LatestRequest } from '$lib/async/latest-request';
-	import { getMyTimetable, type TimetableEntry } from '$lib/api/timetable';
+	import { currentLocalDate, getMyTimetable, type TimetableEntry } from '$lib/api/timetable';
 	import {
 		acknowledgeSupervisionObservation,
 		approveSupervisionObservationRequest,
@@ -475,10 +475,14 @@
 		const range = academicTermId
 			? academicContextOptions?.terms.find((term) => term.id === academicTermId)
 			: academicContextOptions?.years.find((year) => year.id === academicYearId);
+		const rangeEnd =
+			range && 'plannedEndDate' in range
+				? (range.closedOn ?? range.plannedEndDate ?? '')
+				: (range?.endDate ?? '');
 		cycleForm.startsDate ||= range?.startDate ?? '';
-		cycleForm.endsDate ||= range?.endDate ?? '';
+		cycleForm.endsDate ||= rangeEnd;
 		cycleForm.bookingOpensDate ||= range?.startDate ?? '';
-		cycleForm.bookingClosesDate ||= range?.endDate ?? '';
+		cycleForm.bookingClosesDate ||= rangeEnd;
 		createCycleDialogOpen = true;
 	}
 
@@ -776,7 +780,13 @@
 		}
 		loadingTimetable = true;
 		try {
-			const entries = await getMyTimetable({ academicTermId: termId }, { signal });
+			const entries = await getMyTimetable(
+				{
+					academicTermId: termId,
+					date: cycle ? defaultBookingWeekStartDate(cycle) : currentLocalDate()
+				},
+				{ signal }
+			);
 			if (!timetableRequest.isCurrent(revision)) return;
 			timetableEntries = entries;
 			loadedTimetableCycleId = contextKey;

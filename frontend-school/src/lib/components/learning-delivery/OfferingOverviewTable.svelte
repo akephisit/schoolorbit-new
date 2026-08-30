@@ -90,10 +90,7 @@
 	function courseWorkloadSummary(item: LearningOfferingOverviewItem) {
 		if (item.offering.snapshot.kind !== 'course') return '';
 		const snapshot = item.offering.snapshot;
-		if (snapshot.weeklyPeriodTarget === snapshot.standardPeriodsPerWeek) {
-			return `ตามหลักสูตรและจัดจริง ${snapshot.standardPeriodsPerWeek} คาบ/สัปดาห์`;
-		}
-		return `ตามหลักสูตร ${snapshot.standardPeriodsPerWeek} · จัดจริงภาคเรียนนี้ ${snapshot.weeklyPeriodTarget} คาบ/สัปดาห์`;
+		return `ตามหลักสูตร ${snapshot.standardPeriodsPerWeek} คาบ/สัปดาห์`;
 	}
 </script>
 

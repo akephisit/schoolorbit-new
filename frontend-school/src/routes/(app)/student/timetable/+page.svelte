@@ -8,6 +8,7 @@
 		type AcademicContextOptionsResponse
 	} from '$lib/api/academic-context';
 	import {
+		currentLocalDate,
 		getMyTimetable,
 		periodsFromTimetableEntries,
 		type TimetableEntry,
@@ -91,7 +92,10 @@
 		loading = true;
 		errorMessage = '';
 		try {
-			const loadedEntries = await getMyTimetable({ academicTermId: termId });
+			const loadedEntries = await getMyTimetable({
+				academicTermId: termId,
+				date: currentLocalDate()
+			});
 			if (current !== revision) return;
 			periods = periodsFromTimetableEntries(loadedEntries);
 			entries = loadedEntries;

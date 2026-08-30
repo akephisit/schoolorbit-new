@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import {
@@ -11,7 +12,9 @@
 		createTimetableTemplateFromCurrent,
 		deleteTimetableTemplate,
 		listTimetableTemplates,
-		type TimetableTemplate
+		listTimetableVersions,
+		type TimetableTemplate,
+		type TimetableVersion
 	} from '$lib/api/timetable';
 	import { PageShell } from '$lib/components/app-layout';
 	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
@@ -28,7 +31,10 @@
 	const academicContext = getAcademicContextStore();
 	const academicTermId = $derived($academicContext.selected.academicTermId);
 	let templates = $state<TimetableTemplate[]>([]);
-	let loading = $state(false);
+	let versions = $state<TimetableVersion[]>([]);
+	let selectedVersion = $state.raw<TimetableVersion | null>(null);
+	let versionSelectValue = $state('');
+	let loading = $state(true);
 	let creating = $state(false);
 	let applying = $state(false);
 	let clearing = $state(false);
@@ -49,15 +55,64 @@
 		)
 	);
 	const canManage = $derived($can.has(PERMISSIONS.LEARNING_OFFERING_MANAGE_SCHOOL));
+	const canEditSelected = $derived(canManage && selectedVersion?.status === 'draft');
 	const hasDirtyDraft = $derived(
 		showCreateDialog && Boolean(createName.trim() || createDescription.trim())
 	);
 
-	async function loadTemplates(): Promise<void> {
+	function selectPreferredVersion(loadedVersions: TimetableVersion[]): TimetableVersion | null {
+		const requestedId = page.url.searchParams.get('timetableVersionId');
+		const explicit = loadedVersions.find((version) => version.id === requestedId);
+		if (explicit) return explicit;
+		return (
+			loadedVersions.find(
+				(version) => version.status === 'published' && version.displayState === 'current'
+			) ??
+			loadedVersions.find(
+				(version) => version.status === 'published' && version.displayState === 'upcoming'
+			) ??
+			loadedVersions.find((version) => version.status === 'draft') ??
+			null
+		);
+	}
+
+	function versionLabel(version: TimetableVersion): string {
+		const status =
+			version.status === 'draft'
+				? 'แบบร่าง'
+				: version.status === 'published'
+					? 'เผยแพร่แล้ว'
+					: 'ยกเลิกแล้ว';
+		return `${status} · เริ่ม ${version.effectiveFrom}`;
+	}
+
+	function syncVersionUrl(versionId: string): void {
+		if (page.url.searchParams.get('timetableVersionId') === versionId) return;
+		const nextUrl = new URL(page.url);
+		nextUrl.searchParams.set('timetableVersionId', versionId);
+		window.history.replaceState(window.history.state, '', nextUrl);
+	}
+
+	function changeVersion(versionId: string): void {
+		const version = versions.find((item) => item.id === versionId);
+		if (!version) return;
+		selectedVersion = version;
+		versionSelectValue = version.id;
+		syncVersionUrl(version.id);
+	}
+
+	async function loadTemplates(termId: string): Promise<void> {
 		loading = true;
 		errorMessage = '';
 		try {
-			templates = await listTimetableTemplates();
+			const loadedTemplates = await listTimetableTemplates();
+			const loadedVersions = await listTimetableVersions(termId);
+			const preferredVersion = selectPreferredVersion(loadedVersions);
+			templates = loadedTemplates;
+			versions = loadedVersions;
+			selectedVersion = preferredVersion;
+			versionSelectValue = preferredVersion?.id ?? '';
+			if (preferredVersion) syncVersionUrl(preferredVersion.id);
 		} catch (error) {
 			errorMessage = error instanceof Error ? error.message : 'โหลดแม่แบบตารางสอนไม่สำเร็จ';
 		} finally {
@@ -66,11 +121,12 @@
 	}
 
 	async function handleCreate(): Promise<void> {
-		if (!academicTermId || !createName.trim()) return;
+		if (!academicTermId || !selectedVersion || !createName.trim()) return;
 		creating = true;
 		try {
 			const created = await createTimetableTemplateFromCurrent({
 				academicTermId,
+				timetableVersionId: selectedVersion.id,
 				name: createName.trim(),
 				description: createDescription.trim() || null,
 				entryTypes: null
@@ -106,10 +162,13 @@
 	}
 
 	async function handleApply(): Promise<void> {
-		if (!academicTermId || !applyTarget) return;
+		if (!academicTermId || !selectedVersion || !canEditSelected || !applyTarget) return;
 		applying = true;
 		try {
-			const result = await applyTimetableTemplate(applyTarget.id, { academicTermId });
+			const result = await applyTimetableTemplate(applyTarget.id, {
+				academicTermId,
+				timetableVersionId: selectedVersion.id
+			});
 			showApplyDialog = false;
 			applyTarget = null;
 			toast.success(`นำแม่แบบไปใช้แล้ว ${result.applied} คาบ`);
@@ -121,7 +180,7 @@
 	}
 
 	async function handleClear(): Promise<void> {
-		if (!academicTermId) return;
+		if (!academicTermId || !selectedVersion || !canEditSelected) return;
 		const entryTypes =
 			clearMode === 'all'
 				? ['BREAK', 'HOMEROOM', 'ACTIVITY', 'ACADEMIC', 'COURSE']
@@ -130,7 +189,11 @@
 					: ['BREAK', 'HOMEROOM', 'ACTIVITY', 'ACADEMIC'];
 		clearing = true;
 		try {
-			const removed = await clearTimetable({ academicTermId, entryTypes });
+			const removed = await clearTimetable({
+				academicTermId,
+				timetableVersionId: selectedVersion.id,
+				entryTypes
+			});
 			showClearDialog = false;
 			toast.success(`ล้างออกจากตารางแล้ว ${removed.length} คาบ`);
 		} catch (error) {
@@ -149,8 +212,17 @@
 			'timetable-template-draft',
 			() => hasDirtyDraft
 		);
-		void loadTemplates();
-		return unregisterDirty;
+		let loadedTermId = '';
+		const unsubscribeContext = academicContext.subscribe((state) => {
+			const termId = state.selected.academicTermId ?? '';
+			if (!termId || termId === loadedTermId) return;
+			loadedTermId = termId;
+			void loadTemplates(termId);
+		});
+		return () => {
+			unsubscribeContext();
+			unregisterDirty();
+		};
 	});
 </script>
 
@@ -160,10 +232,12 @@
 	backHref="/staff/academic/timetable"
 >
 	{#snippet actions()}
-		{#if canManage && academicTermId}
+		{#if canManage && academicTermId && selectedVersion}
 			<div class="flex flex-wrap gap-2">
-				<Button variant="outline" onclick={() => (showClearDialog = true)}
-					><Eraser /> ล้างตาราง</Button
+				<Button
+					variant="outline"
+					disabled={!canEditSelected}
+					onclick={() => (showClearDialog = true)}><Eraser /> ล้างตาราง</Button
 				>
 				<Button onclick={() => (showCreateDialog = true)}><Plus /> สร้างจากภาคนี้</Button>
 			</div>
@@ -190,7 +264,13 @@
 			title="โหลดแม่แบบไม่สำเร็จ"
 			description={errorMessage}
 			actionLabel="ลองอีกครั้ง"
-			onaction={loadTemplates}
+			onaction={() => academicTermId && loadTemplates(academicTermId)}
+		/>
+	{:else if versions.length === 0}
+		<PageState
+			variant="empty"
+			title="ยังไม่มีรุ่นตารางสอน"
+			description="สร้างรุ่นตารางสอนของภาคเรียนนี้ก่อนใช้แม่แบบ"
 		/>
 	{:else if templates.length === 0}
 		<PageState
@@ -200,34 +280,62 @@
 			onaction={canManage ? () => (showCreateDialog = true) : undefined}
 		/>
 	{:else}
-		<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-			{#each templates as template (template.id)}
-				<Card.Root>
-					<Card.Header>
-						<Card.Title>{template.name}</Card.Title>
-						<Card.Description>{template.description ?? 'ไม่มีคำอธิบาย'}</Card.Description>
-					</Card.Header>
-					<Card.Content>
-						<p class="text-muted-foreground text-xs">สร้างเมื่อ {formatDate(template.createdAt)}</p>
-					</Card.Content>
-					{#if canManage}
-						<Card.Footer class="gap-2">
-							<Button class="flex-1" onclick={() => openApply(template)}
-								><Play /> ใช้กับภาคนี้</Button
-							>
-							<LoadingButton
-								variant="ghost"
-								size="icon"
-								loading={deletingTemplateId === template.id}
-								loadingLabel=""
-								aria-label={`ลบ ${template.name}`}
-								onclick={() => handleDelete(template)}
-								><Trash2 class="text-destructive" /></LoadingButton
-							>
-						</Card.Footer>
-					{/if}
-				</Card.Root>
-			{/each}
+		<div class="space-y-4">
+			<Card.Root class="gap-0 py-0">
+				<Card.Content class="grid gap-3 p-4 sm:grid-cols-[1fr_20rem] sm:items-center">
+					<div>
+						<p class="font-medium">รุ่นตารางเป้าหมาย</p>
+						<p class="mt-1 text-xs text-muted-foreground">
+							{selectedVersion?.status === 'draft'
+								? 'แบบร่างนี้รับการนำแม่แบบไปใช้และล้างตารางได้'
+								: 'รุ่นที่เผยแพร่แล้วใช้สร้างแม่แบบได้ แต่แก้ไขตารางไม่ได้'}
+						</p>
+					</div>
+					<Select.Root type="single" bind:value={versionSelectValue} onValueChange={changeVersion}>
+						<Select.Trigger class="w-full" aria-label="เลือกรุ่นตารางเป้าหมาย">
+							{selectedVersion ? versionLabel(selectedVersion) : 'เลือกรุ่นตาราง'}
+						</Select.Trigger>
+						<Select.Content>
+							{#each versions as version (version.id)}
+								<Select.Item value={version.id}>{versionLabel(version)}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</Card.Content>
+			</Card.Root>
+			<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+				{#each templates as template (template.id)}
+					<Card.Root>
+						<Card.Header>
+							<Card.Title>{template.name}</Card.Title>
+							<Card.Description>{template.description ?? 'ไม่มีคำอธิบาย'}</Card.Description>
+						</Card.Header>
+						<Card.Content>
+							<p class="text-muted-foreground text-xs">
+								สร้างเมื่อ {formatDate(template.createdAt)}
+							</p>
+						</Card.Content>
+						{#if canManage}
+							<Card.Footer class="gap-2">
+								<Button
+									class="flex-1"
+									disabled={!canEditSelected}
+									onclick={() => openApply(template)}><Play /> ใช้กับภาคนี้</Button
+								>
+								<LoadingButton
+									variant="ghost"
+									size="icon"
+									loading={deletingTemplateId === template.id}
+									loadingLabel=""
+									aria-label={`ลบ ${template.name}`}
+									onclick={() => handleDelete(template)}
+									><Trash2 class="text-destructive" /></LoadingButton
+								>
+							</Card.Footer>
+						{/if}
+					</Card.Root>
+				{/each}
+			</div>
 		</div>
 	{/if}
 </PageShell>

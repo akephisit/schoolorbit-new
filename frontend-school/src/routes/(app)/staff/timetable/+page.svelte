@@ -3,6 +3,7 @@
 	import { toast } from 'svelte-sonner';
 	import { getAcademicContextStore } from '$lib/academic-context/store';
 	import {
+		currentLocalDate,
 		getMyTimetable,
 		periodsFromTimetableEntries,
 		type TimetableEntry,
@@ -79,7 +80,10 @@
 		loadedSelectionKey = '';
 		errorMessage = '';
 		try {
-			const loaded = await getMyTimetable({ academicTermId: termId });
+			const loaded = await getMyTimetable({
+				academicTermId: termId,
+				date: currentLocalDate()
+			});
 			if (current === revision) {
 				periods = periodsFromTimetableEntries(loaded);
 				entries = loaded;

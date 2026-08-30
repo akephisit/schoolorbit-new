@@ -117,11 +117,28 @@ test('delivery workload separates the official standard from the current-term ta
 		'src/lib/components/learning-delivery/OfferingOverviewTable.svelte'
 	);
 
-	assert.match(page, /updateLearningOffering/);
-	for (const source of [page, homerooms, table]) {
+	assert.doesNotMatch(page, /weeklyPeriodTarget\s*:/);
+	assert.match(page, /selectedTimetableTarget/);
+	for (const source of [page, homerooms]) {
 		assert.match(source, /ตามหลักสูตร/);
 		assert.match(source, /จัดจริงภาคเรียนนี้/);
 	}
+	assert.match(table, /ตามหลักสูตร/);
+	assert.doesNotMatch(table, /snapshot\.weeklyPeriodTarget/);
+});
+
+test('published learning groups keep teacher names visible without mutation controls', async () => {
+	const page = await readProjectFile(
+		'src/routes/(app)/staff/academic/delivery/[offeringId]/+page.svelte'
+	);
+	const editor = await readProjectFile(
+		'src/lib/components/learning-delivery/LearningGroupEditor.svelte'
+	);
+
+	assert.match(page, /teachersLocked/);
+	assert.match(editor, /teachersLocked/);
+	assert.match(editor, /teacherAssignments/);
+	assert.match(editor, /ไม่สามารถเปลี่ยนครูผู้สอนได้/);
 });
 
 test('stale roster refresh replaces the group version and preview atomically', async () => {

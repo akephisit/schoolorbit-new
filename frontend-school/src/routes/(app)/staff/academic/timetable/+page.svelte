@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import type { Cell, Row, Workbook, Worksheet } from 'exceljs';
 	import { toast } from 'svelte-sonner';
@@ -24,10 +25,13 @@
 	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
 	import {
 		createTimetableEntry,
+		currentLocalDate,
 		deleteTimetableEntry,
 		listTimetableEntries,
+		listTimetableVersions,
 		updateTimetableEntry,
-		type TimetableEntry
+		type TimetableEntry,
+		type TimetableVersion
 	} from '$lib/api/timetable';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
@@ -60,6 +64,7 @@
 	import {
 		CalendarClock,
 		FileSpreadsheet,
+		History,
 		Loader2,
 		Plus,
 		RotateCcw,
@@ -130,8 +135,10 @@
 	let homerooms = $state<Homeroom[]>([]);
 	let rooms = $state<RoomLookupItem[]>([]);
 	let entries = $state<TimetableEntry[]>([]);
+	let versions = $state<TimetableVersion[]>([]);
+	let selectedVersion = $state.raw<TimetableVersion | null>(null);
+	let versionSelectValue = $state('');
 	let selectedScheduleId = $state('');
-	let scheduleSelectValue = $state('');
 	let viewKind = $state<ViewKind>('learning_group');
 	let selectedTargetId = $state('');
 	let targetSelectValue = $state('');
@@ -169,7 +176,11 @@
 			PERMISSIONS.LEARNING_OFFERING_MANAGE_ASSIGNED
 		)
 	);
+	const canEditSelected = $derived(canManage && selectedVersion?.status === 'draft');
 	const selectedEntry = $derived(entries.find((entry) => entry.id === selectedEntryId) ?? null);
+	const selectedSchedule = $derived(
+		schedules.find((schedule) => schedule.id === selectedScheduleId) ?? null
+	);
 	const groupsWithoutTeachers = $derived(
 		groups.filter((group) => group.teacherAssignments.length === 0).length
 	);
@@ -222,6 +233,52 @@
 		);
 	}
 
+	function selectPreferredVersion(loadedVersions: TimetableVersion[]): TimetableVersion | null {
+		const requestedId = page.url.searchParams.get('timetableVersionId');
+		const explicit = loadedVersions.find((version) => version.id === requestedId);
+		if (explicit) return explicit;
+
+		const today = currentLocalDate();
+		const current = loadedVersions.find(
+			(version) =>
+				version.status === 'published' &&
+				(version.displayState === 'current' ||
+					(version.effectiveFrom <= today &&
+						(!version.effectiveUntil || version.effectiveUntil >= today)))
+		);
+		if (current) return current;
+
+		const upcoming = loadedVersions
+			.filter(
+				(version) =>
+					version.status === 'published' &&
+					(version.displayState === 'upcoming' || version.effectiveFrom > today)
+			)
+			.toSorted((left, right) => left.effectiveFrom.localeCompare(right.effectiveFrom))[0];
+		if (upcoming) return upcoming;
+
+		return loadedVersions.find((version) => version.status === 'draft') ?? null;
+	}
+
+	function versionStatusLabel(version: TimetableVersion): string {
+		if (version.status === 'draft') return 'แบบร่าง';
+		if (version.status === 'cancelled') return 'ยกเลิกแล้ว';
+		if (version.displayState === 'current') return 'เผยแพร่แล้ว · กำลังใช้';
+		if (version.displayState === 'upcoming') return 'เผยแพร่แล้ว · รอเริ่มใช้';
+		return 'เผยแพร่แล้ว · ประวัติ';
+	}
+
+	function versionPeriodLabel(version: TimetableVersion): string {
+		return `${version.effectiveFrom} – ${version.effectiveUntil ?? 'ต่อเนื่อง'}`;
+	}
+
+	function syncVersionUrl(versionId: string): void {
+		if (page.url.searchParams.get('timetableVersionId') === versionId) return;
+		const nextUrl = new URL(page.url);
+		nextUrl.searchParams.set('timetableVersionId', versionId);
+		window.history.replaceState(window.history.state, '', nextUrl);
+	}
+
 	async function loadPeriods(
 		scheduleId: string,
 		signal?: AbortSignal
@@ -236,7 +293,7 @@
 		loading = true;
 		errorMessage = '';
 		try {
-			const [collections, loadedSchedules, loadedRooms, loadedEntries] = await Promise.all([
+			const [collections, loadedSchedules, loadedRooms, loadedVersions] = await Promise.all([
 				loadTimetableCollections(
 					{ listLearningOfferings, listLearningGroupsForTerm, listHomerooms },
 					termId,
@@ -245,23 +302,34 @@
 				),
 				listBellSchedules(yearId, { signal }),
 				lookupRooms({ activeOnly: true, limit: 500 }, { signal }),
-				listTimetableEntries({ academicTermId: termId }, { signal })
+				listTimetableVersions(termId, { signal })
 			]);
-			const preferredSchedule =
-				loadedSchedules.find((schedule) => schedule.isDefault) ?? loadedSchedules[0];
+			const preferredVersion = selectPreferredVersion(loadedVersions);
+			const preferredSchedule = loadedSchedules.find(
+				(schedule) => schedule.id === preferredVersion?.bellScheduleId
+			);
 			const loadedPeriods = preferredSchedule
 				? await loadPeriods(preferredSchedule.id, signal)
 				: [];
+			const loadedEntries = preferredVersion
+				? await listTimetableEntries(
+						{ academicTermId: termId, timetableVersionId: preferredVersion.id },
+						{ signal }
+					)
+				: [];
 			if (!request.isCurrent(revision)) return;
 			schedules = loadedSchedules;
+			versions = loadedVersions;
+			selectedVersion = preferredVersion;
+			versionSelectValue = preferredVersion?.id ?? '';
 			selectedScheduleId = preferredSchedule?.id ?? '';
-			scheduleSelectValue = selectedScheduleId;
 			periods = loadedPeriods;
 			offerings = collections.offerings;
 			groups = collections.groups;
 			homerooms = collections.homerooms;
 			rooms = loadedRooms;
 			entries = loadedEntries;
+			if (preferredVersion) syncVersionUrl(preferredVersion.id);
 			viewKind = groups.length > 0 ? 'learning_group' : 'homeroom';
 			selectedTargetId = groups[0]?.id ?? homerooms[0]?.id ?? '';
 			targetSelectValue = selectedTargetId;
@@ -277,30 +345,42 @@
 	}
 
 	async function refreshEntries(): Promise<void> {
-		if (!academicTermId) return;
+		if (!academicTermId || !selectedVersion) return;
 		const { revision, signal } = request.begin();
 		try {
-			const loadedEntries = await listTimetableEntries({ academicTermId }, { signal });
+			const loadedEntries = await listTimetableEntries(
+				{ academicTermId, timetableVersionId: selectedVersion.id },
+				{ signal }
+			);
 			if (request.isCurrent(revision)) entries = loadedEntries;
 		} catch (error) {
 			if (!isAbortError(error)) throw error;
 		}
 	}
 
-	async function changeSchedule(nextId: string): Promise<void> {
+	async function changeVersion(nextId: string): Promise<void> {
 		if (dirty) {
-			scheduleSelectValue = selectedScheduleId;
-			toast.warning('กรุณาบันทึกหรือยกเลิกแบบร่างก่อนเปลี่ยนตารางเวลา');
+			versionSelectValue = selectedVersion?.id ?? '';
+			toast.warning('กรุณาบันทึกหรือยกเลิกแบบร่างก่อนเปลี่ยนรุ่นตารางสอน');
 			return;
 		}
+		const nextVersion = versions.find((version) => version.id === nextId);
+		if (!nextVersion || !academicTermId) return;
 		const { revision, signal } = request.begin();
 		loading = true;
 		try {
-			const loadedPeriods = await loadPeriods(nextId, signal);
+			const loadedPeriods = await loadPeriods(nextVersion.bellScheduleId, signal);
+			const loadedEntries = await listTimetableEntries(
+				{ academicTermId, timetableVersionId: nextVersion.id },
+				{ signal }
+			);
 			if (!request.isCurrent(revision)) return;
-			selectedScheduleId = nextId;
-			scheduleSelectValue = nextId;
+			selectedVersion = nextVersion;
+			versionSelectValue = nextVersion.id;
+			selectedScheduleId = nextVersion.bellScheduleId;
 			periods = loadedPeriods;
+			entries = loadedEntries;
+			syncVersionUrl(nextVersion.id);
 			resetForm();
 		} catch (error) {
 			if (isAbortError(error)) return;
@@ -308,7 +388,7 @@
 				errorMessage = error instanceof Error ? error.message : 'โหลดคาบเรียนไม่สำเร็จ';
 		} finally {
 			if (request.isCurrent(revision)) {
-				scheduleSelectValue = selectedScheduleId;
+				versionSelectValue = selectedVersion?.id ?? '';
 				loading = false;
 			}
 		}
@@ -349,7 +429,7 @@
 	}
 
 	function startAtCell(day: string, periodId: string): void {
-		if (!canManage) return;
+		if (!canEditSelected) return;
 		resetForm();
 		formDay = day;
 		formPeriodId = periodId;
@@ -372,12 +452,20 @@
 	}
 
 	async function saveEntry(): Promise<void> {
-		if (!academicTermId || !selectedTargetId || !formPeriodId) return;
+		if (
+			!academicTermId ||
+			!selectedVersion ||
+			!canEditSelected ||
+			!selectedTargetId ||
+			!formPeriodId
+		)
+			return;
 		busy = true;
 		errorMessage = '';
 		try {
 			if (selectedEntry) {
 				await updateTimetableEntry(selectedEntry.id, {
+					timetableVersionId: selectedVersion.id,
 					rowVersion: selectedEntry.rowVersion,
 					dayOfWeek: formDay,
 					bellSchedulePeriodId: formPeriodId,
@@ -391,6 +479,7 @@
 				const selectedGroup = groups.find((group) => group.id === selectedTargetId);
 				await createTimetableEntry({
 					academicTermId,
+					timetableVersionId: selectedVersion.id,
 					learningGroupId: viewKind === 'learning_group' ? selectedTargetId : null,
 					homeroomId: viewKind === 'homeroom' ? selectedTargetId : null,
 					dayOfWeek: formDay,
@@ -414,10 +503,10 @@
 	}
 
 	async function removeEntry(): Promise<void> {
-		if (!selectedEntry) return;
+		if (!selectedEntry || !selectedVersion || !canEditSelected) return;
 		busy = true;
 		try {
-			await deleteTimetableEntry(selectedEntry.id, selectedEntry.rowVersion);
+			await deleteTimetableEntry(selectedEntry.id, selectedEntry.rowVersion, selectedVersion.id);
 			await refreshEntries();
 			resetForm();
 			toast.success('ลบคาบออกจากตารางแล้ว');
@@ -676,8 +765,65 @@
 			actionLabel="ลองอีกครั้ง"
 			onaction={() => loadWorkspace(academicTermId, academicYearId)}
 		/>
+	{:else if versions.length === 0}
+		<PageState
+			variant="empty"
+			title="ยังไม่มีรุ่นตารางสอน"
+			description="ต้องเตรียมและเผยแพร่รุ่นตารางสอนของภาคเรียนนี้ก่อนจึงจะแสดงตารางได้"
+		/>
 	{:else}
 		<div class="space-y-5">
+			<Card.Root class="overflow-hidden border-primary/20 bg-primary/[0.025] py-0">
+				<Card.Content class="grid gap-4 p-4 lg:grid-cols-[minmax(15rem,1fr)_auto] lg:items-center">
+					<div class="flex min-w-0 items-start gap-3">
+						<div
+							class="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
+						>
+							<History class="size-4" />
+						</div>
+						<div class="min-w-0">
+							<div class="flex flex-wrap items-center gap-2">
+								<p class="font-semibold">รุ่นตารางสอน</p>
+								{#if selectedVersion}
+									<Badge variant={selectedVersion.status === 'draft' ? 'secondary' : 'default'}>
+										{versionStatusLabel(selectedVersion)}
+									</Badge>
+								{/if}
+							</div>
+							<p class="mt-1 text-xs text-muted-foreground">
+								{#if selectedVersion}
+									มีผล {versionPeriodLabel(selectedVersion)} · {selectedVersion.status === 'draft'
+										? 'แก้ไขคาบได้'
+										: 'อ่านอย่างเดียว ข้อมูลที่เผยแพร่แล้วไม่ถูกแก้ย้อนหลัง'}
+								{:else}
+									เลือกรุ่นตารางสอน
+								{/if}
+							</p>
+						</div>
+					</div>
+					<div class="w-full lg:w-80">
+						<Select.Root
+							type="single"
+							bind:value={versionSelectValue}
+							onValueChange={changeVersion}
+						>
+							<Select.Trigger class="w-full bg-background" aria-label="เลือกรุ่นตารางสอน">
+								{selectedVersion
+									? `${versionStatusLabel(selectedVersion)} · เริ่ม ${selectedVersion.effectiveFrom}`
+									: 'เลือกรุ่นตารางสอน'}
+							</Select.Trigger>
+							<Select.Content>
+								{#each versions as version (version.id)}
+									<Select.Item value={version.id}>
+										{versionStatusLabel(version)} · {versionPeriodLabel(version)}
+									</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					</div>
+				</Card.Content>
+			</Card.Root>
+
 			{#if groups.length === 0}
 				<AcademicPrerequisiteNotice prerequisite={missingGroupsPrerequisite} />
 			{/if}
@@ -694,22 +840,12 @@
 			<Card.Root class="gap-0 py-0">
 				<Card.Content class="grid gap-4 pt-6 lg:grid-cols-[14rem_auto_minmax(16rem,1fr)]">
 					<div class="space-y-2">
-						<Label for="timetable-schedule">ตารางเวลา</Label>
-						<Select.Root
-							type="single"
-							bind:value={scheduleSelectValue}
-							onValueChange={changeSchedule}
-						>
-							<Select.Trigger id="timetable-schedule" class="w-full">
-								{@const schedule = schedules.find((item) => item.id === selectedScheduleId)}
-								{schedule ? `${schedule.code} · ${schedule.name}` : 'เลือกตารางเวลา'}
-							</Select.Trigger>
-							<Select.Content>
-								{#each schedules as schedule (schedule.id)}
-									<Select.Item value={schedule.id}>{schedule.code} · {schedule.name}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
+						<Label>ตารางเวลา</Label>
+						<div class="flex h-9 items-center rounded-md border bg-muted/30 px-3 text-sm">
+							{selectedSchedule
+								? `${selectedSchedule.code} · ${selectedSchedule.name}`
+								: 'ไม่พบตารางเวลา'}
+						</div>
 					</div>
 					<div class="space-y-2">
 						<Label>มุมมอง</Label>
@@ -774,7 +910,11 @@
 						<Card.Title class="flex items-center gap-2"
 							><CalendarClock /> ตารางรายสัปดาห์</Card.Title
 						>
-						<Card.Description>คลิกช่องว่างเพื่อเพิ่มคาบ หรือคลิกคาบเดิมเพื่อแก้ไข</Card.Description>
+						<Card.Description>
+							{canEditSelected
+								? 'คลิกช่องว่างเพื่อเพิ่มคาบ หรือคลิกคาบเดิมเพื่อแก้ไข'
+								: 'รุ่นที่เผยแพร่แล้วเป็นข้อมูลอ่านอย่างเดียว'}
+						</Card.Description>
 					</Card.Header>
 					<Card.Content class="overflow-x-auto">
 						<table class="w-full min-w-[760px] border-separate border-spacing-0 text-sm">
@@ -804,7 +944,7 @@
 													<button
 														type="button"
 														class="hover:bg-muted text-muted-foreground flex size-full min-h-20 items-center justify-center rounded-md border border-dashed"
-														disabled={!canManage || !selectedTargetId}
+														disabled={!canEditSelected || !selectedTargetId}
 														onclick={() => startAtCell(day.value, period.id)}
 														title="เพิ่มคาบ"><Plus class="size-4" /></button
 													>
@@ -843,7 +983,9 @@
 					<Card.Header>
 						<div class="flex items-center justify-between gap-2">
 							<div>
-								<Card.Title>{selectedEntry ? 'แก้ไขคาบ' : 'เพิ่มคาบ'}</Card.Title>
+								<Card.Title>
+									{canEditSelected ? (selectedEntry ? 'แก้ไขคาบ' : 'เพิ่มคาบ') : 'รายละเอียดคาบ'}
+								</Card.Title>
 								<Card.Description
 									>{selectedEntry
 										? `เวอร์ชัน ${selectedEntry.rowVersion}`
@@ -860,7 +1002,7 @@
 								<Select.Root
 									type="single"
 									bind:value={formDay}
-									disabled={!canManage}
+									disabled={!canEditSelected}
 									onValueChange={markDirty}
 								>
 									<Select.Trigger id="entry-day" class="w-full">
@@ -878,7 +1020,7 @@
 								<Select.Root
 									type="single"
 									bind:value={formPeriodId}
-									disabled={!canManage}
+									disabled={!canEditSelected}
 									onValueChange={markDirty}
 								>
 									<Select.Trigger id="entry-period" class="w-full">
@@ -900,7 +1042,7 @@
 							<Select.Root
 								type="single"
 								bind:value={formEntryType}
-								disabled={!canManage || Boolean(selectedEntry)}
+								disabled={!canEditSelected || Boolean(selectedEntry)}
 								onValueChange={markDirty}
 							>
 								<Select.Trigger id="entry-type" class="w-full">
@@ -919,7 +1061,7 @@
 							<Select.Root
 								type="single"
 								value={formRoomId || NO_ROOM_VALUE}
-								disabled={!canManage}
+								disabled={!canEditSelected}
 								onValueChange={(value) => {
 									formRoomId = value === NO_ROOM_VALUE ? '' : value;
 									markDirty();
@@ -944,7 +1086,7 @@
 							<Input
 								id="entry-title"
 								bind:value={formTitle}
-								disabled={!canManage}
+								disabled={!canEditSelected}
 								oninput={markDirty}
 							/>
 						</div>
@@ -953,11 +1095,11 @@
 							<Input
 								id="entry-note"
 								bind:value={formNote}
-								disabled={!canManage}
+								disabled={!canEditSelected}
 								oninput={markDirty}
 							/>
 						</div>
-						{#if canManage}
+						{#if canEditSelected}
 							<div class="flex flex-wrap gap-2 pt-2">
 								<Button
 									disabled={busy || !dirty || !selectedTargetId || !formPeriodId}

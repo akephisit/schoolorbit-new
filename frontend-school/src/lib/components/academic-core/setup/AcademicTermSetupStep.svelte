@@ -50,7 +50,7 @@
 	let termType = $state<AcademicTermType>('regular');
 	let customName = $state('');
 	let startDate = $state('');
-	let endDate = $state('');
+	let plannedEndDate = $state('');
 	let bellScheduleId = $derived(
 		schedules.find((schedule) => schedule.isDefault)?.id ?? schedules[0]?.id ?? ''
 	);
@@ -73,7 +73,7 @@
 		termType = 'regular';
 		customName = '';
 		startDate = '';
-		endDate = '';
+		plannedEndDate = '';
 		bellScheduleId = schedules.find((schedule) => schedule.isDefault)?.id ?? schedules[0]?.id ?? '';
 		includedInYearResult = true;
 		blocksYearClosure = true;
@@ -85,7 +85,7 @@
 		termType = term.termType;
 		customName = customNameFromStored(term.name, standardTermName(term.termType, term.sequence));
 		startDate = term.startDate;
-		endDate = term.endDate;
+		plannedEndDate = term.plannedEndDate ?? '';
 		bellScheduleId = term.bellScheduleId;
 		includedInYearResult = term.includedInYearResult;
 		blocksYearClosure = term.blocksYearClosure;
@@ -96,19 +96,19 @@
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
 		errorMessage = '';
-		if (!startDate || !endDate || !bellScheduleId) {
-			errorMessage = 'กรุณาเลือกวันที่และตารางเวลาให้ครบ';
+		if (!startDate || !bellScheduleId) {
+			errorMessage = 'กรุณาเลือกวันเริ่มและตารางเวลาให้ครบ';
 			return;
 		}
-		if (startDate > endDate) {
-			errorMessage = 'วันสิ้นสุดภาคเรียนต้องไม่อยู่ก่อนวันเริ่ม';
+		if (plannedEndDate && startDate > plannedEndDate) {
+			errorMessage = 'วันที่คาดว่าจะปิดภาคเรียนต้องไม่อยู่ก่อนวันเริ่ม';
 			return;
 		}
 		const common = {
 			termType,
 			customName: customName.trim() || null,
 			startDate,
-			endDate,
+			plannedEndDate: plannedEndDate || null,
 			includedInYearResult,
 			blocksYearClosure,
 			bellScheduleId
@@ -139,7 +139,9 @@
 						>
 					</div>
 					<p class="mt-1 text-xs text-muted-foreground">
-						{term.startDate} – {term.endDate} · {schedules.find(
+						เริ่ม {term.startDate} · คาดว่าจะปิด {term.plannedEndDate ?? 'ยังไม่กำหนด'}
+						{#if term.closedOn}
+							· ปิดจริง {term.closedOn}{/if} · {schedules.find(
 							(schedule) => schedule.id === term.bellScheduleId
 						)?.name ?? 'ไม่พบตารางเวลาที่อ้างอิง'}
 					</p>
@@ -205,13 +207,15 @@
 				/>
 			</div>
 			<div class="space-y-1.5">
-				<Label for="term-end">วันสิ้นสุดภาคเรียน</Label>
+				<Label for="term-end">วันที่คาดว่าจะปิดภาคเรียน (ไม่บังคับ)</Label>
 				<DatePicker
 					id="term-end"
-					bind:value={endDate}
-					ariaLabel="เลือกวันสิ้นสุดภาคเรียน"
-					required
+					bind:value={plannedEndDate}
+					ariaLabel="เลือกวันที่คาดว่าจะปิดภาคเรียน"
 				/>
+				<p class="text-xs text-muted-foreground">
+					เว้นว่างได้ ระบบจะบันทึกวันที่ปิดจริงเมื่อดำเนินการปิดภาคเรียน
+				</p>
 			</div>
 		</div>
 

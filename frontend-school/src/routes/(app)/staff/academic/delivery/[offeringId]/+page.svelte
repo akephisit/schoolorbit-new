@@ -16,7 +16,6 @@
 		publishLearningOffering,
 		replaceLearningGroupHomerooms,
 		replaceLearningGroupTeachers,
-		updateLearningOffering,
 		updateLearningGroup,
 		type CreateLearningGroupRequest,
 		type DeliveryManagementOptions,
@@ -27,6 +26,11 @@
 		type RosterPreview,
 		type UpdateLearningGroupRequest
 	} from '$lib/api/learning-delivery';
+	import {
+		listTimetableVersions,
+		type TimetableVersion,
+		type TimetableVersionTarget
+	} from '$lib/api/timetable';
 	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
@@ -35,8 +39,7 @@
 	import RosterPreviewPanel from '$lib/components/learning-delivery/RosterPreviewPanel.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
+	import * as Select from '$lib/components/ui/select';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import {
@@ -45,7 +48,6 @@
 		BookOpenCheck,
 		ClipboardList,
 		Pencil,
-		Save,
 		Send,
 		UsersRound
 	} from 'lucide-svelte';
@@ -57,6 +59,9 @@
 	let offering = $state.raw<LearningOffering | null>(null);
 	let groups = $state.raw<LearningGroup[]>([]);
 	let selectedGroup = $state.raw<LearningGroup | null>(null);
+	let timetableVersions = $state<TimetableVersion[]>([]);
+	let selectedTimetableVersion = $state.raw<TimetableVersion | null>(null);
+	let timetableVersionSelectValue = $state('');
 	let managementOptions = $state.raw<DeliveryManagementOptions | null>(null);
 	let rosterPreview = $state.raw<RosterPreview | null>(null);
 	let loading = $state(true);
@@ -64,14 +69,12 @@
 	let optionsLoading = $state(false);
 	let rosterLoading = $state(false);
 	let publishing = $state(false);
-	let savingWeeklyPeriods = $state(false);
 	let initialized = $state(false);
 	let editorVisible = $state(false);
 	let rosterVisible = $state(false);
 	let rosterStale = $state(false);
 	let errorMessage = $state('');
 	let actionError = $state('');
-	let weeklyPeriodTargetDraft = $state('');
 
 	let canManage = $derived(
 		$can.hasAny(
@@ -82,6 +85,46 @@
 		)
 	);
 	let courseSnapshot = $derived(offering?.snapshot.kind === 'course' ? offering.snapshot : null);
+	let selectedTimetableTarget = $derived<TimetableVersionTarget | null>(
+		selectedTimetableVersion?.targets.find(
+			(target) => target.learningOfferingId === offering?.id
+		) ?? null
+	);
+
+	function preferredTimetableVersion(loadedVersions: TimetableVersion[]): TimetableVersion | null {
+		const requestedId = page.url.searchParams.get('timetableVersionId');
+		return (
+			loadedVersions.find((version) => version.id === requestedId) ??
+			loadedVersions.find(
+				(version) => version.status === 'published' && version.displayState === 'current'
+			) ??
+			loadedVersions.find(
+				(version) => version.status === 'published' && version.displayState === 'upcoming'
+			) ??
+			loadedVersions.find((version) => version.status === 'draft') ??
+			null
+		);
+	}
+
+	function timetableVersionLabel(version: TimetableVersion): string {
+		const status =
+			version.status === 'draft'
+				? 'แบบร่าง'
+				: version.status === 'published'
+					? 'เผยแพร่แล้ว'
+					: 'ยกเลิกแล้ว';
+		return `${status} · เริ่ม ${version.effectiveFrom}`;
+	}
+
+	function selectTimetableVersion(versionId: string): void {
+		const version = timetableVersions.find((item) => item.id === versionId);
+		if (!version) return;
+		selectedTimetableVersion = version;
+		timetableVersionSelectValue = version.id;
+		const nextUrl = new URL(page.url);
+		nextUrl.searchParams.set('timetableVersionId', version.id);
+		window.history.replaceState(window.history.state, '', nextUrl);
+	}
 
 	function offeringKindLabel(kind: LearningOffering['kind']) {
 		return kind === 'course' ? 'รายวิชา' : 'กิจกรรมพัฒนาผู้เรียน';
@@ -115,8 +158,13 @@
 	async function navigateToGroup(group: LearningGroup, replaceState = false) {
 		selectedGroup = group;
 		resetSelectedWorkspace();
+		const versionQuery = selectedTimetableVersion
+			? `&timetableVersionId=${encodeURIComponent(selectedTimetableVersion.id)}`
+			: '';
 		await goto(
-			resolve(`/staff/academic/delivery/${offeringId}?groupId=${encodeURIComponent(group.id)}`),
+			resolve(
+				`/staff/academic/delivery/${offeringId}?groupId=${encodeURIComponent(group.id)}${versionQuery}`
+			),
 			{ replaceState, keepFocus: true, noScroll: true }
 		);
 	}
@@ -127,6 +175,9 @@
 		errorMessage = '';
 		try {
 			const loadedOffering = await getLearningOffering(offeringId, { signal });
+			const loadedTimetableVersions = await listTimetableVersions(loadedOffering.academicTermId, {
+				signal
+			});
 			const loadedGroups = await listLearningGroups(offeringId, { signal });
 			const requestedGroupId = page.url.searchParams.get('groupId');
 			const targetGroup =
@@ -134,10 +185,9 @@
 			const loadedGroup = targetGroup ? await getLearningGroup(targetGroup.id, { signal }) : null;
 			if (!detailRequest.isCurrent(revision)) return;
 			offering = loadedOffering;
-			weeklyPeriodTargetDraft =
-				loadedOffering.snapshot.kind === 'course'
-					? String(loadedOffering.snapshot.weeklyPeriodTarget)
-					: '';
+			timetableVersions = loadedTimetableVersions;
+			selectedTimetableVersion = preferredTimetableVersion(loadedTimetableVersions);
+			timetableVersionSelectValue = selectedTimetableVersion?.id ?? '';
 			groups = loadedGroups.map((group) => (group.id === loadedGroup?.id ? loadedGroup : group));
 			selectedGroup = loadedGroup;
 			initialized = true;
@@ -230,6 +280,10 @@
 
 	async function replaceTeachers(request: ReplaceLearningGroupTeachersRequest) {
 		if (!selectedGroup) return;
+		if (selectedGroup.teachersLocked) {
+			actionError = 'เผยแพร่กลุ่มเรียนแล้ว ไม่สามารถเปลี่ยนครูผู้สอนได้';
+			return;
+		}
 		const updated = await replaceLearningGroupTeachers(selectedGroup.id, request);
 		updateGroupState(updated);
 	}
@@ -305,43 +359,6 @@
 			actionError = error instanceof Error ? error.message : 'เผยแพร่รายการเปิดสอนไม่สำเร็จ';
 		} finally {
 			publishing = false;
-		}
-	}
-
-	async function saveWeeklyPeriodTarget() {
-		if (!offering || offering.snapshot.kind !== 'course' || offering.status !== 'draft') return;
-		const parsedTarget = Number(weeklyPeriodTargetDraft);
-		if (!Number.isInteger(parsedTarget) || parsedTarget <= 0) {
-			actionError = 'คาบที่จัดจริงต่อสัปดาห์ต้องเป็นจำนวนเต็มมากกว่า 0';
-			return;
-		}
-		const ownerId = offering.owningOrganizationUnitId;
-		if (!ownerId) {
-			actionError = 'รายการเปิดสอนยังไม่มีหน่วยงานเจ้าของ จึงบันทึกจำนวนคาบไม่ได้';
-			return;
-		}
-
-		savingWeeklyPeriods = true;
-		actionError = '';
-		try {
-			const updated = await updateLearningOffering(offering.id, {
-				rowVersion: offering.rowVersion,
-				owningOrganizationUnitId: ownerId,
-				targets: offering.targets.map((target) => ({
-					targetKind: target.targetKind,
-					homeroomId: target.homeroomId ?? null,
-					gradeLevelId: target.gradeLevelId,
-					studyProgramId: target.studyProgramId
-				})),
-				weeklyPeriodTarget: parsedTarget
-			});
-			offering = updated;
-			weeklyPeriodTargetDraft =
-				updated.snapshot.kind === 'course' ? String(updated.snapshot.weeklyPeriodTarget) : '';
-		} catch (error) {
-			actionError = error instanceof Error ? error.message : 'บันทึกจำนวนคาบไม่สำเร็จ';
-		} finally {
-			savingWeeklyPeriods = false;
 		}
 	}
 
@@ -428,55 +445,60 @@
 						</div>
 					</div>
 				</div>
-				{#if courseSnapshot}
-					<div class="border-t border-primary/15 bg-primary/[0.045] px-5 py-4">
-						<div
-							class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1.35fr)] sm:items-center"
-						>
-							<div class="rounded-xl border border-primary/15 bg-background/80 px-4 py-3">
-								<p class="text-xs font-medium text-muted-foreground">ตามหลักสูตร</p>
+				<div class="border-t border-primary/15 bg-primary/[0.045] px-5 py-4">
+					<div
+						class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1.35fr)] sm:items-center"
+					>
+						<div class="rounded-xl border border-primary/15 bg-background/80 px-4 py-3">
+							<p class="text-xs font-medium text-muted-foreground">
+								{courseSnapshot ? 'ตามหลักสูตร' : 'ตามทะเบียนกิจกรรม'}
+							</p>
+							{#if courseSnapshot}
 								<p class="mt-1 font-mono text-lg font-semibold tabular-nums text-foreground">
 									{courseSnapshot.standardPeriodsPerWeek} คาบ/สัปดาห์
 								</p>
 								<p class="mt-0.5 text-xs text-muted-foreground">ค่ามาตรฐานของรหัสวิชา</p>
-							</div>
-							<div class="hidden text-primary sm:block" aria-hidden="true">
-								<ArrowRight class="size-5" />
-							</div>
-							<div class="rounded-xl border border-primary/25 bg-background px-4 py-3 shadow-sm">
-								{#if canManage && offering.status === 'draft'}
-									<Label for="weekly-period-target" class="text-xs text-muted-foreground">
-										จัดจริงภาคเรียนนี้
-									</Label>
-									<div class="mt-1.5 flex flex-wrap items-center gap-2">
-										<Input
-											id="weekly-period-target"
-											type="number"
-											min="1"
-											step="1"
-											bind:value={weeklyPeriodTargetDraft}
-											class="w-24 font-mono tabular-nums"
-										/>
-										<span class="text-sm text-muted-foreground">คาบ/สัปดาห์</span>
-										<Button
-											size="sm"
-											onclick={saveWeeklyPeriodTarget}
-											disabled={savingWeeklyPeriods}
-										>
-											<Save class="size-4" />
-											{savingWeeklyPeriods ? 'กำลังบันทึก' : 'บันทึกจำนวนคาบ'}
-										</Button>
-									</div>
-								{:else}
-									<p class="text-xs font-medium text-muted-foreground">จัดจริงภาคเรียนนี้</p>
-									<p class="mt-1 font-mono text-lg font-semibold tabular-nums text-primary">
-										{courseSnapshot.weeklyPeriodTarget} คาบ/สัปดาห์
-									</p>
-								{/if}
-							</div>
+							{:else}
+								<p class="mt-1 text-sm font-medium text-foreground">กิจกรรมไม่มีค่าคาบมาตรฐาน</p>
+								<p class="mt-0.5 text-xs text-muted-foreground">ใช้เป้าหมายของรุ่นตารางสอนโดยตรง</p>
+							{/if}
+						</div>
+						<div class="hidden text-primary sm:block" aria-hidden="true">
+							<ArrowRight class="size-5" />
+						</div>
+						<div class="rounded-xl border border-primary/25 bg-background px-4 py-3 shadow-sm">
+							<p class="text-xs font-medium text-muted-foreground">จัดจริงภาคเรียนนี้</p>
+							{#if timetableVersions.length > 0}
+								<Select.Root
+									type="single"
+									bind:value={timetableVersionSelectValue}
+									onValueChange={selectTimetableVersion}
+								>
+									<Select.Trigger class="mt-1.5 w-full" aria-label="เลือกรุ่นตารางสอน">
+										{selectedTimetableVersion
+											? timetableVersionLabel(selectedTimetableVersion)
+											: 'เลือกรุ่นตารางสอน'}
+									</Select.Trigger>
+									<Select.Content>
+										{#each timetableVersions as version (version.id)}
+											<Select.Item value={version.id}>{timetableVersionLabel(version)}</Select.Item>
+										{/each}
+									</Select.Content>
+								</Select.Root>
+							{/if}
+							<p class="mt-1 font-mono text-lg font-semibold tabular-nums text-primary">
+								{selectedTimetableTarget
+									? `${selectedTimetableTarget.weeklyPeriodTarget} คาบ/สัปดาห์`
+									: 'ยังไม่กำหนด'}
+							</p>
+							<p class="mt-0.5 text-xs text-muted-foreground">
+								{selectedTimetableVersion
+									? `รุ่นตารางเริ่มใช้ ${selectedTimetableVersion.effectiveFrom} · ${selectedTimetableVersion.status === 'draft' ? 'แบบร่าง' : 'เผยแพร่แล้ว'}`
+									: 'ยังไม่มีรุ่นตารางสอนที่ใช้อ้างอิง'}
+							</p>
 						</div>
 					</div>
-				{/if}
+				</div>
 			</section>
 
 			<LearningGroupList
@@ -498,7 +520,12 @@
 								<UsersRound class="size-5" />
 							</div>
 							<div class="min-w-0">
-								<h2 class="truncate font-semibold">{selectedGroup.name}</h2>
+								<div class="flex flex-wrap items-center gap-2">
+									<h2 class="truncate font-semibold">{selectedGroup.name}</h2>
+									{#if selectedGroup.teachersLocked}
+										<Badge variant="outline">ครูผู้สอนถูกล็อกแล้ว</Badge>
+									{/if}
+								</div>
 								<p class="text-sm text-muted-foreground">
 									{selectedGroup.code} · ครู {selectedGroup.teacherAssignments.length} คน · ห้องต้นทาง
 									{selectedGroup.homeroomIds.length} ห้อง · รายชื่อ {rosterStatusLabel(
