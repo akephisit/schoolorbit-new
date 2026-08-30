@@ -4612,53 +4612,53 @@ export interface components {
 					/** @enum {string} */
 					actionKind: 'add_offering';
 					/** Format: date-time */
-					created_at: string;
+					createdAt: string;
 					/** Format: uuid */
-					created_by: string;
+					createdBy: string;
 					/** Format: uuid */
 					id: string;
 					/** Format: uuid */
-					learning_offering_id: string;
+					learningOfferingId: string;
 					/** Format: int64 */
-					row_version: number;
+					rowVersion: number;
 					/** Format: date-time */
-					updated_at: string;
+					updatedAt: string;
 					/** Format: int32 */
-					weekly_period_target: number;
+					weeklyPeriodTarget: number;
 			  }
 			| {
 					/** @enum {string} */
 					actionKind: 'stop_offering';
 					/** Format: date-time */
-					created_at: string;
+					createdAt: string;
 					/** Format: uuid */
-					created_by: string;
+					createdBy: string;
 					/** Format: uuid */
 					id: string;
 					/** Format: uuid */
-					learning_offering_id: string;
+					learningOfferingId: string;
 					/** Format: int64 */
-					row_version: number;
+					rowVersion: number;
 					/** Format: date-time */
-					updated_at: string;
+					updatedAt: string;
 			  }
 			| {
 					/** @enum {string} */
 					actionKind: 'adjust_weekly_period_target';
 					/** Format: date-time */
-					created_at: string;
+					createdAt: string;
 					/** Format: uuid */
-					created_by: string;
+					createdBy: string;
 					/** Format: uuid */
 					id: string;
 					/** Format: uuid */
-					learning_offering_id: string;
+					learningOfferingId: string;
 					/** Format: int64 */
-					row_version: number;
+					rowVersion: number;
 					/** Format: date-time */
-					updated_at: string;
+					updatedAt: string;
 					/** Format: int32 */
-					weekly_period_target: number;
+					weeklyPeriodTarget: number;
 			  };
 		AcademicTermChangeSet: {
 			/** Format: uuid */
@@ -6393,6 +6393,8 @@ export interface components {
 				codeSnapshot: string;
 				/** Format: date-time */
 				createdAt: string;
+				/** Format: date */
+				endsOn: string | null;
 				/** Format: uuid */
 				id: string;
 				kind: components['schemas']['LearningOfferingKind'];
@@ -6408,7 +6410,10 @@ export interface components {
 				/** Format: uuid */
 				sourceRequirementId?: string | null;
 				sourceRequirementKind?: string | null;
+				/** Format: date */
+				startsOn: string | null;
 				status: components['schemas']['LearningOfferingStatus'];
+				stopReason: string | null;
 				targets: components['schemas']['LearningOfferingTarget'][];
 				/** Format: date-time */
 				updatedAt: string;
@@ -8206,6 +8211,8 @@ export interface components {
 				codeSnapshot: string;
 				/** Format: date-time */
 				createdAt: string;
+				/** Format: date */
+				endsOn: string | null;
 				/** Format: uuid */
 				id: string;
 				kind: components['schemas']['LearningOfferingKind'];
@@ -8221,7 +8228,10 @@ export interface components {
 				/** Format: uuid */
 				sourceRequirementId?: string | null;
 				sourceRequirementKind?: string | null;
+				/** Format: date */
+				startsOn: string | null;
 				status: components['schemas']['LearningOfferingStatus'];
+				stopReason: string | null;
 				targets: components['schemas']['LearningOfferingTarget'][];
 				/** Format: date-time */
 				updatedAt: string;
@@ -11845,6 +11855,8 @@ export interface components {
 			codeSnapshot: string;
 			/** Format: date-time */
 			createdAt: string;
+			/** Format: date */
+			endsOn: string | null;
 			/** Format: uuid */
 			id: string;
 			kind: components['schemas']['LearningOfferingKind'];
@@ -11860,7 +11872,10 @@ export interface components {
 			/** Format: uuid */
 			sourceRequirementId?: string | null;
 			sourceRequirementKind?: string | null;
+			/** Format: date */
+			startsOn: string | null;
 			status: components['schemas']['LearningOfferingStatus'];
+			stopReason: string | null;
 			targets: components['schemas']['LearningOfferingTarget'][];
 			/** Format: date-time */
 			updatedAt: string;
@@ -14288,39 +14303,39 @@ export interface components {
 					/** @enum {string} */
 					action: 'add_course';
 					/** Format: int64 */
-					change_set_row_version: number;
+					changeSetRowVersion: number;
 					offering: components['schemas']['CreateCourseOfferingRequest'];
 			  }
 			| {
 					/** @enum {string} */
 					action: 'add_activity';
 					/** Format: int64 */
-					change_set_row_version: number;
+					changeSetRowVersion: number;
 					offering: components['schemas']['CreateActivityOfferingRequest'];
 					/** Format: int32 */
-					weekly_period_target: number;
+					weeklyPeriodTarget: number;
 			  }
 			| {
 					/** @enum {string} */
 					action: 'stop_offering';
 					/** Format: int64 */
-					change_set_row_version: number;
+					changeSetRowVersion: number;
 					/** Format: int64 */
-					item_row_version?: number | null;
+					itemRowVersion?: number | null;
 					/** Format: uuid */
-					learning_offering_id: string;
+					learningOfferingId: string;
 			  }
 			| {
 					/** @enum {string} */
 					action: 'adjust_weekly_period_target';
 					/** Format: int64 */
-					change_set_row_version: number;
+					changeSetRowVersion: number;
 					/** Format: int64 */
-					item_row_version?: number | null;
+					itemRowVersion?: number | null;
 					/** Format: uuid */
-					learning_offering_id: string;
+					learningOfferingId: string;
 					/** Format: int32 */
-					weekly_period_target: number;
+					weeklyPeriodTarget: number;
 			  };
 		UpsertDayRoomAssignmentRequest: {
 			/** Format: int32 */

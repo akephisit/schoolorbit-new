@@ -29,6 +29,7 @@ use super::{
 const OFFERING_COLUMNS: &str = r#"
     id, academic_term_id, academic_year_id, kind, code_snapshot, name_snapshot,
     source_requirement_kind, source_requirement_id, status, published_at,
+    starts_on, ends_on, stop_reason,
     owning_organization_unit_id, row_version,
     migration_provenance <> '{}'::jsonb AS migrated, created_at, updated_at
 "#;
@@ -736,6 +737,9 @@ async fn hydrate_many(
                 source_requirement_id: row.source_requirement_id,
                 status: row.status,
                 published_at: row.published_at,
+                starts_on: row.starts_on,
+                ends_on: row.ends_on,
+                stop_reason: row.stop_reason,
                 owning_organization_unit_id: row.owning_organization_unit_id,
                 row_version: row.row_version,
                 migrated: row.migrated,

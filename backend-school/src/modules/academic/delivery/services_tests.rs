@@ -2018,6 +2018,12 @@ async fn publishing_a_stop_change_set_is_atomic_and_idempotent() {
     assert_eq!(stop_reason.as_deref(), Some(changed.reason.as_str()));
     assert_eq!(stopped_by, Some(context.teacher_id));
     assert_eq!(stop_change_set_id, Some(changed.id));
+    let offering = offerings::get(&pool, offering_id)
+        .await
+        .expect("published availability must be exposed through the offering DTO");
+    assert!(offering.starts_on.is_some());
+    assert_eq!(offering.ends_on, ends_on);
+    assert_eq!(offering.stop_reason, stop_reason);
     let target_status: String =
         sqlx::query_scalar("SELECT status FROM academic_timetable_versions WHERE id = $1")
             .bind(changed.target_timetable_version_id)

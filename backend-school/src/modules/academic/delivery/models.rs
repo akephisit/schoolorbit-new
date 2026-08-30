@@ -139,28 +139,45 @@ pub enum AcademicTermChangeActionKind {
 pub enum AcademicTermChangeItem {
     AddOffering {
         id: Uuid,
+        #[schema(rename = "learningOfferingId")]
         learning_offering_id: Uuid,
+        #[schema(rename = "weeklyPeriodTarget")]
         weekly_period_target: i32,
+        #[schema(rename = "rowVersion")]
         row_version: i64,
+        #[schema(rename = "createdBy")]
         created_by: Uuid,
+        #[schema(rename = "createdAt")]
         created_at: DateTime<Utc>,
+        #[schema(rename = "updatedAt")]
         updated_at: DateTime<Utc>,
     },
     StopOffering {
         id: Uuid,
+        #[schema(rename = "learningOfferingId")]
         learning_offering_id: Uuid,
+        #[schema(rename = "rowVersion")]
         row_version: i64,
+        #[schema(rename = "createdBy")]
         created_by: Uuid,
+        #[schema(rename = "createdAt")]
         created_at: DateTime<Utc>,
+        #[schema(rename = "updatedAt")]
         updated_at: DateTime<Utc>,
     },
     AdjustWeeklyPeriodTarget {
         id: Uuid,
+        #[schema(rename = "learningOfferingId")]
         learning_offering_id: Uuid,
+        #[schema(rename = "weeklyPeriodTarget")]
         weekly_period_target: i32,
+        #[schema(rename = "rowVersion")]
         row_version: i64,
+        #[schema(rename = "createdBy")]
         created_by: Uuid,
+        #[schema(rename = "createdAt")]
         created_at: DateTime<Utc>,
+        #[schema(rename = "updatedAt")]
         updated_at: DateTime<Utc>,
     },
 }
@@ -225,23 +242,33 @@ pub struct AcademicTermChangeSetQuery {
 )]
 pub enum UpsertAcademicTermChangeItemRequest {
     AddCourse {
+        #[schema(rename = "changeSetRowVersion")]
         change_set_row_version: i64,
         offering: CreateCourseOfferingRequest,
     },
     AddActivity {
+        #[schema(rename = "changeSetRowVersion")]
         change_set_row_version: i64,
+        #[schema(rename = "weeklyPeriodTarget")]
         weekly_period_target: i32,
         offering: CreateActivityOfferingRequest,
     },
     StopOffering {
+        #[schema(rename = "changeSetRowVersion")]
         change_set_row_version: i64,
+        #[schema(rename = "itemRowVersion")]
         item_row_version: Option<i64>,
+        #[schema(rename = "learningOfferingId")]
         learning_offering_id: Uuid,
     },
     AdjustWeeklyPeriodTarget {
+        #[schema(rename = "changeSetRowVersion")]
         change_set_row_version: i64,
+        #[schema(rename = "itemRowVersion")]
         item_row_version: Option<i64>,
+        #[schema(rename = "learningOfferingId")]
         learning_offering_id: Uuid,
+        #[schema(rename = "weeklyPeriodTarget")]
         weekly_period_target: i32,
     },
 }
@@ -651,6 +678,12 @@ pub struct LearningOffering {
     pub source_requirement_id: Option<Uuid>,
     pub status: LearningOfferingStatus,
     pub published_at: Option<DateTime<Utc>>,
+    #[schema(required = true)]
+    pub starts_on: Option<NaiveDate>,
+    #[schema(required = true)]
+    pub ends_on: Option<NaiveDate>,
+    #[schema(required = true)]
+    pub stop_reason: Option<String>,
     pub owning_organization_unit_id: Option<Uuid>,
     pub row_version: i64,
     pub migrated: bool,
@@ -1072,6 +1105,9 @@ pub(super) struct LearningOfferingRow {
     pub source_requirement_id: Option<Uuid>,
     pub status: LearningOfferingStatus,
     pub published_at: Option<DateTime<Utc>>,
+    pub starts_on: Option<NaiveDate>,
+    pub ends_on: Option<NaiveDate>,
+    pub stop_reason: Option<String>,
     pub owning_organization_unit_id: Option<Uuid>,
     pub row_version: i64,
     pub migrated: bool,

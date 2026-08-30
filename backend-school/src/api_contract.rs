@@ -2255,6 +2255,56 @@ mod tests {
                 "{schema_name} must not accept arbitrary fields"
             );
         }
+        let offering = &schemas["LearningOffering"];
+        for field in ["startsOn", "endsOn", "stopReason"] {
+            assert!(
+                required(offering).contains(&field),
+                "LearningOffering must expose {field} for date-derived delivery state"
+            );
+            assert!(contains_null(&offering["properties"][field]));
+        }
+        for (schema_name, camel_fields, snake_fields) in [
+            (
+                "AcademicTermChangeItem",
+                ["learningOfferingId", "rowVersion", "weeklyPeriodTarget"].as_slice(),
+                [
+                    "learning_offering_id",
+                    "row_version",
+                    "weekly_period_target",
+                ]
+                .as_slice(),
+            ),
+            (
+                "UpsertAcademicTermChangeItemRequest",
+                [
+                    "learningOfferingId",
+                    "changeSetRowVersion",
+                    "weeklyPeriodTarget",
+                ]
+                .as_slice(),
+                [
+                    "learning_offering_id",
+                    "change_set_row_version",
+                    "weekly_period_target",
+                ]
+                .as_slice(),
+            ),
+        ] {
+            let serialized = serde_json::to_string(&schemas[schema_name])
+                .expect("operational change schema must serialize");
+            for field in camel_fields {
+                assert!(
+                    serialized.contains(&format!("\"{field}\"")),
+                    "{schema_name} must expose camelCase field {field}"
+                );
+            }
+            for field in snake_fields {
+                assert!(
+                    !serialized.contains(&format!("\"{field}\"")),
+                    "{schema_name} must not expose snake_case field {field}"
+                );
+            }
+        }
     }
 
     #[test]

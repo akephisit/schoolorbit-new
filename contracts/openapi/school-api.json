@@ -484,11 +484,11 @@
                 ],
                 "type": "string"
               },
-              "created_at": {
+              "createdAt": {
                 "format": "date-time",
                 "type": "string"
               },
-              "created_by": {
+              "createdBy": {
                 "format": "uuid",
                 "type": "string"
               },
@@ -496,31 +496,31 @@
                 "format": "uuid",
                 "type": "string"
               },
-              "learning_offering_id": {
+              "learningOfferingId": {
                 "format": "uuid",
                 "type": "string"
               },
-              "row_version": {
+              "rowVersion": {
                 "format": "int64",
                 "type": "integer"
               },
-              "updated_at": {
+              "updatedAt": {
                 "format": "date-time",
                 "type": "string"
               },
-              "weekly_period_target": {
+              "weeklyPeriodTarget": {
                 "format": "int32",
                 "type": "integer"
               }
             },
             "required": [
               "id",
-              "learning_offering_id",
-              "weekly_period_target",
-              "row_version",
-              "created_by",
-              "created_at",
-              "updated_at",
+              "learningOfferingId",
+              "weeklyPeriodTarget",
+              "rowVersion",
+              "createdBy",
+              "createdAt",
+              "updatedAt",
               "actionKind"
             ],
             "type": "object"
@@ -533,11 +533,11 @@
                 ],
                 "type": "string"
               },
-              "created_at": {
+              "createdAt": {
                 "format": "date-time",
                 "type": "string"
               },
-              "created_by": {
+              "createdBy": {
                 "format": "uuid",
                 "type": "string"
               },
@@ -545,26 +545,26 @@
                 "format": "uuid",
                 "type": "string"
               },
-              "learning_offering_id": {
+              "learningOfferingId": {
                 "format": "uuid",
                 "type": "string"
               },
-              "row_version": {
+              "rowVersion": {
                 "format": "int64",
                 "type": "integer"
               },
-              "updated_at": {
+              "updatedAt": {
                 "format": "date-time",
                 "type": "string"
               }
             },
             "required": [
               "id",
-              "learning_offering_id",
-              "row_version",
-              "created_by",
-              "created_at",
-              "updated_at",
+              "learningOfferingId",
+              "rowVersion",
+              "createdBy",
+              "createdAt",
+              "updatedAt",
               "actionKind"
             ],
             "type": "object"
@@ -577,11 +577,11 @@
                 ],
                 "type": "string"
               },
-              "created_at": {
+              "createdAt": {
                 "format": "date-time",
                 "type": "string"
               },
-              "created_by": {
+              "createdBy": {
                 "format": "uuid",
                 "type": "string"
               },
@@ -589,31 +589,31 @@
                 "format": "uuid",
                 "type": "string"
               },
-              "learning_offering_id": {
+              "learningOfferingId": {
                 "format": "uuid",
                 "type": "string"
               },
-              "row_version": {
+              "rowVersion": {
                 "format": "int64",
                 "type": "integer"
               },
-              "updated_at": {
+              "updatedAt": {
                 "format": "date-time",
                 "type": "string"
               },
-              "weekly_period_target": {
+              "weeklyPeriodTarget": {
                 "format": "int32",
                 "type": "integer"
               }
             },
             "required": [
               "id",
-              "learning_offering_id",
-              "weekly_period_target",
-              "row_version",
-              "created_by",
-              "created_at",
-              "updated_at",
+              "learningOfferingId",
+              "weeklyPeriodTarget",
+              "rowVersion",
+              "createdBy",
+              "createdAt",
+              "updatedAt",
               "actionKind"
             ],
             "type": "object"
@@ -6939,6 +6939,13 @@
                 "format": "date-time",
                 "type": "string"
               },
+              "endsOn": {
+                "format": "date",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "id": {
                 "format": "uuid",
                 "type": "string"
@@ -6986,8 +6993,21 @@
                   "null"
                 ]
               },
+              "startsOn": {
+                "format": "date",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "status": {
                 "$ref": "#/components/schemas/LearningOfferingStatus"
+              },
+              "stopReason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "targets": {
                 "items": {
@@ -7008,6 +7028,9 @@
               "codeSnapshot",
               "nameSnapshot",
               "status",
+              "startsOn",
+              "endsOn",
+              "stopReason",
               "rowVersion",
               "migrated",
               "createdAt",
@@ -13634,6 +13657,13 @@
                   "format": "date-time",
                   "type": "string"
                 },
+                "endsOn": {
+                  "format": "date",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "id": {
                   "format": "uuid",
                   "type": "string"
@@ -13681,8 +13711,21 @@
                     "null"
                   ]
                 },
+                "startsOn": {
+                  "format": "date",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "status": {
                   "$ref": "#/components/schemas/LearningOfferingStatus"
+                },
+                "stopReason": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "targets": {
                   "items": {
@@ -13703,6 +13746,9 @@
                 "codeSnapshot",
                 "nameSnapshot",
                 "status",
+                "startsOn",
+                "endsOn",
+                "stopReason",
                 "rowVersion",
                 "migrated",
                 "createdAt",
@@ -27093,6 +27139,13 @@
             "format": "date-time",
             "type": "string"
           },
+          "endsOn": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -27140,8 +27193,21 @@
               "null"
             ]
           },
+          "startsOn": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "status": {
             "$ref": "#/components/schemas/LearningOfferingStatus"
+          },
+          "stopReason": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "targets": {
             "items": {
@@ -27162,6 +27228,9 @@
           "codeSnapshot",
           "nameSnapshot",
           "status",
+          "startsOn",
+          "endsOn",
+          "stopReason",
           "rowVersion",
           "migrated",
           "createdAt",
@@ -36310,7 +36379,7 @@
                 ],
                 "type": "string"
               },
-              "change_set_row_version": {
+              "changeSetRowVersion": {
                 "format": "int64",
                 "type": "integer"
               },
@@ -36319,7 +36388,7 @@
               }
             },
             "required": [
-              "change_set_row_version",
+              "changeSetRowVersion",
               "offering",
               "action"
             ],
@@ -36333,21 +36402,21 @@
                 ],
                 "type": "string"
               },
-              "change_set_row_version": {
+              "changeSetRowVersion": {
                 "format": "int64",
                 "type": "integer"
               },
               "offering": {
                 "$ref": "#/components/schemas/CreateActivityOfferingRequest"
               },
-              "weekly_period_target": {
+              "weeklyPeriodTarget": {
                 "format": "int32",
                 "type": "integer"
               }
             },
             "required": [
-              "change_set_row_version",
-              "weekly_period_target",
+              "changeSetRowVersion",
+              "weeklyPeriodTarget",
               "offering",
               "action"
             ],
@@ -36361,25 +36430,25 @@
                 ],
                 "type": "string"
               },
-              "change_set_row_version": {
+              "changeSetRowVersion": {
                 "format": "int64",
                 "type": "integer"
               },
-              "item_row_version": {
+              "itemRowVersion": {
                 "format": "int64",
                 "type": [
                   "integer",
                   "null"
                 ]
               },
-              "learning_offering_id": {
+              "learningOfferingId": {
                 "format": "uuid",
                 "type": "string"
               }
             },
             "required": [
-              "change_set_row_version",
-              "learning_offering_id",
+              "changeSetRowVersion",
+              "learningOfferingId",
               "action"
             ],
             "type": "object"
@@ -36392,30 +36461,30 @@
                 ],
                 "type": "string"
               },
-              "change_set_row_version": {
+              "changeSetRowVersion": {
                 "format": "int64",
                 "type": "integer"
               },
-              "item_row_version": {
+              "itemRowVersion": {
                 "format": "int64",
                 "type": [
                   "integer",
                   "null"
                 ]
               },
-              "learning_offering_id": {
+              "learningOfferingId": {
                 "format": "uuid",
                 "type": "string"
               },
-              "weekly_period_target": {
+              "weeklyPeriodTarget": {
                 "format": "int32",
                 "type": "integer"
               }
             },
             "required": [
-              "change_set_row_version",
-              "learning_offering_id",
-              "weekly_period_target",
+              "changeSetRowVersion",
+              "learningOfferingId",
+              "weeklyPeriodTarget",
               "action"
             ],
             "type": "object"
