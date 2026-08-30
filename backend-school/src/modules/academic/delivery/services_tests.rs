@@ -2378,7 +2378,7 @@ async fn change_set_preview_reports_each_group_below_its_version_target() {
 }
 
 #[tokio::test]
-async fn change_set_preview_reports_schedule_conflicts_allowed_in_draft_storage() {
+async fn change_set_preview_stays_clean_after_database_rejects_a_draft_collision() {
     let pool = prepare_delivery_runtime_fixture("academic_change_set_preview_conflicts").await;
     let context = operational_change_runtime_context(&pool).await;
     let change_set = create_runtime_change_set(
@@ -2418,7 +2418,7 @@ async fn change_set_preview_reports_schedule_conflicts_allowed_in_draft_storage(
         .execute(&pool)
         .await
         .unwrap();
-    let duplicate_entry_id: Uuid = sqlx::query_scalar(
+    let duplicate_error = sqlx::query(
         r#"INSERT INTO academic_timetable_entries (
                id, day_of_week, bell_schedule_period_id, room_id, note,
                is_active, created_by, updated_by, entry_type, title,
@@ -2436,16 +2436,17 @@ async fn change_set_preview_reports_schedule_conflicts_allowed_in_draft_storage(
                   jsonb_build_object('test', 'preview-conflicts'), 1,
                   entry.timetable_version_id, now(), now()
            FROM academic_timetable_entries entry
-           WHERE entry.id = $1
-           RETURNING id"#,
+           WHERE entry.id = $1"#,
     )
     .bind(entry_id)
     .bind(room_id)
     .bind(context.teacher_id)
-    .fetch_one(&pool)
+    .execute(&pool)
     .await
-    .unwrap();
-    assert_ne!(entry_id, duplicate_entry_id);
+    .expect_err("migration 054 must reject a group collision even in a draft version");
+    assert!(duplicate_error
+        .to_string()
+        .contains("ACADEMIC_TIMETABLE_GROUP_CONFLICT"));
     let changed = change_sets::upsert_change_item(
         &pool,
         context.teacher_id,
@@ -2469,11 +2470,11 @@ async fn change_set_preview_reports_schedule_conflicts_allowed_in_draft_storage(
         AcademicChangeFindingCode::RoomConflict,
     ] {
         assert!(
-            preview.findings.iter().any(|finding| {
+            !preview.findings.iter().any(|finding| {
                 finding.code == expected
                     && finding.severity == AcademicChangeFindingSeverity::Blocking
             }),
-            "preview must report {expected:?}"
+            "a rejected collision must not leak {expected:?} into preview"
         );
     }
     assert!(preview
