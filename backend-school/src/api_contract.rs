@@ -15,6 +15,10 @@ use crate::modules::academic::models::timetable::{
     TimetableTemplateTargetSelector, UpdateTemplateRequest, UpdateTimetableEntryRequest,
     ValidateMovesRequest,
 };
+use crate::modules::academic::models::timetable_version::{
+    CloneTimetableVersionRequest, TimetableVersion, TimetableVersionDisplayState,
+    TimetableVersionStatus, TimetableVersionTarget,
+};
 use crate::modules::academic::services::daily_teaching_service::{
     DailyTeachingEntry, DailyTeachingOverview, DailyTeachingPeriod, DailyTeachingPeriodCell,
     DailyTeachingSummary, DailyTeachingTeacher,
@@ -291,6 +295,9 @@ use utoipa::OpenApi;
         crate::modules::academic::handlers::timetable::validate_timetable_moves,
         crate::modules::academic::handlers::timetable::get_timetable_occupancy,
         crate::modules::academic::handlers::timetable::daily_teaching_overview,
+        crate::modules::academic::handlers::timetable_versions::list_versions,
+        crate::modules::academic::handlers::timetable_versions::resolve_version,
+        crate::modules::academic::handlers::timetable_versions::clone_version,
         crate::modules::academic::handlers::timetable_templates::list_templates,
         crate::modules::academic::handlers::timetable_templates::get_template,
         crate::modules::academic::handlers::timetable_templates::create_template,
@@ -1044,6 +1051,13 @@ use utoipa::OpenApi;
         ApiResponse<SwapTimetableEntriesResponse>,
         ApiResponse<Vec<MoveValidityCell>>,
         ApiResponse<Vec<TimetableOccupancyCell>>,
+        TimetableVersionStatus,
+        TimetableVersionDisplayState,
+        TimetableVersionTarget,
+        TimetableVersion,
+        CloneTimetableVersionRequest,
+        ApiResponse<Vec<TimetableVersion>>,
+        ApiResponse<TimetableVersion>,
         ApiResponse<Vec<TimetableTemplate>>,
         ApiResponse<TimetableTemplate>,
         ApiResponse<TemplateWithEntries>,
@@ -2893,15 +2907,7 @@ mod tests {
         let my_timetable_parameters = document["paths"]["/api/me/timetable"]["get"]["parameters"]
             .as_array()
             .expect("staff timetable parameters must be an array");
-        for name in [
-            "academicTermId",
-            "learningGroupId",
-            "homeroomId",
-            "instructorId",
-            "roomId",
-            "dayOfWeek",
-            "entryType",
-        ] {
+        for name in ["academicTermId", "date"] {
             assert!(my_timetable_parameters
                 .iter()
                 .any(|parameter| parameter["name"] == name && parameter["in"] == "query"));
@@ -2972,6 +2978,85 @@ mod tests {
             assert!(required(calendar_event).contains(&field));
             assert!(contains_null(&calendar_event["properties"][field]));
         }
+    }
+
+    #[test]
+    fn documents_release_one_timetable_version_cutover() {
+        let document = school_api_value().expect("document should serialize");
+        assert_operations(
+            &document,
+            &[
+                (
+                    "/api/academic/timetable-versions",
+                    "get",
+                    "listTimetableVersions",
+                ),
+                (
+                    "/api/academic/timetable-versions/resolve",
+                    "get",
+                    "resolveTimetableVersion",
+                ),
+                (
+                    "/api/academic/timetable-versions/{source_id}/clone",
+                    "post",
+                    "cloneTimetableVersion",
+                ),
+            ],
+        );
+
+        let schemas = &document["components"]["schemas"];
+        for schema_name in [
+            "TimetableVersion",
+            "TimetableVersionTarget",
+            "TimetableVersionStatus",
+            "TimetableVersionDisplayState",
+            "CloneTimetableVersionRequest",
+        ] {
+            assert!(!schemas[schema_name].is_null(), "missing {schema_name}");
+        }
+        for schema_name in [
+            "TimetableEntry",
+            "CreateTimetableEntryRequest",
+            "UpdateTimetableEntryRequest",
+            "CreateBatchTimetableEntriesRequest",
+            "SwapTimetableEntriesRequest",
+            "ValidateMovesRequest",
+            "FromCurrentRequest",
+            "ApplyTemplateRequest",
+            "ClearTimetableRequest",
+        ] {
+            assert!(
+                required(&schemas[schema_name]).contains(&"timetableVersionId"),
+                "{schema_name} must require timetableVersionId"
+            );
+        }
+        assert!(required(&schemas["LearningGroup"]).contains(&"teachersLocked"));
+        assert!(required(&schemas["HomeroomDeliveryWorkspace"]).contains(&"timetableVersionId"));
+        assert!(contains_null(
+            &schemas["HomeroomDeliveryWorkspace"]["properties"]["timetableVersionId"]
+        ));
+        assert!(required(&schemas["HomeroomDeliveryItem"]).contains(&"weeklyPeriodTarget"));
+        assert!(contains_null(
+            &schemas["HomeroomDeliveryItem"]["properties"]["weeklyPeriodTarget"]
+        ));
+        assert!(
+            schemas["UpdateLearningOfferingRequest"]["properties"]["weeklyPeriodTarget"].is_null()
+        );
+        assert!(schemas["CourseOfferingSnapshot"]["properties"]["weeklyPeriodTarget"].is_null());
+
+        assert_eq!(
+            query_contract(&document, "/api/me/timetable", "get"),
+            BTreeSet::from([
+                ("academicTermId".to_string(), true),
+                ("date".to_string(), true),
+            ])
+        );
+        assert!(query_contract(
+            &document,
+            "/api/parent/students/{student_id}/timetable",
+            "get"
+        )
+        .contains(&("date".to_string(), true)));
     }
 
     #[test]

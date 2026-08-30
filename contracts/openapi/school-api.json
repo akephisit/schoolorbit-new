@@ -204,15 +204,18 @@
           "blocksYearClosure": {
             "type": "boolean"
           },
+          "closedOn": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "code": {
             "type": "string"
           },
           "createdAt": {
             "format": "date-time",
-            "type": "string"
-          },
-          "endDate": {
-            "format": "date",
             "type": "string"
           },
           "id": {
@@ -227,6 +230,13 @@
           },
           "name": {
             "type": "string"
+          },
+          "plannedEndDate": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "rowVersion": {
             "format": "int64",
@@ -259,7 +269,8 @@
           "name",
           "termType",
           "startDate",
-          "endDate",
+          "plannedEndDate",
+          "closedOn",
           "includedInYearResult",
           "blocksYearClosure",
           "bellScheduleId",
@@ -280,11 +291,14 @@
           "blocksYearClosure": {
             "type": "boolean"
           },
-          "code": {
-            "type": "string"
-          },
-          "endDate": {
+          "closedOn": {
             "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "code": {
             "type": "string"
           },
           "id": {
@@ -296,6 +310,13 @@
           },
           "name": {
             "type": "string"
+          },
+          "plannedEndDate": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "sequence": {
             "format": "int32",
@@ -320,7 +341,8 @@
           "name",
           "termType",
           "startDate",
-          "endDate",
+          "plannedEndDate",
+          "closedOn",
           "includedInYearResult",
           "blocksYearClosure",
           "status"
@@ -1255,15 +1277,18 @@
               "blocksYearClosure": {
                 "type": "boolean"
               },
+              "closedOn": {
+                "format": "date",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "code": {
                 "type": "string"
               },
               "createdAt": {
                 "format": "date-time",
-                "type": "string"
-              },
-              "endDate": {
-                "format": "date",
                 "type": "string"
               },
               "id": {
@@ -1278,6 +1303,13 @@
               },
               "name": {
                 "type": "string"
+              },
+              "plannedEndDate": {
+                "format": "date",
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "rowVersion": {
                 "format": "int64",
@@ -1310,7 +1342,8 @@
               "name",
               "termType",
               "startDate",
-              "endDate",
+              "plannedEndDate",
+              "closedOn",
               "includedInYearResult",
               "blocksYearClosure",
               "bellScheduleId",
@@ -4698,6 +4731,23 @@
                 },
                 "type": "array"
               },
+              "timetableVersionId": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "timetableVersionStatus": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/TimetableVersionStatus"
+                  }
+                ]
+              },
               "unlinked": {
                 "items": {
                   "$ref": "#/components/schemas/UnlinkedDeliveryItem"
@@ -4708,6 +4758,8 @@
             "required": [
               "academicTermId",
               "academicYearId",
+              "timetableVersionId",
+              "timetableVersionStatus",
               "homerooms",
               "unlinked"
             ],
@@ -5829,6 +5881,10 @@
                         "null"
                       ]
                     },
+                    "timetableVersionId": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
                     "title": {
                       "type": [
                         "string",
@@ -5842,6 +5898,7 @@
                   },
                   "required": [
                     "id",
+                    "timetableVersionId",
                     "academicTermId",
                     "academicYearId",
                     "bellScheduleId",
@@ -5996,6 +6053,9 @@
                 },
                 "type": "array"
               },
+              "teachersLocked": {
+                "type": "boolean"
+              },
               "updatedAt": {
                 "format": "date-time",
                 "type": "string"
@@ -6009,6 +6069,7 @@
               "code",
               "name",
               "status",
+              "teachersLocked",
               "rosterStatus",
               "rowVersion",
               "migrated",
@@ -9133,6 +9194,10 @@
                   "null"
                 ]
               },
+              "timetableVersionId": {
+                "format": "uuid",
+                "type": "string"
+              },
               "title": {
                 "type": [
                   "string",
@@ -9146,6 +9211,7 @@
             },
             "required": [
               "id",
+              "timetableVersionId",
               "academicTermId",
               "academicYearId",
               "bellScheduleId",
@@ -9213,6 +9279,138 @@
               "name",
               "createdAt",
               "updatedAt"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_TimetableVersion": {
+        "properties": {
+          "data": {
+            "properties": {
+              "academicTermId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "academicYearId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "bellScheduleId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "changeSetId": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "createdBy": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "displayState": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/TimetableVersionDisplayState"
+                  }
+                ]
+              },
+              "effectiveFrom": {
+                "format": "date",
+                "type": "string"
+              },
+              "effectiveUntil": {
+                "format": "date",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "publishedAt": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "publishedBy": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "rowVersion": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "sourceVersionId": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "$ref": "#/components/schemas/TimetableVersionStatus"
+              },
+              "targets": {
+                "items": {
+                  "$ref": "#/components/schemas/TimetableVersionTarget"
+                },
+                "type": "array"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "academicTermId",
+              "academicYearId",
+              "effectiveFrom",
+              "effectiveUntil",
+              "status",
+              "displayState",
+              "sourceVersionId",
+              "changeSetId",
+              "bellScheduleId",
+              "rowVersion",
+              "createdBy",
+              "publishedBy",
+              "publishedAt",
+              "createdAt",
+              "updatedAt",
+              "targets"
             ],
             "type": "object"
           },
@@ -9302,15 +9500,18 @@
                 "blocksYearClosure": {
                   "type": "boolean"
                 },
+                "closedOn": {
+                  "format": "date",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "code": {
                   "type": "string"
                 },
                 "createdAt": {
                   "format": "date-time",
-                  "type": "string"
-                },
-                "endDate": {
-                  "format": "date",
                   "type": "string"
                 },
                 "id": {
@@ -9325,6 +9526,13 @@
                 },
                 "name": {
                   "type": "string"
+                },
+                "plannedEndDate": {
+                  "format": "date",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "rowVersion": {
                   "format": "int64",
@@ -9357,7 +9565,8 @@
                 "name",
                 "termType",
                 "startDate",
-                "endDate",
+                "plannedEndDate",
+                "closedOn",
                 "includedInYearResult",
                 "blocksYearClosure",
                 "bellScheduleId",
@@ -12353,6 +12562,9 @@
                   },
                   "type": "array"
                 },
+                "teachersLocked": {
+                  "type": "boolean"
+                },
                 "updatedAt": {
                   "format": "date-time",
                   "type": "string"
@@ -12366,6 +12578,7 @@
                 "code",
                 "name",
                 "status",
+                "teachersLocked",
                 "rosterStatus",
                 "rowVersion",
                 "migrated",
@@ -14483,6 +14696,10 @@
                     "null"
                   ]
                 },
+                "timetableVersionId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
                 "title": {
                   "type": [
                     "string",
@@ -14496,6 +14713,7 @@
               },
               "required": [
                 "id",
+                "timetableVersionId",
                 "academicTermId",
                 "academicYearId",
                 "bellScheduleId",
@@ -14635,6 +14853,141 @@
                 "name",
                 "createdAt",
                 "updatedAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_TimetableVersion": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "academicTermId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "academicYearId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "bellScheduleId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "changeSetId": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "createdAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "createdBy": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "displayState": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TimetableVersionDisplayState"
+                    }
+                  ]
+                },
+                "effectiveFrom": {
+                  "format": "date",
+                  "type": "string"
+                },
+                "effectiveUntil": {
+                  "format": "date",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "publishedAt": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "publishedBy": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "rowVersion": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "sourceVersionId": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "status": {
+                  "$ref": "#/components/schemas/TimetableVersionStatus"
+                },
+                "targets": {
+                  "items": {
+                    "$ref": "#/components/schemas/TimetableVersionTarget"
+                  },
+                  "type": "array"
+                },
+                "updatedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "academicTermId",
+                "academicYearId",
+                "effectiveFrom",
+                "effectiveUntil",
+                "status",
+                "displayState",
+                "sourceVersionId",
+                "changeSetId",
+                "bellScheduleId",
+                "rowVersion",
+                "createdBy",
+                "publishedBy",
+                "publishedAt",
+                "createdAt",
+                "updatedAt",
+                "targets"
               ],
               "type": "object"
             },
@@ -14880,9 +15233,14 @@
           "academicTermId": {
             "format": "uuid",
             "type": "string"
+          },
+          "timetableVersionId": {
+            "format": "uuid",
+            "type": "string"
           }
         },
         "required": [
+          "timetableVersionId",
           "academicTermId"
         ],
         "type": "object"
@@ -18778,10 +19136,33 @@
               "array",
               "null"
             ]
+          },
+          "timetableVersionId": {
+            "format": "uuid",
+            "type": "string"
           }
         },
         "required": [
+          "timetableVersionId",
           "academicTermId"
+        ],
+        "type": "object"
+      },
+      "CloneTimetableVersionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "effectiveFrom": {
+            "format": "date",
+            "type": "string"
+          },
+          "sourceRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "effectiveFrom",
+          "sourceRowVersion"
         ],
         "type": "object"
       },
@@ -18840,10 +19221,6 @@
           "subjectVersionId": {
             "format": "uuid",
             "type": "string"
-          },
-          "weeklyPeriodTarget": {
-            "format": "int32",
-            "type": "integer"
           }
         },
         "required": [
@@ -18851,7 +19228,6 @@
           "subjectId",
           "credit",
           "standardPeriodsPerWeek",
-          "weeklyPeriodTarget",
           "gradingPolicy"
         ],
         "type": "object"
@@ -18876,12 +19252,15 @@
               "null"
             ]
           },
-          "endDate": {
-            "format": "date",
-            "type": "string"
-          },
           "includedInYearResult": {
             "type": "boolean"
+          },
+          "plannedEndDate": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "startDate": {
             "format": "date",
@@ -18895,7 +19274,6 @@
           "academicYearId",
           "termType",
           "startDate",
-          "endDate",
           "includedInYearResult",
           "blocksYearClosure",
           "bellScheduleId"
@@ -19192,6 +19570,10 @@
               "null"
             ]
           },
+          "timetableVersionId": {
+            "format": "uuid",
+            "type": "string"
+          },
           "title": {
             "type": [
               "string",
@@ -19200,6 +19582,7 @@
           }
         },
         "required": [
+          "timetableVersionId",
           "academicTermId",
           "daysOfWeek",
           "bellSchedulePeriodIds",
@@ -20753,6 +21136,10 @@
               "null"
             ]
           },
+          "timetableVersionId": {
+            "format": "uuid",
+            "type": "string"
+          },
           "title": {
             "type": [
               "string",
@@ -20761,6 +21148,7 @@
           }
         },
         "required": [
+          "timetableVersionId",
           "academicTermId",
           "dayOfWeek",
           "bellSchedulePeriodId",
@@ -23410,9 +23798,14 @@
           },
           "name": {
             "type": "string"
+          },
+          "timetableVersionId": {
+            "format": "uuid",
+            "type": "string"
           }
         },
         "required": [
+          "timetableVersionId",
           "academicTermId",
           "name"
         ],
@@ -23757,6 +24150,9 @@
           "status": {
             "$ref": "#/components/schemas/LearningOfferingStatus"
           },
+          "teachersLocked": {
+            "type": "boolean"
+          },
           "timetableEntryCount": {
             "format": "int64",
             "type": "integer"
@@ -23767,6 +24163,7 @@
           "code",
           "name",
           "status",
+          "teachersLocked",
           "rosterStatus",
           "homeroomIds",
           "homeroomNames",
@@ -23844,6 +24241,7 @@
           "code",
           "name",
           "requirementKind",
+          "weeklyPeriodTarget",
           "offeringState",
           "groupMode",
           "teacherState",
@@ -23929,6 +24327,23 @@
             },
             "type": "array"
           },
+          "timetableVersionId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timetableVersionStatus": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TimetableVersionStatus"
+              }
+            ]
+          },
           "unlinked": {
             "items": {
               "$ref": "#/components/schemas/UnlinkedDeliveryItem"
@@ -23939,6 +24354,8 @@
         "required": [
           "academicTermId",
           "academicYearId",
+          "timetableVersionId",
+          "timetableVersionStatus",
           "homerooms",
           "unlinked"
         ],
@@ -25274,6 +25691,10 @@
                     "null"
                   ]
                 },
+                "timetableVersionId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
                 "title": {
                   "type": [
                     "string",
@@ -25287,6 +25708,7 @@
               },
               "required": [
                 "id",
+                "timetableVersionId",
                 "academicTermId",
                 "academicYearId",
                 "bellScheduleId",
@@ -25411,6 +25833,9 @@
             },
             "type": "array"
           },
+          "teachersLocked": {
+            "type": "boolean"
+          },
           "updatedAt": {
             "format": "date-time",
             "type": "string"
@@ -25424,6 +25849,7 @@
           "code",
           "name",
           "status",
+          "teachersLocked",
           "rosterStatus",
           "rowVersion",
           "migrated",
@@ -31933,9 +32359,14 @@
           "entryBRowVersion": {
             "format": "int64",
             "type": "integer"
+          },
+          "timetableVersionId": {
+            "format": "uuid",
+            "type": "string"
           }
         },
         "required": [
+          "timetableVersionId",
           "entryAId",
           "entryARowVersion",
           "entryBId",
@@ -32392,6 +32823,10 @@
               "null"
             ]
           },
+          "timetableVersionId": {
+            "format": "uuid",
+            "type": "string"
+          },
           "title": {
             "type": [
               "string",
@@ -32405,6 +32840,7 @@
         },
         "required": [
           "id",
+          "timetableVersionId",
           "academicTermId",
           "academicYearId",
           "bellScheduleId",
@@ -32652,6 +33088,169 @@
         },
         "type": "object"
       },
+      "TimetableVersion": {
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "academicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "bellScheduleId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "changeSetId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "createdBy": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "displayState": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TimetableVersionDisplayState"
+              }
+            ]
+          },
+          "effectiveFrom": {
+            "format": "date",
+            "type": "string"
+          },
+          "effectiveUntil": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "publishedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "publishedBy": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sourceVersionId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/TimetableVersionStatus"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/TimetableVersionTarget"
+            },
+            "type": "array"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "academicTermId",
+          "academicYearId",
+          "effectiveFrom",
+          "effectiveUntil",
+          "status",
+          "displayState",
+          "sourceVersionId",
+          "changeSetId",
+          "bellScheduleId",
+          "rowVersion",
+          "createdBy",
+          "publishedBy",
+          "publishedAt",
+          "createdAt",
+          "updatedAt",
+          "targets"
+        ],
+        "type": "object"
+      },
+      "TimetableVersionDisplayState": {
+        "enum": [
+          "current",
+          "upcoming",
+          "historical"
+        ],
+        "type": "string"
+      },
+      "TimetableVersionStatus": {
+        "enum": [
+          "draft",
+          "published",
+          "cancelled"
+        ],
+        "type": "string"
+      },
+      "TimetableVersionTarget": {
+        "properties": {
+          "learningOfferingId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "standardPeriodsPerWeek": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "timetableVersionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "weeklyPeriodTarget": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "timetableVersionId",
+          "learningOfferingId",
+          "weeklyPeriodTarget",
+          "standardPeriodsPerWeek"
+        ],
+        "type": "object"
+      },
       "TransferHomeroomPlacementRequest": {
         "additionalProperties": false,
         "properties": {
@@ -32742,12 +33341,15 @@
               "null"
             ]
           },
-          "endDate": {
-            "format": "date",
-            "type": "string"
-          },
           "includedInYearResult": {
             "type": "boolean"
+          },
+          "plannedEndDate": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "rowVersion": {
             "format": "int64",
@@ -32764,7 +33366,6 @@
         "required": [
           "termType",
           "startDate",
-          "endDate",
           "includedInYearResult",
           "blocksYearClosure",
           "bellScheduleId",
@@ -33415,13 +34016,6 @@
               "$ref": "#/components/schemas/OfferingTargetInput"
             },
             "type": "array"
-          },
-          "weeklyPeriodTarget": {
-            "format": "int32",
-            "type": [
-              "integer",
-              "null"
-            ]
           }
         },
         "required": [
@@ -34474,6 +35068,10 @@
             "format": "int64",
             "type": "integer"
           },
+          "timetableVersionId": {
+            "format": "uuid",
+            "type": "string"
+          },
           "title": {
             "type": [
               "string",
@@ -34482,6 +35080,7 @@
           }
         },
         "required": [
+          "timetableVersionId",
           "rowVersion"
         ],
         "type": "object"
@@ -34766,9 +35365,14 @@
           "entryId": {
             "format": "uuid",
             "type": "string"
+          },
+          "timetableVersionId": {
+            "format": "uuid",
+            "type": "string"
           }
         },
         "required": [
+          "timetableVersionId",
           "academicTermId",
           "entryId"
         ],
@@ -44404,6 +45008,15 @@
         "parameters": [
           {
             "in": "query",
+            "name": "timetableVersionId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
             "name": "academicTermId",
             "required": true,
             "schema": {
@@ -45011,6 +45624,219 @@
         ]
       }
     },
+    "/api/academic/timetable-versions": {
+      "get": {
+        "operationId": "listTimetableVersions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_TimetableVersion"
+                }
+              }
+            },
+            "description": "Timetable versions for the selected term"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Timetable read permission denied"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/timetable-versions/{source_id}/clone": {
+      "post": {
+        "operationId": "cloneTimetableVersion",
+        "parameters": [
+          {
+            "description": "Published timetable version ID",
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloneTimetableVersionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TimetableVersion"
+                }
+              }
+            },
+            "description": "Draft timetable version cloned from the published source"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid effective date"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Timetable manage permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Source timetable version not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Timetable version conflict"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/timetable-versions/resolve": {
+      "get": {
+        "operationId": "resolveTimetableVersion",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TimetableVersion"
+                }
+              }
+            },
+            "description": "Published timetable version effective on the selected date"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Timetable read permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "No effective timetable version"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
     "/api/academic/timetable/{entry_id}": {
       "delete": {
         "operationId": "deleteTimetableEntry",
@@ -45019,6 +45845,15 @@
             "description": "Timetable entry ID",
             "in": "path",
             "name": "entry_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "timetableVersionId",
             "required": true,
             "schema": {
               "format": "uuid",
@@ -45265,6 +46100,15 @@
               "format": "uuid",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "timetableVersionId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -45416,6 +46260,15 @@
       "get": {
         "operationId": "getTimetableOccupancy",
         "parameters": [
+          {
+            "in": "query",
+            "name": "timetableVersionId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
           {
             "in": "query",
             "name": "academicTermId",
@@ -53395,53 +54248,10 @@
           },
           {
             "in": "query",
-            "name": "learningGroupId",
-            "required": false,
+            "name": "date",
+            "required": true,
             "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "homeroomId",
-            "required": false,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "instructorId",
-            "required": false,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "roomId",
-            "required": false,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "dayOfWeek",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "entryType",
-            "required": false,
-            "schema": {
+              "format": "date",
               "type": "string"
             }
           }
@@ -54982,6 +55792,15 @@
             "required": true,
             "schema": {
               "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "format": "date",
               "type": "string"
             }
           }

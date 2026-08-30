@@ -30,7 +30,7 @@ use crate::AppState;
     get,
     path = "/api/academic/timetable",
     operation_id = "listTimetableEntries",
-    params(PersonalTimetableQuery),
+    params(TimetableQuery),
     responses(
         (status = 200, description = "Timetable entries in the selected term", body = ApiResponse<Vec<crate::modules::academic::models::timetable::TimetableEntry>>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -58,7 +58,7 @@ pub async fn list_timetable_entries(
     get,
     path = "/api/me/timetable",
     operation_id = "getMyTimetable",
-    params(TimetableQuery),
+    params(PersonalTimetableQuery),
     responses(
         (status = 200, description = "Current staff or student timetable in the selected term", body = ApiResponse<Vec<crate::modules::academic::models::timetable::TimetableEntry>>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
