@@ -466,6 +466,8 @@ pub struct HomeroomDeliveryItem {
     pub name: String,
     pub requirement_kind: RequirementKind,
     pub standard_periods_per_week: Option<i32>,
+    #[schema(required = true)]
+    pub weekly_period_target: Option<i32>,
     pub offering_id: Option<Uuid>,
     pub offering_state: HomeroomOfferingState,
     pub group_mode: HomeroomGroupMode,

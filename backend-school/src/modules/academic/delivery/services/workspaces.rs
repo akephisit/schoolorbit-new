@@ -90,6 +90,7 @@ struct OfferingTargetRow {
     status: LearningOfferingStatus,
     code: String,
     name: String,
+    weekly_period_target: Option<i32>,
     target_kind: String,
     homeroom_id: Option<Uuid>,
     grade_level_id: Uuid,
@@ -142,15 +143,17 @@ pub async fn homeroom_delivery_workspace(
     .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียนในปีการศึกษาที่เลือก".to_string()))?;
 
     let timetable_version: Option<WorkspaceTimetableVersionRow> = match term_status.as_str() {
-        "planning" | "ready" => sqlx::query_as(
-            r#"SELECT id, status
+        "planning" | "ready" => {
+            sqlx::query_as(
+                r#"SELECT id, status
                FROM academic_timetable_versions
                WHERE academic_term_id = $1 AND status = 'published'
                ORDER BY effective_from, id LIMIT 1"#,
-        )
-        .bind(academic_term_id)
-        .fetch_optional(pool)
-        .await?,
+            )
+            .bind(academic_term_id)
+            .fetch_optional(pool)
+            .await?
+        }
         "active" => {
             let current: Option<WorkspaceTimetableVersionRow> = sqlx::query_as(
                 r#"SELECT id, status
@@ -306,6 +309,7 @@ pub async fn homeroom_delivery_workspace(
                   offering.status,
                   offering.code_snapshot AS code,
                   offering.name_snapshot AS name,
+                  timetable_target.weekly_period_target,
                   target.target_kind,
                   target.homeroom_id,
                   target.grade_level_id,
@@ -319,16 +323,20 @@ pub async fn homeroom_delivery_workspace(
              ON target.learning_offering_id = offering.id
             AND target.academic_term_id = offering.academic_term_id
             AND target.academic_year_id = offering.academic_year_id
+           LEFT JOIN academic_timetable_version_targets timetable_target
+             ON timetable_target.learning_offering_id = offering.id
+            AND timetable_target.timetable_version_id = $5
            WHERE offering.academic_term_id = $1
              AND offering.academic_year_id = $2
              AND ($3 OR offering.owning_organization_unit_id = ANY($4))
            ORDER BY offering.code_snapshot, offering.id, target.id
-           LIMIT $5"#,
+           LIMIT $6"#,
     )
     .bind(academic_term_id)
     .bind(academic_year_id)
     .bind(filter.includes_school_owned)
     .bind(&owner_ids)
+    .bind(timetable_version_id)
     .bind((MAX_WORKSPACE_TARGET_ROWS + 1) as i64)
     .fetch_all(pool)
     .await?;
@@ -486,6 +494,8 @@ pub async fn homeroom_delivery_workspace(
                 name: expected.name,
                 requirement_kind: expected.requirement_kind,
                 standard_periods_per_week: expected.standard_periods_per_week,
+                weekly_period_target: applicable_offering
+                    .and_then(|offering| offering.weekly_period_target),
                 offering_id,
                 offering_state: applicable_offering
                     .map(|offering| offering_state(offering.status))

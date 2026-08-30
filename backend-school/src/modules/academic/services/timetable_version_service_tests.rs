@@ -78,6 +78,15 @@ async fn list_resolve_and_clone_preserve_version_isolation_and_targets() {
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].id, source_id);
     assert!(!listed[0].targets.is_empty());
+    assert!(listed[0]
+        .targets
+        .iter()
+        .filter_map(|target| {
+            target
+                .standard_periods_per_week
+                .map(|standard| (target.weekly_period_target, standard))
+        })
+        .all(|(target, standard)| target == standard));
 
     let resolved = timetable_version_service::resolve_for_date(&pool, term_id, term_start)
         .await

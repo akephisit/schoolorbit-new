@@ -2099,6 +2099,45 @@ async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverag
 }
 
 #[tokio::test]
+async fn active_homeroom_workspace_projects_the_effective_version_targets() {
+    let pool = prepare_delivery_runtime_fixture("academic_delivery_workspace_version_target").await;
+    let (year_id, term_id): (Uuid, Uuid) = sqlx::query_as(
+        r#"SELECT academic_year_id, id
+           FROM academic_terms
+           WHERE status = 'active'
+           ORDER BY start_date, id LIMIT 1"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let workspace = workspaces::homeroom_delivery_workspace(
+        &pool,
+        year_id,
+        term_id,
+        &AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    assert!(workspace.timetable_version_id.is_some());
+    assert_eq!(
+        workspace.timetable_version_status,
+        Some(
+            crate::modules::academic::models::timetable_version::TimetableVersionStatus::Published
+        )
+    );
+    assert!(workspace
+        .homerooms
+        .iter()
+        .flat_map(|room| &room.items)
+        .filter(|item| item.offering_id.is_some())
+        .any(|item| item.weekly_period_target.is_some_and(|target| target > 0)));
+}
+
+#[tokio::test]
 async fn delivery_management_options_are_scoped_and_human_readable() {
     let pool = prepare_delivery_runtime_fixture("academic_delivery_management_options").await;
     let context = planning_runtime_context(&pool).await;
