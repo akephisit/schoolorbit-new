@@ -1138,12 +1138,9 @@ async fn resolve_lesson_input(
             let observed_date = observed_at
                 .with_timezone(&FixedOffset::east_opt(7 * 60 * 60).expect("valid Bangkok offset"))
                 .date_naive();
-            let timetable_version = timetable_version_service::resolve_for_date(
-                pool,
-                academic_term_id,
-                observed_date,
-            )
-            .await?;
+            let timetable_version =
+                timetable_version_service::resolve_for_date(pool, academic_term_id, observed_date)
+                    .await?;
             let entry = load_timetable_entry_context_for_teacher(
                 pool,
                 entry_id,
