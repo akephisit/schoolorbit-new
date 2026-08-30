@@ -446,7 +446,8 @@ test('student and parent history selectors use learner-scoped academic context e
 	assert.match(coreService, /student_academic_years/);
 	assert.match(coreService, /student_id\s*=\s*\$1/);
 	assert.match(parentsApi, /operations\['getParentChildTimetable'\]\['parameters'\]\['query'\]/);
-	assert.match(parentsApi, /const query = \{ academicTermId:/);
+	assert.match(parentsApi, /academicTermId:\s*trimmedAcademicTermId/);
+	assert.match(parentsApi, /date:\s*requiredDate/);
 	assert.match(parentsApi, /\{ query \}/);
 	assert.doesNotMatch(parentsApi, /\?academicTermId=/);
 	assert.doesNotMatch(parentsApi, /academicSemesterId|academic_semester_id|TimetableEntryDto/);

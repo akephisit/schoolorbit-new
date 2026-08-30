@@ -773,7 +773,7 @@
 		/>
 	{:else}
 		<div class="space-y-5">
-			<Card.Root class="overflow-hidden border-primary/20 bg-primary/[0.025] py-0">
+			<Card.Root class="gap-0 overflow-hidden border-primary/20 bg-primary/[0.025] py-0">
 				<Card.Content class="grid gap-4 p-4 lg:grid-cols-[minmax(15rem,1fr)_auto] lg:items-center">
 					<div class="flex min-w-0 items-start gap-3">
 						<div

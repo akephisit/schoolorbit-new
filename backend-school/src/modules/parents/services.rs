@@ -393,6 +393,7 @@ mod tests {
             .await
             .unwrap();
         apply_phase_b_runtime_migrations(&pool).await.unwrap();
+        apply_migrations_through(&pool, 52).await.unwrap();
 
         let parent_id = create_test_user(&pool, "parent-context@example.test", "test-password")
             .await

@@ -835,7 +835,10 @@ test('parent self-service API uses typed student and timetable responses', async
 	assert.doesNotMatch(childPage, /response\.data as/);
 	assert.match(timetablePage, /getChildProfile\(studentId, selectedYearId\)/);
 	assert.match(timetablePage, /child = loadedChild/);
-	assert.match(timetablePage, /const loaded = await getChildTimetable\(studentId, termId\)/);
+	assert.match(
+		timetablePage,
+		/const loaded = await getChildTimetable\(studentId, termId, currentLocalDate\(\)\)/
+	);
 	assert.doesNotMatch(timetablePage, /childData as/);
 });
 
@@ -941,10 +944,12 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.doesNotMatch(supervisionWorkspace, /saveMySupervisionEvaluation/);
 	assert.match(supervisionWorkspace, /acknowledgeSupervisionObservation/);
 	assert.match(supervisionWorkspace, /getMyTimetable/);
+	assert.match(supervisionWorkspace, /academicTermId:\s*termId/);
 	assert.match(
 		supervisionWorkspace,
-		/getMyTimetable\(\{ academicTermId:\s*termId \},\s*\{ signal \}\)/
+		/date:\s*cycle\s*\?\s*defaultBookingWeekStartDate\(cycle\)\s*:\s*currentLocalDate\(\)/
 	);
+	assert.match(supervisionWorkspace, /\{ signal \}/);
 	assert.match(supervisionWorkspace, /entry\.academicTermId === termId/);
 	assert.match(supervisionWorkspace, /timetableGridDays/);
 	assert.match(supervisionWorkspace, /timetablePeriodRows/);

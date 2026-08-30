@@ -7,9 +7,7 @@ use crate::modules::academic::cutover_test_support::{
     apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
     CutoverFixture,
 };
-use crate::modules::academic::models::timetable_version::{
-    CloneTimetableVersionRequest, TimetableVersionDisplayState,
-};
+use crate::modules::academic::models::timetable_version::CloneTimetableVersionRequest;
 use crate::test_helpers::create_named_test_pool;
 
 async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
@@ -21,36 +19,6 @@ async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
     apply_migrations_through(&pool, 52).await.unwrap();
     pool
-}
-
-#[test]
-fn timetable_version_display_state_uses_the_effective_interval() {
-    let today = NaiveDate::from_ymd_opt(2027, 6, 15).unwrap();
-
-    assert_eq!(
-        timetable_version_service::derive_display_state(
-            NaiveDate::from_ymd_opt(2027, 7, 1).unwrap(),
-            None,
-            today,
-        ),
-        TimetableVersionDisplayState::Upcoming
-    );
-    assert_eq!(
-        timetable_version_service::derive_display_state(
-            NaiveDate::from_ymd_opt(2027, 5, 1).unwrap(),
-            Some(NaiveDate::from_ymd_opt(2027, 6, 30).unwrap()),
-            today,
-        ),
-        TimetableVersionDisplayState::Current
-    );
-    assert_eq!(
-        timetable_version_service::derive_display_state(
-            NaiveDate::from_ymd_opt(2027, 5, 1).unwrap(),
-            Some(NaiveDate::from_ymd_opt(2027, 6, 14).unwrap()),
-            today,
-        ),
-        TimetableVersionDisplayState::Historical
-    );
 }
 
 #[tokio::test]

@@ -33,7 +33,7 @@ test('academic core is a four-step planning path with focused shadcn controls', 
 	assert.match(termStep, /ui\/collapsible/);
 	assert.match(termStep, /standardTermName/);
 	assert.match(termStep, /editing\?\.sequence\s*\?\?\s*nextSequence/);
-	assert.match(termStep, /startDate\s*>\s*endDate/);
+	assert.match(termStep, /plannedEndDate\s*&&\s*startDate\s*>\s*plannedEndDate/);
 	assert.doesNotMatch(termStep, /term-(code|sequence)/);
 });
 

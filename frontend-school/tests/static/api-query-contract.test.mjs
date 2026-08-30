@@ -337,10 +337,10 @@ test('parent wrappers send generated linked-year and term queries', async () => 
 	});
 
 	globalThis.__schoolOrbitApiResponseData = [];
-	assert.deepEqual(await parents.getChildTimetable('student/1', ' term-1 '), []);
+	assert.deepEqual(await parents.getChildTimetable('student/1', ' term-1 ', ' 2026-08-30 '), []);
 	assert.deepEqual(globalThis.__schoolOrbitApiCalls.pop(), {
 		method: 'get',
 		endpoint: '/api/parent/students/student%2F1/timetable',
-		options: { query: { academicTermId: 'term-1' } }
+		options: { query: { academicTermId: 'term-1', date: '2026-08-30' } }
 	});
 });

@@ -427,3 +427,36 @@ fn map_clone_write_error(error: sqlx::Error) -> AppError {
     }
     AppError::DbError(error)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::derive_display_state;
+    use crate::modules::academic::models::timetable_version::TimetableVersionDisplayState;
+    use chrono::NaiveDate;
+
+    #[test]
+    fn display_state_uses_the_effective_interval() {
+        let today = NaiveDate::from_ymd_opt(2027, 6, 15).unwrap();
+
+        assert_eq!(
+            derive_display_state(NaiveDate::from_ymd_opt(2027, 7, 1).unwrap(), None, today,),
+            TimetableVersionDisplayState::Upcoming
+        );
+        assert_eq!(
+            derive_display_state(
+                NaiveDate::from_ymd_opt(2027, 5, 1).unwrap(),
+                Some(NaiveDate::from_ymd_opt(2027, 6, 30).unwrap()),
+                today,
+            ),
+            TimetableVersionDisplayState::Current
+        );
+        assert_eq!(
+            derive_display_state(
+                NaiveDate::from_ymd_opt(2027, 5, 1).unwrap(),
+                Some(NaiveDate::from_ymd_opt(2027, 6, 14).unwrap()),
+                today,
+            ),
+            TimetableVersionDisplayState::Historical
+        );
+    }
+}
