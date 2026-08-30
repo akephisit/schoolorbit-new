@@ -11,11 +11,11 @@ use crate::error::AppError;
 use crate::middleware::permission::ActorContext;
 use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::policies::learning_offering_access_policy::{self, OfferingAction};
-use crate::utils::request_context::actor_tenant_context_from_session;
+use crate::utils::request_context::{actor_tenant_context_from_session, ActorTenantContext};
 use crate::AppState;
 
 use super::models::*;
-use super::services::{activities, groups, offerings, workspaces};
+use super::services::{activities, change_sets, groups, offerings, roster_memberships, workspaces};
 
 fn ok<T: serde::Serialize>(data: T) -> Response {
     Json(ApiResponse::ok(data)).into_response()
@@ -52,6 +52,60 @@ fn require_student_session(session: &AuthenticatedSession) -> Result<(), AppErro
             "เฉพาะนักเรียนเท่านั้นที่จัดการการลงทะเบียนกิจกรรมของตนเองได้".to_string(),
         ))
     }
+}
+
+async fn require_term_change_set_access(
+    context: &ActorTenantContext,
+    change_set_id: Uuid,
+    action: OfferingAction,
+) -> Result<Vec<Uuid>, AppError> {
+    let offering_ids =
+        offerings::operational_change_offering_ids(&context.tenant.pool, change_set_id).await?;
+    learning_offering_access_policy::require_learning_offering_batch_access(
+        &context.tenant.pool,
+        &context.actor,
+        &offering_ids,
+        action,
+    )
+    .await?;
+    Ok(offering_ids)
+}
+
+async fn signal_term_change_set_changed(
+    state: &AppState,
+    session: &AuthenticatedSession,
+    context: &ActorTenantContext,
+    change_set: &AcademicTermChangeSet,
+    prior_descriptors: &[offerings::LearningOfferingSignalDescriptor],
+) -> Result<(), AppError> {
+    state.websocket_manager.broadcast_academic_core_changed(
+        session.tenant.subdomain.clone(),
+        context.actor.user_id,
+        "academic_term_change_set",
+        Some(change_set.id),
+        Some(change_set.academic_year_id),
+        Some(change_set.academic_term_id),
+    );
+    let offering_ids =
+        offerings::operational_change_offering_ids(&context.tenant.pool, change_set.id).await?;
+    let current_descriptors =
+        offerings::signal_descriptors(&context.tenant.pool, &offering_ids).await?;
+    let mut descriptors = std::collections::BTreeMap::new();
+    for descriptor in prior_descriptors.iter().chain(current_descriptors.iter()) {
+        descriptors.insert(descriptor.learning_offering_id, descriptor.clone());
+    }
+    for descriptor in descriptors.into_values() {
+        signal_delivery_changed(
+            state,
+            session,
+            &context.actor,
+            descriptor.academic_term_id,
+            descriptor.learning_offering_id,
+            None,
+            descriptor.row_version,
+        );
+    }
+    Ok(())
 }
 
 #[utoipa::path(
@@ -953,6 +1007,456 @@ pub async fn publish_group_roster(
         groups::publish_roster(&context.tenant.pool, context.actor.user_id, id, request).await?;
     signal_group_changed(&state, &session, &context.actor, &group);
     Ok(ok(group))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/term-change-sets",
+    operation_id = "listAcademicTermChangeSets",
+    tag = "academic",
+    params(AcademicTermChangeSetQuery),
+    responses(
+        (status = 200, description = "Operational academic changes for the selected term", body = ApiResponse<Vec<AcademicTermChangeSet>>),
+        (status = 400, description = "Invalid academic term query", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning offering read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Academic term not found", body = ApiErrorResponse),
+        (status = 409, description = "Academic term state conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_term_change_sets(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<AcademicTermChangeSetQuery>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    learning_offering_access_policy::require_learning_offering_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        OfferingAction::Read,
+    )
+    .await?;
+    Ok(ok(change_sets::list_change_sets(
+        &context.tenant.pool,
+        query.academic_term_id,
+    )
+    .await?))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/academic/term-change-sets",
+    operation_id = "createAcademicTermChangeSet",
+    tag = "academic",
+    request_body = CreateAcademicTermChangeSetRequest,
+    responses(
+        (status = 201, description = "Operational academic change draft created", body = ApiResponse<AcademicTermChangeSet>),
+        (status = 400, description = "Invalid operational change", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning offering management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Academic term or timetable version not found", body = ApiErrorResponse),
+        (status = 409, description = "Operational change creation conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn create_term_change_set(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Json(request): Json<CreateAcademicTermChangeSetRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    learning_offering_access_policy::require_learning_offering_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        OfferingAction::Manage,
+    )
+    .await?;
+    let change_set =
+        change_sets::create_change_set(&context.tenant.pool, context.actor.user_id, request)
+            .await?;
+    signal_term_change_set_changed(&state, &session, &context, &change_set, &[]).await?;
+    Ok(created(change_set))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/term-change-sets/{id}",
+    operation_id = "getAcademicTermChangeSet",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Operational change set ID")),
+    responses(
+        (status = 200, description = "Operational academic change", body = ApiResponse<AcademicTermChangeSet>),
+        (status = 400, description = "Invalid operational change ID", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning offering read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Operational change not found", body = ApiErrorResponse),
+        (status = 409, description = "Operational change state conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_term_change_set(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    require_term_change_set_access(&context, id, OfferingAction::Read).await?;
+    Ok(ok(
+        change_sets::get_change_set(&context.tenant.pool, id).await?
+    ))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/academic/term-change-sets/{id}",
+    operation_id = "updateAcademicTermChangeSet",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Operational change set ID")),
+    request_body = UpdateAcademicTermChangeSetRequest,
+    responses(
+        (status = 200, description = "Operational academic change updated", body = ApiResponse<AcademicTermChangeSet>),
+        (status = 400, description = "Invalid operational change update", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning offering management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Operational change not found", body = ApiErrorResponse),
+        (status = 409, description = "Operational change row version conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn update_term_change_set(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<UpdateAcademicTermChangeSetRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let offering_ids = require_term_change_set_access(&context, id, OfferingAction::Manage).await?;
+    let prior_descriptors =
+        offerings::signal_descriptors(&context.tenant.pool, &offering_ids).await?;
+    let change_set =
+        change_sets::update_change_set(&context.tenant.pool, context.actor.user_id, id, request)
+            .await?;
+    signal_term_change_set_changed(&state, &session, &context, &change_set, &prior_descriptors)
+        .await?;
+    Ok(ok(change_set))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/academic/term-change-sets/{id}/cancel",
+    operation_id = "cancelAcademicTermChangeSet",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Operational change set ID")),
+    request_body = CancelAcademicTermChangeSetRequest,
+    responses(
+        (status = 200, description = "Operational academic change cancelled", body = ApiResponse<AcademicTermChangeSet>),
+        (status = 400, description = "Invalid cancellation request", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning offering management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Operational change not found", body = ApiErrorResponse),
+        (status = 409, description = "Operational change cancellation conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn cancel_term_change_set(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<CancelAcademicTermChangeSetRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let offering_ids = require_term_change_set_access(&context, id, OfferingAction::Manage).await?;
+    let prior_descriptors =
+        offerings::signal_descriptors(&context.tenant.pool, &offering_ids).await?;
+    let change_set =
+        change_sets::cancel_change_set(&context.tenant.pool, context.actor.user_id, id, request)
+            .await?;
+    signal_term_change_set_changed(&state, &session, &context, &change_set, &prior_descriptors)
+        .await?;
+    Ok(ok(change_set))
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/academic/term-change-sets/{id}/items",
+    operation_id = "upsertAcademicTermChangeItem",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Operational change set ID")),
+    request_body = UpsertAcademicTermChangeItemRequest,
+    responses(
+        (status = 200, description = "Operational change item upserted", body = ApiResponse<AcademicTermChangeSet>),
+        (status = 400, description = "Invalid operational change item", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning offering management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Operational change or offering not found", body = ApiErrorResponse),
+        (status = 409, description = "Operational change item conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn upsert_term_change_item(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<UpsertAcademicTermChangeItemRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let offering_ids = require_term_change_set_access(&context, id, OfferingAction::Manage).await?;
+    let prior_descriptors =
+        offerings::signal_descriptors(&context.tenant.pool, &offering_ids).await?;
+    let manage_filter = learning_offering_access_policy::require_learning_offering_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        OfferingAction::Manage,
+    )
+    .await?;
+    if let Some(owner_id) = request.owning_organization_unit_id() {
+        if !learning_offering_access_policy::learning_offering_owner_allowed(
+            &manage_filter,
+            owner_id,
+        ) {
+            return Err(AppError::Forbidden(
+                "ไม่มีสิทธิ์เพิ่มรายการเปิดสอนให้หน่วยงานนี้".to_string(),
+            ));
+        }
+    }
+    if let Some(offering_id) = request.existing_learning_offering_id() {
+        learning_offering_access_policy::require_learning_offering_batch_access(
+            &context.tenant.pool,
+            &context.actor,
+            &[offering_id],
+            OfferingAction::Manage,
+        )
+        .await?;
+    }
+    let change_set =
+        change_sets::upsert_change_item(&context.tenant.pool, context.actor.user_id, id, request)
+            .await?;
+    signal_term_change_set_changed(&state, &session, &context, &change_set, &prior_descriptors)
+        .await?;
+    Ok(ok(change_set))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/academic/term-change-sets/{id}/items/{itemId}",
+    operation_id = "deleteAcademicTermChangeItem",
+    tag = "academic",
+    params(
+        ("id" = Uuid, Path, description = "Operational change set ID"),
+        ("itemId" = Uuid, Path, description = "Operational change item ID")
+    ),
+    request_body = DeleteAcademicTermChangeItemRequest,
+    responses(
+        (status = 200, description = "Operational change item deleted", body = ApiResponse<AcademicTermChangeSet>),
+        (status = 400, description = "Invalid delete request", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning offering management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Operational change item not found", body = ApiErrorResponse),
+        (status = 409, description = "Operational change item row version conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn delete_term_change_item(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path((id, item_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<DeleteAcademicTermChangeItemRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let offering_ids = require_term_change_set_access(&context, id, OfferingAction::Manage).await?;
+    let prior_descriptors =
+        offerings::signal_descriptors(&context.tenant.pool, &offering_ids).await?;
+    let change_set = change_sets::delete_change_item(
+        &context.tenant.pool,
+        context.actor.user_id,
+        id,
+        item_id,
+        request,
+    )
+    .await?;
+    signal_term_change_set_changed(&state, &session, &context, &change_set, &prior_descriptors)
+        .await?;
+    Ok(ok(change_set))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/term-change-sets/{id}/preview",
+    operation_id = "previewAcademicTermChangeSet",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Operational change set ID")),
+    responses(
+        (status = 200, description = "Operational change readiness preview", body = ApiResponse<AcademicTermChangeSetPreview>),
+        (status = 400, description = "Invalid preview request", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning offering read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Operational change not found", body = ApiErrorResponse),
+        (status = 409, description = "Operational change preview conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn preview_term_change_set(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    require_term_change_set_access(&context, id, OfferingAction::Read).await?;
+    Ok(ok(change_sets::preview_change_set(
+        &context.tenant.pool,
+        id,
+    )
+    .await?))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/academic/term-change-sets/{id}/publish",
+    operation_id = "publishAcademicTermChangeSet",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Operational change set ID")),
+    request_body = PublishAcademicTermChangeSetRequest,
+    responses(
+        (status = 200, description = "Operational academic change published", body = ApiResponse<AcademicTermChangeSet>),
+        (status = 400, description = "Readiness blockers remain", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning offering management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Operational change not found", body = ApiErrorResponse),
+        (status = 409, description = "Preview or publication conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn publish_term_change_set(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<PublishAcademicTermChangeSetRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let offering_ids = require_term_change_set_access(&context, id, OfferingAction::Manage).await?;
+    let prior_descriptors =
+        offerings::signal_descriptors(&context.tenant.pool, &offering_ids).await?;
+    let change_set =
+        change_sets::publish_change_set(&context.tenant.pool, context.actor.user_id, id, request)
+            .await?;
+    signal_term_change_set_changed(&state, &session, &context, &change_set, &prior_descriptors)
+        .await?;
+    Ok(ok(change_set))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/learning-groups/{id}/memberships",
+    operation_id = "listDatedRosterMemberships",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Learning group ID")),
+    responses(
+        (status = 200, description = "Dated roster membership history", body = ApiResponse<Vec<DatedRosterMembership>>),
+        (status = 400, description = "Invalid learning group ID", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning group read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Learning group not found", body = ApiErrorResponse),
+        (status = 409, description = "Roster state conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_group_memberships(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    learning_offering_access_policy::require_learning_group_access(
+        &context.tenant.pool,
+        &context.actor,
+        id,
+        OfferingAction::Read,
+    )
+    .await?;
+    Ok(ok(roster_memberships::list_memberships(
+        &context.tenant.pool,
+        id,
+    )
+    .await?))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/academic/learning-groups/{id}/memberships",
+    operation_id = "addDatedRosterMembership",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Learning group ID")),
+    request_body = AddDatedRosterMembershipRequest,
+    responses(
+        (status = 201, description = "Dated roster membership added", body = ApiResponse<DatedRosterMembership>),
+        (status = 400, description = "Invalid membership interval", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning group management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Learning group or student year not found", body = ApiErrorResponse),
+        (status = 409, description = "Membership overlap or row version conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn add_group_membership(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<AddDatedRosterMembershipRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    learning_offering_access_policy::require_learning_group_access(
+        &context.tenant.pool,
+        &context.actor,
+        id,
+        OfferingAction::Manage,
+    )
+    .await?;
+    let membership = roster_memberships::add_membership(
+        &context.tenant.pool,
+        context.actor.user_id,
+        id,
+        request,
+    )
+    .await?;
+    let group = groups::get(&context.tenant.pool, id).await?;
+    signal_group_changed(&state, &session, &context.actor, &group);
+    Ok(created(membership))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/academic/learning-groups/{id}/memberships/{membershipId}/end",
+    operation_id = "endDatedRosterMembership",
+    tag = "academic",
+    params(
+        ("id" = Uuid, Path, description = "Learning group ID"),
+        ("membershipId" = Uuid, Path, description = "Dated roster membership ID")
+    ),
+    request_body = RemoveDatedRosterMembershipRequest,
+    responses(
+        (status = 200, description = "Dated roster membership ended", body = ApiResponse<DatedRosterMembership>),
+        (status = 400, description = "Invalid inclusive end date", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning group management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Learning group or membership not found", body = ApiErrorResponse),
+        (status = 409, description = "Membership row version conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn end_group_membership(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path((id, membership_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<RemoveDatedRosterMembershipRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    learning_offering_access_policy::require_learning_group_access(
+        &context.tenant.pool,
+        &context.actor,
+        id,
+        OfferingAction::Manage,
+    )
+    .await?;
+    let membership = roster_memberships::remove_membership(
+        &context.tenant.pool,
+        context.actor.user_id,
+        id,
+        membership_id,
+        request,
+    )
+    .await?;
+    let group = groups::get(&context.tenant.pool, id).await?;
+    signal_group_changed(&state, &session, &context.actor, &group);
+    Ok(ok(membership))
 }
 
 fn signal_group_changed(

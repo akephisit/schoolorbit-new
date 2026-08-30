@@ -267,6 +267,28 @@ impl UpsertAcademicTermChangeItemRequest {
             } => *change_set_row_version,
         }
     }
+
+    pub fn owning_organization_unit_id(&self) -> Option<Uuid> {
+        match self {
+            Self::AddCourse { offering, .. } => Some(offering.owning_organization_unit_id),
+            Self::AddActivity { offering, .. } => Some(offering.owning_organization_unit_id),
+            Self::StopOffering { .. } | Self::AdjustWeeklyPeriodTarget { .. } => None,
+        }
+    }
+
+    pub fn existing_learning_offering_id(&self) -> Option<Uuid> {
+        match self {
+            Self::StopOffering {
+                learning_offering_id,
+                ..
+            }
+            | Self::AdjustWeeklyPeriodTarget {
+                learning_offering_id,
+                ..
+            } => Some(*learning_offering_id),
+            Self::AddCourse { .. } | Self::AddActivity { .. } => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, ToSchema)]

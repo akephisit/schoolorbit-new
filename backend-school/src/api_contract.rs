@@ -441,6 +441,18 @@ use utoipa::OpenApi;
         crate::modules::academic::delivery::handlers::preview_group_roster,
         crate::modules::academic::delivery::handlers::apply_group_roster,
         crate::modules::academic::delivery::handlers::publish_group_roster,
+        crate::modules::academic::delivery::handlers::list_term_change_sets,
+        crate::modules::academic::delivery::handlers::create_term_change_set,
+        crate::modules::academic::delivery::handlers::get_term_change_set,
+        crate::modules::academic::delivery::handlers::update_term_change_set,
+        crate::modules::academic::delivery::handlers::cancel_term_change_set,
+        crate::modules::academic::delivery::handlers::upsert_term_change_item,
+        crate::modules::academic::delivery::handlers::delete_term_change_item,
+        crate::modules::academic::delivery::handlers::preview_term_change_set,
+        crate::modules::academic::delivery::handlers::publish_term_change_set,
+        crate::modules::academic::delivery::handlers::list_group_memberships,
+        crate::modules::academic::delivery::handlers::add_group_membership,
+        crate::modules::academic::delivery::handlers::end_group_membership,
         crate::modules::academic::delivery::handlers::list_my_activity_registrations,
         crate::modules::academic::delivery::handlers::enroll_my_activity_registration,
         crate::modules::academic::delivery::handlers::unenroll_my_activity_registration,
@@ -1005,6 +1017,26 @@ use utoipa::OpenApi;
         ApplyRosterRequest,
         PublishRosterRequest,
         LearningGroupStudent,
+        AcademicTermChangeSetStatus,
+        AcademicTermChangeActionKind,
+        AcademicTermChangeItem,
+        AcademicTermChangeSet,
+        CreateAcademicTermChangeSetRequest,
+        UpdateAcademicTermChangeSetRequest,
+        CancelAcademicTermChangeSetRequest,
+        AcademicTermChangeSetQuery,
+        UpsertAcademicTermChangeItemRequest,
+        DeleteAcademicTermChangeItemRequest,
+        AcademicChangeFindingSeverity,
+        AcademicChangeFindingCode,
+        AcademicChangeFinding,
+        AcademicChangeImpactCounts,
+        AcademicOfferingScheduleCount,
+        AcademicTermChangeSetPreview,
+        PublishAcademicTermChangeSetRequest,
+        DatedRosterMembership,
+        AddDatedRosterMembershipRequest,
+        RemoveDatedRosterMembershipRequest,
         ActivityResult,
         StudentActivityRegistrationQuery,
         StudentActivityGroupOption,
@@ -1022,6 +1054,11 @@ use utoipa::OpenApi;
         ApiResponse<LearningGroupHomeroomIds>,
         ApiResponse<Vec<TeacherAssignmentInput>>,
         ApiResponse<RosterPreview>,
+        ApiResponse<Vec<AcademicTermChangeSet>>,
+        ApiResponse<AcademicTermChangeSet>,
+        ApiResponse<AcademicTermChangeSetPreview>,
+        ApiResponse<Vec<DatedRosterMembership>>,
+        ApiResponse<DatedRosterMembership>,
         ApiResponse<Vec<StudentActivityOfferingOption>>,
         ApiResponse<StudentActivityRegistrationResult>,
         TimetableEntry,
@@ -2085,6 +2122,141 @@ mod tests {
             Some(2)
         );
     }
+
+    #[test]
+    fn operational_academic_change_contract_is_typed_and_complete() {
+        let document = school_api_value().expect("document should serialize");
+        let operations = [
+            (
+                "/api/academic/term-change-sets",
+                "get",
+                "listAcademicTermChangeSets",
+            ),
+            (
+                "/api/academic/term-change-sets",
+                "post",
+                "createAcademicTermChangeSet",
+            ),
+            (
+                "/api/academic/term-change-sets/{id}",
+                "get",
+                "getAcademicTermChangeSet",
+            ),
+            (
+                "/api/academic/term-change-sets/{id}",
+                "patch",
+                "updateAcademicTermChangeSet",
+            ),
+            (
+                "/api/academic/term-change-sets/{id}/cancel",
+                "post",
+                "cancelAcademicTermChangeSet",
+            ),
+            (
+                "/api/academic/term-change-sets/{id}/items",
+                "put",
+                "upsertAcademicTermChangeItem",
+            ),
+            (
+                "/api/academic/term-change-sets/{id}/items/{itemId}",
+                "delete",
+                "deleteAcademicTermChangeItem",
+            ),
+            (
+                "/api/academic/term-change-sets/{id}/preview",
+                "get",
+                "previewAcademicTermChangeSet",
+            ),
+            (
+                "/api/academic/term-change-sets/{id}/publish",
+                "post",
+                "publishAcademicTermChangeSet",
+            ),
+            (
+                "/api/academic/learning-groups/{id}/memberships",
+                "get",
+                "listDatedRosterMemberships",
+            ),
+            (
+                "/api/academic/learning-groups/{id}/memberships",
+                "post",
+                "addDatedRosterMembership",
+            ),
+            (
+                "/api/academic/learning-groups/{id}/memberships/{membershipId}/end",
+                "post",
+                "endDatedRosterMembership",
+            ),
+        ];
+        assert_operations(&document, &operations);
+        assert_eq!(
+            query_contract(&document, "/api/academic/term-change-sets", "get"),
+            BTreeSet::from([("academicTermId".to_string(), true)])
+        );
+        for (path, method, expected_names) in [
+            (
+                "/api/academic/term-change-sets/{id}/items/{itemId}",
+                "delete",
+                BTreeSet::from(["id", "itemId"]),
+            ),
+            (
+                "/api/academic/learning-groups/{id}/memberships/{membershipId}/end",
+                "post",
+                BTreeSet::from(["id", "membershipId"]),
+            ),
+        ] {
+            let names = document["paths"][path][method]["parameters"]
+                .as_array()
+                .expect("path parameters must be an array")
+                .iter()
+                .filter(|parameter| parameter["in"] == "path")
+                .map(|parameter| parameter["name"].as_str().expect("path name"))
+                .collect::<BTreeSet<_>>();
+            assert_eq!(names, expected_names);
+        }
+        for (path, method, _) in operations {
+            let operation = &document["paths"][path][method];
+            for status in ["400", "403", "404", "409"] {
+                assert_eq!(
+                    operation["responses"][status]["content"]["application/json"]["schema"]["$ref"],
+                    "#/components/schemas/ApiErrorResponse",
+                    "{method} {path} must document {status}"
+                );
+            }
+        }
+        assert_eq!(
+            document["paths"]["/api/academic/term-change-sets"]["get"]["responses"]["200"]
+                ["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_Vec_AcademicTermChangeSet"
+        );
+        assert_eq!(
+            document["paths"]["/api/academic/term-change-sets/{id}/preview"]["get"]["responses"]
+                ["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_AcademicTermChangeSetPreview"
+        );
+        assert_eq!(
+            document["paths"]["/api/academic/learning-groups/{id}/memberships"]["get"]["responses"]
+                ["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_Vec_DatedRosterMembership"
+        );
+        let schemas = &document["components"]["schemas"];
+        for schema_name in [
+            "CreateAcademicTermChangeSetRequest",
+            "UpdateAcademicTermChangeSetRequest",
+            "CancelAcademicTermChangeSetRequest",
+            "DeleteAcademicTermChangeItemRequest",
+            "PublishAcademicTermChangeSetRequest",
+            "AddDatedRosterMembershipRequest",
+            "RemoveDatedRosterMembershipRequest",
+        ] {
+            assert_ne!(
+                schemas[schema_name]["additionalProperties"],
+                Value::Bool(true),
+                "{schema_name} must not accept arbitrary fields"
+            );
+        }
+    }
+
     #[test]
     fn documents_organization_unit_and_permission_grant_operations() {
         let document = school_api_value().expect("document should serialize");

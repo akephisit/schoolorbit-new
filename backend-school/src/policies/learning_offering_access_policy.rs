@@ -127,6 +127,54 @@ pub async fn require_learning_offering_access(
     }
 }
 
+pub async fn require_learning_offering_batch_access(
+    pool: &PgPool,
+    actor: &ActorContext,
+    offering_ids: &[Uuid],
+    action: OfferingAction,
+) -> Result<(), AppError> {
+    let mut unique_ids = offering_ids.to_vec();
+    unique_ids.sort_unstable();
+    unique_ids.dedup();
+    if unique_ids.is_empty() {
+        require_learning_offering_list_access(pool, actor, action).await?;
+        return Ok(());
+    }
+    let filter = require_learning_offering_list_access(pool, actor, action).await?;
+    let targets: Vec<(Uuid, Option<Uuid>, bool)> = sqlx::query_as(
+        r#"SELECT offering.id, offering.owning_organization_unit_id,
+                  EXISTS (
+                      SELECT 1
+                      FROM learning_groups learning_group
+                      JOIN learning_group_teachers teacher
+                        ON teacher.learning_group_id = learning_group.id
+                      WHERE learning_group.learning_offering_id = offering.id
+                        AND teacher.teacher_id = $2
+                  ) AS actor_is_assigned
+           FROM learning_offerings offering
+           WHERE offering.id = ANY($1)
+           ORDER BY offering.id"#,
+    )
+    .bind(&unique_ids)
+    .bind(actor.user_id)
+    .fetch_all(pool)
+    .await?;
+    if targets.len() != unique_ids.len() {
+        return Err(AppError::NotFound(
+            "ไม่พบรายการเปิดสอนบางรายการในชุดการเปลี่ยนแปลง".to_string(),
+        ));
+    }
+    if targets.iter().any(|(_, owner_id, actor_is_assigned)| {
+        resource_access_policy::academic_resource_access_for(&filter, *owner_id, *actor_is_assigned)
+            == AcademicResourceAccess::None
+    }) {
+        return Err(AppError::Forbidden(
+            "ไม่มีสิทธิ์เข้าถึงรายการเปิดสอนบางรายการในชุดการเปลี่ยนแปลง".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 pub async fn require_learning_group_access(
     pool: &PgPool,
     actor: &ActorContext,
@@ -436,5 +484,38 @@ mod tests {
             .unwrap(),
             AcademicResourceAccess::School
         );
+
+        sqlx::query(
+            r#"DELETE FROM learning_group_teachers teacher
+               USING learning_groups learning_group
+               WHERE teacher.learning_group_id = learning_group.id
+                 AND learning_group.learning_offering_id = $1
+                 AND teacher.teacher_id = $2"#,
+        )
+        .bind(school_offering_id)
+        .bind(assigned_manager.user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let unassigned_offering_id = school_offering_id;
+        assert!(matches!(
+            require_learning_offering_batch_access(
+                &pool,
+                &assigned_manager,
+                &[assigned_offering_id, unassigned_offering_id],
+                OfferingAction::Manage,
+            )
+            .await,
+            Err(AppError::Forbidden(_))
+        ));
+        let school_manager = actor(&[codes::LEARNING_OFFERING_MANAGE_SCHOOL]);
+        require_learning_offering_batch_access(
+            &pool,
+            &school_manager,
+            &[assigned_offering_id, unassigned_offering_id],
+            OfferingAction::Manage,
+        )
+        .await
+        .expect("school management scope must authorize every affected offering together");
     }
 }

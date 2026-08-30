@@ -2,7 +2,7 @@ pub mod handlers;
 pub mod models;
 pub mod services;
 
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post, put};
 use axum::Router;
 
 use crate::AppState;
@@ -59,6 +59,42 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/learning-groups/{id}/roster/publish",
             post(handlers::publish_group_roster),
+        )
+        .route(
+            "/term-change-sets",
+            get(handlers::list_term_change_sets).post(handlers::create_term_change_set),
+        )
+        .route(
+            "/term-change-sets/{id}",
+            get(handlers::get_term_change_set).patch(handlers::update_term_change_set),
+        )
+        .route(
+            "/term-change-sets/{id}/cancel",
+            post(handlers::cancel_term_change_set),
+        )
+        .route(
+            "/term-change-sets/{id}/items",
+            put(handlers::upsert_term_change_item),
+        )
+        .route(
+            "/term-change-sets/{id}/items/{itemId}",
+            delete(handlers::delete_term_change_item),
+        )
+        .route(
+            "/term-change-sets/{id}/preview",
+            get(handlers::preview_term_change_set),
+        )
+        .route(
+            "/term-change-sets/{id}/publish",
+            post(handlers::publish_term_change_set),
+        )
+        .route(
+            "/learning-groups/{id}/memberships",
+            get(handlers::list_group_memberships).post(handlers::add_group_membership),
+        )
+        .route(
+            "/learning-groups/{id}/memberships/{membershipId}/end",
+            post(handlers::end_group_membership),
         )
 }
 

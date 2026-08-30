@@ -1742,6 +1742,12 @@ async fn change_set_preview_counts_stop_impact_without_exposing_roster_identitie
     let preview = change_sets::preview_change_set(&pool, changed.id)
         .await
         .unwrap();
+    assert_eq!(
+        offerings::operational_change_offering_ids(&pool, changed.id)
+            .await
+            .unwrap(),
+        vec![offering_id]
+    );
 
     assert_eq!(preview.impact_counts, expected);
     assert!(!preview

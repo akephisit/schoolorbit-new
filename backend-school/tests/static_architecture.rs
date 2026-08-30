@@ -5974,6 +5974,76 @@ fn learning_delivery_registers_the_canonical_offering_group_and_roster_routes() 
 }
 
 #[test]
+fn operational_academic_changes_register_authorized_contract_routes() {
+    let routes = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/delivery.rs"),
+    ));
+    let handlers = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/delivery/handlers.rs"),
+    ));
+
+    for required in [
+        "\"/term-change-sets\"",
+        "\"/term-change-sets/{id}\"",
+        "\"/term-change-sets/{id}/cancel\"",
+        "\"/term-change-sets/{id}/items\"",
+        "\"/term-change-sets/{id}/items/{itemId}\"",
+        "\"/term-change-sets/{id}/preview\"",
+        "\"/term-change-sets/{id}/publish\"",
+        "\"/learning-groups/{id}/memberships\"",
+        "\"/learning-groups/{id}/memberships/{membershipId}/end\"",
+    ] {
+        assert!(
+            routes.contains(required),
+            "missing operational route: {required}"
+        );
+    }
+
+    for handler_name in [
+        "list_term_change_sets",
+        "get_term_change_set",
+        "preview_term_change_set",
+        "list_group_memberships",
+    ] {
+        let handler =
+            extract_braced_block(&handlers, &format!("pub async fn {handler_name}"), false);
+        assert!(
+            handler.contains("OfferingAction::Read"),
+            "{handler_name} must require learning-offering read access"
+        );
+    }
+
+    for handler_name in [
+        "create_term_change_set",
+        "update_term_change_set",
+        "cancel_term_change_set",
+        "upsert_term_change_item",
+        "delete_term_change_item",
+        "publish_term_change_set",
+        "add_group_membership",
+        "end_group_membership",
+    ] {
+        let handler =
+            extract_braced_block(&handlers, &format!("pub async fn {handler_name}"), false);
+        assert!(
+            handler.contains("OfferingAction::Manage"),
+            "{handler_name} must require learning-offering management access"
+        );
+        assert!(
+            handler.contains("signal_") || handler.contains("signal_group_changed"),
+            "{handler_name} must emit a bounded invalidation after mutation"
+        );
+    }
+
+    for forbidden_db_call in ["sqlx::query", ".execute(", ".fetch_"] {
+        assert!(
+            !handlers.contains(forbidden_db_call),
+            "delivery handlers must delegate {forbidden_db_call} to services"
+        );
+    }
+}
+
+#[test]
 fn learning_delivery_contract_is_strictly_tagged_idempotent_and_pii_safe() {
     let models = strip_comments(&read_source(
         manifest_dir().join("src/modules/academic/delivery/models.rs"),

@@ -1,6 +1,155 @@
 {
   "components": {
     "schemas": {
+      "AcademicChangeFinding": {
+        "properties": {
+          "affectedCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "code": {
+            "$ref": "#/components/schemas/AcademicChangeFindingCode"
+          },
+          "guidance": {
+            "type": "string"
+          },
+          "learningGroupId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "learningOfferingId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resourceId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "route": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "severity": {
+            "$ref": "#/components/schemas/AcademicChangeFindingSeverity"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "severity",
+          "title",
+          "guidance",
+          "affectedCount"
+        ],
+        "type": "object"
+      },
+      "AcademicChangeFindingCode": {
+        "enum": [
+          "change_set_no_items",
+          "change_set_stale",
+          "term_not_writable",
+          "effective_date_invalid",
+          "base_timetable_version_stale",
+          "target_timetable_version_stale",
+          "change_item_stale",
+          "resource_stale",
+          "draft_group",
+          "missing_primary_teacher",
+          "unpublished_roster",
+          "offering_unavailable",
+          "missing_weekly_period_target",
+          "weekly_period_deficit",
+          "weekly_period_excess",
+          "homeroom_conflict",
+          "learning_group_conflict",
+          "teacher_conflict",
+          "room_conflict",
+          "stopped_offering_still_scheduled"
+        ],
+        "type": "string"
+      },
+      "AcademicChangeFindingSeverity": {
+        "enum": [
+          "blocking",
+          "warning"
+        ],
+        "type": "string"
+      },
+      "AcademicChangeImpactCounts": {
+        "properties": {
+          "courseAssessmentCategories": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "courseAssessmentItems": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "courseAssessmentPlans": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "examScheduleItems": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "groups": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "homerooms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "learningResults": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "membershipIntervals": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "supervisionObservations": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "targetTimetableEntries": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "teacherAssignments": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "groups",
+          "homerooms",
+          "membershipIntervals",
+          "teacherAssignments",
+          "targetTimetableEntries",
+          "courseAssessmentPlans",
+          "courseAssessmentCategories",
+          "courseAssessmentItems",
+          "learningResults",
+          "examScheduleItems",
+          "supervisionObservations"
+        ],
+        "type": "object"
+      },
       "AcademicContextOptions": {
         "properties": {
           "activeAcademicTermId": {
@@ -163,6 +312,41 @@
         ],
         "type": "object"
       },
+      "AcademicOfferingScheduleCount": {
+        "properties": {
+          "actualPeriods": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "learningGroupId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "learningGroupLabel": {
+            "type": "string"
+          },
+          "learningOfferingId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "offeringLabel": {
+            "type": "string"
+          },
+          "targetPeriods": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "learningOfferingId",
+          "learningGroupId",
+          "offeringLabel",
+          "learningGroupLabel",
+          "actualPeriods",
+          "targetPeriods"
+        ],
+        "type": "object"
+      },
       "AcademicSetupWorkspace": {
         "properties": {
           "bellSchedules": {
@@ -281,6 +465,335 @@
           "updatedAt"
         ],
         "type": "object"
+      },
+      "AcademicTermChangeActionKind": {
+        "enum": [
+          "add_offering",
+          "stop_offering",
+          "adjust_weekly_period_target"
+        ],
+        "type": "string"
+      },
+      "AcademicTermChangeItem": {
+        "oneOf": [
+          {
+            "properties": {
+              "actionKind": {
+                "enum": [
+                  "add_offering"
+                ],
+                "type": "string"
+              },
+              "created_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "created_by": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "learning_offering_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "row_version": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "updated_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "weekly_period_target": {
+                "format": "int32",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "id",
+              "learning_offering_id",
+              "weekly_period_target",
+              "row_version",
+              "created_by",
+              "created_at",
+              "updated_at",
+              "actionKind"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "actionKind": {
+                "enum": [
+                  "stop_offering"
+                ],
+                "type": "string"
+              },
+              "created_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "created_by": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "learning_offering_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "row_version": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "updated_at": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "learning_offering_id",
+              "row_version",
+              "created_by",
+              "created_at",
+              "updated_at",
+              "actionKind"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "actionKind": {
+                "enum": [
+                  "adjust_weekly_period_target"
+                ],
+                "type": "string"
+              },
+              "created_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "created_by": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "learning_offering_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "row_version": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "updated_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "weekly_period_target": {
+                "format": "int32",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "id",
+              "learning_offering_id",
+              "weekly_period_target",
+              "row_version",
+              "created_by",
+              "created_at",
+              "updated_at",
+              "actionKind"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "AcademicTermChangeSet": {
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "academicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "baseTimetableVersionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "cancelledAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cancelledBy": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "createdBy": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "effectiveFrom": {
+            "format": "date",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AcademicTermChangeItem"
+            },
+            "type": "array"
+          },
+          "publishedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "publishedBy": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AcademicTermChangeSetStatus"
+          },
+          "targetTimetableVersionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "academicTermId",
+          "academicYearId",
+          "effectiveFrom",
+          "reason",
+          "status",
+          "baseTimetableVersionId",
+          "targetTimetableVersionId",
+          "rowVersion",
+          "createdBy",
+          "createdAt",
+          "updatedAt",
+          "items"
+        ],
+        "type": "object"
+      },
+      "AcademicTermChangeSetPreview": {
+        "properties": {
+          "changeSetId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "changeSetRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "effectiveFrom": {
+            "format": "date",
+            "type": "string"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/AcademicChangeFinding"
+            },
+            "type": "array"
+          },
+          "impactCounts": {
+            "$ref": "#/components/schemas/AcademicChangeImpactCounts"
+          },
+          "previewHash": {
+            "type": "string"
+          },
+          "scheduleCounts": {
+            "items": {
+              "$ref": "#/components/schemas/AcademicOfferingScheduleCount"
+            },
+            "type": "array"
+          },
+          "targetTimetableVersionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "targetTimetableVersionRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "changeSetId",
+          "changeSetRowVersion",
+          "targetTimetableVersionId",
+          "targetTimetableVersionRowVersion",
+          "effectiveFrom",
+          "impactCounts",
+          "scheduleCounts",
+          "findings",
+          "previewHash"
+        ],
+        "type": "object"
+      },
+      "AcademicTermChangeSetQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "academicTermId"
+        ],
+        "type": "object"
+      },
+      "AcademicTermChangeSetStatus": {
+        "enum": [
+          "draft",
+          "published",
+          "cancelled"
+        ],
+        "type": "string"
       },
       "AcademicTermOption": {
         "properties": {
@@ -874,6 +1387,29 @@
         ],
         "type": "object"
       },
+      "AddDatedRosterMembershipRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "groupRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "joinedAt": {
+            "format": "date",
+            "type": "string"
+          },
+          "studentAcademicYearId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "groupRowVersion",
+          "studentAcademicYearId",
+          "joinedAt"
+        ],
+        "type": "object"
+      },
       "AddMemberRequest": {
         "properties": {
           "is_primary": {
@@ -1352,6 +1888,190 @@
               "migrated",
               "createdAt",
               "updatedAt"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_AcademicTermChangeSet": {
+        "properties": {
+          "data": {
+            "properties": {
+              "academicTermId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "academicYearId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "baseTimetableVersionId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "cancelledAt": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "cancelledBy": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "createdBy": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "effectiveFrom": {
+                "format": "date",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "items": {
+                "items": {
+                  "$ref": "#/components/schemas/AcademicTermChangeItem"
+                },
+                "type": "array"
+              },
+              "publishedAt": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "publishedBy": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              },
+              "rowVersion": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "status": {
+                "$ref": "#/components/schemas/AcademicTermChangeSetStatus"
+              },
+              "targetTimetableVersionId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "academicTermId",
+              "academicYearId",
+              "effectiveFrom",
+              "reason",
+              "status",
+              "baseTimetableVersionId",
+              "targetTimetableVersionId",
+              "rowVersion",
+              "createdBy",
+              "createdAt",
+              "updatedAt",
+              "items"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_AcademicTermChangeSetPreview": {
+        "properties": {
+          "data": {
+            "properties": {
+              "changeSetId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "changeSetRowVersion": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "effectiveFrom": {
+                "format": "date",
+                "type": "string"
+              },
+              "findings": {
+                "items": {
+                  "$ref": "#/components/schemas/AcademicChangeFinding"
+                },
+                "type": "array"
+              },
+              "impactCounts": {
+                "$ref": "#/components/schemas/AcademicChangeImpactCounts"
+              },
+              "previewHash": {
+                "type": "string"
+              },
+              "scheduleCounts": {
+                "items": {
+                  "$ref": "#/components/schemas/AcademicOfferingScheduleCount"
+                },
+                "type": "array"
+              },
+              "targetTimetableVersionId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "targetTimetableVersionRowVersion": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "changeSetId",
+              "changeSetRowVersion",
+              "targetTimetableVersionId",
+              "targetTimetableVersionRowVersion",
+              "effectiveFrom",
+              "impactCounts",
+              "scheduleCounts",
+              "findings",
+              "previewHash"
             ],
             "type": "object"
           },
@@ -3684,6 +4404,90 @@
               "periods",
               "teachers",
               "summary"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_DatedRosterMembership": {
+        "properties": {
+          "data": {
+            "properties": {
+              "displayName": {
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "joinedAt": {
+                "format": "date",
+                "type": "string"
+              },
+              "learningGroupId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "leftAt": {
+                "format": "date",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "membershipStatus": {
+                "$ref": "#/components/schemas/MembershipStatus"
+              },
+              "publishedAt": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "rosterSource": {
+                "type": "string"
+              },
+              "rowVersion": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "studentAcademicYearId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "studentCode": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "studentId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "learningGroupId",
+              "studentAcademicYearId",
+              "studentId",
+              "displayName",
+              "membershipStatus",
+              "rosterSource",
+              "joinedAt",
+              "rowVersion"
             ],
             "type": "object"
           },
@@ -9593,6 +10397,124 @@
         ],
         "type": "object"
       },
+      "ApiResponse_Vec_AcademicTermChangeSet": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "academicTermId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "academicYearId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "baseTimetableVersionId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "cancelledAt": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "cancelledBy": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "createdAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "createdBy": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "effectiveFrom": {
+                  "format": "date",
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "items": {
+                  "items": {
+                    "$ref": "#/components/schemas/AcademicTermChangeItem"
+                  },
+                  "type": "array"
+                },
+                "publishedAt": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "publishedBy": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "rowVersion": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "status": {
+                  "$ref": "#/components/schemas/AcademicTermChangeSetStatus"
+                },
+                "targetTimetableVersionId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "academicTermId",
+                "academicYearId",
+                "effectiveFrom",
+                "reason",
+                "status",
+                "baseTimetableVersionId",
+                "targetTimetableVersionId",
+                "rowVersion",
+                "createdBy",
+                "createdAt",
+                "updatedAt",
+                "items"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Vec_AcademicYear": {
         "properties": {
           "data": {
@@ -11592,6 +12514,93 @@
               "required": [
                 "version",
                 "startAcademicYearName"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_DatedRosterMembership": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "displayName": {
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "joinedAt": {
+                  "format": "date",
+                  "type": "string"
+                },
+                "learningGroupId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "leftAt": {
+                  "format": "date",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "membershipStatus": {
+                  "$ref": "#/components/schemas/MembershipStatus"
+                },
+                "publishedAt": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "rosterSource": {
+                  "type": "string"
+                },
+                "rowVersion": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "studentAcademicYearId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "studentCode": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "studentId": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "learningGroupId",
+                "studentAcademicYearId",
+                "studentId",
+                "displayName",
+                "membershipStatus",
+                "rosterSource",
+                "joinedAt",
+                "rowVersion"
               ],
               "type": "object"
             },
@@ -16369,6 +17378,19 @@
         ],
         "type": "string"
       },
+      "CancelAcademicTermChangeSetRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rowVersion"
+        ],
+        "type": "object"
+      },
       "CancelObservationRequest": {
         "properties": {
           "reason": {
@@ -19229,6 +20251,33 @@
           "credit",
           "standardPeriodsPerWeek",
           "gradingPolicy"
+        ],
+        "type": "object"
+      },
+      "CreateAcademicTermChangeSetRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "effectiveFrom": {
+            "format": "date",
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "academicTermId",
+          "effectiveFrom",
+          "reason",
+          "idempotencyKey"
         ],
         "type": "object"
       },
@@ -22229,6 +23278,75 @@
         ],
         "type": "object"
       },
+      "DatedRosterMembership": {
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "joinedAt": {
+            "format": "date",
+            "type": "string"
+          },
+          "learningGroupId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "leftAt": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "membershipStatus": {
+            "$ref": "#/components/schemas/MembershipStatus"
+          },
+          "publishedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rosterSource": {
+            "type": "string"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "studentAcademicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "studentCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "studentId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "learningGroupId",
+          "studentAcademicYearId",
+          "studentId",
+          "displayName",
+          "membershipStatus",
+          "rosterSource",
+          "joinedAt",
+          "rowVersion"
+        ],
+        "type": "object"
+      },
       "DayRoomAssignmentView": {
         "properties": {
           "buildingName": {
@@ -22403,6 +23521,24 @@
           "reason",
           "started_at",
           "expires_at"
+        ],
+        "type": "object"
+      },
+      "DeleteAcademicTermChangeItemRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "changeSetRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "itemRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "changeSetRowVersion",
+          "itemRowVersion"
         ],
         "type": "object"
       },
@@ -26150,6 +27286,7 @@
         "enum": [
           "draft",
           "published",
+          "cancelled",
           "closed"
         ],
         "type": "string"
@@ -28042,6 +29179,39 @@
         ],
         "type": "object"
       },
+      "PublishAcademicTermChangeSetRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "acknowledgedWarningCodes": {
+            "items": {
+              "$ref": "#/components/schemas/AcademicChangeFindingCode"
+            },
+            "type": "array"
+          },
+          "idempotencyKey": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "previewHash": {
+            "type": "string"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "targetTimetableVersionRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rowVersion",
+          "targetTimetableVersionRowVersion",
+          "previewHash",
+          "idempotencyKey"
+        ],
+        "type": "object"
+      },
       "PublishLearningOfferingRequest": {
         "additionalProperties": false,
         "properties": {
@@ -28534,6 +29704,29 @@
           "external"
         ],
         "type": "string"
+      },
+      "RemoveDatedRosterMembershipRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "groupRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "leftAt": {
+            "format": "date",
+            "type": "string"
+          },
+          "membershipRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "groupRowVersion",
+          "membershipRowVersion",
+          "leftAt"
+        ],
+        "type": "object"
       },
       "ReorderGroupsRequest": {
         "properties": {
@@ -33325,6 +34518,28 @@
         ],
         "type": "object"
       },
+      "UpdateAcademicTermChangeSetRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "effectiveFrom": {
+            "format": "date",
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rowVersion",
+          "effectiveFrom",
+          "reason"
+        ],
+        "type": "object"
+      },
       "UpdateAcademicTermRequest": {
         "additionalProperties": false,
         "properties": {
@@ -35084,6 +36299,128 @@
           "rowVersion"
         ],
         "type": "object"
+      },
+      "UpsertAcademicTermChangeItemRequest": {
+        "oneOf": [
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "add_course"
+                ],
+                "type": "string"
+              },
+              "change_set_row_version": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "offering": {
+                "$ref": "#/components/schemas/CreateCourseOfferingRequest"
+              }
+            },
+            "required": [
+              "change_set_row_version",
+              "offering",
+              "action"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "add_activity"
+                ],
+                "type": "string"
+              },
+              "change_set_row_version": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "offering": {
+                "$ref": "#/components/schemas/CreateActivityOfferingRequest"
+              },
+              "weekly_period_target": {
+                "format": "int32",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "change_set_row_version",
+              "weekly_period_target",
+              "offering",
+              "action"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "stop_offering"
+                ],
+                "type": "string"
+              },
+              "change_set_row_version": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "item_row_version": {
+                "format": "int64",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "learning_offering_id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "change_set_row_version",
+              "learning_offering_id",
+              "action"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "adjust_weekly_period_target"
+                ],
+                "type": "string"
+              },
+              "change_set_row_version": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "item_row_version": {
+                "format": "int64",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "learning_offering_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "weekly_period_target": {
+                "format": "int32",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "change_set_row_version",
+              "learning_offering_id",
+              "weekly_period_target",
+              "action"
+            ],
+            "type": "object"
+          }
+        ]
       },
       "UpsertDayRoomAssignmentRequest": {
         "additionalProperties": false,
@@ -41951,6 +43288,280 @@
         ]
       }
     },
+    "/api/academic/learning-groups/{id}/memberships": {
+      "get": {
+        "operationId": "listDatedRosterMemberships",
+        "parameters": [
+          {
+            "description": "Learning group ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_DatedRosterMembership"
+                }
+              }
+            },
+            "description": "Dated roster membership history"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid learning group ID"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Learning group read permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Learning group not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Roster state conflict"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      },
+      "post": {
+        "operationId": "addDatedRosterMembership",
+        "parameters": [
+          {
+            "description": "Learning group ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddDatedRosterMembershipRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_DatedRosterMembership"
+                }
+              }
+            },
+            "description": "Dated roster membership added"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid membership interval"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Learning group management permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Learning group or student year not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Membership overlap or row version conflict"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/learning-groups/{id}/memberships/{membershipId}/end": {
+      "post": {
+        "operationId": "endDatedRosterMembership",
+        "parameters": [
+          {
+            "description": "Learning group ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Dated roster membership ID",
+            "in": "path",
+            "name": "membershipId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoveDatedRosterMembershipRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_DatedRosterMembership"
+                }
+              }
+            },
+            "description": "Dated roster membership ended"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid inclusive end date"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Learning group management permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Learning group or membership not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Membership row version conflict"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
     "/api/academic/learning-groups/{id}/roster": {
       "get": {
         "operationId": "previewLearningGroupRoster",
@@ -44644,6 +46255,797 @@
               }
             },
             "description": "Study program row version conflict"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/term-change-sets": {
+      "get": {
+        "operationId": "listAcademicTermChangeSets",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_AcademicTermChangeSet"
+                }
+              }
+            },
+            "description": "Operational academic changes for the selected term"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid academic term query"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Learning offering read permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic term not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic term state conflict"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      },
+      "post": {
+        "operationId": "createAcademicTermChangeSet",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAcademicTermChangeSetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AcademicTermChangeSet"
+                }
+              }
+            },
+            "description": "Operational academic change draft created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid operational change"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Learning offering management permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic term or timetable version not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Operational change creation conflict"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/term-change-sets/{id}": {
+      "get": {
+        "operationId": "getAcademicTermChangeSet",
+        "parameters": [
+          {
+            "description": "Operational change set ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AcademicTermChangeSet"
+                }
+              }
+            },
+            "description": "Operational academic change"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid operational change ID"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Learning offering read permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Operational change not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Operational change state conflict"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      },
+      "patch": {
+        "operationId": "updateAcademicTermChangeSet",
+        "parameters": [
+          {
+            "description": "Operational change set ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAcademicTermChangeSetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AcademicTermChangeSet"
+                }
+              }
+            },
+            "description": "Operational academic change updated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid operational change update"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Learning offering management permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Operational change not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Operational change row version conflict"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/term-change-sets/{id}/cancel": {
+      "post": {
+        "operationId": "cancelAcademicTermChangeSet",
+        "parameters": [
+          {
+            "description": "Operational change set ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelAcademicTermChangeSetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AcademicTermChangeSet"
+                }
+              }
+            },
+            "description": "Operational academic change cancelled"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid cancellation request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Learning offering management permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Operational change not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Operational change cancellation conflict"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/term-change-sets/{id}/items": {
+      "put": {
+        "operationId": "upsertAcademicTermChangeItem",
+        "parameters": [
+          {
+            "description": "Operational change set ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertAcademicTermChangeItemRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AcademicTermChangeSet"
+                }
+              }
+            },
+            "description": "Operational change item upserted"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid operational change item"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Learning offering management permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Operational change or offering not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Operational change item conflict"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/term-change-sets/{id}/items/{itemId}": {
+      "delete": {
+        "operationId": "deleteAcademicTermChangeItem",
+        "parameters": [
+          {
+            "description": "Operational change set ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Operational change item ID",
+            "in": "path",
+            "name": "itemId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteAcademicTermChangeItemRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AcademicTermChangeSet"
+                }
+              }
+            },
+            "description": "Operational change item deleted"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid delete request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Learning offering management permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Operational change item not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Operational change item row version conflict"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/term-change-sets/{id}/preview": {
+      "get": {
+        "operationId": "previewAcademicTermChangeSet",
+        "parameters": [
+          {
+            "description": "Operational change set ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AcademicTermChangeSetPreview"
+                }
+              }
+            },
+            "description": "Operational change readiness preview"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid preview request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Learning offering read permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Operational change not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Operational change preview conflict"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/term-change-sets/{id}/publish": {
+      "post": {
+        "operationId": "publishAcademicTermChangeSet",
+        "parameters": [
+          {
+            "description": "Operational change set ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishAcademicTermChangeSetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AcademicTermChangeSet"
+                }
+              }
+            },
+            "description": "Operational academic change published"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Readiness blockers remain"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Learning offering management permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Operational change not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Preview or publication conflict"
           }
         },
         "tags": [

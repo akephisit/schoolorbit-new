@@ -602,6 +602,29 @@ pub async fn signal_descriptors(
         .collect()
 }
 
+pub async fn operational_change_offering_ids(
+    pool: &PgPool,
+    change_set_id: Uuid,
+) -> Result<Vec<Uuid>, AppError> {
+    let change_set_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM academic_term_change_sets WHERE id = $1)")
+            .bind(change_set_id)
+            .fetch_one(pool)
+            .await?;
+    if !change_set_exists {
+        return Err(AppError::NotFound("ไม่พบชุดการเปลี่ยนแปลงภาคเรียน".to_string()));
+    }
+    Ok(sqlx::query_scalar(
+        r#"SELECT DISTINCT learning_offering_id
+           FROM academic_term_change_items
+           WHERE change_set_id = $1
+           ORDER BY learning_offering_id"#,
+    )
+    .bind(change_set_id)
+    .fetch_all(pool)
+    .await?)
+}
+
 async fn hydrate(pool: &PgPool, row: LearningOfferingRow) -> Result<LearningOffering, AppError> {
     hydrate_many(pool, vec![row])
         .await?
