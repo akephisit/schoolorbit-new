@@ -23,7 +23,7 @@ fn stable_uuid(name: &str) -> Uuid {
 async fn migration_chain_supports_an_empty_new_tenant() {
     let pool = create_named_test_pool("academic_core_empty_tenant").await;
 
-    apply_migrations_through(&pool, 52)
+    apply_migrations_through(&pool, 53)
         .await
         .expect("an empty newly provisioned tenant must migrate through the active timeline");
 
@@ -41,7 +41,7 @@ async fn migration_chain_supports_an_empty_new_tenant() {
             .fetch_one(&pool)
             .await
             .expect("migration history must be queryable");
-    assert_eq!(latest_version, 52);
+    assert_eq!(latest_version, 53);
 }
 
 #[tokio::test]
@@ -2548,4 +2548,313 @@ async fn migration_052_rejects_published_teacher_mutability_after_cutover() {
     .await
     .unwrap();
     assert_eq!(after, before);
+}
+
+#[tokio::test]
+async fn migration_053_adds_operational_publication_and_roster_guards() {
+    let pool = phase_a_fixture("academic_core_053_operational_guards").await;
+    record_passing_phase_a_reconciliation_marker(&pool)
+        .await
+        .expect("cleanup marker must exist before the post-cutover migrations");
+    apply_migrations_through(&pool, 52)
+        .await
+        .expect("fixture must reach the pre-053 schema");
+
+    let before_counts: (i64, i64, i64, i64, i64) = sqlx::query_as(
+        r#"SELECT (SELECT count(*) FROM learning_offerings),
+                  (SELECT count(*) FROM academic_timetable_versions),
+                  (SELECT count(*) FROM academic_timetable_version_targets),
+                  (SELECT count(*) FROM academic_timetable_entries),
+                  (SELECT count(*) FROM learning_group_students)"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    apply_migrations_through(&pool, 53)
+        .await
+        .expect("migration 053 must install the workflow guards");
+
+    for column_name in [
+        "creation_request_hash",
+        "publication_idempotency_key",
+        "publication_request_hash",
+        "acknowledged_warning_codes",
+    ] {
+        assert!(column_exists(&pool, "academic_term_change_sets", column_name).await);
+    }
+
+    let publication_index_exists: bool = sqlx::query_scalar(
+        r#"SELECT EXISTS (
+               SELECT 1
+               FROM pg_indexes
+               WHERE schemaname = current_schema()
+                 AND tablename = 'academic_term_change_sets'
+                 AND indexname = 'academic_term_change_sets_publication_idempotency_key'
+           )"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(publication_index_exists);
+
+    let roster_trigger_enabled: String = sqlx::query_scalar(
+        "SELECT tgenabled::text FROM pg_trigger \
+         WHERE tgname = 'learning_group_students_interval_guard' \
+           AND tgrelid = 'learning_group_students'::regclass",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(roster_trigger_enabled, "O");
+
+    let after_counts: (i64, i64, i64, i64, i64) = sqlx::query_as(
+        r#"SELECT (SELECT count(*) FROM learning_offerings),
+                  (SELECT count(*) FROM academic_timetable_versions),
+                  (SELECT count(*) FROM academic_timetable_version_targets),
+                  (SELECT count(*) FROM academic_timetable_entries),
+                  (SELECT count(*) FROM learning_group_students)"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(after_counts, before_counts);
+}
+
+#[tokio::test]
+async fn migration_053_rejects_overlapping_roster_intervals_atomically() {
+    let pool = phase_a_fixture("academic_core_053_roster_interval_guard").await;
+    record_passing_phase_a_reconciliation_marker(&pool)
+        .await
+        .expect("cleanup marker must exist before the post-cutover migrations");
+    apply_migrations_through(&pool, 52)
+        .await
+        .expect("fixture must reach the pre-053 schema");
+
+    let (
+        membership_id,
+        learning_group_id,
+        learning_offering_id,
+        academic_term_id,
+        academic_year_id,
+        student_academic_year_id,
+        student_id,
+        joined_at,
+    ): (Uuid, Uuid, Uuid, Uuid, Uuid, Uuid, Uuid, NaiveDate) = sqlx::query_as(
+        r#"SELECT membership.id, membership.learning_group_id,
+                  learning_group.learning_offering_id, membership.academic_term_id,
+                  membership.academic_year_id, membership.student_academic_year_id,
+                  membership.student_id, membership.joined_at
+           FROM learning_group_students membership
+           JOIN learning_groups learning_group ON learning_group.id = membership.learning_group_id
+           WHERE membership.membership_status = 'active'
+           ORDER BY membership.id
+           LIMIT 1"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("fixture must contain an active membership");
+
+    sqlx::query(
+        "UPDATE learning_group_students \
+         SET membership_status = 'ended', left_at = joined_at \
+         WHERE id = $1",
+    )
+    .bind(membership_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    apply_migrations_through(&pool, 53)
+        .await
+        .expect("migration 053 must install the interval guard");
+
+    let overlapping_insert = sqlx::query(
+        r#"INSERT INTO learning_group_students (
+               id, learning_group_id, academic_term_id, academic_year_id,
+               student_academic_year_id, student_id, membership_status,
+               roster_source, joined_at, left_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, 'ended', 'migration_053_test', $7, $7)"#,
+    )
+    .bind(stable_uuid("migration-053:overlapping-membership"))
+    .bind(learning_group_id)
+    .bind(academic_term_id)
+    .bind(academic_year_id)
+    .bind(student_academic_year_id)
+    .bind(student_id)
+    .bind(joined_at)
+    .execute(&pool)
+    .await
+    .expect_err("an inclusive same-day interval must overlap");
+    assert!(overlapping_insert
+        .to_string()
+        .contains("ACADEMIC_ROSTER_MEMBERSHIP_INTERVAL_OVERLAP"));
+
+    let later_joined_at = joined_at
+        .checked_add_signed(chrono::Duration::days(1))
+        .unwrap();
+    let later_left_at = joined_at
+        .checked_add_signed(chrono::Duration::days(2))
+        .unwrap();
+    let later_membership_id = stable_uuid("migration-053:later-membership");
+    sqlx::query(
+        r#"INSERT INTO learning_group_students (
+               id, learning_group_id, academic_term_id, academic_year_id,
+               student_academic_year_id, student_id, membership_status,
+               roster_source, joined_at, left_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, 'ended', 'migration_053_test', $7, $8)"#,
+    )
+    .bind(later_membership_id)
+    .bind(learning_group_id)
+    .bind(academic_term_id)
+    .bind(academic_year_id)
+    .bind(student_academic_year_id)
+    .bind(student_id)
+    .bind(later_joined_at)
+    .bind(later_left_at)
+    .execute(&pool)
+    .await
+    .expect("a strictly later interval must succeed");
+
+    let overlapping_update = sqlx::query(
+        "UPDATE learning_group_students SET joined_at = $1, left_at = $1 WHERE id = $2",
+    )
+    .bind(joined_at)
+    .bind(later_membership_id)
+    .execute(&pool)
+    .await
+    .expect_err("moving a later interval over history must fail");
+    assert!(overlapping_update
+        .to_string()
+        .contains("ACADEMIC_ROSTER_MEMBERSHIP_INTERVAL_OVERLAP"));
+
+    let other_group_id = stable_uuid("migration-053:other-membership-group");
+    sqlx::query(
+        r#"INSERT INTO learning_groups (
+               id, learning_offering_id, academic_term_id, academic_year_id,
+               code, name, status, roster_status
+           ) VALUES ($1, $2, $3, $4, 'M053-OTHER', 'กลุ่มทดสอบช่วงสมาชิก',
+                     'draft', 'draft')"#,
+    )
+    .bind(other_group_id)
+    .bind(learning_offering_id)
+    .bind(academic_term_id)
+    .bind(academic_year_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"INSERT INTO learning_group_students (
+               id, learning_group_id, academic_term_id, academic_year_id,
+               student_academic_year_id, student_id, membership_status,
+               roster_source, joined_at, left_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, 'ended', 'migration_053_test', $7, $7)"#,
+    )
+    .bind(stable_uuid("migration-053:other-group-membership"))
+    .bind(other_group_id)
+    .bind(academic_term_id)
+    .bind(academic_year_id)
+    .bind(student_academic_year_id)
+    .bind(student_id)
+    .bind(joined_at)
+    .execute(&pool)
+    .await
+    .expect("the same student may have the same dates in another group");
+}
+
+#[tokio::test]
+async fn migration_053_rejects_malformed_published_change_set_metadata() {
+    let pool = phase_a_fixture("academic_core_053_publication_metadata").await;
+    record_passing_phase_a_reconciliation_marker(&pool)
+        .await
+        .expect("cleanup marker must exist before the post-cutover migrations");
+    apply_migrations_through(&pool, 53)
+        .await
+        .expect("migration 053 must install publication metadata checks");
+
+    let (academic_term_id, academic_year_id, actor_id): (Uuid, Uuid, Uuid) = sqlx::query_as(
+        r#"SELECT version.academic_term_id, version.academic_year_id, version.published_by
+           FROM academic_timetable_versions version
+           WHERE version.status = 'published'
+           ORDER BY version.id
+           LIMIT 1"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("fixture must contain a published timetable version");
+
+    let insert_draft = |id: Uuid, idempotency_key: &'static str| {
+        sqlx::query(
+            r#"INSERT INTO academic_term_change_sets (
+                   id, academic_term_id, academic_year_id, effective_from, reason,
+                   idempotency_key, creation_request_hash, created_by
+               ) VALUES ($1, $2, $3, current_date, 'ทดสอบข้อมูลเผยแพร่', $4, $5, $6)"#,
+        )
+        .bind(id)
+        .bind(academic_term_id)
+        .bind(academic_year_id)
+        .bind(idempotency_key)
+        .bind("1".repeat(64))
+        .bind(actor_id)
+    };
+
+    let missing_metadata_id = stable_uuid("migration-053:missing-publication-metadata");
+    insert_draft(missing_metadata_id, "migration-053-missing")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let missing_metadata = sqlx::query(
+        "UPDATE academic_term_change_sets \
+         SET status = 'published', published_by = $1, published_at = now() \
+         WHERE id = $2",
+    )
+    .bind(actor_id)
+    .bind(missing_metadata_id)
+    .execute(&pool)
+    .await
+    .expect_err("published state must require publication request metadata");
+    assert!(missing_metadata
+        .to_string()
+        .contains("academic_term_change_sets_status_metadata_check"));
+
+    let malformed_hash_id = stable_uuid("migration-053:malformed-publication-hash");
+    insert_draft(malformed_hash_id, "migration-053-malformed")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let malformed_hash = sqlx::query(
+        r#"UPDATE academic_term_change_sets
+           SET status = 'published', published_by = $1, published_at = now(),
+               publication_idempotency_key = $2, publication_request_hash = 'not-a-hash'
+           WHERE id = $3"#,
+    )
+    .bind(actor_id)
+    .bind(stable_uuid("migration-053:malformed-publication-key"))
+    .bind(malformed_hash_id)
+    .execute(&pool)
+    .await
+    .expect_err("published state must require a canonical SHA-256 hash");
+    assert!(malformed_hash
+        .to_string()
+        .contains("academic_term_change_sets_status_metadata_check"));
+
+    let valid_id = stable_uuid("migration-053:valid-publication-metadata");
+    insert_draft(valid_id, "migration-053-valid")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        r#"UPDATE academic_term_change_sets
+           SET status = 'published', published_by = $1, published_at = now(),
+               publication_idempotency_key = $2, publication_request_hash = $3,
+               acknowledged_warning_codes = ARRAY['TARGET_EXCESS']::text[]
+           WHERE id = $4"#,
+    )
+    .bind(actor_id)
+    .bind(stable_uuid("migration-053:valid-publication-key"))
+    .bind("a".repeat(64))
+    .bind(valid_id)
+    .execute(&pool)
+    .await
+    .expect("complete publication metadata must satisfy the database shape");
 }
