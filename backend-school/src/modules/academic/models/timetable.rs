@@ -155,6 +155,7 @@ pub struct TimetableWorkspaceLearningGroup {
     pub name: String,
     pub status: String,
     pub roster_status: String,
+    pub offering_kind: String,
     pub offering_code: String,
     pub offering_name: String,
     pub homeroom_ids: Vec<Uuid>,

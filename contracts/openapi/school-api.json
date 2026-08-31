@@ -35335,6 +35335,9 @@
           "offeringCode": {
             "type": "string"
           },
+          "offeringKind": {
+            "type": "string"
+          },
           "offeringName": {
             "type": "string"
           },
@@ -35352,6 +35355,7 @@
           "name",
           "status",
           "rosterStatus",
+          "offeringKind",
           "offeringCode",
           "offeringName",
           "homeroomIds",

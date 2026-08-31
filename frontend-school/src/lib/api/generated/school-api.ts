@@ -14127,6 +14127,7 @@ export interface components {
 			learningOfferingId: string;
 			name: string;
 			offeringCode: string;
+			offeringKind: string;
 			offeringName: string;
 			rosterStatus: string;
 			status: string;

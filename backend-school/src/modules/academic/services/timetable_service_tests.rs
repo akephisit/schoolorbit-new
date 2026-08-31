@@ -384,6 +384,7 @@ async fn workspace_loads_one_bounded_exact_instructor_board() {
         .iter()
         .find(|group| group.id == fixture.group_id)
         .unwrap();
+    assert_eq!(group.offering_kind, "course");
     assert_eq!(group.homeroom_ids, homeroom_ids);
     let demand = workspace
         .unscheduled_demands

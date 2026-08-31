@@ -54,6 +54,7 @@ function workspace(status: 'draft' | 'published' = 'draft'): TimetableWorkspace 
 				status: 'published',
 				rosterStatus: 'published',
 				offeringCode: 'ค21101',
+				offeringKind: 'course',
 				offeringName: 'คณิตศาสตร์พื้นฐาน',
 				homeroomIds: ['homeroom-1', 'homeroom-2'],
 				eligibleInstructorIds: ['teacher-1']
@@ -66,6 +67,7 @@ function workspace(status: 'draft' | 'published' = 'draft'): TimetableWorkspace 
 				status: 'published',
 				rosterStatus: 'published',
 				offeringCode: 'อ21101',
+				offeringKind: 'course',
 				offeringName: 'ภาษาอังกฤษ',
 				homeroomIds: ['homeroom-2'],
 				eligibleInstructorIds: ['teacher-1', 'teacher-2']
