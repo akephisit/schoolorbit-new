@@ -578,7 +578,7 @@ async fn prepare_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 55).await.unwrap();
+    apply_migrations_through(&pool, 56).await.unwrap();
     pool
 }
 
@@ -3023,13 +3023,11 @@ async fn change_set_preview_counts_stop_impact_without_exposing_roster_identitie
                   AND entry.learning_offering_id = $1 AND entry.is_active) AS target_timetable_entries,
              (SELECT count(*) FROM course_assessment_plans plan
                 WHERE plan.learning_offering_id = $1) AS course_assessment_plans,
-             (SELECT count(*) FROM course_assessment_categories category
-                JOIN course_assessment_plans plan ON plan.id = category.plan_id
-                WHERE plan.learning_offering_id = $1) AS course_assessment_categories,
-             (SELECT count(*) FROM course_assessment_items item
-                JOIN course_assessment_categories category ON category.id = item.category_id
-                JOIN course_assessment_plans plan ON plan.id = category.plan_id
-                WHERE plan.learning_offering_id = $1) AS course_assessment_items,
+             (SELECT count(*) FROM course_assessment_phases phase
+                JOIN course_assessment_plans plan ON plan.id = phase.plan_id
+                WHERE plan.learning_offering_id = $1) AS course_assessment_phases,
+             (SELECT count(*) FROM learning_group_score_items item
+                WHERE item.learning_offering_id = $1) AS learning_group_score_items,
              (SELECT count(*) FROM learning_results result
                 WHERE result.learning_offering_id = $1) AS learning_results,
              (SELECT count(*) FROM academic_exam_schedule_items item
@@ -3050,8 +3048,8 @@ async fn change_set_preview_counts_stop_impact_without_exposing_roster_identitie
         teacher_assignments: expected.get("teacher_assignments"),
         target_timetable_entries: expected.get("target_timetable_entries"),
         course_assessment_plans: expected.get("course_assessment_plans"),
-        course_assessment_categories: expected.get("course_assessment_categories"),
-        course_assessment_items: expected.get("course_assessment_items"),
+        course_assessment_phases: expected.get("course_assessment_phases"),
+        learning_group_score_items: expected.get("learning_group_score_items"),
         learning_results: expected.get("learning_results"),
         exam_schedule_items: expected.get("exam_schedule_items"),
         supervision_observations: expected.get("supervision_observations"),

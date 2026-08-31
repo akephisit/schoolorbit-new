@@ -502,43 +502,24 @@ fn get_invigilator_workspace_checks_round_before_assignment_queries() {
 }
 
 #[test]
-fn import_exam_items_filters_source_categories_by_round_kind() {
+fn source_preview_uses_the_canonical_eligible_source_view() {
     let source = include_str!("workspace.rs");
-    let import_start = source.find("pub async fn import_exam_items").unwrap();
-    let import_tail = &source[import_start..];
-    let next_function_start = import_tail
-        .find("pub async fn clear_mismatched_exam_items")
-        .unwrap();
-    let import_body = &import_tail[..next_function_start];
-
-    assert!(import_body.contains("exam_kind"));
-    assert_eq!(
-        import_body.matches("c.code = rc.exam_kind").count(),
-        3,
-        "existing, missing-duration, and insert source queries must filter by round kind"
-    );
+    assert!(source.contains("academic_exam_eligible_sources"));
+    assert!(source.contains("source.exam_kind = round.exam_kind"));
+    assert!(source.contains("duration_changed"));
+    assert!(source.contains("no_longer_eligible"));
 }
 
 #[test]
-fn clear_mismatched_exam_items_deletes_only_items_outside_round_kind() {
+fn source_sync_requires_an_unchanged_preview_and_mutable_round() {
     let source = include_str!("workspace.rs");
-    let clear_start = source
-        .find("pub async fn clear_mismatched_exam_items")
-        .unwrap();
-    let clear_tail = &source[clear_start..];
-    let next_function_start = clear_tail
-        .find("pub(super) async fn fetch_workspace_counts_in_tx")
-        .unwrap();
-    let clear_body = &clear_tail[..next_function_start];
-
-    assert!(clear_body.contains("SELECT status"));
-    assert!(clear_body.contains("FOR UPDATE"));
-    assert!(clear_body.contains("DELETE FROM academic_exam_schedule_items"));
-    assert!(clear_body.contains("USING course_assessment_categories c"));
-    assert!(clear_body.contains("round_context rc"));
-    assert!(clear_body.contains("item.assessment_category_id = c.id"));
-    assert!(clear_body.contains("c.code IS DISTINCT FROM rc.exam_kind"));
-    assert!(clear_body.contains("mark_round_draft_after_mutation"));
+    let sync_start = source.find("pub async fn sync_exam_sources").unwrap();
+    let sync_body = &source[sync_start..];
+    assert!(sync_body.contains("FOR UPDATE"));
+    assert!(sync_body.contains("ensure_exam_round_is_mutable"));
+    assert!(sync_body.contains("round_row_version"));
+    assert!(sync_body.contains("preview.preview_token != request.preview_token"));
+    assert!(sync_body.contains("revalidate_session_duration_change_in_tx"));
 }
 
 #[test]

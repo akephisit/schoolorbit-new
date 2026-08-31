@@ -1,11 +1,11 @@
 use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
 use crate::modules::academic::models::exam_schedule::{
-    ClearMismatchedExamItemsResult, CreateExamRoundRequest, DayRoomAssignmentView, ExamDayDetail,
-    ExamInvigilatorStaffOption, ExamInvigilatorWorkspace, ExamRound, ExamScheduleWorkspace,
-    ExamSessionView, GenerateSeatsRequest, ImportExamItemsRequest, ImportExamItemsResult,
-    PlaceExamSessionRequest, SeatAssignmentView, UpdateExamInvigilatorsRequest,
-    UpdateExamRoundRequest, UpsertDayRoomAssignmentRequest, UpsertExamDayRequest,
+    CreateExamRoundRequest, DayRoomAssignmentView, ExamDayDetail, ExamInvigilatorStaffOption,
+    ExamInvigilatorWorkspace, ExamRound, ExamScheduleWorkspace, ExamSessionView, ExamSourcePreview,
+    GenerateSeatsRequest, PlaceExamSessionRequest, SeatAssignmentView, SyncExamSourcesRequest,
+    SyncExamSourcesResult, UpdateExamInvigilatorsRequest, UpdateExamRoundRequest,
+    UpsertDayRoomAssignmentRequest, UpsertExamDayRequest,
 };
 use crate::modules::academic::services::exam_schedule_service;
 use crate::modules::auth::session_service::AuthenticatedSession;
@@ -161,54 +161,54 @@ pub async fn get_workspace(
     Ok(Json(ApiResponse::ok(workspace)).into_response())
 }
 
-/// POST /api/academic/exam-schedules/{round_id}/import-items
+/// GET /api/academic/exam-schedules/{round_id}/source-preview
 #[utoipa::path(
-    post,
-    path = "/api/academic/exam-schedules/{round_id}/import-items",
-    operation_id = "importExamItems",
+    get,
+    path = "/api/academic/exam-schedules/{round_id}/source-preview",
+    operation_id = "previewExamSources",
     tag = "academic",
     params(("round_id" = Uuid, Path, description = "Exam round ID")),
-    request_body = ImportExamItemsRequest,
     responses(
-        (status = 200, description = "Assessment items imported", body = ApiResponse<ImportExamItemsResult>),
-        (status = 400, description = "Import rejected", body = ApiErrorResponse),
+        (status = 200, description = "Assessment source change preview", body = ApiResponse<ExamSourcePreview>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
     )
 )]
-pub async fn import_items(
+pub async fn preview_sources(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(round_id): Path<Uuid>,
-    Json(payload): Json<ImportExamItemsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL)?;
+    actor.require_permission(codes::ACADEMIC_EXAM_SCHEDULE_READ_SCHOOL)?;
 
-    let result =
-        exam_schedule_service::import_exam_items(&pool, round_id, payload, actor.user_id).await?;
-    Ok(Json(ApiResponse::ok(result)).into_response())
+    let preview = exam_schedule_service::preview_exam_sources(&pool, round_id).await?;
+    Ok(Json(ApiResponse::ok(preview)).into_response())
 }
 
-/// POST /api/academic/exam-schedules/{round_id}/clear-mismatched-items
+/// POST /api/academic/exam-schedules/{round_id}/source-sync
 #[utoipa::path(
     post,
-    path = "/api/academic/exam-schedules/{round_id}/clear-mismatched-items",
-    operation_id = "clearMismatchedExamItems",
+    path = "/api/academic/exam-schedules/{round_id}/source-sync",
+    operation_id = "syncExamSources",
     tag = "academic",
     params(("round_id" = Uuid, Path, description = "Exam round ID")),
+    request_body = SyncExamSourcesRequest,
     responses(
-        (status = 200, description = "Mismatched items cleared", body = ApiResponse<ClearMismatchedExamItemsResult>),
+        (status = 200, description = "Selected assessment source changes synchronized", body = ApiResponse<SyncExamSourcesResult>),
+        (status = 400, description = "Source synchronization rejected", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Permission denied", body = ApiErrorResponse)
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 409, description = "Source preview is stale or conflicts with placement", body = ApiErrorResponse)
     )
 )]
-pub async fn clear_mismatched_items(
+pub async fn sync_sources(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(round_id): Path<Uuid>,
+    Json(payload): Json<SyncExamSourcesRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
@@ -216,7 +216,7 @@ pub async fn clear_mismatched_items(
     actor.require_permission(codes::ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL)?;
 
     let result =
-        exam_schedule_service::clear_mismatched_exam_items(&pool, round_id, actor.user_id).await?;
+        exam_schedule_service::sync_exam_sources(&pool, round_id, actor.user_id, payload).await?;
     Ok(Json(ApiResponse::ok(result)).into_response())
 }
 

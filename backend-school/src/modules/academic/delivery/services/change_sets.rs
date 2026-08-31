@@ -875,13 +875,11 @@ async fn load_stop_impact_counts(
                 AS target_timetable_entries,
              (SELECT count(*) FROM course_assessment_plans plan
                 WHERE plan.learning_offering_id = ANY($1)) AS course_assessment_plans,
-             (SELECT count(*) FROM course_assessment_categories category
-                JOIN course_assessment_plans plan ON plan.id = category.plan_id
-                WHERE plan.learning_offering_id = ANY($1)) AS course_assessment_categories,
-             (SELECT count(*) FROM course_assessment_items item
-                JOIN course_assessment_categories category ON category.id = item.category_id
-                JOIN course_assessment_plans plan ON plan.id = category.plan_id
-                WHERE plan.learning_offering_id = ANY($1)) AS course_assessment_items,
+             (SELECT count(*) FROM course_assessment_phases phase
+                JOIN course_assessment_plans plan ON plan.id = phase.plan_id
+                WHERE plan.learning_offering_id = ANY($1)) AS course_assessment_phases,
+             (SELECT count(*) FROM learning_group_score_items item
+                WHERE item.learning_offering_id = ANY($1)) AS learning_group_score_items,
              (SELECT count(*) FROM learning_results result
                 WHERE result.learning_offering_id = ANY($1)) AS learning_results,
              (SELECT count(*) FROM academic_exam_schedule_items item
@@ -901,8 +899,8 @@ async fn load_stop_impact_counts(
         teacher_assignments: row.get("teacher_assignments"),
         target_timetable_entries: row.get("target_timetable_entries"),
         course_assessment_plans: row.get("course_assessment_plans"),
-        course_assessment_categories: row.get("course_assessment_categories"),
-        course_assessment_items: row.get("course_assessment_items"),
+        course_assessment_phases: row.get("course_assessment_phases"),
+        learning_group_score_items: row.get("learning_group_score_items"),
         learning_results: row.get("learning_results"),
         exam_schedule_items: row.get("exam_schedule_items"),
         supervision_observations: row.get("supervision_observations"),

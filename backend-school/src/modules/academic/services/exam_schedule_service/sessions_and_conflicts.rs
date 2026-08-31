@@ -28,7 +28,7 @@ pub(super) struct ExamSessionRow {
     ends_at: NaiveTime,
     academic_term_id: Uuid,
     academic_year_id: Uuid,
-    assessment_category_id: Uuid,
+    assessment_phase_id: Uuid,
     course_assessment_plan_id: Uuid,
     learning_offering_id: Uuid,
     learning_group_id: Uuid,
@@ -38,7 +38,7 @@ pub(super) struct ExamSessionRow {
     duration_minutes: i32,
     imported_at: DateTime<Utc>,
     exam_date: Option<NaiveDate>,
-    assessment_category_name: Option<String>,
+    assessment_phase_name: Option<String>,
     subject_code: Option<String>,
     subject_name_th: Option<String>,
     subject_name_en: Option<String>,
@@ -67,7 +67,7 @@ impl ExamSessionRow {
             ends_at: self.ends_at,
             academic_term_id: self.academic_term_id,
             academic_year_id: self.academic_year_id,
-            assessment_category_id: self.assessment_category_id,
+            assessment_phase_id: self.assessment_phase_id,
             course_assessment_plan_id: self.course_assessment_plan_id,
             learning_offering_id: self.learning_offering_id,
             learning_group_id: self.learning_group_id,
@@ -77,7 +77,7 @@ impl ExamSessionRow {
             duration_minutes: self.duration_minutes,
             imported_at: self.imported_at,
             exam_date: self.exam_date,
-            assessment_category_name: self.assessment_category_name,
+            assessment_phase_name: self.assessment_phase_name,
             subject_code: self.subject_code,
             subject_name_th: self.subject_name_th,
             subject_name_en: self.subject_name_en,
@@ -103,9 +103,8 @@ struct ExamScheduleItemPlacementContext {
     id: Uuid,
     exam_round_id: Uuid,
     academic_term_id: Uuid,
-    assessment_category_id: Uuid,
+    assessment_phase_id: Uuid,
     course_assessment_plan_id: Uuid,
-    learning_group_id: Uuid,
     homeroom_id: Uuid,
     subject_id: Uuid,
     grade_level_id: Uuid,
@@ -121,6 +120,19 @@ struct ExamDayPlacementContext {
 #[derive(Debug, sqlx::FromRow)]
 struct DayRoomAssignmentPlacementContext {
     id: Uuid,
+    room_id: Uuid,
+}
+#[derive(Debug, sqlx::FromRow)]
+struct DurationChangePlacementContext {
+    session_id: Uuid,
+    exam_round_id: Uuid,
+    exam_day_id: Uuid,
+    starts_at: NaiveTime,
+    day_start_time: NaiveTime,
+    day_end_time: NaiveTime,
+    homeroom_id: Uuid,
+    grade_level_id: Uuid,
+    day_room_assignment_id: Uuid,
     room_id: Uuid,
 }
 async fn lock_exam_session_conflict_scope(
@@ -255,6 +267,120 @@ pub async fn place_exam_session(
 
     fetch_exam_session_view(pool, session_id).await
 }
+
+pub(super) async fn revalidate_session_duration_change_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    exam_schedule_item_id: Uuid,
+    duration_minutes: i32,
+) -> Result<(), AppError> {
+    let context: Option<DurationChangePlacementContext> = sqlx::query_as(
+        r#"SELECT session.id AS session_id,
+                  session.exam_round_id,
+                  session.exam_day_id,
+                  session.starts_at,
+                  day.start_time AS day_start_time,
+                  day.end_time AS day_end_time,
+                  item.homeroom_id,
+                  item.grade_level_id,
+                  assignment.id AS day_room_assignment_id,
+                  assignment.room_id
+           FROM academic_exam_sessions session
+           JOIN academic_exam_schedule_items item
+             ON item.id = session.exam_schedule_item_id
+            AND item.exam_round_id = session.exam_round_id
+           JOIN academic_exam_days day
+             ON day.id = session.exam_day_id
+            AND day.exam_round_id = session.exam_round_id
+           JOIN academic_exam_day_room_assignments assignment
+             ON assignment.exam_day_id = session.exam_day_id
+            AND assignment.homeroom_id = item.homeroom_id
+           WHERE session.exam_schedule_item_id = $1
+           FOR UPDATE OF session, item, day, assignment"#,
+    )
+    .bind(exam_schedule_item_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let Some(context) = context else {
+        return Ok(());
+    };
+
+    validate_day_allows_grade_level(tx, context.exam_day_id, context.grade_level_id).await?;
+    let blocked_windows =
+        fetch_blocked_windows_for_day_for_placement(tx, context.exam_day_id).await?;
+    let ends_at = validate_session_window(
+        context.starts_at,
+        duration_minutes,
+        context.day_start_time,
+        context.day_end_time,
+        &blocked_windows,
+    )
+    .map_err(validation_error_to_app_error)?;
+
+    lock_exam_session_conflict_scope(
+        tx,
+        context.exam_day_id,
+        context.homeroom_id,
+        context.room_id,
+    )
+    .await?;
+    let candidate = CandidateSession {
+        session_id: Some(context.session_id),
+        homeroom_id: context.homeroom_id,
+        exam_day_id: context.exam_day_id,
+        starts_at: context.starts_at,
+        ends_at,
+    };
+    if has_same_classroom_conflict(
+        &candidate,
+        &fetch_candidate_sessions_for_day(tx, context.exam_day_id).await?,
+    ) {
+        return Err(AppError::Conflict(
+            "New exam duration overlaps another exam for the homeroom".to_string(),
+        ));
+    }
+    let room_candidate = CandidateRoomSession {
+        session_id: Some(context.session_id),
+        room_id: context.room_id,
+        exam_day_id: context.exam_day_id,
+        starts_at: context.starts_at,
+        ends_at,
+    };
+    if has_same_room_conflict(
+        &room_candidate,
+        &fetch_candidate_room_sessions_for_day(tx, context.exam_day_id).await?,
+    ) {
+        return Err(AppError::Conflict(
+            "New exam duration overlaps another exam in the room".to_string(),
+        ));
+    }
+
+    let invigilator_staff_ids =
+        fetch_invigilator_staff_ids_for_assignment(tx, context.day_room_assignment_id).await?;
+    lock_exam_invigilator_staff_conflict_scope(tx, context.exam_day_id, &invigilator_staff_ids)
+        .await?;
+    validate_invigilator_candidate_session_conflicts(
+        tx,
+        context.exam_round_id,
+        context.day_room_assignment_id,
+        context.exam_day_id,
+        context.starts_at,
+        ends_at,
+        &invigilator_staff_ids,
+    )
+    .await?;
+
+    sqlx::query(
+        r#"UPDATE academic_exam_sessions
+           SET ends_at = $2, updated_at = now()
+           WHERE id = $1"#,
+    )
+    .bind(context.session_id)
+    .bind(ends_at)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
 pub async fn delete_exam_session(
     pool: &PgPool,
     session_id: Uuid,
@@ -295,7 +421,7 @@ async fn fetch_schedule_item_placement_context(
                item.exam_round_id,
                item.academic_term_id,
                item.academic_year_id,
-               item.assessment_category_id,
+               item.assessment_phase_id,
                item.course_assessment_plan_id,
                item.learning_offering_id,
                item.learning_group_id,
@@ -481,7 +607,7 @@ async fn fetch_exam_session_view(
                session.starts_at,
                session.ends_at,
                item.academic_term_id,
-               item.assessment_category_id,
+               item.assessment_phase_id,
                item.course_assessment_plan_id,
                item.learning_group_id,
                item.homeroom_id,
@@ -490,7 +616,12 @@ async fn fetch_exam_session_view(
                item.duration_minutes,
                item.imported_at,
                day.exam_date AS exam_date,
-               category.name AS assessment_category_name,
+               CASE phase.phase_code
+                   WHEN 'midterm' THEN 'กลางภาค'
+                   WHEN 'final' THEN 'ปลายภาค'
+                   WHEN 'before_midterm' THEN 'ก่อนกลางภาค'
+                   WHEN 'after_midterm' THEN 'หลังกลางภาค'
+               END AS assessment_phase_name,
                subject.code AS subject_code,
                subject_version.name_th AS subject_name_th,
                subject_version.name_en AS subject_name_en,
@@ -519,8 +650,8 @@ async fn fetch_exam_session_view(
         JOIN academic_exam_days day
           ON day.id = session.exam_day_id
          AND day.exam_round_id = session.exam_round_id
-        JOIN course_assessment_categories category
-          ON category.id = item.assessment_category_id
+        JOIN course_assessment_phases phase
+          ON phase.id = item.assessment_phase_id
         JOIN learning_offerings offering ON offering.id = item.learning_offering_id
         JOIN course_offering_details course_detail
           ON course_detail.learning_offering_id = item.learning_offering_id

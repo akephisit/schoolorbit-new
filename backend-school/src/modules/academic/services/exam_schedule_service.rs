@@ -25,7 +25,7 @@ pub use self::rounds_and_days::{
     create_round, delete_exam_day, list_rounds, update_exam_day, update_round, upsert_exam_day,
 };
 pub use self::sessions_and_conflicts::{delete_exam_session, place_exam_session};
-pub use self::workspace::{clear_mismatched_exam_items, get_workspace, import_exam_items};
+pub use self::workspace::{get_workspace, preview_exam_sources, sync_exam_sources};
 
 #[cfg(test)]
 mod tests;

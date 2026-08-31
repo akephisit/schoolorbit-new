@@ -40,6 +40,7 @@ pub async fn publish_round(
         SET status = 'published',
             published_at = now(),
             published_by = $2,
+            row_version = row_version + 1,
             updated_by = $2,
             updated_at = now()
         WHERE id = $1
@@ -50,6 +51,7 @@ pub async fn publish_round(
                   description,
                   exam_kind,
                   status,
+                  row_version,
                   published_at,
                   created_at,
                   updated_at

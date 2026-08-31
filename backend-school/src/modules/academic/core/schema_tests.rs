@@ -3698,6 +3698,7 @@ async fn migration_056_establishes_fixed_assessment_phases() {
     assert!(table_exists(&pool, "course_assessment_phases").await);
     assert!(table_exists(&pool, "academic_assessment_phase_controls").await);
     assert!(table_exists(&pool, "learning_group_score_items").await);
+    assert!(table_exists(&pool, "academic_exam_eligible_sources").await);
     assert!(!table_exists(&pool, "course_assessment_categories").await);
     assert!(!table_exists(&pool, "course_assessment_items").await);
 
@@ -3793,4 +3794,19 @@ async fn migration_056_establishes_fixed_assessment_phases() {
     .await
     .expect("obsolete assessment teacher toggle must be queryable");
     assert_eq!(obsolete_teacher_toggle_count, 0);
+
+    sqlx::query(
+        r#"UPDATE course_assessment_plans
+           SET assessment_coordinator_id = '50000000-0000-0000-0000-000000000002'
+           WHERE id = '80000000-0000-0000-0000-000000000001'"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("fixture teacher must be selectable as an assessment coordinator");
+    let eligible_source_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM academic_exam_eligible_sources")
+            .fetch_one(&pool)
+            .await
+            .expect("eligible exam sources must be queryable");
+    assert!(eligible_source_count > 0);
 }

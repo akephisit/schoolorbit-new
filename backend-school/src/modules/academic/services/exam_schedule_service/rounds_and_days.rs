@@ -81,6 +81,7 @@ pub async fn list_rounds(
                description,
                exam_kind,
                status,
+               row_version,
                published_at,
                created_at,
                updated_at
@@ -130,6 +131,7 @@ pub async fn create_round(
                   description,
                   exam_kind,
                   status,
+                  row_version,
                   published_at,
                   created_at,
                   updated_at
@@ -173,6 +175,7 @@ pub async fn update_round(
                   description,
                   exam_kind,
                   status,
+                  row_version,
                   published_at,
                   created_at,
                   updated_at
@@ -412,6 +415,7 @@ pub(super) async fn mark_round_draft_after_mutation(
         SET status = 'draft',
             published_at = NULL,
             published_by = NULL,
+            row_version = row_version + 1,
             updated_by = COALESCE($2, updated_by),
             updated_at = now()
         WHERE id = $1
@@ -555,6 +559,7 @@ pub(super) async fn fetch_round(pool: &PgPool, round_id: Uuid) -> Result<ExamRou
                description,
                exam_kind,
                status,
+               row_version,
                published_at,
                created_at,
                updated_at

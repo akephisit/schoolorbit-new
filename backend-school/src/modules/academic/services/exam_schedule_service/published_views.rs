@@ -23,7 +23,7 @@ struct PersonalExamSessionRow {
     starts_at: NaiveTime,
     ends_at: NaiveTime,
     subject_name: String,
-    assessment_category_name: String,
+    assessment_phase_name: String,
     homeroom_name: String,
     room_name: String,
     building_name: Option<String>,
@@ -67,7 +67,7 @@ struct StaffPublishedExamSessionRow {
     subject_id: Uuid,
     subject_code: String,
     subject_name: String,
-    assessment_category_name: String,
+    assessment_phase_name: String,
     grade_level_id: Uuid,
     grade_level_name: String,
     grade_level_type: String,
@@ -87,7 +87,7 @@ impl PersonalExamSessionRow {
             starts_at: self.starts_at,
             ends_at: self.ends_at,
             subject_name: self.subject_name,
-            assessment_category_name: self.assessment_category_name,
+            assessment_phase_name: self.assessment_phase_name,
             homeroom_name: self.homeroom_name,
             room_name: self.room_name,
             building_name: self.building_name,
@@ -229,7 +229,12 @@ async fn list_published_exam_schedule_for_student(
                session.starts_at,
                session.ends_at,
                offering.name_snapshot AS subject_name,
-               category.name AS assessment_category_name,
+               CASE phase.phase_code
+                   WHEN 'midterm' THEN 'กลางภาค'
+                   WHEN 'final' THEN 'ปลายภาค'
+                   WHEN 'before_midterm' THEN 'ก่อนกลางภาค'
+                   WHEN 'after_midterm' THEN 'หลังกลางภาค'
+               END AS assessment_phase_name,
                classroom.name AS homeroom_name,
                room.name_th AS room_name,
                building.name_th AS building_name,
@@ -251,8 +256,8 @@ async fn list_published_exam_schedule_for_student(
         JOIN academic_exam_days day
           ON day.id = session.exam_day_id
          AND day.exam_round_id = session.exam_round_id
-        JOIN course_assessment_categories category
-          ON category.id = item.assessment_category_id
+        JOIN course_assessment_phases phase
+          ON phase.id = item.assessment_phase_id
         JOIN learning_offerings offering ON offering.id = item.learning_offering_id
         JOIN subjects subject ON subject.id = item.subject_id
         JOIN homerooms classroom ON classroom.id = item.homeroom_id
@@ -274,8 +279,12 @@ async fn list_published_exam_schedule_for_student(
                  session.starts_at,
                  classroom.name,
                  subject.code,
-                 category.display_order,
-                 category.name,
+                 CASE phase.phase_code
+                     WHEN 'before_midterm' THEN 1
+                     WHEN 'midterm' THEN 2
+                     WHEN 'after_midterm' THEN 3
+                     WHEN 'final' THEN 4
+                 END,
                  session.id
         "#,
     )
@@ -367,7 +376,12 @@ async fn list_published_exam_schedule_for_staff(
                subject.id AS subject_id,
                subject.code AS subject_code,
                offering.name_snapshot AS subject_name,
-               category.name AS assessment_category_name,
+               CASE phase.phase_code
+                   WHEN 'midterm' THEN 'กลางภาค'
+                   WHEN 'final' THEN 'ปลายภาค'
+                   WHEN 'before_midterm' THEN 'ก่อนกลางภาค'
+                   WHEN 'after_midterm' THEN 'หลังกลางภาค'
+               END AS assessment_phase_name,
                grade_level.id AS grade_level_id,
                CASE grade_level.level_type
                    WHEN 'kindergarten' THEN CONCAT('อ.', grade_level.year)
@@ -393,8 +407,8 @@ async fn list_published_exam_schedule_for_staff(
         JOIN academic_exam_days day
           ON day.id = session.exam_day_id
          AND day.exam_round_id = session.exam_round_id
-        JOIN course_assessment_categories category
-          ON category.id = item.assessment_category_id
+        JOIN course_assessment_phases phase
+          ON phase.id = item.assessment_phase_id
         JOIN learning_offerings offering ON offering.id = item.learning_offering_id
         JOIN subjects subject ON subject.id = item.subject_id
         JOIN homerooms classroom ON classroom.id = item.homeroom_id
@@ -421,8 +435,12 @@ async fn list_published_exam_schedule_for_staff(
                  grade_level.year,
                  classroom.name,
                  subject.code,
-                 category.display_order,
-                 category.name,
+                 CASE phase.phase_code
+                     WHEN 'before_midterm' THEN 1
+                     WHEN 'midterm' THEN 2
+                     WHEN 'after_midterm' THEN 3
+                     WHEN 'final' THEN 4
+                 END,
                  session.id
         "#,
     )
@@ -568,7 +586,7 @@ fn group_staff_published_exam_rows(
                 subject_id: row.subject_id,
                 subject_code: row.subject_code,
                 subject_name: row.subject_name,
-                assessment_category_name: row.assessment_category_name,
+                assessment_phase_name: row.assessment_phase_name,
                 grade_level_id: row.grade_level_id,
                 grade_level_name: row.grade_level_name,
                 grade_level_type: row.grade_level_type,
@@ -641,7 +659,7 @@ mod tests {
             subject_id: Uuid::from_u128(9),
             subject_code: "ค21101".to_string(),
             subject_name: "คณิตศาสตร์".to_string(),
-            assessment_category_name: "กลางภาค".to_string(),
+            assessment_phase_name: "กลางภาค".to_string(),
             grade_level_id: Uuid::from_u128(10),
             grade_level_name: "ม.1".to_string(),
             grade_level_type: "secondary".to_string(),

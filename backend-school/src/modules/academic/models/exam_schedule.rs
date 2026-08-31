@@ -15,6 +15,7 @@ pub struct ExamRound {
     pub description: Option<String>,
     pub exam_kind: String,
     pub status: String,
+    pub row_version: i64,
     pub published_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -92,24 +93,78 @@ pub struct UpdateExamInvigilatorsRequest {
     pub invigilator_staff_ids: Vec<Uuid>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ExamSourceChangeKind {
+    New,
+    DurationChanged,
+    NoLongerEligible,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ExamSourceChange {
+    pub source_id: Uuid,
+    pub exam_schedule_item_id: Option<Uuid>,
+    pub assessment_phase_id: Uuid,
+    pub learning_group_id: Uuid,
+    pub homeroom_id: Uuid,
+    pub subject_id: Uuid,
+    pub grade_level_id: Uuid,
+    pub subject_code: String,
+    pub subject_name: String,
+    pub homeroom_name: String,
+    pub change_kind: ExamSourceChangeKind,
+    pub snapshot_duration_minutes: Option<i32>,
+    pub current_duration_minutes: Option<i32>,
+    pub scheduled: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ExamSourceSyncItemStatus {
+    Applied,
+    Conflict,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ExamSourceSyncItemResult {
+    pub source_id: Uuid,
+    pub change_kind: ExamSourceChangeKind,
+    pub status: ExamSourceSyncItemStatus,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ExamSourcePreview {
+    pub round_id: Uuid,
+    pub round_status: String,
+    pub round_row_version: i64,
+    pub preview_token: String,
+    pub new_count: i64,
+    pub duration_changed_count: i64,
+    pub no_longer_eligible_count: i64,
+    pub changes: Vec<ExamSourceChange>,
+}
+
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ImportExamItemsRequest {
-    pub grade_level_ids: Option<Vec<Uuid>>,
+pub struct SyncExamSourcesRequest {
+    pub round_row_version: i64,
+    pub preview_token: String,
+    pub source_ids: Vec<Uuid>,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct ImportExamItemsResult {
+pub struct SyncExamSourcesResult {
     pub inserted_count: i64,
-    pub skipped_existing_count: i64,
-    pub skipped_missing_duration_count: i64,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ClearMismatchedExamItemsResult {
-    pub deleted_count: i64,
+    pub updated_duration_count: i64,
+    pub removed_count: i64,
+    pub round_row_version: i64,
+    pub results: Vec<ExamSourceSyncItemResult>,
 }
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow, ToSchema)]
@@ -253,7 +308,7 @@ pub struct ExamScheduleItem {
     pub exam_round_id: Uuid,
     pub academic_term_id: Uuid,
     pub academic_year_id: Uuid,
-    pub assessment_category_id: Uuid,
+    pub assessment_phase_id: Uuid,
     pub course_assessment_plan_id: Uuid,
     pub learning_offering_id: Uuid,
     pub learning_group_id: Uuid,
@@ -271,7 +326,7 @@ pub struct ExamScheduleItemView {
     pub exam_round_id: Uuid,
     pub academic_term_id: Uuid,
     pub academic_year_id: Uuid,
-    pub assessment_category_id: Uuid,
+    pub assessment_phase_id: Uuid,
     pub course_assessment_plan_id: Uuid,
     pub learning_offering_id: Uuid,
     pub learning_group_id: Uuid,
@@ -280,7 +335,7 @@ pub struct ExamScheduleItemView {
     pub grade_level_id: Uuid,
     pub duration_minutes: i32,
     pub imported_at: DateTime<Utc>,
-    pub assessment_category_name: Option<String>,
+    pub assessment_phase_name: Option<String>,
     pub subject_code: Option<String>,
     pub subject_name_th: Option<String>,
     pub subject_name_en: Option<String>,
@@ -319,7 +374,7 @@ pub struct ExamSessionView {
     pub ends_at: NaiveTime,
     pub academic_term_id: Uuid,
     pub academic_year_id: Uuid,
-    pub assessment_category_id: Uuid,
+    pub assessment_phase_id: Uuid,
     pub course_assessment_plan_id: Uuid,
     pub learning_offering_id: Uuid,
     pub learning_group_id: Uuid,
@@ -329,7 +384,7 @@ pub struct ExamSessionView {
     pub duration_minutes: i32,
     pub imported_at: DateTime<Utc>,
     pub exam_date: Option<NaiveDate>,
-    pub assessment_category_name: Option<String>,
+    pub assessment_phase_name: Option<String>,
     pub subject_code: Option<String>,
     pub subject_name_th: Option<String>,
     pub subject_name_en: Option<String>,
@@ -355,6 +410,7 @@ pub struct ExamScheduleWorkspace {
     pub days: Vec<ExamDayDetail>,
     pub unscheduled_items: Vec<ExamScheduleItemView>,
     pub scheduled_sessions: Vec<ExamSessionView>,
+    pub source_preview: ExamSourcePreview,
     pub readiness: ExamScheduleReadiness,
 }
 
@@ -383,7 +439,7 @@ pub struct PersonalExamSessionView {
     pub starts_at: NaiveTime,
     pub ends_at: NaiveTime,
     pub subject_name: String,
-    pub assessment_category_name: String,
+    pub assessment_phase_name: String,
     pub homeroom_name: String,
     pub room_name: String,
     #[schema(required = true)]
@@ -426,7 +482,7 @@ pub struct StaffPublishedExamSession {
     pub learning_group_id: Uuid,
     pub subject_code: String,
     pub subject_name: String,
-    pub assessment_category_name: String,
+    pub assessment_phase_name: String,
     pub grade_level_id: Uuid,
     pub grade_level_name: String,
     pub grade_level_type: String,

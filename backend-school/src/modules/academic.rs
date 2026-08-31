@@ -54,12 +54,12 @@ pub fn academic_routes() -> Router<AppState> {
                     .patch(handlers::exam_schedule::update_round),
             )
             .route(
-                "/exam-schedules/{round_id}/import-items",
-                post(handlers::exam_schedule::import_items),
+                "/exam-schedules/{round_id}/source-preview",
+                get(handlers::exam_schedule::preview_sources),
             )
             .route(
-                "/exam-schedules/{round_id}/clear-mismatched-items",
-                post(handlers::exam_schedule::clear_mismatched_items),
+                "/exam-schedules/{round_id}/source-sync",
+                post(handlers::exam_schedule::sync_sources),
             )
             .route(
                 "/exam-schedules/{round_id}/days",
