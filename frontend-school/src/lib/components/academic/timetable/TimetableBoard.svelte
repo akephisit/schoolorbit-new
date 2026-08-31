@@ -10,7 +10,7 @@
 	import TimetableCell, { type TimetableCellState } from './TimetableCell.svelte';
 	import TimetableLessonCard from './TimetableLessonCard.svelte';
 
-	type Day = { id: string; label: string; shortLabel: string };
+	type Day = { id: string; label: string };
 
 	let {
 		state,
@@ -47,11 +47,11 @@
 	} = $props();
 
 	const days: Day[] = [
-		{ id: 'MON', label: 'วันจันทร์', shortLabel: 'จ.' },
-		{ id: 'TUE', label: 'วันอังคาร', shortLabel: 'อ.' },
-		{ id: 'WED', label: 'วันพุธ', shortLabel: 'พ.' },
-		{ id: 'THU', label: 'วันพฤหัสบดี', shortLabel: 'พฤ.' },
-		{ id: 'FRI', label: 'วันศุกร์', shortLabel: 'ศ.' }
+		{ id: 'MON', label: 'วันจันทร์' },
+		{ id: 'TUE', label: 'วันอังคาร' },
+		{ id: 'WED', label: 'วันพุธ' },
+		{ id: 'THU', label: 'วันพฤหัสบดี' },
+		{ id: 'FRI', label: 'วันศุกร์' }
 	];
 
 	function periodLabel(period: TimetableBoardState['workspace']['bellPeriods'][number]): string {
@@ -82,27 +82,25 @@
 				<tr class="bg-muted/35">
 					<th
 						class="sticky left-0 z-10 w-28 min-w-28 border-b border-r bg-muted/70 px-3 py-2 text-xs font-semibold"
-						>คาบ</th
+						>วัน / คาบ</th
 					>
-					{#each days as day (day.id)}
+					{#each state.workspace.bellPeriods as period (period.id)}
 						<th class="min-w-44 border-b border-r px-3 py-2 text-center text-xs font-semibold">
-							<span class="sm:hidden">{day.shortLabel}</span><span class="hidden sm:inline"
-								>{day.label}</span
-							>
+							<p>{periodLabel(period)}</p>
+							<p class="mt-1 font-mono text-[0.65rem] font-normal text-muted-foreground">
+								{period.startTime.slice(0, 5)}–{period.endTime.slice(0, 5)}
+							</p>
 						</th>
 					{/each}
 				</tr>
 			</thead>
 			<tbody>
-				{#each state.workspace.bellPeriods as period (period.id)}
+				{#each days as day (day.id)}
 					<tr>
 						<th class="sticky left-0 z-10 border-b border-r bg-background px-3 py-3 align-top">
-							<p class="text-xs font-semibold">{periodLabel(period)}</p>
-							<p class="mt-1 font-mono text-[0.65rem] text-muted-foreground">
-								{period.startTime.slice(0, 5)}–{period.endTime.slice(0, 5)}
-							</p>
+							<p class="text-xs font-semibold">{day.label}</p>
 						</th>
-						{#each days as day (day.id)}
+						{#each state.workspace.bellPeriods as period (period.id)}
 							{@const entries = entriesForTimetableCell(state, {
 								view,
 								rowId: row.id,

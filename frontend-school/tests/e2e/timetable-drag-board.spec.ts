@@ -22,6 +22,23 @@ async function selectPeriod(dialog: Locator, periodName: string): Promise<void> 
 		.click();
 }
 
+test('shows periods across the top and weekdays down the left side', async ({ page }) => {
+	await installTimetableMock(page);
+	await page.goto(timetableUrl());
+
+	const board = page.locator('section[aria-label^="ตารางของ "]');
+	await expect(board.locator('thead th').first()).toHaveText('วัน / คาบ');
+	await expect(board.locator('thead th').nth(1)).toContainText('คาบ 1');
+	await expect(board.locator('thead th').nth(2)).toContainText('คาบ 2');
+	await expect(board.locator('tbody tr > th')).toHaveText([
+		'วันจันทร์',
+		'วันอังคาร',
+		'วันพุธ',
+		'วันพฤหัสบดี',
+		'วันศุกร์'
+	]);
+});
+
 test('places exactly one unscheduled period and projects it into both editable views', async ({
 	page
 }) => {
