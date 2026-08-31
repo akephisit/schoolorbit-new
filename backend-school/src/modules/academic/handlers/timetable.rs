@@ -11,8 +11,8 @@ use crate::error::AppError;
 use crate::modules::academic::models::timetable::{
     CreateBatchTimetableEntriesRequest, CreateTimetableEntryRequest, DeleteTimetableEntryQuery,
     PersonalTimetableQuery, SwapTimetableEntriesRequest, TimetableBatchMutationQuery,
-    TimetableOccupancyQuery, TimetableQuery, TimetableWorkspaceQuery, UpdateTimetableEntryRequest,
-    ValidateMovesRequest,
+    TimetableOccupancyQuery, TimetablePlacementPreviewRequest, TimetablePlacementSource,
+    TimetableQuery, TimetableWorkspaceQuery, UpdateTimetableEntryRequest, ValidateMovesRequest,
 };
 use crate::modules::academic::services::{
     daily_teaching_service, timetable_service, timetable_version_service,
@@ -391,6 +391,49 @@ pub async fn validate_timetable_moves(
     )
     .await?;
     Ok(Json(ApiResponse::ok(cells)).into_response())
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/academic/timetable/placement-preview",
+    operation_id = "previewTimetablePlacement",
+    request_body = TimetablePlacementPreviewRequest,
+    responses(
+        (status = 200, description = "Authoritative placement, move, or swap preview", body = ApiResponse<crate::modules::academic::models::timetable::TimetablePlacementPreview>),
+        (status = 400, description = "Invalid placement shape or academic context", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Timetable manage permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Timetable version, group, or entry not found", body = ApiErrorResponse)
+    ),
+    tag = "academic"
+)]
+pub async fn preview_timetable_placement(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Json(payload): Json<TimetablePlacementPreviewRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    match &payload.source {
+        TimetablePlacementSource::ExistingEntry { entry_id, .. } => {
+            require_existing_entry_manage_access(&context, *entry_id).await?;
+        }
+        TimetablePlacementSource::UnscheduledDemand {
+            learning_group_id, ..
+        } => {
+            require_learning_group_access(
+                &context.tenant.pool,
+                &context.actor,
+                *learning_group_id,
+                OfferingAction::Manage,
+            )
+            .await?;
+        }
+    }
+    if let Some(target_entry_id) = payload.expected_target_entry_id {
+        require_existing_entry_manage_access(&context, target_entry_id).await?;
+    }
+    let preview = timetable_service::preview_placement(&context.tenant.pool, &payload).await?;
+    Ok(Json(ApiResponse::ok(preview)).into_response())
 }
 
 #[utoipa::path(

@@ -149,6 +149,10 @@ pub fn academic_routes() -> Router<AppState> {
                 post(handlers::timetable::validate_timetable_moves),
             )
             .route(
+                "/timetable/placement-preview",
+                post(handlers::timetable::preview_timetable_placement),
+            )
+            .route(
                 "/timetable/occupancy",
                 get(handlers::timetable::get_timetable_occupancy),
             )

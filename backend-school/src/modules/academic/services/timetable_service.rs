@@ -10,10 +10,13 @@ use crate::modules::academic::core::models::BellSchedulePeriod;
 use crate::modules::academic::models::timetable::{
     BatchTimetableResult, ConflictInfo, CreateBatchTimetableEntriesRequest,
     CreateTimetableEntryRequest, MoveValidityCell, SwapTimetableEntriesRequest,
-    SwapTimetableEntriesResponse, TimetableEntry, TimetableInstructor, TimetableOccupancyCell,
-    TimetableQuery, TimetableUnscheduledDemand, TimetableValidationResponse, TimetableWorkspace,
-    TimetableWorkspaceHomeroom, TimetableWorkspaceLearningGroup, TimetableWorkspaceQuery,
-    TimetableWorkspaceRoom, TimetableWorkspaceStaff, UpdateTimetableEntryRequest,
+    SwapTimetableEntriesResponse, TimetableConflictType, TimetableEntry, TimetableInstructor,
+    TimetableOccupancyCell, TimetablePlacementCandidate, TimetablePlacementMutationKind,
+    TimetablePlacementPreview, TimetablePlacementPreviewRequest, TimetablePlacementSource,
+    TimetablePlacementState, TimetableQuery, TimetableUnscheduledDemand,
+    TimetableValidationResponse, TimetableWorkspace, TimetableWorkspaceHomeroom,
+    TimetableWorkspaceLearningGroup, TimetableWorkspaceQuery, TimetableWorkspaceRoom,
+    TimetableWorkspaceStaff, UpdateTimetableEntryRequest,
 };
 use crate::policies::resource_access_policy::AcademicResourceListFilter;
 
@@ -102,6 +105,41 @@ struct EntryLockRow {
     bell_schedule_period_id: Uuid,
     row_version: i64,
     is_active: bool,
+}
+
+#[derive(Debug, Clone, FromRow)]
+struct PlacementEntryRow {
+    id: Uuid,
+    timetable_version_id: Uuid,
+    academic_term_id: Uuid,
+    academic_year_id: Uuid,
+    entry_type: String,
+    learning_group_id: Option<Uuid>,
+    learning_offering_id: Option<Uuid>,
+    homeroom_id: Option<Uuid>,
+    room_id: Option<Uuid>,
+    day_of_week: String,
+    bell_schedule_period_id: Uuid,
+    row_version: i64,
+}
+
+impl PlacementEntryRow {
+    fn lock_row(&self) -> EntryLockRow {
+        EntryLockRow {
+            id: self.id,
+            timetable_version_id: self.timetable_version_id,
+            academic_term_id: self.academic_term_id,
+            academic_year_id: self.academic_year_id,
+            learning_group_id: self.learning_group_id,
+            learning_offering_id: self.learning_offering_id,
+            homeroom_id: self.homeroom_id,
+            room_id: self.room_id,
+            day_of_week: self.day_of_week.clone(),
+            bell_schedule_period_id: self.bell_schedule_period_id,
+            row_version: self.row_version,
+            is_active: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, FromRow)]
@@ -1604,10 +1642,9 @@ pub async fn validate_moves(
                 cells.push(MoveValidityCell {
                     day_of_week: (*day).to_string(),
                     bell_schedule_period_id: *period_id,
-                    state: "source".to_string(),
+                    state: TimetablePlacementState::Source,
                     target_entry_id: None,
-                    valid: true,
-                    reason: String::new(),
+                    conflicts: Vec::new(),
                 });
                 continue;
             }
@@ -1624,21 +1661,420 @@ pub async fn validate_moves(
                 day_of_week: (*day).to_string(),
                 bell_schedule_period_id: *period_id,
                 state: if conflicts.is_empty() {
-                    "empty"
+                    TimetablePlacementState::Move
                 } else {
-                    "occupied"
-                }
-                .to_string(),
-                target_entry_id: conflicts.first().map(|conflict| conflict.existing_entry_id),
-                valid: conflicts.is_empty(),
-                reason: conflicts
+                    TimetablePlacementState::Blocked
+                },
+                target_entry_id: conflicts
                     .first()
-                    .map(|conflict| conflict.message.clone())
-                    .unwrap_or_default(),
+                    .and_then(|conflict| conflict.existing_entry_id),
+                conflicts,
             });
         }
     }
     Ok(cells)
+}
+
+pub async fn preview_placement(
+    pool: &PgPool,
+    request: &TimetablePlacementPreviewRequest,
+) -> Result<TimetablePlacementPreview, AppError> {
+    let target_day = normalize_day(&request.target_day_of_week)?;
+    let mut normalized_candidate = request.candidate.clone();
+    normalized_candidate.entry_type = normalize_entry_type(&normalized_candidate.entry_type)?;
+    normalized_candidate.instructor_ids = canonical_ids(&normalized_candidate.instructor_ids);
+
+    if request.expected_target_entry_id.is_some() != request.expected_target_row_version.is_some() {
+        return Err(AppError::ValidationError(
+            "ต้องส่งรหัสและ rowVersion ของรายการเป้าหมายมาด้วยกัน".to_string(),
+        ));
+    }
+
+    let mut transaction = pool.begin().await?;
+    let version = require_timetable_version_in_tx(
+        &mut transaction,
+        request.timetable_version_id,
+        Some(request.academic_term_id),
+        false,
+    )
+    .await?;
+    require_period_in_tx(
+        &mut transaction,
+        request.academic_term_id,
+        request.target_bell_schedule_period_id,
+    )
+    .await?;
+
+    let source_entry = match request.source {
+        TimetablePlacementSource::ExistingEntry { entry_id, .. } => {
+            Some(load_placement_entry_in_tx(&mut transaction, entry_id).await?)
+        }
+        TimetablePlacementSource::UnscheduledDemand { .. } => None,
+    };
+    let source_entry_id = source_entry.as_ref().map(|entry| entry.id);
+    if version.status != "draft"
+        || matches!(
+            version.term_status.as_str(),
+            "closing" | "closed" | "archived" | "cancelled"
+        )
+    {
+        transaction.rollback().await?;
+        return Ok(blocked_placement_preview(
+            normalized_candidate,
+            source_entry_id,
+            request.expected_target_entry_id,
+            target_day,
+            request.target_bell_schedule_period_id,
+            placement_block(
+                TimetableConflictType::Version,
+                "แก้ไขได้เฉพาะรุ่นตารางสอนแบบร่างในภาคเรียนที่ยังเปิดอยู่",
+                source_entry_id,
+            ),
+        ));
+    }
+
+    if let (
+        TimetablePlacementSource::ExistingEntry {
+            entry_id,
+            row_version,
+        },
+        Some(entry),
+    ) = (&request.source, source_entry.as_ref())
+    {
+        if entry.id != *entry_id
+            || entry.row_version != *row_version
+            || entry.timetable_version_id != request.timetable_version_id
+            || entry.academic_term_id != request.academic_term_id
+        {
+            transaction.rollback().await?;
+            return Ok(blocked_placement_preview(
+                normalized_candidate,
+                Some(*entry_id),
+                request.expected_target_entry_id,
+                target_day,
+                request.target_bell_schedule_period_id,
+                placement_block(
+                    TimetableConflictType::StaleEntry,
+                    "รายการต้นทางเปลี่ยนแปลงแล้ว กรุณาโหลดตารางใหม่",
+                    Some(*entry_id),
+                ),
+            ));
+        }
+    }
+
+    let synthetic_request = CreateTimetableEntryRequest {
+        timetable_version_id: request.timetable_version_id,
+        academic_term_id: request.academic_term_id,
+        learning_group_id: normalized_candidate.learning_group_id,
+        homeroom_id: normalized_candidate.homeroom_id,
+        day_of_week: target_day.clone(),
+        bell_schedule_period_id: request.target_bell_schedule_period_id,
+        room_id: normalized_candidate.room_id,
+        note: None,
+        entry_type: normalized_candidate.entry_type.clone(),
+        title: None,
+        instructor_ids: normalized_candidate.instructor_ids.clone(),
+    };
+    let (_, group, normalized_entry_type, candidate_scope) =
+        resolve_create_scope(&mut transaction, &synthetic_request).await?;
+    normalized_candidate.entry_type = normalized_entry_type;
+    normalized_candidate.learning_offering_id =
+        group.as_ref().map(|group| group.learning_offering_id);
+    normalized_candidate.instructor_ids = candidate_scope.instructor_ids.clone();
+
+    match (&request.source, source_entry.as_ref()) {
+        (TimetablePlacementSource::ExistingEntry { .. }, Some(existing)) => {
+            if existing.entry_type != normalized_candidate.entry_type
+                || existing.learning_group_id != normalized_candidate.learning_group_id
+                || existing.learning_offering_id != normalized_candidate.learning_offering_id
+                || existing.homeroom_id != normalized_candidate.homeroom_id
+            {
+                return Err(AppError::ValidationError(
+                    "รายการต้นทางและ candidate ต้องใช้ชนิด กลุ่ม การเปิดสอน และห้องประจำชั้นเดิม".to_string(),
+                ));
+            }
+        }
+        (
+            TimetablePlacementSource::UnscheduledDemand {
+                learning_group_id,
+                learning_offering_id,
+            },
+            None,
+        ) => {
+            if normalized_candidate.learning_group_id != Some(*learning_group_id)
+                || normalized_candidate.learning_offering_id != Some(*learning_offering_id)
+            {
+                return Err(AppError::ValidationError(
+                    "candidate ไม่ตรงกับรายการคาบที่ยังไม่ได้จัด".to_string(),
+                ));
+            }
+            let has_remaining_demand: bool = sqlx::query_scalar(
+                r#"SELECT target.weekly_period_target > count(entry.id)::integer
+                   FROM academic_timetable_version_targets target
+                   JOIN learning_groups learning_group
+                     ON learning_group.learning_offering_id = target.learning_offering_id
+                    AND learning_group.id = $2
+                   LEFT JOIN academic_timetable_entries entry
+                     ON entry.timetable_version_id = target.timetable_version_id
+                    AND entry.learning_group_id = learning_group.id
+                    AND entry.is_active
+                   WHERE target.timetable_version_id = $1
+                     AND target.learning_offering_id = $3
+                   GROUP BY target.weekly_period_target"#,
+            )
+            .bind(request.timetable_version_id)
+            .bind(learning_group_id)
+            .bind(learning_offering_id)
+            .fetch_optional(&mut *transaction)
+            .await?
+            .unwrap_or(false);
+            if !has_remaining_demand {
+                return Err(AppError::ValidationError(
+                    "กลุ่มเรียนนี้ไม่มีคาบคงเหลือที่ยังไม่ได้จัด".to_string(),
+                ));
+            }
+        }
+        _ => {
+            return Err(AppError::ValidationError(
+                "ไม่สามารถจับคู่ต้นทางของการวางตารางได้".to_string(),
+            ));
+        }
+    }
+
+    let target_entry = if let Some(target_entry_id) = request.expected_target_entry_id {
+        let target = load_placement_entry_in_tx(&mut transaction, target_entry_id).await?;
+        let expected_row_version = request
+            .expected_target_row_version
+            .expect("validated target row version shape");
+        if target.row_version != expected_row_version
+            || target.timetable_version_id != request.timetable_version_id
+            || target.academic_term_id != request.academic_term_id
+            || target.day_of_week != target_day
+            || target.bell_schedule_period_id != request.target_bell_schedule_period_id
+        {
+            transaction.rollback().await?;
+            return Ok(blocked_placement_preview(
+                normalized_candidate,
+                source_entry_id,
+                Some(target_entry_id),
+                target_day,
+                request.target_bell_schedule_period_id,
+                placement_block(
+                    TimetableConflictType::StaleEntry,
+                    "รายการเป้าหมายเปลี่ยนแปลงแล้ว กรุณาโหลดตารางใหม่",
+                    Some(target_entry_id),
+                ),
+            ));
+        }
+        if source_entry_id == Some(target.id) {
+            return Err(AppError::ValidationError(
+                "รายการต้นทางและรายการเป้าหมายต้องเป็นคนละรายการ".to_string(),
+            ));
+        }
+        Some(target)
+    } else {
+        None
+    };
+
+    if source_entry.is_none() && target_entry.is_some() {
+        let conflicts = find_conflicts_in_tx(
+            &mut transaction,
+            request.timetable_version_id,
+            &target_day,
+            request.target_bell_schedule_period_id,
+            &candidate_scope,
+            &[],
+        )
+        .await?;
+        transaction.rollback().await?;
+        return Ok(TimetablePlacementPreview {
+            state: TimetablePlacementState::Blocked,
+            source_entry_id: None,
+            target_entry_id: request.expected_target_entry_id,
+            target_day_of_week: target_day,
+            target_bell_schedule_period_id: request.target_bell_schedule_period_id,
+            normalized_candidate,
+            conflicts: if conflicts.is_empty() {
+                vec![placement_block(
+                    TimetableConflictType::LearningGroup,
+                    "คาบที่ยังไม่ได้จัดไม่สามารถสลับกับรายการที่วางแล้ว",
+                    request.expected_target_entry_id,
+                )]
+            } else {
+                conflicts
+            },
+            mutation: None,
+        });
+    }
+
+    if let (Some(source), Some(target)) = (source_entry.as_ref(), target_entry.as_ref()) {
+        let current_candidate =
+            placement_candidate_for_entry_in_tx(&mut transaction, source).await?;
+        if current_candidate != normalized_candidate {
+            return Err(AppError::ValidationError(
+                "การสลับคาบเปลี่ยนครูหรือห้องพร้อมกันไม่ได้ กรุณาปรับรายการก่อนสลับ".to_string(),
+            ));
+        }
+        let excluded = [source.id, target.id];
+        let mut conflicts = find_conflicts_in_tx(
+            &mut transaction,
+            request.timetable_version_id,
+            &target.day_of_week,
+            target.bell_schedule_period_id,
+            &candidate_scope,
+            &excluded,
+        )
+        .await?;
+        let target_scope = entry_candidate_scope(&mut transaction, &target.lock_row()).await?;
+        conflicts.extend(
+            find_conflicts_in_tx(
+                &mut transaction,
+                request.timetable_version_id,
+                &source.day_of_week,
+                source.bell_schedule_period_id,
+                &target_scope,
+                &excluded,
+            )
+            .await?,
+        );
+        conflicts.sort_by_key(|conflict| {
+            (
+                conflict.conflict_type,
+                conflict.existing_entry_id.unwrap_or(Uuid::nil()),
+            )
+        });
+        conflicts.dedup();
+        transaction.rollback().await?;
+        return Ok(TimetablePlacementPreview {
+            state: if conflicts.is_empty() {
+                TimetablePlacementState::Swap
+            } else {
+                TimetablePlacementState::Blocked
+            },
+            source_entry_id: Some(source.id),
+            target_entry_id: Some(target.id),
+            target_day_of_week: target_day,
+            target_bell_schedule_period_id: request.target_bell_schedule_period_id,
+            normalized_candidate,
+            mutation: conflicts
+                .is_empty()
+                .then_some(TimetablePlacementMutationKind::Swap),
+            conflicts,
+        });
+    }
+
+    let excluded = source_entry_id.into_iter().collect::<Vec<_>>();
+    let conflicts = find_conflicts_in_tx(
+        &mut transaction,
+        request.timetable_version_id,
+        &target_day,
+        request.target_bell_schedule_period_id,
+        &candidate_scope,
+        &excluded,
+    )
+    .await?;
+    if !conflicts.is_empty() {
+        transaction.rollback().await?;
+        return Ok(TimetablePlacementPreview {
+            state: TimetablePlacementState::Blocked,
+            source_entry_id,
+            target_entry_id: None,
+            target_day_of_week: target_day,
+            target_bell_schedule_period_id: request.target_bell_schedule_period_id,
+            normalized_candidate,
+            conflicts,
+            mutation: None,
+        });
+    }
+
+    let (state, mutation) = if let Some(source) = source_entry.as_ref() {
+        if source.day_of_week == target_day
+            && source.bell_schedule_period_id == request.target_bell_schedule_period_id
+        {
+            let current_candidate =
+                placement_candidate_for_entry_in_tx(&mut transaction, source).await?;
+            if current_candidate == normalized_candidate {
+                (TimetablePlacementState::Source, None)
+            } else {
+                (
+                    TimetablePlacementState::Move,
+                    Some(TimetablePlacementMutationKind::Update),
+                )
+            }
+        } else {
+            (
+                TimetablePlacementState::Move,
+                Some(TimetablePlacementMutationKind::Move),
+            )
+        }
+    } else {
+        (
+            TimetablePlacementState::Move,
+            Some(TimetablePlacementMutationKind::Create),
+        )
+    };
+    transaction.rollback().await?;
+    Ok(TimetablePlacementPreview {
+        state,
+        source_entry_id,
+        target_entry_id: None,
+        target_day_of_week: target_day,
+        target_bell_schedule_period_id: request.target_bell_schedule_period_id,
+        normalized_candidate,
+        conflicts: Vec::new(),
+        mutation,
+    })
+}
+
+fn blocked_placement_preview(
+    normalized_candidate: TimetablePlacementCandidate,
+    source_entry_id: Option<Uuid>,
+    target_entry_id: Option<Uuid>,
+    target_day_of_week: String,
+    target_bell_schedule_period_id: Uuid,
+    conflict: ConflictInfo,
+) -> TimetablePlacementPreview {
+    TimetablePlacementPreview {
+        state: TimetablePlacementState::Blocked,
+        source_entry_id,
+        target_entry_id,
+        target_day_of_week,
+        target_bell_schedule_period_id,
+        normalized_candidate,
+        conflicts: vec![conflict],
+        mutation: None,
+    }
+}
+
+async fn load_placement_entry_in_tx(
+    transaction: &mut Transaction<'_, Postgres>,
+    entry_id: Uuid,
+) -> Result<PlacementEntryRow, AppError> {
+    sqlx::query_as(
+        r#"SELECT id, timetable_version_id, academic_term_id, academic_year_id,
+                  entry_type, learning_group_id, learning_offering_id, homeroom_id,
+                  room_id, day_of_week, bell_schedule_period_id, row_version
+           FROM academic_timetable_entries
+           WHERE id = $1 AND is_active"#,
+    )
+    .bind(entry_id)
+    .fetch_optional(&mut **transaction)
+    .await?
+    .ok_or_else(|| AppError::NotFound("ไม่พบรายการตารางสอน".to_string()))
+}
+
+async fn placement_candidate_for_entry_in_tx(
+    transaction: &mut Transaction<'_, Postgres>,
+    entry: &PlacementEntryRow,
+) -> Result<TimetablePlacementCandidate, AppError> {
+    Ok(TimetablePlacementCandidate {
+        entry_type: entry.entry_type.clone(),
+        learning_group_id: entry.learning_group_id,
+        learning_offering_id: entry.learning_offering_id,
+        homeroom_id: entry.homeroom_id,
+        room_id: entry.room_id,
+        instructor_ids: canonical_ids(&exact_entry_instructors_in_tx(transaction, entry.id).await?),
+    })
 }
 
 pub async fn validate_candidate(
@@ -2217,6 +2653,12 @@ async fn compare_conflicts_in_tx(
         let instructors = relationships.instructors(entry.id);
         append_conflicts(&mut conflicts, &entry, &homerooms, &instructors, scope);
     }
+    conflicts.sort_by_key(|conflict| {
+        (
+            conflict.conflict_type,
+            conflict.existing_entry_id.unwrap_or(Uuid::nil()),
+        )
+    });
     Ok(conflicts)
 }
 
@@ -2231,7 +2673,7 @@ fn append_conflicts(
         && candidate.learning_group_id == entry.learning_group_id
     {
         conflicts.push(conflict(
-            "GROUP_CONFLICT",
+            TimetableConflictType::LearningGroup,
             "กลุ่มเรียนมีตารางในคาบนี้แล้ว",
             entry.id,
         ));
@@ -2242,29 +2684,45 @@ fn append_conflicts(
             .any(|homeroom| candidate.homeroom_ids.contains(homeroom))
     {
         conflicts.push(conflict(
-            "HOMEROOM_CONFLICT",
+            TimetableConflictType::Homeroom,
             "ขอบเขตห้องประจำชั้นมีตารางในคาบนี้แล้ว",
             entry.id,
         ));
     }
     if candidate.room_id.is_some() && candidate.room_id == entry.room_id {
-        conflicts.push(conflict("ROOM_CONFLICT", "ห้องเรียนถูกใช้ในคาบนี้แล้ว", entry.id));
+        conflicts.push(conflict(
+            TimetableConflictType::Room,
+            "ห้องเรียนถูกใช้ในคาบนี้แล้ว",
+            entry.id,
+        ));
     }
     if instructors
         .iter()
         .any(|instructor| candidate.instructor_ids.contains(instructor))
     {
         conflicts.push(conflict(
-            "INSTRUCTOR_CONFLICT",
+            TimetableConflictType::Instructor,
             "ครูมีตารางในคาบนี้แล้ว",
             entry.id,
         ));
     }
 }
 
-fn conflict(kind: &str, message: &str, entry_id: Uuid) -> ConflictInfo {
+fn conflict(kind: TimetableConflictType, message: &str, entry_id: Uuid) -> ConflictInfo {
     ConflictInfo {
-        conflict_type: kind.to_string(),
+        conflict_type: kind,
+        message: message.to_string(),
+        existing_entry_id: Some(entry_id),
+    }
+}
+
+fn placement_block(
+    kind: TimetableConflictType,
+    message: &str,
+    entry_id: Option<Uuid>,
+) -> ConflictInfo {
+    ConflictInfo {
+        conflict_type: kind,
         message: message.to_string(),
         existing_entry_id: entry_id,
     }

@@ -286,23 +286,116 @@ pub struct ValidateMovesRequest {
     pub entry_id: Uuid,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TimetablePlacementState {
+    Source,
+    Move,
+    Swap,
+    Blocked,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TimetableConflictType {
+    LearningGroup,
+    Homeroom,
+    Instructor,
+    Room,
+    Version,
+    StaleEntry,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TimetablePlacementMutationKind {
+    Create,
+    Update,
+    Move,
+    Swap,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, ToSchema)]
+#[serde(
+    tag = "kind",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub enum TimetablePlacementSource {
+    ExistingEntry {
+        #[serde(rename = "entryId")]
+        entry_id: Uuid,
+        #[serde(rename = "rowVersion")]
+        row_version: i64,
+    },
+    UnscheduledDemand {
+        #[serde(rename = "learningGroupId")]
+        learning_group_id: Uuid,
+        #[serde(rename = "learningOfferingId")]
+        learning_offering_id: Uuid,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TimetablePlacementCandidate {
+    pub entry_type: String,
+    pub learning_group_id: Option<Uuid>,
+    pub learning_offering_id: Option<Uuid>,
+    pub homeroom_id: Option<Uuid>,
+    pub room_id: Option<Uuid>,
+    #[serde(default)]
+    pub instructor_ids: Vec<Uuid>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TimetablePlacementPreviewRequest {
+    pub timetable_version_id: Uuid,
+    pub academic_term_id: Uuid,
+    pub source: TimetablePlacementSource,
+    pub candidate: TimetablePlacementCandidate,
+    pub target_day_of_week: String,
+    pub target_bell_schedule_period_id: Uuid,
+    pub expected_target_entry_id: Option<Uuid>,
+    pub expected_target_row_version: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TimetablePlacementPreview {
+    pub state: TimetablePlacementState,
+    #[schema(required = true)]
+    pub source_entry_id: Option<Uuid>,
+    #[schema(required = true)]
+    pub target_entry_id: Option<Uuid>,
+    pub target_day_of_week: String,
+    pub target_bell_schedule_period_id: Uuid,
+    pub normalized_candidate: TimetablePlacementCandidate,
+    pub conflicts: Vec<ConflictInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mutation: Option<TimetablePlacementMutationKind>,
+}
+
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct MoveValidityCell {
     pub day_of_week: String,
     pub bell_schedule_period_id: Uuid,
-    pub state: String,
+    pub state: TimetablePlacementState,
+    #[schema(required = true)]
     pub target_entry_id: Option<Uuid>,
-    pub valid: bool,
-    pub reason: String,
+    pub conflicts: Vec<ConflictInfo>,
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ConflictInfo {
-    pub conflict_type: String,
+    pub conflict_type: TimetableConflictType,
     pub message: String,
-    pub existing_entry_id: Uuid,
+    #[schema(required = true)]
+    pub existing_entry_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]

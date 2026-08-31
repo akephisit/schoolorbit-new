@@ -10,8 +10,10 @@ use crate::modules::academic::models::timetable::{
     ApplyTemplateRequest, BatchTimetableResult, ClearTimetableRequest,
     CreateBatchTimetableEntriesRequest, CreateTemplateRequest, CreateTimetableEntryRequest,
     FromCurrentRequest, MoveValidityCell, SwapTimetableEntriesRequest,
-    SwapTimetableEntriesResponse, TemplateApplyResult, TemplateWithEntries, TimetableEntry,
-    TimetableInstructor, TimetableOccupancyCell, TimetableTemplate, TimetableTemplateEntry,
+    SwapTimetableEntriesResponse, TemplateApplyResult, TemplateWithEntries, TimetableConflictType,
+    TimetableEntry, TimetableInstructor, TimetableOccupancyCell, TimetablePlacementCandidate,
+    TimetablePlacementMutationKind, TimetablePlacementPreview, TimetablePlacementPreviewRequest,
+    TimetablePlacementSource, TimetablePlacementState, TimetableTemplate, TimetableTemplateEntry,
     TimetableTemplateTargetSelector, TimetableUnscheduledDemand, TimetableWorkspace,
     TimetableWorkspaceHomeroom, TimetableWorkspaceLearningGroup, TimetableWorkspaceRoom,
     TimetableWorkspaceStaff, UpdateTemplateRequest, UpdateTimetableEntryRequest,
@@ -296,6 +298,7 @@ use utoipa::OpenApi;
         crate::modules::academic::handlers::timetable::delete_batch_group,
         crate::modules::academic::handlers::timetable::swap_timetable_entries,
         crate::modules::academic::handlers::timetable::validate_timetable_moves,
+        crate::modules::academic::handlers::timetable::preview_timetable_placement,
         crate::modules::academic::handlers::timetable::get_timetable_occupancy,
         crate::modules::academic::handlers::timetable::daily_teaching_overview,
         crate::modules::academic::handlers::timetable_versions::list_versions,
@@ -1082,6 +1085,13 @@ use utoipa::OpenApi;
         SwapTimetableEntriesResponse,
         ValidateMovesRequest,
         MoveValidityCell,
+        TimetablePlacementState,
+        TimetableConflictType,
+        TimetablePlacementMutationKind,
+        TimetablePlacementSource,
+        TimetablePlacementCandidate,
+        TimetablePlacementPreviewRequest,
+        TimetablePlacementPreview,
         TimetableOccupancyCell,
         TimetableTemplate,
         TimetableTemplateEntry,
@@ -1099,6 +1109,7 @@ use utoipa::OpenApi;
         ApiResponse<BatchTimetableResult>,
         ApiResponse<SwapTimetableEntriesResponse>,
         ApiResponse<Vec<MoveValidityCell>>,
+        ApiResponse<TimetablePlacementPreview>,
         ApiResponse<Vec<TimetableOccupancyCell>>,
         TimetableVersionStatus,
         TimetableVersionDisplayState,
@@ -3401,6 +3412,43 @@ mod tests {
         ] {
             assert!(required(&schemas["TimetableWorkspace"]).contains(&field));
         }
+    }
+
+    #[test]
+    fn documents_typed_timetable_placement_preview_contract() {
+        let document = school_api_value().expect("document should serialize");
+        assert_operations(
+            &document,
+            &[(
+                "/api/academic/timetable/placement-preview",
+                "post",
+                "previewTimetablePlacement",
+            )],
+        );
+        let schemas = &document["components"]["schemas"];
+        for schema_name in [
+            "TimetablePlacementState",
+            "TimetableConflictType",
+            "TimetablePlacementMutationKind",
+            "TimetablePlacementSource",
+            "TimetablePlacementCandidate",
+            "TimetablePlacementPreviewRequest",
+            "TimetablePlacementPreview",
+        ] {
+            assert!(!schemas[schema_name].is_null(), "missing {schema_name}");
+        }
+        assert!(
+            required(&schemas["TimetablePlacementPreviewRequest"]).contains(&"timetableVersionId")
+        );
+        assert!(required(&schemas["TimetablePlacementPreviewRequest"])
+            .contains(&"targetBellSchedulePeriodId"));
+        assert!(required(&schemas["TimetablePlacementPreview"]).contains(&"conflicts"));
+        assert!(schemas["MoveValidityCell"]["properties"]
+            .get("valid")
+            .is_none());
+        assert!(schemas["MoveValidityCell"]["properties"]
+            .get("reason")
+            .is_none());
     }
 
     #[test]

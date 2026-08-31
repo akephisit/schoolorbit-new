@@ -9,6 +9,8 @@ use crate::modules::academic::cutover_test_support::{
 };
 use crate::modules::academic::models::timetable::{
     CreateBatchTimetableEntriesRequest, CreateTimetableEntryRequest, SwapTimetableEntriesRequest,
+    TimetableConflictType, TimetablePlacementCandidate, TimetablePlacementMutationKind,
+    TimetablePlacementPreviewRequest, TimetablePlacementSource, TimetablePlacementState,
     TimetableQuery, TimetableWorkspaceQuery, UpdateTimetableEntryRequest,
 };
 use crate::modules::academic::models::timetable_version::CloneTimetableVersionRequest;
@@ -429,6 +431,357 @@ async fn workspace_rejects_a_version_outside_the_requested_academic_context() {
 }
 
 #[tokio::test]
+async fn placement_preview_distinguishes_create_move_update_swap_and_blocked() {
+    let pool = migrated_pool("timetable_placement_preview_states").await;
+    let fixture = exact_instructor_fixture(&pool).await;
+    let offering_id: Uuid =
+        sqlx::query_scalar("SELECT learning_offering_id FROM learning_groups WHERE id = $1")
+            .bind(fixture.group_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let period_ids: Vec<Uuid> = sqlx::query_scalar(
+        r#"SELECT id FROM bell_schedule_periods
+           WHERE bell_schedule_id = $1 AND is_active
+           ORDER BY order_index, id LIMIT 2"#,
+    )
+    .bind(fixture.draft.bell_schedule_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(period_ids.len(), 2);
+    sqlx::query("DELETE FROM academic_timetable_entries WHERE timetable_version_id = $1")
+        .bind(fixture.draft.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let candidate = |instructor_ids: Vec<Uuid>| TimetablePlacementCandidate {
+        entry_type: "COURSE".to_string(),
+        learning_group_id: Some(fixture.group_id),
+        learning_offering_id: Some(offering_id),
+        homeroom_id: None,
+        room_id: None,
+        instructor_ids,
+    };
+    let unscheduled_source = TimetablePlacementSource::UnscheduledDemand {
+        learning_group_id: fixture.group_id,
+        learning_offering_id: offering_id,
+    };
+    let preview_create = timetable_service::preview_placement(
+        &pool,
+        &TimetablePlacementPreviewRequest {
+            timetable_version_id: fixture.draft.id,
+            academic_term_id: fixture.term_id,
+            source: unscheduled_source.clone(),
+            candidate: candidate(vec![fixture.teacher_a]),
+            target_day_of_week: "WED".to_string(),
+            target_bell_schedule_period_id: period_ids[0],
+            expected_target_entry_id: None,
+            expected_target_row_version: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(preview_create.state, TimetablePlacementState::Move);
+    assert_eq!(
+        preview_create.mutation,
+        Some(TimetablePlacementMutationKind::Create)
+    );
+
+    let source = timetable_service::create_entry(
+        &pool,
+        fixture.actor_id,
+        CreateTimetableEntryRequest {
+            timetable_version_id: fixture.draft.id,
+            academic_term_id: fixture.term_id,
+            learning_group_id: Some(fixture.group_id),
+            homeroom_id: None,
+            day_of_week: "MON".to_string(),
+            bell_schedule_period_id: period_ids[0],
+            room_id: None,
+            note: None,
+            entry_type: "COURSE".to_string(),
+            title: None,
+            instructor_ids: vec![fixture.teacher_a],
+        },
+    )
+    .await
+    .unwrap();
+    let existing_source = TimetablePlacementSource::ExistingEntry {
+        entry_id: source.id,
+        row_version: source.row_version,
+    };
+    let preview_move = timetable_service::preview_placement(
+        &pool,
+        &TimetablePlacementPreviewRequest {
+            timetable_version_id: fixture.draft.id,
+            academic_term_id: fixture.term_id,
+            source: existing_source.clone(),
+            candidate: candidate(vec![fixture.teacher_a]),
+            target_day_of_week: "THU".to_string(),
+            target_bell_schedule_period_id: period_ids[1],
+            expected_target_entry_id: None,
+            expected_target_row_version: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(preview_move.state, TimetablePlacementState::Move);
+    assert_eq!(
+        preview_move.mutation,
+        Some(TimetablePlacementMutationKind::Move)
+    );
+
+    let preview_update = timetable_service::preview_placement(
+        &pool,
+        &TimetablePlacementPreviewRequest {
+            timetable_version_id: fixture.draft.id,
+            academic_term_id: fixture.term_id,
+            source: existing_source.clone(),
+            candidate: candidate(vec![fixture.teacher_a, fixture.teacher_b]),
+            target_day_of_week: source.day_of_week.clone(),
+            target_bell_schedule_period_id: source.bell_schedule_period_id,
+            expected_target_entry_id: None,
+            expected_target_row_version: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(preview_update.state, TimetablePlacementState::Move);
+    assert_eq!(
+        preview_update.mutation,
+        Some(TimetablePlacementMutationKind::Update)
+    );
+
+    let target = timetable_service::create_entry(
+        &pool,
+        fixture.actor_id,
+        CreateTimetableEntryRequest {
+            timetable_version_id: fixture.draft.id,
+            academic_term_id: fixture.term_id,
+            learning_group_id: Some(fixture.group_id),
+            homeroom_id: None,
+            day_of_week: "TUE".to_string(),
+            bell_schedule_period_id: period_ids[1],
+            room_id: None,
+            note: None,
+            entry_type: "COURSE".to_string(),
+            title: None,
+            instructor_ids: vec![fixture.teacher_b],
+        },
+    )
+    .await
+    .unwrap();
+    let preview_swap = timetable_service::preview_placement(
+        &pool,
+        &TimetablePlacementPreviewRequest {
+            timetable_version_id: fixture.draft.id,
+            academic_term_id: fixture.term_id,
+            source: existing_source,
+            candidate: candidate(vec![fixture.teacher_a]),
+            target_day_of_week: target.day_of_week.clone(),
+            target_bell_schedule_period_id: target.bell_schedule_period_id,
+            expected_target_entry_id: Some(target.id),
+            expected_target_row_version: Some(target.row_version),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(preview_swap.state, TimetablePlacementState::Swap);
+    assert_eq!(
+        preview_swap.mutation,
+        Some(TimetablePlacementMutationKind::Swap)
+    );
+
+    let preview_blocked = timetable_service::preview_placement(
+        &pool,
+        &TimetablePlacementPreviewRequest {
+            timetable_version_id: fixture.draft.id,
+            academic_term_id: fixture.term_id,
+            source: unscheduled_source,
+            candidate: candidate(vec![fixture.teacher_a]),
+            target_day_of_week: target.day_of_week,
+            target_bell_schedule_period_id: target.bell_schedule_period_id,
+            expected_target_entry_id: Some(target.id),
+            expected_target_row_version: Some(target.row_version),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(preview_blocked.state, TimetablePlacementState::Blocked);
+    assert_eq!(preview_blocked.mutation, None);
+    assert!(!preview_blocked.conflicts.is_empty());
+
+    let swapped = timetable_service::swap_entries(
+        &pool,
+        fixture.actor_id,
+        SwapTimetableEntriesRequest {
+            timetable_version_id: fixture.draft.id,
+            entry_a_id: source.id,
+            entry_a_row_version: source.row_version,
+            entry_b_id: target.id,
+            entry_b_row_version: target.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(swapped.entry_a.day_of_week, preview_swap.target_day_of_week);
+    assert_eq!(
+        swapped.entry_a.bell_schedule_period_id,
+        preview_swap.target_bell_schedule_period_id
+    );
+    assert_eq!(swapped.entry_b.day_of_week, source.day_of_week);
+    assert_eq!(
+        swapped.entry_b.bell_schedule_period_id,
+        source.bell_schedule_period_id
+    );
+}
+
+#[tokio::test]
+async fn placement_preview_reports_stale_exact_instructor_and_published_version_blocks() {
+    let pool = migrated_pool("timetable_placement_preview_blocks").await;
+    let fixture = exact_instructor_fixture(&pool).await;
+    let offering_id: Uuid =
+        sqlx::query_scalar("SELECT learning_offering_id FROM learning_groups WHERE id = $1")
+            .bind(fixture.group_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    sqlx::query(
+        r#"UPDATE academic_timetable_version_targets
+           SET weekly_period_target = 3
+           WHERE timetable_version_id = $1 AND learning_offering_id = $2"#,
+    )
+    .bind(fixture.draft.id)
+    .bind(offering_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("DELETE FROM academic_timetable_entries WHERE timetable_version_id = $1")
+        .bind(fixture.draft.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let existing = timetable_service::create_entry(
+        &pool,
+        fixture.actor_id,
+        CreateTimetableEntryRequest {
+            timetable_version_id: fixture.draft.id,
+            academic_term_id: fixture.term_id,
+            learning_group_id: Some(fixture.group_id),
+            homeroom_id: None,
+            day_of_week: "FRI".to_string(),
+            bell_schedule_period_id: fixture.period_id,
+            room_id: None,
+            note: None,
+            entry_type: "COURSE".to_string(),
+            title: None,
+            instructor_ids: vec![fixture.teacher_a],
+        },
+    )
+    .await
+    .unwrap();
+    let request = TimetablePlacementPreviewRequest {
+        timetable_version_id: fixture.draft.id,
+        academic_term_id: fixture.term_id,
+        source: TimetablePlacementSource::ExistingEntry {
+            entry_id: existing.id,
+            row_version: existing.row_version + 1,
+        },
+        candidate: TimetablePlacementCandidate {
+            entry_type: "COURSE".to_string(),
+            learning_group_id: Some(fixture.group_id),
+            learning_offering_id: Some(offering_id),
+            homeroom_id: None,
+            room_id: None,
+            instructor_ids: vec![fixture.teacher_a],
+        },
+        target_day_of_week: "THU".to_string(),
+        target_bell_schedule_period_id: fixture.period_id,
+        expected_target_entry_id: None,
+        expected_target_row_version: None,
+    };
+    let stale = timetable_service::preview_placement(&pool, &request)
+        .await
+        .unwrap();
+    assert_eq!(stale.state, TimetablePlacementState::Blocked);
+    assert!(stale
+        .conflicts
+        .iter()
+        .any(|conflict| { conflict.conflict_type == TimetableConflictType::StaleEntry }));
+
+    timetable_service::create_entry(
+        &pool,
+        fixture.actor_id,
+        CreateTimetableEntryRequest {
+            timetable_version_id: fixture.draft.id,
+            academic_term_id: fixture.term_id,
+            learning_group_id: None,
+            homeroom_id: None,
+            day_of_week: "THU".to_string(),
+            bell_schedule_period_id: fixture.period_id,
+            room_id: None,
+            note: None,
+            entry_type: "ACADEMIC".to_string(),
+            title: Some("งานครูเอ".to_string()),
+            instructor_ids: vec![fixture.teacher_a],
+        },
+    )
+    .await
+    .unwrap();
+    let instructor_block = timetable_service::preview_placement(
+        &pool,
+        &TimetablePlacementPreviewRequest {
+            source: TimetablePlacementSource::UnscheduledDemand {
+                learning_group_id: fixture.group_id,
+                learning_offering_id: offering_id,
+            },
+            candidate: request.candidate.clone(),
+            target_day_of_week: "THU".to_string(),
+            expected_target_entry_id: None,
+            expected_target_row_version: None,
+            ..request.clone()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(instructor_block.state, TimetablePlacementState::Blocked);
+    assert!(instructor_block
+        .conflicts
+        .iter()
+        .any(|conflict| conflict.conflict_type == TimetableConflictType::Instructor));
+
+    sqlx::query(
+        r#"UPDATE academic_timetable_versions
+           SET status = 'published', published_by = $2, published_at = now()
+           WHERE id = $1"#,
+    )
+    .bind(fixture.draft.id)
+    .bind(fixture.actor_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let published = timetable_service::preview_placement(
+        &pool,
+        &TimetablePlacementPreviewRequest {
+            source: TimetablePlacementSource::ExistingEntry {
+                entry_id: existing.id,
+                row_version: existing.row_version,
+            },
+            ..request
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(published.state, TimetablePlacementState::Blocked);
+    assert!(published
+        .conflicts
+        .iter()
+        .any(|conflict| { conflict.conflict_type == TimetableConflictType::Version }));
+}
+
+#[tokio::test]
 async fn legacy_teacher_conflict_diagnostic_names_every_entry_in_the_slot() {
     let pool = migrated_pool("timetable_legacy_teacher_conflict_diagnostic").await;
     let fixture = exact_instructor_fixture(&pool).await;
@@ -740,7 +1093,7 @@ async fn timetable_entries_split_and_coteach_with_exact_instructors() {
     assert!(teacher_b_conflict
         .conflicts
         .iter()
-        .any(|conflict| conflict.conflict_type == "INSTRUCTOR_CONFLICT"));
+        .any(|conflict| conflict.conflict_type == TimetableConflictType::Instructor));
 
     let occupancy = timetable_service::occupancy(&pool, fixture.draft.id, fixture.term_id)
         .await
@@ -1861,7 +2214,10 @@ async fn batch_and_conflict_reads_preserve_results() {
         .await
         .unwrap();
     assert_eq!(
-        moves.iter().filter(|cell| cell.state == "source").count(),
+        moves
+            .iter()
+            .filter(|cell| cell.state == TimetablePlacementState::Source)
+            .count(),
         1
     );
     assert!(moves.len() >= 14);
