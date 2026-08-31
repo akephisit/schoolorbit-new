@@ -19,6 +19,7 @@ async function readProjectFile(relativePath) {
 const dragDropRoutes = [
 	'src/routes/(app)/staff/academic/admission/[id]/selections/+page.svelte',
 	'src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte',
+	'src/routes/(app)/staff/academic/timetable/+page.svelte',
 	'src/routes/(app)/staff/menu/+page.svelte',
 	'src/routes/(app)/staff/organization/+page.svelte'
 ];
@@ -37,6 +38,8 @@ test('mobile drag drop opt-in component uses package-local assets', async () => 
 	assert.match(source, /mobile-drag-drop\/default\.css/);
 	assert.match(source, /await import\('mobile-drag-drop'\)/);
 	assert.match(source, /mobile-drag-drop\/scroll-behaviour/);
+	assert.match(source, /data-timetable-lesson-card/);
+	assert.match(source, /dragStartConditionOverride/);
 	assert.doesNotMatch(source, /https?:\/\//);
 });
 

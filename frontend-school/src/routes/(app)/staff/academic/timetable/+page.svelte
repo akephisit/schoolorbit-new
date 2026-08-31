@@ -44,6 +44,7 @@
 	import AcademicChangeReadiness from '$lib/components/learning-delivery/AcademicChangeReadiness.svelte';
 	import AcademicChangeSetDialog from '$lib/components/learning-delivery/AcademicChangeSetDialog.svelte';
 	import TimetableInstructorPicker from '$lib/components/academic/timetable/TimetableInstructorPicker.svelte';
+	import MobileDragDropPolyfill from '$lib/components/MobileDragDropPolyfill.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
@@ -849,6 +850,8 @@
 		};
 	});
 </script>
+
+<MobileDragDropPolyfill />
 
 <PageShell
 	title="จัดตารางสอน"

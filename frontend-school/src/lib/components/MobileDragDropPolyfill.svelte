@@ -3,6 +3,17 @@
 
 	let initializationPromise: Promise<void> | null = null;
 
+	function hasDeliberateDragTarget(event: TouchEvent): boolean {
+		if (event.touches.length !== 1 || !(event.target instanceof Element)) return false;
+
+		const timetableCard = event.target.closest('[data-timetable-lesson-card]');
+		if (timetableCard) {
+			return event.target.closest('[data-timetable-drag-handle="true"]') !== null;
+		}
+
+		return event.composedPath().some((node) => node instanceof HTMLElement && node.draggable);
+	}
+
 	function initializeMobileDragDrop() {
 		initializationPromise ??= (async () => {
 			const { polyfill } = await import('mobile-drag-drop');
@@ -11,7 +22,8 @@
 
 			polyfill({
 				dragImageTranslateOverride: scrollBehaviourDragImageTranslateOverride,
-				holdToDrag: 200
+				dragStartConditionOverride: hasDeliberateDragTarget,
+				holdToDrag: 250
 			});
 		})();
 
