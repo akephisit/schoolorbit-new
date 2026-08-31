@@ -8,7 +8,8 @@ use uuid::Uuid;
 use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
 use crate::modules::academic::models::assessment::{
-    AssessmentPlanListQuery, SaveAssessmentPlanRequest, UpdateAssessmentSettingsRequest,
+    AssessmentPhaseControlListQuery, AssessmentPlanListQuery, SaveAssessmentPlanRequest,
+    UpdateAssessmentPhaseControlRequest,
 };
 use crate::modules::academic::services::assessment_service;
 use crate::modules::auth::session_service::AuthenticatedSession;
@@ -42,11 +43,6 @@ pub async fn list_assessment_plans(
         OfferingAction::Read,
     )
     .await?;
-    assessment_service::require_teacher_access_enabled_for_reader(
-        &context.tenant.pool,
-        &context.actor,
-    )
-    .await?;
     let plans =
         assessment_service::list_assessment_plans(&context.tenant.pool, &query, &access).await?;
     Ok(Json(ApiResponse::ok(plans)).into_response())
@@ -54,48 +50,60 @@ pub async fn list_assessment_plans(
 
 #[utoipa::path(
     get,
-    path = "/api/academic/assessments/settings",
-    operation_id = "getAssessmentSettings",
+    path = "/api/academic/assessments/phase-controls",
+    operation_id = "listAssessmentPhaseControls",
     tag = "academic",
+    params(AssessmentPhaseControlListQuery),
     responses(
-        (status = 200, description = "Assessment settings", body = ApiResponse<crate::modules::academic::models::assessment::AssessmentSettingsResponse>),
+        (status = 200, description = "Assessment phase controls", body = ApiResponse<Vec<crate::modules::academic::models::assessment::AssessmentPhaseControl>>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Assessment settings read permission denied", body = ApiErrorResponse)
+        (status = 403, description = "Assessment phase control read permission denied", body = ApiErrorResponse)
     )
 )]
-pub async fn get_assessment_settings(
+pub async fn list_assessment_phase_controls(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<AssessmentPhaseControlListQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    assessment_service::require_assessment_settings_read_access(&context.actor)?;
-    let settings = assessment_service::get_assessment_settings(&context.tenant.pool).await?;
-    Ok(Json(ApiResponse::ok(settings)).into_response())
+    assessment_service::require_phase_controls_read_access(&context.actor)?;
+    let controls =
+        assessment_service::list_phase_controls(&context.tenant.pool, query.academic_term_id)
+            .await?;
+    Ok(Json(ApiResponse::ok(controls)).into_response())
 }
 
 #[utoipa::path(
     put,
-    path = "/api/academic/assessments/settings",
-    operation_id = "updateAssessmentSettings",
+    path = "/api/academic/assessments/phase-controls/{control_id}",
+    operation_id = "updateAssessmentPhaseControl",
     tag = "academic",
-    request_body = UpdateAssessmentSettingsRequest,
+    params(("control_id" = Uuid, Path, description = "Assessment phase control ID")),
+    request_body = UpdateAssessmentPhaseControlRequest,
     responses(
-        (status = 200, description = "Updated assessment settings", body = ApiResponse<crate::modules::academic::models::assessment::AssessmentSettingsResponse>),
-        (status = 400, description = "Invalid assessment settings", body = ApiErrorResponse),
+        (status = 200, description = "Updated assessment phase control", body = ApiResponse<crate::modules::academic::models::assessment::AssessmentPhaseControl>),
+        (status = 400, description = "Invalid assessment phase control", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Assessment settings manage permission denied", body = ApiErrorResponse)
+        (status = 403, description = "Assessment phase control manage permission denied", body = ApiErrorResponse),
+        (status = 409, description = "Stale assessment phase control version", body = ApiErrorResponse)
     )
 )]
-pub async fn update_assessment_settings(
+pub async fn update_assessment_phase_control(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
-    Json(payload): Json<UpdateAssessmentSettingsRequest>,
+    Path(control_id): Path<Uuid>,
+    Json(payload): Json<UpdateAssessmentPhaseControlRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    assessment_service::require_assessment_settings_manage_access(&context.actor)?;
-    let settings =
-        assessment_service::update_assessment_settings(&context.tenant.pool, payload).await?;
-    Ok(Json(ApiResponse::ok(settings)).into_response())
+    assessment_service::require_phase_controls_manage_access(&context.actor)?;
+    let control = assessment_service::update_phase_control(
+        &context.tenant.pool,
+        control_id,
+        context.actor.user_id,
+        payload,
+    )
+    .await?;
+    Ok(Json(ApiResponse::ok(control)).into_response())
 }
 
 #[utoipa::path(
@@ -122,11 +130,6 @@ pub async fn get_assessment_plan(
         &context.actor,
         offering_id,
         OfferingAction::Read,
-    )
-    .await?;
-    assessment_service::require_teacher_access_enabled_for_reader(
-        &context.tenant.pool,
-        &context.actor,
     )
     .await?;
     let plan = assessment_service::get_plan_detail(&context.tenant.pool, offering_id).await?;
@@ -163,56 +166,14 @@ pub async fn save_assessment_plan(
         OfferingAction::Manage,
     )
     .await?;
-    assessment_service::require_teacher_access_enabled_for_manager(
-        &context.tenant.pool,
-        &context.actor,
-    )
-    .await?;
+    let can_manage_school = assessment_service::actor_can_manage_all_plans(&context.actor);
     let plan = assessment_service::save_plan(
         &context.tenant.pool,
         offering_id,
         context.actor.user_id,
+        can_manage_school,
         payload,
     )
     .await?;
-    Ok(Json(ApiResponse::ok(plan)).into_response())
-}
-
-#[utoipa::path(
-    post,
-    path = "/api/academic/assessments/offerings/{offering_id}/submit",
-    operation_id = "submitAssessmentPlan",
-    tag = "academic",
-    params(("offering_id" = Uuid, Path, description = "Learning offering ID")),
-    responses(
-        (status = 200, description = "Submitted assessment plan", body = ApiResponse<crate::modules::academic::models::assessment::AssessmentPlanDetail>),
-        (status = 400, description = "Assessment plan is not ready", body = ApiErrorResponse),
-        (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Assessment plan manage permission denied", body = ApiErrorResponse),
-        (status = 404, description = "Offering not found", body = ApiErrorResponse),
-        (status = 409, description = "Assessment plan state conflict", body = ApiErrorResponse)
-    )
-)]
-pub async fn submit_assessment_plan(
-    State(state): State<AppState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Path(offering_id): Path<Uuid>,
-) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context_from_session(&state, &session).await?;
-    require_learning_offering_access(
-        &context.tenant.pool,
-        &context.actor,
-        offering_id,
-        OfferingAction::Manage,
-    )
-    .await?;
-    assessment_service::require_teacher_access_enabled_for_manager(
-        &context.tenant.pool,
-        &context.actor,
-    )
-    .await?;
-    let plan =
-        assessment_service::submit_plan(&context.tenant.pool, offering_id, context.actor.user_id)
-            .await?;
     Ok(Json(ApiResponse::ok(plan)).into_response())
 }

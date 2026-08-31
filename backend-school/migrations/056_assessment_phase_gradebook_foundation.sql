@@ -235,6 +235,9 @@ CREATE TABLE learning_group_score_items (
 CREATE INDEX learning_group_score_items_group_phase_idx
     ON learning_group_score_items(learning_group_id, assessment_phase_id, display_order);
 
+DELETE FROM feature_toggles
+WHERE code = 'academic_assessment_teacher_access';
+
 INSERT INTO learning_group_score_items (
     id,
     learning_group_id,

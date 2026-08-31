@@ -3701,22 +3701,26 @@ async fn migration_056_establishes_fixed_assessment_phases() {
     assert!(!table_exists(&pool, "course_assessment_categories").await);
     assert!(!table_exists(&pool, "course_assessment_items").await);
 
-    assert!(column_exists(&pool, "course_assessment_plans", "assessment_coordinator_id").await);
+    assert!(
+        column_exists(
+            &pool,
+            "course_assessment_plans",
+            "assessment_coordinator_id"
+        )
+        .await
+    );
     assert!(!column_exists(&pool, "course_assessment_plans", "status").await);
     assert!(!column_exists(&pool, "course_assessment_plans", "submitted_at").await);
     assert!(!column_exists(&pool, "course_assessment_plans", "locked_at").await);
-    assert!(column_exists(
-        &pool,
-        "academic_exam_schedule_items",
-        "assessment_phase_id"
-    )
-    .await);
-    assert!(!column_exists(
-        &pool,
-        "academic_exam_schedule_items",
-        "assessment_category_id"
-    )
-    .await);
+    assert!(column_exists(&pool, "academic_exam_schedule_items", "assessment_phase_id").await);
+    assert!(
+        !column_exists(
+            &pool,
+            "academic_exam_schedule_items",
+            "assessment_category_id"
+        )
+        .await
+    );
 
     let phase_codes: Vec<String> = sqlx::query_scalar(
         r#"SELECT DISTINCT phase_code
@@ -3781,4 +3785,12 @@ async fn migration_056_establishes_fixed_assessment_phases() {
     .await
     .expect("term phase controls must be queryable");
     assert_eq!(term_and_control_counts.1, term_and_control_counts.0 * 4);
+
+    let obsolete_teacher_toggle_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM feature_toggles WHERE code = 'academic_assessment_teacher_access'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("obsolete assessment teacher toggle must be queryable");
+    assert_eq!(obsolete_teacher_toggle_count, 0);
 }

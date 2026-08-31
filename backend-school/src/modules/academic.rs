@@ -25,18 +25,17 @@ pub fn academic_routes() -> Router<AppState> {
                 get(handlers::assessment::list_assessment_plans),
             )
             .route(
-                "/assessments/settings",
-                get(handlers::assessment::get_assessment_settings)
-                    .put(handlers::assessment::update_assessment_settings),
+                "/assessments/phase-controls",
+                get(handlers::assessment::list_assessment_phase_controls),
+            )
+            .route(
+                "/assessments/phase-controls/{control_id}",
+                put(handlers::assessment::update_assessment_phase_control),
             )
             .route(
                 "/assessments/offerings/{offering_id}",
                 get(handlers::assessment::get_assessment_plan)
                     .put(handlers::assessment::save_assessment_plan),
-            )
-            .route(
-                "/assessments/offerings/{offering_id}/submit",
-                post(handlers::assessment::submit_assessment_plan),
             )
             // Question Bank
             .nest(
