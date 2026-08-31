@@ -80,6 +80,9 @@
 	<div class="mt-2 space-y-1 text-[0.68rem] text-muted-foreground">
 		<p class="flex items-center gap-1.5">
 			<Users class="size-3" />
+			{#if teacherNames.length > 1}
+				<span class="font-medium text-primary">ครูร่วมสอน</span>
+			{/if}
 			{teacherNames.join(', ') || 'ยังไม่ระบุครู'}
 		</p>
 		{#if entry.roomCode}

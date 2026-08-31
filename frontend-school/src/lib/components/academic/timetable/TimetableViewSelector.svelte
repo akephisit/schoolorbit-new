@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
-	import { BookOpen, School } from 'lucide-svelte';
+	import { BookOpen, School, UsersRound } from 'lucide-svelte';
 
 	import type { TimetableBoardView } from '$lib/academic/timetable/board-state';
 
@@ -39,5 +39,17 @@
 	>
 		<BookOpen class="size-3.5" />
 		กลุ่มเรียน
+	</Button>
+	<Button
+		type="button"
+		size="sm"
+		variant={value === 'teacher' ? 'default' : 'ghost'}
+		class="h-8 rounded-md px-3"
+		aria-pressed={value === 'teacher'}
+		{disabled}
+		onclick={() => onViewChange('teacher')}
+	>
+		<UsersRound class="size-3.5" />
+		ครูผู้สอน
 	</Button>
 </div>

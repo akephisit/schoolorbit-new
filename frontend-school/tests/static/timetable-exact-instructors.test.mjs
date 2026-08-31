@@ -8,21 +8,18 @@ const readProjectFile = (relativePath) => readFile(path.join(projectRoot, relati
 
 test('timetable editor sends the exact selected instructors for create and update', async () => {
 	const page = await readProjectFile('src/routes/(app)/staff/academic/timetable/+page.svelte');
+	const inspector = await readProjectFile(
+		'src/lib/components/academic/timetable/TimetableEntryInspector.svelte'
+	);
 
 	assert.match(page, /import TimetableInstructorPicker from/);
-	assert.match(page, /let formInstructorIds = \$state<string\[\]>\(\[\]\)/);
-	assert.doesNotMatch(page, /instructorIds:\s*\[\]/);
-	assert.ok(
-		(page.match(/instructorIds:\s*formInstructorIds/g) ?? []).length >= 2,
-		'create and update must both send formInstructorIds'
-	);
-	assert.match(page, /entry\.instructors\.map\(\(item\) => item\.userId\)/);
-	assert.match(page, /teacherAssignments\.length === 1/);
+	assert.match(page, /entry\.instructors\.map\(\(instructor\) => instructor\.userId\)/);
+	assert.match(page, /instructorIds:\s*preview\.normalizedCandidate\.instructorIds/);
+	assert.match(page, /pendingDemandInstructorIds/);
 	assert.match(page, /<TimetableInstructorPicker/);
-	assert.match(page, /ครูผู้สอนของคาบนี้/);
-	assert.match(page, /unavailableSelectedInstructors/);
-	assert.match(page, /ไม่ได้อยู่ในช่วงวันที่ของรุ่นตารางสอนนี้/);
-	assert.match(page, /removeUnavailableInstructor/);
+	assert.match(inspector, /entry\?\.instructors\.map\(\(teacher\) => teacher\.userId\)/);
+	assert.match(inspector, /instructorIds:\s*selectedInstructorIds/);
+	assert.doesNotMatch(page, /teacherAssignments|formInstructorIds/);
 });
 
 test('instructor picker is explicit accessible and keyed by teacher identity', async () => {
@@ -39,9 +36,14 @@ test('instructor picker is explicit accessible and keyed by teacher identity', a
 });
 
 test('published timetable exposes exact instructor names without an editable picker', async () => {
-	const page = await readProjectFile('src/routes/(app)/staff/academic/timetable/+page.svelte');
+	const card = await readProjectFile(
+		'src/lib/components/academic/timetable/TimetableLessonCard.svelte'
+	);
+	const inspector = await readProjectFile(
+		'src/lib/components/academic/timetable/TimetableEntryInspector.svelte'
+	);
 
-	assert.match(page, /selectedEntry\.instructors/);
-	assert.match(page, /instructor\.displayName/);
-	assert.match(page, /canEditSelected/);
+	assert.match(card, /entry\.instructors\.map\(\(teacher\) => teacher\.displayName\)/);
+	assert.match(inspector, /disabled=\{readOnly \|\| busy\}/);
+	assert.match(inspector, /\{#if entry && !readOnly\}/);
 });

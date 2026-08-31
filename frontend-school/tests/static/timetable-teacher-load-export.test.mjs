@@ -198,16 +198,20 @@ describe('timetable teacher load export helpers', () => {
 			projectFile('src/routes/(app)/staff/academic/timetable/+page.svelte'),
 			'utf8'
 		);
-		const exportFunction = page.slice(page.indexOf('async function handleExportTeacherLoadXlsx'));
+		const workbookModule = readFileSync(
+			projectFile('src/lib/utils/timetable-teacher-load-workbook.ts'),
+			'utf8'
+		);
 
-		assert.match(exportFunction, /import\('exceljs'\)/);
-		assert.match(exportFunction, /new ExcelJS\.Workbook\(\)/);
-		assert.match(exportFunction, /workbook\.xlsx\.writeBuffer\(\)/);
-		assert.match(page, /calculateTeacherLoadColumnWidths/);
-		assert.match(page, /TEACHER_LOAD_SUMMARY_COLUMN_WIDTH_OPTIONS/);
-		assert.match(page, /TEACHER_LOAD_DETAIL_COLUMN_WIDTH_OPTIONS/);
-		assert.match(page, /TH Sarabun New/);
-		assert.doesNotMatch(exportFunction, /import\('xlsx'\)/);
+		assert.match(page, /import\('\$lib\/utils\/timetable-teacher-load-workbook'\)/);
+		assert.match(workbookModule, /import\('exceljs'\)/);
+		assert.match(workbookModule, /new ExcelJS\.Workbook\(\)/);
+		assert.match(workbookModule, /workbook\.xlsx\.writeBuffer\(\)/);
+		assert.match(workbookModule, /calculateTeacherLoadColumnWidths/);
+		assert.match(workbookModule, /TEACHER_LOAD_SUMMARY_COLUMN_WIDTH_OPTIONS/);
+		assert.match(workbookModule, /TEACHER_LOAD_DETAIL_COLUMN_WIDTH_OPTIONS/);
+		assert.match(workbookModule, /TH Sarabun New/);
+		assert.doesNotMatch(workbookModule, /import\('xlsx'\)/);
 	});
 
 	it('keeps nested subject-group fields aligned across generated and Rust contracts', () => {

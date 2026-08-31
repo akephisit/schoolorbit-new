@@ -87,6 +87,14 @@ class TimetableWorkspaceController {
 	remainingDemand = (groupId: string) => remainingDemandForGroup(this.board, groupId);
 
 	private initialOwnerId(view: TimetableBoardView): string | null {
+		if (view === 'teacher') {
+			const scheduledTeacher = this.workspace.entries
+				.flatMap((entry) => entry.instructors)
+				.find((instructor) =>
+					this.workspace.staff.some((teacher) => teacher.id === instructor.userId)
+				);
+			if (scheduledTeacher) return scheduledTeacher.userId;
+		}
 		return rowsForTimetableView(this.board, view)[0]?.id ?? null;
 	}
 }

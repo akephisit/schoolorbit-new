@@ -8,6 +8,7 @@ const componentRoot = 'src/lib/components/academic/timetable';
 const componentNames = [
 	'TimetableWorkspaceHeader.svelte',
 	'TimetableViewSelector.svelte',
+	'TimetableTeacherView.svelte',
 	'TimetableUnscheduledTray.svelte',
 	'TimetableBoard.svelte',
 	'TimetableCell.svelte',
@@ -61,4 +62,20 @@ test('non-drag move dialog uses shadcn selectors for one day and one period', as
 	assert.match(dialog, /selectedPeriodId/);
 	assert.match(dialog, /ย้ายคาบ/);
 	assert.doesNotMatch(dialog, /ช่วงคาบ|สองคาบ|2\s*คาบ/);
+});
+
+test('teacher board is an exact-instructor projection with searchable selection', async () => {
+	const page = await read('src/routes/(app)/staff/academic/timetable/+page.svelte');
+	const selector = await read(`${componentRoot}/TimetableViewSelector.svelte`);
+	const teacherView = await read(`${componentRoot}/TimetableTeacherView.svelte`);
+	const lessonCard = await read(`${componentRoot}/TimetableLessonCard.svelte`);
+
+	assert.match(selector, /onViewChange\('teacher'\)/);
+	assert.match(teacherView, /Command\.Input/);
+	assert.match(teacherView, /คาบต่อสัปดาห์/);
+	assert.match(page, /view === 'teacher'/);
+	assert.match(page, /eligibleInstructorIds\.includes\(ownerId\)/);
+	assert.match(page, /ย้ายรายการเดียวกันสำหรับครูทุกคนในทีม/);
+	assert.match(lessonCard, /ครูร่วมสอน/);
+	assert.doesNotMatch(teacherView, /createTimetableEntry|updateTimetableEntry/);
 });

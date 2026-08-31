@@ -9,6 +9,7 @@
 	import {
 		entriesForTimetableCell,
 		localPlacementPreview,
+		teacherPeriodCount,
 		type TimetableBoardView
 	} from '$lib/academic/timetable/board-state';
 	import {
@@ -41,6 +42,7 @@
 	import TimetableEntryInspector from '$lib/components/academic/timetable/TimetableEntryInspector.svelte';
 	import TimetableInstructorPicker from '$lib/components/academic/timetable/TimetableInstructorPicker.svelte';
 	import TimetableMoveDialog from '$lib/components/academic/timetable/TimetableMoveDialog.svelte';
+	import TimetableTeacherView from '$lib/components/academic/timetable/TimetableTeacherView.svelte';
 	import TimetableUnscheduledTray from '$lib/components/academic/timetable/TimetableUnscheduledTray.svelte';
 	import TimetableWorkspaceHeader from '$lib/components/academic/timetable/TimetableWorkspaceHeader.svelte';
 	import { PageShell } from '$lib/components/app-layout';
@@ -66,7 +68,14 @@
 		disconnectTimetableSocket,
 		refreshTrigger
 	} from '$lib/stores/timetable-socket';
-	import { AlertTriangle, History, LoaderCircle, MousePointer2, RefreshCw } from 'lucide-svelte';
+	import {
+		AlertTriangle,
+		FileSpreadsheet,
+		History,
+		LoaderCircle,
+		MousePointer2,
+		RefreshCw
+	} from 'lucide-svelte';
 
 	type InstructorOption = {
 		id: string;
@@ -130,6 +139,8 @@
 	let pendingDemandSource = $state.raw<TimetablePlacementSource | null>(null);
 	let pendingDemandCandidate = $state.raw<TimetablePlacementCandidate | null>(null);
 	let pendingDemandInstructorIds = $state<string[]>([]);
+	let teamMoveWarningShown = $state(false);
+	let isTeacherLoadExporting = $state(false);
 
 	const canRead = $derived(
 		$can.hasAny(
@@ -182,6 +193,16 @@
 		if (current.view === 'learning_group') {
 			return current.workspace.unscheduledDemands.filter(
 				(demand) => demand.learningGroupId === ownerId
+			);
+		}
+		if (current.view === 'teacher') {
+			const groupIds = new Set(
+				current.workspace.learningGroups
+					.filter((group) => group.eligibleInstructorIds.includes(ownerId))
+					.map((group) => group.id)
+			);
+			return current.workspace.unscheduledDemands.filter((demand) =>
+				groupIds.has(demand.learningGroupId)
 			);
 		}
 		const groupIds = new Set(
@@ -237,17 +258,23 @@
 	}
 
 	function requestedView(): TimetableBoardView {
-		return page.url.searchParams.get('view') === 'learningGroup' ? 'learning_group' : 'homeroom';
+		const view = page.url.searchParams.get('view');
+		if (view === 'learningGroup') return 'learning_group';
+		if (view === 'teacher') return 'teacher';
+		return 'homeroom';
 	}
 
 	function syncUrl(): void {
 		if (!controller) return;
 		const nextUrl = new URL(page.url);
 		nextUrl.searchParams.set('timetableVersionId', controller.workspace.version.id);
-		nextUrl.searchParams.set(
-			'view',
-			controller.view === 'learning_group' ? 'learningGroup' : 'homeroom'
-		);
+		const view =
+			controller.view === 'learning_group'
+				? 'learningGroup'
+				: controller.view === 'teacher'
+					? 'teacher'
+					: 'homeroom';
+		nextUrl.searchParams.set('view', view);
 		if (controller.selectedOwnerId) nextUrl.searchParams.set('ownerId', controller.selectedOwnerId);
 		else nextUrl.searchParams.delete('ownerId');
 		replaceState(
@@ -392,6 +419,7 @@
 	}
 
 	function startExistingPlacement(entry: TimetableEntry): void {
+		announceTeamMove(entry);
 		controller?.startPlacement(
 			{ kind: 'existing_entry', entryId: entry.id, rowVersion: entry.rowVersion },
 			candidateForEntry(entry)
@@ -407,6 +435,21 @@
 		candidate: TimetablePlacementCandidate
 	): void {
 		if (!controller) return;
+		if (controller.view === 'teacher' && controller.selectedOwnerId && candidate.learningGroupId) {
+			const selectedTeacherId = controller.selectedOwnerId;
+			const options = instructorOptionsForGroup(candidate.learningGroupId);
+			const preselected = options.some((option) => option.id === selectedTeacherId)
+				? [selectedTeacherId]
+				: [];
+			if (options.length > 1) {
+				pendingDemandSource = source;
+				pendingDemandCandidate = { ...candidate, instructorIds: preselected };
+				pendingDemandInstructorIds = preselected;
+				teacherDialogOpen = true;
+				return;
+			}
+			candidate = { ...candidate, instructorIds: preselected };
+		}
 		if (candidate.instructorIds.length === 1) {
 			controller.startPlacement(source, candidate);
 			toast.info('เลือกช่องสีเขียวเพื่อวาง 1 คาบ');
@@ -605,9 +648,46 @@
 	}
 
 	function openMoveDialog(entry: TimetableEntry): void {
+		announceTeamMove(entry);
 		inspectorOpen = false;
 		moveEntryId = entry.id;
 		moveDialogOpen = true;
+	}
+
+	function announceTeamMove(entry: TimetableEntry): void {
+		if (entry.instructors.length < 2 || teamMoveWarningShown) return;
+		teamMoveWarningShown = true;
+		toast.warning('ย้ายรายการเดียวกันสำหรับครูทุกคนในทีม');
+	}
+
+	function periodsForTeacher(teacherId: string): number {
+		return controller ? teacherPeriodCount(controller.board, teacherId) : 0;
+	}
+
+	async function handleExportTeacherLoadXlsx(): Promise<void> {
+		if (!controller || !academicTermId || isTeacherLoadExporting) return;
+		isTeacherLoadExporting = true;
+		try {
+			const { downloadTeacherLoadWorkbook } =
+				await import('$lib/utils/timetable-teacher-load-workbook');
+			const selectedTerm = $academicContext.options?.terms.find(
+				(term) => term.id === academicTermId
+			);
+			const selectedYear = $academicContext.options?.years.find(
+				(year) => year.id === academicYearId
+			);
+			const teacherCount = await downloadTeacherLoadWorkbook(
+				controller.workspace.entries,
+				`สรุปคาบสอนครู-${selectedTerm?.name ?? 'ภาคเรียน'}-${selectedYear?.name ?? 'ปีการศึกษา'}`
+			);
+			if (teacherCount === 0) toast.error('ไม่พบคาบสอนสำหรับภาคเรียนนี้');
+			else toast.success(`ดาวน์โหลดสรุปคาบสอน ${teacherCount} คนแล้ว`);
+		} catch (error) {
+			console.error('Failed to export teacher load workbook', error);
+			toast.error('ส่งออกสรุปคาบสอนไม่สำเร็จ');
+		} finally {
+			isTeacherLoadExporting = false;
+		}
 	}
 
 	async function confirmMove(dayOfWeek: string, periodId: string): Promise<void> {
@@ -819,6 +899,18 @@
 		{/if}
 		<Button
 			variant="outline"
+			disabled={isTeacherLoadExporting || loading || !controller?.workspace.entries.length}
+			onclick={handleExportTeacherLoadXlsx}
+		>
+			{#if isTeacherLoadExporting}
+				<LoaderCircle class="animate-spin" />
+			{:else}
+				<FileSpreadsheet />
+			{/if}
+			สรุปคาบ XLSX
+		</Button>
+		<Button
+			variant="outline"
 			disabled={loading || !controller}
 			onclick={() => reloadSelectedWorkspace()}
 		>
@@ -888,26 +980,36 @@
 							</Select.Content>
 						</Select.Root>
 					</div>
-					<div class="space-y-1.5">
-						<p class="text-xs font-medium text-muted-foreground">
-							{controller.view === 'homeroom' ? 'ห้องประจำชั้น' : 'กลุ่มเรียน'}
-						</p>
-						<Select.Root
-							type="single"
-							value={controller.selectedOwnerId ?? ''}
-							onValueChange={changeOwner}
+					{#if controller.view === 'teacher'}
+						<TimetableTeacherView
+							teachers={controller.workspace.staff}
+							selectedTeacherId={controller.selectedOwnerId}
+							periodCount={periodsForTeacher}
 							disabled={busy}
-						>
-							<Select.Trigger class="w-full" aria-label="เลือกรายการที่ต้องการจัด">
-								{selectedOwner ? `${selectedOwner.code} · ${selectedOwner.label}` : 'เลือกรายการ'}
-							</Select.Trigger>
-							<Select.Content>
-								{#each controller.rows as row (row.id)}
-									<Select.Item value={row.id}>{row.code} · {row.label}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
-					</div>
+							onSelect={changeOwner}
+						/>
+					{:else}
+						<div class="space-y-1.5">
+							<p class="text-xs font-medium text-muted-foreground">
+								{controller.view === 'homeroom' ? 'ห้องประจำชั้น' : 'กลุ่มเรียน'}
+							</p>
+							<Select.Root
+								type="single"
+								value={controller.selectedOwnerId ?? ''}
+								onValueChange={changeOwner}
+								disabled={busy}
+							>
+								<Select.Trigger class="w-full" aria-label="เลือกรายการที่ต้องการจัด">
+									{selectedOwner ? `${selectedOwner.code} · ${selectedOwner.label}` : 'เลือกรายการ'}
+								</Select.Trigger>
+								<Select.Content>
+									{#each controller.rows as row (row.id)}
+										<Select.Item value={row.id}>{row.code} · {row.label}</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						</div>
+					{/if}
 				</Card.Content>
 			</Card.Root>
 
