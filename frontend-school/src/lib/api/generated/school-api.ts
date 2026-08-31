@@ -1801,6 +1801,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/timetable/placement-preview': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['previewTimetablePlacement'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/timetable/swap': {
 		parameters: {
 			query?: never;
@@ -1827,6 +1843,22 @@ export interface paths {
 		get?: never;
 		put?: never;
 		post: operations['validateTimetableMoves'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/timetable/workspace': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getTimetableWorkspace'];
+		put?: never;
+		post?: never;
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -7235,6 +7267,23 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_TimetablePlacementPreview: {
+			data: {
+				conflicts: components['schemas']['ConflictInfo'][];
+				mutation?: null | components['schemas']['TimetablePlacementMutationKind'];
+				normalizedCandidate: components['schemas']['TimetablePlacementCandidate'];
+				/** Format: uuid */
+				sourceEntryId: string | null;
+				state: components['schemas']['TimetablePlacementState'];
+				/** Format: uuid */
+				targetBellSchedulePeriodId: string;
+				targetDayOfWeek: string;
+				/** Format: uuid */
+				targetEntryId: string | null;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_TimetableTemplate: {
 			data: {
 				/** Format: date-time */
@@ -7284,6 +7333,20 @@ export interface components {
 				targets: components['schemas']['TimetableVersionTarget'][];
 				/** Format: date-time */
 				updatedAt: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_TimetableWorkspace: {
+			data: {
+				bellPeriods: components['schemas']['BellSchedulePeriod'][];
+				entries: components['schemas']['TimetableEntry'][];
+				homerooms: components['schemas']['TimetableWorkspaceHomeroom'][];
+				learningGroups: components['schemas']['TimetableWorkspaceLearningGroup'][];
+				rooms: components['schemas']['TimetableWorkspaceRoom'][];
+				staff: components['schemas']['TimetableWorkspaceStaff'][];
+				unscheduledDemands: components['schemas']['TimetableUnscheduledDemand'][];
+				version: components['schemas']['TimetableVersion'];
 			};
 			message?: string;
 			success: boolean;
@@ -8345,12 +8408,11 @@ export interface components {
 			data: {
 				/** Format: uuid */
 				bellSchedulePeriodId: string;
+				conflicts: components['schemas']['ConflictInfo'][];
 				dayOfWeek: string;
-				reason: string;
-				state: string;
+				state: components['schemas']['TimetablePlacementState'];
 				/** Format: uuid */
-				targetEntryId?: string | null;
-				valid: boolean;
+				targetEntryId: string | null;
 			}[];
 			message?: string;
 			success: boolean;
@@ -10017,6 +10079,12 @@ export interface components {
 			effectiveFrom: string;
 			/** Format: int64 */
 			sourceRowVersion: number;
+		};
+		ConflictInfo: {
+			conflictType: components['schemas']['TimetableConflictType'];
+			/** Format: uuid */
+			existingEntryId: string | null;
+			message: string;
 		};
 		CourseGradingPolicy: {
 			passingScore?: string | null;
@@ -12163,12 +12231,11 @@ export interface components {
 		MoveValidityCell: {
 			/** Format: uuid */
 			bellSchedulePeriodId: string;
+			conflicts: components['schemas']['ConflictInfo'][];
 			dayOfWeek: string;
-			reason: string;
-			state: string;
+			state: components['schemas']['TimetablePlacementState'];
 			/** Format: uuid */
-			targetEntryId?: string | null;
-			valid: boolean;
+			targetEntryId: string | null;
 		};
 		Notification: {
 			/** Format: date-time */
@@ -13772,6 +13839,14 @@ export interface components {
 			/** Format: double */
 			offsetY: number;
 		};
+		/** @enum {string} */
+		TimetableConflictType:
+			| 'learning_group'
+			| 'homeroom'
+			| 'instructor'
+			| 'room'
+			| 'version'
+			| 'stale_entry';
 		TimetableEntry: {
 			/** Format: uuid */
 			academicTermId: string;
@@ -13856,6 +13931,67 @@ export interface components {
 			/** Format: uuid */
 			roomId?: string | null;
 		};
+		TimetablePlacementCandidate: {
+			entryType: string;
+			/** Format: uuid */
+			homeroomId?: string | null;
+			instructorIds?: string[];
+			/** Format: uuid */
+			learningGroupId?: string | null;
+			/** Format: uuid */
+			learningOfferingId?: string | null;
+			/** Format: uuid */
+			roomId?: string | null;
+		};
+		/** @enum {string} */
+		TimetablePlacementMutationKind: 'create' | 'update' | 'move' | 'swap';
+		TimetablePlacementPreview: {
+			conflicts: components['schemas']['ConflictInfo'][];
+			mutation?: null | components['schemas']['TimetablePlacementMutationKind'];
+			normalizedCandidate: components['schemas']['TimetablePlacementCandidate'];
+			/** Format: uuid */
+			sourceEntryId: string | null;
+			state: components['schemas']['TimetablePlacementState'];
+			/** Format: uuid */
+			targetBellSchedulePeriodId: string;
+			targetDayOfWeek: string;
+			/** Format: uuid */
+			targetEntryId: string | null;
+		};
+		TimetablePlacementPreviewRequest: {
+			/** Format: uuid */
+			academicTermId: string;
+			candidate: components['schemas']['TimetablePlacementCandidate'];
+			/** Format: uuid */
+			expectedTargetEntryId?: string | null;
+			/** Format: int64 */
+			expectedTargetRowVersion?: number | null;
+			source: components['schemas']['TimetablePlacementSource'];
+			/** Format: uuid */
+			targetBellSchedulePeriodId: string;
+			targetDayOfWeek: string;
+			/** Format: uuid */
+			timetableVersionId: string;
+		};
+		TimetablePlacementSource:
+			| {
+					/** Format: uuid */
+					entryId: string;
+					/** @enum {string} */
+					kind: 'existing_entry';
+					/** Format: int64 */
+					rowVersion: number;
+			  }
+			| {
+					/** @enum {string} */
+					kind: 'unscheduled_demand';
+					/** Format: uuid */
+					learningGroupId: string;
+					/** Format: uuid */
+					learningOfferingId: string;
+			  };
+		/** @enum {string} */
+		TimetablePlacementState: 'source' | 'move' | 'swap' | 'blocked';
 		TimetableTemplate: {
 			/** Format: date-time */
 			createdAt: string;
@@ -13894,6 +14030,22 @@ export interface components {
 			roomNumber?: string | null;
 			/** Format: uuid */
 			studyProgramId?: string | null;
+		};
+		TimetableUnscheduledDemand: {
+			eligibleInstructorIds: string[];
+			homeroomIds: string[];
+			/** Format: uuid */
+			learningGroupId: string;
+			/** Format: uuid */
+			learningOfferingId: string;
+			offeringCode: string;
+			offeringName: string;
+			/** Format: int32 */
+			remainingPeriods: number;
+			/** Format: int32 */
+			requiredPeriods: number;
+			/** Format: int32 */
+			scheduledPeriods: number;
 		};
 		TimetableVersion: {
 			/** Format: uuid */
@@ -13941,6 +14093,56 @@ export interface components {
 			timetableVersionId: string;
 			/** Format: int32 */
 			weeklyPeriodTarget: number;
+		};
+		TimetableWorkspace: {
+			bellPeriods: components['schemas']['BellSchedulePeriod'][];
+			entries: components['schemas']['TimetableEntry'][];
+			homerooms: components['schemas']['TimetableWorkspaceHomeroom'][];
+			learningGroups: components['schemas']['TimetableWorkspaceLearningGroup'][];
+			rooms: components['schemas']['TimetableWorkspaceRoom'][];
+			staff: components['schemas']['TimetableWorkspaceStaff'][];
+			unscheduledDemands: components['schemas']['TimetableUnscheduledDemand'][];
+			version: components['schemas']['TimetableVersion'];
+		};
+		TimetableWorkspaceHomeroom: {
+			code: string;
+			/** Format: uuid */
+			gradeLevelId: string;
+			gradeLevelType: string;
+			/** Format: int32 */
+			gradeLevelYear: number;
+			/** Format: uuid */
+			id: string;
+			isActive: boolean;
+			name: string;
+			roomNumber: string | null;
+		};
+		TimetableWorkspaceLearningGroup: {
+			code: string;
+			eligibleInstructorIds: string[];
+			homeroomIds: string[];
+			/** Format: uuid */
+			id: string;
+			/** Format: uuid */
+			learningOfferingId: string;
+			name: string;
+			offeringCode: string;
+			offeringName: string;
+			rosterStatus: string;
+			status: string;
+		};
+		TimetableWorkspaceRoom: {
+			code: string | null;
+			/** Format: uuid */
+			id: string;
+			name: string;
+			status: string;
+		};
+		TimetableWorkspaceStaff: {
+			displayName: string;
+			/** Format: uuid */
+			id: string;
+			status: string;
 		};
 		TransferHomeroomPlacementRequest: {
 			/** Format: int32 */
@@ -24122,6 +24324,66 @@ export interface operations {
 			};
 		};
 	};
+	previewTimetablePlacement: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['TimetablePlacementPreviewRequest'];
+			};
+		};
+		responses: {
+			/** @description Authoritative placement, move, or swap preview */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TimetablePlacementPreview'];
+				};
+			};
+			/** @description Invalid placement shape or academic context */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable manage permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable version, group, or entry not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	swapTimetableEntries: {
 		parameters: {
 			query?: never;
@@ -24215,6 +24477,66 @@ export interface operations {
 			};
 			/** @description Timetable manage permission denied */
 			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getTimetableWorkspace: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+				timetableVersionId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Bounded timetable workspace for the selected version */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TimetableWorkspace'];
+				};
+			};
+			/** @description Timetable version does not match the academic context */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable version not found */
+			404: {
 				headers: {
 					[name: string]: unknown;
 				};

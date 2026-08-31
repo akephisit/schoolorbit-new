@@ -14,6 +14,19 @@ export type TimetableInstructor = Schemas['TimetableInstructor'];
 export type TimetableVersion = Schemas['TimetableVersion'];
 export type TimetableVersionStatus = Schemas['TimetableVersionStatus'];
 export type TimetableVersionTarget = Schemas['TimetableVersionTarget'];
+export type TimetableWorkspace = Schemas['TimetableWorkspace'];
+export type TimetableWorkspaceLearningGroup = Schemas['TimetableWorkspaceLearningGroup'];
+export type TimetableWorkspaceHomeroom = Schemas['TimetableWorkspaceHomeroom'];
+export type TimetableWorkspaceRoom = Schemas['TimetableWorkspaceRoom'];
+export type TimetableWorkspaceStaff = Schemas['TimetableWorkspaceStaff'];
+export type TimetableUnscheduledDemand = Schemas['TimetableUnscheduledDemand'];
+export type TimetablePlacementState = Schemas['TimetablePlacementState'];
+export type TimetableConflictType = Schemas['TimetableConflictType'];
+export type TimetablePlacementMutationKind = Schemas['TimetablePlacementMutationKind'];
+export type TimetablePlacementSource = Schemas['TimetablePlacementSource'];
+export type TimetablePlacementCandidate = Schemas['TimetablePlacementCandidate'];
+export type TimetablePlacementPreviewRequest = Schemas['TimetablePlacementPreviewRequest'];
+export type TimetablePlacementPreview = Schemas['TimetablePlacementPreview'];
 export type CloneTimetableVersionRequest =
 	operations['cloneTimetableVersion']['requestBody']['content']['application/json'];
 export type CreateTimetableEntryRequest = Schemas['CreateTimetableEntryRequest'];
@@ -56,6 +69,9 @@ type DeleteTimetableBatchQuery = NonNullable<
 >;
 type TimetableOccupancyQuery = NonNullable<
 	operations['getTimetableOccupancy']['parameters']['query']
+>;
+export type TimetableWorkspaceQuery = NonNullable<
+	operations['getTimetableWorkspace']['parameters']['query']
 >;
 
 export interface TimetablePeriodSummary {
@@ -147,6 +163,18 @@ export const listTimetableEntries = (filters: TimetableFilters, options: ApiRequ
 	timetableData(
 		apiClient.get<TimetableEntry[]>(`/api/academic/timetable${timetableQuery(filters)}`, options),
 		'ไม่สามารถโหลดตารางสอนได้'
+	);
+
+export const getTimetableWorkspace = (
+	query: TimetableWorkspaceQuery,
+	options: ApiRequestOptions = {}
+) =>
+	timetableData(
+		apiClient.get<TimetableWorkspace>('/api/academic/timetable/workspace', {
+			...options,
+			query
+		}),
+		'ไม่สามารถโหลดพื้นที่จัดตารางสอนได้'
 	);
 
 export const getMyTimetable = (filters: MyTimetableFilters, options: ApiRequestOptions = {}) =>
@@ -262,6 +290,19 @@ export const validateTimetableMoves = (
 			entryId
 		}),
 		'ตรวจสอบตำแหน่งย้ายคาบไม่สำเร็จ'
+	);
+
+export const previewTimetablePlacement = (
+	body: TimetablePlacementPreviewRequest,
+	options: ApiRequestOptions = {}
+) =>
+	timetableData(
+		apiClient.post<TimetablePlacementPreview>(
+			'/api/academic/timetable/placement-preview',
+			body,
+			options
+		),
+		'ตรวจสอบตำแหน่งวางคาบไม่สำเร็จ'
 	);
 
 export const getTimetableOccupancy = (

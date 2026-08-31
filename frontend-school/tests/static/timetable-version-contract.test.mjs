@@ -115,3 +115,41 @@ test('date-based personal timetable reads carry the selected date', async () => 
 	assert.match(api, /date:\s*requiredDate/);
 	assert.match(parents, /date:\s*requiredDate/);
 });
+
+test('timetable board consumes one generated workspace and typed placement preview', async () => {
+	const openapi = JSON.parse(await readProjectFile('../contracts/openapi/school-api.json'));
+	const api = await readProjectFile('src/lib/api/timetable.ts');
+	const boardState = await readProjectFile('src/lib/academic/timetable/board-state.ts');
+	const controller = await readProjectFile(
+		'src/lib/academic/timetable/workspace-controller.svelte.ts'
+	);
+
+	assert.equal(
+		openapi.paths['/api/academic/timetable/workspace'].get.operationId,
+		'getTimetableWorkspace'
+	);
+	assert.equal(
+		openapi.paths['/api/academic/timetable/placement-preview'].post.operationId,
+		'previewTimetablePlacement'
+	);
+	assert.deepEqual(
+		openapi.components.schemas.TimetablePlacementSource.oneOf.map((variant) =>
+			Object.keys(variant.properties).sort()
+		),
+		[
+			['entryId', 'kind', 'rowVersion'],
+			['kind', 'learningGroupId', 'learningOfferingId']
+		]
+	);
+	assert.match(api, /TimetableWorkspace\s*=\s*Schemas\['TimetableWorkspace'\]/);
+	assert.match(api, /TimetablePlacementPreview\s*=\s*Schemas\['TimetablePlacementPreview'\]/);
+	assert.match(api, /operations\['getTimetableWorkspace'\]/);
+	assert.match(api, /export const getTimetableWorkspace/);
+	assert.match(api, /export const previewTimetablePlacement/);
+	assert.doesNotMatch(api, /interface\s+TimetableWorkspace|interface\s+TimetablePlacementPreview/);
+	assert.match(boardState, /entry\.instructors/);
+	assert.match(boardState, /entry\.learningGroupId/);
+	assert.doesNotMatch(boardState, /groupTeachers|learningGroupTeachers/);
+	assert.match(controller, /\$state\.raw/);
+	assert.match(controller, /\$derived/);
+});
