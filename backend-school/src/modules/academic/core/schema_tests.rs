@@ -3670,3 +3670,115 @@ async fn migration_055_adds_effective_teacher_change_schema() {
         .to_string()
         .contains("ACADEMIC_PUBLISHED_GROUP_TEACHERS_IMMUTABLE"));
 }
+
+#[tokio::test]
+async fn migration_056_establishes_fixed_assessment_phases() {
+    let pool = phase_a_fixture("academic_core_056_assessment_phases").await;
+    record_passing_phase_a_reconciliation_marker(&pool)
+        .await
+        .expect("cleanup marker must exist before the post-cutover migrations");
+    apply_migrations_through(&pool, 55)
+        .await
+        .expect("fixture must reach the pre-056 schema");
+
+    let linked_phase_id_before: Uuid = sqlx::query_scalar(
+        r#"SELECT assessment_category_id
+           FROM academic_exam_schedule_items
+           ORDER BY id
+           LIMIT 1"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("fixture must contain one imported assessment category");
+
+    apply_migrations_through(&pool, 56)
+        .await
+        .expect("migration 056 must establish the assessment phase boundary");
+
+    assert!(table_exists(&pool, "course_assessment_phases").await);
+    assert!(table_exists(&pool, "academic_assessment_phase_controls").await);
+    assert!(table_exists(&pool, "learning_group_score_items").await);
+    assert!(!table_exists(&pool, "course_assessment_categories").await);
+    assert!(!table_exists(&pool, "course_assessment_items").await);
+
+    assert!(column_exists(&pool, "course_assessment_plans", "assessment_coordinator_id").await);
+    assert!(!column_exists(&pool, "course_assessment_plans", "status").await);
+    assert!(!column_exists(&pool, "course_assessment_plans", "submitted_at").await);
+    assert!(!column_exists(&pool, "course_assessment_plans", "locked_at").await);
+    assert!(column_exists(
+        &pool,
+        "academic_exam_schedule_items",
+        "assessment_phase_id"
+    )
+    .await);
+    assert!(!column_exists(
+        &pool,
+        "academic_exam_schedule_items",
+        "assessment_category_id"
+    )
+    .await);
+
+    let phase_codes: Vec<String> = sqlx::query_scalar(
+        r#"SELECT DISTINCT phase_code
+           FROM course_assessment_phases
+           ORDER BY phase_code"#,
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("canonical phase codes must be queryable");
+    assert_eq!(
+        phase_codes,
+        vec![
+            "after_midterm".to_string(),
+            "before_midterm".to_string(),
+            "final".to_string(),
+            "midterm".to_string(),
+        ]
+    );
+
+    let invalid_plan_count: i64 = sqlx::query_scalar(
+        r#"SELECT COUNT(*)
+           FROM (
+               SELECT plan.id
+               FROM course_assessment_plans plan
+               LEFT JOIN course_assessment_phases phase ON phase.plan_id = plan.id
+               GROUP BY plan.id
+               HAVING COUNT(phase.id) <> 4 OR COUNT(DISTINCT phase.phase_code) <> 4
+           ) invalid"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("every persisted plan must expose four distinct phases");
+    assert_eq!(invalid_plan_count, 0);
+
+    let linked_phase_id_after: Uuid = sqlx::query_scalar(
+        r#"SELECT assessment_phase_id
+           FROM academic_exam_schedule_items
+           ORDER BY id
+           LIMIT 1"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("imported exam item must keep its phase link");
+    assert_eq!(linked_phase_id_after, linked_phase_id_before);
+
+    let orphaned_exam_item_count: i64 = sqlx::query_scalar(
+        r#"SELECT COUNT(*)
+           FROM academic_exam_schedule_items item
+           LEFT JOIN course_assessment_phases phase ON phase.id = item.assessment_phase_id
+           WHERE phase.id IS NULL"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("exam phase references must remain valid");
+    assert_eq!(orphaned_exam_item_count, 0);
+
+    let term_and_control_counts: (i64, i64) = sqlx::query_as(
+        r#"SELECT (SELECT COUNT(*) FROM academic_terms),
+                  (SELECT COUNT(*) FROM academic_assessment_phase_controls)"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("term phase controls must be queryable");
+    assert_eq!(term_and_control_counts.1, term_and_control_counts.0 * 4);
+}

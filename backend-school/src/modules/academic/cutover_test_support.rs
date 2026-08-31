@@ -548,11 +548,27 @@ VALUES (
 INSERT INTO academic_assessment_categories (
     id, plan_id, code, name, max_score, exam_mode, display_order, exam_duration_minutes
 )
-VALUES (
-    '81000000-0000-0000-0000-000000000001',
-    '80000000-0000-0000-0000-000000000001',
-    'midterm', 'กลางภาค', 12.50, 'in_timetable', 1, 60
-);
+VALUES
+    (
+        '81000000-0000-0000-0000-000000000011',
+        '80000000-0000-0000-0000-000000000001',
+        'before_midterm', 'ก่อนกลางภาค', 30.00, 'none', 10, NULL
+    ),
+    (
+        '81000000-0000-0000-0000-000000000001',
+        '80000000-0000-0000-0000-000000000001',
+        'midterm', 'กลางภาค', 12.50, 'in_timetable', 20, 60
+    ),
+    (
+        '81000000-0000-0000-0000-000000000012',
+        '80000000-0000-0000-0000-000000000001',
+        'after_midterm', 'หลังกลางภาค', 30.00, 'none', 30, NULL
+    ),
+    (
+        '81000000-0000-0000-0000-000000000013',
+        '80000000-0000-0000-0000-000000000001',
+        'final', 'ปลายภาค', 27.50, 'none', 40, NULL
+    );
 
 INSERT INTO academic_assessment_items (
     id, category_id, name, max_score, display_order
