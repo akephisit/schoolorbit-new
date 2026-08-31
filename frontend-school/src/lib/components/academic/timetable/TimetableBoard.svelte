@@ -110,6 +110,8 @@
 								bellSchedulePeriodId: period.id
 							})}
 							<TimetableCell
+								dayOfWeek={day.id}
+								periodId={period.id}
 								dayLabel={day.label}
 								periodLabel={periodLabel(period)}
 								state={cellState?.(day.id, period.id) ?? 'neutral'}

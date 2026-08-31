@@ -5,7 +5,7 @@ import { installTimetableMock, makeTimetableEntry, timetableIds } from './timeta
 test.use({ serviceWorkers: 'block' });
 test.describe.configure({ mode: 'serial' });
 
-function teacherUrl(teacherId: string, versionId = timetableIds.draftVersion): string {
+function teacherUrl(teacherId: string, versionId: string = timetableIds.draftVersion): string {
 	return (
 		`/staff/academic/timetable?academicYearId=${timetableIds.year}` +
 		`&academicTermId=${timetableIds.term}` +
@@ -103,8 +103,5 @@ test('keeps published teacher boards read-only', async ({ page }) => {
 
 	await expect(page.getByText('เผยแพร่แล้ว · อ่านอย่างเดียว')).toBeVisible();
 	await expect(page.getByRole('button', { name: 'ย้ายคาบ' })).toHaveCount(0);
-	await expect(page.locator('article[data-entry-id]')).toHaveAttribute(
-		'draggable',
-		'false'
-	);
+	await expect(page.locator('article[data-entry-id]')).toHaveAttribute('draggable', 'false');
 });

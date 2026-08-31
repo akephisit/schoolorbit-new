@@ -1,21 +1,21 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
-	import { BookOpen, School, UsersRound } from 'lucide-svelte';
+	import { BookOpen, LayoutGrid, School, UsersRound } from 'lucide-svelte';
 
-	import type { TimetableBoardView } from '$lib/academic/timetable/board-state';
+	import type { TimetablePageView } from '$lib/academic/timetable/board-state';
 
 	let {
 		value,
 		disabled = false,
 		onViewChange
 	}: {
-		value: TimetableBoardView;
+		value: TimetablePageView;
 		disabled?: boolean;
-		onViewChange: (view: TimetableBoardView) => void;
+		onViewChange: (view: TimetablePageView) => void;
 	} = $props();
 </script>
 
-<div class="inline-flex rounded-lg border bg-muted/45 p-1" aria-label="มุมมองตารางสอน">
+<div class="flex flex-wrap rounded-lg border bg-muted/45 p-1" aria-label="มุมมองตารางสอน">
 	<Button
 		type="button"
 		size="sm"
@@ -51,5 +51,17 @@
 	>
 		<UsersRound class="size-3.5" />
 		ครูผู้สอน
+	</Button>
+	<Button
+		type="button"
+		size="sm"
+		variant={value === 'wholeSchool' ? 'default' : 'ghost'}
+		class="h-8 rounded-md px-3"
+		aria-pressed={value === 'wholeSchool'}
+		{disabled}
+		onclick={() => onViewChange('wholeSchool')}
+	>
+		<LayoutGrid class="size-3.5" />
+		ทั้งโรงเรียน
 	</Button>
 </div>

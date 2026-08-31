@@ -32,6 +32,17 @@ export interface TimetableMockOptions {
 	requiredPeriods?: number;
 	eligibleInstructorIds?: string[];
 	blockedPeriodId?: string;
+	overviewIssues?: Array<{
+		kind: string;
+		severity: 'blocking' | 'warning';
+		message: string;
+		bellSchedulePeriodId: string | null;
+		entryIds: string[];
+		homeroomIds: string[];
+		instructorIds: string[];
+		learningGroupId: string | null;
+		roomId: string | null;
+	}>;
 }
 
 function fulfill(route: Route, data: unknown, status = 200) {
@@ -147,11 +158,12 @@ export function makeTimetableEntry(
 }
 
 function periods() {
-	return [
+	const periodRows: Array<[string, number, string, string, string]> = [
 		[timetableIds.period1, 1, 'คาบ 1', '08:30:00', '09:20:00'],
 		[timetableIds.period2, 2, 'คาบ 2', '09:20:00', '10:10:00'],
 		[timetableIds.period3, 3, 'คาบ 3', '10:10:00', '11:00:00']
-	].map(([id, orderIndex, name, startTime, endTime]) => ({
+	];
+	return periodRows.map(([id, orderIndex, name, startTime, endTime]) => ({
 		id,
 		bellScheduleId: timetableIds.schedule,
 		orderIndex,
@@ -193,6 +205,8 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 	const eligibleInstructorIds = options.eligibleInstructorIds ?? [timetableIds.teacherA];
 	const requiredPeriods = options.requiredPeriods ?? 3;
 	let workspaceRequests = 0;
+	let overviewRequests = 0;
+	const overviewDays: string[] = [];
 	let previewRequests = 0;
 	let createRequests = 0;
 	let updateRequests = 0;
@@ -267,6 +281,56 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 		]
 	});
 
+	const wholeSchoolOverview = (dayOfWeek: string) => {
+		const dayEntries = entries.filter((entry) => entry.dayOfWeek === dayOfWeek);
+		const lessons = (periodId: string) =>
+			dayEntries
+				.filter((entry) => entry.bellSchedulePeriodId === periodId)
+				.map((entry) => ({
+					entryId: entry.id,
+					entryType: entry.entryType,
+					learningGroupId: entry.learningGroupId,
+					learningGroupCode: entry.learningGroupCode,
+					learningGroupName: entry.learningGroupName,
+					offeringCode: entry.offeringCode,
+					offeringName: entry.offeringName,
+					title: entry.title,
+					coveredHomeroomIds: [timetableIds.homeroom],
+					instructors: entry.instructors,
+					roomId: entry.roomId,
+					roomCode: entry.roomCode,
+					isSharedGroup: false
+				}));
+		const issues = options.overviewIssues ?? [];
+		return {
+			version: selectedVersion,
+			dayOfWeek,
+			periods: periods(),
+			rows: [
+				{
+					homeroomId: timetableIds.homeroom,
+					homeroomCode: 'M1-1',
+					homeroomName: 'ม.1/1',
+					gradeLevelType: 'secondary',
+					gradeLevelYear: 1,
+					roomNumber: '1',
+					cells: periods().map((period) => ({
+						bellSchedulePeriodId: period.id,
+						lessons: lessons(period.id)
+					}))
+				}
+			],
+			issues,
+			summary: {
+				homeroomCount: 1,
+				uniqueLessonCount: dayEntries.length,
+				issueCount: issues.length,
+				blockingIssueCount: issues.filter((issue) => issue.severity === 'blocking').length,
+				warningIssueCount: issues.filter((issue) => issue.severity === 'warning').length
+			}
+		};
+	};
+
 	await page.route(
 		(url) => url.pathname.startsWith('/api/'),
 		async (route) => {
@@ -324,6 +388,13 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 			if (url.pathname === '/api/academic/timetable/workspace') {
 				workspaceRequests += 1;
 				await fulfill(route, workspace());
+				return;
+			}
+			if (url.pathname === '/api/academic/timetable/whole-school') {
+				overviewRequests += 1;
+				const dayOfWeek = url.searchParams.get('dayOfWeek') ?? 'MON';
+				overviewDays.push(dayOfWeek);
+				await fulfill(route, wholeSchoolOverview(dayOfWeek));
 				return;
 			}
 			if (url.pathname === `/api/academic/term-change-sets/${timetableIds.changeSet}`) {
@@ -484,6 +555,8 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 
 	return {
 		workspaceRequestCount: () => workspaceRequests,
+		overviewRequestCount: () => overviewRequests,
+		overviewDays: () => overviewDays,
 		previewRequestCount: () => previewRequests,
 		createRequestCount: () => createRequests,
 		updateRequestCount: () => updateRequests,

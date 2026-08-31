@@ -2,7 +2,8 @@
 	import { replaceState } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
+	import { SvelteMap } from 'svelte/reactivity';
 	import { toast } from 'svelte-sonner';
 
 	import { getAcademicContextStore } from '$lib/academic-context/store';
@@ -10,7 +11,8 @@
 		entriesForTimetableCell,
 		localPlacementPreview,
 		teacherPeriodCount,
-		type TimetableBoardView
+		type TimetableBoardView,
+		type TimetablePageView
 	} from '$lib/academic/timetable/board-state';
 	import {
 		createTimetableWorkspaceController,
@@ -24,6 +26,7 @@
 		currentLocalDate,
 		deleteTimetableEntry,
 		getTimetableWorkspace,
+		getWholeSchoolTimetableOverview,
 		listTimetableVersions,
 		previewTimetablePlacement,
 		swapTimetableEntries,
@@ -34,7 +37,8 @@
 		type TimetablePlacementPreviewRequest,
 		type TimetablePlacementSource,
 		type TimetableVersion,
-		type TimetableWorkspace
+		type TimetableWorkspace,
+		type WholeSchoolTimetableOverview
 	} from '$lib/api/timetable';
 	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
 	import TimetableBoard from '$lib/components/academic/timetable/TimetableBoard.svelte';
@@ -44,6 +48,7 @@
 	import TimetableMoveDialog from '$lib/components/academic/timetable/TimetableMoveDialog.svelte';
 	import TimetableTeacherView from '$lib/components/academic/timetable/TimetableTeacherView.svelte';
 	import TimetableUnscheduledTray from '$lib/components/academic/timetable/TimetableUnscheduledTray.svelte';
+	import TimetableWholeSchoolOverview from '$lib/components/academic/timetable/TimetableWholeSchoolOverview.svelte';
 	import TimetableWorkspaceHeader from '$lib/components/academic/timetable/TimetableWorkspaceHeader.svelte';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
@@ -120,6 +125,8 @@
 	const academicTermId = $derived($academicContext.selected.academicTermId);
 	const academicYearId = $derived($academicContext.selected.academicYearId);
 	const request = new LatestRequest();
+	const overviewRequest = new LatestRequest();
+	const overviewCache = new SvelteMap<string, WholeSchoolTimetableOverview>();
 
 	let versions = $state<TimetableVersion[]>([]);
 	let controller = $state.raw<TimetableWorkspaceController | null>(null);
@@ -141,6 +148,11 @@
 	let pendingDemandInstructorIds = $state<string[]>([]);
 	let teamMoveWarningShown = $state(false);
 	let isTeacherLoadExporting = $state(false);
+	let activeView = $state<TimetablePageView>('homeroom');
+	let selectedOverviewDay = $state('MON');
+	let wholeSchoolOverview = $state.raw<WholeSchoolTimetableOverview | null>(null);
+	let overviewLoading = $state(false);
+	let overviewErrorMessage = $state('');
 
 	const canRead = $derived(
 		$can.hasAny(
@@ -257,26 +269,32 @@
 		return `${version.effectiveFrom} – ${version.effectiveUntil ?? 'ต่อเนื่อง'}`;
 	}
 
-	function requestedView(): TimetableBoardView {
+	function requestedView(): TimetablePageView {
 		const view = page.url.searchParams.get('view');
 		if (view === 'learningGroup') return 'learning_group';
 		if (view === 'teacher') return 'teacher';
+		if (view === 'wholeSchool') return 'wholeSchool';
 		return 'homeroom';
 	}
 
-	function syncUrl(): void {
+	function syncUrl(focusPeriodId: string | null = null): void {
 		if (!controller) return;
 		const nextUrl = new URL(page.url);
 		nextUrl.searchParams.set('timetableVersionId', controller.workspace.version.id);
 		const view =
-			controller.view === 'learning_group'
-				? 'learningGroup'
-				: controller.view === 'teacher'
-					? 'teacher'
-					: 'homeroom';
+			activeView === 'wholeSchool'
+				? 'wholeSchool'
+				: controller.view === 'learning_group'
+					? 'learningGroup'
+					: controller.view === 'teacher'
+						? 'teacher'
+						: 'homeroom';
 		nextUrl.searchParams.set('view', view);
-		if (controller.selectedOwnerId) nextUrl.searchParams.set('ownerId', controller.selectedOwnerId);
-		else nextUrl.searchParams.delete('ownerId');
+		if (activeView !== 'wholeSchool' && controller.selectedOwnerId) {
+			nextUrl.searchParams.set('ownerId', controller.selectedOwnerId);
+		} else nextUrl.searchParams.delete('ownerId');
+		if (focusPeriodId) nextUrl.searchParams.set('focusPeriodId', focusPeriodId);
+		else nextUrl.searchParams.delete('focusPeriodId');
 		replaceState(
 			resolve(`/staff/academic/timetable?${nextUrl.searchParams.toString()}`),
 			page.state
@@ -285,9 +303,11 @@
 
 	function initializeController(workspace: TimetableWorkspace): TimetableWorkspaceController {
 		const next = createTimetableWorkspaceController(workspace);
-		next.setView(requestedView());
+		const view = requestedView();
+		activeView = view;
+		next.setView(view === 'wholeSchool' ? 'homeroom' : view);
 		const ownerId = page.url.searchParams.get('ownerId');
-		if (ownerId) next.selectOwner(ownerId);
+		if (ownerId && view !== 'wholeSchool') next.selectOwner(ownerId);
 		return next;
 	}
 
@@ -305,6 +325,63 @@
 			},
 			{ signal }
 		);
+	}
+
+	function overviewCacheKey(versionId: string, dayOfWeek: string): string {
+		return `${versionId}:${dayOfWeek}`;
+	}
+
+	function invalidateOverview(versionId: string): void {
+		for (const key of overviewCache.keys()) {
+			if (key.startsWith(`${versionId}:`)) overviewCache.delete(key);
+		}
+	}
+
+	async function loadWholeSchoolOverview(force = false): Promise<void> {
+		if (!controller || !academicYearId || !academicTermId || activeView !== 'wholeSchool') return;
+		const versionId = controller.workspace.version.id;
+		const dayOfWeek = selectedOverviewDay;
+		const key = overviewCacheKey(versionId, dayOfWeek);
+		if (!force) {
+			const cached = overviewCache.get(key);
+			if (cached) {
+				wholeSchoolOverview = cached;
+				overviewErrorMessage = '';
+				return;
+			}
+		}
+
+		const { revision, signal } = overviewRequest.begin();
+		overviewLoading = true;
+		overviewErrorMessage = '';
+		try {
+			const loaded = await getWholeSchoolTimetableOverview(
+				{
+					academicYearId,
+					academicTermId,
+					timetableVersionId: versionId,
+					dayOfWeek
+				},
+				{ signal }
+			);
+			if (!overviewRequest.isCurrent(revision)) return;
+			overviewCache.set(key, loaded);
+			wholeSchoolOverview = loaded;
+		} catch (error) {
+			if (!isAbortError(error) && overviewRequest.isCurrent(revision)) {
+				overviewErrorMessage =
+					error instanceof Error ? error.message : 'โหลดภาพรวมตารางสอนไม่สำเร็จ';
+			}
+		} finally {
+			if (overviewRequest.isCurrent(revision)) overviewLoading = false;
+		}
+	}
+
+	function changeOverviewDay(dayOfWeek: string): void {
+		if (dayOfWeek === selectedOverviewDay) return;
+		selectedOverviewDay = dayOfWeek;
+		wholeSchoolOverview = null;
+		void loadWholeSchoolOverview();
 	}
 
 	async function loadChangeSet(
@@ -338,6 +415,7 @@
 			selectedChangeSet = changeSet;
 			draftRevision += 1;
 			syncUrl();
+			if (activeView === 'wholeSchool') void loadWholeSchoolOverview();
 		} catch (error) {
 			if (!isAbortError(error) && request.isCurrent(revision)) {
 				errorMessage = error instanceof Error ? error.message : 'โหลดพื้นที่จัดตารางสอนไม่สำเร็จ';
@@ -362,6 +440,7 @@
 			selectedChangeSet = changeSet;
 			draftRevision += 1;
 			syncUrl();
+			if (activeView === 'wholeSchool') void loadWholeSchoolOverview();
 		} catch (error) {
 			if (!isAbortError(error) && request.isCurrent(revision)) {
 				errorMessage = error instanceof Error ? error.message : 'โหลดรุ่นตารางสอนไม่สำเร็จ';
@@ -380,7 +459,9 @@
 			const workspace = await fetchWorkspace(academicYearId, academicTermId, versionId);
 			controller.setWorkspace(workspace);
 			controller.clearPlacement();
+			invalidateOverview(versionId);
 			draftRevision += 1;
+			if (activeView === 'wholeSchool') await loadWholeSchoolOverview(true);
 			if (message) toast.info(message);
 		} catch (error) {
 			errorMessage = error instanceof Error ? error.message : 'โหลดข้อมูลตารางล่าสุดไม่สำเร็จ';
@@ -390,9 +471,18 @@
 		}
 	}
 
-	function changeView(view: TimetableBoardView): void {
+	function changeView(view: TimetablePageView): void {
 		if (!controller) return;
-		controller.setView(view);
+		activeView = view;
+		if (view === 'wholeSchool') {
+			controller.clearPlacement();
+			wholeSchoolOverview = null;
+			void loadWholeSchoolOverview();
+		} else {
+			overviewRequest.abort();
+			overviewLoading = false;
+			controller.setView(view);
+		}
 		syncUrl();
 	}
 
@@ -401,6 +491,34 @@
 		controller.selectOwner(ownerId);
 		controller.clearPlacement();
 		syncUrl();
+	}
+
+	async function focusEditableCell(periodId: string | null): Promise<void> {
+		if (!periodId) return;
+		await tick();
+		document
+			.querySelector<HTMLElement>(
+				`[data-timetable-day="${selectedOverviewDay}"][data-timetable-period-id="${periodId}"]`
+			)
+			?.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' });
+	}
+
+	function openOverviewHomeroom(homeroomId: string, periodId: string | null): void {
+		if (!controller) return;
+		activeView = 'homeroom';
+		controller.setView('homeroom');
+		controller.selectOwner(homeroomId);
+		syncUrl(periodId);
+		void focusEditableCell(periodId);
+	}
+
+	function openOverviewTeacher(teacherId: string, periodId: string | null): void {
+		if (!controller) return;
+		activeView = 'teacher';
+		controller.setView('teacher');
+		controller.selectOwner(teacherId);
+		syncUrl(periodId);
+		void focusEditableCell(periodId);
 	}
 
 	function candidateForEntry(
@@ -828,6 +946,9 @@
 			const contextKey = `${selectedYearId}:${selectedTermId}`;
 			if (contextKey !== loadedContextKey) {
 				loadedContextKey = contextKey;
+				overviewRequest.abort();
+				overviewCache.clear();
+				wholeSchoolOverview = null;
 				controller = null;
 				versions = [];
 				selectedChangeSet = null;
@@ -862,6 +983,7 @@
 
 		return () => {
 			request.abort();
+			overviewRequest.abort();
 			unsubscribeRefresh();
 			unsubscribeAuth();
 			unsubscribeContext();
@@ -874,7 +996,7 @@
 
 <PageShell
 	title="จัดตารางสอน"
-	description="จัดครั้งละหนึ่งคาบในมุมมองห้องประจำชั้นหรือกลุ่มเรียน ระบบตรวจห้อง ครู และผู้เรียนชนกันก่อนบันทึก"
+	description="จัดครั้งละหนึ่งคาบจากมุมมองห้อง กลุ่มเรียน หรือครู และตรวจภาพรวมทั้งโรงเรียนก่อนเผยแพร่"
 >
 	{#snippet actions()}
 		{#if canManage && academicTermId}
@@ -950,14 +1072,16 @@
 		<div class="space-y-5">
 			<TimetableWorkspaceHeader
 				version={controller.workspace.version}
-				view={controller.view}
+				view={activeView}
 				isSaving={busy || previewing || controller.pendingMutation !== null}
 				isRefreshing={controller.isRefreshing}
 				onViewChange={changeView}
 			/>
 
 			<Card.Root class="gap-0 py-0">
-				<Card.Content class="grid gap-3 p-3 sm:p-4 lg:grid-cols-2">
+				<Card.Content
+					class={['grid gap-3 p-3 sm:p-4', activeView !== 'wholeSchool' && 'lg:grid-cols-2']}
+				>
 					<div class="space-y-1.5">
 						<p class="text-xs font-medium text-muted-foreground">รุ่นตารางสอน</p>
 						<Select.Root
@@ -980,7 +1104,13 @@
 							</Select.Content>
 						</Select.Root>
 					</div>
-					{#if controller.view === 'teacher'}
+					{#if activeView === 'wholeSchool'}
+						<div
+							class="flex items-center rounded-lg border bg-muted/20 px-3 py-2 text-sm text-muted-foreground"
+						>
+							เลือกวันด้านล่างเพื่อโหลดภาพรวมครั้งละหนึ่งวัน
+						</div>
+					{:else if controller.view === 'teacher'}
 						<TimetableTeacherView
 							teachers={controller.workspace.staff}
 							selectedTeacherId={controller.selectedOwnerId}
@@ -1060,7 +1190,7 @@
 				</div>
 			{/if}
 
-			{#if controller.dragSource}
+			{#if activeView !== 'wholeSchool' && controller.dragSource}
 				<div
 					class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/25 bg-primary/5 px-4 py-3"
 				>
@@ -1071,7 +1201,18 @@
 				</div>
 			{/if}
 
-			{#if controller.selectedRow && controller.workspace.bellPeriods.length > 0}
+			{#if activeView === 'wholeSchool'}
+				<TimetableWholeSchoolOverview
+					overview={wholeSchoolOverview}
+					selectedDay={selectedOverviewDay}
+					loading={overviewLoading}
+					errorMessage={overviewErrorMessage}
+					onDayChange={changeOverviewDay}
+					onRetry={() => loadWholeSchoolOverview(true)}
+					onOpenHomeroom={openOverviewHomeroom}
+					onOpenTeacher={openOverviewTeacher}
+				/>
+			{:else if controller.selectedRow && controller.workspace.bellPeriods.length > 0}
 				<div class="grid min-h-0 gap-4 xl:grid-cols-[19rem_minmax(0,1fr)]">
 					<TimetableUnscheduledTray
 						demands={visibleDemands}

@@ -3,7 +3,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { CalendarRange, Check, CloudCog, LoaderCircle, RefreshCw } from 'lucide-svelte';
 
-	import type { TimetableBoardView } from '$lib/academic/timetable/board-state';
+	import type { TimetablePageView } from '$lib/academic/timetable/board-state';
 	import TimetableViewSelector from './TimetableViewSelector.svelte';
 
 	let {
@@ -14,10 +14,10 @@
 		onViewChange
 	}: {
 		version: TimetableVersion;
-		view: TimetableBoardView;
+		view: TimetablePageView;
 		isSaving?: boolean;
 		isRefreshing?: boolean;
-		onViewChange: (view: TimetableBoardView) => void;
+		onViewChange: (view: TimetablePageView) => void;
 	} = $props();
 
 	const thaiDate = (value: string | null) => {

@@ -8,6 +8,7 @@ import type {
 } from '../../api/timetable';
 
 export type TimetableBoardView = 'homeroom' | 'learning_group' | 'teacher';
+export type TimetablePageView = TimetableBoardView | 'wholeSchool';
 export type LocalTimetableConflict = 'learning_group' | 'homeroom' | 'instructor' | 'room';
 
 export interface TimetableBoardRow {

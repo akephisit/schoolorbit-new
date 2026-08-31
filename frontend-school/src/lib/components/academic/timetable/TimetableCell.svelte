@@ -22,6 +22,8 @@
 	} from 'lucide-svelte';
 
 	let {
+		dayOfWeek,
+		periodId,
 		dayLabel,
 		periodLabel,
 		state = 'neutral',
@@ -31,6 +33,8 @@
 		onActivateIntent,
 		children
 	}: {
+		dayOfWeek: string;
+		periodId: string;
 		dayLabel: string;
 		periodLabel: string;
 		state?: TimetableCellState;
@@ -64,6 +68,8 @@
 		state === 'stale' && 'bg-orange-50 ring-2 ring-inset ring-orange-500 dark:bg-orange-950/20'
 	]}
 	aria-label={`${dayLabel} ${periodLabel} — ${stateLabel}`}
+	data-timetable-day={dayOfWeek}
+	data-timetable-period-id={periodId}
 	data-state={state}
 	ondragover={(event) => {
 		if (disabled) return;
