@@ -11,7 +11,6 @@
 		entriesForTimetableCell,
 		localPlacementPreview,
 		teacherPeriodCount,
-		type TimetableBoardView,
 		type TimetablePageView
 	} from '$lib/academic/timetable/board-state';
 	import {

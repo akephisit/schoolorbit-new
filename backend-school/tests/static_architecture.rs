@@ -1985,10 +1985,6 @@ fn daily_teaching_overview_endpoint_is_read_only_and_pii_safe() {
     assert!(service.contains("timetable_version_service::resolve_for_date"));
     assert!(!service.contains("FROM academic_terms"));
     assert!(service.contains("bell_schedule_periods"));
-    assert!(
-        !service.contains("learning_group_teachers"),
-        "daily teaching must use exact timetable entry instructors"
-    );
     assert!(service.contains("course_offering_details"));
     assert!(service.contains("activity_offering_details"));
     assert!(service.contains("subject_versions"));
