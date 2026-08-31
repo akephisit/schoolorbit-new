@@ -1849,6 +1849,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/timetable/whole-school': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getWholeSchoolTimetableOverview'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/timetable/workspace': {
 		parameters: {
 			query?: never;
@@ -8956,6 +8972,18 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_WholeSchoolTimetableOverview: {
+			data: {
+				dayOfWeek: string;
+				issues: components['schemas']['WholeSchoolTimetableIssue'][];
+				periods: components['schemas']['BellSchedulePeriod'][];
+				rows: components['schemas']['WholeSchoolTimetableRow'][];
+				summary: components['schemas']['WholeSchoolTimetableSummary'];
+				version: components['schemas']['TimetableVersion'];
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApplyAcademicMenuTemplateRequest: {
 			revision: string;
 		};
@@ -14707,6 +14735,85 @@ export interface components {
 		};
 		/** @enum {string} */
 		VersionStatus: 'draft' | 'published' | 'archived';
+		WholeSchoolTimetableCell: {
+			/** Format: uuid */
+			bellSchedulePeriodId: string;
+			lessons: components['schemas']['WholeSchoolTimetableLesson'][];
+		};
+		WholeSchoolTimetableIssue: {
+			/** Format: uuid */
+			bellSchedulePeriodId: string | null;
+			entryIds: string[];
+			homeroomIds: string[];
+			instructorIds: string[];
+			kind: components['schemas']['WholeSchoolTimetableIssueKind'];
+			/** Format: uuid */
+			learningGroupId: string | null;
+			message: string;
+			/** Format: uuid */
+			roomId: string | null;
+			severity: components['schemas']['WholeSchoolTimetableIssueSeverity'];
+		};
+		/** @enum {string} */
+		WholeSchoolTimetableIssueKind:
+			| 'homeroom_conflict'
+			| 'instructor_conflict'
+			| 'room_conflict'
+			| 'unscheduled_demand'
+			| 'over_scheduled_demand'
+			| 'missing_instructor'
+			| 'missing_room';
+		/** @enum {string} */
+		WholeSchoolTimetableIssueSeverity: 'blocking' | 'warning';
+		WholeSchoolTimetableLesson: {
+			coveredHomeroomIds: string[];
+			/** Format: uuid */
+			entryId: string;
+			entryType: string;
+			instructors: components['schemas']['TimetableInstructor'][];
+			isSharedGroup: boolean;
+			learningGroupCode: string | null;
+			/** Format: uuid */
+			learningGroupId: string | null;
+			learningGroupName: string | null;
+			offeringCode: string | null;
+			offeringName: string | null;
+			roomCode: string | null;
+			/** Format: uuid */
+			roomId: string | null;
+			title: string | null;
+		};
+		WholeSchoolTimetableOverview: {
+			dayOfWeek: string;
+			issues: components['schemas']['WholeSchoolTimetableIssue'][];
+			periods: components['schemas']['BellSchedulePeriod'][];
+			rows: components['schemas']['WholeSchoolTimetableRow'][];
+			summary: components['schemas']['WholeSchoolTimetableSummary'];
+			version: components['schemas']['TimetableVersion'];
+		};
+		WholeSchoolTimetableRow: {
+			cells: components['schemas']['WholeSchoolTimetableCell'][];
+			gradeLevelType: string;
+			/** Format: int32 */
+			gradeLevelYear: number;
+			homeroomCode: string;
+			/** Format: uuid */
+			homeroomId: string;
+			homeroomName: string;
+			roomNumber: string | null;
+		};
+		WholeSchoolTimetableSummary: {
+			/** Format: int32 */
+			blockingIssueCount: number;
+			/** Format: int32 */
+			homeroomCount: number;
+			/** Format: int32 */
+			issueCount: number;
+			/** Format: int32 */
+			uniqueLessonCount: number;
+			/** Format: int32 */
+			warningIssueCount: number;
+		};
 	};
 	responses: never;
 	parameters: never;
@@ -24478,6 +24585,67 @@ export interface operations {
 			};
 			/** @description Timetable manage permission denied */
 			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getWholeSchoolTimetableOverview: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+				dayOfWeek: string;
+				timetableVersionId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Read-only whole-school timetable overview for one selected day */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_WholeSchoolTimetableOverview'];
+				};
+			};
+			/** @description Invalid day or academic context */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable version not found */
+			404: {
 				headers: {
 					[name: string]: unknown;
 				};

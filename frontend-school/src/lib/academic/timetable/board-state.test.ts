@@ -12,7 +12,8 @@ import {
 	localPlacementPreview,
 	remainingDemandForGroup,
 	replaceTimetableEntries,
-	rowsForTimetableView
+	rowsForTimetableView,
+	teacherPeriodCount
 } from './board-state.ts';
 
 const entry = (
@@ -70,7 +71,7 @@ function workspace(status: 'draft' | 'published' = 'draft'): TimetableWorkspace 
 				offeringKind: 'course',
 				offeringName: 'ภาษาอังกฤษ',
 				homeroomIds: ['homeroom-2'],
-				eligibleInstructorIds: ['teacher-1', 'teacher-2']
+				eligibleInstructorIds: ['teacher-1', 'teacher-2', 'teacher-3']
 			}
 		],
 		homerooms: [
@@ -96,10 +97,15 @@ function workspace(status: 'draft' | 'published' = 'draft'): TimetableWorkspace 
 			}
 		],
 		rooms: [],
-		staff: [],
+		staff: [
+			{ id: 'teacher-1', displayName: 'ครูหนึ่ง', status: 'active' },
+			{ id: 'teacher-2', displayName: 'ครูสอง', status: 'active' },
+			{ id: 'teacher-3', displayName: 'ครูสาม', status: 'active' }
+		],
 		entries: [
 			entry('entry-1', 'group-1', 'MON', 'period-1', ['teacher-1'], 'room-1'),
-			entry('entry-2', 'group-2', 'TUE', 'period-1', ['teacher-2'], 'room-2')
+			entry('entry-2', 'group-2', 'TUE', 'period-1', ['teacher-2'], 'room-2'),
+			entry('entry-3', 'group-2', 'WED', 'period-2', ['teacher-1', 'teacher-2'])
 		],
 		unscheduledDemands: [
 			{
@@ -141,7 +147,45 @@ test('shared learning-group entries project into every covered homeroom without 
 		}).map((item) => item.id),
 		['entry-1']
 	);
-	assert.equal(state.entriesById.size, 2);
+	assert.equal(state.entriesById.size, 3);
+});
+
+test('teacher view projects exact solo and co-taught entries without copying rows', () => {
+	const state = createTimetableBoardState(workspace());
+	assert.deepEqual(
+		rowsForTimetableView(state, 'teacher').map((row) => row.id),
+		['teacher-1', 'teacher-2', 'teacher-3']
+	);
+	assert.deepEqual(
+		entriesForTimetableCell(state, {
+			view: 'teacher',
+			rowId: 'teacher-1',
+			dayOfWeek: 'WED',
+			bellSchedulePeriodId: 'period-2'
+		}).map((item) => item.id),
+		['entry-3']
+	);
+	assert.deepEqual(
+		entriesForTimetableCell(state, {
+			view: 'teacher',
+			rowId: 'teacher-2',
+			dayOfWeek: 'WED',
+			bellSchedulePeriodId: 'period-2'
+		}).map((item) => item.id),
+		['entry-3']
+	);
+	assert.deepEqual(
+		entriesForTimetableCell(state, {
+			view: 'teacher',
+			rowId: 'teacher-3',
+			dayOfWeek: 'WED',
+			bellSchedulePeriodId: 'period-2'
+		}),
+		[]
+	);
+	assert.equal(teacherPeriodCount(state, 'teacher-1'), 2);
+	assert.equal(teacherPeriodCount(state, 'teacher-2'), 2);
+	assert.equal(state.entriesById.get('entry-3'), state.entries[2]);
 });
 
 test('local placement uses exact group, homeroom, teacher, and room occupancy', () => {

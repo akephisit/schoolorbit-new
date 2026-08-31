@@ -20,6 +20,14 @@ export type TimetableWorkspaceHomeroom = Schemas['TimetableWorkspaceHomeroom'];
 export type TimetableWorkspaceRoom = Schemas['TimetableWorkspaceRoom'];
 export type TimetableWorkspaceStaff = Schemas['TimetableWorkspaceStaff'];
 export type TimetableUnscheduledDemand = Schemas['TimetableUnscheduledDemand'];
+export type WholeSchoolTimetableOverview = Schemas['WholeSchoolTimetableOverview'];
+export type WholeSchoolTimetableRow = Schemas['WholeSchoolTimetableRow'];
+export type WholeSchoolTimetableCell = Schemas['WholeSchoolTimetableCell'];
+export type WholeSchoolTimetableLesson = Schemas['WholeSchoolTimetableLesson'];
+export type WholeSchoolTimetableIssue = Schemas['WholeSchoolTimetableIssue'];
+export type WholeSchoolTimetableIssueKind = Schemas['WholeSchoolTimetableIssueKind'];
+export type WholeSchoolTimetableIssueSeverity = Schemas['WholeSchoolTimetableIssueSeverity'];
+export type WholeSchoolTimetableSummary = Schemas['WholeSchoolTimetableSummary'];
 export type TimetablePlacementState = Schemas['TimetablePlacementState'];
 export type TimetableConflictType = Schemas['TimetableConflictType'];
 export type TimetablePlacementMutationKind = Schemas['TimetablePlacementMutationKind'];
@@ -72,6 +80,9 @@ type TimetableOccupancyQuery = NonNullable<
 >;
 export type TimetableWorkspaceQuery = NonNullable<
 	operations['getTimetableWorkspace']['parameters']['query']
+>;
+export type WholeSchoolTimetableQuery = NonNullable<
+	operations['getWholeSchoolTimetableOverview']['parameters']['query']
 >;
 
 export interface TimetablePeriodSummary {
@@ -175,6 +186,18 @@ export const getTimetableWorkspace = (
 			query
 		}),
 		'ไม่สามารถโหลดพื้นที่จัดตารางสอนได้'
+	);
+
+export const getWholeSchoolTimetableOverview = (
+	query: WholeSchoolTimetableQuery,
+	options: ApiRequestOptions = {}
+) =>
+	timetableData(
+		apiClient.get<WholeSchoolTimetableOverview>('/api/academic/timetable/whole-school', {
+			...options,
+			query
+		}),
+		'ไม่สามารถโหลดภาพรวมตารางสอนทั้งโรงเรียนได้'
 	);
 
 export const getMyTimetable = (filters: MyTimetableFilters, options: ApiRequestOptions = {}) =>

@@ -7,7 +7,7 @@ import type {
 	TimetableWorkspace
 } from '../../api/timetable';
 
-export type TimetableBoardView = 'homeroom' | 'learning_group';
+export type TimetableBoardView = 'homeroom' | 'learning_group' | 'teacher';
 export type LocalTimetableConflict = 'learning_group' | 'homeroom' | 'instructor' | 'room';
 
 export interface TimetableBoardRow {
@@ -82,6 +82,14 @@ export function rowsForTimetableView(
 			kind: view
 		}));
 	}
+	if (view === 'teacher') {
+		return state.workspace.staff.map((teacher) => ({
+			id: teacher.id,
+			code: 'ครู',
+			label: teacher.displayName,
+			kind: view
+		}));
+	}
 	return state.workspace.learningGroups.map((group) => ({
 		id: group.id,
 		code: group.code,
@@ -110,6 +118,14 @@ export function remainingDemandForGroup(state: TimetableBoardState, groupId: str
 		0
 	);
 	return Math.max(demand.requiredPeriods - scheduled, 0);
+}
+
+export function teacherPeriodCount(state: TimetableBoardState, teacherId: string): number {
+	return state.entries.reduce(
+		(count, entry) =>
+			count + (entry.instructors.some((instructor) => instructor.userId === teacherId) ? 1 : 0),
+		0
+	);
 }
 
 export function localPlacementPreview(
@@ -150,6 +166,9 @@ function entryBelongsToRow(
 	rowId: string
 ): boolean {
 	if (view === 'learning_group') return entry.learningGroupId === rowId;
+	if (view === 'teacher') {
+		return entry.instructors.some((instructor) => instructor.userId === rowId);
+	}
 	if (entry.learningGroupId) {
 		return state.groupsById.get(entry.learningGroupId)?.homeroomIds.includes(rowId) ?? false;
 	}

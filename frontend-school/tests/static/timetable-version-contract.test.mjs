@@ -167,3 +167,25 @@ test('timetable board consumes one generated workspace and typed placement previ
 	assert.match(controller, /\$state\.raw/);
 	assert.match(controller, /\$derived/);
 });
+
+test('whole-school overview uses the generated day-bounded contract', async () => {
+	const openapi = JSON.parse(await readProjectFile('../contracts/openapi/school-api.json'));
+	const api = await readProjectFile('src/lib/api/timetable.ts');
+
+	assert.equal(
+		openapi.paths['/api/academic/timetable/whole-school'].get.operationId,
+		'getWholeSchoolTimetableOverview'
+	);
+	assert.deepEqual(
+		openapi.paths['/api/academic/timetable/whole-school'].get.parameters
+			.filter((parameter) => parameter.in === 'query')
+			.map((parameter) => parameter.name)
+			.toSorted(),
+		['academicTermId', 'academicYearId', 'dayOfWeek', 'timetableVersionId'].toSorted()
+	);
+	assert.match(api, /WholeSchoolTimetableOverview\s*=\s*Schemas\['WholeSchoolTimetableOverview'\]/);
+	assert.match(api, /operations\['getWholeSchoolTimetableOverview'\]/);
+	assert.match(api, /export const getWholeSchoolTimetableOverview/);
+	assert.doesNotMatch(api, /interface\s+WholeSchoolTimetable/);
+	assert.doesNotMatch(api, /academic_year_id|academic_term_id|day_of_week/);
+});

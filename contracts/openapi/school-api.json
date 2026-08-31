@@ -16329,6 +16329,61 @@
         ],
         "type": "object"
       },
+      "ApiResponse_WholeSchoolTimetableOverview": {
+        "properties": {
+          "data": {
+            "properties": {
+              "dayOfWeek": {
+                "type": "string"
+              },
+              "issues": {
+                "items": {
+                  "$ref": "#/components/schemas/WholeSchoolTimetableIssue"
+                },
+                "type": "array"
+              },
+              "periods": {
+                "items": {
+                  "$ref": "#/components/schemas/BellSchedulePeriod"
+                },
+                "type": "array"
+              },
+              "rows": {
+                "items": {
+                  "$ref": "#/components/schemas/WholeSchoolTimetableRow"
+                },
+                "type": "array"
+              },
+              "summary": {
+                "$ref": "#/components/schemas/WholeSchoolTimetableSummary"
+              },
+              "version": {
+                "$ref": "#/components/schemas/TimetableVersion"
+              }
+            },
+            "required": [
+              "version",
+              "dayOfWeek",
+              "periods",
+              "rows",
+              "issues",
+              "summary"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApplyAcademicMenuTemplateRequest": {
         "additionalProperties": false,
         "properties": {
@@ -37703,6 +37758,319 @@
           "archived"
         ],
         "type": "string"
+      },
+      "WholeSchoolTimetableCell": {
+        "properties": {
+          "bellSchedulePeriodId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "lessons": {
+            "items": {
+              "$ref": "#/components/schemas/WholeSchoolTimetableLesson"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "bellSchedulePeriodId",
+          "lessons"
+        ],
+        "type": "object"
+      },
+      "WholeSchoolTimetableIssue": {
+        "properties": {
+          "bellSchedulePeriodId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "entryIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "homeroomIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "instructorIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/WholeSchoolTimetableIssueKind"
+          },
+          "learningGroupId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "roomId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "severity": {
+            "$ref": "#/components/schemas/WholeSchoolTimetableIssueSeverity"
+          }
+        },
+        "required": [
+          "kind",
+          "severity",
+          "message",
+          "entryIds",
+          "homeroomIds",
+          "instructorIds",
+          "roomId",
+          "bellSchedulePeriodId",
+          "learningGroupId"
+        ],
+        "type": "object"
+      },
+      "WholeSchoolTimetableIssueKind": {
+        "enum": [
+          "homeroom_conflict",
+          "instructor_conflict",
+          "room_conflict",
+          "unscheduled_demand",
+          "over_scheduled_demand",
+          "missing_instructor",
+          "missing_room"
+        ],
+        "type": "string"
+      },
+      "WholeSchoolTimetableIssueSeverity": {
+        "enum": [
+          "blocking",
+          "warning"
+        ],
+        "type": "string"
+      },
+      "WholeSchoolTimetableLesson": {
+        "properties": {
+          "coveredHomeroomIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "entryId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "entryType": {
+            "type": "string"
+          },
+          "instructors": {
+            "items": {
+              "$ref": "#/components/schemas/TimetableInstructor"
+            },
+            "type": "array"
+          },
+          "isSharedGroup": {
+            "type": "boolean"
+          },
+          "learningGroupCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "learningGroupId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "learningGroupName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "offeringCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "offeringName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "roomCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "roomId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "entryId",
+          "entryType",
+          "learningGroupId",
+          "learningGroupCode",
+          "learningGroupName",
+          "offeringCode",
+          "offeringName",
+          "title",
+          "coveredHomeroomIds",
+          "instructors",
+          "roomId",
+          "roomCode",
+          "isSharedGroup"
+        ],
+        "type": "object"
+      },
+      "WholeSchoolTimetableOverview": {
+        "properties": {
+          "dayOfWeek": {
+            "type": "string"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/WholeSchoolTimetableIssue"
+            },
+            "type": "array"
+          },
+          "periods": {
+            "items": {
+              "$ref": "#/components/schemas/BellSchedulePeriod"
+            },
+            "type": "array"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/WholeSchoolTimetableRow"
+            },
+            "type": "array"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/WholeSchoolTimetableSummary"
+          },
+          "version": {
+            "$ref": "#/components/schemas/TimetableVersion"
+          }
+        },
+        "required": [
+          "version",
+          "dayOfWeek",
+          "periods",
+          "rows",
+          "issues",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "WholeSchoolTimetableRow": {
+        "properties": {
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/WholeSchoolTimetableCell"
+            },
+            "type": "array"
+          },
+          "gradeLevelType": {
+            "type": "string"
+          },
+          "gradeLevelYear": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "homeroomCode": {
+            "type": "string"
+          },
+          "homeroomId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "homeroomName": {
+            "type": "string"
+          },
+          "roomNumber": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "homeroomId",
+          "homeroomCode",
+          "homeroomName",
+          "gradeLevelType",
+          "gradeLevelYear",
+          "roomNumber",
+          "cells"
+        ],
+        "type": "object"
+      },
+      "WholeSchoolTimetableSummary": {
+        "properties": {
+          "blockingIssueCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "homeroomCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "issueCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "uniqueLessonCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "warningIssueCount": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "homeroomCount",
+          "uniqueLessonCount",
+          "issueCount",
+          "blockingIssueCount",
+          "warningIssueCount"
+        ],
+        "type": "object"
       }
     }
   },
@@ -49983,6 +50351,103 @@
               }
             },
             "description": "Timetable manage permission denied"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/timetable/whole-school": {
+      "get": {
+        "operationId": "getWholeSchoolTimetableOverview",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "timetableVersionId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dayOfWeek",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_WholeSchoolTimetableOverview"
+                }
+              }
+            },
+            "description": "Read-only whole-school timetable overview for one selected day"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid day or academic context"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Timetable read permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Timetable version not found"
           }
         },
         "tags": [
