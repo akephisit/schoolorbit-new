@@ -212,6 +212,198 @@ fn instructor_roles_json(
 }
 
 #[tokio::test]
+async fn legacy_teacher_conflict_diagnostic_names_every_entry_in_the_slot() {
+    let pool = migrated_pool("timetable_legacy_teacher_conflict_diagnostic").await;
+    let fixture = exact_instructor_fixture(&pool).await;
+    let second_group_id = Uuid::new_v4();
+    let first_entry_id = Uuid::new_v4();
+    let second_entry_id = Uuid::new_v4();
+
+    sqlx::query(
+        r#"INSERT INTO learning_groups (
+               id, learning_offering_id, academic_term_id, academic_year_id,
+               code, name, status, roster_status
+           )
+           SELECT $1, learning_offering_id, academic_term_id, academic_year_id,
+                  E'LEGACY-DIAG-2\nforged=true', 'กลุ่มวินิจฉัยที่สอง', 'draft', 'draft'
+           FROM learning_groups
+           WHERE id = $2"#,
+    )
+    .bind(second_group_id)
+    .bind(fixture.group_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"INSERT INTO learning_group_teachers (
+               id, learning_group_id, academic_term_id, academic_year_id,
+               teacher_id, role, starts_on, created_by, updated_by
+           )
+           SELECT gen_random_uuid(), $1, learning_group.academic_term_id,
+                  learning_group.academic_year_id, $3, 'primary',
+                  offering.starts_on, $4, $4
+           FROM learning_groups learning_group
+           JOIN learning_offerings offering
+             ON offering.id = learning_group.learning_offering_id
+           WHERE learning_group.id = $2"#,
+    )
+    .bind(second_group_id)
+    .bind(second_group_id)
+    .bind(fixture.teacher_a)
+    .bind(fixture.actor_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"INSERT INTO academic_timetable_entries (
+               id, day_of_week, bell_schedule_period_id,
+               room_id, note, is_active, created_by, updated_by, entry_type, title,
+               homeroom_id, academic_term_id, batch_id,
+               academic_year_id, learning_offering_id, learning_group_id,
+               bell_schedule_id, migration_provenance, row_version,
+               timetable_version_id
+           )
+           SELECT requested.entry_id, 'TUE', $3,
+                  NULL, NULL, true, $4, $4, 'COURSE', NULL,
+                  NULL, learning_group.academic_term_id, NULL,
+                  learning_group.academic_year_id, learning_group.learning_offering_id,
+                  learning_group.id, term.bell_schedule_id, '{}'::jsonb, 1, $5
+           FROM (
+               VALUES ($1::uuid, $6::uuid), ($2::uuid, $7::uuid)
+           ) AS requested(entry_id, learning_group_id)
+           JOIN learning_groups learning_group
+             ON learning_group.id = requested.learning_group_id
+           JOIN academic_terms term ON term.id = learning_group.academic_term_id"#,
+    )
+    .bind(first_entry_id)
+    .bind(second_entry_id)
+    .bind(fixture.period_id)
+    .bind(fixture.actor_id)
+    .bind(fixture.draft.id)
+    .bind(fixture.group_id)
+    .bind(second_group_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let conflicts = timetable_service::list_legacy_current_teacher_conflicts(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(conflicts.len(), 1);
+    assert_eq!(conflicts[0].teacher_id, fixture.teacher_a);
+    assert_eq!(conflicts[0].timetable_version_id, fixture.draft.id);
+    assert_eq!(conflicts[0].day_of_week, "TUE");
+    assert_eq!(conflicts[0].bell_schedule_period_id, fixture.period_id);
+    assert_eq!(conflicts[0].entry_count, 2);
+    assert_eq!(conflicts[0].group_code_count, 2);
+    let mut expected_entry_ids = vec![first_entry_id, second_entry_id];
+    expected_entry_ids.sort_unstable();
+    assert_eq!(conflicts[0].entry_ids, expected_entry_ids);
+    assert_eq!(
+        conflicts[0].group_codes,
+        vec![
+            format!("EXACT-{}", &fixture.group_id.to_string()[..8]),
+            "LEGACY-DIAG-2 forged=true".to_string(),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn legacy_teacher_conflict_diagnostic_caps_each_conflict_bucket() {
+    let pool = migrated_pool("timetable_legacy_teacher_conflict_bounds").await;
+    let fixture = exact_instructor_fixture(&pool).await;
+
+    sqlx::query(
+        r#"WITH source AS (
+               SELECT learning_group.learning_offering_id,
+                      learning_group.academic_term_id,
+                      learning_group.academic_year_id,
+                      offering.starts_on,
+                      term.bell_schedule_id
+               FROM learning_groups learning_group
+               JOIN learning_offerings offering
+                 ON offering.id = learning_group.learning_offering_id
+               JOIN academic_terms term
+                 ON term.id = learning_group.academic_term_id
+               WHERE learning_group.id = $1
+           ), requested AS (
+               SELECT sequence,
+                      gen_random_uuid() AS group_id,
+                      gen_random_uuid() AS entry_id
+               FROM generate_series(1, 25) AS sequence
+           ), inserted_groups AS (
+               INSERT INTO learning_groups (
+                   id, learning_offering_id, academic_term_id, academic_year_id,
+                   code, name, status, roster_status
+               )
+               SELECT requested.group_id, source.learning_offering_id,
+                      source.academic_term_id, source.academic_year_id,
+                      CASE WHEN requested.sequence = 25
+                           THEN repeat('X', 120)
+                           ELSE format('BOUND-%s', requested.sequence)
+                      END,
+                      format('กลุ่มวินิจฉัยขอบเขต %s', requested.sequence),
+                      'draft', 'draft'
+               FROM requested CROSS JOIN source
+               RETURNING id
+           ), inserted_teachers AS (
+               INSERT INTO learning_group_teachers (
+                   id, learning_group_id, academic_term_id, academic_year_id,
+                   teacher_id, role, starts_on, created_by, updated_by
+               )
+               SELECT gen_random_uuid(), requested.group_id,
+                      source.academic_term_id, source.academic_year_id,
+                      $2, 'primary', source.starts_on, $3, $3
+               FROM requested CROSS JOIN source
+               RETURNING learning_group_id
+           )
+           INSERT INTO academic_timetable_entries (
+               id, day_of_week, bell_schedule_period_id,
+               room_id, note, is_active, created_by, updated_by, entry_type, title,
+               homeroom_id, academic_term_id, batch_id,
+               academic_year_id, learning_offering_id, learning_group_id,
+               bell_schedule_id, migration_provenance, row_version,
+               timetable_version_id
+           )
+           SELECT requested.entry_id, 'WED', $4,
+                  NULL, NULL, true, $3, $3, 'COURSE', NULL,
+                  NULL, source.academic_term_id, NULL,
+                  source.academic_year_id, source.learning_offering_id,
+                  requested.group_id, source.bell_schedule_id, '{}'::jsonb, 1, $5
+           FROM requested CROSS JOIN source
+           JOIN inserted_groups ON inserted_groups.id = requested.group_id
+           JOIN inserted_teachers
+             ON inserted_teachers.learning_group_id = requested.group_id"#,
+    )
+    .bind(fixture.group_id)
+    .bind(fixture.teacher_a)
+    .bind(fixture.actor_id)
+    .bind(fixture.period_id)
+    .bind(fixture.draft.id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let conflicts = timetable_service::list_legacy_current_teacher_conflicts(&pool)
+        .await
+        .unwrap();
+    let conflict = conflicts
+        .iter()
+        .find(|conflict| conflict.day_of_week == "WED")
+        .unwrap();
+
+    assert_eq!(conflict.entry_count, 25);
+    assert_eq!(conflict.group_code_count, 25);
+    assert_eq!(conflict.entry_ids.len(), 20);
+    assert_eq!(conflict.group_codes.len(), 20);
+    assert!(conflict
+        .group_codes
+        .iter()
+        .all(|code| code.chars().count() <= 80 && !code.chars().any(char::is_control)));
+}
+
+#[tokio::test]
 async fn timetable_entries_split_and_coteach_with_exact_instructors() {
     let pool = migrated_pool("timetable_exact_instructor_split_coteach").await;
     let fixture = exact_instructor_fixture(&pool).await;

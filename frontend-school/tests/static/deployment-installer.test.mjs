@@ -282,8 +282,24 @@ test('backend-school migration failure reports only bounded deployment diagnosti
 	assert.match(diagnostic, /tenant_migration_result subdomain=/);
 	assert.match(diagnostic, /error_code=/);
 	assert.match(diagnostic, /scan\("ACADEMIC_\[A-Z0-9_\]\+"\)/);
+	assert.match(diagnostic, /academicDiagnostics\.currentTeacherConflicts\[\]\?/);
+	assert.match(diagnostic, /tenant_academic_teacher_conflict subdomain=/);
+	assert.match(diagnostic, /teacher_id=/);
+	assert.match(diagnostic, /timetable_version_id=/);
+	assert.match(diagnostic, /day=/);
+	assert.match(diagnostic, /bell_schedule_period_id=/);
+	assert.match(diagnostic, /entry_count=/);
+	assert.match(diagnostic, /group_code_count=/);
+	assert.match(diagnostic, /entry_ids=/);
+	assert.match(diagnostic, /group_codes=/);
+	assert.match(diagnostic, /tojson/);
 	assert.match(diagnostic, /print_migration_verification_failure < "\$migration_response"/);
 	assert.doesNotMatch(diagnostic, /error=\\\(\.error/);
+	assert.doesNotMatch(diagnostic, /join\(","\)/);
+	assert.doesNotMatch(diagnostic, /displayName|firstName|lastName/);
+
+	const hostileGroupCodes = JSON.stringify(['SAFE', 'FORGED\nstatus=success']);
+	assert.equal(hostileGroupCodes.includes('\n'), false);
 });
 
 test('backend-school deployment repairs the admin network alias before maintenance activation', async () => {

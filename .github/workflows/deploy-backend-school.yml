@@ -512,6 +512,11 @@ jobs:
                       else (([.error | scan("ACADEMIC_[A-Z0-9_]+") ] | first) // "redacted")
                       end
                     )"
+                ),
+                (
+                  .results[]? as $result
+                  | $result.academicDiagnostics.currentTeacherConflicts[]?
+                  | "tenant_academic_teacher_conflict subdomain=\($result.subdomain // "unknown") teacher_id=\(.teacherId // "unknown") timetable_version_id=\(.timetableVersionId // "unknown") day=\(.dayOfWeek // "unknown") bell_schedule_period_id=\(.bellSchedulePeriodId // "unknown") entry_count=\(.entryCount // "unknown") group_code_count=\(.groupCodeCount // "unknown") entry_ids=\((.entryIds // []) | tojson) group_codes=\((.groupCodes // []) | tojson)"
                 )
               '
             }

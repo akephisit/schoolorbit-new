@@ -154,6 +154,19 @@ struct TimetableEntryAuditPayload {
     after: TimetableEntryAuditSnapshot,
 }
 
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LegacyCurrentTeacherConflict {
+    pub teacher_id: Uuid,
+    pub timetable_version_id: Uuid,
+    pub day_of_week: String,
+    pub bell_schedule_period_id: Uuid,
+    pub entry_count: i64,
+    pub group_code_count: i64,
+    pub entry_ids: Vec<Uuid>,
+    pub group_codes: Vec<String>,
+}
+
 #[derive(Debug, Default)]
 struct RelationshipIndexes {
     homerooms_by_group: HashMap<Uuid, Vec<Uuid>>,
@@ -178,6 +191,108 @@ impl RelationshipIndexes {
             .cloned()
             .unwrap_or_default()
     }
+}
+
+pub(crate) async fn list_legacy_current_teacher_conflicts(
+    pool: &PgPool,
+) -> Result<Vec<LegacyCurrentTeacherConflict>, AppError> {
+    const MAX_CONFLICTS: i64 = 100;
+    const MAX_ENTRIES_PER_CONFLICT: i64 = 20;
+    const MAX_GROUP_CODES_PER_CONFLICT: i64 = 20;
+    const MAX_GROUP_CODE_CHARS: i32 = 80;
+
+    let mut transaction = pool.begin().await?;
+    sqlx::query("SET LOCAL statement_timeout = '5000ms'")
+        .execute(&mut *transaction)
+        .await?;
+    let conflicts = sqlx::query_as(
+        r#"WITH current_entry_teacher AS MATERIALIZED (
+               SELECT entry.id AS entry_id,
+                      entry.timetable_version_id,
+                      entry.day_of_week,
+                      entry.bell_schedule_period_id,
+                      teacher.teacher_id,
+                      left(
+                          regexp_replace(
+                              learning_group.code,
+                              '[[:cntrl:]]',
+                              ' ',
+                              'g'
+                          ),
+                          $4
+                      ) AS group_code
+               FROM academic_timetable_entries entry
+               JOIN learning_groups learning_group
+                 ON learning_group.id = entry.learning_group_id
+               JOIN learning_group_teachers teacher
+                 ON teacher.learning_group_id = entry.learning_group_id
+               WHERE entry.learning_group_id IS NOT NULL
+                 AND entry.is_active
+               UNION ALL
+               SELECT entry.id,
+                      entry.timetable_version_id,
+                      entry.day_of_week,
+                      entry.bell_schedule_period_id,
+                      instructor.instructor_id,
+                      concat('STRUCTURAL:', entry.entry_type)
+               FROM academic_timetable_entries entry
+               JOIN timetable_entry_instructors instructor
+                 ON instructor.entry_id = entry.id
+               WHERE entry.learning_group_id IS NULL
+                 AND entry.is_active
+           ), conflict_keys AS (
+               SELECT teacher_id,
+                      timetable_version_id,
+                      day_of_week,
+                      bell_schedule_period_id,
+                      count(DISTINCT entry_id) AS entry_count,
+                      count(DISTINCT group_code) AS group_code_count
+               FROM current_entry_teacher
+               GROUP BY teacher_id, timetable_version_id, day_of_week,
+                        bell_schedule_period_id
+               HAVING count(DISTINCT entry_id) > 1
+               ORDER BY timetable_version_id, day_of_week,
+                        bell_schedule_period_id, teacher_id
+               LIMIT $1
+           )
+           SELECT conflict.teacher_id,
+                  conflict.timetable_version_id,
+                  conflict.day_of_week,
+                  conflict.bell_schedule_period_id,
+                  conflict.entry_count,
+                  conflict.group_code_count,
+                  ARRAY(
+                      SELECT DISTINCT current_entry.entry_id
+                      FROM current_entry_teacher current_entry
+                      WHERE current_entry.teacher_id = conflict.teacher_id
+                        AND current_entry.timetable_version_id = conflict.timetable_version_id
+                        AND current_entry.day_of_week = conflict.day_of_week
+                        AND current_entry.bell_schedule_period_id = conflict.bell_schedule_period_id
+                      ORDER BY current_entry.entry_id
+                      LIMIT $2
+                  ) AS entry_ids,
+                  ARRAY(
+                      SELECT DISTINCT current_entry.group_code
+                      FROM current_entry_teacher current_entry
+                      WHERE current_entry.teacher_id = conflict.teacher_id
+                        AND current_entry.timetable_version_id = conflict.timetable_version_id
+                        AND current_entry.day_of_week = conflict.day_of_week
+                        AND current_entry.bell_schedule_period_id = conflict.bell_schedule_period_id
+                      ORDER BY current_entry.group_code
+                      LIMIT $3
+                  ) AS group_codes
+           FROM conflict_keys conflict
+           ORDER BY conflict.timetable_version_id, conflict.day_of_week,
+                    conflict.bell_schedule_period_id, conflict.teacher_id"#,
+    )
+    .bind(MAX_CONFLICTS)
+    .bind(MAX_ENTRIES_PER_CONFLICT)
+    .bind(MAX_GROUP_CODES_PER_CONFLICT)
+    .bind(MAX_GROUP_CODE_CHARS)
+    .fetch_all(&mut *transaction)
+    .await?;
+    transaction.commit().await?;
+    Ok(conflicts)
 }
 
 pub async fn list_entries(

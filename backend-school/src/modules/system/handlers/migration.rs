@@ -2,10 +2,13 @@ use crate::error::AppError;
 use crate::modules::academic::reconciliation::{
     read_academic_core_cleanup_audit, ReconciliationCheck, PHASE_B_MIGRATION_VERSION,
 };
+use crate::modules::academic::services::timetable_service::{self, LegacyCurrentTeacherConflict};
 use crate::AppState;
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use serde::Serialize;
 use sqlx::PgPool;
+use std::future::Future;
+use std::time::Duration;
 
 #[derive(Serialize)]
 struct MigrationResult {
@@ -14,6 +17,17 @@ struct MigrationResult {
     version: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
+    #[serde(
+        rename = "academicDiagnostics",
+        skip_serializing_if = "Option::is_none"
+    )]
+    academic_diagnostics: Option<AcademicMigrationDiagnostics>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AcademicMigrationDiagnostics {
+    current_teacher_conflicts: Vec<LegacyCurrentTeacherConflict>,
 }
 
 #[derive(Serialize)]
@@ -206,6 +220,7 @@ pub async fn migrate_all_schools(
                     status: "skipped".to_string(),
                     version: None,
                     error: Some("No database connection string".to_string()),
+                    academic_diagnostics: None,
                 });
                 continue;
             }
@@ -358,6 +373,8 @@ async fn migrate_single_school(
         }
         Err(e) => {
             tracing::error!("❌ Failed to get pool for {}: {}", subdomain, e);
+            let academic_diagnostics =
+                collect_academic_migration_diagnostics(state, subdomain, db_url, &e).await;
             let _ = state
                 .admin_client
                 .update_migration_status(subdomain, 0, "failed", Some(&e))
@@ -367,6 +384,7 @@ async fn migrate_single_school(
                 status: "failed".to_string(),
                 version: None,
                 error: Some(e),
+                academic_diagnostics,
             };
         }
     };
@@ -384,6 +402,7 @@ async fn migrate_single_school(
                 status: "failed".to_string(),
                 version: None,
                 error: Some(e),
+                academic_diagnostics: None,
             };
         }
     };
@@ -405,6 +424,7 @@ async fn migrate_single_school(
                 status: status.to_string(),
                 version: Some(current_version),
                 error: None,
+                academic_diagnostics: None,
             }
         }
         Err(e) => {
@@ -417,9 +437,71 @@ async fn migrate_single_school(
                 status: "migrated".to_string(),
                 version: Some(current_version),
                 error: Some(format!("Failed to update admin service: {}", e)),
+                academic_diagnostics: None,
             }
         }
     }
+}
+
+async fn collect_academic_migration_diagnostics(
+    state: &AppState,
+    subdomain: &str,
+    db_url: &str,
+    migration_error: &str,
+) -> Option<AcademicMigrationDiagnostics> {
+    if !migration_error.contains("ACADEMIC_054_CURRENT_TEACHER_CONFLICT") {
+        return None;
+    }
+
+    let diagnostic = run_with_diagnostic_timeout(Duration::from_secs(6), async {
+        let pool = state
+            .pool_manager
+            .get_pool_without_migrations(db_url, subdomain)
+            .await
+            .map_err(|_| "pool")?;
+        timetable_service::list_legacy_current_teacher_conflicts(&pool)
+            .await
+            .map_err(|_| "query")
+    })
+    .await;
+
+    match diagnostic {
+        Some(Ok(current_teacher_conflicts)) => {
+            tracing::info!(
+                subdomain,
+                conflict_count = current_teacher_conflicts.len(),
+                "Collected bounded academic migration diagnostics"
+            );
+            Some(AcademicMigrationDiagnostics {
+                current_teacher_conflicts,
+            })
+        }
+        Some(Err(reason)) => {
+            tracing::warn!(
+                subdomain,
+                reason = if reason == "pool" {
+                    "academic_migration_diagnostic_pool_unavailable"
+                } else {
+                    "academic_migration_diagnostic_query_failed"
+                }
+            );
+            None
+        }
+        None => {
+            tracing::warn!(
+                subdomain,
+                reason = "academic_migration_diagnostic_timed_out"
+            );
+            None
+        }
+    }
+}
+
+async fn run_with_diagnostic_timeout<T, F>(duration: Duration, future: F) -> Option<T>
+where
+    F: Future<Output = T>,
+{
+    tokio::time::timeout(duration, future).await.ok()
 }
 
 /// Get latest migration version from migrations directory
@@ -543,6 +625,65 @@ mod tests {
         assert!(!encoded.contains("entityMap"));
         assert!(!encoded.contains("sourceId"));
         assert!(!encoded.contains("targetId"));
+    }
+
+    #[test]
+    fn migration_result_serializes_only_bounded_academic_conflict_diagnostics() {
+        let teacher_id = uuid::Uuid::new_v4();
+        let version_id = uuid::Uuid::new_v4();
+        let period_id = uuid::Uuid::new_v4();
+        let first_entry_id = uuid::Uuid::new_v4();
+        let second_entry_id = uuid::Uuid::new_v4();
+        let value = serde_json::to_value(MigrationResult {
+            subdomain: "fixture".to_string(),
+            status: "failed".to_string(),
+            version: None,
+            error: Some("ACADEMIC_054_CURRENT_TEACHER_CONFLICT".to_string()),
+            academic_diagnostics: Some(AcademicMigrationDiagnostics {
+                current_teacher_conflicts: vec![
+                    crate::modules::academic::services::timetable_service::LegacyCurrentTeacherConflict {
+                        teacher_id,
+                        timetable_version_id: version_id,
+                        day_of_week: "MON".to_string(),
+                        bell_schedule_period_id: period_id,
+                        entry_count: 2,
+                        group_code_count: 2,
+                        entry_ids: vec![first_entry_id, second_entry_id],
+                        group_codes: vec!["ก-1\nforged=true".to_string(), "ก-2".to_string()],
+                    },
+                ],
+            }),
+        })
+        .unwrap();
+        let encoded = serde_json::to_string(&value).unwrap();
+
+        assert_eq!(
+            value["academicDiagnostics"]["currentTeacherConflicts"][0]["teacherId"],
+            teacher_id.to_string()
+        );
+        assert_eq!(
+            value["academicDiagnostics"]["currentTeacherConflicts"][0]["groupCodes"],
+            serde_json::json!(["ก-1\nforged=true", "ก-2"])
+        );
+        assert_eq!(
+            value["academicDiagnostics"]["currentTeacherConflicts"][0]["entryCount"],
+            2
+        );
+        assert!(!encoded.contains('\n'));
+        assert!(!encoded.contains("displayName"));
+        assert!(!encoded.contains("firstName"));
+        assert!(!encoded.contains("lastName"));
+    }
+
+    #[tokio::test]
+    async fn migration_diagnostic_timeout_is_bounded() {
+        let result = run_with_diagnostic_timeout(
+            std::time::Duration::from_millis(1),
+            std::future::pending::<()>(),
+        )
+        .await;
+
+        assert!(result.is_none());
     }
 
     #[test]
