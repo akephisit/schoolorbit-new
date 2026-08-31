@@ -396,6 +396,7 @@ run_academic_context_smoke() {
     local selected_terms="$tmp_dir/academic-terms"
     local year_id
     local term_id
+    local timetable_version_id
     local year_index=0
     local term_index=0
 
@@ -492,7 +493,42 @@ PY
         term_index=$((term_index + 1))
         academic_context_get "offerings-$term_index" "academic offerings context $term_index" "/api/academic/offerings?academicTermId=$term_id"
         academic_context_get "assessments-$term_index" "assessment plans context $term_index" "/api/academic/assessments/plans?academicTermId=$term_id"
-        academic_context_get "timetable-$term_index" "academic timetable context $term_index" "/api/academic/timetable?academicTermId=$term_id"
+        academic_context_get "timetable-versions-$term_index" "academic timetable versions context $term_index" "/api/academic/timetable-versions?academicTermId=$term_id"
+        if ! timetable_version_id="$(
+            python3 - "$tmp_dir/academic-timetable-versions-$term_index.body" "$term_id" <<'PY'
+import json
+import sys
+import uuid
+
+body_path, expected_term_id = sys.argv[1:]
+with open(body_path, encoding="utf-8") as handle:
+    payload = json.load(handle)
+
+versions = payload.get("data") if isinstance(payload, dict) else None
+if not isinstance(versions, list):
+    raise SystemExit(1)
+
+for version in versions:
+    if not isinstance(version, dict) or version.get("status") != "published":
+        continue
+    try:
+        version_id = str(uuid.UUID(version.get("id")))
+        academic_term_id = str(uuid.UUID(version.get("academicTermId")))
+    except (AttributeError, TypeError, ValueError):
+        continue
+    if academic_term_id == expected_term_id.lower():
+        print(version_id)
+        break
+PY
+        )"; then
+            fail "academic timetable versions context $term_index expected a valid API payload"
+            timetable_version_id=
+        fi
+        if [[ -n $timetable_version_id ]]; then
+            academic_context_get "timetable-$term_index" "academic timetable context $term_index" "/api/academic/timetable?timetableVersionId=$timetable_version_id&academicTermId=$term_id"
+        else
+            printf 'SKIP academic timetable context %s: no published timetable version.\n' "$term_index"
+        fi
         academic_context_get "exams-$term_index" "exam schedules context $term_index" "/api/academic/exam-schedules?academicTermId=$term_id"
         academic_context_get "supervision-$term_index" "supervision observations context $term_index" "/api/supervision/observations?academicYearId=$year_id&academicTermId=$term_id"
     done <"$selected_terms"
