@@ -6,11 +6,14 @@ use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::error::AppError;
+use crate::modules::academic::core::models::BellSchedulePeriod;
 use crate::modules::academic::models::timetable::{
     BatchTimetableResult, ConflictInfo, CreateBatchTimetableEntriesRequest,
     CreateTimetableEntryRequest, MoveValidityCell, SwapTimetableEntriesRequest,
     SwapTimetableEntriesResponse, TimetableEntry, TimetableInstructor, TimetableOccupancyCell,
-    TimetableQuery, TimetableValidationResponse, UpdateTimetableEntryRequest,
+    TimetableQuery, TimetableUnscheduledDemand, TimetableValidationResponse, TimetableWorkspace,
+    TimetableWorkspaceHomeroom, TimetableWorkspaceLearningGroup, TimetableWorkspaceQuery,
+    TimetableWorkspaceRoom, TimetableWorkspaceStaff, UpdateTimetableEntryRequest,
 };
 use crate::policies::resource_access_policy::AcademicResourceListFilter;
 
@@ -117,6 +120,21 @@ struct CandidateScope {
     homeroom_ids: Vec<Uuid>,
     instructor_ids: Vec<Uuid>,
     room_id: Option<Uuid>,
+}
+
+#[derive(Debug, Clone, FromRow)]
+struct WorkspaceLearningGroupRow {
+    id: Uuid,
+    learning_offering_id: Uuid,
+    code: String,
+    name: String,
+    status: String,
+    roster_status: String,
+    offering_code: String,
+    offering_name: String,
+    weekly_period_target: i32,
+    homeroom_ids: Vec<Uuid>,
+    eligible_instructor_ids: Vec<Uuid>,
 }
 
 #[derive(Debug, Serialize)]
@@ -365,6 +383,349 @@ pub async fn list_entries(
     .fetch_all(pool)
     .await?;
     hydrate_rows(pool, rows).await
+}
+
+pub async fn get_workspace(
+    pool: &PgPool,
+    query: TimetableWorkspaceQuery,
+    access: &AcademicResourceListFilter,
+) -> Result<TimetableWorkspace, AppError> {
+    const MAX_GROUPS: i64 = 2_000;
+    const MAX_HOMEROOMS: i64 = 500;
+    const MAX_ROOMS: i64 = 2_000;
+    const MAX_STAFF: i64 = 2_000;
+
+    let version = super::timetable_version_service::get_version(
+        pool,
+        query.timetable_version_id,
+        Utc::now().date_naive(),
+    )
+    .await?;
+    if version.academic_year_id != query.academic_year_id
+        || version.academic_term_id != query.academic_term_id
+    {
+        return Err(AppError::ValidationError(
+            "รุ่นตารางเรียนที่เลือกไม่ได้อยู่ในปีการศึกษาและภาคเรียนนี้".to_string(),
+        ));
+    }
+
+    let entry_query = TimetableQuery {
+        timetable_version_id: query.timetable_version_id,
+        academic_term_id: query.academic_term_id,
+        learning_group_id: None,
+        homeroom_id: None,
+        instructor_id: None,
+        room_id: None,
+        day_of_week: None,
+        entry_type: None,
+    };
+    let entries = list_entries(pool, &entry_query, access).await?;
+    let referenced_period_ids = entries
+        .iter()
+        .map(|entry| entry.bell_schedule_period_id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let bell_periods: Vec<BellSchedulePeriod> = sqlx::query_as(
+        r#"SELECT id, bell_schedule_id, name, start_time, end_time,
+                  order_index, applicable_days, is_active
+           FROM bell_schedule_periods
+           WHERE bell_schedule_id = $1
+             AND (is_active OR id = ANY($2))
+           ORDER BY order_index, id"#,
+    )
+    .bind(version.bell_schedule_id)
+    .bind(&referenced_period_ids)
+    .fetch_all(pool)
+    .await?;
+
+    let owner_ids = access.allowed_organization_unit_ids();
+    let group_rows: Vec<WorkspaceLearningGroupRow> = sqlx::query_as(
+        r#"SELECT learning_group.id,
+                  learning_group.learning_offering_id,
+                  learning_group.code,
+                  learning_group.name,
+                  learning_group.status,
+                  learning_group.roster_status,
+                  offering.code_snapshot AS offering_code,
+                  offering.name_snapshot AS offering_name,
+                  target.weekly_period_target,
+                  ARRAY(
+                      SELECT coverage.homeroom_id
+                      FROM learning_group_homerooms coverage
+                      JOIN homerooms homeroom ON homeroom.id = coverage.homeroom_id
+                      JOIN grade_levels grade ON grade.id = homeroom.grade_level_id
+                      WHERE coverage.learning_group_id = learning_group.id
+                      ORDER BY CASE grade.level_type
+                                   WHEN 'kindergarten' THEN 1
+                                   WHEN 'primary' THEN 2
+                                   WHEN 'secondary' THEN 3
+                                   ELSE 4
+                               END,
+                               grade.year,
+                               homeroom.room_number,
+                               homeroom.name,
+                               homeroom.id
+                  ) AS homeroom_ids,
+                  ARRAY(
+                      SELECT teacher.teacher_id
+                      FROM learning_group_teachers teacher
+                      JOIN users teacher_user ON teacher_user.id = teacher.teacher_id
+                      WHERE teacher.learning_group_id = learning_group.id
+                        AND teacher.starts_on <= version.effective_from
+                        AND (teacher.ends_on IS NULL OR teacher.ends_on >= version.effective_from)
+                        AND teacher_user.user_type = 'staff'
+                        AND teacher_user.status = 'active'
+                      ORDER BY CASE teacher.role
+                                   WHEN 'primary' THEN 1
+                                   WHEN 'secondary' THEN 2
+                                   ELSE 3
+                               END,
+                               teacher.starts_on,
+                               teacher.id
+                  ) AS eligible_instructor_ids
+           FROM learning_groups learning_group
+           JOIN learning_offerings offering
+             ON offering.id = learning_group.learning_offering_id
+           JOIN academic_timetable_version_targets target
+             ON target.timetable_version_id = $1
+            AND target.learning_offering_id = learning_group.learning_offering_id
+           JOIN academic_timetable_versions version ON version.id = target.timetable_version_id
+           WHERE learning_group.academic_term_id = $2
+             AND learning_group.academic_year_id = $3
+             AND ($4 OR offering.owning_organization_unit_id = ANY($5) OR EXISTS (
+                 SELECT 1
+                 FROM learning_groups assigned_group
+                 JOIN learning_group_teachers assigned_teacher
+                   ON assigned_teacher.learning_group_id = assigned_group.id
+                 WHERE assigned_group.learning_offering_id = offering.id
+                   AND assigned_teacher.teacher_id = $6
+             ))
+           ORDER BY learning_group.code, learning_group.id
+           LIMIT $7"#,
+    )
+    .bind(query.timetable_version_id)
+    .bind(query.academic_term_id)
+    .bind(query.academic_year_id)
+    .bind(access.includes_school_owned)
+    .bind(&owner_ids)
+    .bind(access.assigned_actor_id)
+    .bind(MAX_GROUPS + 1)
+    .fetch_all(pool)
+    .await?;
+    if group_rows.len() > MAX_GROUPS as usize {
+        return Err(AppError::ValidationError(
+            "จำนวนกลุ่มเรียนในพื้นที่จัดตารางเกิน 2000 กลุ่ม".to_string(),
+        ));
+    }
+
+    let relevant_homeroom_ids = group_rows
+        .iter()
+        .flat_map(|group| group.homeroom_ids.iter().copied())
+        .chain(entries.iter().filter_map(|entry| entry.homeroom_id))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let homerooms: Vec<TimetableWorkspaceHomeroom> = sqlx::query_as::<
+        _,
+        (
+            Uuid,
+            String,
+            String,
+            Uuid,
+            String,
+            i32,
+            Option<String>,
+            bool,
+        ),
+    >(
+        r#"SELECT homeroom.id,
+                  homeroom.code,
+                  homeroom.name,
+                  homeroom.grade_level_id,
+                  grade.level_type::text,
+                  grade.year,
+                  homeroom.room_number,
+                  coalesce(homeroom.is_active, false)
+           FROM homerooms homeroom
+           JOIN grade_levels grade ON grade.id = homeroom.grade_level_id
+           WHERE homeroom.academic_year_id = $1
+             AND (($2 AND coalesce(homeroom.is_active, false)) OR homeroom.id = ANY($3))
+           ORDER BY CASE grade.level_type
+                        WHEN 'kindergarten' THEN 1
+                        WHEN 'primary' THEN 2
+                        WHEN 'secondary' THEN 3
+                        ELSE 4
+                    END,
+                    grade.year,
+                    homeroom.room_number,
+                    homeroom.name,
+                    homeroom.id
+           LIMIT $4"#,
+    )
+    .bind(query.academic_year_id)
+    .bind(access.includes_school_owned)
+    .bind(&relevant_homeroom_ids)
+    .bind(MAX_HOMEROOMS + 1)
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .map(
+        |(
+            id,
+            code,
+            name,
+            grade_level_id,
+            grade_level_type,
+            grade_level_year,
+            room_number,
+            is_active,
+        )| {
+            TimetableWorkspaceHomeroom {
+                id,
+                code,
+                name,
+                grade_level_id,
+                grade_level_type,
+                grade_level_year,
+                room_number,
+                is_active,
+            }
+        },
+    )
+    .collect();
+    if homerooms.len() > MAX_HOMEROOMS as usize {
+        return Err(AppError::ValidationError(
+            "จำนวนห้องประจำชั้นในพื้นที่จัดตารางเกิน 500 ห้อง".to_string(),
+        ));
+    }
+
+    let referenced_room_ids = entries
+        .iter()
+        .filter_map(|entry| entry.room_id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let rooms: Vec<TimetableWorkspaceRoom> =
+        sqlx::query_as::<_, (Uuid, Option<String>, String, String)>(
+            r#"SELECT id, code, name_th, status::text
+           FROM rooms
+           WHERE status = 'ACTIVE' OR id = ANY($1)
+           ORDER BY coalesce(code, ''), name_th, id
+           LIMIT $2"#,
+        )
+        .bind(&referenced_room_ids)
+        .bind(MAX_ROOMS + 1)
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .map(|(id, code, name, status)| TimetableWorkspaceRoom {
+            id,
+            code,
+            name,
+            status,
+        })
+        .collect();
+    if rooms.len() > MAX_ROOMS as usize {
+        return Err(AppError::ValidationError(
+            "จำนวนห้องเรียนในพื้นที่จัดตารางเกิน 2000 ห้อง".to_string(),
+        ));
+    }
+
+    let eligible_staff_ids = group_rows
+        .iter()
+        .flat_map(|group| group.eligible_instructor_ids.iter().copied());
+    let referenced_staff_ids = entries.iter().flat_map(|entry| {
+        entry
+            .instructors
+            .iter()
+            .map(|instructor| instructor.user_id)
+    });
+    let staff_ids = eligible_staff_ids
+        .chain(referenced_staff_ids)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let staff: Vec<TimetableWorkspaceStaff> = sqlx::query_as::<_, (Uuid, String, String)>(
+        r#"SELECT id,
+                  coalesce(
+                      nullif(concat_ws(' ',
+                          nullif(concat(coalesce(title, ''), first_name), ''),
+                          nullif(last_name, '')
+                      ), ''),
+                      username,
+                      email
+                  ) AS display_name,
+                  status::text
+           FROM users
+           WHERE id = ANY($1) AND user_type = 'staff'
+           ORDER BY display_name, id
+           LIMIT $2"#,
+    )
+    .bind(&staff_ids)
+    .bind(MAX_STAFF + 1)
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .map(|(id, display_name, status)| TimetableWorkspaceStaff {
+        id,
+        display_name,
+        status,
+    })
+    .collect();
+    if staff.len() > MAX_STAFF as usize {
+        return Err(AppError::ValidationError(
+            "จำนวนครูในพื้นที่จัดตารางเกิน 2000 คน".to_string(),
+        ));
+    }
+
+    let mut scheduled_by_group: HashMap<Uuid, i32> = HashMap::new();
+    for group_id in entries.iter().filter_map(|entry| entry.learning_group_id) {
+        *scheduled_by_group.entry(group_id).or_default() += 1;
+    }
+    let learning_groups = group_rows
+        .iter()
+        .map(|group| TimetableWorkspaceLearningGroup {
+            id: group.id,
+            learning_offering_id: group.learning_offering_id,
+            code: group.code.clone(),
+            name: group.name.clone(),
+            status: group.status.clone(),
+            roster_status: group.roster_status.clone(),
+            offering_code: group.offering_code.clone(),
+            offering_name: group.offering_name.clone(),
+            homeroom_ids: group.homeroom_ids.clone(),
+            eligible_instructor_ids: group.eligible_instructor_ids.clone(),
+        })
+        .collect();
+    let unscheduled_demands = group_rows
+        .into_iter()
+        .map(|group| {
+            let scheduled_periods = scheduled_by_group.get(&group.id).copied().unwrap_or(0);
+            TimetableUnscheduledDemand {
+                learning_group_id: group.id,
+                learning_offering_id: group.learning_offering_id,
+                offering_code: group.offering_code,
+                offering_name: group.offering_name,
+                required_periods: group.weekly_period_target,
+                scheduled_periods,
+                remaining_periods: (group.weekly_period_target - scheduled_periods).max(0),
+                homeroom_ids: group.homeroom_ids,
+                eligible_instructor_ids: group.eligible_instructor_ids,
+            }
+        })
+        .collect();
+
+    Ok(TimetableWorkspace {
+        version,
+        bell_periods,
+        entries,
+        learning_groups,
+        homerooms,
+        rooms,
+        staff,
+        unscheduled_demands,
+    })
 }
 
 pub async fn get_entry(pool: &PgPool, entry_id: Uuid) -> Result<TimetableEntry, AppError> {

@@ -12,7 +12,9 @@ use crate::modules::academic::models::timetable::{
     FromCurrentRequest, MoveValidityCell, SwapTimetableEntriesRequest,
     SwapTimetableEntriesResponse, TemplateApplyResult, TemplateWithEntries, TimetableEntry,
     TimetableInstructor, TimetableOccupancyCell, TimetableTemplate, TimetableTemplateEntry,
-    TimetableTemplateTargetSelector, UpdateTemplateRequest, UpdateTimetableEntryRequest,
+    TimetableTemplateTargetSelector, TimetableUnscheduledDemand, TimetableWorkspace,
+    TimetableWorkspaceHomeroom, TimetableWorkspaceLearningGroup, TimetableWorkspaceRoom,
+    TimetableWorkspaceStaff, UpdateTemplateRequest, UpdateTimetableEntryRequest,
     ValidateMovesRequest,
 };
 use crate::modules::academic::models::timetable_version::{
@@ -286,6 +288,7 @@ use utoipa::OpenApi;
         crate::modules::academic::handlers::timetable::get_my_timetable,
         crate::modules::academic::core::handlers::list_my_context_options,
         crate::modules::academic::handlers::timetable::list_timetable_entries,
+        crate::modules::academic::handlers::timetable::get_timetable_workspace,
         crate::modules::academic::handlers::timetable::create_timetable_entry,
         crate::modules::academic::handlers::timetable::create_batch_timetable_entries,
         crate::modules::academic::handlers::timetable::update_timetable_entry,
@@ -1065,6 +1068,12 @@ use utoipa::OpenApi;
         ApiResponse<StudentActivityRegistrationResult>,
         TimetableEntry,
         TimetableInstructor,
+        TimetableWorkspace,
+        TimetableWorkspaceLearningGroup,
+        TimetableWorkspaceHomeroom,
+        TimetableWorkspaceRoom,
+        TimetableWorkspaceStaff,
+        TimetableUnscheduledDemand,
         CreateTimetableEntryRequest,
         UpdateTimetableEntryRequest,
         CreateBatchTimetableEntriesRequest,
@@ -1086,6 +1095,7 @@ use utoipa::OpenApi;
         TemplateApplyResult,
         ApiResponse<TimetableEntry>,
         ApiResponse<Vec<TimetableEntry>>,
+        ApiResponse<TimetableWorkspace>,
         ApiResponse<BatchTimetableResult>,
         ApiResponse<SwapTimetableEntriesResponse>,
         ApiResponse<Vec<MoveValidityCell>>,
@@ -3346,6 +3356,51 @@ mod tests {
             "get"
         )
         .contains(&("date".to_string(), true)));
+    }
+
+    #[test]
+    fn documents_timetable_workspace_contract() {
+        let document = school_api_value().expect("document should serialize");
+        assert_operations(
+            &document,
+            &[(
+                "/api/academic/timetable/workspace",
+                "get",
+                "getTimetableWorkspace",
+            )],
+        );
+        assert_eq!(
+            query_contract(&document, "/api/academic/timetable/workspace", "get"),
+            BTreeSet::from([
+                ("academicTermId".to_string(), true),
+                ("academicYearId".to_string(), true),
+                ("timetableVersionId".to_string(), true),
+            ])
+        );
+
+        let schemas = &document["components"]["schemas"];
+        for schema_name in [
+            "TimetableWorkspace",
+            "TimetableWorkspaceLearningGroup",
+            "TimetableWorkspaceHomeroom",
+            "TimetableWorkspaceRoom",
+            "TimetableWorkspaceStaff",
+            "TimetableUnscheduledDemand",
+        ] {
+            assert!(!schemas[schema_name].is_null(), "missing {schema_name}");
+        }
+        for field in [
+            "version",
+            "bellPeriods",
+            "entries",
+            "learningGroups",
+            "homerooms",
+            "rooms",
+            "staff",
+            "unscheduledDemands",
+        ] {
+            assert!(required(&schemas["TimetableWorkspace"]).contains(&field));
+        }
     }
 
     #[test]

@@ -387,7 +387,7 @@ pub(crate) async fn clone_draft_in_transaction(
     Ok(new_version_id)
 }
 
-async fn get_version(
+pub(crate) async fn get_version(
     pool: &PgPool,
     version_id: Uuid,
     display_date: NaiveDate,

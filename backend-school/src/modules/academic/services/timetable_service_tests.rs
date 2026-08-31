@@ -9,7 +9,7 @@ use crate::modules::academic::cutover_test_support::{
 };
 use crate::modules::academic::models::timetable::{
     CreateBatchTimetableEntriesRequest, CreateTimetableEntryRequest, SwapTimetableEntriesRequest,
-    TimetableQuery, UpdateTimetableEntryRequest,
+    TimetableQuery, TimetableWorkspaceQuery, UpdateTimetableEntryRequest,
 };
 use crate::modules::academic::models::timetable_version::CloneTimetableVersionRequest;
 use crate::modules::academic::models::timetable_version::TimetableVersion;
@@ -209,6 +209,223 @@ fn instructor_roles_json(
             .map(|(_, instructor)| instructor)
             .collect(),
     )
+}
+
+#[tokio::test]
+async fn workspace_loads_one_bounded_exact_instructor_board() {
+    let pool = migrated_pool("timetable_workspace_board").await;
+    let fixture = exact_instructor_fixture(&pool).await;
+    let offering_id: Uuid =
+        sqlx::query_scalar("SELECT learning_offering_id FROM learning_groups WHERE id = $1")
+            .bind(fixture.group_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let year_id: Uuid =
+        sqlx::query_scalar("SELECT academic_year_id FROM learning_groups WHERE id = $1")
+            .bind(fixture.group_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let homeroom_ids: Vec<Uuid> = sqlx::query_scalar(
+        r#"SELECT id
+           FROM homerooms
+           WHERE academic_year_id = $1 AND is_active
+           ORDER BY room_number, id
+           LIMIT 2"#,
+    )
+    .bind(year_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(homeroom_ids.len(), 2);
+    let period_ids: Vec<Uuid> = sqlx::query_scalar(
+        r#"SELECT period.id
+           FROM bell_schedule_periods period
+           WHERE period.bell_schedule_id = $1 AND period.is_active
+           ORDER BY period.order_index, period.id
+           LIMIT 2"#,
+    )
+    .bind(fixture.draft.bell_schedule_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(period_ids.len(), 2);
+    let referenced_inactive_room_id = Uuid::new_v4();
+    let unreferenced_inactive_room_id = Uuid::new_v4();
+    let unreferenced_inactive_staff_id = Uuid::new_v4();
+    let first_entry_id = Uuid::new_v4();
+    let second_entry_id = Uuid::new_v4();
+
+    sqlx::query("DELETE FROM academic_timetable_entries WHERE timetable_version_id = $1")
+        .bind(fixture.draft.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    for homeroom_id in &homeroom_ids {
+        sqlx::query(
+            r#"INSERT INTO learning_group_homerooms (
+                   id, learning_group_id, academic_term_id, academic_year_id,
+                   homeroom_id, coverage_source
+               ) VALUES (gen_random_uuid(), $1, $2, $3, $4, 'workspace_test')"#,
+        )
+        .bind(fixture.group_id)
+        .bind(fixture.term_id)
+        .bind(year_id)
+        .bind(homeroom_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    sqlx::query(
+        r#"INSERT INTO rooms (
+               id, name_th, code, room_type, capacity, status
+           ) VALUES
+               ($1, 'ห้องอ้างอิงที่ปิดแล้ว', 'WORKSPACE-REF', 'GENERAL', 30, 'INACTIVE'),
+               ($2, 'ห้องที่ปิดและไม่ถูกอ้างอิง', 'WORKSPACE-NOREF', 'GENERAL', 30, 'INACTIVE')"#,
+    )
+    .bind(referenced_inactive_room_id)
+    .bind(unreferenced_inactive_room_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"INSERT INTO users (
+               id, email, username, password_hash, first_name, last_name,
+               user_type, status
+           ) VALUES ($1, $2, $3, 'fixture-not-a-login',
+                     'ครูที่ไม่ถูกอ้างอิง', 'ปิดใช้งาน', 'staff', 'inactive')"#,
+    )
+    .bind(unreferenced_inactive_staff_id)
+    .bind(format!("{unreferenced_inactive_staff_id}@example.invalid"))
+    .bind(format!("inactive-{unreferenced_inactive_staff_id}"))
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE users SET status = 'inactive' WHERE id = $1")
+        .bind(fixture.teacher_b)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let updated_target = sqlx::query(
+        r#"UPDATE academic_timetable_version_targets
+           SET weekly_period_target = 3
+           WHERE timetable_version_id = $1 AND learning_offering_id = $2"#,
+    )
+    .bind(fixture.draft.id)
+    .bind(offering_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(updated_target.rows_affected(), 1);
+    sqlx::query(
+        r#"INSERT INTO academic_timetable_entries (
+               id, day_of_week, bell_schedule_period_id,
+               room_id, note, is_active, created_by, updated_by, entry_type, title,
+               homeroom_id, academic_term_id, batch_id,
+               academic_year_id, learning_offering_id, learning_group_id,
+               bell_schedule_id, migration_provenance, row_version,
+               timetable_version_id
+           ) VALUES
+               ($1, 'MON', $3, $5, NULL, true, $6, $6, 'COURSE', NULL,
+                NULL, $7, NULL, $8, $9, $10, $11, '{}'::jsonb, 1, $12),
+               ($2, 'TUE', $4, NULL, NULL, true, $6, $6, 'COURSE', NULL,
+                NULL, $7, NULL, $8, $9, $10, $11, '{}'::jsonb, 1, $12)"#,
+    )
+    .bind(first_entry_id)
+    .bind(second_entry_id)
+    .bind(period_ids[0])
+    .bind(period_ids[1])
+    .bind(referenced_inactive_room_id)
+    .bind(fixture.actor_id)
+    .bind(fixture.term_id)
+    .bind(year_id)
+    .bind(offering_id)
+    .bind(fixture.group_id)
+    .bind(fixture.draft.bell_schedule_id)
+    .bind(fixture.draft.id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"INSERT INTO timetable_entry_instructors (
+               id, entry_id, instructor_id, role
+           ) VALUES
+               (gen_random_uuid(), $1, $3, 'primary'),
+               (gen_random_uuid(), $1, $4, 'secondary'),
+               (gen_random_uuid(), $2, $3, 'primary')"#,
+    )
+    .bind(first_entry_id)
+    .bind(second_entry_id)
+    .bind(fixture.teacher_a)
+    .bind(fixture.teacher_b)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let workspace = timetable_service::get_workspace(
+        &pool,
+        TimetableWorkspaceQuery {
+            academic_year_id: year_id,
+            academic_term_id: fixture.term_id,
+            timetable_version_id: fixture.draft.id,
+        },
+        &school_access(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(workspace.entries.len(), 2);
+    assert_eq!(workspace.entries[0].instructors.len(), 2);
+    let group = workspace
+        .learning_groups
+        .iter()
+        .find(|group| group.id == fixture.group_id)
+        .unwrap();
+    assert_eq!(group.homeroom_ids, homeroom_ids);
+    let demand = workspace
+        .unscheduled_demands
+        .iter()
+        .find(|demand| demand.learning_group_id == fixture.group_id)
+        .unwrap();
+    assert_eq!(demand.required_periods, 3);
+    assert_eq!(demand.scheduled_periods, 2);
+    assert_eq!(demand.remaining_periods, 1);
+    assert!(workspace
+        .rooms
+        .iter()
+        .any(|room| room.id == referenced_inactive_room_id));
+    assert!(!workspace
+        .rooms
+        .iter()
+        .any(|room| room.id == unreferenced_inactive_room_id));
+    assert!(workspace
+        .staff
+        .iter()
+        .any(|staff| staff.id == fixture.teacher_b));
+    assert!(!workspace
+        .staff
+        .iter()
+        .any(|staff| staff.id == unreferenced_inactive_staff_id));
+}
+
+#[tokio::test]
+async fn workspace_rejects_a_version_outside_the_requested_academic_context() {
+    let pool = migrated_pool("timetable_workspace_context_guard").await;
+    let fixture = exact_instructor_fixture(&pool).await;
+
+    let result = timetable_service::get_workspace(
+        &pool,
+        TimetableWorkspaceQuery {
+            academic_year_id: Uuid::new_v4(),
+            academic_term_id: fixture.term_id,
+            timetable_version_id: fixture.draft.id,
+        },
+        &school_access(),
+    )
+    .await;
+
+    assert!(matches!(result, Err(AppError::ValidationError(_))));
 }
 
 #[tokio::test]

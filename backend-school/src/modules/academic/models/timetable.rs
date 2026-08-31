@@ -3,7 +3,9 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
+use crate::modules::academic::core::models::BellSchedulePeriod;
 use crate::modules::academic::delivery::models::ActivitySchedulingMode;
+use crate::modules::academic::models::timetable_version::TimetableVersion;
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -120,6 +122,89 @@ pub struct TimetableQuery {
     pub room_id: Option<Uuid>,
     pub day_of_week: Option<String>,
     pub entry_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TimetableWorkspaceQuery {
+    pub academic_year_id: Uuid,
+    pub academic_term_id: Uuid,
+    pub timetable_version_id: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TimetableWorkspace {
+    pub version: TimetableVersion,
+    pub bell_periods: Vec<BellSchedulePeriod>,
+    pub entries: Vec<TimetableEntry>,
+    pub learning_groups: Vec<TimetableWorkspaceLearningGroup>,
+    pub homerooms: Vec<TimetableWorkspaceHomeroom>,
+    pub rooms: Vec<TimetableWorkspaceRoom>,
+    pub staff: Vec<TimetableWorkspaceStaff>,
+    pub unscheduled_demands: Vec<TimetableUnscheduledDemand>,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TimetableWorkspaceLearningGroup {
+    pub id: Uuid,
+    pub learning_offering_id: Uuid,
+    pub code: String,
+    pub name: String,
+    pub status: String,
+    pub roster_status: String,
+    pub offering_code: String,
+    pub offering_name: String,
+    pub homeroom_ids: Vec<Uuid>,
+    pub eligible_instructor_ids: Vec<Uuid>,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TimetableWorkspaceHomeroom {
+    pub id: Uuid,
+    pub code: String,
+    pub name: String,
+    pub grade_level_id: Uuid,
+    pub grade_level_type: String,
+    pub grade_level_year: i32,
+    #[schema(required = true)]
+    pub room_number: Option<String>,
+    pub is_active: bool,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TimetableWorkspaceRoom {
+    pub id: Uuid,
+    #[schema(required = true)]
+    pub code: Option<String>,
+    pub name: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TimetableWorkspaceStaff {
+    pub id: Uuid,
+    pub display_name: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TimetableUnscheduledDemand {
+    pub learning_group_id: Uuid,
+    pub learning_offering_id: Uuid,
+    pub offering_code: String,
+    pub offering_name: String,
+    pub required_periods: i32,
+    pub scheduled_periods: i32,
+    pub remaining_periods: i32,
+    pub homeroom_ids: Vec<Uuid>,
+    pub eligible_instructor_ids: Vec<Uuid>,
 }
 
 #[derive(Debug, Clone, Deserialize, IntoParams)]

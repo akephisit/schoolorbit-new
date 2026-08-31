@@ -11,7 +11,8 @@ use crate::error::AppError;
 use crate::modules::academic::models::timetable::{
     CreateBatchTimetableEntriesRequest, CreateTimetableEntryRequest, DeleteTimetableEntryQuery,
     PersonalTimetableQuery, SwapTimetableEntriesRequest, TimetableBatchMutationQuery,
-    TimetableOccupancyQuery, TimetableQuery, UpdateTimetableEntryRequest, ValidateMovesRequest,
+    TimetableOccupancyQuery, TimetableQuery, TimetableWorkspaceQuery, UpdateTimetableEntryRequest,
+    ValidateMovesRequest,
 };
 use crate::modules::academic::services::{
     daily_teaching_service, timetable_service, timetable_version_service,
@@ -52,6 +53,36 @@ pub async fn list_timetable_entries(
     .await?;
     let entries = timetable_service::list_entries(&context.tenant.pool, &query, &access).await?;
     Ok(Json(ApiResponse::ok(entries)).into_response())
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/timetable/workspace",
+    operation_id = "getTimetableWorkspace",
+    params(TimetableWorkspaceQuery),
+    responses(
+        (status = 200, description = "Bounded timetable workspace for the selected version", body = ApiResponse<crate::modules::academic::models::timetable::TimetableWorkspace>),
+        (status = 400, description = "Timetable version does not match the academic context", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Timetable read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Timetable version not found", body = ApiErrorResponse)
+    ),
+    tag = "academic"
+)]
+pub async fn get_timetable_workspace(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<TimetableWorkspaceQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let access = require_learning_offering_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        OfferingAction::Read,
+    )
+    .await?;
+    let workspace = timetable_service::get_workspace(&context.tenant.pool, query, &access).await?;
+    Ok(Json(ApiResponse::ok(workspace)).into_response())
 }
 
 #[utoipa::path(
