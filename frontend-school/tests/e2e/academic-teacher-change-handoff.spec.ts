@@ -427,7 +427,7 @@ test('manual mode opens the exact target timetable and never sends apply', async
 	const mocked = await mockTeacherHandoff(page);
 	await page.goto(deliveryUrl());
 
-	await page.getByRole('combobox').filter({ hasText: 'ให้ครูคนเดียวสอนทุกคาบที่เลือก' }).click();
+	await page.getByRole('button', { name: 'ให้ครูคนเดียวสอนทุกคาบที่เลือก' }).click();
 	await page.getByRole('option', { name: 'จัดเองในหน้าตารางสอน' }).click();
 	await expect(page.getByText('ระบบจะไม่เปลี่ยนครูในคาบให้อัตโนมัติ')).toBeVisible();
 	await expect(page.getByRole('link', { name: /เปิดหน้าตารางสอนเพื่อจัดเอง/ })).toHaveAttribute(
