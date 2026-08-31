@@ -6,7 +6,9 @@ use crate::{
             seed_academic_cutover_fixture, CutoverFixture,
         },
         models::{
-            timetable::{CreateTimetableEntryRequest, UpdateTimetableEntryRequest},
+            timetable::{
+                CreateTimetableEntryRequest, TimetableWorkspaceQuery, UpdateTimetableEntryRequest,
+            },
             timetable_version::CloneTimetableVersionRequest,
         },
         services::{timetable_service, timetable_version_service},
@@ -22,21 +24,25 @@ use super::{
         AcademicChangeFindingCode, AcademicChangeFindingSeverity, AcademicChangeImpactCounts,
         AcademicTermChangeSetStatus, ActivityAttendanceRequirement, ActivityPassCriteria,
         ActivityRegistrationType, ActivitySchedulingMode, AddDatedRosterMembershipRequest,
-        ApplyCurriculumOfferingsRequest, ApplyRosterRequest, CancelAcademicTermChangeSetRequest,
-        CourseGradingPolicy, CreateAcademicTermChangeSetRequest, CreateActivityOfferingRequest,
+        ApplyCurriculumOfferingsRequest, ApplyRosterRequest, ApplyTeacherHandoffRequest,
+        CancelAcademicTermChangeSetRequest, CourseGradingPolicy,
+        CreateAcademicTermChangeSetRequest, CreateActivityOfferingRequest,
         CreateCourseOfferingRequest, CreateLearningGroupRequest, CreateLearningOfferingRequest,
         CurriculumDeliveryAlignmentState, CurriculumOfferingPreview, CurriculumPreparationChoice,
         DeleteAcademicTermChangeItemRequest, LearningOfferingKind, LearningOfferingQuery,
         LearningOfferingSnapshot, LearningOfferingStatus, LearningTeacherRole, OfferingTargetInput,
         OfferingTargetKind, PreparationAction, PreparationGroupingState,
-        PreviewCurriculumOfferingsRequest, PublishAcademicTermChangeSetRequest,
-        PublishLearningOfferingRequest, PublishRosterRequest, RemoveDatedRosterMembershipRequest,
-        ReplaceLearningGroupHomeroomsRequest, ReplaceLearningGroupTeachersRequest,
-        RosterOverrideAction, RosterOverrideInput, StudentActivityRegistrationQuery,
-        TeacherAssignmentInput, UpdateAcademicTermChangeSetRequest, UpdateLearningOfferingRequest,
+        PreviewCurriculumOfferingsRequest, PreviewTeacherHandoffRequest,
+        PublishAcademicTermChangeSetRequest, PublishLearningOfferingRequest, PublishRosterRequest,
+        RemoveDatedRosterMembershipRequest, ReplaceLearningGroupHomeroomsRequest,
+        ReplaceLearningGroupTeachersRequest, RosterOverrideAction, RosterOverrideInput,
+        StudentActivityRegistrationQuery, TeacherAssignmentInput, TeacherHandoffEntryVersion,
+        TeacherHandoffMode, UpdateAcademicTermChangeSetRequest, UpdateLearningOfferingRequest,
         UpsertAcademicTermChangeItemRequest,
     },
-    services::{activities, change_sets, groups, offerings, roster_memberships, workspaces},
+    services::{
+        activities, change_sets, groups, offerings, roster_memberships, teacher_handoff, workspaces,
+    },
 };
 use crate::error::AppError;
 use crate::policies::resource_access_policy::AcademicResourceListFilter;
@@ -572,7 +578,7 @@ async fn prepare_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 54).await.unwrap();
+    apply_migrations_through(&pool, 55).await.unwrap();
     pool
 }
 
@@ -869,6 +875,777 @@ async fn create_runtime_change_set(
     )
     .await
     .expect("a planning term must accept a draft operational change")
+}
+
+async fn fill_change_set_target_deficits(
+    pool: &PgPool,
+    actor_user_id: Uuid,
+    academic_term_id: Uuid,
+    timetable_version_id: Uuid,
+) {
+    let deficits: Vec<(Uuid, String, i64)> = sqlx::query_as(
+        r#"SELECT learning_group.id, upper(offering.kind)::text,
+                  greatest(target.weekly_period_target - count(entry.id), 0)::bigint
+           FROM academic_timetable_version_targets target
+           JOIN learning_offerings offering ON offering.id = target.learning_offering_id
+           JOIN learning_groups learning_group
+             ON learning_group.learning_offering_id = target.learning_offering_id
+            AND learning_group.status <> 'closed'
+           LEFT JOIN academic_timetable_entries entry
+             ON entry.timetable_version_id = target.timetable_version_id
+            AND entry.learning_group_id = learning_group.id
+            AND entry.is_active
+           WHERE target.timetable_version_id = $1
+           GROUP BY learning_group.id, offering.kind, target.weekly_period_target
+           HAVING count(entry.id) < target.weekly_period_target
+           ORDER BY learning_group.id"#,
+    )
+    .bind(timetable_version_id)
+    .fetch_all(pool)
+    .await
+    .unwrap();
+    for (group_id, entry_type, missing_count) in deficits {
+        let instructor_ids: Vec<Uuid> = sqlx::query_scalar(
+            r#"SELECT assignment.teacher_id
+               FROM learning_group_teachers assignment
+               JOIN academic_timetable_versions version ON version.id = $2
+               JOIN users teacher ON teacher.id = assignment.teacher_id
+               WHERE assignment.learning_group_id = $1
+                 AND assignment.starts_on <= version.effective_from
+                 AND (assignment.ends_on IS NULL OR assignment.ends_on >= version.effective_from)
+                 AND teacher.status = 'active'
+               ORDER BY CASE assignment.role WHEN 'primary' THEN 1 ELSE 2 END,
+                        assignment.starts_on, assignment.teacher_id"#,
+        )
+        .bind(group_id)
+        .bind(timetable_version_id)
+        .fetch_all(pool)
+        .await
+        .unwrap();
+        for _ in 0..missing_count {
+            let slots: Vec<(String, Uuid)> = sqlx::query_as(
+                r#"SELECT day.code, period.id
+                   FROM (VALUES ('MON'), ('TUE'), ('WED'), ('THU'), ('FRI')) AS day(code)
+                   JOIN academic_terms term ON term.id = $1
+                   JOIN bell_schedule_periods period
+                     ON period.bell_schedule_id = term.bell_schedule_id
+                    AND period.is_active
+                   ORDER BY day.code, period.order_index
+                   LIMIT 100"#,
+            )
+            .bind(academic_term_id)
+            .fetch_all(pool)
+            .await
+            .expect("fixture must leave enough empty timetable slots");
+            let mut placed = false;
+            for (day_of_week, bell_schedule_period_id) in slots {
+                let result = timetable_service::create_entry(
+                    pool,
+                    actor_user_id,
+                    CreateTimetableEntryRequest {
+                        timetable_version_id,
+                        academic_term_id,
+                        learning_group_id: Some(group_id),
+                        homeroom_id: None,
+                        day_of_week,
+                        bell_schedule_period_id,
+                        room_id: None,
+                        note: Some("เติมคาบสำหรับทดสอบ readiness".to_string()),
+                        entry_type: entry_type.clone(),
+                        title: None,
+                        instructor_ids: instructor_ids.clone(),
+                    },
+                )
+                .await;
+                if result.is_ok() {
+                    placed = true;
+                    break;
+                }
+            }
+            assert!(placed, "fixture must leave a valid timetable slot");
+        }
+    }
+}
+
+#[tokio::test]
+async fn teacher_change_items_support_add_adjust_stop_and_delete() {
+    let pool = prepare_delivery_runtime_fixture("academic_teacher_change_items").await;
+    let context = operational_change_runtime_context(&pool).await;
+    let change_set = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        14,
+        "teacher-change-items:create",
+    )
+    .await;
+    let (group_id, assignment_id, current_teacher_id): (Uuid, Uuid, Uuid) = sqlx::query_as(
+        r#"SELECT learning_group.id, teacher.id, teacher.teacher_id
+           FROM learning_groups learning_group
+           JOIN learning_group_teachers teacher
+             ON teacher.learning_group_id = learning_group.id
+           WHERE learning_group.academic_term_id = $1
+             AND learning_group.status = 'published'
+             AND teacher.starts_on < $2
+             AND (teacher.ends_on IS NULL OR teacher.ends_on >= $2)
+           ORDER BY learning_group.id, teacher.id
+           LIMIT 1"#,
+    )
+    .bind(context.term_id)
+    .bind(change_set.effective_from)
+    .fetch_one(&pool)
+    .await
+    .expect("fixture must contain an effective teacher episode");
+    let new_teacher_id = stable_uuid("teacher-change-items:new-teacher");
+    sqlx::query(
+        r#"INSERT INTO users (
+               id, email, username, password_hash, first_name, last_name,
+               user_type, status
+           ) VALUES ($1, $2, $3, 'fixture-not-a-login', 'ครูใหม่', 'กลางภาค',
+                     'staff', 'active')"#,
+    )
+    .bind(new_teacher_id)
+    .bind(format!("{new_teacher_id}@example.invalid"))
+    .bind(format!("teacher-{new_teacher_id}"))
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let added = change_sets::upsert_change_item(
+        &pool,
+        context.teacher_id,
+        change_set.id,
+        UpsertAcademicTermChangeItemRequest::AddGroupTeacher {
+            change_set_row_version: change_set.row_version,
+            item_row_version: None,
+            learning_group_id: group_id,
+            teacher_id: new_teacher_id,
+            teacher_role: LearningTeacherRole::Secondary,
+        },
+    )
+    .await
+    .expect("an active staff member must be addable at the effective date");
+    let (add_item_id, add_item_row_version) = added
+        .items
+        .iter()
+        .find_map(|item| match item {
+            super::models::AcademicTermChangeItem::AddGroupTeacher {
+                id,
+                learning_group_id,
+                teacher_id,
+                teacher_role,
+                row_version,
+                learning_group_label,
+                teacher_label,
+                ..
+            } => {
+                assert_eq!(*learning_group_id, group_id);
+                assert_eq!(*teacher_id, new_teacher_id);
+                assert_eq!(*teacher_role, LearningTeacherRole::Secondary);
+                assert!(!learning_group_label.is_empty());
+                assert!(teacher_label.contains("ครูใหม่"));
+                Some((*id, *row_version))
+            }
+            _ => None,
+        })
+        .expect("response must hydrate the typed add-teacher item");
+    let group_offering_id: Uuid =
+        sqlx::query_scalar("SELECT learning_offering_id FROM learning_groups WHERE id = $1")
+            .bind(group_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        offerings::operational_change_offering_ids(&pool, added.id)
+            .await
+            .expect("teacher items must authorize and signal through their learning group"),
+        vec![group_offering_id]
+    );
+
+    let stale = change_sets::upsert_change_item(
+        &pool,
+        context.teacher_id,
+        change_set.id,
+        UpsertAcademicTermChangeItemRequest::AddGroupTeacher {
+            change_set_row_version: change_set.row_version,
+            item_row_version: Some(add_item_row_version),
+            learning_group_id: group_id,
+            teacher_id: new_teacher_id,
+            teacher_role: LearningTeacherRole::Primary,
+        },
+    )
+    .await
+    .expect_err("a stale change-set revision must reject the edit");
+    assert!(matches!(stale, AppError::Conflict(_)));
+
+    let adjusted = change_sets::upsert_change_item(
+        &pool,
+        context.teacher_id,
+        change_set.id,
+        UpsertAcademicTermChangeItemRequest::AdjustGroupTeacherRole {
+            change_set_row_version: added.row_version,
+            item_row_version: None,
+            learning_group_id: group_id,
+            learning_group_teacher_id: assignment_id,
+            teacher_id: current_teacher_id,
+            teacher_role: LearningTeacherRole::Assistant,
+        },
+    )
+    .await
+    .expect("an effective assignment must accept a role adjustment item");
+    let (adjust_item_id, adjust_item_row_version) = adjusted
+        .items
+        .iter()
+        .find_map(|item| match item {
+            super::models::AcademicTermChangeItem::AdjustGroupTeacherRole {
+                id,
+                learning_group_teacher_id,
+                teacher_role,
+                row_version,
+                ..
+            } if *learning_group_teacher_id == assignment_id => {
+                assert_eq!(*teacher_role, LearningTeacherRole::Assistant);
+                Some((*id, *row_version))
+            }
+            _ => None,
+        })
+        .expect("response must hydrate the typed role-adjustment item");
+
+    let after_delete_adjust = change_sets::delete_change_item(
+        &pool,
+        context.teacher_id,
+        change_set.id,
+        adjust_item_id,
+        DeleteAcademicTermChangeItemRequest {
+            change_set_row_version: adjusted.row_version,
+            item_row_version: adjust_item_row_version,
+        },
+    )
+    .await
+    .expect("a draft teacher-role item must be deletable");
+    let stopped = change_sets::upsert_change_item(
+        &pool,
+        context.teacher_id,
+        change_set.id,
+        UpsertAcademicTermChangeItemRequest::StopGroupTeacher {
+            change_set_row_version: after_delete_adjust.row_version,
+            item_row_version: None,
+            learning_group_id: group_id,
+            learning_group_teacher_id: assignment_id,
+            teacher_id: current_teacher_id,
+        },
+    )
+    .await
+    .expect("an effective assignment must be stoppable");
+    let (stop_item_id, stop_item_row_version) = stopped
+        .items
+        .iter()
+        .find_map(|item| match item {
+            super::models::AcademicTermChangeItem::StopGroupTeacher {
+                id,
+                learning_group_teacher_id,
+                row_version,
+                ..
+            } if *learning_group_teacher_id == assignment_id => Some((*id, *row_version)),
+            _ => None,
+        })
+        .expect("response must hydrate the typed stop-teacher item");
+    let after_delete_stop = change_sets::delete_change_item(
+        &pool,
+        context.teacher_id,
+        change_set.id,
+        stop_item_id,
+        DeleteAcademicTermChangeItemRequest {
+            change_set_row_version: stopped.row_version,
+            item_row_version: stop_item_row_version,
+        },
+    )
+    .await
+    .expect("a draft stop-teacher item must be deletable");
+    let add_item = after_delete_stop
+        .items
+        .iter()
+        .find_map(|item| match item {
+            super::models::AcademicTermChangeItem::AddGroupTeacher {
+                id, row_version, ..
+            } if *id == add_item_id => Some((*id, *row_version)),
+            _ => None,
+        })
+        .expect("the independent add-teacher item must remain");
+    change_sets::delete_change_item(
+        &pool,
+        context.teacher_id,
+        change_set.id,
+        add_item.0,
+        DeleteAcademicTermChangeItemRequest {
+            change_set_row_version: after_delete_stop.row_version,
+            item_row_version: add_item.1,
+        },
+    )
+    .await
+    .expect("a draft add-teacher item must be deletable");
+}
+
+#[tokio::test]
+async fn teacher_handoff_preview_and_apply_replace_exact_instructors_atomically() {
+    let pool = prepare_delivery_runtime_fixture("academic_teacher_handoff_apply").await;
+    let context = operational_change_runtime_context(&pool).await;
+    let change_set = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        14,
+        "teacher-handoff:create",
+    )
+    .await;
+    let (entry_id, group_id, stopped_assignment_id, stopped_teacher_id): (Uuid, Uuid, Uuid, Uuid) =
+        sqlx::query_as(
+            r#"SELECT entry.id, entry.learning_group_id, assignment.id,
+                  instructor.instructor_id
+           FROM academic_timetable_entries entry
+           JOIN timetable_entry_instructors instructor ON instructor.entry_id = entry.id
+           JOIN learning_group_teachers assignment
+             ON assignment.learning_group_id = entry.learning_group_id
+            AND assignment.teacher_id = instructor.instructor_id
+           WHERE entry.timetable_version_id = $1
+             AND entry.learning_group_id IS NOT NULL
+             AND entry.is_active
+             AND assignment.starts_on < $2
+             AND (assignment.ends_on IS NULL OR assignment.ends_on >= $2)
+           ORDER BY entry.id, instructor.instructor_id
+           LIMIT 1"#,
+        )
+        .bind(change_set.target_timetable_version_id)
+        .bind(change_set.effective_from)
+        .fetch_one(&pool)
+        .await
+        .expect("target draft must contain an entry with an effective exact instructor");
+    fill_change_set_target_deficits(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        change_set.target_timetable_version_id,
+    )
+    .await;
+    let replacement_teacher_id = stable_uuid("teacher-handoff:replacement");
+    sqlx::query(
+        r#"INSERT INTO users (
+               id, email, username, password_hash, first_name, last_name,
+               user_type, status
+           ) VALUES ($1, $2, $3, 'fixture-not-a-login', 'ครูรับช่วง', 'ทดสอบ',
+                     'staff', 'active')"#,
+    )
+    .bind(replacement_teacher_id)
+    .bind(format!("{replacement_teacher_id}@example.invalid"))
+    .bind(format!("teacher-{replacement_teacher_id}"))
+    .execute(&pool)
+    .await
+    .unwrap();
+    let coteacher_id = stable_uuid("teacher-handoff:coteacher");
+    sqlx::query(
+        r#"INSERT INTO users (
+               id, email, username, password_hash, first_name, last_name,
+               user_type, status
+           ) VALUES ($1, $2, $3, 'fixture-not-a-login', 'ครูร่วม', 'ทดสอบ',
+                     'staff', 'active')"#,
+    )
+    .bind(coteacher_id)
+    .bind(format!("{coteacher_id}@example.invalid"))
+    .bind(format!("teacher-{coteacher_id}"))
+    .execute(&pool)
+    .await
+    .unwrap();
+    let with_replacement = change_sets::upsert_change_item(
+        &pool,
+        context.teacher_id,
+        change_set.id,
+        UpsertAcademicTermChangeItemRequest::AddGroupTeacher {
+            change_set_row_version: change_set.row_version,
+            item_row_version: None,
+            learning_group_id: group_id,
+            teacher_id: replacement_teacher_id,
+            teacher_role: LearningTeacherRole::Primary,
+        },
+    )
+    .await
+    .unwrap();
+    let with_coteacher = change_sets::upsert_change_item(
+        &pool,
+        context.teacher_id,
+        change_set.id,
+        UpsertAcademicTermChangeItemRequest::AddGroupTeacher {
+            change_set_row_version: with_replacement.row_version,
+            item_row_version: None,
+            learning_group_id: group_id,
+            teacher_id: coteacher_id,
+            teacher_role: LearningTeacherRole::Secondary,
+        },
+    )
+    .await
+    .unwrap();
+    let changed = change_sets::upsert_change_item(
+        &pool,
+        context.teacher_id,
+        change_set.id,
+        UpsertAcademicTermChangeItemRequest::StopGroupTeacher {
+            change_set_row_version: with_coteacher.row_version,
+            item_row_version: None,
+            learning_group_id: group_id,
+            learning_group_teacher_id: stopped_assignment_id,
+            teacher_id: stopped_teacher_id,
+        },
+    )
+    .await
+    .unwrap();
+    let stop_item_id = changed
+        .items
+        .iter()
+        .find_map(|item| match item {
+            super::models::AcademicTermChangeItem::StopGroupTeacher { id, .. } => Some(*id),
+            _ => None,
+        })
+        .unwrap();
+    let version_row_version: i64 =
+        sqlx::query_scalar("SELECT row_version FROM academic_timetable_versions WHERE id = $1")
+            .bind(changed.target_timetable_version_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let manual = teacher_handoff::preview(
+        &pool,
+        changed.id,
+        PreviewTeacherHandoffRequest {
+            change_set_row_version: changed.row_version,
+            target_timetable_version_row_version: version_row_version,
+            teacher_change_item_id: stop_item_id,
+            entry_ids: Vec::new(),
+            mode: TeacherHandoffMode::Manual,
+            instructor_ids: Vec::new(),
+        },
+    )
+    .await
+    .expect("manual handoff must return the affected entries without a mutation proposal");
+    assert!(!manual.can_apply);
+    assert!(manual.preview_hash.is_none());
+    assert!(manual.proposed_entries.is_empty());
+    assert!(manual
+        .timetable_route
+        .contains(&format!("academicYearId={}", changed.academic_year_id)));
+    assert!(manual
+        .timetable_route
+        .contains(&format!("academicTermId={}", changed.academic_term_id)));
+    assert!(manual.timetable_route.contains(&format!(
+        "timetableVersionId={}",
+        changed.target_timetable_version_id
+    )));
+    assert!(manual.timetable_route.contains("view=group"));
+    assert!(manual
+        .timetable_route
+        .contains(&format!("ownerId={group_id}")));
+
+    let coteacher_preview = teacher_handoff::preview(
+        &pool,
+        changed.id,
+        PreviewTeacherHandoffRequest {
+            change_set_row_version: changed.row_version,
+            target_timetable_version_row_version: version_row_version,
+            teacher_change_item_id: stop_item_id,
+            entry_ids: vec![entry_id],
+            mode: TeacherHandoffMode::AssignCoteachers,
+            instructor_ids: vec![coteacher_id, replacement_teacher_id],
+        },
+    )
+    .await
+    .expect("two projected teachers must preview as an exact co-teacher set");
+    assert!(coteacher_preview.can_apply);
+    let coteacher_entry = coteacher_preview
+        .proposed_entries
+        .iter()
+        .find(|entry| entry.entry_id == entry_id)
+        .unwrap();
+    assert!(coteacher_entry
+        .after_instructors
+        .iter()
+        .any(|instructor| instructor.instructor_id == replacement_teacher_id));
+    assert!(coteacher_entry
+        .after_instructors
+        .iter()
+        .any(|instructor| instructor.instructor_id == coteacher_id));
+
+    let ineligible_teacher_id = stable_uuid("teacher-handoff:ineligible");
+    sqlx::query(
+        r#"INSERT INTO users (
+               id, email, username, password_hash, first_name, last_name,
+               user_type, status
+           ) VALUES ($1, $2, $3, 'fixture-not-a-login', 'ครูนอกทีม', 'ทดสอบ',
+                     'staff', 'active')"#,
+    )
+    .bind(ineligible_teacher_id)
+    .bind(format!("{ineligible_teacher_id}@example.invalid"))
+    .bind(format!("teacher-{ineligible_teacher_id}"))
+    .execute(&pool)
+    .await
+    .unwrap();
+    let ineligible = teacher_handoff::preview(
+        &pool,
+        changed.id,
+        PreviewTeacherHandoffRequest {
+            change_set_row_version: changed.row_version,
+            target_timetable_version_row_version: version_row_version,
+            teacher_change_item_id: stop_item_id,
+            entry_ids: vec![entry_id],
+            mode: TeacherHandoffMode::AssignOne,
+            instructor_ids: vec![ineligible_teacher_id],
+        },
+    )
+    .await
+    .expect("ineligible teachers must be reported as a typed preview conflict");
+    assert!(!ineligible.can_apply);
+    assert!(ineligible.conflicts.iter().any(|conflict| {
+        conflict.kind == super::models::TeacherHandoffConflictKind::IneligibleInstructor
+    }));
+
+    let preview = teacher_handoff::preview(
+        &pool,
+        changed.id,
+        PreviewTeacherHandoffRequest {
+            change_set_row_version: changed.row_version,
+            target_timetable_version_row_version: version_row_version,
+            teacher_change_item_id: stop_item_id,
+            entry_ids: Vec::new(),
+            mode: TeacherHandoffMode::AssignOne,
+            instructor_ids: vec![replacement_teacher_id],
+        },
+    )
+    .await
+    .expect("an eligible replacement without a collision must preview");
+    assert!(preview.can_apply);
+    assert!(preview.conflicts.is_empty());
+    assert!(!preview.proposed_entries.is_empty());
+    let proposed = preview
+        .proposed_entries
+        .iter()
+        .find(|entry| entry.entry_id == entry_id)
+        .unwrap();
+    assert!(proposed
+        .before_instructors
+        .iter()
+        .any(|instructor| instructor.instructor_id == stopped_teacher_id));
+    assert!(proposed
+        .after_instructors
+        .iter()
+        .any(|instructor| instructor.instructor_id == replacement_teacher_id));
+    assert!(!proposed
+        .after_instructors
+        .iter()
+        .any(|instructor| instructor.instructor_id == stopped_teacher_id));
+
+    let stale_apply_request = ApplyTeacherHandoffRequest {
+        change_set_row_version: changed.row_version,
+        target_timetable_version_row_version: version_row_version,
+        teacher_change_item_id: stop_item_id,
+        entries: preview
+            .proposed_entries
+            .iter()
+            .map(|entry| TeacherHandoffEntryVersion {
+                entry_id: entry.entry_id,
+                row_version: entry.row_version,
+            })
+            .collect(),
+        mode: TeacherHandoffMode::AssignOne,
+        instructor_ids: vec![replacement_teacher_id],
+        preview_hash: preview.preview_hash.clone().unwrap(),
+        idempotency_key: stable_uuid("teacher-handoff:stale-apply"),
+    };
+
+    sqlx::query(
+        "UPDATE academic_timetable_versions SET row_version = row_version + 1 WHERE id = $1",
+    )
+    .bind(changed.target_timetable_version_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let stale = teacher_handoff::apply(&pool, context.teacher_id, changed.id, stale_apply_request)
+        .await
+        .expect_err("a handoff based on a stale timetable revision must conflict");
+    assert!(matches!(stale, AppError::Conflict(_)));
+    let unchanged_ids: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT instructor_id FROM timetable_entry_instructors WHERE entry_id = $1 ORDER BY instructor_id",
+    )
+    .bind(entry_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert!(unchanged_ids.contains(&stopped_teacher_id));
+    assert!(!unchanged_ids.contains(&replacement_teacher_id));
+
+    let fresh_version_row_version: i64 =
+        sqlx::query_scalar("SELECT row_version FROM academic_timetable_versions WHERE id = $1")
+            .bind(changed.target_timetable_version_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let fresh_preview = teacher_handoff::preview(
+        &pool,
+        changed.id,
+        PreviewTeacherHandoffRequest {
+            change_set_row_version: changed.row_version,
+            target_timetable_version_row_version: fresh_version_row_version,
+            teacher_change_item_id: stop_item_id,
+            entry_ids: Vec::new(),
+            mode: TeacherHandoffMode::AssignOne,
+            instructor_ids: vec![replacement_teacher_id],
+        },
+    )
+    .await
+    .expect("a refreshed preview must be applicable");
+    let fresh_proposed = fresh_preview
+        .proposed_entries
+        .iter()
+        .find(|entry| entry.entry_id == entry_id)
+        .unwrap();
+    let apply_request = ApplyTeacherHandoffRequest {
+        change_set_row_version: changed.row_version,
+        target_timetable_version_row_version: fresh_version_row_version,
+        teacher_change_item_id: stop_item_id,
+        entries: fresh_preview
+            .proposed_entries
+            .iter()
+            .map(|entry| TeacherHandoffEntryVersion {
+                entry_id: entry.entry_id,
+                row_version: entry.row_version,
+            })
+            .collect(),
+        mode: TeacherHandoffMode::AssignOne,
+        instructor_ids: vec![replacement_teacher_id],
+        preview_hash: fresh_preview.preview_hash.clone().unwrap(),
+        idempotency_key: stable_uuid("teacher-handoff:apply"),
+    };
+    let applied =
+        teacher_handoff::apply(&pool, context.teacher_id, changed.id, apply_request.clone())
+            .await
+            .expect("a fresh conflict-free preview must apply atomically");
+    assert_eq!(applied.academic_term_id, changed.academic_term_id);
+    assert!(!applied.response.replayed);
+    assert_eq!(
+        applied.response.updated_entries[0].row_version,
+        fresh_proposed.row_version + 1
+    );
+    let exact_ids: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT instructor_id FROM timetable_entry_instructors WHERE entry_id = $1 ORDER BY instructor_id",
+    )
+    .bind(entry_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert!(exact_ids.contains(&replacement_teacher_id));
+    assert!(!exact_ids.contains(&stopped_teacher_id));
+    let replayed = teacher_handoff::apply(&pool, context.teacher_id, changed.id, apply_request)
+        .await
+        .expect("the same idempotency key and request must replay the receipt");
+    assert_eq!(replayed.academic_term_id, changed.academic_term_id);
+    assert!(replayed.response.replayed);
+
+    let readiness = change_sets::preview_change_set(&pool, changed.id)
+        .await
+        .expect("the handed-off target must return readiness");
+    assert!(!readiness.findings.iter().any(|finding| {
+        matches!(
+            finding.code,
+            AcademicChangeFindingCode::StoppedTeacherStillScheduled
+                | AcademicChangeFindingCode::EntryInstructorNotEffective
+        )
+    }));
+    let blockers = readiness
+        .findings
+        .iter()
+        .filter(|finding| finding.severity == AcademicChangeFindingSeverity::Blocking)
+        .collect::<Vec<_>>();
+    assert!(blockers.is_empty(), "unexpected blockers: {blockers:?}");
+    let warning_codes = readiness
+        .findings
+        .iter()
+        .filter(|finding| finding.severity == AcademicChangeFindingSeverity::Warning)
+        .map(|finding| finding.code)
+        .collect::<Vec<_>>();
+    let published = change_sets::publish_change_set(
+        &pool,
+        context.teacher_id,
+        changed.id,
+        PublishAcademicTermChangeSetRequest {
+            row_version: readiness.change_set_row_version,
+            target_timetable_version_row_version: readiness.target_timetable_version_row_version,
+            preview_hash: readiness.preview_hash,
+            acknowledged_warning_codes: warning_codes,
+            idempotency_key: stable_uuid("teacher-handoff:publish"),
+        },
+    )
+    .await
+    .expect("complete handoff must permit atomic teacher and timetable publication");
+    assert_eq!(published.status, AcademicTermChangeSetStatus::Published);
+    let old_ends_on: Option<NaiveDate> =
+        sqlx::query_scalar("SELECT ends_on FROM learning_group_teachers WHERE id = $1")
+            .bind(stopped_assignment_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        old_ends_on,
+        changed
+            .effective_from
+            .checked_sub_signed(chrono::Duration::days(1))
+    );
+    let new_starts_on: NaiveDate = sqlx::query_scalar(
+        r#"SELECT starts_on FROM learning_group_teachers
+           WHERE learning_group_id = $1 AND teacher_id = $2
+             AND started_by_change_set_id = $3"#,
+    )
+    .bind(group_id)
+    .bind(replacement_teacher_id)
+    .bind(changed.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(new_starts_on, changed.effective_from);
+    let before_version = timetable_version_service::resolve_for_date(
+        &pool,
+        context.term_id,
+        changed.effective_from.pred_opt().unwrap(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(before_version.id, changed.base_timetable_version_id);
+    let effective_version =
+        timetable_version_service::resolve_for_date(&pool, context.term_id, changed.effective_from)
+            .await
+            .unwrap();
+    assert_eq!(effective_version.id, changed.target_timetable_version_id);
+
+    let published_workspace = timetable_service::get_workspace(
+        &pool,
+        TimetableWorkspaceQuery {
+            academic_year_id: changed.academic_year_id,
+            academic_term_id: changed.academic_term_id,
+            timetable_version_id: changed.target_timetable_version_id,
+        },
+        &AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..AcademicResourceListFilter::default()
+        },
+    )
+    .await
+    .expect("a published timetable must read persisted teachers without replaying its change set");
+    let published_group = published_workspace
+        .learning_groups
+        .iter()
+        .find(|group| group.id == group_id)
+        .expect("the changed group must remain in the published workspace");
+    assert!(published_group
+        .eligible_instructor_ids
+        .contains(&replacement_teacher_id));
+    assert!(!published_group
+        .eligible_instructor_ids
+        .contains(&stopped_teacher_id));
 }
 
 async fn add_operational_change_catalog_fixture(
@@ -1918,7 +2695,7 @@ async fn readiness_blocks_missing_and_ineligible_exact_entry_instructors() {
         .await
         .unwrap();
     assert!(ineligible_preview.findings.iter().any(|finding| {
-        finding.code == AcademicChangeFindingCode::IneligibleEntryInstructor
+        finding.code == AcademicChangeFindingCode::EntryInstructorNotEffective
             && finding.severity == AcademicChangeFindingSeverity::Blocking
             && finding.resource_id == Some(target_entry_id)
     }));
@@ -5000,6 +5777,23 @@ async fn homeroom_alignment_reports_missing_and_extra_delivery_per_room() {
 async fn delivery_management_options_are_scoped_and_human_readable() {
     let pool = prepare_delivery_runtime_fixture("academic_delivery_management_options").await;
     let context = planning_runtime_context(&pool).await;
+    let offering = offerings::create(&pool, context.teacher_id, course_request(&context))
+        .await
+        .expect("offering should be created for management options");
+    let group = groups::create(
+        &pool,
+        context.teacher_id,
+        offering.id,
+        CreateLearningGroupRequest {
+            code: "MANAGE-OPTIONS".to_string(),
+            name: "กลุ่มตัวเลือกกลางภาค".to_string(),
+            description: None,
+            capacity: None,
+            preferred_room_ids: Vec::new(),
+        },
+    )
+    .await
+    .expect("group should be created for management options");
 
     let options = workspaces::delivery_management_options(
         &pool,
@@ -5049,6 +5843,10 @@ async fn delivery_management_options_are_scoped_and_human_readable() {
         .teachers
         .iter()
         .any(|item| item.id == context.teacher_id && !item.name.trim().is_empty()));
+    assert!(options
+        .learning_groups
+        .iter()
+        .any(|item| item.id == group.id && item.learning_offering_id == offering.id));
     assert!(options.rooms.iter().all(|item| !item.name_th.is_empty()));
 
     let scoped = workspaces::delivery_management_options(

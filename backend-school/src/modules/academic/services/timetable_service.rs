@@ -21,6 +21,9 @@ use crate::modules::academic::models::timetable::{
     WholeSchoolTimetableLesson, WholeSchoolTimetableOverview, WholeSchoolTimetableQuery,
     WholeSchoolTimetableRow, WholeSchoolTimetableSummary,
 };
+use crate::modules::academic::models::timetable_version::{
+    TimetableVersion, TimetableVersionStatus,
+};
 use crate::policies::resource_access_policy::AcademicResourceListFilter;
 
 const VALID_DAYS: &[&str] = &["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
@@ -39,6 +42,7 @@ struct TimetableVersionContext {
     academic_year_id: Uuid,
     bell_schedule_id: Uuid,
     effective_from: NaiveDate,
+    change_set_id: Option<Uuid>,
     status: String,
     term_status: String,
 }
@@ -490,7 +494,7 @@ pub async fn get_workspace(
     .await?;
 
     let owner_ids = access.allowed_organization_unit_ids();
-    let group_rows: Vec<WorkspaceLearningGroupRow> = sqlx::query_as(
+    let mut group_rows: Vec<WorkspaceLearningGroupRow> = sqlx::query_as(
         r#"SELECT learning_group.id,
                   learning_group.learning_offering_id,
                   learning_group.code,
@@ -568,6 +572,28 @@ pub async fn get_workspace(
         return Err(AppError::ValidationError(
             "จำนวนกลุ่มเรียนในพื้นที่จัดตารางเกิน 2000 กลุ่ม".to_string(),
         ));
+    }
+    if let Some(change_set_id) = pending_change_set_id(&version) {
+        let group_ids = group_rows.iter().map(|group| group.id).collect::<Vec<_>>();
+        let mut transaction = pool.begin().await?;
+        let projected = super::effective_teacher_service::project_effective_assignments_in_tx(
+            &mut transaction,
+            change_set_id,
+            &group_ids,
+        )
+        .await?;
+        transaction.commit().await?;
+        let mut projected_by_group = HashMap::<Uuid, Vec<Uuid>>::new();
+        for assignment in projected {
+            projected_by_group
+                .entry(assignment.learning_group_id)
+                .or_default()
+                .push(assignment.teacher_id);
+        }
+        for group in &mut group_rows {
+            group.eligible_instructor_ids =
+                projected_by_group.remove(&group.id).unwrap_or_default();
+        }
     }
 
     let relevant_homeroom_ids = group_rows
@@ -983,6 +1009,25 @@ pub async fn get_whole_school_overview(
     let mut instructor_conflicts: BTreeMap<(Uuid, Uuid), BTreeSet<Uuid>> = BTreeMap::new();
     let mut room_conflicts: BTreeMap<(Uuid, Uuid), BTreeSet<Uuid>> = BTreeMap::new();
     let mut issues = Vec::new();
+    let projected_teacher_keys = if let Some(change_set_id) = pending_change_set_id(&version) {
+        let group_ids = group_rows.iter().map(|group| group.id).collect::<Vec<_>>();
+        let mut transaction = pool.begin().await?;
+        let assignments = super::effective_teacher_service::project_effective_assignments_in_tx(
+            &mut transaction,
+            change_set_id,
+            &group_ids,
+        )
+        .await?;
+        transaction.commit().await?;
+        Some(
+            assignments
+                .into_iter()
+                .map(|assignment| (assignment.learning_group_id, assignment.teacher_id))
+                .collect::<BTreeSet<_>>(),
+        )
+    } else {
+        None
+    };
 
     for entry in &entries {
         let covered_homeroom_ids = entry
@@ -1038,6 +1083,31 @@ pub async fn get_whole_school_overview(
                 bell_schedule_period_id: Some(entry.bell_schedule_period_id),
                 learning_group_id: entry.learning_group_id,
             });
+        }
+        if let (Some(group_id), Some(projected_teacher_keys)) =
+            (entry.learning_group_id, projected_teacher_keys.as_ref())
+        {
+            let unresolved_instructor_ids = entry
+                .instructors
+                .iter()
+                .filter(|instructor| {
+                    !projected_teacher_keys.contains(&(group_id, instructor.user_id))
+                })
+                .map(|instructor| instructor.user_id)
+                .collect::<Vec<_>>();
+            if !unresolved_instructor_ids.is_empty() {
+                issues.push(WholeSchoolTimetableIssue {
+                    kind: WholeSchoolTimetableIssueKind::UnresolvedTeacherHandoff,
+                    severity: WholeSchoolTimetableIssueSeverity::Blocking,
+                    message: "คาบนี้ยังอ้างถึงครูที่ไม่มีช่วงการสอนในวันที่รุ่นเริ่มใช้".to_string(),
+                    entry_ids: vec![entry.id],
+                    homeroom_ids: covered_homeroom_ids.clone(),
+                    instructor_ids: unresolved_instructor_ids,
+                    room_id: entry.room_id,
+                    bell_schedule_period_id: Some(entry.bell_schedule_period_id),
+                    learning_group_id: Some(group_id),
+                });
+            }
         }
         if entry.room_id.is_none() && covered_homeroom_ids.len() > 1 {
             issues.push(WholeSchoolTimetableIssue {
@@ -1493,6 +1563,7 @@ async fn update_entry_impl(
                     &mut transaction,
                     group_id,
                     version.effective_from,
+                    version.change_set_id,
                     requested_ids,
                 )
                 .await?
@@ -2746,6 +2817,7 @@ async fn resolve_create_scope(
             transaction,
             group.id,
             version.effective_from,
+            version.change_set_id,
             &request.instructor_ids,
         )
         .await?;
@@ -2842,6 +2914,12 @@ fn ordered_unique_ids(ids: &[Uuid]) -> Vec<Uuid> {
     ordered
 }
 
+fn pending_change_set_id(version: &TimetableVersion) -> Option<Uuid> {
+    (version.status == TimetableVersionStatus::Draft)
+        .then_some(version.change_set_id)
+        .flatten()
+}
+
 async fn require_timetable_version(
     pool: &PgPool,
     timetable_version_id: Uuid,
@@ -2850,7 +2928,8 @@ async fn require_timetable_version(
 ) -> Result<TimetableVersionContext, AppError> {
     let version: TimetableVersionContext = sqlx::query_as(
         r#"SELECT version.academic_term_id, version.academic_year_id,
-                  version.bell_schedule_id, version.effective_from, version.status,
+                  version.bell_schedule_id, version.effective_from, version.change_set_id,
+                  version.status,
                   term.status AS term_status
            FROM academic_timetable_versions version
            JOIN academic_terms term ON term.id = version.academic_term_id
@@ -2872,7 +2951,8 @@ async fn require_timetable_version_in_tx(
 ) -> Result<TimetableVersionContext, AppError> {
     let version: TimetableVersionContext = sqlx::query_as(
         r#"SELECT version.academic_term_id, version.academic_year_id,
-                  version.bell_schedule_id, version.effective_from, version.status,
+                  version.bell_schedule_id, version.effective_from, version.change_set_id,
+                  version.status,
                   term.status AS term_status
            FROM academic_timetable_versions version
            JOIN academic_terms term ON term.id = version.academic_term_id
@@ -3297,31 +3377,45 @@ async fn eligible_group_instructors_in_tx(
     transaction: &mut Transaction<'_, Postgres>,
     learning_group_id: Uuid,
     effective_from: NaiveDate,
+    change_set_id: Option<Uuid>,
     requested_ids: &[Uuid],
 ) -> Result<Vec<Uuid>, AppError> {
     let requested_ids = canonical_ids(requested_ids);
     if requested_ids.is_empty() {
         return Ok(Vec::new());
     }
-    let eligible_ids: Vec<Uuid> = sqlx::query_scalar(
-        r#"SELECT teacher.teacher_id
-           FROM learning_group_teachers teacher
-           WHERE teacher.learning_group_id = $1
-             AND teacher.starts_on <= $2
-             AND (teacher.ends_on IS NULL OR teacher.ends_on >= $2)
-             AND teacher.teacher_id = ANY($3)
-           ORDER BY CASE teacher.role
-                        WHEN 'primary' THEN 1
-                        WHEN 'secondary' THEN 2
-                        ELSE 3
-                    END,
-                    teacher.starts_on, teacher.id"#,
-    )
-    .bind(learning_group_id)
-    .bind(effective_from)
-    .bind(&requested_ids)
-    .fetch_all(&mut **transaction)
-    .await?;
+    let eligible_ids: Vec<Uuid> = if let Some(change_set_id) = change_set_id {
+        super::effective_teacher_service::project_effective_assignments_in_tx(
+            transaction,
+            change_set_id,
+            &[learning_group_id],
+        )
+        .await?
+        .into_iter()
+        .filter(|assignment| requested_ids.contains(&assignment.teacher_id))
+        .map(|assignment| assignment.teacher_id)
+        .collect()
+    } else {
+        sqlx::query_scalar(
+            r#"SELECT teacher.teacher_id
+               FROM learning_group_teachers teacher
+               WHERE teacher.learning_group_id = $1
+                 AND teacher.starts_on <= $2
+                 AND (teacher.ends_on IS NULL OR teacher.ends_on >= $2)
+                 AND teacher.teacher_id = ANY($3)
+               ORDER BY CASE teacher.role
+                            WHEN 'primary' THEN 1
+                            WHEN 'secondary' THEN 2
+                            ELSE 3
+                        END,
+                        teacher.starts_on, teacher.id"#,
+        )
+        .bind(learning_group_id)
+        .bind(effective_from)
+        .bind(&requested_ids)
+        .fetch_all(&mut **transaction)
+        .await?
+    };
     if eligible_ids.len() != requested_ids.len() {
         return Err(AppError::ValidationError(
             "ครูที่เลือกไม่ได้รับมอบหมายให้กลุ่มเรียนในวันที่รุ่นตารางเริ่มใช้".to_string(),

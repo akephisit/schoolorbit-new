@@ -616,10 +616,16 @@ pub async fn operational_change_offering_ids(
         return Err(AppError::NotFound("ไม่พบชุดการเปลี่ยนแปลงภาคเรียน".to_string()));
     }
     Ok(sqlx::query_scalar(
-        r#"SELECT DISTINCT learning_offering_id
-           FROM academic_term_change_items
-           WHERE change_set_id = $1
-           ORDER BY learning_offering_id"#,
+        r#"SELECT item.learning_offering_id
+           FROM academic_term_change_items item
+           WHERE item.change_set_id = $1
+             AND item.learning_offering_id IS NOT NULL
+           UNION
+           SELECT learning_group.learning_offering_id
+           FROM academic_term_change_items item
+           JOIN learning_groups learning_group ON learning_group.id = item.learning_group_id
+           WHERE item.change_set_id = $1
+           ORDER BY 1"#,
     )
     .bind(change_set_id)
     .fetch_all(pool)

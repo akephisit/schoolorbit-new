@@ -3414,3 +3414,259 @@ async fn migration_054_database_guards_reject_conflicts_and_published_child_muta
         .to_string()
         .contains("ACADEMIC_PUBLISHED_TIMETABLE_VERSION_CHILD_IMMUTABLE"));
 }
+
+#[tokio::test]
+async fn migration_055_adds_effective_teacher_change_schema() {
+    let pool = phase_a_fixture("academic_core_055_teacher_changes").await;
+    record_passing_phase_a_reconciliation_marker(&pool)
+        .await
+        .expect("cleanup marker must exist before the post-cutover migrations");
+    apply_migrations_through(&pool, 54)
+        .await
+        .expect("fixture must reach the pre-055 schema");
+
+    apply_migrations_through(&pool, 55)
+        .await
+        .expect("migration 055 must add typed teacher changes");
+
+    assert!(table_exists(&pool, "academic_teacher_handoff_runs").await);
+    for column_name in [
+        "learning_group_id",
+        "learning_group_teacher_id",
+        "teacher_id",
+        "teacher_role",
+    ] {
+        assert!(column_exists(&pool, "academic_term_change_items", column_name).await);
+    }
+
+    let learning_offering_nullable: bool = sqlx::query_scalar(
+        r#"SELECT is_nullable = 'YES'
+           FROM information_schema.columns
+           WHERE table_schema = current_schema()
+             AND table_name = 'academic_term_change_items'
+             AND column_name = 'learning_offering_id'"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(learning_offering_nullable);
+
+    let (
+        learning_group_id,
+        learning_offering_id,
+        assignment_id,
+        current_teacher_id,
+        academic_term_id,
+        academic_year_id,
+        starts_on,
+        actor_user_id,
+    ): (Uuid, Uuid, Uuid, Uuid, Uuid, Uuid, NaiveDate, Uuid) = sqlx::query_as(
+        r#"SELECT learning_group.id, learning_group.learning_offering_id,
+                  teacher.id, teacher.teacher_id, learning_group.academic_term_id,
+                  learning_group.academic_year_id, teacher.starts_on, actor.id
+           FROM learning_groups learning_group
+           JOIN learning_group_teachers teacher
+             ON teacher.learning_group_id = learning_group.id
+           JOIN users actor ON actor.user_type = 'staff' AND actor.status = 'active'
+           WHERE learning_group.status = 'published'
+           ORDER BY learning_group.id, teacher.id, actor.id
+           LIMIT 1"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("fixture must contain a published group teacher");
+    let effective_from = starts_on.succ_opt().unwrap();
+    let change_set_id = stable_uuid("migration-055:change-set");
+    sqlx::query(
+        r#"INSERT INTO academic_term_change_sets (
+               id, academic_term_id, academic_year_id, effective_from, reason,
+               idempotency_key, creation_request_hash, created_by
+           ) VALUES ($1, $2, $3, $4, 'ทดสอบเปลี่ยนครู', $5, repeat('0', 64), $6)"#,
+    )
+    .bind(change_set_id)
+    .bind(academic_term_id)
+    .bind(academic_year_id)
+    .bind(effective_from)
+    .bind(format!("migration-055-{change_set_id}"))
+    .bind(actor_user_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let added_teacher_id = stable_uuid("migration-055:added-teacher");
+    sqlx::query(
+        r#"INSERT INTO users (
+               id, email, username, password_hash, first_name, last_name,
+               user_type, status
+           ) VALUES ($1, $2, $3, 'fixture-not-a-login', 'ครูใหม่', '055',
+                     'staff', 'active')"#,
+    )
+    .bind(added_teacher_id)
+    .bind(format!("{added_teacher_id}@example.invalid"))
+    .bind(format!("teacher-{added_teacher_id}"))
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    for (item_id, action_kind, episode_id, teacher_id, role) in [
+        (
+            stable_uuid("migration-055:item:add"),
+            "add_group_teacher",
+            None,
+            added_teacher_id,
+            Some("secondary"),
+        ),
+        (
+            stable_uuid("migration-055:item:adjust"),
+            "adjust_group_teacher_role",
+            Some(assignment_id),
+            current_teacher_id,
+            Some("assistant"),
+        ),
+        (
+            stable_uuid("migration-055:item:stop"),
+            "stop_group_teacher",
+            Some(assignment_id),
+            current_teacher_id,
+            None,
+        ),
+    ] {
+        sqlx::query(
+            r#"INSERT INTO academic_term_change_items (
+                   id, change_set_id, academic_term_id, academic_year_id,
+                   action_kind, learning_group_id, learning_group_teacher_id,
+                   teacher_id, teacher_role, created_by
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"#,
+        )
+        .bind(item_id)
+        .bind(change_set_id)
+        .bind(academic_term_id)
+        .bind(academic_year_id)
+        .bind(action_kind)
+        .bind(learning_group_id)
+        .bind(episode_id)
+        .bind(teacher_id)
+        .bind(role)
+        .bind(actor_user_id)
+        .execute(&pool)
+        .await
+        .expect("each valid teacher action shape must be accepted");
+    }
+
+    let mixed_shape = sqlx::query(
+        r#"INSERT INTO academic_term_change_items (
+               id, change_set_id, academic_term_id, academic_year_id,
+               action_kind, learning_offering_id, learning_group_id,
+               teacher_id, teacher_role, created_by
+           ) VALUES ($1, $2, $3, $4, 'add_group_teacher', $5, $6, $7,
+                     'secondary', $8)"#,
+    )
+    .bind(stable_uuid("migration-055:item:mixed"))
+    .bind(change_set_id)
+    .bind(academic_term_id)
+    .bind(academic_year_id)
+    .bind(learning_offering_id)
+    .bind(learning_group_id)
+    .bind(added_teacher_id)
+    .bind(actor_user_id)
+    .execute(&pool)
+    .await
+    .expect_err("teacher and offering shapes must never be mixed");
+    assert!(mixed_shape
+        .to_string()
+        .contains("academic_term_change_items_action_shape_check"));
+
+    let duplicate_add = sqlx::query(
+        r#"INSERT INTO academic_term_change_items (
+               id, change_set_id, academic_term_id, academic_year_id,
+               action_kind, learning_group_id, teacher_id, teacher_role, created_by
+           ) VALUES ($1, $2, $3, $4, 'add_group_teacher', $5, $6,
+                     'primary', $7)"#,
+    )
+    .bind(stable_uuid("migration-055:item:duplicate-add"))
+    .bind(change_set_id)
+    .bind(academic_term_id)
+    .bind(academic_year_id)
+    .bind(learning_group_id)
+    .bind(added_teacher_id)
+    .bind(actor_user_id)
+    .execute(&pool)
+    .await
+    .expect_err("one change set may add a group teacher only once");
+    assert!(duplicate_add
+        .to_string()
+        .contains("academic_term_change_items_teacher_add_key"));
+
+    let direct_insert = sqlx::query(
+        r#"INSERT INTO learning_group_teachers (
+               id, learning_group_id, academic_term_id, academic_year_id,
+               teacher_id, role, starts_on, created_by, updated_by
+           ) VALUES ($1, $2, $3, $4, $5, 'secondary', $6, $7, $7)"#,
+    )
+    .bind(stable_uuid("migration-055:direct-insert"))
+    .bind(learning_group_id)
+    .bind(academic_term_id)
+    .bind(academic_year_id)
+    .bind(added_teacher_id)
+    .bind(effective_from)
+    .bind(actor_user_id)
+    .execute(&pool)
+    .await
+    .expect_err("published-group teacher changes require change-set provenance");
+    assert!(direct_insert
+        .to_string()
+        .contains("ACADEMIC_PUBLISHED_GROUP_TEACHERS_IMMUTABLE"));
+
+    let mut transaction = pool.begin().await.unwrap();
+    sqlx::query("SELECT set_config('schoolorbit.academic_change_set_id', $1, true)")
+        .bind(change_set_id.to_string())
+        .execute(&mut *transaction)
+        .await
+        .unwrap();
+    let new_episode_id = stable_uuid("migration-055:provenance-insert");
+    sqlx::query(
+        r#"INSERT INTO learning_group_teachers (
+               id, learning_group_id, academic_term_id, academic_year_id,
+               teacher_id, role, starts_on, started_by_change_set_id,
+               created_by, updated_by
+           ) VALUES ($1, $2, $3, $4, $5, 'secondary', $6, $7, $8, $8)"#,
+    )
+    .bind(new_episode_id)
+    .bind(learning_group_id)
+    .bind(academic_term_id)
+    .bind(academic_year_id)
+    .bind(added_teacher_id)
+    .bind(effective_from)
+    .bind(change_set_id)
+    .bind(actor_user_id)
+    .execute(&mut *transaction)
+    .await
+    .expect("publishing provenance must permit an append-only episode");
+    sqlx::query(
+        r#"UPDATE learning_group_teachers
+           SET ends_on = $1, ended_by_change_set_id = $2,
+               row_version = row_version + 1, updated_by = $3, updated_at = now()
+           WHERE id = $4"#,
+    )
+    .bind(starts_on)
+    .bind(change_set_id)
+    .bind(actor_user_id)
+    .bind(assignment_id)
+    .execute(&mut *transaction)
+    .await
+    .expect("publishing provenance must permit one-way closure at effective date minus one");
+    transaction.commit().await.unwrap();
+
+    let reopen = sqlx::query(
+        r#"UPDATE learning_group_teachers
+           SET ends_on = NULL, ended_by_change_set_id = NULL,
+               row_version = row_version + 1, updated_at = now()
+           WHERE id = $1"#,
+    )
+    .bind(assignment_id)
+    .execute(&pool)
+    .await
+    .expect_err("a closed published episode must never be reopened directly");
+    assert!(reopen
+        .to_string()
+        .contains("ACADEMIC_PUBLISHED_GROUP_TEACHERS_IMMUTABLE"));
+}

@@ -21,7 +21,8 @@
 		ExternalLink,
 		RefreshCw,
 		Send,
-		TriangleAlert
+		TriangleAlert,
+		UsersRound
 	} from 'lucide-svelte';
 
 	let {
@@ -43,6 +44,17 @@
 
 	let blockingFindings = $derived(
 		preview?.findings.filter((finding) => finding.severity === 'blocking') ?? []
+	);
+	const teacherFindingCodes = new Set<AcademicChangeFindingCode>([
+		'missing_effective_teacher',
+		'stopped_teacher_still_scheduled',
+		'entry_instructor_not_effective'
+	]);
+	let teacherFindings = $derived(
+		blockingFindings.filter((finding) => teacherFindingCodes.has(finding.code))
+	);
+	let otherBlockingFindings = $derived(
+		blockingFindings.filter((finding) => !teacherFindingCodes.has(finding.code))
 	);
 	let warningFindings = $derived.by(() => {
 		return (preview?.findings ?? [])
@@ -212,13 +224,41 @@
 				</div>
 
 				{#if preview}
-					<div class="grid gap-3 sm:grid-cols-2">
-						<div class="rounded-xl border border-destructive/25 bg-destructive/5 p-3">
-							<p class="flex items-center gap-2 font-medium text-destructive">
-								<CircleAlert class="size-4" /> จุดที่ต้องแก้ {blockingFindings.length}
+					<div class="grid gap-3 lg:grid-cols-3">
+						<div class="rounded-xl border border-sky-500/25 bg-sky-500/5 p-3">
+							<p class="flex items-center gap-2 font-medium text-sky-900">
+								<UsersRound class="size-4" /> ครูและการส่งต่อคาบ {teacherFindings.length}
 							</p>
 							<div class="mt-2 space-y-2">
-								{#each blockingFindings as finding (`${finding.code}:${finding.resourceId ?? ''}:${finding.learningGroupId ?? ''}`)}
+								{#each teacherFindings as finding (`teacher:${finding.code}:${finding.resourceId ?? ''}:${finding.learningGroupId ?? ''}`)}
+									<div class="rounded-lg bg-background/80 p-2 text-sm">
+										<p class="font-medium">{finding.title}</p>
+										<p class="text-xs text-muted-foreground">{finding.guidance}</p>
+										{#if findingRoute(finding)}
+											<Button
+												href={findingRoute(finding) ?? undefined}
+												size="sm"
+												variant="link"
+												class="h-auto px-0 py-1"
+											>
+												{finding.code === 'stopped_teacher_still_scheduled'
+													? 'เปิดการส่งต่อคาบ'
+													: 'ไปแก้ไข'}
+												<ExternalLink class="size-3" />
+											</Button>
+										{/if}
+									</div>
+								{:else}
+									<p class="text-sm text-emerald-700">ครูและคาบพร้อมตามวันที่เริ่มใช้</p>
+								{/each}
+							</div>
+						</div>
+						<div class="rounded-xl border border-destructive/25 bg-destructive/5 p-3">
+							<p class="flex items-center gap-2 font-medium text-destructive">
+								<CircleAlert class="size-4" /> โครงสร้างและตาราง {otherBlockingFindings.length}
+							</p>
+							<div class="mt-2 space-y-2">
+								{#each otherBlockingFindings as finding (`${finding.code}:${finding.resourceId ?? ''}:${finding.learningGroupId ?? ''}`)}
 									<div class="rounded-lg bg-background/80 p-2 text-sm">
 										<p class="font-medium">{finding.title}</p>
 										<p class="text-xs text-muted-foreground">{finding.guidance}</p>

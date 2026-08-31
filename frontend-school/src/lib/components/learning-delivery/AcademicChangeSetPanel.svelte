@@ -1,11 +1,14 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import {
 		deleteAcademicTermChangeItem,
 		getAcademicTermChangeSet,
 		getLearningDeliveryManagementOptions,
 		upsertAcademicTermChangeItem,
 		type AcademicTermChangeSet,
+		type ApplyTeacherHandoffResponse,
 		type DeliveryManagementOptions,
+		type LearningTeacherRole,
 		type LearningOfferingOverviewItem,
 		type UpsertAcademicTermChangeItemRequest
 	} from '$lib/api/learning-delivery';
@@ -16,25 +19,39 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
-	import { ArrowRight, CalendarClock, ExternalLink, Plus, Trash2, X } from 'lucide-svelte';
+	import {
+		ArrowRight,
+		CalendarClock,
+		ExternalLink,
+		Plus,
+		Trash2,
+		UserRoundPlus,
+		X
+	} from 'lucide-svelte';
 	import AcademicChangeReadiness from './AcademicChangeReadiness.svelte';
+	import AcademicTeacherChangeForm from './AcademicTeacherChangeForm.svelte';
 	import DeliveryOptionCombobox from './DeliveryOptionCombobox.svelte';
+	import TeacherHandoffPanel from './TeacherHandoffPanel.svelte';
 
 	type ChangeAction =
 		| 'add_course'
 		| 'add_activity'
 		| 'stop_offering'
 		| 'adjust_weekly_period_target';
+	type ChangeItem = AcademicTermChangeSet['items'][number];
+	type StopTeacherItem = Extract<ChangeItem, { actionKind: 'stop_group_teacher' }>;
 
 	let {
 		changeSet,
 		offerings,
 		canManage,
+		initialTeacherChangeItemId = '',
 		onChanged
 	}: {
 		changeSet: AcademicTermChangeSet;
 		offerings: LearningOfferingOverviewItem[];
 		canManage: boolean;
+		initialTeacherChangeItemId?: string;
 		onChanged: (changeSet: AcademicTermChangeSet) => void | Promise<void>;
 	} = $props();
 
@@ -44,6 +61,8 @@
 	let deletingItemId = $state('');
 	let readinessRevision = $state(0);
 	let itemFormOpen = $state(false);
+	let teacherFormOpen = $state(false);
+	let handoffItemId = $state('');
 	let action = $state<ChangeAction>('add_course');
 	let catalogVersionId = $state('');
 	let owningOrganizationUnitId = $state('');
@@ -81,6 +100,12 @@
 				description: item.offering.kind === 'course' ? 'รายวิชา' : 'กิจกรรมพัฒนาผู้เรียน'
 			}))
 	);
+	let activeHandoffItem = $derived(
+		changeSet.items.find(
+			(item): item is StopTeacherItem =>
+				item.id === handoffItemId && item.actionKind === 'stop_group_teacher'
+		) ?? null
+	);
 
 	function formatDate(value: string): string {
 		return new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium' }).format(
@@ -99,19 +124,102 @@
 		errorMessage = '';
 	}
 
-	async function showItemForm() {
-		if (!canManage || changeSet.status !== 'draft') return;
-		itemFormOpen = true;
-		if (managementOptions || loadingOptions) return;
+	async function loadManagementOptions(): Promise<boolean> {
+		if (managementOptions) return true;
+		if (loadingOptions) return false;
 		loadingOptions = true;
 		try {
 			managementOptions = await getLearningDeliveryManagementOptions(changeSet.academicTermId);
+			return true;
 		} catch (error) {
 			errorMessage = error instanceof Error ? error.message : 'โหลดตัวเลือกไม่สำเร็จ';
+			return false;
 		} finally {
 			loadingOptions = false;
 		}
 	}
+
+	async function showItemForm() {
+		if (!canManage || changeSet.status !== 'draft') return;
+		teacherFormOpen = false;
+		handoffItemId = '';
+		itemFormOpen = true;
+		await loadManagementOptions();
+	}
+
+	async function showTeacherForm() {
+		if (!canManage || changeSet.status !== 'draft') return;
+		itemFormOpen = false;
+		handoffItemId = '';
+		teacherFormOpen = true;
+		await loadManagementOptions();
+	}
+
+	async function showHandoff(itemId: string) {
+		if (!canManage || changeSet.status !== 'draft') return;
+		itemFormOpen = false;
+		teacherFormOpen = false;
+		if (!(await loadManagementOptions())) return;
+		handoffItemId = itemId;
+	}
+
+	function teacherRoleLabel(role: LearningTeacherRole): string {
+		return role === 'primary' ? 'ครูหลัก' : role === 'secondary' ? 'ครูร่วม' : 'ครูผู้ช่วย';
+	}
+
+	function itemTitle(item: ChangeItem): string {
+		switch (item.actionKind) {
+			case 'add_offering':
+				return 'เพิ่มรายการเปิดสอน';
+			case 'stop_offering':
+				return 'หยุดรายการเปิดสอน';
+			case 'adjust_weekly_period_target':
+				return 'ปรับจำนวนคาบต่อสัปดาห์';
+			case 'add_group_teacher':
+				return 'เพิ่มครูในกลุ่มเรียน';
+			case 'adjust_group_teacher_role':
+				return 'ปรับบทบาทครู';
+			case 'stop_group_teacher':
+				return 'หยุดความรับผิดชอบของครู';
+		}
+	}
+
+	function itemDescription(item: ChangeItem): string {
+		if (
+			item.actionKind === 'add_group_teacher' ||
+			item.actionKind === 'adjust_group_teacher_role' ||
+			item.actionKind === 'stop_group_teacher'
+		) {
+			const role =
+				item.actionKind === 'stop_group_teacher' ? '' : ` · ${teacherRoleLabel(item.teacherRole)}`;
+			return `${item.learningGroupLabel} · ${item.teacherLabel}${role}`;
+		}
+		const offering = offerings.find(
+			(entry) => entry.offering.id === item.learningOfferingId
+		)?.offering;
+		const periods =
+			item.actionKind === 'add_offering' || item.actionKind === 'adjust_weekly_period_target'
+				? ` · ${item.weeklyPeriodTarget} คาบ/สัปดาห์`
+				: '';
+		return `${offering?.nameSnapshot ?? item.learningOfferingId}${periods}`;
+	}
+
+	async function teacherItemSaved(updated: AcademicTermChangeSet) {
+		await onChanged(updated);
+		teacherFormOpen = false;
+		readinessRevision += 1;
+	}
+
+	async function handoffApplied(_result: ApplyTeacherHandoffResponse) {
+		readinessRevision += 1;
+	}
+
+	onMount(() => {
+		handoffItemId = initialTeacherChangeItemId;
+		if (handoffItemId && changeSet.status === 'draft' && canManage) {
+			void loadManagementOptions();
+		}
+	});
 
 	async function recoverItemConflict(message: string) {
 		readinessRevision += 1;
@@ -271,7 +379,7 @@
 				</div>
 			</div>
 			<div class="shrink-0 rounded-xl border bg-background px-4 py-2 text-end">
-				<p class="text-xs text-muted-foreground">เริ่มมีผล</p>
+				<p class="text-xs text-muted-foreground">หลังเผยแพร่ เริ่มมีผล</p>
 				<p class="font-medium text-amber-900">{formatDate(changeSet.effectiveFrom)}</p>
 			</div>
 		</div>
@@ -296,35 +404,28 @@
 					</p>
 				</div>
 				{#if canManage && changeSet.status === 'draft'}
-					<Button size="sm" variant="outline" onclick={showItemForm}>
-						<Plus class="size-4" /> เพิ่มรายการ
-					</Button>
+					<div class="flex flex-wrap gap-2">
+						<Button size="sm" variant="outline" onclick={showItemForm}>
+							<Plus class="size-4" /> เพิ่ม/ปรับรายการสอน
+						</Button>
+						<Button size="sm" variant="outline" onclick={showTeacherForm}>
+							<UserRoundPlus class="size-4" /> เปลี่ยนครูผู้สอน
+						</Button>
+					</div>
 				{/if}
 			</div>
 
 			{#if changeSet.items.length === 0}
 				<div class="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-					ยังไม่มีรายการเพิ่ม ปรับคาบ หรือหยุดสอน
+					ยังไม่มีรายการเพิ่ม ปรับ หยุด หรือเปลี่ยนครู
 				</div>
 			{:else}
 				<div class="divide-y rounded-xl border">
 					{#each changeSet.items as item (item.id)}
 						<div class="flex items-center justify-between gap-3 p-3">
 							<div class="min-w-0">
-								<p class="font-medium">
-									{item.actionKind === 'add_offering'
-										? 'เพิ่มรายการเปิดสอน'
-										: item.actionKind === 'stop_offering'
-											? 'หยุดรายการเปิดสอน'
-											: 'ปรับจำนวนคาบต่อสัปดาห์'}
-								</p>
-								<p class="truncate text-sm text-muted-foreground">
-									{offerings.find((entry) => entry.offering.id === item.learningOfferingId)
-										?.offering.nameSnapshot ?? item.learningOfferingId}
-									{#if 'weeklyPeriodTarget' in item}
-										· {item.weeklyPeriodTarget} คาบ/สัปดาห์
-									{/if}
-								</p>
+								<p class="font-medium">{itemTitle(item)}</p>
+								<p class="truncate text-sm text-muted-foreground">{itemDescription(item)}</p>
 							</div>
 							<div class="flex shrink-0 gap-1">
 								{#if item.actionKind === 'add_offering'}
@@ -334,6 +435,12 @@
 										variant="ghost"
 									>
 										{changeSet.status === 'draft' ? 'จัดกลุ่มและครู' : 'ดูรายละเอียด'}
+										<ExternalLink class="size-3.5" />
+									</Button>
+								{/if}
+								{#if item.actionKind === 'stop_group_teacher' && changeSet.status === 'draft'}
+									<Button size="sm" variant="ghost" onclick={() => showHandoff(item.id)}>
+										จัดการคาบที่ได้รับผลกระทบ
 										<ExternalLink class="size-3.5" />
 									</Button>
 								{/if}
@@ -354,6 +461,33 @@
 				</div>
 			{/if}
 		</section>
+
+		{#if teacherFormOpen && canManage && changeSet.status === 'draft'}
+			{#if loadingOptions || !managementOptions}
+				<div class="h-48 animate-pulse rounded-xl bg-muted"></div>
+			{:else}
+				<AcademicTeacherChangeForm
+					{changeSet}
+					{managementOptions}
+					onSaved={teacherItemSaved}
+					onConflict={recoverItemConflict}
+					onCancel={() => (teacherFormOpen = false)}
+				/>
+			{/if}
+		{/if}
+
+		{#if activeHandoffItem && managementOptions && canManage && changeSet.status === 'draft'}
+			{#key activeHandoffItem.id}
+				<TeacherHandoffPanel
+					{changeSet}
+					teacherChangeItem={activeHandoffItem}
+					{managementOptions}
+					{onChanged}
+					onApplied={handoffApplied}
+					onClose={() => (handoffItemId = '')}
+				/>
+			{/key}
+		{/if}
 
 		{#if itemFormOpen && canManage && changeSet.status === 'draft'}
 			<form

@@ -85,6 +85,14 @@ pub fn routes() -> Router<AppState> {
             get(handlers::preview_term_change_set),
         )
         .route(
+            "/term-change-sets/{id}/teacher-handoff/preview",
+            post(handlers::preview_teacher_handoff),
+        )
+        .route(
+            "/term-change-sets/{id}/teacher-handoff/apply",
+            post(handlers::apply_teacher_handoff),
+        )
+        .route(
             "/term-change-sets/{id}/publish",
             post(handlers::publish_term_change_set),
         )

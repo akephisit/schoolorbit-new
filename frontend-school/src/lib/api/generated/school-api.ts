@@ -1545,6 +1545,38 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/term-change-sets/{id}/teacher-handoff/apply': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['applyTeacherHandoff'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/term-change-sets/{id}/teacher-handoff/preview': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['previewTeacherHandoff'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/terms': {
 		parameters: {
 			query?: never;
@@ -4544,7 +4576,6 @@ export interface components {
 			| 'draft_group'
 			| 'missing_primary_teacher'
 			| 'missing_entry_instructor'
-			| 'ineligible_entry_instructor'
 			| 'unpublished_roster'
 			| 'offering_unavailable'
 			| 'missing_weekly_period_target'
@@ -4554,7 +4585,10 @@ export interface components {
 			| 'learning_group_conflict'
 			| 'teacher_conflict'
 			| 'room_conflict'
-			| 'stopped_offering_still_scheduled';
+			| 'stopped_offering_still_scheduled'
+			| 'missing_effective_teacher'
+			| 'stopped_teacher_still_scheduled'
+			| 'entry_instructor_not_effective';
 		/** @enum {string} */
 		AcademicChangeFindingSeverity: 'blocking' | 'warning';
 		AcademicChangeImpactCounts: {
@@ -4672,7 +4706,13 @@ export interface components {
 			updatedAt: string;
 		};
 		/** @enum {string} */
-		AcademicTermChangeActionKind: 'add_offering' | 'stop_offering' | 'adjust_weekly_period_target';
+		AcademicTermChangeActionKind:
+			| 'add_offering'
+			| 'stop_offering'
+			| 'adjust_weekly_period_target'
+			| 'add_group_teacher'
+			| 'adjust_group_teacher_role'
+			| 'stop_group_teacher';
 		AcademicTermChangeItem:
 			| {
 					/** @enum {string} */
@@ -4725,6 +4765,73 @@ export interface components {
 					updatedAt: string;
 					/** Format: int32 */
 					weeklyPeriodTarget: number;
+			  }
+			| {
+					/** @enum {string} */
+					actionKind: 'add_group_teacher';
+					/** Format: date-time */
+					createdAt: string;
+					/** Format: uuid */
+					createdBy: string;
+					/** Format: uuid */
+					id: string;
+					/** Format: uuid */
+					learningGroupId: string;
+					learningGroupLabel: string;
+					/** Format: int64 */
+					rowVersion: number;
+					/** Format: uuid */
+					teacherId: string;
+					teacherLabel: string;
+					teacherRole: components['schemas']['LearningTeacherRole'];
+					/** Format: date-time */
+					updatedAt: string;
+			  }
+			| {
+					/** @enum {string} */
+					actionKind: 'adjust_group_teacher_role';
+					/** Format: date-time */
+					createdAt: string;
+					/** Format: uuid */
+					createdBy: string;
+					/** Format: uuid */
+					id: string;
+					/** Format: uuid */
+					learningGroupId: string;
+					learningGroupLabel: string;
+					/** Format: uuid */
+					learningGroupTeacherId: string;
+					/** Format: int64 */
+					rowVersion: number;
+					/** Format: uuid */
+					teacherId: string;
+					teacherLabel: string;
+					teacherRole: components['schemas']['LearningTeacherRole'];
+					/** Format: date-time */
+					updatedAt: string;
+			  }
+			| {
+					/** @enum {string} */
+					actionKind: 'stop_group_teacher';
+					/** Format: date-time */
+					createdAt: string;
+					/** Format: uuid */
+					createdBy: string;
+					/** Format: uuid */
+					id: string;
+					/** Format: uuid */
+					learningGroupId: string;
+					learningGroupLabel: string;
+					/** Format: uuid */
+					learningGroupTeacherId: string;
+					/** Format: int64 */
+					rowVersion: number;
+					/** Format: uuid */
+					teacherId: string;
+					teacherLabel: string;
+					teacherRole: components['schemas']['LearningTeacherRole'];
+					/** Format: date-time */
+					updatedAt: string;
 			  };
 		AcademicTermChangeSet: {
 			/** Format: uuid */
@@ -5244,6 +5351,15 @@ export interface components {
 				retainedOfferingCount: number;
 				skippedCount: number;
 				sourceHash: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_ApplyTeacherHandoffResponse: {
+			data: {
+				handoff: components['schemas']['TeacherHandoffPreview'];
+				replayed: boolean;
+				updatedEntries: components['schemas']['TeacherHandoffEntryVersion'][];
 			};
 			message?: string;
 			success: boolean;
@@ -5836,6 +5952,7 @@ export interface components {
 				catalogVersions: components['schemas']['DeliveryCatalogVersionOption'][];
 				gradeLevels: components['schemas']['GradeLevelLookupItem'][];
 				homerooms: components['schemas']['HomeroomLookupItem'][];
+				learningGroups: components['schemas']['LearningGroup'][];
 				organizationUnits: components['schemas']['OrganizationUnitLookupItem'][];
 				rooms: components['schemas']['Room'][];
 				studyPrograms: components['schemas']['StudyProgramOption'][];
@@ -7199,6 +7316,29 @@ export interface components {
 			data: {
 				entryA: components['schemas']['TimetableEntry'];
 				entryB: components['schemas']['TimetableEntry'];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_TeacherHandoffPreview: {
+			data: {
+				affectedEntries: components['schemas']['TeacherHandoffEntryPreview'][];
+				canApply: boolean;
+				/** Format: uuid */
+				changeSetId: string;
+				/** Format: int64 */
+				changeSetRowVersion: number;
+				conflicts: components['schemas']['TeacherHandoffConflict'][];
+				mode: components['schemas']['TeacherHandoffMode'];
+				previewHash?: string | null;
+				proposedEntries: components['schemas']['TeacherHandoffEntryPreview'][];
+				/** Format: uuid */
+				targetTimetableVersionId: string;
+				/** Format: int64 */
+				targetTimetableVersionRowVersion: number;
+				/** Format: uuid */
+				teacherChangeItemId: string;
+				timetableRoute: string;
 			};
 			message?: string;
 			success: boolean;
@@ -9015,6 +9155,25 @@ export interface components {
 			/** Format: int64 */
 			rowVersion: number;
 			sourceHash: string;
+		};
+		ApplyTeacherHandoffRequest: {
+			/** Format: int64 */
+			changeSetRowVersion: number;
+			entries: components['schemas']['TeacherHandoffEntryVersion'][];
+			/** Format: uuid */
+			idempotencyKey: string;
+			instructorIds?: string[];
+			mode: components['schemas']['TeacherHandoffMode'];
+			previewHash: string;
+			/** Format: int64 */
+			targetTimetableVersionRowVersion: number;
+			/** Format: uuid */
+			teacherChangeItemId: string;
+		};
+		ApplyTeacherHandoffResponse: {
+			handoff: components['schemas']['TeacherHandoffPreview'];
+			replayed: boolean;
+			updatedEntries: components['schemas']['TeacherHandoffEntryVersion'][];
 		};
 		ApplyTemplateRequest: {
 			/** Format: uuid */
@@ -11018,6 +11177,7 @@ export interface components {
 			catalogVersions: components['schemas']['DeliveryCatalogVersionOption'][];
 			gradeLevels: components['schemas']['GradeLevelLookupItem'][];
 			homerooms: components['schemas']['HomeroomLookupItem'][];
+			learningGroups: components['schemas']['LearningGroup'][];
 			organizationUnits: components['schemas']['OrganizationUnitLookupItem'][];
 			rooms: components['schemas']['Room'][];
 			studyPrograms: components['schemas']['StudyProgramOption'][];
@@ -12489,6 +12649,17 @@ export interface components {
 			academicTermId: string;
 			studyProgramIds: string[];
 		};
+		PreviewTeacherHandoffRequest: {
+			/** Format: int64 */
+			changeSetRowVersion: number;
+			entryIds?: string[];
+			instructorIds?: string[];
+			mode: components['schemas']['TeacherHandoffMode'];
+			/** Format: int64 */
+			targetTimetableVersionRowVersion: number;
+			/** Format: uuid */
+			teacherChangeItemId: string;
+		};
 		ProfileResponse: {
 			address: string | null;
 			/** Format: date-time */
@@ -13803,6 +13974,69 @@ export interface components {
 			/** Format: uuid */
 			teacherId: string;
 		};
+		TeacherHandoffConflict: {
+			entryIds: string[];
+			instructorIds: string[];
+			kind: components['schemas']['TeacherHandoffConflictKind'];
+			message: string;
+			timetableRoute: string;
+		};
+		/** @enum {string} */
+		TeacherHandoffConflictKind:
+			| 'instructor_collision'
+			| 'duplicate_instructor'
+			| 'ineligible_instructor'
+			| 'entry_outside_target';
+		TeacherHandoffEntryPreview: {
+			afterInstructors: components['schemas']['TeacherHandoffInstructorPreview'][];
+			beforeInstructors: components['schemas']['TeacherHandoffInstructorPreview'][];
+			/** Format: uuid */
+			bellSchedulePeriodId: string;
+			dayOfWeek: string;
+			/** Format: uuid */
+			entryId: string;
+			/** Format: uuid */
+			learningGroupId: string;
+			learningGroupLabel: string;
+			offeringLabel: string;
+			periodLabel: string;
+			roomLabel?: string | null;
+			/** Format: int64 */
+			rowVersion: number;
+		};
+		TeacherHandoffEntryVersion: {
+			/** Format: uuid */
+			entryId: string;
+			/** Format: int64 */
+			rowVersion: number;
+		};
+		TeacherHandoffInstructorPreview: {
+			displayName: string;
+			/** Format: uuid */
+			instructorId: string;
+			role: string;
+		};
+		/** @enum {string} */
+		TeacherHandoffMode: 'assign_one' | 'assign_coteachers' | 'manual';
+		TeacherHandoffPreview: {
+			affectedEntries: components['schemas']['TeacherHandoffEntryPreview'][];
+			canApply: boolean;
+			/** Format: uuid */
+			changeSetId: string;
+			/** Format: int64 */
+			changeSetRowVersion: number;
+			conflicts: components['schemas']['TeacherHandoffConflict'][];
+			mode: components['schemas']['TeacherHandoffMode'];
+			previewHash?: string | null;
+			proposedEntries: components['schemas']['TeacherHandoffEntryPreview'][];
+			/** Format: uuid */
+			targetTimetableVersionId: string;
+			/** Format: int64 */
+			targetTimetableVersionRowVersion: number;
+			/** Format: uuid */
+			teacherChangeItemId: string;
+			timetableRoute: string;
+		};
 		/** @description กลุ่มการเรียนที่ครูสอนใน Academic Delivery */
 		TeachingAssignmentItem: {
 			/** Format: uuid */
@@ -14654,6 +14888,48 @@ export interface components {
 					learningOfferingId: string;
 					/** Format: int32 */
 					weeklyPeriodTarget: number;
+			  }
+			| {
+					/** @enum {string} */
+					action: 'add_group_teacher';
+					/** Format: int64 */
+					changeSetRowVersion: number;
+					/** Format: int64 */
+					itemRowVersion?: number | null;
+					/** Format: uuid */
+					learningGroupId: string;
+					/** Format: uuid */
+					teacherId: string;
+					teacherRole: components['schemas']['LearningTeacherRole'];
+			  }
+			| {
+					/** @enum {string} */
+					action: 'adjust_group_teacher_role';
+					/** Format: int64 */
+					changeSetRowVersion: number;
+					/** Format: int64 */
+					itemRowVersion?: number | null;
+					/** Format: uuid */
+					learningGroupId: string;
+					/** Format: uuid */
+					learningGroupTeacherId: string;
+					/** Format: uuid */
+					teacherId: string;
+					teacherRole: components['schemas']['LearningTeacherRole'];
+			  }
+			| {
+					/** @enum {string} */
+					action: 'stop_group_teacher';
+					/** Format: int64 */
+					changeSetRowVersion: number;
+					/** Format: int64 */
+					itemRowVersion?: number | null;
+					/** Format: uuid */
+					learningGroupId: string;
+					/** Format: uuid */
+					learningGroupTeacherId: string;
+					/** Format: uuid */
+					teacherId: string;
 			  };
 		UpsertDayRoomAssignmentRequest: {
 			/** Format: int32 */
@@ -14762,7 +15038,8 @@ export interface components {
 			| 'unscheduled_demand'
 			| 'over_scheduled_demand'
 			| 'missing_instructor'
-			| 'missing_room';
+			| 'missing_room'
+			| 'unresolved_teacher_handoff';
 		/** @enum {string} */
 		WholeSchoolTimetableIssueSeverity: 'blocking' | 'warning';
 		WholeSchoolTimetableLesson: {
@@ -23145,6 +23422,150 @@ export interface operations {
 				};
 			};
 			/** @description Preview or publication conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	applyTeacherHandoff: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Operational change set ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ApplyTeacherHandoffRequest'];
+			};
+		};
+		responses: {
+			/** @description Teacher timetable handoff applied */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ApplyTeacherHandoffResponse'];
+				};
+			};
+			/** @description Invalid teacher handoff */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning offering management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Teacher change item not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Teacher handoff conflict or stale preview */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	previewTeacherHandoff: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Operational change set ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['PreviewTeacherHandoffRequest'];
+			};
+		};
+		responses: {
+			/** @description Teacher timetable handoff preview */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TeacherHandoffPreview'];
+				};
+			};
+			/** @description Invalid teacher handoff */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning offering management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Teacher change item not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Teacher handoff conflict */
 			409: {
 				headers: {
 					[name: string]: unknown;

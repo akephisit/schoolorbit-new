@@ -12,10 +12,12 @@ use crate::modules::academic::delivery::models::{
     AcademicTermChangeItem, AcademicTermChangeSet, AcademicTermChangeSetPreview,
     AcademicTermChangeSetStatus, CancelAcademicTermChangeSetRequest,
     CreateAcademicTermChangeSetRequest, DeleteAcademicTermChangeItemRequest,
-    LearningOfferingStatus, PublishAcademicTermChangeSetRequest,
+    LearningOfferingStatus, LearningTeacherRole, PublishAcademicTermChangeSetRequest,
     UpdateAcademicTermChangeSetRequest, UpsertAcademicTermChangeItemRequest,
 };
-use crate::modules::academic::services::{timetable_service, timetable_version_service};
+use crate::modules::academic::services::{
+    effective_teacher_service, timetable_service, timetable_version_service,
+};
 
 use super::{
     append_audit, offerings, require_active_owner, require_writable_term, stable_hash,
@@ -47,8 +49,12 @@ struct ChangeItemRow {
     id: Uuid,
     change_set_id: Uuid,
     action_kind: AcademicTermChangeActionKind,
-    learning_offering_id: Uuid,
+    learning_offering_id: Option<Uuid>,
     weekly_period_target: Option<i32>,
+    learning_group_id: Option<Uuid>,
+    learning_group_teacher_id: Option<Uuid>,
+    teacher_id: Option<Uuid>,
+    teacher_role: Option<LearningTeacherRole>,
     row_version: i64,
     created_by: Uuid,
     created_at: chrono::DateTime<Utc>,
@@ -71,6 +77,27 @@ struct ScheduleCountRow {
     learning_group_label: String,
     actual_periods: i64,
     target_periods: i32,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TeacherEpisodeAuditSnapshot {
+    role: LearningTeacherRole,
+    starts_on: NaiveDate,
+    ends_on: Option<NaiveDate>,
+    row_version: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TeacherEpisodeAuditChange {
+    action: AcademicTermChangeActionKind,
+    item_id: Uuid,
+    episode_id: Uuid,
+    learning_group_id: Uuid,
+    teacher_id: Uuid,
+    before: Option<TeacherEpisodeAuditSnapshot>,
+    after: TeacherEpisodeAuditSnapshot,
 }
 
 #[derive(Debug, Serialize)]
@@ -247,7 +274,8 @@ pub async fn publish_change_set(
     )?;
     let item_rows: Vec<ChangeItemRow> = sqlx::query_as(
         r#"SELECT id, change_set_id, action_kind, learning_offering_id,
-                  weekly_period_target, row_version, created_by, created_at, updated_at
+                  weekly_period_target, learning_group_id, learning_group_teacher_id,
+                  teacher_id, teacher_role, row_version, created_by, created_at, updated_at
            FROM academic_term_change_items
            WHERE change_set_id = $1 ORDER BY id"#,
     )
@@ -257,12 +285,12 @@ pub async fn publish_change_set(
     let add_offering_ids = item_rows
         .iter()
         .filter(|item| item.action_kind == AcademicTermChangeActionKind::AddOffering)
-        .map(|item| item.learning_offering_id)
+        .filter_map(|item| item.learning_offering_id)
         .collect::<Vec<_>>();
     let stop_offering_ids = item_rows
         .iter()
         .filter(|item| item.action_kind == AcademicTermChangeActionKind::StopOffering)
-        .map(|item| item.learning_offering_id)
+        .filter_map(|item| item.learning_offering_id)
         .collect::<Vec<_>>();
 
     if !add_offering_ids.is_empty() {
@@ -342,6 +370,10 @@ pub async fn publish_change_set(
         }
     }
 
+    let teacher_episode_changes =
+        apply_teacher_episode_changes(&mut transaction, &change_set, &item_rows, actor_user_id)
+            .await?;
+
     let published_version = sqlx::query(
         r#"UPDATE academic_timetable_versions
            SET status = 'published', published_by = $1, published_at = now(),
@@ -397,7 +429,8 @@ pub async fn publish_change_set(
                    'targetTimetableVersionId', $5::text,
                    'effectiveFrom', $6::text,
                    'itemCount', $7::integer,
-                   'requestHash', $8::text
+                   'requestHash', $8::text,
+                   'teacherEpisodeChanges', $9::jsonb
                )
            )"#,
     )
@@ -409,10 +442,179 @@ pub async fn publish_change_set(
     .bind(change_set.effective_from)
     .bind(item_count)
     .bind(&publication_request_hash)
+    .bind(sqlx::types::Json(&teacher_episode_changes))
     .execute(&mut *transaction)
     .await?;
     transaction.commit().await?;
     get_change_set(pool, id).await
+}
+
+async fn apply_teacher_episode_changes(
+    transaction: &mut Transaction<'_, Postgres>,
+    change_set: &ChangeSetRow,
+    items: &[ChangeItemRow],
+    actor_user_id: Uuid,
+) -> Result<Vec<TeacherEpisodeAuditChange>, AppError> {
+    let mut teacher_items = items
+        .iter()
+        .filter(|item| {
+            matches!(
+                item.action_kind,
+                AcademicTermChangeActionKind::AddGroupTeacher
+                    | AcademicTermChangeActionKind::AdjustGroupTeacherRole
+                    | AcademicTermChangeActionKind::StopGroupTeacher
+            )
+        })
+        .collect::<Vec<_>>();
+    if teacher_items.is_empty() {
+        return Ok(Vec::new());
+    }
+    sqlx::query("SELECT set_config('schoolorbit.academic_change_set_id', $1, true)")
+        .bind(change_set.id.to_string())
+        .execute(&mut **transaction)
+        .await?;
+    teacher_items.sort_by_key(|item| {
+        (
+            match item.action_kind {
+                AcademicTermChangeActionKind::StopGroupTeacher => 0,
+                AcademicTermChangeActionKind::AdjustGroupTeacherRole => 1,
+                AcademicTermChangeActionKind::AddGroupTeacher => 2,
+                _ => 3,
+            },
+            item.learning_group_id,
+            item.teacher_id,
+            item.id,
+        )
+    });
+    let ends_on = change_set
+        .effective_from
+        .checked_sub_signed(chrono::Duration::days(1))
+        .ok_or_else(|| AppError::ValidationError("วันที่เริ่มใช้ไม่ถูกต้อง".to_string()))?;
+    let mut changes = Vec::new();
+
+    for item in teacher_items.iter().filter(|item| {
+        matches!(
+            item.action_kind,
+            AcademicTermChangeActionKind::StopGroupTeacher
+                | AcademicTermChangeActionKind::AdjustGroupTeacherRole
+        )
+    }) {
+        let episode_id = required_change_item_field(
+            item.learning_group_teacher_id,
+            "รายการเปลี่ยนครูไม่มีช่วงการสอนเดิม",
+        )?;
+        let before: (
+            Uuid,
+            Uuid,
+            LearningTeacherRole,
+            NaiveDate,
+            Option<NaiveDate>,
+            i64,
+        ) = sqlx::query_as(
+            r#"SELECT learning_group_id, teacher_id, role, starts_on, ends_on, row_version
+                   FROM learning_group_teachers
+                   WHERE id = $1
+                   FOR UPDATE"#,
+        )
+        .bind(episode_id)
+        .fetch_optional(&mut **transaction)
+        .await?
+        .ok_or_else(|| AppError::Conflict("ช่วงการสอนเดิมไม่พบแล้ว".to_string()))?;
+        if Some(before.0) != item.learning_group_id || Some(before.1) != item.teacher_id {
+            return Err(AppError::Conflict(
+                "บริบทช่วงการสอนเดิมเปลี่ยนแปลงแล้ว".to_string(),
+            ));
+        }
+        let updated = sqlx::query(
+            r#"UPDATE learning_group_teachers
+               SET ends_on = $1, ended_by_change_set_id = $2,
+                   row_version = row_version + 1,
+                   updated_by = $3, updated_at = now()
+               WHERE id = $4
+                 AND starts_on < $5
+                 AND (ends_on IS NULL OR ends_on >= $5)
+                 AND ended_by_change_set_id IS NULL"#,
+        )
+        .bind(ends_on)
+        .bind(change_set.id)
+        .bind(actor_user_id)
+        .bind(episode_id)
+        .bind(change_set.effective_from)
+        .execute(&mut **transaction)
+        .await?;
+        if updated.rows_affected() != 1 {
+            return Err(AppError::Conflict(
+                "ช่วงการสอนเดิมเปลี่ยนไป กรุณาตรวจความพร้อมใหม่".to_string(),
+            ));
+        }
+        changes.push(TeacherEpisodeAuditChange {
+            action: item.action_kind,
+            item_id: item.id,
+            episode_id,
+            learning_group_id: before.0,
+            teacher_id: before.1,
+            before: Some(TeacherEpisodeAuditSnapshot {
+                role: before.2,
+                starts_on: before.3,
+                ends_on: before.4,
+                row_version: before.5,
+            }),
+            after: TeacherEpisodeAuditSnapshot {
+                role: before.2,
+                starts_on: before.3,
+                ends_on: Some(ends_on),
+                row_version: before.5 + 1,
+            },
+        });
+    }
+
+    for item in teacher_items.iter().filter(|item| {
+        matches!(
+            item.action_kind,
+            AcademicTermChangeActionKind::AddGroupTeacher
+                | AcademicTermChangeActionKind::AdjustGroupTeacherRole
+        )
+    }) {
+        let learning_group_id =
+            required_change_item_field(item.learning_group_id, "รายการเพิ่มช่วงการสอนไม่มีกลุ่มเรียน")?;
+        let teacher_id = required_change_item_field(item.teacher_id, "รายการเพิ่มช่วงการสอนไม่มีครู")?;
+        let role = required_change_item_field(item.teacher_role, "รายการเพิ่มช่วงการสอนไม่มีบทบาท")?;
+        let episode_id = Uuid::new_v4();
+        sqlx::query(
+            r#"INSERT INTO learning_group_teachers (
+                   id, learning_group_id, academic_term_id, academic_year_id,
+                   teacher_id, role, starts_on, started_by_change_set_id,
+                   created_by, updated_by
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)"#,
+        )
+        .bind(episode_id)
+        .bind(learning_group_id)
+        .bind(change_set.academic_term_id)
+        .bind(change_set.academic_year_id)
+        .bind(teacher_id)
+        .bind(role)
+        .bind(change_set.effective_from)
+        .bind(change_set.id)
+        .bind(actor_user_id)
+        .execute(&mut **transaction)
+        .await?;
+        changes.push(TeacherEpisodeAuditChange {
+            action: item.action_kind,
+            item_id: item.id,
+            episode_id,
+            learning_group_id,
+            teacher_id,
+            before: None,
+            after: TeacherEpisodeAuditSnapshot {
+                role,
+                starts_on: change_set.effective_from,
+                ends_on: None,
+                row_version: 1,
+            },
+        });
+    }
+
+    Ok(changes)
 }
 
 async fn build_preview_in_transaction(
@@ -478,7 +680,8 @@ async fn build_preview_in_transaction(
     }
     let item_query = format!(
         r#"SELECT id, change_set_id, action_kind, learning_offering_id,
-                  weekly_period_target, row_version, created_by, created_at, updated_at
+                  weekly_period_target, learning_group_id, learning_group_teacher_id,
+                  teacher_id, teacher_role, row_version, created_by, created_at, updated_at
            FROM academic_term_change_items
            WHERE change_set_id = $1
            ORDER BY id {lock}"#
@@ -500,11 +703,22 @@ async fn build_preview_in_transaction(
     let stop_offering_ids = items
         .iter()
         .filter(|item| item.action_kind == AcademicTermChangeActionKind::StopOffering)
-        .map(|item| item.learning_offering_id)
+        .filter_map(|item| item.learning_offering_id)
         .collect::<Vec<_>>();
 
-    let impact_counts =
+    let mut impact_counts =
         load_stop_impact_counts(transaction, base_version_id, &stop_offering_ids).await?;
+    impact_counts.teacher_assignments += items
+        .iter()
+        .filter(|item| {
+            matches!(
+                item.action_kind,
+                AcademicTermChangeActionKind::AddGroupTeacher
+                    | AcademicTermChangeActionKind::AdjustGroupTeacherRole
+                    | AcademicTermChangeActionKind::StopGroupTeacher
+            )
+        })
+        .count() as i64;
     let schedule_rows: Vec<ScheduleCountRow> = sqlx::query_as(
         r#"SELECT target.learning_offering_id, learning_group.id AS learning_group_id,
                   concat_ws(' · ', nullif(offering.code_snapshot, ''), offering.name_snapshot)
@@ -592,13 +806,17 @@ async fn build_preview_in_transaction(
                 item.action_kind,
                 item.learning_offering_id,
                 item.weekly_period_target,
+                item.learning_group_id,
+                item.learning_group_teacher_id,
+                item.teacher_id,
+                item.teacher_role,
                 item.row_version,
             )
         })
         .collect::<Vec<_>>();
     let affected_offering_ids = items
         .iter()
-        .map(|item| item.learning_offering_id)
+        .filter_map(|item| item.learning_offering_id)
         .collect::<Vec<_>>();
     let resource_fingerprint =
         load_preview_resource_fingerprint(transaction, target_version_id, &affected_offering_ids)
@@ -698,7 +916,7 @@ async fn lock_publication_resources(
 ) -> Result<(), AppError> {
     let mut affected_offering_ids = items
         .iter()
-        .map(|item| item.learning_offering_id)
+        .filter_map(|item| item.learning_offering_id)
         .collect::<Vec<_>>();
     let target_offering_ids: Vec<Uuid> = sqlx::query_scalar(
         r#"SELECT learning_offering_id
@@ -801,7 +1019,12 @@ async fn load_preview_resource_fingerprint(
                UNION ALL
                SELECT concat_ws('|', 'teacher', assignment.id::text,
                                 assignment.learning_group_id::text,
-                                assignment.teacher_id::text, assignment.role)
+                                assignment.teacher_id::text, assignment.role,
+                                assignment.starts_on::text,
+                                coalesce(assignment.ends_on::text, ''),
+                                assignment.row_version::text,
+                                coalesce(assignment.started_by_change_set_id::text, ''),
+                                coalesce(assignment.ended_by_change_set_id::text, ''))
                FROM learning_group_teachers assignment
                JOIN target_groups target ON target.id = assignment.learning_group_id
                UNION ALL
@@ -1032,6 +1255,39 @@ async fn append_resource_readiness_findings(
         ));
     }
 
+    let target_group_ids: Vec<Uuid> = sqlx::query_scalar(
+        r#"SELECT learning_group.id
+           FROM academic_timetable_version_targets target
+           JOIN learning_groups learning_group
+             ON learning_group.learning_offering_id = target.learning_offering_id
+           WHERE target.timetable_version_id = $1
+             AND learning_group.status <> 'closed'
+           ORDER BY learning_group.id"#,
+    )
+    .bind(target_version_id)
+    .fetch_all(&mut **transaction)
+    .await?;
+    let projected_teachers = effective_teacher_service::project_effective_assignments_in_tx(
+        transaction,
+        change_set.id,
+        &target_group_ids,
+    )
+    .await?;
+    let projected_primary_groups = projected_teachers
+        .iter()
+        .filter(|assignment| assignment.role == LearningTeacherRole::Primary)
+        .map(|assignment| assignment.learning_group_id)
+        .collect::<BTreeSet<_>>();
+    let projected_teacher_keys = projected_teachers
+        .iter()
+        .map(|assignment| (assignment.learning_group_id, assignment.teacher_id))
+        .collect::<BTreeSet<_>>();
+    let stopped_teacher_items = items
+        .iter()
+        .filter(|item| item.action_kind == AcademicTermChangeActionKind::StopGroupTeacher)
+        .filter_map(|item| Some(((item.learning_group_id?, item.teacher_id?), item.id)))
+        .collect::<HashMap<_, _>>();
+
     let group_rows = sqlx::query(
         r#"SELECT learning_group.id, learning_group.learning_offering_id,
                   learning_group.status, learning_group.roster_status,
@@ -1075,7 +1331,7 @@ async fn append_resource_readiness_findings(
         let roster_status: String = row.get("roster_status");
         let roster_prepared: bool = row.get("roster_prepared");
         let teachers_locked: bool = row.get("teachers_locked");
-        let has_active_primary: bool = row.get("has_active_primary");
+        let has_active_primary = projected_primary_groups.contains(&group_id);
         let is_added: bool = row.get("is_added");
         if status != "published" && !(is_added && status == "draft") {
             findings.push(change_finding(
@@ -1091,7 +1347,14 @@ async fn append_resource_readiness_findings(
         }
         if !has_active_primary || (!is_added && !teachers_locked) {
             findings.push(change_finding(
-                AcademicChangeFindingCode::MissingPrimaryTeacher,
+                if items
+                    .iter()
+                    .any(|item| item.learning_group_id == Some(group_id))
+                {
+                    AcademicChangeFindingCode::MissingEffectiveTeacher
+                } else {
+                    AcademicChangeFindingCode::MissingPrimaryTeacher
+                },
                 AcademicChangeFindingSeverity::Blocking,
                 "กลุ่มเรียนยังไม่มีครูหลักที่พร้อมใช้งาน",
                 "กำหนดครูหลักให้กลุ่มเรียนก่อนเผยแพร่ ครูจะถูกล็อกเมื่อเผยแพร่",
@@ -1190,49 +1453,67 @@ async fn append_resource_readiness_findings(
         ));
     }
 
-    let entries_with_ineligible_instructors: Vec<(Uuid, Option<Uuid>, Option<Uuid>)> =
-        sqlx::query_as(
-            r#"SELECT DISTINCT entry.id, entry.learning_offering_id, entry.learning_group_id
-               FROM academic_timetable_entries entry
-               JOIN academic_timetable_versions version
-                 ON version.id = entry.timetable_version_id
-               JOIN timetable_entry_instructors instructor ON instructor.entry_id = entry.id
-               LEFT JOIN users teacher ON teacher.id = instructor.instructor_id
-               WHERE entry.timetable_version_id = $1
-                 AND entry.is_active
-                 AND entry.entry_type IN ('COURSE', 'ACTIVITY')
-                 AND entry.learning_group_id IS NOT NULL
-                 AND (
-                     teacher.id IS NULL
-                     OR teacher.status <> 'active'
-                     OR NOT EXISTS (
-                         SELECT 1
-                         FROM learning_group_teachers assignment
-                         WHERE assignment.learning_group_id = entry.learning_group_id
-                           AND assignment.teacher_id = instructor.instructor_id
-                           AND assignment.starts_on <= version.effective_from
-                           AND (
-                               assignment.ends_on IS NULL
-                               OR assignment.ends_on >= version.effective_from
-                           )
-                     )
-                 )
-               ORDER BY entry.id"#,
-        )
-        .bind(target_version_id)
-        .fetch_all(&mut **transaction)
-        .await?;
-    for (entry_id, offering_id, group_id) in entries_with_ineligible_instructors {
-        findings.push(change_finding(
-            AcademicChangeFindingCode::IneligibleEntryInstructor,
+    let entry_instructors: Vec<(Uuid, Uuid, Uuid, Uuid)> = sqlx::query_as(
+        r#"SELECT entry.id, entry.learning_offering_id,
+                  entry.learning_group_id, instructor.instructor_id
+           FROM academic_timetable_entries entry
+           JOIN timetable_entry_instructors instructor ON instructor.entry_id = entry.id
+           WHERE entry.timetable_version_id = $1
+             AND entry.is_active
+             AND entry.entry_type IN ('COURSE', 'ACTIVITY')
+             AND entry.learning_group_id IS NOT NULL
+           ORDER BY entry.id, instructor.instructor_id"#,
+    )
+    .bind(target_version_id)
+    .fetch_all(&mut **transaction)
+    .await?;
+    for (entry_id, offering_id, group_id, instructor_id) in entry_instructors {
+        if projected_teacher_keys.contains(&(group_id, instructor_id)) {
+            continue;
+        }
+        let stopped_item_id = stopped_teacher_items
+            .get(&(group_id, instructor_id))
+            .copied();
+        let mut finding = change_finding(
+            if stopped_item_id.is_some() {
+                AcademicChangeFindingCode::StoppedTeacherStillScheduled
+            } else {
+                AcademicChangeFindingCode::EntryInstructorNotEffective
+            },
             AcademicChangeFindingSeverity::Blocking,
-            "คาบเรียนมีครูที่ไม่อยู่ในทีมสอนของกลุ่มเรียน",
-            "แก้ครูประจำคาบ หรือเพิ่มช่วงการสอนของครูในกลุ่มเรียนให้ครอบคลุมวันที่เริ่มใช้รุ่นตาราง",
+            if stopped_item_id.is_some() {
+                "ครูที่จะหยุดยังอยู่ในคาบของรุ่นตารางใหม่"
+            } else {
+                "คาบเรียนมีครูที่ไม่มีช่วงการสอนในวันที่เริ่มใช้"
+            },
+            if stopped_item_id.is_some() {
+                "เปิดการส่งมอบคาบ เลือกครูรับช่วง หรือจัดเองในหน้าตารางสอน"
+            } else {
+                "แก้ครูประจำคาบ หรือเพิ่มช่วงการสอนของครูให้ครอบคลุมวันที่เริ่มใช้"
+            },
             1,
-            offering_id,
-            group_id,
+            Some(offering_id),
+            Some(group_id),
             Some(entry_id),
-        ));
+        );
+        finding.route = Some(if let Some(item_id) = stopped_item_id {
+            format!(
+                "/staff/academic/delivery?academicYearId={}&academicTermId={}&changeSetId={}&teacherChangeItemId={}",
+                change_set.academic_year_id,
+                change_set.academic_term_id,
+                change_set.id,
+                item_id
+            )
+        } else {
+            format!(
+                "/staff/academic/timetable?academicYearId={}&academicTermId={}&timetableVersionId={}&view=group&ownerId={}",
+                change_set.academic_year_id,
+                change_set.academic_term_id,
+                target_version_id,
+                group_id
+            )
+        });
+        findings.push(finding);
     }
 
     for count in schedule_counts {
@@ -1432,7 +1713,6 @@ fn finding_code_text(code: AcademicChangeFindingCode) -> &'static str {
         AcademicChangeFindingCode::DraftGroup => "draft_group",
         AcademicChangeFindingCode::MissingPrimaryTeacher => "missing_primary_teacher",
         AcademicChangeFindingCode::MissingEntryInstructor => "missing_entry_instructor",
-        AcademicChangeFindingCode::IneligibleEntryInstructor => "ineligible_entry_instructor",
         AcademicChangeFindingCode::UnpublishedRoster => "unpublished_roster",
         AcademicChangeFindingCode::OfferingUnavailable => "offering_unavailable",
         AcademicChangeFindingCode::MissingWeeklyPeriodTarget => "missing_weekly_period_target",
@@ -1445,6 +1725,11 @@ fn finding_code_text(code: AcademicChangeFindingCode) -> &'static str {
         AcademicChangeFindingCode::StoppedOfferingStillScheduled => {
             "stopped_offering_still_scheduled"
         }
+        AcademicChangeFindingCode::MissingEffectiveTeacher => "missing_effective_teacher",
+        AcademicChangeFindingCode::StoppedTeacherStillScheduled => {
+            "stopped_teacher_still_scheduled"
+        }
+        AcademicChangeFindingCode::EntryInstructorNotEffective => "entry_instructor_not_effective",
     }
 }
 
@@ -1961,6 +2246,235 @@ pub async fn upsert_change_item(
                 (item_id, "adjust_weekly_period_target", false)
             }
         }
+        UpsertAcademicTermChangeItemRequest::AddGroupTeacher {
+            item_row_version,
+            learning_group_id,
+            teacher_id,
+            teacher_role,
+            ..
+        } => {
+            require_teacher_change_group(&mut transaction, &term, learning_group_id).await?;
+            require_active_staff(&mut transaction, teacher_id).await?;
+            let overlapping_episode_id: Option<Uuid> = sqlx::query_scalar(
+                r#"SELECT id
+                   FROM learning_group_teachers
+                   WHERE learning_group_id = $1
+                     AND teacher_id = $2
+                     AND starts_on <= $3
+                     AND (ends_on IS NULL OR ends_on >= $3)
+                   ORDER BY starts_on DESC, id
+                   LIMIT 1
+                   FOR UPDATE"#,
+            )
+            .bind(learning_group_id)
+            .bind(teacher_id)
+            .bind(row.effective_from)
+            .fetch_optional(&mut *transaction)
+            .await?;
+            if let Some(episode_id) = overlapping_episode_id {
+                let has_matching_stop: bool = sqlx::query_scalar(
+                    r#"SELECT EXISTS (
+                           SELECT 1 FROM academic_term_change_items
+                           WHERE change_set_id = $1
+                             AND action_kind = 'stop_group_teacher'
+                             AND learning_group_teacher_id = $2
+                       )"#,
+                )
+                .bind(change_set_id)
+                .bind(episode_id)
+                .fetch_one(&mut *transaction)
+                .await?;
+                if !has_matching_stop {
+                    return Err(AppError::Conflict(
+                        "ครูคนนี้มีช่วงการสอนที่ครอบคลุมวันที่เริ่มใช้แล้ว".to_string(),
+                    ));
+                }
+            }
+            if let Some(existing) = find_teacher_add_item(
+                &mut transaction,
+                change_set_id,
+                learning_group_id,
+                teacher_id,
+            )
+            .await?
+            {
+                if item_row_version != Some(existing.row_version) {
+                    return Err(AppError::Conflict(
+                        "รายการเพิ่มครูถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string(),
+                    ));
+                }
+                if existing.teacher_role == Some(teacher_role) {
+                    (existing.id, "add_group_teacher", true)
+                } else {
+                    sqlx::query(
+                        r#"UPDATE academic_term_change_items
+                           SET teacher_role = $1, row_version = row_version + 1,
+                               updated_at = now()
+                           WHERE id = $2"#,
+                    )
+                    .bind(teacher_role)
+                    .bind(existing.id)
+                    .execute(&mut *transaction)
+                    .await?;
+                    (existing.id, "add_group_teacher", false)
+                }
+            } else {
+                if item_row_version.is_some() {
+                    return Err(AppError::Conflict(
+                        "ไม่พบรายการเพิ่มครูรุ่นที่ต้องการแก้ไข".to_string(),
+                    ));
+                }
+                let item_id = insert_teacher_change_item(
+                    &mut transaction,
+                    change_set_id,
+                    &term,
+                    AcademicTermChangeActionKind::AddGroupTeacher,
+                    learning_group_id,
+                    None,
+                    teacher_id,
+                    Some(teacher_role),
+                    actor_user_id,
+                )
+                .await?;
+                (item_id, "add_group_teacher", false)
+            }
+        }
+        UpsertAcademicTermChangeItemRequest::AdjustGroupTeacherRole {
+            item_row_version,
+            learning_group_id,
+            learning_group_teacher_id,
+            teacher_id,
+            teacher_role,
+            ..
+        } => {
+            require_teacher_change_group(&mut transaction, &term, learning_group_id).await?;
+            require_active_staff(&mut transaction, teacher_id).await?;
+            require_effective_teacher_episode(
+                &mut transaction,
+                &term,
+                learning_group_id,
+                learning_group_teacher_id,
+                teacher_id,
+                row.effective_from,
+            )
+            .await?;
+            ensure_no_teacher_episode_action(
+                &mut transaction,
+                change_set_id,
+                AcademicTermChangeActionKind::StopGroupTeacher,
+                learning_group_teacher_id,
+                "หยุดและปรับบทบาทช่วงการสอนเดียวกันในชุดเดียวไม่ได้",
+            )
+            .await?;
+            if let Some(existing) = find_teacher_episode_item(
+                &mut transaction,
+                change_set_id,
+                AcademicTermChangeActionKind::AdjustGroupTeacherRole,
+                learning_group_teacher_id,
+            )
+            .await?
+            {
+                if item_row_version != Some(existing.row_version) {
+                    return Err(AppError::Conflict(
+                        "รายการปรับบทบาทครูถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string(),
+                    ));
+                }
+                if existing.teacher_role == Some(teacher_role) {
+                    (existing.id, "adjust_group_teacher_role", true)
+                } else {
+                    sqlx::query(
+                        r#"UPDATE academic_term_change_items
+                           SET teacher_role = $1, row_version = row_version + 1,
+                               updated_at = now()
+                           WHERE id = $2"#,
+                    )
+                    .bind(teacher_role)
+                    .bind(existing.id)
+                    .execute(&mut *transaction)
+                    .await?;
+                    (existing.id, "adjust_group_teacher_role", false)
+                }
+            } else {
+                if item_row_version.is_some() {
+                    return Err(AppError::Conflict(
+                        "ไม่พบรายการปรับบทบาทครูรุ่นที่ต้องการแก้ไข".to_string(),
+                    ));
+                }
+                let item_id = insert_teacher_change_item(
+                    &mut transaction,
+                    change_set_id,
+                    &term,
+                    AcademicTermChangeActionKind::AdjustGroupTeacherRole,
+                    learning_group_id,
+                    Some(learning_group_teacher_id),
+                    teacher_id,
+                    Some(teacher_role),
+                    actor_user_id,
+                )
+                .await?;
+                (item_id, "adjust_group_teacher_role", false)
+            }
+        }
+        UpsertAcademicTermChangeItemRequest::StopGroupTeacher {
+            item_row_version,
+            learning_group_id,
+            learning_group_teacher_id,
+            teacher_id,
+            ..
+        } => {
+            require_teacher_change_group(&mut transaction, &term, learning_group_id).await?;
+            require_effective_teacher_episode(
+                &mut transaction,
+                &term,
+                learning_group_id,
+                learning_group_teacher_id,
+                teacher_id,
+                row.effective_from,
+            )
+            .await?;
+            ensure_no_teacher_episode_action(
+                &mut transaction,
+                change_set_id,
+                AcademicTermChangeActionKind::AdjustGroupTeacherRole,
+                learning_group_teacher_id,
+                "หยุดและปรับบทบาทช่วงการสอนเดียวกันในชุดเดียวไม่ได้",
+            )
+            .await?;
+            if let Some(existing) = find_teacher_episode_item(
+                &mut transaction,
+                change_set_id,
+                AcademicTermChangeActionKind::StopGroupTeacher,
+                learning_group_teacher_id,
+            )
+            .await?
+            {
+                if item_row_version != Some(existing.row_version) {
+                    return Err(AppError::Conflict(
+                        "รายการหยุดครูถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string(),
+                    ));
+                }
+                (existing.id, "stop_group_teacher", true)
+            } else {
+                if item_row_version.is_some() {
+                    return Err(AppError::Conflict(
+                        "ไม่พบรายการหยุดครูรุ่นที่ต้องการแก้ไข".to_string(),
+                    ));
+                }
+                let item_id = insert_teacher_change_item(
+                    &mut transaction,
+                    change_set_id,
+                    &term,
+                    AcademicTermChangeActionKind::StopGroupTeacher,
+                    learning_group_id,
+                    Some(learning_group_teacher_id),
+                    teacher_id,
+                    None,
+                    actor_user_id,
+                )
+                .await?;
+                (item_id, "stop_group_teacher", false)
+            }
+        }
     };
 
     if no_op {
@@ -2027,13 +2541,17 @@ pub async fn delete_change_item(
 
     match item.action_kind {
         AcademicTermChangeActionKind::AddOffering => {
-            require_draft_only_delete(&mut transaction, item.learning_offering_id).await?;
+            let offering_id = required_change_item_field(
+                item.learning_offering_id,
+                "รายการเพิ่มการเปิดสอนไม่มีรายการเปิดสอน",
+            )?;
+            require_draft_only_delete(&mut transaction, offering_id).await?;
             sqlx::query(
                 "DELETE FROM academic_timetable_entries \
                  WHERE timetable_version_id = $1 AND learning_offering_id = $2",
             )
             .bind(target_version_id)
-            .bind(item.learning_offering_id)
+            .bind(offering_id)
             .execute(&mut *transaction)
             .await?;
             sqlx::query(
@@ -2041,7 +2559,7 @@ pub async fn delete_change_item(
                  WHERE timetable_version_id = $1 AND learning_offering_id = $2",
             )
             .bind(target_version_id)
-            .bind(item.learning_offering_id)
+            .bind(offering_id)
             .execute(&mut *transaction)
             .await?;
             sqlx::query("DELETE FROM academic_term_change_items WHERE id = $1")
@@ -2049,15 +2567,19 @@ pub async fn delete_change_item(
                 .execute(&mut *transaction)
                 .await?;
             sqlx::query("DELETE FROM learning_groups WHERE learning_offering_id = $1")
-                .bind(item.learning_offering_id)
+                .bind(offering_id)
                 .execute(&mut *transaction)
                 .await?;
             sqlx::query("DELETE FROM learning_offerings WHERE id = $1 AND status = 'draft'")
-                .bind(item.learning_offering_id)
+                .bind(offering_id)
                 .execute(&mut *transaction)
                 .await?;
         }
         AcademicTermChangeActionKind::StopOffering => {
+            let offering_id = required_change_item_field(
+                item.learning_offering_id,
+                "รายการหยุดเปิดสอนไม่มีรายการเปิดสอน",
+            )?;
             sqlx::query("DELETE FROM academic_term_change_items WHERE id = $1")
                 .bind(item.id)
                 .execute(&mut *transaction)
@@ -2066,7 +2588,7 @@ pub async fn delete_change_item(
                 &mut transaction,
                 base_version_id,
                 target_version_id,
-                item.learning_offering_id,
+                offering_id,
             )
             .await?;
             restore_version_entries(
@@ -2074,11 +2596,15 @@ pub async fn delete_change_item(
                 actor_user_id,
                 base_version_id,
                 target_version_id,
-                item.learning_offering_id,
+                offering_id,
             )
             .await?;
         }
         AcademicTermChangeActionKind::AdjustWeeklyPeriodTarget => {
+            let offering_id = required_change_item_field(
+                item.learning_offering_id,
+                "รายการปรับจำนวนคาบไม่มีรายการเปิดสอน",
+            )?;
             sqlx::query("DELETE FROM academic_term_change_items WHERE id = $1")
                 .bind(item.id)
                 .execute(&mut *transaction)
@@ -2087,9 +2613,17 @@ pub async fn delete_change_item(
                 &mut transaction,
                 base_version_id,
                 target_version_id,
-                item.learning_offering_id,
+                offering_id,
             )
             .await?;
+        }
+        AcademicTermChangeActionKind::AddGroupTeacher
+        | AcademicTermChangeActionKind::AdjustGroupTeacherRole
+        | AcademicTermChangeActionKind::StopGroupTeacher => {
+            sqlx::query("DELETE FROM academic_term_change_items WHERE id = $1")
+                .bind(item.id)
+                .execute(&mut *transaction)
+                .await?;
         }
     }
     increment_change_set_revision(&mut transaction, change_set_id).await?;
@@ -2106,6 +2640,9 @@ pub async fn delete_change_item(
             "changeSetId": change_set_id,
             "action": item.action_kind,
             "learningOfferingId": item.learning_offering_id,
+            "learningGroupId": item.learning_group_id,
+            "learningGroupTeacherId": item.learning_group_teacher_id,
+            "teacherId": item.teacher_id,
         }),
     )
     .await?;
@@ -2245,6 +2782,207 @@ async fn insert_change_item(
     Ok(item_id)
 }
 
+#[allow(clippy::too_many_arguments)]
+async fn insert_teacher_change_item(
+    transaction: &mut Transaction<'_, Postgres>,
+    change_set_id: Uuid,
+    term: &TermContext,
+    action_kind: AcademicTermChangeActionKind,
+    learning_group_id: Uuid,
+    learning_group_teacher_id: Option<Uuid>,
+    teacher_id: Uuid,
+    teacher_role: Option<LearningTeacherRole>,
+    actor_user_id: Uuid,
+) -> Result<Uuid, AppError> {
+    let item_id = Uuid::new_v4();
+    sqlx::query(
+        r#"INSERT INTO academic_term_change_items (
+               id, change_set_id, academic_term_id, academic_year_id, action_kind,
+               learning_group_id, learning_group_teacher_id, teacher_id,
+               teacher_role, created_by
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"#,
+    )
+    .bind(item_id)
+    .bind(change_set_id)
+    .bind(term.id)
+    .bind(term.academic_year_id)
+    .bind(action_kind)
+    .bind(learning_group_id)
+    .bind(learning_group_teacher_id)
+    .bind(teacher_id)
+    .bind(teacher_role)
+    .bind(actor_user_id)
+    .execute(&mut **transaction)
+    .await?;
+    Ok(item_id)
+}
+
+async fn require_teacher_change_group(
+    transaction: &mut Transaction<'_, Postgres>,
+    term: &TermContext,
+    learning_group_id: Uuid,
+) -> Result<(), AppError> {
+    let context: Option<(Uuid, Uuid, String)> = sqlx::query_as(
+        r#"SELECT academic_term_id, academic_year_id, status
+           FROM learning_groups
+           WHERE id = $1
+           FOR UPDATE"#,
+    )
+    .bind(learning_group_id)
+    .fetch_optional(&mut **transaction)
+    .await?;
+    let Some((academic_term_id, academic_year_id, status)) = context else {
+        return Err(AppError::NotFound("ไม่พบกลุ่มเรียนที่ต้องการเปลี่ยนครู".to_string()));
+    };
+    if academic_term_id != term.id || academic_year_id != term.academic_year_id {
+        return Err(AppError::ValidationError(
+            "กลุ่มเรียนไม่อยู่ในภาคเรียนของชุดการเปลี่ยนแปลง".to_string(),
+        ));
+    }
+    if status != "published" {
+        return Err(AppError::Conflict(
+            "เปลี่ยนครูกลางภาคได้เฉพาะกลุ่มเรียนที่เผยแพร่แล้ว".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+async fn require_active_staff(
+    transaction: &mut Transaction<'_, Postgres>,
+    teacher_id: Uuid,
+) -> Result<(), AppError> {
+    let eligible: bool = sqlx::query_scalar(
+        r#"SELECT EXISTS (
+               SELECT 1 FROM users
+               WHERE id = $1 AND user_type = 'staff' AND status = 'active'
+           )"#,
+    )
+    .bind(teacher_id)
+    .fetch_one(&mut **transaction)
+    .await?;
+    if eligible {
+        Ok(())
+    } else {
+        Err(AppError::ValidationError(
+            "เลือกได้เฉพาะบุคลากรที่ยังใช้งานอยู่".to_string(),
+        ))
+    }
+}
+
+async fn require_effective_teacher_episode(
+    transaction: &mut Transaction<'_, Postgres>,
+    term: &TermContext,
+    learning_group_id: Uuid,
+    learning_group_teacher_id: Uuid,
+    teacher_id: Uuid,
+    effective_from: NaiveDate,
+) -> Result<(), AppError> {
+    let episode: Option<(NaiveDate, Option<NaiveDate>)> = sqlx::query_as(
+        r#"SELECT starts_on, ends_on
+           FROM learning_group_teachers
+           WHERE id = $1
+             AND learning_group_id = $2
+             AND teacher_id = $3
+             AND academic_term_id = $4
+             AND academic_year_id = $5
+           FOR UPDATE"#,
+    )
+    .bind(learning_group_teacher_id)
+    .bind(learning_group_id)
+    .bind(teacher_id)
+    .bind(term.id)
+    .bind(term.academic_year_id)
+    .fetch_optional(&mut **transaction)
+    .await?;
+    let Some((starts_on, ends_on)) = episode else {
+        return Err(AppError::NotFound(
+            "ไม่พบช่วงการสอนของครูในกลุ่มเรียนนี้".to_string(),
+        ));
+    };
+    if effective_from <= starts_on || ends_on.is_some_and(|end| effective_from > end) {
+        return Err(AppError::ValidationError(
+            "วันที่เริ่มใช้ต้องอยู่หลังวันเริ่มช่วงการสอนเดิมและไม่เกินวันสิ้นสุดเดิม".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+async fn find_teacher_add_item(
+    transaction: &mut Transaction<'_, Postgres>,
+    change_set_id: Uuid,
+    learning_group_id: Uuid,
+    teacher_id: Uuid,
+) -> Result<Option<ChangeItemRow>, AppError> {
+    sqlx::query_as(
+        r#"SELECT id, change_set_id, action_kind, learning_offering_id,
+                  weekly_period_target, learning_group_id, learning_group_teacher_id,
+                  teacher_id, teacher_role, row_version, created_by, created_at, updated_at
+           FROM academic_term_change_items
+           WHERE change_set_id = $1
+             AND action_kind = 'add_group_teacher'
+             AND learning_group_id = $2
+             AND teacher_id = $3
+           FOR UPDATE"#,
+    )
+    .bind(change_set_id)
+    .bind(learning_group_id)
+    .bind(teacher_id)
+    .fetch_optional(&mut **transaction)
+    .await
+    .map_err(AppError::from)
+}
+
+async fn find_teacher_episode_item(
+    transaction: &mut Transaction<'_, Postgres>,
+    change_set_id: Uuid,
+    action_kind: AcademicTermChangeActionKind,
+    learning_group_teacher_id: Uuid,
+) -> Result<Option<ChangeItemRow>, AppError> {
+    sqlx::query_as(
+        r#"SELECT id, change_set_id, action_kind, learning_offering_id,
+                  weekly_period_target, learning_group_id, learning_group_teacher_id,
+                  teacher_id, teacher_role, row_version, created_by, created_at, updated_at
+           FROM academic_term_change_items
+           WHERE change_set_id = $1
+             AND action_kind = $2
+             AND learning_group_teacher_id = $3
+           FOR UPDATE"#,
+    )
+    .bind(change_set_id)
+    .bind(action_kind)
+    .bind(learning_group_teacher_id)
+    .fetch_optional(&mut **transaction)
+    .await
+    .map_err(AppError::from)
+}
+
+async fn ensure_no_teacher_episode_action(
+    transaction: &mut Transaction<'_, Postgres>,
+    change_set_id: Uuid,
+    action_kind: AcademicTermChangeActionKind,
+    learning_group_teacher_id: Uuid,
+    message: &str,
+) -> Result<(), AppError> {
+    let exists: bool = sqlx::query_scalar(
+        r#"SELECT EXISTS (
+               SELECT 1 FROM academic_term_change_items
+               WHERE change_set_id = $1
+                 AND action_kind = $2
+                 AND learning_group_teacher_id = $3
+           )"#,
+    )
+    .bind(change_set_id)
+    .bind(action_kind)
+    .bind(learning_group_teacher_id)
+    .fetch_one(&mut **transaction)
+    .await?;
+    if exists {
+        Err(AppError::Conflict(message.to_string()))
+    } else {
+        Ok(())
+    }
+}
+
 async fn require_stoppable_offering(
     transaction: &mut Transaction<'_, Postgres>,
     change_set_id: Uuid,
@@ -2310,7 +3048,8 @@ async fn find_change_item(
 ) -> Result<Option<ChangeItemRow>, AppError> {
     Ok(sqlx::query_as(
         r#"SELECT id, change_set_id, action_kind, learning_offering_id,
-                  weekly_period_target, row_version, created_by, created_at, updated_at
+                  weekly_period_target, learning_group_id, learning_group_teacher_id,
+                  teacher_id, teacher_role, row_version, created_by, created_at, updated_at
            FROM academic_term_change_items
            WHERE change_set_id = $1 AND action_kind = $2 AND learning_offering_id = $3
            FOR UPDATE"#,
@@ -2329,7 +3068,8 @@ async fn lock_change_item(
 ) -> Result<ChangeItemRow, AppError> {
     sqlx::query_as(
         r#"SELECT id, change_set_id, action_kind, learning_offering_id,
-                  weekly_period_target, row_version, created_by, created_at, updated_at
+                  weekly_period_target, learning_group_id, learning_group_teacher_id,
+                  teacher_id, teacher_role, row_version, created_by, created_at, updated_at
            FROM academic_term_change_items
            WHERE change_set_id = $1 AND id = $2
            FOR UPDATE"#,
@@ -2698,7 +3438,8 @@ async fn hydrate_many(
     let ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
     let item_rows: Vec<ChangeItemRow> = sqlx::query_as(
         r#"SELECT id, change_set_id, action_kind, learning_offering_id,
-                  weekly_period_target, row_version, created_by, created_at, updated_at
+                  weekly_period_target, learning_group_id, learning_group_teacher_id,
+                  teacher_id, teacher_role, row_version, created_by, created_at, updated_at
            FROM academic_term_change_items
            WHERE change_set_id = ANY($1)
            ORDER BY change_set_id, created_at, id"#,
@@ -2706,12 +3447,59 @@ async fn hydrate_many(
     .bind(&ids)
     .fetch_all(pool)
     .await?;
+    let group_ids = item_rows
+        .iter()
+        .filter_map(|row| row.learning_group_id)
+        .collect::<Vec<_>>();
+    let group_labels = if group_ids.is_empty() {
+        HashMap::new()
+    } else {
+        sqlx::query_as::<_, (Uuid, String)>(
+            r#"SELECT id, concat_ws(' · ', nullif(code, ''), name)
+               FROM learning_groups
+               WHERE id = ANY($1)"#,
+        )
+        .bind(&group_ids)
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .collect::<HashMap<_, _>>()
+    };
+    let teacher_ids = item_rows
+        .iter()
+        .filter_map(|row| row.teacher_id)
+        .collect::<Vec<_>>();
+    let teacher_labels = if teacher_ids.is_empty() {
+        HashMap::new()
+    } else {
+        sqlx::query_as::<_, (Uuid, String)>(
+            r#"SELECT id,
+                      concat_ws(' ',
+                          nullif(concat(coalesce(title, ''), first_name), ''),
+                          nullif(last_name, ''))
+               FROM users
+               WHERE id = ANY($1)"#,
+        )
+        .bind(&teacher_ids)
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .collect::<HashMap<_, _>>()
+    };
     let mut items_by_change_set = HashMap::<Uuid, Vec<AcademicTermChangeItem>>::new();
     for row in item_rows {
+        let learning_offering_id = row.learning_offering_id;
+        let learning_group_id = row.learning_group_id;
+        let learning_group_teacher_id = row.learning_group_teacher_id;
+        let teacher_id = row.teacher_id;
+        let teacher_role = row.teacher_role;
         let item = match row.action_kind {
             AcademicTermChangeActionKind::AddOffering => AcademicTermChangeItem::AddOffering {
                 id: row.id,
-                learning_offering_id: row.learning_offering_id,
+                learning_offering_id: required_change_item_field(
+                    learning_offering_id,
+                    "รายการเพิ่มการเปิดสอนไม่มีรายการเปิดสอน",
+                )?,
                 weekly_period_target: row.weekly_period_target.ok_or_else(|| {
                     AppError::InternalServerError(
                         "รายการเพิ่มการเปิดสอนไม่มีจำนวนคาบเป้าหมาย".to_string(),
@@ -2724,7 +3512,10 @@ async fn hydrate_many(
             },
             AcademicTermChangeActionKind::StopOffering => AcademicTermChangeItem::StopOffering {
                 id: row.id,
-                learning_offering_id: row.learning_offering_id,
+                learning_offering_id: required_change_item_field(
+                    learning_offering_id,
+                    "รายการหยุดเปิดสอนไม่มีรายการเปิดสอน",
+                )?,
                 row_version: row.row_version,
                 created_by: row.created_by,
                 created_at: row.created_at,
@@ -2733,10 +3524,108 @@ async fn hydrate_many(
             AcademicTermChangeActionKind::AdjustWeeklyPeriodTarget => {
                 AcademicTermChangeItem::AdjustWeeklyPeriodTarget {
                     id: row.id,
-                    learning_offering_id: row.learning_offering_id,
+                    learning_offering_id: required_change_item_field(
+                        learning_offering_id,
+                        "รายการปรับจำนวนคาบไม่มีรายการเปิดสอน",
+                    )?,
                     weekly_period_target: row.weekly_period_target.ok_or_else(|| {
                         AppError::InternalServerError("รายการปรับจำนวนคาบไม่มีค่าเป้าหมาย".to_string())
                     })?,
+                    row_version: row.row_version,
+                    created_by: row.created_by,
+                    created_at: row.created_at,
+                    updated_at: row.updated_at,
+                }
+            }
+            AcademicTermChangeActionKind::AddGroupTeacher => {
+                let group_id =
+                    required_change_item_field(learning_group_id, "รายการเพิ่มครูไม่มีกลุ่มเรียน")?;
+                let teacher_id = required_change_item_field(teacher_id, "รายการเพิ่มครูไม่มีครู")?;
+                AcademicTermChangeItem::AddGroupTeacher {
+                    id: row.id,
+                    learning_group_id: group_id,
+                    learning_group_label: required_change_item_label(
+                        &group_labels,
+                        group_id,
+                        "ไม่พบชื่อกลุ่มเรียนของรายการเพิ่มครู",
+                    )?,
+                    teacher_id,
+                    teacher_label: required_change_item_label(
+                        &teacher_labels,
+                        teacher_id,
+                        "ไม่พบชื่อครูของรายการเพิ่มครู",
+                    )?,
+                    teacher_role: required_change_item_field(teacher_role, "รายการเพิ่มครูไม่มีบทบาท")?,
+                    row_version: row.row_version,
+                    created_by: row.created_by,
+                    created_at: row.created_at,
+                    updated_at: row.updated_at,
+                }
+            }
+            AcademicTermChangeActionKind::AdjustGroupTeacherRole => {
+                let group_id =
+                    required_change_item_field(learning_group_id, "รายการปรับบทบาทครูไม่มีกลุ่มเรียน")?;
+                let teacher_id = required_change_item_field(teacher_id, "รายการปรับบทบาทไม่มีครู")?;
+                AcademicTermChangeItem::AdjustGroupTeacherRole {
+                    id: row.id,
+                    learning_group_id: group_id,
+                    learning_group_label: required_change_item_label(
+                        &group_labels,
+                        group_id,
+                        "ไม่พบชื่อกลุ่มเรียนของรายการปรับบทบาทครู",
+                    )?,
+                    learning_group_teacher_id: required_change_item_field(
+                        learning_group_teacher_id,
+                        "รายการปรับบทบาทไม่มีช่วงการสอน",
+                    )?,
+                    teacher_id,
+                    teacher_label: required_change_item_label(
+                        &teacher_labels,
+                        teacher_id,
+                        "ไม่พบชื่อครูของรายการปรับบทบาท",
+                    )?,
+                    teacher_role: required_change_item_field(
+                        teacher_role,
+                        "รายการปรับบทบาทไม่มีบทบาทใหม่",
+                    )?,
+                    row_version: row.row_version,
+                    created_by: row.created_by,
+                    created_at: row.created_at,
+                    updated_at: row.updated_at,
+                }
+            }
+            AcademicTermChangeActionKind::StopGroupTeacher => {
+                let group_id =
+                    required_change_item_field(learning_group_id, "รายการหยุดครูไม่มีกลุ่มเรียน")?;
+                let teacher_id = required_change_item_field(teacher_id, "รายการหยุดครูไม่มีครู")?;
+                let episode_id = required_change_item_field(
+                    learning_group_teacher_id,
+                    "รายการหยุดครูไม่มีช่วงการสอน",
+                )?;
+                let episode_role: LearningTeacherRole =
+                    sqlx::query_scalar("SELECT role FROM learning_group_teachers WHERE id = $1")
+                        .bind(episode_id)
+                        .fetch_optional(pool)
+                        .await?
+                        .ok_or_else(|| {
+                            AppError::InternalServerError("ไม่พบบทบาทเดิมของรายการหยุดครู".to_string())
+                        })?;
+                AcademicTermChangeItem::StopGroupTeacher {
+                    id: row.id,
+                    learning_group_id: group_id,
+                    learning_group_label: required_change_item_label(
+                        &group_labels,
+                        group_id,
+                        "ไม่พบชื่อกลุ่มเรียนของรายการหยุดครู",
+                    )?,
+                    learning_group_teacher_id: episode_id,
+                    teacher_id,
+                    teacher_label: required_change_item_label(
+                        &teacher_labels,
+                        teacher_id,
+                        "ไม่พบชื่อครูของรายการหยุดครู",
+                    )?,
+                    teacher_role: episode_role,
                     row_version: row.row_version,
                     created_by: row.created_by,
                     created_at: row.created_at,
@@ -2779,6 +3668,21 @@ async fn hydrate_many(
             })
         })
         .collect()
+}
+
+fn required_change_item_field<T>(value: Option<T>, message: &str) -> Result<T, AppError> {
+    value.ok_or_else(|| AppError::InternalServerError(message.to_string()))
+}
+
+fn required_change_item_label(
+    labels: &HashMap<Uuid, String>,
+    id: Uuid,
+    message: &str,
+) -> Result<String, AppError> {
+    labels
+        .get(&id)
+        .cloned()
+        .ok_or_else(|| AppError::InternalServerError(message.to_string()))
 }
 
 fn map_live_effective_conflict(error: sqlx::Error) -> AppError {

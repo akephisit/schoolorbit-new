@@ -10,6 +10,7 @@ pub mod change_sets;
 pub mod groups;
 pub mod offerings;
 pub mod roster_memberships;
+pub mod teacher_handoff;
 pub mod workspaces;
 
 pub(super) fn validate_row_version(row_version: i64) -> Result<(), AppError> {

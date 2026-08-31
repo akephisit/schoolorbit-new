@@ -69,7 +69,6 @@
           "draft_group",
           "missing_primary_teacher",
           "missing_entry_instructor",
-          "ineligible_entry_instructor",
           "unpublished_roster",
           "offering_unavailable",
           "missing_weekly_period_target",
@@ -79,7 +78,10 @@
           "learning_group_conflict",
           "teacher_conflict",
           "room_conflict",
-          "stopped_offering_still_scheduled"
+          "stopped_offering_still_scheduled",
+          "missing_effective_teacher",
+          "stopped_teacher_still_scheduled",
+          "entry_instructor_not_effective"
         ],
         "type": "string"
       },
@@ -472,7 +474,10 @@
         "enum": [
           "add_offering",
           "stop_offering",
-          "adjust_weekly_period_target"
+          "adjust_weekly_period_target",
+          "add_group_teacher",
+          "adjust_group_teacher_role",
+          "stop_group_teacher"
         ],
         "type": "string"
       },
@@ -612,6 +617,199 @@
               "id",
               "learningOfferingId",
               "weeklyPeriodTarget",
+              "rowVersion",
+              "createdBy",
+              "createdAt",
+              "updatedAt",
+              "actionKind"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "actionKind": {
+                "enum": [
+                  "add_group_teacher"
+                ],
+                "type": "string"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "createdBy": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "learningGroupId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "learningGroupLabel": {
+                "type": "string"
+              },
+              "rowVersion": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "teacherId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "teacherLabel": {
+                "type": "string"
+              },
+              "teacherRole": {
+                "$ref": "#/components/schemas/LearningTeacherRole"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "learningGroupId",
+              "learningGroupLabel",
+              "teacherId",
+              "teacherLabel",
+              "teacherRole",
+              "rowVersion",
+              "createdBy",
+              "createdAt",
+              "updatedAt",
+              "actionKind"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "actionKind": {
+                "enum": [
+                  "adjust_group_teacher_role"
+                ],
+                "type": "string"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "createdBy": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "learningGroupId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "learningGroupLabel": {
+                "type": "string"
+              },
+              "learningGroupTeacherId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "rowVersion": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "teacherId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "teacherLabel": {
+                "type": "string"
+              },
+              "teacherRole": {
+                "$ref": "#/components/schemas/LearningTeacherRole"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "learningGroupId",
+              "learningGroupLabel",
+              "learningGroupTeacherId",
+              "teacherId",
+              "teacherLabel",
+              "teacherRole",
+              "rowVersion",
+              "createdBy",
+              "createdAt",
+              "updatedAt",
+              "actionKind"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "actionKind": {
+                "enum": [
+                  "stop_group_teacher"
+                ],
+                "type": "string"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "createdBy": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "learningGroupId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "learningGroupLabel": {
+                "type": "string"
+              },
+              "learningGroupTeacherId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "rowVersion": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "teacherId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "teacherLabel": {
+                "type": "string"
+              },
+              "teacherRole": {
+                "$ref": "#/components/schemas/LearningTeacherRole"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "learningGroupId",
+              "learningGroupLabel",
+              "learningGroupTeacherId",
+              "teacherId",
+              "teacherLabel",
+              "teacherRole",
               "rowVersion",
               "createdBy",
               "createdAt",
@@ -2437,6 +2635,43 @@
               "createdGroupCount",
               "retainedGroupCount",
               "skippedCount"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_ApplyTeacherHandoffResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "handoff": {
+                "$ref": "#/components/schemas/TeacherHandoffPreview"
+              },
+              "replayed": {
+                "type": "boolean"
+              },
+              "updatedEntries": {
+                "items": {
+                  "$ref": "#/components/schemas/TeacherHandoffEntryVersion"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "handoff",
+              "updatedEntries",
+              "replayed"
             ],
             "type": "object"
           },
@@ -4644,6 +4879,12 @@
                 },
                 "type": "array"
               },
+              "learningGroups": {
+                "items": {
+                  "$ref": "#/components/schemas/LearningGroup"
+                },
+                "type": "array"
+              },
               "organizationUnits": {
                 "items": {
                   "$ref": "#/components/schemas/OrganizationUnitLookupItem"
@@ -4677,6 +4918,7 @@
               "studyPrograms",
               "organizationUnits",
               "homerooms",
+              "learningGroups",
               "teachers",
               "rooms"
             ],
@@ -9754,6 +9996,92 @@
             "required": [
               "entryA",
               "entryB"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_TeacherHandoffPreview": {
+        "properties": {
+          "data": {
+            "properties": {
+              "affectedEntries": {
+                "items": {
+                  "$ref": "#/components/schemas/TeacherHandoffEntryPreview"
+                },
+                "type": "array"
+              },
+              "canApply": {
+                "type": "boolean"
+              },
+              "changeSetId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "changeSetRowVersion": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "conflicts": {
+                "items": {
+                  "$ref": "#/components/schemas/TeacherHandoffConflict"
+                },
+                "type": "array"
+              },
+              "mode": {
+                "$ref": "#/components/schemas/TeacherHandoffMode"
+              },
+              "previewHash": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "proposedEntries": {
+                "items": {
+                  "$ref": "#/components/schemas/TeacherHandoffEntryPreview"
+                },
+                "type": "array"
+              },
+              "targetTimetableVersionId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "targetTimetableVersionRowVersion": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "teacherChangeItemId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "timetableRoute": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "changeSetId",
+              "changeSetRowVersion",
+              "teacherChangeItemId",
+              "targetTimetableVersionId",
+              "targetTimetableVersionRowVersion",
+              "mode",
+              "affectedEntries",
+              "proposedEntries",
+              "conflicts",
+              "canApply",
+              "timetableRoute"
             ],
             "type": "object"
           },
@@ -16516,6 +16844,78 @@
           "rowVersion",
           "sourceHash",
           "overrides"
+        ],
+        "type": "object"
+      },
+      "ApplyTeacherHandoffRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "changeSetRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/TeacherHandoffEntryVersion"
+            },
+            "type": "array"
+          },
+          "idempotencyKey": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "instructorIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/TeacherHandoffMode"
+          },
+          "previewHash": {
+            "type": "string"
+          },
+          "targetTimetableVersionRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "teacherChangeItemId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "changeSetRowVersion",
+          "targetTimetableVersionRowVersion",
+          "teacherChangeItemId",
+          "entries",
+          "mode",
+          "previewHash",
+          "idempotencyKey"
+        ],
+        "type": "object"
+      },
+      "ApplyTeacherHandoffResponse": {
+        "properties": {
+          "handoff": {
+            "$ref": "#/components/schemas/TeacherHandoffPreview"
+          },
+          "replayed": {
+            "type": "boolean"
+          },
+          "updatedEntries": {
+            "items": {
+              "$ref": "#/components/schemas/TeacherHandoffEntryVersion"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "handoff",
+          "updatedEntries",
+          "replayed"
         ],
         "type": "object"
       },
@@ -24022,6 +24422,12 @@
             },
             "type": "array"
           },
+          "learningGroups": {
+            "items": {
+              "$ref": "#/components/schemas/LearningGroup"
+            },
+            "type": "array"
+          },
           "organizationUnits": {
             "items": {
               "$ref": "#/components/schemas/OrganizationUnitLookupItem"
@@ -24055,6 +24461,7 @@
           "studyPrograms",
           "organizationUnits",
           "homerooms",
+          "learningGroups",
           "teachers",
           "rooms"
         ],
@@ -29283,6 +29690,47 @@
         ],
         "type": "object"
       },
+      "PreviewTeacherHandoffRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "changeSetRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "entryIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "instructorIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/TeacherHandoffMode"
+          },
+          "targetTimetableVersionRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "teacherChangeItemId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "changeSetRowVersion",
+          "targetTimetableVersionRowVersion",
+          "teacherChangeItemId",
+          "mode"
+        ],
+        "type": "object"
+      },
       "ProfileResponse": {
         "properties": {
           "address": {
@@ -34117,6 +34565,230 @@
         ],
         "type": "object"
       },
+      "TeacherHandoffConflict": {
+        "properties": {
+          "entryIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "instructorIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TeacherHandoffConflictKind"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timetableRoute": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "message",
+          "entryIds",
+          "instructorIds",
+          "timetableRoute"
+        ],
+        "type": "object"
+      },
+      "TeacherHandoffConflictKind": {
+        "enum": [
+          "instructor_collision",
+          "duplicate_instructor",
+          "ineligible_instructor",
+          "entry_outside_target"
+        ],
+        "type": "string"
+      },
+      "TeacherHandoffEntryPreview": {
+        "properties": {
+          "afterInstructors": {
+            "items": {
+              "$ref": "#/components/schemas/TeacherHandoffInstructorPreview"
+            },
+            "type": "array"
+          },
+          "beforeInstructors": {
+            "items": {
+              "$ref": "#/components/schemas/TeacherHandoffInstructorPreview"
+            },
+            "type": "array"
+          },
+          "bellSchedulePeriodId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "dayOfWeek": {
+            "type": "string"
+          },
+          "entryId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "learningGroupId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "learningGroupLabel": {
+            "type": "string"
+          },
+          "offeringLabel": {
+            "type": "string"
+          },
+          "periodLabel": {
+            "type": "string"
+          },
+          "roomLabel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "entryId",
+          "rowVersion",
+          "learningGroupId",
+          "learningGroupLabel",
+          "offeringLabel",
+          "dayOfWeek",
+          "bellSchedulePeriodId",
+          "periodLabel",
+          "beforeInstructors",
+          "afterInstructors"
+        ],
+        "type": "object"
+      },
+      "TeacherHandoffEntryVersion": {
+        "additionalProperties": false,
+        "properties": {
+          "entryId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "entryId",
+          "rowVersion"
+        ],
+        "type": "object"
+      },
+      "TeacherHandoffInstructorPreview": {
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "instructorId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "instructorId",
+          "displayName",
+          "role"
+        ],
+        "type": "object"
+      },
+      "TeacherHandoffMode": {
+        "enum": [
+          "assign_one",
+          "assign_coteachers",
+          "manual"
+        ],
+        "type": "string"
+      },
+      "TeacherHandoffPreview": {
+        "properties": {
+          "affectedEntries": {
+            "items": {
+              "$ref": "#/components/schemas/TeacherHandoffEntryPreview"
+            },
+            "type": "array"
+          },
+          "canApply": {
+            "type": "boolean"
+          },
+          "changeSetId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "changeSetRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "conflicts": {
+            "items": {
+              "$ref": "#/components/schemas/TeacherHandoffConflict"
+            },
+            "type": "array"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/TeacherHandoffMode"
+          },
+          "previewHash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "proposedEntries": {
+            "items": {
+              "$ref": "#/components/schemas/TeacherHandoffEntryPreview"
+            },
+            "type": "array"
+          },
+          "targetTimetableVersionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "targetTimetableVersionRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "teacherChangeItemId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "timetableRoute": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "changeSetId",
+          "changeSetRowVersion",
+          "teacherChangeItemId",
+          "targetTimetableVersionId",
+          "targetTimetableVersionRowVersion",
+          "mode",
+          "affectedEntries",
+          "proposedEntries",
+          "conflicts",
+          "canApply",
+          "timetableRoute"
+        ],
+        "type": "object"
+      },
       "TeachingAssignmentItem": {
         "description": "กลุ่มการเรียนที่ครูสอนใน Academic Delivery",
         "properties": {
@@ -37455,6 +38127,132 @@
               "action"
             ],
             "type": "object"
+          },
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "add_group_teacher"
+                ],
+                "type": "string"
+              },
+              "changeSetRowVersion": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "itemRowVersion": {
+                "format": "int64",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "learningGroupId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "teacherId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "teacherRole": {
+                "$ref": "#/components/schemas/LearningTeacherRole"
+              }
+            },
+            "required": [
+              "changeSetRowVersion",
+              "learningGroupId",
+              "teacherId",
+              "teacherRole",
+              "action"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "adjust_group_teacher_role"
+                ],
+                "type": "string"
+              },
+              "changeSetRowVersion": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "itemRowVersion": {
+                "format": "int64",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "learningGroupId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "learningGroupTeacherId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "teacherId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "teacherRole": {
+                "$ref": "#/components/schemas/LearningTeacherRole"
+              }
+            },
+            "required": [
+              "changeSetRowVersion",
+              "learningGroupId",
+              "learningGroupTeacherId",
+              "teacherId",
+              "teacherRole",
+              "action"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "stop_group_teacher"
+                ],
+                "type": "string"
+              },
+              "changeSetRowVersion": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "itemRowVersion": {
+                "format": "int64",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "learningGroupId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "learningGroupTeacherId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "teacherId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "changeSetRowVersion",
+              "learningGroupId",
+              "learningGroupTeacherId",
+              "teacherId",
+              "action"
+            ],
+            "type": "object"
           }
         ]
       },
@@ -37853,7 +38651,8 @@
           "unscheduled_demand",
           "over_scheduled_demand",
           "missing_instructor",
-          "missing_room"
+          "missing_room",
+          "unresolved_teacher_handoff"
         ],
         "type": "string"
       },
@@ -48496,6 +49295,190 @@
               }
             },
             "description": "Preview or publication conflict"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/term-change-sets/{id}/teacher-handoff/apply": {
+      "post": {
+        "operationId": "applyTeacherHandoff",
+        "parameters": [
+          {
+            "description": "Operational change set ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyTeacherHandoffRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApplyTeacherHandoffResponse"
+                }
+              }
+            },
+            "description": "Teacher timetable handoff applied"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid teacher handoff"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Learning offering management permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Teacher change item not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Teacher handoff conflict or stale preview"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/term-change-sets/{id}/teacher-handoff/preview": {
+      "post": {
+        "operationId": "previewTeacherHandoff",
+        "parameters": [
+          {
+            "description": "Operational change set ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewTeacherHandoffRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TeacherHandoffPreview"
+                }
+              }
+            },
+            "description": "Teacher timetable handoff preview"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid teacher handoff"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Learning offering management permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Teacher change item not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Teacher handoff conflict"
           }
         },
         "tags": [

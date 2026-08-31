@@ -145,7 +145,7 @@ test('post-publication roster uses dated interval history with inclusive end sem
 	assert.doesNotMatch(roster, /national|บัตรประชาชน/);
 });
 
-test('published teachers remain locked while exceptional workflow offers no replacement action', async () => {
+test('published teachers stay locked and exceptional changes use the typed change-set workflow', async () => {
 	const detail = await readProjectFile(
 		'src/routes/(app)/staff/academic/delivery/[offeringId]/+page.svelte'
 	);
@@ -159,5 +159,7 @@ test('published teachers remain locked while exceptional workflow offers no repl
 	assert.match(detail, /canManage={canMutateOffering}/);
 	assert.match(detail, /if \(!canMutateOffering/);
 	assert.match(panel, /changeSet\.status === 'draft' \? 'จัดกลุ่มและครู' : 'ดูรายละเอียด'/);
-	assert.doesNotMatch(panel, /replaceLearningGroupTeachers|เปลี่ยนครูผู้สอน/);
+	assert.match(panel, /AcademicTeacherChangeForm/);
+	assert.match(panel, /TeacherHandoffPanel/);
+	assert.doesNotMatch(panel, /replaceLearningGroupTeachers/);
 });

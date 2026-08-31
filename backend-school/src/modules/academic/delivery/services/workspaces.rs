@@ -23,7 +23,7 @@ use super::super::models::{
     LearningOfferingOverviewItem, LearningOfferingQuery, LearningOfferingStatus, RosterStatus,
     UnlinkedDeliveryItem,
 };
-use super::offerings;
+use super::{groups, offerings};
 
 const MAX_WORKSPACE_GROUPS: i64 = 2_000;
 const MAX_WORKSPACE_HOMEROOMS: usize = 500;
@@ -1120,6 +1120,7 @@ pub async fn delivery_management_options(
             .into_iter()
             .filter(|unit| learning_offering_owner_allowed(filter, unit.id))
             .collect();
+    let learning_groups = groups::list_for_term(pool, academic_term_id, filter).await?;
     let teachers = lookup_services::lookup_staff(pool, lookup_query()).await?;
     let rooms = lookup_services::lookup_rooms(pool).await?;
     ensure_option_size(rooms.len(), MAX_LOOKUP_OPTIONS, "ห้องเรียน")?;
@@ -1132,6 +1133,7 @@ pub async fn delivery_management_options(
         study_programs,
         organization_units,
         homerooms,
+        learning_groups,
         teachers,
         rooms,
     })

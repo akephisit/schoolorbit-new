@@ -112,7 +112,9 @@
 			workspace = homeroomResult;
 			changeSets = loadedChangeSets;
 			if (!loadedChangeSets.some((changeSet) => changeSet.id === selectedChangeSetId)) {
+				const requestedChangeSetId = page.url.searchParams.get('changeSetId')?.trim() ?? '';
 				selectedChangeSetId =
+					loadedChangeSets.find((changeSet) => changeSet.id === requestedChangeSetId)?.id ??
 					loadedChangeSets.find((changeSet) => changeSet.status === 'draft')?.id ??
 					loadedChangeSets[0]?.id ??
 					'';
@@ -285,11 +287,12 @@
 				</section>
 			{/if}
 			{#if activeChangeSet}
-				{#key `${activeChangeSet.id}:${activeChangeSet.rowVersion}`}
+				{#key activeChangeSet.id}
 					<AcademicChangeSetPanel
 						changeSet={activeChangeSet}
 						offerings={items}
 						{canManage}
+						initialTeacherChangeItemId={page.url.searchParams.get('teacherChangeItemId') ?? ''}
 						onChanged={updateChangeSet}
 					/>
 				{/key}

@@ -128,6 +128,9 @@ pub enum AcademicTermChangeActionKind {
     AddOffering,
     StopOffering,
     AdjustWeeklyPeriodTarget,
+    AddGroupTeacher,
+    AdjustGroupTeacherRole,
+    StopGroupTeacher,
 }
 
 #[derive(Clone, Debug, Serialize, ToSchema)]
@@ -171,6 +174,73 @@ pub enum AcademicTermChangeItem {
         learning_offering_id: Uuid,
         #[schema(rename = "weeklyPeriodTarget")]
         weekly_period_target: i32,
+        #[schema(rename = "rowVersion")]
+        row_version: i64,
+        #[schema(rename = "createdBy")]
+        created_by: Uuid,
+        #[schema(rename = "createdAt")]
+        created_at: DateTime<Utc>,
+        #[schema(rename = "updatedAt")]
+        updated_at: DateTime<Utc>,
+    },
+    AddGroupTeacher {
+        id: Uuid,
+        #[schema(rename = "learningGroupId")]
+        learning_group_id: Uuid,
+        #[schema(rename = "learningGroupLabel")]
+        learning_group_label: String,
+        #[schema(rename = "teacherId")]
+        teacher_id: Uuid,
+        #[schema(rename = "teacherLabel")]
+        teacher_label: String,
+        #[schema(rename = "teacherRole")]
+        teacher_role: LearningTeacherRole,
+        #[schema(rename = "rowVersion")]
+        row_version: i64,
+        #[schema(rename = "createdBy")]
+        created_by: Uuid,
+        #[schema(rename = "createdAt")]
+        created_at: DateTime<Utc>,
+        #[schema(rename = "updatedAt")]
+        updated_at: DateTime<Utc>,
+    },
+    AdjustGroupTeacherRole {
+        id: Uuid,
+        #[schema(rename = "learningGroupId")]
+        learning_group_id: Uuid,
+        #[schema(rename = "learningGroupLabel")]
+        learning_group_label: String,
+        #[schema(rename = "learningGroupTeacherId")]
+        learning_group_teacher_id: Uuid,
+        #[schema(rename = "teacherId")]
+        teacher_id: Uuid,
+        #[schema(rename = "teacherLabel")]
+        teacher_label: String,
+        #[schema(rename = "teacherRole")]
+        teacher_role: LearningTeacherRole,
+        #[schema(rename = "rowVersion")]
+        row_version: i64,
+        #[schema(rename = "createdBy")]
+        created_by: Uuid,
+        #[schema(rename = "createdAt")]
+        created_at: DateTime<Utc>,
+        #[schema(rename = "updatedAt")]
+        updated_at: DateTime<Utc>,
+    },
+    StopGroupTeacher {
+        id: Uuid,
+        #[schema(rename = "learningGroupId")]
+        learning_group_id: Uuid,
+        #[schema(rename = "learningGroupLabel")]
+        learning_group_label: String,
+        #[schema(rename = "learningGroupTeacherId")]
+        learning_group_teacher_id: Uuid,
+        #[schema(rename = "teacherId")]
+        teacher_id: Uuid,
+        #[schema(rename = "teacherLabel")]
+        teacher_label: String,
+        #[schema(rename = "teacherRole")]
+        teacher_role: LearningTeacherRole,
         #[schema(rename = "rowVersion")]
         row_version: i64,
         #[schema(rename = "createdBy")]
@@ -271,6 +341,44 @@ pub enum UpsertAcademicTermChangeItemRequest {
         #[schema(rename = "weeklyPeriodTarget")]
         weekly_period_target: i32,
     },
+    AddGroupTeacher {
+        #[schema(rename = "changeSetRowVersion")]
+        change_set_row_version: i64,
+        #[schema(rename = "itemRowVersion")]
+        item_row_version: Option<i64>,
+        #[schema(rename = "learningGroupId")]
+        learning_group_id: Uuid,
+        #[schema(rename = "teacherId")]
+        teacher_id: Uuid,
+        #[schema(rename = "teacherRole")]
+        teacher_role: LearningTeacherRole,
+    },
+    AdjustGroupTeacherRole {
+        #[schema(rename = "changeSetRowVersion")]
+        change_set_row_version: i64,
+        #[schema(rename = "itemRowVersion")]
+        item_row_version: Option<i64>,
+        #[schema(rename = "learningGroupId")]
+        learning_group_id: Uuid,
+        #[schema(rename = "learningGroupTeacherId")]
+        learning_group_teacher_id: Uuid,
+        #[schema(rename = "teacherId")]
+        teacher_id: Uuid,
+        #[schema(rename = "teacherRole")]
+        teacher_role: LearningTeacherRole,
+    },
+    StopGroupTeacher {
+        #[schema(rename = "changeSetRowVersion")]
+        change_set_row_version: i64,
+        #[schema(rename = "itemRowVersion")]
+        item_row_version: Option<i64>,
+        #[schema(rename = "learningGroupId")]
+        learning_group_id: Uuid,
+        #[schema(rename = "learningGroupTeacherId")]
+        learning_group_teacher_id: Uuid,
+        #[schema(rename = "teacherId")]
+        teacher_id: Uuid,
+    },
 }
 
 impl UpsertAcademicTermChangeItemRequest {
@@ -291,6 +399,18 @@ impl UpsertAcademicTermChangeItemRequest {
             | Self::AdjustWeeklyPeriodTarget {
                 change_set_row_version,
                 ..
+            }
+            | Self::AddGroupTeacher {
+                change_set_row_version,
+                ..
+            }
+            | Self::AdjustGroupTeacherRole {
+                change_set_row_version,
+                ..
+            }
+            | Self::StopGroupTeacher {
+                change_set_row_version,
+                ..
             } => *change_set_row_version,
         }
     }
@@ -299,7 +419,11 @@ impl UpsertAcademicTermChangeItemRequest {
         match self {
             Self::AddCourse { offering, .. } => Some(offering.owning_organization_unit_id),
             Self::AddActivity { offering, .. } => Some(offering.owning_organization_unit_id),
-            Self::StopOffering { .. } | Self::AdjustWeeklyPeriodTarget { .. } => None,
+            Self::StopOffering { .. }
+            | Self::AdjustWeeklyPeriodTarget { .. }
+            | Self::AddGroupTeacher { .. }
+            | Self::AdjustGroupTeacherRole { .. }
+            | Self::StopGroupTeacher { .. } => None,
         }
     }
 
@@ -313,7 +437,29 @@ impl UpsertAcademicTermChangeItemRequest {
                 learning_offering_id,
                 ..
             } => Some(*learning_offering_id),
-            Self::AddCourse { .. } | Self::AddActivity { .. } => None,
+            Self::AddCourse { .. }
+            | Self::AddActivity { .. }
+            | Self::AddGroupTeacher { .. }
+            | Self::AdjustGroupTeacherRole { .. }
+            | Self::StopGroupTeacher { .. } => None,
+        }
+    }
+
+    pub fn existing_learning_group_id(&self) -> Option<Uuid> {
+        match self {
+            Self::AddGroupTeacher {
+                learning_group_id, ..
+            }
+            | Self::AdjustGroupTeacherRole {
+                learning_group_id, ..
+            }
+            | Self::StopGroupTeacher {
+                learning_group_id, ..
+            } => Some(*learning_group_id),
+            Self::AddCourse { .. }
+            | Self::AddActivity { .. }
+            | Self::StopOffering { .. }
+            | Self::AdjustWeeklyPeriodTarget { .. } => None,
         }
     }
 }
@@ -350,7 +496,6 @@ pub enum AcademicChangeFindingCode {
     DraftGroup,
     MissingPrimaryTeacher,
     MissingEntryInstructor,
-    IneligibleEntryInstructor,
     UnpublishedRoster,
     OfferingUnavailable,
     MissingWeeklyPeriodTarget,
@@ -361,6 +506,9 @@ pub enum AcademicChangeFindingCode {
     TeacherConflict,
     RoomConflict,
     StoppedOfferingStillScheduled,
+    MissingEffectiveTeacher,
+    StoppedTeacherStillScheduled,
+    EntryInstructorNotEffective,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
@@ -427,6 +575,116 @@ pub struct PublishAcademicTermChangeSetRequest {
     #[serde(default)]
     pub acknowledged_warning_codes: Vec<AcademicChangeFindingCode>,
     pub idempotency_key: Uuid,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TeacherHandoffMode {
+    AssignOne,
+    AssignCoteachers,
+    Manual,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PreviewTeacherHandoffRequest {
+    pub change_set_row_version: i64,
+    pub target_timetable_version_row_version: i64,
+    pub teacher_change_item_id: Uuid,
+    #[serde(default)]
+    pub entry_ids: Vec<Uuid>,
+    pub mode: TeacherHandoffMode,
+    #[serde(default)]
+    pub instructor_ids: Vec<Uuid>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TeacherHandoffEntryVersion {
+    pub entry_id: Uuid,
+    pub row_version: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ApplyTeacherHandoffRequest {
+    pub change_set_row_version: i64,
+    pub target_timetable_version_row_version: i64,
+    pub teacher_change_item_id: Uuid,
+    pub entries: Vec<TeacherHandoffEntryVersion>,
+    pub mode: TeacherHandoffMode,
+    #[serde(default)]
+    pub instructor_ids: Vec<Uuid>,
+    pub preview_hash: String,
+    pub idempotency_key: Uuid,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TeacherHandoffInstructorPreview {
+    pub instructor_id: Uuid,
+    pub display_name: String,
+    pub role: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TeacherHandoffConflictKind {
+    InstructorCollision,
+    DuplicateInstructor,
+    IneligibleInstructor,
+    EntryOutsideTarget,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TeacherHandoffConflict {
+    pub kind: TeacherHandoffConflictKind,
+    pub message: String,
+    pub entry_ids: Vec<Uuid>,
+    pub instructor_ids: Vec<Uuid>,
+    pub timetable_route: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TeacherHandoffEntryPreview {
+    pub entry_id: Uuid,
+    pub row_version: i64,
+    pub learning_group_id: Uuid,
+    pub learning_group_label: String,
+    pub offering_label: String,
+    pub day_of_week: String,
+    pub bell_schedule_period_id: Uuid,
+    pub period_label: String,
+    pub room_label: Option<String>,
+    pub before_instructors: Vec<TeacherHandoffInstructorPreview>,
+    pub after_instructors: Vec<TeacherHandoffInstructorPreview>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TeacherHandoffPreview {
+    pub change_set_id: Uuid,
+    pub change_set_row_version: i64,
+    pub teacher_change_item_id: Uuid,
+    pub target_timetable_version_id: Uuid,
+    pub target_timetable_version_row_version: i64,
+    pub mode: TeacherHandoffMode,
+    pub affected_entries: Vec<TeacherHandoffEntryPreview>,
+    pub proposed_entries: Vec<TeacherHandoffEntryPreview>,
+    pub conflicts: Vec<TeacherHandoffConflict>,
+    pub preview_hash: Option<String>,
+    pub can_apply: bool,
+    pub timetable_route: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyTeacherHandoffResponse {
+    pub handoff: TeacherHandoffPreview,
+    pub updated_entries: Vec<TeacherHandoffEntryVersion>,
+    pub replayed: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
@@ -883,6 +1141,7 @@ pub struct DeliveryManagementOptions {
     pub study_programs: Vec<StudyProgramOption>,
     pub organization_units: Vec<OrganizationUnitLookupItem>,
     pub homerooms: Vec<HomeroomLookupItem>,
+    pub learning_groups: Vec<LearningGroup>,
     pub teachers: Vec<StaffLookupItem>,
     pub rooms: Vec<Room>,
 }

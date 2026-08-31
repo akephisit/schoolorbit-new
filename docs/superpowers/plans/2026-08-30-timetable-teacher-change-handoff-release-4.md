@@ -133,7 +133,7 @@ git commit -m "feat(academic): add effective teacher change schema"
 - Add matching variants to `AcademicTermChangeItem` and `UpsertAcademicTermChangeItemRequest`.
 - Requests include change-set/item row versions plus the exact group/teacher/assignment IDs required by the action.
 - Returned teacher items include stable teacher/group display labels, role, and the affected assignment episode ID where applicable so the frontend needs no lookup fanout.
-- Extend findings with `MissingEffectiveTeacher`, `StoppedTeacherStillScheduled`, `EntryInstructorNotEffective`, `TeacherHandoffConflict`, and `TeacherHandoffStale`.
+- Extend readiness findings with `MissingEffectiveTeacher`, `StoppedTeacherStillScheduled`, and `EntryInstructorNotEffective`. Handoff preview conflicts and stale revisions remain typed preview/apply responses rather than dead readiness codes.
 
 - [ ] **Step 1: Write failing item CRUD and authorization tests**
 

@@ -19,6 +19,7 @@ export type CurriculumDeliveryAlignmentState = Schemas['CurriculumDeliveryAlignm
 export type CurriculumDeliveryExtraOffering = Schemas['CurriculumDeliveryExtraOffering'];
 export type DeliveryManagementOptions = Schemas['DeliveryManagementOptions'];
 export type LearningGroup = Schemas['LearningGroup'];
+export type LearningTeacherRole = Schemas['LearningTeacherRole'];
 export type TeacherAssignment = Schemas['TeacherAssignmentInput'];
 export type RosterPreview = Schemas['RosterPreview'];
 export type CurriculumOfferingPreview = Schemas['CurriculumOfferingPreview'];
@@ -47,6 +48,11 @@ export type CancelAcademicTermChangeSetRequest = Schemas['CancelAcademicTermChan
 export type UpsertAcademicTermChangeItemRequest = Schemas['UpsertAcademicTermChangeItemRequest'];
 export type DeleteAcademicTermChangeItemRequest = Schemas['DeleteAcademicTermChangeItemRequest'];
 export type PublishAcademicTermChangeSetRequest = Schemas['PublishAcademicTermChangeSetRequest'];
+export type TeacherHandoffMode = Schemas['TeacherHandoffMode'];
+export type PreviewTeacherHandoffRequest = Schemas['PreviewTeacherHandoffRequest'];
+export type ApplyTeacherHandoffRequest = Schemas['ApplyTeacherHandoffRequest'];
+export type TeacherHandoffPreview = Schemas['TeacherHandoffPreview'];
+export type ApplyTeacherHandoffResponse = Schemas['ApplyTeacherHandoffResponse'];
 export type DatedRosterMembership = Schemas['DatedRosterMembership'];
 export type AddDatedRosterMembershipRequest = Schemas['AddDatedRosterMembershipRequest'];
 export type RemoveDatedRosterMembershipRequest = Schemas['RemoveDatedRosterMembershipRequest'];
@@ -97,6 +103,8 @@ type UpsertAcademicTermChangeItemOperation = operations['upsertAcademicTermChang
 type DeleteAcademicTermChangeItemOperation = operations['deleteAcademicTermChangeItem'];
 type PreviewAcademicTermChangeSetOperation = operations['previewAcademicTermChangeSet'];
 type PublishAcademicTermChangeSetOperation = operations['publishAcademicTermChangeSet'];
+type PreviewTeacherHandoffOperation = operations['previewTeacherHandoff'];
+type ApplyTeacherHandoffOperation = operations['applyTeacherHandoff'];
 type ListDatedRosterMembershipsOperation = operations['listDatedRosterMemberships'];
 type AddDatedRosterMembershipOperation = operations['addDatedRosterMembership'];
 type EndDatedRosterMembershipOperation = operations['endDatedRosterMembership'];
@@ -364,6 +372,36 @@ export const publishAcademicTermChangeSet = (
 	deliveryData(
 		apiClient.post<AcademicTermChangeSet>(`${changeSetPath(id)}/publish`, body),
 		'เผยแพร่การเปลี่ยนแปลงกลางภาคไม่สำเร็จ'
+	);
+
+export const previewTeacherHandoff = (
+	id: OperationPath<PreviewTeacherHandoffOperation>['id'],
+	body: PreviewTeacherHandoffRequest &
+		PreviewTeacherHandoffOperation['requestBody']['content']['application/json'],
+	options: ApiRequestOptions = {}
+) =>
+	deliveryData(
+		apiClient.post<TeacherHandoffPreview>(
+			`${changeSetPath(id)}/teacher-handoff/preview`,
+			body,
+			options
+		),
+		'ตรวจผลกระทบของการส่งต่อคาบไม่สำเร็จ'
+	);
+
+export const applyTeacherHandoff = (
+	id: OperationPath<ApplyTeacherHandoffOperation>['id'],
+	body: ApplyTeacherHandoffRequest &
+		ApplyTeacherHandoffOperation['requestBody']['content']['application/json'],
+	options: ApiRequestOptions = {}
+) =>
+	deliveryData(
+		apiClient.post<ApplyTeacherHandoffResponse>(
+			`${changeSetPath(id)}/teacher-handoff/apply`,
+			body,
+			options
+		),
+		'ส่งต่อคาบให้ครูชุดใหม่ไม่สำเร็จ'
 	);
 
 export const listDatedRosterMemberships = (

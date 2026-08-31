@@ -2,6 +2,7 @@ pub mod assessment_service;
 #[cfg(test)]
 mod assessment_service_tests;
 pub mod daily_teaching_service;
+pub mod effective_teacher_service;
 pub mod exam_schedule_service;
 pub mod timetable_realtime_service;
 pub mod timetable_service;

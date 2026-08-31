@@ -15,7 +15,9 @@ use crate::utils::request_context::{actor_tenant_context_from_session, ActorTena
 use crate::AppState;
 
 use super::models::*;
-use super::services::{activities, change_sets, groups, offerings, roster_memberships, workspaces};
+use super::services::{
+    activities, change_sets, groups, offerings, roster_memberships, teacher_handoff, workspaces,
+};
 
 fn ok<T: serde::Serialize>(data: T) -> Response {
     Json(ApiResponse::ok(data)).into_response()
@@ -1224,6 +1226,15 @@ pub async fn upsert_term_change_item(
         )
         .await?;
     }
+    if let Some(group_id) = request.existing_learning_group_id() {
+        learning_offering_access_policy::require_learning_group_access(
+            &context.tenant.pool,
+            &context.actor,
+            group_id,
+            OfferingAction::Manage,
+        )
+        .await?;
+    }
     let change_set =
         change_sets::upsert_change_item(&context.tenant.pool, context.actor.user_id, id, request)
             .await?;
@@ -1272,6 +1283,79 @@ pub async fn delete_term_change_item(
     signal_term_change_set_changed(&state, &session, &context, &change_set, &prior_descriptors)
         .await?;
     Ok(ok(change_set))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/academic/term-change-sets/{id}/teacher-handoff/preview",
+    operation_id = "previewTeacherHandoff",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Operational change set ID")),
+    request_body = PreviewTeacherHandoffRequest,
+    responses(
+        (status = 200, description = "Teacher timetable handoff preview", body = ApiResponse<TeacherHandoffPreview>),
+        (status = 400, description = "Invalid teacher handoff", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning offering management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Teacher change item not found", body = ApiErrorResponse),
+        (status = 409, description = "Teacher handoff conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn preview_teacher_handoff(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<PreviewTeacherHandoffRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    require_term_change_set_access(&context, id, OfferingAction::Manage).await?;
+    Ok(ok(teacher_handoff::preview(
+        &context.tenant.pool,
+        id,
+        request,
+    )
+    .await?))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/academic/term-change-sets/{id}/teacher-handoff/apply",
+    operation_id = "applyTeacherHandoff",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Operational change set ID")),
+    request_body = ApplyTeacherHandoffRequest,
+    responses(
+        (status = 200, description = "Teacher timetable handoff applied", body = ApiResponse<ApplyTeacherHandoffResponse>),
+        (status = 400, description = "Invalid teacher handoff", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Learning offering management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Teacher change item not found", body = ApiErrorResponse),
+        (status = 409, description = "Teacher handoff conflict or stale preview", body = ApiErrorResponse)
+    )
+)]
+pub async fn apply_teacher_handoff(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<ApplyTeacherHandoffRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    require_term_change_set_access(&context, id, OfferingAction::Manage).await?;
+    let outcome =
+        teacher_handoff::apply(&context.tenant.pool, context.actor.user_id, id, request).await?;
+    for entry in &outcome.response.handoff.proposed_entries {
+        state.websocket_manager.broadcast_mutation(
+            session.tenant.subdomain.clone(),
+            outcome.academic_term_id,
+            crate::modules::academic::websockets::TimetableEvent::TimetableChanged {
+                user_id: context.actor.user_id,
+                academic_term_id: outcome.academic_term_id,
+                learning_group_id: Some(entry.learning_group_id),
+                revision: entry.row_version + 1,
+            },
+        );
+    }
+    Ok(ok(outcome.response))
 }
 
 #[utoipa::path(

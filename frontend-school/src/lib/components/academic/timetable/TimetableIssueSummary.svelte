@@ -26,7 +26,8 @@
 		unscheduled_demand: 'คาบยังจัดไม่ครบ',
 		over_scheduled_demand: 'คาบเกินเป้าหมาย',
 		missing_instructor: 'ยังไม่ระบุครู',
-		missing_room: 'ยังไม่ระบุห้อง'
+		missing_room: 'ยังไม่ระบุห้อง',
+		unresolved_teacher_handoff: 'ครูผู้สอนยังไม่ตรงกับวันที่เริ่มใช้'
 	};
 	const groupedIssues = $derived.by(() => {
 		const groups = new SvelteMap<WholeSchoolTimetableIssue['kind'], WholeSchoolTimetableIssue[]>();

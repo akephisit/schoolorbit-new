@@ -285,6 +285,7 @@ pub enum WholeSchoolTimetableIssueKind {
     OverScheduledDemand,
     MissingInstructor,
     MissingRoom,
+    UnresolvedTeacherHandoff,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
