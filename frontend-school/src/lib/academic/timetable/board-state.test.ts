@@ -153,6 +153,7 @@ test('local placement uses exact group, homeroom, teacher, and room occupancy', 
 	};
 	const candidate: TimetablePlacementCandidate = {
 		entryType: 'COURSE',
+		homeroomId: null,
 		learningGroupId: 'group-2',
 		learningOfferingId: 'offering-2',
 		instructorIds: ['teacher-1'],

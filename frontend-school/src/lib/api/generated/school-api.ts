@@ -13934,14 +13934,14 @@ export interface components {
 		TimetablePlacementCandidate: {
 			entryType: string;
 			/** Format: uuid */
-			homeroomId?: string | null;
-			instructorIds?: string[];
+			homeroomId: string | null;
+			instructorIds: string[];
 			/** Format: uuid */
-			learningGroupId?: string | null;
+			learningGroupId: string | null;
 			/** Format: uuid */
-			learningOfferingId?: string | null;
+			learningOfferingId: string | null;
 			/** Format: uuid */
-			roomId?: string | null;
+			roomId: string | null;
 		};
 		/** @enum {string} */
 		TimetablePlacementMutationKind: 'create' | 'update' | 'move' | 'swap';

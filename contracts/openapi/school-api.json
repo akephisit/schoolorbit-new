@@ -34658,7 +34658,12 @@
           }
         },
         "required": [
-          "entryType"
+          "entryType",
+          "learningGroupId",
+          "learningOfferingId",
+          "homeroomId",
+          "roomId",
+          "instructorIds"
         ],
         "type": "object"
       },

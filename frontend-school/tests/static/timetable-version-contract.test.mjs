@@ -141,6 +141,17 @@ test('timetable board consumes one generated workspace and typed placement previ
 			['kind', 'learningGroupId', 'learningOfferingId']
 		]
 	);
+	assert.deepEqual(
+		openapi.components.schemas.TimetablePlacementCandidate.required.toSorted(),
+		[
+			'entryType',
+			'homeroomId',
+			'instructorIds',
+			'learningGroupId',
+			'learningOfferingId',
+			'roomId'
+		].toSorted()
+	);
 	assert.match(api, /TimetableWorkspace\s*=\s*Schemas\['TimetableWorkspace'\]/);
 	assert.match(api, /TimetablePlacementPreview\s*=\s*Schemas\['TimetablePlacementPreview'\]/);
 	assert.match(api, /operations\['getTimetableWorkspace'\]/);

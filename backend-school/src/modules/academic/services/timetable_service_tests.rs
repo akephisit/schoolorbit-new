@@ -431,6 +431,29 @@ async fn workspace_rejects_a_version_outside_the_requested_academic_context() {
     assert!(matches!(result, Err(AppError::ValidationError(_))));
 }
 
+#[test]
+fn placement_candidate_requires_the_complete_conflict_shape() {
+    let missing_nullable_field =
+        serde_json::from_value::<TimetablePlacementCandidate>(serde_json::json!({
+            "entryType": "COURSE",
+            "learningGroupId": null,
+            "learningOfferingId": null,
+            "homeroomId": null,
+            "instructorIds": []
+        }));
+    assert!(missing_nullable_field.is_err());
+
+    let missing_instructors =
+        serde_json::from_value::<TimetablePlacementCandidate>(serde_json::json!({
+            "entryType": "COURSE",
+            "learningGroupId": null,
+            "learningOfferingId": null,
+            "homeroomId": null,
+            "roomId": null
+        }));
+    assert!(missing_instructors.is_err());
+}
+
 #[tokio::test]
 async fn placement_preview_distinguishes_create_move_update_swap_and_blocked() {
     let pool = migrated_pool("timetable_placement_preview_states").await;

@@ -342,12 +342,26 @@ pub enum TimetablePlacementSource {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TimetablePlacementCandidate {
     pub entry_type: String,
+    #[serde(deserialize_with = "deserialize_required_nullable_uuid")]
+    #[schema(required = true)]
     pub learning_group_id: Option<Uuid>,
+    #[serde(deserialize_with = "deserialize_required_nullable_uuid")]
+    #[schema(required = true)]
     pub learning_offering_id: Option<Uuid>,
+    #[serde(deserialize_with = "deserialize_required_nullable_uuid")]
+    #[schema(required = true)]
     pub homeroom_id: Option<Uuid>,
+    #[serde(deserialize_with = "deserialize_required_nullable_uuid")]
+    #[schema(required = true)]
     pub room_id: Option<Uuid>,
-    #[serde(default)]
     pub instructor_ids: Vec<Uuid>,
+}
+
+fn deserialize_required_nullable_uuid<'de, D>(deserializer: D) -> Result<Option<Uuid>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<Uuid>::deserialize(deserializer)
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
