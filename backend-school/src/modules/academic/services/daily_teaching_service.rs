@@ -148,6 +148,7 @@ pub async fn get_daily_teaching_overview(
     .bind(version.bell_schedule_id)
     .fetch_all(pool)
     .await?;
+    let include_empty_teachers = query.include_empty_teachers.unwrap_or(false);
     let teachers: Vec<TeacherSeed> = sqlx::query_as(
         r#"SELECT DISTINCT user_account.id,
                   concat_ws(' ',
@@ -165,23 +166,29 @@ pub async fn get_daily_teaching_overview(
                    AND entry.timetable_version_id = $2
                    AND entry.is_active
              )
+             OR ($3 AND EXISTS (
+                 SELECT 1
+                 FROM learning_group_teachers eligible_teacher
+                 JOIN learning_groups learning_group
+                   ON learning_group.id = eligible_teacher.learning_group_id
+                 JOIN academic_timetable_version_targets target
+                   ON target.timetable_version_id = $2
+                  AND target.learning_offering_id = learning_group.learning_offering_id
+                 WHERE eligible_teacher.teacher_id = user_account.id
+                   AND learning_group.academic_term_id = $1
+                   AND eligible_teacher.starts_on <= $4
+                   AND (eligible_teacher.ends_on IS NULL OR eligible_teacher.ends_on >= $4)
+             ))
            ORDER BY display_name, user_account.id"#,
     )
     .bind(query.academic_term_id)
     .bind(version.id)
+    .bind(include_empty_teachers)
+    .bind(date)
     .fetch_all(pool)
     .await?;
     let entries: Vec<EntrySeed> = sqlx::query_as(
-        r#"WITH effective_teacher AS (
-               SELECT entry.id AS entry_id, instructor.instructor_id AS teacher_id
-               FROM academic_timetable_entries entry
-               JOIN timetable_entry_instructors instructor ON instructor.entry_id = entry.id
-               WHERE entry.academic_term_id = $1
-                 AND entry.timetable_version_id = $3
-                 AND entry.day_of_week = $2
-                 AND entry.is_active
-           )
-           SELECT effective_teacher.teacher_id,
+        r#"SELECT exact_instructor.instructor_id AS teacher_id,
                   entry.bell_schedule_period_id,
                   period.order_index AS period_order_index,
                   entry.id AS entry_id,
@@ -217,10 +224,14 @@ pub async fn get_daily_teaching_overview(
                   room.code AS room_code,
                   entry.title,
                   entry.note,
-                  (SELECT count(*) FROM effective_teacher team WHERE team.entry_id = entry.id)::bigint
+                  (
+                      SELECT count(*)
+                      FROM timetable_entry_instructors team
+                      WHERE team.entry_id = entry.id
+                  )::bigint
                       AS instructor_count
-           FROM effective_teacher
-           JOIN academic_timetable_entries entry ON entry.id = effective_teacher.entry_id
+           FROM timetable_entry_instructors exact_instructor
+           JOIN academic_timetable_entries entry ON entry.id = exact_instructor.entry_id
            JOIN bell_schedule_periods period ON period.id = entry.bell_schedule_period_id
            LEFT JOIN learning_groups learning_group ON learning_group.id = entry.learning_group_id
            LEFT JOIN learning_offerings offering ON offering.id = entry.learning_offering_id
@@ -233,7 +244,11 @@ pub async fn get_daily_teaching_overview(
            LEFT JOIN activity_versions activity_version
              ON activity_version.id = activity_detail.activity_version_id
            LEFT JOIN rooms room ON room.id = entry.room_id
-           ORDER BY effective_teacher.teacher_id, period.order_index, entry.id"#,
+           WHERE entry.academic_term_id = $1
+             AND entry.timetable_version_id = $3
+             AND entry.day_of_week = $2
+             AND entry.is_active
+           ORDER BY exact_instructor.instructor_id, period.order_index, entry.id"#,
     )
     .bind(query.academic_term_id)
     .bind(&day)
@@ -248,7 +263,7 @@ pub async fn get_daily_teaching_overview(
         periods,
         teachers,
         entries,
-        query.include_empty_teachers.unwrap_or(false),
+        include_empty_teachers,
     ))
 }
 

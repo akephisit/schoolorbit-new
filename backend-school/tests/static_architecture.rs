@@ -378,10 +378,21 @@ fn timetable_exact_instructor_consumers_do_not_fallback_to_group_teachers() {
         manifest_dir().join("src/modules/parents/services.rs"),
     ));
 
-    assert!(daily_teaching.contains("FROM timetable_entry_instructors"));
+    let scheduled_entry_query = daily_teaching
+        .split_once("let entries: Vec<EntrySeed>")
+        .expect("daily teaching must isolate its exact scheduled-entry query")
+        .1
+        .split_once("Ok(build_overview")
+        .expect("daily teaching exact scheduled-entry query must remain bounded")
+        .0;
+    assert!(scheduled_entry_query.contains("FROM timetable_entry_instructors"));
     assert!(
-        !daily_teaching.contains("learning_group_teachers"),
-        "daily teaching must derive period teachers only from exact entry children"
+        !scheduled_entry_query.contains("learning_group_teachers"),
+        "daily teaching scheduled membership must derive only from exact entry children"
+    );
+    assert!(
+        !daily_teaching.contains("effective_teacher"),
+        "daily teaching must not reintroduce an ambiguous teacher-membership union"
     );
     assert!(supervision_entry_lookup.contains("FROM timetable_entry_instructors"));
     assert!(

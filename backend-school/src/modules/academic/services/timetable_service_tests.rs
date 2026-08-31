@@ -1397,6 +1397,26 @@ async fn daily_teaching_returns_only_periods_the_staff_member_exactly_teaches() 
         .iter()
         .flat_map(|period| &period.entries)
         .any(|entry| entry.entry_id == created.id));
+
+    let overview_with_empty = daily_teaching_service::get_daily_teaching_overview(
+        &pool,
+        daily_teaching_service::DailyTeachingQuery {
+            academic_term_id: fixture.term_id,
+            date: Some(observed_date),
+            include_empty_teachers: Some(true),
+        },
+    )
+    .await
+    .unwrap();
+    let eligible_teacher_a = overview_with_empty
+        .teachers
+        .iter()
+        .find(|teacher| teacher.id == fixture.teacher_a)
+        .expect("eligible teacher A must be visible only when empty teachers are requested");
+    assert!(eligible_teacher_a
+        .periods
+        .iter()
+        .all(|period| period.entries.is_empty()));
 }
 
 #[tokio::test]
