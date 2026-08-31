@@ -12,6 +12,7 @@ use crate::modules::academic::models::timetable::{
     TimetableConflictType, TimetablePlacementCandidate, TimetablePlacementMutationKind,
     TimetablePlacementPreviewRequest, TimetablePlacementSource, TimetablePlacementState,
     TimetableQuery, TimetableWorkspaceQuery, UpdateTimetableEntryRequest,
+    WholeSchoolTimetableIssueKind, WholeSchoolTimetableQuery,
 };
 use crate::modules::academic::models::timetable_version::CloneTimetableVersionRequest;
 use crate::modules::academic::models::timetable_version::TimetableVersion;
@@ -429,6 +430,209 @@ async fn workspace_rejects_a_version_outside_the_requested_academic_context() {
     .await;
 
     assert!(matches!(result, Err(AppError::ValidationError(_))));
+}
+
+#[tokio::test]
+async fn whole_school_overview_is_day_bounded_and_uses_exact_relationships() {
+    let pool = migrated_pool("timetable_whole_school_overview").await;
+    let fixture = exact_instructor_fixture(&pool).await;
+    let (offering_id, year_id): (Uuid, Uuid) = sqlx::query_as(
+        "SELECT learning_offering_id, academic_year_id FROM learning_groups WHERE id = $1",
+    )
+    .bind(fixture.group_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let homeroom_ids: Vec<Uuid> = sqlx::query_scalar(
+        r#"SELECT id FROM homerooms
+           WHERE academic_year_id = $1 AND is_active
+           ORDER BY room_number, id LIMIT 2"#,
+    )
+    .bind(year_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(homeroom_ids.len(), 2);
+    let period_ids: Vec<Uuid> = sqlx::query_scalar(
+        r#"SELECT id FROM bell_schedule_periods
+           WHERE bell_schedule_id = $1 AND is_active
+           ORDER BY order_index, id LIMIT 2"#,
+    )
+    .bind(fixture.draft.bell_schedule_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(period_ids.len(), 2);
+
+    sqlx::query("DELETE FROM academic_timetable_entries WHERE timetable_version_id = $1")
+        .bind(fixture.draft.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    for homeroom_id in &homeroom_ids {
+        sqlx::query(
+            r#"INSERT INTO learning_group_homerooms (
+                   id, learning_group_id, academic_term_id, academic_year_id,
+                   homeroom_id, coverage_source
+               ) VALUES (gen_random_uuid(), $1, $2, $3, $4, 'overview_test')"#,
+        )
+        .bind(fixture.group_id)
+        .bind(fixture.term_id)
+        .bind(year_id)
+        .bind(homeroom_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    sqlx::query(
+        r#"UPDATE academic_timetable_version_targets
+           SET weekly_period_target = 3
+           WHERE timetable_version_id = $1 AND learning_offering_id = $2"#,
+    )
+    .bind(fixture.draft.id)
+    .bind(offering_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let shared_entry_id = Uuid::new_v4();
+    let tuesday_entry_id = Uuid::new_v4();
+    let structural_entry_id = Uuid::new_v4();
+    sqlx::query(
+        "ALTER TABLE academic_timetable_entries DISABLE TRIGGER academic_timetable_entries_slot_conflict_guard",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "ALTER TABLE timetable_entry_instructors DISABLE TRIGGER timetable_entry_instructors_exact_conflict_guard",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"INSERT INTO academic_timetable_entries (
+               id, day_of_week, bell_schedule_period_id,
+               room_id, note, is_active, created_by, updated_by, entry_type, title,
+               homeroom_id, academic_term_id, batch_id,
+               academic_year_id, learning_offering_id, learning_group_id,
+               bell_schedule_id, migration_provenance, row_version,
+               timetable_version_id
+           ) VALUES
+               ($1, 'MON', $4, NULL, NULL, true, $7, $7, 'COURSE', NULL,
+                NULL, $8, NULL, $9, $10, $11, $12, '{}'::jsonb, 1, $13),
+               ($2, 'TUE', $5, NULL, NULL, true, $7, $7, 'COURSE', NULL,
+                NULL, $8, NULL, $9, $10, $11, $12, '{}'::jsonb, 1, $13),
+               ($3, 'MON', $4, NULL, NULL, true, $7, $7, 'HOMEROOM', 'โฮมรูมทดสอบ',
+                $6, $8, NULL, $9, NULL, NULL, $12, '{}'::jsonb, 1, $13)"#,
+    )
+    .bind(shared_entry_id)
+    .bind(tuesday_entry_id)
+    .bind(structural_entry_id)
+    .bind(period_ids[0])
+    .bind(period_ids[1])
+    .bind(homeroom_ids[0])
+    .bind(fixture.actor_id)
+    .bind(fixture.term_id)
+    .bind(year_id)
+    .bind(offering_id)
+    .bind(fixture.group_id)
+    .bind(fixture.draft.bell_schedule_id)
+    .bind(fixture.draft.id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"INSERT INTO timetable_entry_instructors (
+               id, entry_id, instructor_id, role
+           ) VALUES
+               (gen_random_uuid(), $1, $4, 'primary'),
+               (gen_random_uuid(), $1, $5, 'secondary'),
+               (gen_random_uuid(), $2, $4, 'primary'),
+               (gen_random_uuid(), $3, $5, 'primary')"#,
+    )
+    .bind(shared_entry_id)
+    .bind(tuesday_entry_id)
+    .bind(structural_entry_id)
+    .bind(fixture.teacher_a)
+    .bind(fixture.teacher_b)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "ALTER TABLE academic_timetable_entries ENABLE TRIGGER academic_timetable_entries_slot_conflict_guard",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "ALTER TABLE timetable_entry_instructors ENABLE TRIGGER timetable_entry_instructors_exact_conflict_guard",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let overview = timetable_service::get_whole_school_overview(
+        &pool,
+        WholeSchoolTimetableQuery {
+            academic_year_id: year_id,
+            academic_term_id: fixture.term_id,
+            timetable_version_id: fixture.draft.id,
+            day_of_week: "MON".to_string(),
+        },
+        &school_access(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(overview.day_of_week, "MON");
+    assert!(overview
+        .rows
+        .iter()
+        .all(|row| row.cells.len() == overview.periods.len()));
+    let shared_occurrences = overview
+        .rows
+        .iter()
+        .flat_map(|row| &row.cells)
+        .flat_map(|cell| &cell.lessons)
+        .filter(|lesson| lesson.entry_id == shared_entry_id)
+        .count();
+    assert_eq!(shared_occurrences, homeroom_ids.len());
+    let shared_lesson = overview
+        .rows
+        .iter()
+        .flat_map(|row| &row.cells)
+        .flat_map(|cell| &cell.lessons)
+        .find(|lesson| lesson.entry_id == shared_entry_id)
+        .unwrap();
+    assert_eq!(shared_lesson.instructors.len(), 2);
+    assert!(overview
+        .rows
+        .iter()
+        .flat_map(|row| &row.cells)
+        .flat_map(|cell| &cell.lessons)
+        .all(|lesson| lesson.entry_id != tuesday_entry_id));
+    assert!(overview
+        .issues
+        .iter()
+        .any(|issue| issue.kind == WholeSchoolTimetableIssueKind::InstructorConflict));
+    assert!(overview
+        .issues
+        .iter()
+        .any(|issue| issue.kind == WholeSchoolTimetableIssueKind::UnscheduledDemand));
+
+    let invalid_day = timetable_service::get_whole_school_overview(
+        &pool,
+        WholeSchoolTimetableQuery {
+            academic_year_id: year_id,
+            academic_term_id: fixture.term_id,
+            timetable_version_id: fixture.draft.id,
+            day_of_week: "NOT_A_DAY".to_string(),
+        },
+        &school_access(),
+    )
+    .await;
+    assert!(matches!(invalid_day, Err(AppError::ValidationError(_))));
 }
 
 #[test]

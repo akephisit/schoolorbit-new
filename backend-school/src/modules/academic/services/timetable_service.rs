@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use serde::Serialize;
@@ -16,7 +16,10 @@ use crate::modules::academic::models::timetable::{
     TimetablePlacementState, TimetableQuery, TimetableUnscheduledDemand,
     TimetableValidationResponse, TimetableWorkspace, TimetableWorkspaceHomeroom,
     TimetableWorkspaceLearningGroup, TimetableWorkspaceQuery, TimetableWorkspaceRoom,
-    TimetableWorkspaceStaff, UpdateTimetableEntryRequest,
+    TimetableWorkspaceStaff, UpdateTimetableEntryRequest, WholeSchoolTimetableCell,
+    WholeSchoolTimetableIssue, WholeSchoolTimetableIssueKind, WholeSchoolTimetableIssueSeverity,
+    WholeSchoolTimetableLesson, WholeSchoolTimetableOverview, WholeSchoolTimetableQuery,
+    WholeSchoolTimetableRow, WholeSchoolTimetableSummary,
 };
 use crate::policies::resource_access_policy::AcademicResourceListFilter;
 
@@ -174,6 +177,14 @@ struct WorkspaceLearningGroupRow {
     weekly_period_target: i32,
     homeroom_ids: Vec<Uuid>,
     eligible_instructor_ids: Vec<Uuid>,
+}
+
+#[derive(Debug, Clone, FromRow)]
+struct WholeSchoolGroupRow {
+    id: Uuid,
+    weekly_period_target: i32,
+    scheduled_periods: i64,
+    homeroom_ids: Vec<Uuid>,
 }
 
 #[derive(Debug, Serialize)]
@@ -766,6 +777,431 @@ pub async fn get_workspace(
         rooms,
         staff,
         unscheduled_demands,
+    })
+}
+
+pub async fn get_whole_school_overview(
+    pool: &PgPool,
+    query: WholeSchoolTimetableQuery,
+    access: &AcademicResourceListFilter,
+) -> Result<WholeSchoolTimetableOverview, AppError> {
+    const MAX_HOMEROOMS: i64 = 500;
+    const MAX_GROUPS: i64 = 2_000;
+
+    let day_of_week = normalize_day(&query.day_of_week)?;
+    let version = super::timetable_version_service::get_version(
+        pool,
+        query.timetable_version_id,
+        Utc::now().date_naive(),
+    )
+    .await?;
+    if version.academic_year_id != query.academic_year_id
+        || version.academic_term_id != query.academic_term_id
+    {
+        return Err(AppError::ValidationError(
+            "รุ่นตารางเรียนที่เลือกไม่ได้อยู่ในปีการศึกษาและภาคเรียนนี้".to_string(),
+        ));
+    }
+
+    let entry_query = TimetableQuery {
+        timetable_version_id: query.timetable_version_id,
+        academic_term_id: query.academic_term_id,
+        learning_group_id: None,
+        homeroom_id: None,
+        instructor_id: None,
+        room_id: None,
+        day_of_week: Some(day_of_week.clone()),
+        entry_type: None,
+    };
+    let entries = list_entries(pool, &entry_query, access).await?;
+    let referenced_period_ids = entries
+        .iter()
+        .map(|entry| entry.bell_schedule_period_id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let periods: Vec<BellSchedulePeriod> = sqlx::query_as(
+        r#"SELECT id, bell_schedule_id, name, start_time, end_time,
+                  order_index, applicable_days, is_active
+           FROM bell_schedule_periods
+           WHERE bell_schedule_id = $1
+             AND (is_active OR id = ANY($2))
+           ORDER BY order_index, id"#,
+    )
+    .bind(version.bell_schedule_id)
+    .bind(&referenced_period_ids)
+    .fetch_all(pool)
+    .await?;
+
+    let owner_ids = access.allowed_organization_unit_ids();
+    let group_rows: Vec<WholeSchoolGroupRow> = sqlx::query_as(
+        r#"SELECT learning_group.id,
+                  target.weekly_period_target,
+                  (
+                      SELECT count(*)
+                      FROM academic_timetable_entries scheduled_entry
+                      WHERE scheduled_entry.timetable_version_id = $1
+                        AND scheduled_entry.learning_group_id = learning_group.id
+                        AND scheduled_entry.is_active
+                  ) AS scheduled_periods,
+                  ARRAY(
+                      SELECT coverage.homeroom_id
+                      FROM learning_group_homerooms coverage
+                      JOIN homerooms homeroom ON homeroom.id = coverage.homeroom_id
+                      JOIN grade_levels grade ON grade.id = homeroom.grade_level_id
+                      WHERE coverage.learning_group_id = learning_group.id
+                      ORDER BY CASE grade.level_type
+                                   WHEN 'kindergarten' THEN 1
+                                   WHEN 'primary' THEN 2
+                                   WHEN 'secondary' THEN 3
+                                   ELSE 4
+                               END,
+                               grade.year,
+                               homeroom.room_number,
+                               homeroom.name,
+                               homeroom.id
+                  ) AS homeroom_ids
+           FROM learning_groups learning_group
+           JOIN learning_offerings offering
+             ON offering.id = learning_group.learning_offering_id
+           JOIN academic_timetable_version_targets target
+             ON target.timetable_version_id = $1
+            AND target.learning_offering_id = learning_group.learning_offering_id
+           WHERE learning_group.academic_term_id = $2
+             AND learning_group.academic_year_id = $3
+             AND ($4 OR offering.owning_organization_unit_id = ANY($5) OR EXISTS (
+                 SELECT 1
+                 FROM learning_group_teachers assigned_teacher
+                 WHERE assigned_teacher.learning_group_id = learning_group.id
+                   AND assigned_teacher.teacher_id = $6
+             ))
+           ORDER BY learning_group.code, learning_group.id
+           LIMIT $7"#,
+    )
+    .bind(query.timetable_version_id)
+    .bind(query.academic_term_id)
+    .bind(query.academic_year_id)
+    .bind(access.includes_school_owned)
+    .bind(&owner_ids)
+    .bind(access.assigned_actor_id)
+    .bind(MAX_GROUPS + 1)
+    .fetch_all(pool)
+    .await?;
+    if group_rows.len() > MAX_GROUPS as usize {
+        return Err(AppError::ValidationError(
+            "จำนวนกลุ่มเรียนในภาพรวมเกิน 2000 กลุ่ม".to_string(),
+        ));
+    }
+
+    let homerooms_by_group = group_rows
+        .iter()
+        .map(|group| (group.id, group.homeroom_ids.clone()))
+        .collect::<HashMap<_, _>>();
+    let relevant_homeroom_ids = group_rows
+        .iter()
+        .flat_map(|group| group.homeroom_ids.iter().copied())
+        .chain(entries.iter().filter_map(|entry| entry.homeroom_id))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let homerooms: Vec<TimetableWorkspaceHomeroom> = sqlx::query_as::<
+        _,
+        (
+            Uuid,
+            String,
+            String,
+            Uuid,
+            String,
+            i32,
+            Option<String>,
+            bool,
+        ),
+    >(
+        r#"SELECT homeroom.id,
+                  homeroom.code,
+                  homeroom.name,
+                  homeroom.grade_level_id,
+                  grade.level_type::text,
+                  grade.year,
+                  homeroom.room_number,
+                  coalesce(homeroom.is_active, false)
+           FROM homerooms homeroom
+           JOIN grade_levels grade ON grade.id = homeroom.grade_level_id
+           WHERE homeroom.academic_year_id = $1
+             AND coalesce(homeroom.is_active, false)
+             AND ($2 OR homeroom.id = ANY($3))
+           ORDER BY CASE grade.level_type
+                        WHEN 'kindergarten' THEN 1
+                        WHEN 'primary' THEN 2
+                        WHEN 'secondary' THEN 3
+                        ELSE 4
+                    END,
+                    grade.year,
+                    homeroom.room_number,
+                    homeroom.name,
+                    homeroom.id
+           LIMIT $4"#,
+    )
+    .bind(query.academic_year_id)
+    .bind(access.includes_school_owned)
+    .bind(&relevant_homeroom_ids)
+    .bind(MAX_HOMEROOMS + 1)
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .map(
+        |(
+            id,
+            code,
+            name,
+            grade_level_id,
+            grade_level_type,
+            grade_level_year,
+            room_number,
+            is_active,
+        )| TimetableWorkspaceHomeroom {
+            id,
+            code,
+            name,
+            grade_level_id,
+            grade_level_type,
+            grade_level_year,
+            room_number,
+            is_active,
+        },
+    )
+    .collect();
+    if homerooms.len() > MAX_HOMEROOMS as usize {
+        return Err(AppError::ValidationError(
+            "จำนวนห้องประจำชั้นในภาพรวมเกิน 500 ห้อง".to_string(),
+        ));
+    }
+
+    let mut lessons_by_homeroom_period: HashMap<(Uuid, Uuid), Vec<WholeSchoolTimetableLesson>> =
+        HashMap::new();
+    let mut homeroom_conflicts: BTreeMap<(Uuid, Uuid), BTreeSet<Uuid>> = BTreeMap::new();
+    let mut instructor_conflicts: BTreeMap<(Uuid, Uuid), BTreeSet<Uuid>> = BTreeMap::new();
+    let mut room_conflicts: BTreeMap<(Uuid, Uuid), BTreeSet<Uuid>> = BTreeMap::new();
+    let mut issues = Vec::new();
+
+    for entry in &entries {
+        let covered_homeroom_ids = entry
+            .learning_group_id
+            .and_then(|group_id| homerooms_by_group.get(&group_id).cloned())
+            .unwrap_or_else(|| entry.homeroom_id.into_iter().collect());
+        let lesson = WholeSchoolTimetableLesson {
+            entry_id: entry.id,
+            entry_type: entry.entry_type.clone(),
+            learning_group_id: entry.learning_group_id,
+            learning_group_code: entry.learning_group_code.clone(),
+            learning_group_name: entry.learning_group_name.clone(),
+            offering_code: entry.offering_code.clone(),
+            offering_name: entry.offering_name.clone(),
+            title: entry.title.clone(),
+            covered_homeroom_ids: covered_homeroom_ids.clone(),
+            instructors: entry.instructors.clone(),
+            room_id: entry.room_id,
+            room_code: entry.room_code.clone(),
+            is_shared_group: covered_homeroom_ids.len() > 1,
+        };
+        for homeroom_id in &covered_homeroom_ids {
+            lessons_by_homeroom_period
+                .entry((*homeroom_id, entry.bell_schedule_period_id))
+                .or_default()
+                .push(lesson.clone());
+            homeroom_conflicts
+                .entry((*homeroom_id, entry.bell_schedule_period_id))
+                .or_default()
+                .insert(entry.id);
+        }
+        for instructor in &entry.instructors {
+            instructor_conflicts
+                .entry((instructor.user_id, entry.bell_schedule_period_id))
+                .or_default()
+                .insert(entry.id);
+        }
+        if let Some(room_id) = entry.room_id {
+            room_conflicts
+                .entry((room_id, entry.bell_schedule_period_id))
+                .or_default()
+                .insert(entry.id);
+        }
+        if entry.instructors.is_empty() {
+            issues.push(WholeSchoolTimetableIssue {
+                kind: WholeSchoolTimetableIssueKind::MissingInstructor,
+                severity: WholeSchoolTimetableIssueSeverity::Blocking,
+                message: "คาบนี้ยังไม่มีครูผู้สอนที่ระบุแน่นอน".to_string(),
+                entry_ids: vec![entry.id],
+                homeroom_ids: covered_homeroom_ids.clone(),
+                instructor_ids: Vec::new(),
+                room_id: entry.room_id,
+                bell_schedule_period_id: Some(entry.bell_schedule_period_id),
+                learning_group_id: entry.learning_group_id,
+            });
+        }
+        if entry.room_id.is_none() && covered_homeroom_ids.len() > 1 {
+            issues.push(WholeSchoolTimetableIssue {
+                kind: WholeSchoolTimetableIssueKind::MissingRoom,
+                severity: WholeSchoolTimetableIssueSeverity::Warning,
+                message: "กลุ่มเรียนรวมห้องยังไม่ได้ระบุห้องเรียนจริง".to_string(),
+                entry_ids: vec![entry.id],
+                homeroom_ids: covered_homeroom_ids,
+                instructor_ids: entry
+                    .instructors
+                    .iter()
+                    .map(|instructor| instructor.user_id)
+                    .collect(),
+                room_id: None,
+                bell_schedule_period_id: Some(entry.bell_schedule_period_id),
+                learning_group_id: entry.learning_group_id,
+            });
+        }
+    }
+
+    for ((homeroom_id, period_id), entry_ids) in homeroom_conflicts {
+        if entry_ids.len() < 2 {
+            continue;
+        }
+        issues.push(WholeSchoolTimetableIssue {
+            kind: WholeSchoolTimetableIssueKind::HomeroomConflict,
+            severity: WholeSchoolTimetableIssueSeverity::Blocking,
+            message: "ห้องประจำชั้นมีมากกว่าหนึ่งรายการในคาบเดียวกัน".to_string(),
+            entry_ids: entry_ids.into_iter().collect(),
+            homeroom_ids: vec![homeroom_id],
+            instructor_ids: Vec::new(),
+            room_id: None,
+            bell_schedule_period_id: Some(period_id),
+            learning_group_id: None,
+        });
+    }
+    for ((instructor_id, period_id), entry_ids) in instructor_conflicts {
+        if entry_ids.len() < 2 {
+            continue;
+        }
+        issues.push(WholeSchoolTimetableIssue {
+            kind: WholeSchoolTimetableIssueKind::InstructorConflict,
+            severity: WholeSchoolTimetableIssueSeverity::Blocking,
+            message: "ครูมีมากกว่าหนึ่งรายการในคาบเดียวกัน".to_string(),
+            entry_ids: entry_ids.into_iter().collect(),
+            homeroom_ids: Vec::new(),
+            instructor_ids: vec![instructor_id],
+            room_id: None,
+            bell_schedule_period_id: Some(period_id),
+            learning_group_id: None,
+        });
+    }
+    for ((room_id, period_id), entry_ids) in room_conflicts {
+        if entry_ids.len() < 2 {
+            continue;
+        }
+        issues.push(WholeSchoolTimetableIssue {
+            kind: WholeSchoolTimetableIssueKind::RoomConflict,
+            severity: WholeSchoolTimetableIssueSeverity::Blocking,
+            message: "ห้องเรียนถูกใช้มากกว่าหนึ่งรายการในคาบเดียวกัน".to_string(),
+            entry_ids: entry_ids.into_iter().collect(),
+            homeroom_ids: Vec::new(),
+            instructor_ids: Vec::new(),
+            room_id: Some(room_id),
+            bell_schedule_period_id: Some(period_id),
+            learning_group_id: None,
+        });
+    }
+    for group in &group_rows {
+        let scheduled_periods = i32::try_from(group.scheduled_periods).unwrap_or(i32::MAX);
+        let (kind, message) = if scheduled_periods < group.weekly_period_target {
+            (
+                WholeSchoolTimetableIssueKind::UnscheduledDemand,
+                format!(
+                    "ยังจัดไม่ครบ {} คาบจากเป้าหมาย {} คาบต่อสัปดาห์",
+                    group.weekly_period_target - scheduled_periods,
+                    group.weekly_period_target
+                ),
+            )
+        } else if scheduled_periods > group.weekly_period_target {
+            (
+                WholeSchoolTimetableIssueKind::OverScheduledDemand,
+                format!(
+                    "จัดเกินเป้าหมาย {} คาบต่อสัปดาห์",
+                    scheduled_periods - group.weekly_period_target
+                ),
+            )
+        } else {
+            continue;
+        };
+        issues.push(WholeSchoolTimetableIssue {
+            kind,
+            severity: WholeSchoolTimetableIssueSeverity::Warning,
+            message,
+            entry_ids: Vec::new(),
+            homeroom_ids: group.homeroom_ids.clone(),
+            instructor_ids: Vec::new(),
+            room_id: None,
+            bell_schedule_period_id: None,
+            learning_group_id: Some(group.id),
+        });
+    }
+    issues.sort_by(|left, right| {
+        left.kind
+            .cmp(&right.kind)
+            .then_with(|| {
+                left.bell_schedule_period_id
+                    .cmp(&right.bell_schedule_period_id)
+            })
+            .then_with(|| left.learning_group_id.cmp(&right.learning_group_id))
+            .then_with(|| left.entry_ids.cmp(&right.entry_ids))
+    });
+
+    let rows = homerooms
+        .into_iter()
+        .map(|homeroom| {
+            let cells = periods
+                .iter()
+                .map(|period| {
+                    let mut lessons = lessons_by_homeroom_period
+                        .remove(&(homeroom.id, period.id))
+                        .unwrap_or_default();
+                    lessons.sort_by(|left, right| {
+                        left.offering_code
+                            .cmp(&right.offering_code)
+                            .then_with(|| left.entry_id.cmp(&right.entry_id))
+                    });
+                    WholeSchoolTimetableCell {
+                        bell_schedule_period_id: period.id,
+                        lessons,
+                    }
+                })
+                .collect();
+            WholeSchoolTimetableRow {
+                homeroom_id: homeroom.id,
+                homeroom_code: homeroom.code,
+                homeroom_name: homeroom.name,
+                grade_level_type: homeroom.grade_level_type,
+                grade_level_year: homeroom.grade_level_year,
+                room_number: homeroom.room_number,
+                cells,
+            }
+        })
+        .collect::<Vec<_>>();
+    let blocking_issue_count = issues
+        .iter()
+        .filter(|issue| issue.severity == WholeSchoolTimetableIssueSeverity::Blocking)
+        .count() as i32;
+    let warning_issue_count = issues.len() as i32 - blocking_issue_count;
+    let summary = WholeSchoolTimetableSummary {
+        homeroom_count: rows.len() as i32,
+        unique_lesson_count: entries.len() as i32,
+        issue_count: issues.len() as i32,
+        blocking_issue_count,
+        warning_issue_count,
+    };
+
+    Ok(WholeSchoolTimetableOverview {
+        version,
+        day_of_week,
+        periods,
+        rows,
+        issues,
+        summary,
     })
 }
 

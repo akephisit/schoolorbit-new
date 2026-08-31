@@ -208,6 +208,119 @@ pub struct TimetableUnscheduledDemand {
     pub eligible_instructor_ids: Vec<Uuid>,
 }
 
+#[derive(Debug, Clone, Deserialize, IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WholeSchoolTimetableQuery {
+    pub academic_year_id: Uuid,
+    pub academic_term_id: Uuid,
+    pub timetable_version_id: Uuid,
+    pub day_of_week: String,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WholeSchoolTimetableOverview {
+    pub version: TimetableVersion,
+    pub day_of_week: String,
+    pub periods: Vec<BellSchedulePeriod>,
+    pub rows: Vec<WholeSchoolTimetableRow>,
+    pub issues: Vec<WholeSchoolTimetableIssue>,
+    pub summary: WholeSchoolTimetableSummary,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WholeSchoolTimetableRow {
+    pub homeroom_id: Uuid,
+    pub homeroom_code: String,
+    pub homeroom_name: String,
+    pub grade_level_type: String,
+    pub grade_level_year: i32,
+    #[schema(required = true)]
+    pub room_number: Option<String>,
+    pub cells: Vec<WholeSchoolTimetableCell>,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WholeSchoolTimetableCell {
+    pub bell_schedule_period_id: Uuid,
+    pub lessons: Vec<WholeSchoolTimetableLesson>,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WholeSchoolTimetableLesson {
+    pub entry_id: Uuid,
+    pub entry_type: String,
+    #[schema(required = true)]
+    pub learning_group_id: Option<Uuid>,
+    #[schema(required = true)]
+    pub learning_group_code: Option<String>,
+    #[schema(required = true)]
+    pub learning_group_name: Option<String>,
+    #[schema(required = true)]
+    pub offering_code: Option<String>,
+    #[schema(required = true)]
+    pub offering_name: Option<String>,
+    #[schema(required = true)]
+    pub title: Option<String>,
+    pub covered_homeroom_ids: Vec<Uuid>,
+    pub instructors: Vec<TimetableInstructor>,
+    #[schema(required = true)]
+    pub room_id: Option<Uuid>,
+    #[schema(required = true)]
+    pub room_code: Option<String>,
+    pub is_shared_group: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum WholeSchoolTimetableIssueKind {
+    HomeroomConflict,
+    InstructorConflict,
+    RoomConflict,
+    UnscheduledDemand,
+    OverScheduledDemand,
+    MissingInstructor,
+    MissingRoom,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum WholeSchoolTimetableIssueSeverity {
+    Blocking,
+    Warning,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WholeSchoolTimetableIssue {
+    pub kind: WholeSchoolTimetableIssueKind,
+    pub severity: WholeSchoolTimetableIssueSeverity,
+    pub message: String,
+    pub entry_ids: Vec<Uuid>,
+    pub homeroom_ids: Vec<Uuid>,
+    pub instructor_ids: Vec<Uuid>,
+    #[schema(required = true)]
+    pub room_id: Option<Uuid>,
+    #[schema(required = true)]
+    pub bell_schedule_period_id: Option<Uuid>,
+    #[schema(required = true)]
+    pub learning_group_id: Option<Uuid>,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WholeSchoolTimetableSummary {
+    pub homeroom_count: i32,
+    pub unique_lesson_count: i32,
+    pub issue_count: i32,
+    pub blocking_issue_count: i32,
+    pub warning_issue_count: i32,
+}
+
 #[derive(Debug, Clone, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

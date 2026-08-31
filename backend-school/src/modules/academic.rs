@@ -128,6 +128,10 @@ pub fn academic_routes() -> Router<AppState> {
                 get(handlers::timetable::get_timetable_workspace),
             )
             .route(
+                "/timetable/whole-school",
+                get(handlers::timetable::get_whole_school_timetable_overview),
+            )
+            .route(
                 "/timetable",
                 get(handlers::timetable::list_timetable_entries)
                     .post(handlers::timetable::create_timetable_entry),

@@ -17,7 +17,9 @@ use crate::modules::academic::models::timetable::{
     TimetableTemplateTargetSelector, TimetableUnscheduledDemand, TimetableWorkspace,
     TimetableWorkspaceHomeroom, TimetableWorkspaceLearningGroup, TimetableWorkspaceRoom,
     TimetableWorkspaceStaff, UpdateTemplateRequest, UpdateTimetableEntryRequest,
-    ValidateMovesRequest,
+    ValidateMovesRequest, WholeSchoolTimetableCell, WholeSchoolTimetableIssue,
+    WholeSchoolTimetableIssueKind, WholeSchoolTimetableIssueSeverity, WholeSchoolTimetableLesson,
+    WholeSchoolTimetableOverview, WholeSchoolTimetableRow, WholeSchoolTimetableSummary,
 };
 use crate::modules::academic::models::timetable_version::{
     CloneTimetableVersionRequest, TimetableVersion, TimetableVersionDisplayState,
@@ -291,6 +293,7 @@ use utoipa::OpenApi;
         crate::modules::academic::core::handlers::list_my_context_options,
         crate::modules::academic::handlers::timetable::list_timetable_entries,
         crate::modules::academic::handlers::timetable::get_timetable_workspace,
+        crate::modules::academic::handlers::timetable::get_whole_school_timetable_overview,
         crate::modules::academic::handlers::timetable::create_timetable_entry,
         crate::modules::academic::handlers::timetable::create_batch_timetable_entries,
         crate::modules::academic::handlers::timetable::update_timetable_entry,
@@ -1077,6 +1080,15 @@ use utoipa::OpenApi;
         TimetableWorkspaceRoom,
         TimetableWorkspaceStaff,
         TimetableUnscheduledDemand,
+        WholeSchoolTimetableOverview,
+        WholeSchoolTimetableRow,
+        WholeSchoolTimetableCell,
+        WholeSchoolTimetableLesson,
+        WholeSchoolTimetableIssue,
+        WholeSchoolTimetableIssueKind,
+        WholeSchoolTimetableIssueSeverity,
+        WholeSchoolTimetableSummary,
+        ApiResponse<WholeSchoolTimetableOverview>,
         CreateTimetableEntryRequest,
         UpdateTimetableEntryRequest,
         CreateBatchTimetableEntriesRequest,
@@ -3412,6 +3424,45 @@ mod tests {
         ] {
             assert!(required(&schemas["TimetableWorkspace"]).contains(&field));
         }
+    }
+
+    #[test]
+    fn documents_day_bounded_whole_school_timetable_contract() {
+        let document = school_api_value().expect("document should serialize");
+        assert_operations(
+            &document,
+            &[(
+                "/api/academic/timetable/whole-school",
+                "get",
+                "getWholeSchoolTimetableOverview",
+            )],
+        );
+        assert_eq!(
+            query_contract(&document, "/api/academic/timetable/whole-school", "get"),
+            BTreeSet::from([
+                ("academicTermId".to_string(), true),
+                ("academicYearId".to_string(), true),
+                ("dayOfWeek".to_string(), true),
+                ("timetableVersionId".to_string(), true),
+            ])
+        );
+
+        let schemas = &document["components"]["schemas"];
+        for schema_name in [
+            "WholeSchoolTimetableOverview",
+            "WholeSchoolTimetableRow",
+            "WholeSchoolTimetableCell",
+            "WholeSchoolTimetableLesson",
+            "WholeSchoolTimetableIssue",
+            "WholeSchoolTimetableIssueKind",
+            "WholeSchoolTimetableIssueSeverity",
+            "WholeSchoolTimetableSummary",
+        ] {
+            assert!(!schemas[schema_name].is_null(), "missing {schema_name}");
+        }
+        assert!(required(&schemas["WholeSchoolTimetableOverview"]).contains(&"dayOfWeek"));
+        assert!(required(&schemas["WholeSchoolTimetableOverview"]).contains(&"rows"));
+        assert!(required(&schemas["WholeSchoolTimetableLesson"]).contains(&"instructors"));
     }
 
     #[test]

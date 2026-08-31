@@ -13,6 +13,7 @@ use crate::modules::academic::models::timetable::{
     PersonalTimetableQuery, SwapTimetableEntriesRequest, TimetableBatchMutationQuery,
     TimetableOccupancyQuery, TimetablePlacementPreviewRequest, TimetablePlacementSource,
     TimetableQuery, TimetableWorkspaceQuery, UpdateTimetableEntryRequest, ValidateMovesRequest,
+    WholeSchoolTimetableQuery,
 };
 use crate::modules::academic::services::{
     daily_teaching_service, timetable_service, timetable_version_service,
@@ -83,6 +84,37 @@ pub async fn get_timetable_workspace(
     .await?;
     let workspace = timetable_service::get_workspace(&context.tenant.pool, query, &access).await?;
     Ok(Json(ApiResponse::ok(workspace)).into_response())
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/timetable/whole-school",
+    operation_id = "getWholeSchoolTimetableOverview",
+    params(WholeSchoolTimetableQuery),
+    responses(
+        (status = 200, description = "Read-only whole-school timetable overview for one selected day", body = ApiResponse<crate::modules::academic::models::timetable::WholeSchoolTimetableOverview>),
+        (status = 400, description = "Invalid day or academic context", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Timetable read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Timetable version not found", body = ApiErrorResponse)
+    ),
+    tag = "academic"
+)]
+pub async fn get_whole_school_timetable_overview(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<WholeSchoolTimetableQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let access = require_learning_offering_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        OfferingAction::Read,
+    )
+    .await?;
+    let overview =
+        timetable_service::get_whole_school_overview(&context.tenant.pool, query, &access).await?;
+    Ok(Json(ApiResponse::ok(overview)).into_response())
 }
 
 #[utoipa::path(
