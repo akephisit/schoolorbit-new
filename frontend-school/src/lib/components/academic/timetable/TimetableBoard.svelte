@@ -20,6 +20,7 @@
 		canEdit = false,
 		cellState,
 		onDropIntent,
+		onActivateIntent,
 		onHoverIntent,
 		onSelectEntry,
 		onDragStart,
@@ -35,6 +36,7 @@
 		canEdit?: boolean;
 		cellState?: (dayOfWeek: string, periodId: string) => TimetableCellState;
 		onDropIntent?: (dayOfWeek: string, periodId: string) => void;
+		onActivateIntent?: (dayOfWeek: string, periodId: string) => void;
 		onHoverIntent?: (dayOfWeek: string, periodId: string) => void;
 		onSelectEntry?: (entry: TimetableEntry) => void;
 		onDragStart?: (entry: TimetableEntry, event: DragEvent) => void;
@@ -114,6 +116,7 @@
 								disabled={!canEdit}
 								onHoverIntent={() => onHoverIntent?.(day.id, period.id)}
 								onDropIntent={() => onDropIntent?.(day.id, period.id)}
+								onActivateIntent={() => onActivateIntent?.(day.id, period.id)}
 							>
 								{#each entries as entry (`${entry.id}:${row.id}`)}
 									<TimetableLessonCard

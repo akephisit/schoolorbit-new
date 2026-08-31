@@ -35,7 +35,7 @@
 	<div class="flex flex-col gap-4 p-4 lg:flex-row lg:items-center lg:justify-between">
 		<div class="min-w-0 space-y-2">
 			<div class="flex flex-wrap items-center gap-2">
-				<h1 class="text-xl font-semibold tracking-tight">จัดตารางสอน</h1>
+				<h2 class="text-lg font-semibold tracking-tight">รุ่นตารางสอนที่เลือก</h2>
 				<Badge variant={version.status === 'draft' ? 'secondary' : 'outline'}>
 					{version.status === 'draft' ? 'แบบร่าง · แก้ไขได้' : 'เผยแพร่แล้ว · อ่านอย่างเดียว'}
 				</Badge>

@@ -68,15 +68,18 @@ test('typed timetable wrapper owns version list resolve clone and version-scoped
 
 test('academic timetable selects one URL-backed version and disables published editing', async () => {
 	const page = await readProjectFile('src/routes/(app)/staff/academic/timetable/+page.svelte');
+	const header = await readProjectFile(
+		'src/lib/components/academic/timetable/TimetableWorkspaceHeader.svelte'
+	);
 
-	assert.equal((page.match(/listTimetableVersions\(/g) ?? []).length, 1);
+	assert.match(page, /listTimetableVersions\(/);
 	assert.match(page, /timetableVersionId/);
-	assert.match(page, /selectedVersion\?\.status === 'draft'/);
+	assert.match(page, /controller\?\.canEdit/);
 	assert.match(page, /replaceState/);
 	assert.match(page, /current.*upcoming.*draft/is);
-	assert.match(page, /เผยแพร่แล้ว/);
-	assert.match(page, /อ่านอย่างเดียว/);
-	assert.match(page, /timetableVersionId:\s*selectedVersion\.id/);
+	assert.match(header, /เผยแพร่แล้ว/);
+	assert.match(header, /อ่านอย่างเดียว/);
+	assert.match(page, /timetableVersionId:\s*controller\.workspace\.version\.id/);
 });
 
 test('timetable revision creation reuses the date-effective academic change workflow', async () => {
@@ -103,8 +106,8 @@ test('timetable workspace links one change set to the selected version and inval
 	);
 	assert.match(page, /<AcademicChangeReadiness/);
 	assert.match(page, /draftRevision\s*\+=\s*1/);
-	assert.match(page, /timetableVersionId:\s*selectedVersion\.id/);
-	assert.match(page, /instructorIds:\s*formInstructorIds/);
+	assert.match(page, /timetableVersionId:\s*controller\.workspace\.version\.id/);
+	assert.match(page, /instructorIds:\s*preview\.normalizedCandidate\.instructorIds/);
 	assert.doesNotMatch(page, /cloneTimetableVersion/);
 });
 

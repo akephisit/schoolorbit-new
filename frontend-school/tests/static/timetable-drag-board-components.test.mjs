@@ -47,6 +47,8 @@ test('lesson cards and cells expose drag state plus complete keyboard parity', a
 	assert.match(cell, /dayLabel/);
 	assert.match(cell, /periodLabel/);
 	assert.match(cell, /stateLabel/);
+	assert.match(cell, /onActivateIntent/);
+	assert.match(cell, /วางคาบที่นี่/);
 	assert.match(board, /entry\.id.*row\.id|row\.id.*entry\.id/s);
 	assert.match(board, /Escape/);
 });

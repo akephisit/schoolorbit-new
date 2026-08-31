@@ -1,40 +1,48 @@
 <script lang="ts">
+	import { replaceState } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
-	import type { Cell, Row, Workbook, Worksheet } from 'exceljs';
 	import { toast } from 'svelte-sonner';
+
+	import { getAcademicContextStore } from '$lib/academic-context/store';
 	import {
-		getAcademicContextStore,
-		registerAcademicContextDirtySource
-	} from '$lib/academic-context/store';
+		entriesForTimetableCell,
+		localPlacementPreview,
+		type TimetableBoardView
+	} from '$lib/academic/timetable/board-state';
 	import {
-		listBellSchedulePeriods,
-		listBellSchedules,
-		listHomerooms,
-		type BellSchedule,
-		type BellSchedulePeriod,
-		type Homeroom
-	} from '$lib/api/academic-core';
-	import {
-		getAcademicTermChangeSet,
-		listLearningGroupsForTerm,
-		listLearningOfferings,
-		type AcademicTermChangeSet,
-		type LearningGroup,
-		type LearningOffering
-	} from '$lib/api/learning-delivery';
-	import { lookupRooms, type RoomLookupItem } from '$lib/api/lookup';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
+		createTimetableWorkspaceController,
+		type TimetableDragSource,
+		type TimetableWorkspaceController
+	} from '$lib/academic/timetable/workspace-controller.svelte';
+	import { ApiClientError } from '$lib/api/client';
+	import { getAcademicTermChangeSet, type AcademicTermChangeSet } from '$lib/api/learning-delivery';
 	import {
 		createTimetableEntry,
 		currentLocalDate,
 		deleteTimetableEntry,
-		listTimetableEntries,
+		getTimetableWorkspace,
 		listTimetableVersions,
+		previewTimetablePlacement,
+		swapTimetableEntries,
 		updateTimetableEntry,
 		type TimetableEntry,
-		type TimetableVersion
+		type TimetablePlacementCandidate,
+		type TimetablePlacementPreview,
+		type TimetablePlacementPreviewRequest,
+		type TimetablePlacementSource,
+		type TimetableVersion,
+		type TimetableWorkspace
 	} from '$lib/api/timetable';
+	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
+	import TimetableBoard from '$lib/components/academic/timetable/TimetableBoard.svelte';
+	import type { TimetableCellState } from '$lib/components/academic/timetable/TimetableCell.svelte';
+	import TimetableEntryInspector from '$lib/components/academic/timetable/TimetableEntryInspector.svelte';
+	import TimetableInstructorPicker from '$lib/components/academic/timetable/TimetableInstructorPicker.svelte';
+	import TimetableMoveDialog from '$lib/components/academic/timetable/TimetableMoveDialog.svelte';
+	import TimetableUnscheduledTray from '$lib/components/academic/timetable/TimetableUnscheduledTray.svelte';
+	import TimetableWorkspaceHeader from '$lib/components/academic/timetable/TimetableWorkspaceHeader.svelte';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import {
@@ -43,13 +51,12 @@
 	} from '$lib/components/academic-workflow';
 	import AcademicChangeReadiness from '$lib/components/learning-delivery/AcademicChangeReadiness.svelte';
 	import AcademicChangeSetDialog from '$lib/components/learning-delivery/AcademicChangeSetDialog.svelte';
-	import TimetableInstructorPicker from '$lib/components/academic/timetable/TimetableInstructorPicker.svelte';
 	import MobileDragDropPolyfill from '$lib/components/MobileDragDropPolyfill.svelte';
+	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
+	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { authStore } from '$lib/stores/auth';
@@ -59,51 +66,19 @@
 		disconnectTimetableSocket,
 		refreshTrigger
 	} from '$lib/stores/timetable-socket';
-	import { loadTimetableCollections } from '$lib/workspaces/academic-batch';
-	import {
-		buildTeacherLoadExportRows,
-		calculateTeacherLoadColumnWidths,
-		TEACHER_LOAD_DETAIL_COLUMN_WIDTH_OPTIONS,
-		TEACHER_LOAD_SUMMARY_COLUMN_WIDTH_OPTIONS,
-		type TeacherLoadExportRows
-	} from '$lib/utils/timetable-teacher-load-export';
-	import {
-		AlertTriangle,
-		CalendarClock,
-		FileSpreadsheet,
-		History,
-		Loader2,
-		Plus,
-		RotateCcw,
-		Save,
-		Trash2
-	} from 'lucide-svelte';
+	import { AlertTriangle, History, LoaderCircle, MousePointer2, RefreshCw } from 'lucide-svelte';
 
-	type ViewKind = 'learning_group' | 'homeroom';
-	type EntryType = 'COURSE' | 'ACTIVITY' | 'HOMEROOM' | 'ACADEMIC' | 'BREAK';
+	type InstructorOption = {
+		id: string;
+		displayName: string;
+		role: 'primary' | 'secondary' | 'assistant';
+	};
 
-	const dayOptions = [
-		{ value: 'MON', label: 'จันทร์' },
-		{ value: 'TUE', label: 'อังคาร' },
-		{ value: 'WED', label: 'พุธ' },
-		{ value: 'THU', label: 'พฤหัสบดี' },
-		{ value: 'FRI', label: 'ศุกร์' },
-		{ value: 'SAT', label: 'เสาร์' },
-		{ value: 'SUN', label: 'อาทิตย์' }
-	];
-	const entryTypeOptions: Array<{ value: EntryType; label: string }> = [
-		{ value: 'COURSE', label: 'รายวิชา' },
-		{ value: 'ACTIVITY', label: 'กิจกรรม' },
-		{ value: 'HOMEROOM', label: 'โฮมรูม' },
-		{ value: 'ACADEMIC', label: 'กิจกรรมวิชาการ' },
-		{ value: 'BREAK', label: 'พัก' }
-	];
-	const NO_ROOM_VALUE = '__no_room__';
 	const missingGroupsPrerequisite: AcademicPrerequisite = {
 		key: 'timetable-learning-groups',
 		status: 'missing',
 		title: 'ยังไม่มีกลุ่มเรียนสำหรับจัดตาราง',
-		description: 'สร้างกลุ่มใต้รายการเปิดสอน และกำหนดผู้เรียนหรือห้องต้นทางให้ตรงกับการสอนจริง',
+		description: 'สร้างกลุ่มใต้รายการเปิดสอน และกำหนดห้องต้นทางให้ตรงกับการสอนจริง',
 		actionLabel: 'ไปจัดกลุ่มเรียน',
 		href: '/staff/academic/delivery'
 	};
@@ -111,15 +86,15 @@
 		key: 'timetable-teachers',
 		status: 'warning',
 		title: 'บางกลุ่มยังไม่มีครูผู้สอน',
-		description: 'กำหนดครูให้กลุ่มเรียนก่อนวางคาบ เพื่อให้ตรวจตารางชนและสรุปภาระงานได้ถูกต้อง',
-		actionLabel: 'ไปกำหนดครูในกลุ่มเรียน',
+		description: 'กำหนดครูในหน้าจัดการเรียนก่อนวางคาบ เพื่อให้ตรวจตารางชนได้ถูกต้อง',
+		actionLabel: 'ไปกำหนดครู',
 		href: '/staff/academic/delivery'
 	};
 	const missingPeriodsPrerequisite: AcademicPrerequisite = {
 		key: 'timetable-periods',
 		status: 'missing',
-		title: 'ยังไม่มีตารางเวลาและคาบเรียน',
-		description: 'ตั้งเวลาเริ่มและสิ้นสุดของแต่ละคาบในปีการศึกษา ก่อนนำมาใช้จัดตารางสอน',
+		title: 'ยังไม่มีคาบเรียนในตารางเวลา',
+		description: 'ตั้งเวลาเริ่มและสิ้นสุดของแต่ละคาบก่อนจัดตารางสอน',
 		actionLabel: 'ไปตั้งค่าคาบเรียน',
 		href: '/staff/academic/core#bell-schedules'
 	};
@@ -127,44 +102,34 @@
 		key: 'timetable-rooms',
 		status: 'warning',
 		title: 'ยังไม่มีห้องเรียนให้เลือก',
-		description: 'เพิ่มอาคารและห้องเรียนในข้อมูลงานอาคาร แล้วกลับมาเลือกห้องให้แต่ละคาบ',
-		actionLabel: 'ไปจัดการอาคารและห้อง',
+		description: 'เพิ่มอาคารและห้องเรียนก่อนกำหนดห้องเฉพาะให้คาบ',
+		actionLabel: 'ไปจัดการห้อง',
 		href: '/staff/facility/buildings'
 	};
 
 	const academicContext = getAcademicContextStore();
 	const academicTermId = $derived($academicContext.selected.academicTermId);
 	const academicYearId = $derived($academicContext.selected.academicYearId);
-	let schedules = $state<BellSchedule[]>([]);
-	let periods = $state<BellSchedulePeriod[]>([]);
-	let offerings = $state<LearningOffering[]>([]);
-	let groups = $state<LearningGroup[]>([]);
-	let homerooms = $state<Homeroom[]>([]);
-	let rooms = $state<RoomLookupItem[]>([]);
-	let entries = $state<TimetableEntry[]>([]);
+	const request = new LatestRequest();
+
 	let versions = $state<TimetableVersion[]>([]);
-	let selectedVersion = $state.raw<TimetableVersion | null>(null);
+	let controller = $state.raw<TimetableWorkspaceController | null>(null);
 	let selectedChangeSet = $state.raw<AcademicTermChangeSet | null>(null);
-	let versionSelectValue = $state('');
-	let selectedScheduleId = $state('');
-	let viewKind = $state<ViewKind>('learning_group');
-	let selectedTargetId = $state('');
-	let targetSelectValue = $state('');
-	let selectedEntryId = $state('');
-	let formDay = $state('MON');
-	let formPeriodId = $state('');
-	let formRoomId = $state('');
-	let formEntryType = $state<EntryType>('COURSE');
-	let formInstructorIds = $state<string[]>([]);
-	let formTitle = $state('');
-	let formNote = $state('');
 	let loading = $state(false);
 	let busy = $state(false);
-	let draftRevision = $state(0);
-	let isTeacherLoadExporting = $state(false);
-	let dirty = $state(false);
+	let previewing = $state(false);
 	let errorMessage = $state('');
-	const request = new LatestRequest();
+	let draftRevision = $state(0);
+	let inspectorOpen = $state(false);
+	let inspectorEntryId = $state<string | null>(null);
+	let moveDialogOpen = $state(false);
+	let moveEntryId = $state<string | null>(null);
+	let removeDialogOpen = $state(false);
+	let removeEntryId = $state<string | null>(null);
+	let teacherDialogOpen = $state(false);
+	let pendingDemandSource = $state.raw<TimetablePlacementSource | null>(null);
+	let pendingDemandCandidate = $state.raw<TimetablePlacementCandidate | null>(null);
+	let pendingDemandInstructorIds = $state<string[]>([]);
 
 	const canRead = $derived(
 		$can.hasAny(
@@ -186,109 +151,53 @@
 			PERMISSIONS.LEARNING_OFFERING_MANAGE_ASSIGNED
 		)
 	);
-	const canEditSelected = $derived(canManage && selectedVersion?.status === 'draft');
+	const selectedVersion = $derived(controller?.workspace.version ?? null);
+	let versionSelectValue = $derived(selectedVersion?.id ?? '');
 	const activeDraftVersion = $derived(
 		versions.find((version) => version.status === 'draft' && version.changeSetId) ?? null
 	);
-	const selectedEntry = $derived(entries.find((entry) => entry.id === selectedEntryId) ?? null);
-	const selectedSchedule = $derived(
-		schedules.find((schedule) => schedule.id === selectedScheduleId) ?? null
+	const canEditSelected = $derived(
+		Boolean(canManage && controller?.canEdit && !busy && !previewing)
 	);
 	const groupsWithoutTeachers = $derived(
-		groups.filter((group) => group.teacherAssignments.length === 0).length
+		controller?.workspace.learningGroups.filter((group) => group.eligibleInstructorIds.length === 0)
+			.length ?? 0
 	);
-	const selectedGroupInstructorOptions = $derived.by(() => {
-		if (viewKind !== 'learning_group' || !selectedVersion) return [];
-		const group = groups.find((item) => item.id === selectedTargetId);
-		if (!group) return [];
-		const effectiveOn = selectedVersion.effectiveFrom;
-		return group.teacherAssignments
-			.filter(
-				(assignment) =>
-					assignment.startsOn <= effectiveOn &&
-					(!assignment.endsOn || assignment.endsOn >= effectiveOn)
-			)
-			.filter(
-				(assignment, index, assignments) =>
-					assignments.findIndex((item) => item.teacherId === assignment.teacherId) === index
-			)
-			.map((assignment) => ({
-				id: assignment.teacherId,
-				displayName: assignment.displayName,
-				role: assignment.role
-			}));
-	});
-	const showsInstructorPicker = $derived(
-		viewKind === 'learning_group' && (formEntryType === 'COURSE' || formEntryType === 'ACTIVITY')
+	const selectedEntry = $derived(
+		controller?.workspace.entries.find((entry) => entry.id === inspectorEntryId) ?? null
 	);
-	const unavailableSelectedInstructors = $derived.by(() => {
-		if (!selectedEntry || !showsInstructorPicker) return [];
-		return selectedEntry.instructors.filter(
-			(instructor) =>
-				formInstructorIds.includes(instructor.userId) &&
-				!selectedGroupInstructorOptions.some((option) => option.id === instructor.userId)
-		);
-	});
-	const activeDays = $derived.by(() => {
-		const selectedYear = $academicContext.options?.years.find((year) => year.id === academicYearId);
-		void selectedYear;
-		const configured = new Set(
-			periods.flatMap((period) =>
-				(period.applicableDays ?? '')
-					.split(',')
-					.map((day) => day.trim())
-					.filter(Boolean)
-			)
-		);
-		return configured.size > 0
-			? dayOptions.filter((day) => configured.has(day.value))
-			: dayOptions.slice(0, 5);
-	});
-	const visibleEntries = $derived(
-		entries.filter((entry) => {
-			if (entry.bellScheduleId !== selectedScheduleId) return false;
-			return viewKind === 'learning_group'
-				? entry.learningGroupId === selectedTargetId
-				: entry.homeroomId === selectedTargetId;
-		})
+	const moveEntry = $derived(
+		controller?.workspace.entries.find((entry) => entry.id === moveEntryId) ?? null
 	);
-
-	function offeringForGroup(group: LearningGroup): LearningOffering | undefined {
-		return offerings.find((offering) => offering.id === group.learningOfferingId);
-	}
-
-	function groupLabel(group: LearningGroup): string {
-		const offering = offeringForGroup(group);
-		return `${offering?.codeSnapshot ?? ''} · ${group.code} ${group.name}`.trim();
-	}
-
-	function entryTitle(entry: TimetableEntry): string {
-		return (
-			entry.offeringCode ??
-			entry.title ??
-			entry.activityVersionDisplayLabel ??
-			entry.subjectVersionDisplayLabel ??
-			entry.entryType
+	const removeEntry = $derived(
+		controller?.workspace.entries.find((entry) => entry.id === removeEntryId) ?? null
+	);
+	const selectedOwner = $derived(
+		controller?.rows.find((row) => row.id === controller?.selectedOwnerId) ?? null
+	);
+	const visibleDemands = $derived.by(() => {
+		if (!controller || !controller.selectedOwnerId) return [];
+		const current = controller;
+		const ownerId = controller.selectedOwnerId;
+		if (current.view === 'learning_group') {
+			return current.workspace.unscheduledDemands.filter(
+				(demand) => demand.learningGroupId === ownerId
+			);
+		}
+		const groupIds = new Set(
+			current.workspace.learningGroups
+				.filter((group) => group.homeroomIds.includes(ownerId))
+				.map((group) => group.id)
 		);
-	}
-
-	function instructorRoleLabel(role: string): string {
-		if (role === 'primary') return 'ครูหลัก';
-		if (role === 'secondary') return 'ครูร่วมสอน';
-		if (role === 'assistant') return 'ครูผู้ช่วย';
-		return 'ครูผู้สอน';
-	}
-
-	function defaultInstructorIds(): string[] {
-		const teacherAssignments = selectedGroupInstructorOptions;
-		return teacherAssignments.length === 1 ? [teacherAssignments[0].id] : [];
-	}
-
-	function entriesForCell(day: string, periodId: string): TimetableEntry[] {
-		return visibleEntries.filter(
-			(entry) => entry.dayOfWeek === day && entry.bellSchedulePeriodId === periodId
+		return current.workspace.unscheduledDemands.filter((demand) =>
+			groupIds.has(demand.learningGroupId)
 		);
-	}
+	});
+	const pendingDemandInstructorOptions = $derived(
+		pendingDemandCandidate?.learningGroupId
+			? instructorOptionsForGroup(pendingDemandCandidate.learningGroupId)
+			: []
+	);
 
 	function selectPreferredVersion(loadedVersions: TimetableVersion[]): TimetableVersion | null {
 		const requestedId = page.url.searchParams.get('timetableVersionId');
@@ -312,9 +221,7 @@
 					(version.displayState === 'upcoming' || version.effectiveFrom > today)
 			)
 			.toSorted((left, right) => left.effectiveFrom.localeCompare(right.effectiveFrom))[0];
-		if (upcoming) return upcoming;
-
-		return loadedVersions.find((version) => version.status === 'draft') ?? null;
+		return upcoming ?? loadedVersions.find((version) => version.status === 'draft') ?? null;
 	}
 
 	function versionStatusLabel(version: TimetableVersion): string {
@@ -329,30 +236,51 @@
 		return `${version.effectiveFrom} – ${version.effectiveUntil ?? 'ต่อเนื่อง'}`;
 	}
 
-	function syncVersionUrl(versionId: string): void {
-		if (page.url.searchParams.get('timetableVersionId') === versionId) return;
-		const nextUrl = new URL(page.url);
-		nextUrl.searchParams.set('timetableVersionId', versionId);
-		window.history.replaceState(window.history.state, '', nextUrl);
+	function requestedView(): TimetableBoardView {
+		return page.url.searchParams.get('view') === 'learningGroup' ? 'learning_group' : 'homeroom';
 	}
 
-	async function loadPeriods(
-		scheduleId: string,
-		signal?: AbortSignal
-	): Promise<BellSchedulePeriod[]> {
-		return (await listBellSchedulePeriods(scheduleId, { signal })).sort(
-			(a, b) => a.orderIndex - b.orderIndex
+	function syncUrl(): void {
+		if (!controller) return;
+		const nextUrl = new URL(page.url);
+		nextUrl.searchParams.set('timetableVersionId', controller.workspace.version.id);
+		nextUrl.searchParams.set(
+			'view',
+			controller.view === 'learning_group' ? 'learningGroup' : 'homeroom'
+		);
+		if (controller.selectedOwnerId) nextUrl.searchParams.set('ownerId', controller.selectedOwnerId);
+		else nextUrl.searchParams.delete('ownerId');
+		replaceState(
+			resolve(`/staff/academic/timetable?${nextUrl.searchParams.toString()}`),
+			page.state
 		);
 	}
 
-	async function loadVersionOptions(
-		termId: string,
-		signal?: AbortSignal
-	): Promise<TimetableVersion[]> {
-		return listTimetableVersions(termId, { signal });
+	function initializeController(workspace: TimetableWorkspace): TimetableWorkspaceController {
+		const next = createTimetableWorkspaceController(workspace);
+		next.setView(requestedView());
+		const ownerId = page.url.searchParams.get('ownerId');
+		if (ownerId) next.selectOwner(ownerId);
+		return next;
 	}
 
-	async function loadSelectedChangeSet(
+	function fetchWorkspace(
+		yearId: string,
+		termId: string,
+		versionId: string,
+		signal?: AbortSignal
+	): Promise<TimetableWorkspace> {
+		return getTimetableWorkspace(
+			{
+				academicYearId: yearId,
+				academicTermId: termId,
+				timetableVersionId: versionId
+			},
+			{ signal }
+		);
+	}
+
+	async function loadChangeSet(
 		version: TimetableVersion,
 		signal?: AbortSignal
 	): Promise<AcademicTermChangeSet | null> {
@@ -361,60 +289,30 @@
 			: Promise.resolve(null);
 	}
 
-	async function loadWorkspace(termId: string, yearId: string): Promise<void> {
+	async function loadWorkspaceContext(termId: string, yearId: string): Promise<void> {
 		const { revision, signal } = request.begin();
 		loading = true;
 		errorMessage = '';
 		try {
-			const [collections, loadedSchedules, loadedRooms, loadedVersions] = await Promise.all([
-				loadTimetableCollections(
-					{ listLearningOfferings, listLearningGroupsForTerm, listHomerooms },
-					termId,
-					yearId,
-					signal
-				),
-				listBellSchedules(yearId, { signal }),
-				lookupRooms({ activeOnly: true, limit: 500 }, { signal }),
-				loadVersionOptions(termId, signal)
-			]);
-			const preferredVersion = selectPreferredVersion(loadedVersions);
-			const preferredSchedule = loadedSchedules.find(
-				(schedule) => schedule.id === preferredVersion?.bellScheduleId
-			);
-			const loadedPeriods = preferredSchedule
-				? await loadPeriods(preferredSchedule.id, signal)
-				: [];
-			const loadedEntries = preferredVersion
-				? await listTimetableEntries(
-						{ academicTermId: termId, timetableVersionId: preferredVersion.id },
-						{ signal }
-					)
-				: [];
-			const loadedChangeSet = preferredVersion
-				? await loadSelectedChangeSet(preferredVersion, signal)
-				: null;
+			const loadedVersions = await listTimetableVersions(termId, { signal });
+			const preferred = selectPreferredVersion(loadedVersions);
+			if (!preferred) {
+				if (request.isCurrent(revision)) {
+					versions = loadedVersions;
+					controller = null;
+				}
+				return;
+			}
+			const workspace = await fetchWorkspace(yearId, termId, preferred.id, signal);
+			const changeSet = await loadChangeSet(workspace.version, signal);
 			if (!request.isCurrent(revision)) return;
-			schedules = loadedSchedules;
 			versions = loadedVersions;
-			selectedVersion = preferredVersion;
-			versionSelectValue = preferredVersion?.id ?? '';
-			selectedScheduleId = preferredSchedule?.id ?? '';
-			periods = loadedPeriods;
-			offerings = collections.offerings;
-			groups = collections.groups;
-			homerooms = collections.homerooms;
-			rooms = loadedRooms;
-			entries = loadedEntries;
-			selectedChangeSet = loadedChangeSet;
+			controller = initializeController(workspace);
+			selectedChangeSet = changeSet;
 			draftRevision += 1;
-			if (preferredVersion) syncVersionUrl(preferredVersion.id);
-			viewKind = groups.length > 0 ? 'learning_group' : 'homeroom';
-			selectedTargetId = groups[0]?.id ?? homerooms[0]?.id ?? '';
-			targetSelectValue = selectedTargetId;
-			resetForm();
+			syncUrl();
 		} catch (error) {
-			if (isAbortError(error)) return;
-			if (request.isCurrent(revision)) {
+			if (!isAbortError(error) && request.isCurrent(revision)) {
 				errorMessage = error instanceof Error ? error.message : 'โหลดพื้นที่จัดตารางสอนไม่สำเร็จ';
 			}
 		} finally {
@@ -422,373 +320,419 @@
 		}
 	}
 
-	async function refreshEntries(): Promise<void> {
-		if (!academicTermId || !selectedVersion) return;
+	async function changeVersion(versionId: string, force = false): Promise<void> {
+		if (!academicYearId || !academicTermId || (!force && versionId === selectedVersion?.id)) return;
+		const version = versions.find((item) => item.id === versionId);
+		if (!version) return;
 		const { revision, signal } = request.begin();
+		loading = true;
+		errorMessage = '';
 		try {
-			const loadedEntries = await listTimetableEntries(
-				{ academicTermId, timetableVersionId: selectedVersion.id },
-				{ signal }
-			);
-			if (request.isCurrent(revision)) entries = loadedEntries;
+			const workspace = await fetchWorkspace(academicYearId, academicTermId, version.id, signal);
+			const changeSet = await loadChangeSet(workspace.version, signal);
+			if (!request.isCurrent(revision)) return;
+			controller = initializeController(workspace);
+			selectedChangeSet = changeSet;
+			draftRevision += 1;
+			syncUrl();
 		} catch (error) {
-			if (!isAbortError(error)) throw error;
+			if (!isAbortError(error) && request.isCurrent(revision)) {
+				errorMessage = error instanceof Error ? error.message : 'โหลดรุ่นตารางสอนไม่สำเร็จ';
+				toast.error(errorMessage);
+			}
+		} finally {
+			if (request.isCurrent(revision)) loading = false;
 		}
 	}
 
-	async function changeVersion(nextId: string): Promise<void> {
-		if (dirty) {
-			versionSelectValue = selectedVersion?.id ?? '';
-			toast.warning('กรุณาบันทึกหรือยกเลิกแบบร่างก่อนเปลี่ยนรุ่นตารางสอน');
+	async function reloadSelectedWorkspace(message?: string): Promise<void> {
+		if (!controller || !academicYearId || !academicTermId) return;
+		const versionId = controller.workspace.version.id;
+		controller.setRefreshing(true);
+		try {
+			const workspace = await fetchWorkspace(academicYearId, academicTermId, versionId);
+			controller.setWorkspace(workspace);
+			controller.clearPlacement();
+			draftRevision += 1;
+			if (message) toast.info(message);
+		} catch (error) {
+			errorMessage = error instanceof Error ? error.message : 'โหลดข้อมูลตารางล่าสุดไม่สำเร็จ';
+			toast.error(errorMessage);
+		} finally {
+			controller.setRefreshing(false);
+		}
+	}
+
+	function changeView(view: TimetableBoardView): void {
+		if (!controller) return;
+		controller.setView(view);
+		syncUrl();
+	}
+
+	function changeOwner(ownerId: string): void {
+		if (!controller) return;
+		controller.selectOwner(ownerId);
+		controller.clearPlacement();
+		syncUrl();
+	}
+
+	function candidateForEntry(
+		entry: TimetableEntry,
+		overrides?: { roomId: string | null; instructorIds: string[] }
+	): TimetablePlacementCandidate {
+		return {
+			entryType: entry.entryType,
+			learningGroupId: entry.learningGroupId ?? null,
+			learningOfferingId: entry.offeringId ?? null,
+			homeroomId: entry.homeroomId ?? null,
+			roomId: overrides?.roomId ?? entry.roomId ?? null,
+			instructorIds:
+				overrides?.instructorIds ?? entry.instructors.map((instructor) => instructor.userId)
+		};
+	}
+
+	function startExistingPlacement(entry: TimetableEntry): void {
+		controller?.startPlacement(
+			{ kind: 'existing_entry', entryId: entry.id, rowVersion: entry.rowVersion },
+			candidateForEntry(entry)
+		);
+	}
+
+	function cancelDrag(): void {
+		if (!previewing) controller?.clearPlacement();
+	}
+
+	function chooseDemand(
+		source: TimetablePlacementSource,
+		candidate: TimetablePlacementCandidate
+	): void {
+		if (!controller) return;
+		if (candidate.instructorIds.length === 1) {
+			controller.startPlacement(source, candidate);
+			toast.info('เลือกช่องสีเขียวเพื่อวาง 1 คาบ');
 			return;
 		}
-		const nextVersion = versions.find((version) => version.id === nextId);
-		if (!nextVersion || !academicTermId) return;
-		const { revision, signal } = request.begin();
-		loading = true;
-		try {
-			const loadedPeriods = await loadPeriods(nextVersion.bellScheduleId, signal);
-			const loadedEntries = await listTimetableEntries(
-				{ academicTermId, timetableVersionId: nextVersion.id },
-				{ signal }
-			);
-			const loadedChangeSet = await loadSelectedChangeSet(nextVersion, signal);
-			if (!request.isCurrent(revision)) return;
-			selectedVersion = nextVersion;
-			selectedChangeSet = loadedChangeSet;
-			versionSelectValue = nextVersion.id;
-			selectedScheduleId = nextVersion.bellScheduleId;
-			periods = loadedPeriods;
-			entries = loadedEntries;
-			syncVersionUrl(nextVersion.id);
-			resetForm();
-		} catch (error) {
-			if (isAbortError(error)) return;
-			if (request.isCurrent(revision))
-				errorMessage = error instanceof Error ? error.message : 'โหลดคาบเรียนไม่สำเร็จ';
-		} finally {
-			if (request.isCurrent(revision)) {
-				versionSelectValue = selectedVersion?.id ?? '';
-				loading = false;
+		pendingDemandSource = source;
+		pendingDemandCandidate = candidate;
+		pendingDemandInstructorIds = [];
+		teacherDialogOpen = true;
+	}
+
+	function startDemandAfterTeacherSelection(): void {
+		if (
+			!controller ||
+			!pendingDemandSource ||
+			!pendingDemandCandidate ||
+			pendingDemandInstructorIds.length === 0
+		)
+			return;
+		controller.startPlacement(pendingDemandSource, {
+			...pendingDemandCandidate,
+			instructorIds: pendingDemandInstructorIds
+		});
+		teacherDialogOpen = false;
+		toast.info('เลือกช่องสีเขียวเพื่อวาง 1 คาบ');
+	}
+
+	function cellState(dayOfWeek: string, periodId: string): TimetableCellState {
+		if (!controller?.dragSource || !controller.selectedOwnerId) return 'neutral';
+		const source = controller.dragSource.source;
+		if (source.kind === 'existing_entry') {
+			const entry = controller.board.entriesById.get(source.entryId);
+			if (entry?.dayOfWeek === dayOfWeek && entry.bellSchedulePeriodId === periodId) {
+				return 'dragging';
 			}
 		}
+		if (
+			controller.preview?.targetDayOfWeek === dayOfWeek &&
+			controller.preview.targetBellSchedulePeriodId === periodId
+		) {
+			return controller.preview.state === 'source' ? 'dragging' : controller.preview.state;
+		}
+		const local = localPlacementPreview(controller.board, {
+			view: controller.view,
+			rowId: controller.selectedOwnerId,
+			dayOfWeek,
+			bellSchedulePeriodId: periodId,
+			source,
+			candidate: controller.dragSource.candidate
+		}).state;
+		return local === 'source' ? 'dragging' : local;
+	}
+
+	function targetEntryFor(dayOfWeek: string, periodId: string): TimetableEntry | null {
+		if (!controller?.selectedRow) return null;
+		const sourceEntryId =
+			controller.dragSource?.source.kind === 'existing_entry'
+				? controller.dragSource.source.entryId
+				: null;
+		return (
+			entriesForTimetableCell(controller.board, {
+				view: controller.view,
+				rowId: controller.selectedRow.id,
+				dayOfWeek,
+				bellSchedulePeriodId: periodId
+			}).find((entry) => entry.id !== sourceEntryId) ?? null
+		);
+	}
+
+	function patchEntries(changedEntries: TimetableEntry[]): void {
+		if (!controller) return;
+		const changedById = new Map(changedEntries.map((entry) => [entry.id, entry]));
+		const existingIds = new Set(controller.workspace.entries.map((entry) => entry.id));
+		const nextEntries = controller.workspace.entries
+			.map((entry) => changedById.get(entry.id) ?? entry)
+			.filter((entry) => entry.isActive)
+			.concat(changedEntries.filter((entry) => entry.isActive && !existingIds.has(entry.id)));
+		controller.setWorkspace({ ...controller.workspace, entries: nextEntries });
+		draftRevision += 1;
+	}
+
+	async function applyPlacementPreview(
+		preview: TimetablePlacementPreview,
+		dragSource: TimetableDragSource
+	): Promise<boolean> {
+		if (!controller || !preview.mutation || !academicTermId) return false;
+		controller.beginMutation(preview.mutation);
+		busy = true;
+		try {
+			if (preview.mutation === 'create') {
+				const created = await createTimetableEntry({
+					academicTermId,
+					timetableVersionId: controller.workspace.version.id,
+					learningGroupId: preview.normalizedCandidate.learningGroupId,
+					homeroomId: preview.normalizedCandidate.homeroomId,
+					dayOfWeek: preview.targetDayOfWeek,
+					bellSchedulePeriodId: preview.targetBellSchedulePeriodId,
+					roomId: preview.normalizedCandidate.roomId,
+					note: null,
+					entryType: preview.normalizedCandidate.entryType,
+					title: null,
+					instructorIds: preview.normalizedCandidate.instructorIds
+				});
+				patchEntries([created]);
+			} else if (preview.mutation === 'swap') {
+				if (dragSource.source.kind !== 'existing_entry' || !preview.targetEntryId) {
+					throw new Error('ข้อมูลสำหรับสลับคาบไม่ครบ');
+				}
+				const targetEntry = controller.board.entriesById.get(preview.targetEntryId);
+				if (!targetEntry) throw new Error('ไม่พบคาบปลายทาง กรุณาโหลดข้อมูลล่าสุด');
+				const swapped = await swapTimetableEntries({
+					timetableVersionId: controller.workspace.version.id,
+					entryAId: dragSource.source.entryId,
+					entryARowVersion: dragSource.source.rowVersion,
+					entryBId: targetEntry.id,
+					entryBRowVersion: targetEntry.rowVersion
+				});
+				patchEntries([swapped.entryA, swapped.entryB]);
+			} else {
+				if (dragSource.source.kind !== 'existing_entry') {
+					throw new Error('ข้อมูลสำหรับย้ายคาบไม่ครบ');
+				}
+				const updated = await updateTimetableEntry(dragSource.source.entryId, {
+					timetableVersionId: controller.workspace.version.id,
+					rowVersion: dragSource.source.rowVersion,
+					dayOfWeek: preview.targetDayOfWeek,
+					bellSchedulePeriodId: preview.targetBellSchedulePeriodId,
+					roomId: preview.normalizedCandidate.roomId,
+					clearRoom: preview.normalizedCandidate.roomId === null,
+					instructorIds: preview.normalizedCandidate.instructorIds
+				});
+				patchEntries([updated]);
+			}
+			controller.finishMutation();
+			toast.success(preview.mutation === 'swap' ? 'สลับคาบแล้ว' : 'บันทึกตำแหน่งคาบแล้ว');
+			return true;
+		} catch (error) {
+			controller.failMutation();
+			if (error instanceof ApiClientError && error.status === 409) {
+				await reloadSelectedWorkspace('มีผู้ใช้อื่นเปลี่ยนตาราง ระบบโหลดข้อมูลล่าสุดให้แล้ว');
+				return false;
+			}
+			errorMessage = error instanceof Error ? error.message : 'บันทึกตำแหน่งคาบไม่สำเร็จ';
+			toast.error(errorMessage);
+			return false;
+		} finally {
+			busy = false;
+		}
+	}
+
+	async function attemptPlacement(
+		dayOfWeek: string,
+		periodId: string,
+		dragSource: TimetableDragSource | null = controller?.dragSource ?? null
+	): Promise<boolean> {
+		if (!controller || !dragSource || !academicTermId || busy || previewing) return false;
+		const targetEntry = targetEntryFor(dayOfWeek, periodId);
+		const payload = {
+			timetableVersionId: controller.workspace.version.id,
+			academicTermId,
+			source: dragSource.source,
+			candidate: dragSource.candidate,
+			targetDayOfWeek: dayOfWeek,
+			targetBellSchedulePeriodId: periodId,
+			expectedTargetEntryId: targetEntry?.id ?? null,
+			expectedTargetRowVersion: targetEntry?.rowVersion ?? null
+		} satisfies TimetablePlacementPreviewRequest;
+		previewing = true;
+		try {
+			const preview = await previewTimetablePlacement(payload);
+			controller.setPreview(preview);
+			if (preview.state === 'blocked' || !preview.mutation) {
+				toast.error(
+					preview.conflicts.map((conflict) => conflict.message).join(' · ') ||
+						'วางคาบในตำแหน่งนี้ไม่ได้'
+				);
+				return false;
+			}
+			return await applyPlacementPreview(preview, dragSource);
+		} catch (error) {
+			if (error instanceof ApiClientError && error.status === 409) {
+				await reloadSelectedWorkspace('ข้อมูลตารางเปลี่ยนแล้ว ระบบโหลดข้อมูลล่าสุดให้แล้ว');
+				return false;
+			}
+			errorMessage = error instanceof Error ? error.message : 'ตรวจสอบตำแหน่งคาบไม่สำเร็จ';
+			toast.error(errorMessage);
+			return false;
+		} finally {
+			previewing = false;
+		}
+	}
+
+	function inspectEntry(entry: TimetableEntry): void {
+		inspectorEntryId = entry.id;
+		inspectorOpen = true;
+	}
+
+	function openMoveDialog(entry: TimetableEntry): void {
+		inspectorOpen = false;
+		moveEntryId = entry.id;
+		moveDialogOpen = true;
+	}
+
+	async function confirmMove(dayOfWeek: string, periodId: string): Promise<void> {
+		if (!moveEntry || !controller) return;
+		const source: TimetableDragSource = {
+			source: {
+				kind: 'existing_entry',
+				entryId: moveEntry.id,
+				rowVersion: moveEntry.rowVersion
+			},
+			candidate: candidateForEntry(moveEntry)
+		};
+		controller.startPlacement(source.source, source.candidate);
+		if (await attemptPlacement(dayOfWeek, periodId, source)) moveDialogOpen = false;
+	}
+
+	async function saveEntryDetails(value: {
+		roomId: string | null;
+		instructorIds: string[];
+	}): Promise<void> {
+		if (!selectedEntry || !controller) return;
+		const source: TimetableDragSource = {
+			source: {
+				kind: 'existing_entry',
+				entryId: selectedEntry.id,
+				rowVersion: selectedEntry.rowVersion
+			},
+			candidate: candidateForEntry(selectedEntry, value)
+		};
+		controller.startPlacement(source.source, source.candidate);
+		if (
+			await attemptPlacement(selectedEntry.dayOfWeek, selectedEntry.bellSchedulePeriodId, source)
+		) {
+			inspectorOpen = false;
+		}
+	}
+
+	function requestRemove(entry: TimetableEntry): void {
+		inspectorOpen = false;
+		removeEntryId = entry.id;
+		removeDialogOpen = true;
+	}
+
+	async function confirmRemove(): Promise<void> {
+		if (!removeEntry || !controller || busy) return;
+		busy = true;
+		try {
+			const deleted = await deleteTimetableEntry(
+				removeEntry.id,
+				removeEntry.rowVersion,
+				controller.workspace.version.id
+			);
+			patchEntries([deleted]);
+			controller.clearPlacement();
+			removeDialogOpen = false;
+			toast.success('นำคาบออกจากตารางแล้ว');
+		} catch (error) {
+			if (error instanceof ApiClientError && error.status === 409) {
+				await reloadSelectedWorkspace('คาบนี้ถูกเปลี่ยนแล้ว ระบบโหลดข้อมูลล่าสุดให้แล้ว');
+				return;
+			}
+			errorMessage = error instanceof Error ? error.message : 'นำคาบออกจากตารางไม่สำเร็จ';
+			toast.error(errorMessage);
+		} finally {
+			busy = false;
+		}
+	}
+
+	function normalizedInstructorRole(
+		role: string | undefined,
+		index: number
+	): InstructorOption['role'] {
+		if (role === 'primary' || role === 'secondary' || role === 'assistant') return role;
+		return index === 0 ? 'primary' : 'secondary';
+	}
+
+	function instructorOptionsForGroup(
+		groupId: string,
+		entry: TimetableEntry | null = null
+	): InstructorOption[] {
+		if (!controller) return [];
+		const group = controller.workspace.learningGroups.find((item) => item.id === groupId);
+		if (!group) return [];
+		const ids = [
+			...group.eligibleInstructorIds,
+			...(entry?.instructors.map((instructor) => instructor.userId) ?? []).filter(
+				(id) => !group.eligibleInstructorIds.includes(id)
+			)
+		];
+		return ids.map((id, index) => {
+			const staff = controller?.workspace.staff.find((item) => item.id === id);
+			const currentInstructor = entry?.instructors.find((item) => item.userId === id);
+			return {
+				id,
+				displayName: staff?.displayName ?? currentInstructor?.displayName ?? 'ครูที่อ้างอิง',
+				role: normalizedInstructorRole(currentInstructor?.role, index)
+			};
+		});
+	}
+
+	function instructorOptionsForEntry(entry: TimetableEntry | null): InstructorOption[] {
+		if (!entry) return [];
+		if (entry.learningGroupId) return instructorOptionsForGroup(entry.learningGroupId, entry);
+		return entry.instructors.map((instructor, index) => ({
+			id: instructor.userId,
+			displayName: instructor.displayName,
+			role: normalizedInstructorRole(instructor.role, index)
+		}));
 	}
 
 	async function handleRevisionCreated(created: AcademicTermChangeSet): Promise<void> {
 		if (!academicTermId) return;
 		selectedChangeSet = created;
-		versions = await loadVersionOptions(academicTermId);
-		if (!versions.some((version) => version.id === created.targetTimetableVersionId)) {
-			throw new Error('สร้างแบบร่างแล้ว แต่ไม่พบรุ่นตารางสอนใหม่ กรุณาโหลดหน้าอีกครั้ง');
-		}
+		versions = await listTimetableVersions(academicTermId);
 		await changeVersion(created.targetTimetableVersionId);
 		toast.success('สร้างรุ่นตารางสอนแบบร่างแล้ว');
 	}
 
 	async function handleChangeSetChanged(updated: AcademicTermChangeSet): Promise<void> {
 		selectedChangeSet = updated;
-		if (
-			!academicTermId ||
-			selectedVersion?.id !== updated.targetTimetableVersionId ||
-			selectedVersion.status === updated.status
-		)
-			return;
-		versions = await loadVersionOptions(academicTermId);
-		await changeVersion(updated.targetTimetableVersionId);
+		if (!academicTermId) return;
+		versions = await listTimetableVersions(academicTermId);
+		await changeVersion(updated.targetTimetableVersionId, true);
 		if (updated.status === 'published') toast.success('เผยแพร่รุ่นตารางสอนใหม่แล้ว');
 		if (updated.status === 'cancelled') toast.success('ยกเลิกรุ่นตารางสอนแบบร่างแล้ว');
-	}
-
-	function changeViewKind(nextKind: ViewKind): void {
-		if (dirty) {
-			toast.warning('กรุณาบันทึกหรือยกเลิกแบบร่างก่อนเปลี่ยนมุมมอง');
-			return;
-		}
-		viewKind = nextKind;
-		selectedTargetId =
-			nextKind === 'learning_group' ? (groups[0]?.id ?? '') : (homerooms[0]?.id ?? '');
-		targetSelectValue = selectedTargetId;
-		resetForm();
-	}
-
-	function changeTarget(nextId: string): void {
-		if (dirty) {
-			targetSelectValue = selectedTargetId;
-			toast.warning('กรุณาบันทึกหรือยกเลิกแบบร่างก่อนเปลี่ยนกลุ่ม');
-			return;
-		}
-		selectedTargetId = nextId;
-		targetSelectValue = nextId;
-		resetForm();
-	}
-
-	function resetForm(): void {
-		selectedEntryId = '';
-		formDay = activeDays[0]?.value ?? 'MON';
-		formPeriodId = periods[0]?.id ?? '';
-		formRoomId = '';
-		const selectedGroup = groups.find((group) => group.id === selectedTargetId);
-		formEntryType =
-			viewKind === 'learning_group'
-				? selectedGroup && offeringForGroup(selectedGroup)?.kind === 'activity'
-					? 'ACTIVITY'
-					: 'COURSE'
-				: 'HOMEROOM';
-		formInstructorIds = defaultInstructorIds();
-		formTitle = '';
-		formNote = '';
-		dirty = false;
-	}
-
-	function startAtCell(day: string, periodId: string): void {
-		if (!canEditSelected) return;
-		resetForm();
-		formDay = day;
-		formPeriodId = periodId;
-		dirty = true;
-	}
-
-	function editEntry(entry: TimetableEntry): void {
-		selectedEntryId = entry.id;
-		formDay = entry.dayOfWeek;
-		formPeriodId = entry.bellSchedulePeriodId;
-		formRoomId = entry.roomId ?? '';
-		formEntryType = entry.entryType as EntryType;
-		formInstructorIds = entry.instructors.map((item) => item.userId);
-		formTitle = entry.title ?? '';
-		formNote = entry.note ?? '';
-		dirty = false;
-	}
-
-	function markDirty(): void {
-		dirty = true;
-	}
-
-	function changeEntryType(value: string): void {
-		formEntryType = value as EntryType;
-		formInstructorIds = showsInstructorPicker ? defaultInstructorIds() : [];
-		markDirty();
-	}
-
-	function removeUnavailableInstructor(instructorId: string): void {
-		formInstructorIds = formInstructorIds.filter((id) => id !== instructorId);
-		markDirty();
-	}
-
-	async function saveEntry(): Promise<void> {
-		if (
-			!academicTermId ||
-			!selectedVersion ||
-			!canEditSelected ||
-			!selectedTargetId ||
-			!formPeriodId ||
-			unavailableSelectedInstructors.length > 0
-		)
-			return;
-		busy = true;
-		errorMessage = '';
-		try {
-			if (selectedEntry) {
-				await updateTimetableEntry(selectedEntry.id, {
-					timetableVersionId: selectedVersion.id,
-					rowVersion: selectedEntry.rowVersion,
-					dayOfWeek: formDay,
-					bellSchedulePeriodId: formPeriodId,
-					roomId: formRoomId || null,
-					clearRoom: !formRoomId,
-					note: formNote.trim() || null,
-					clearNote: !formNote.trim(),
-					title: formTitle.trim() || null,
-					instructorIds: formInstructorIds
-				});
-			} else {
-				await createTimetableEntry({
-					academicTermId,
-					timetableVersionId: selectedVersion.id,
-					learningGroupId: viewKind === 'learning_group' ? selectedTargetId : null,
-					homeroomId: viewKind === 'homeroom' ? selectedTargetId : null,
-					dayOfWeek: formDay,
-					bellSchedulePeriodId: formPeriodId,
-					roomId: formRoomId || null,
-					note: formNote.trim() || null,
-					entryType: formEntryType,
-					title: formTitle.trim() || null,
-					instructorIds: formInstructorIds
-				});
-			}
-			await refreshEntries();
-			draftRevision += 1;
-			resetForm();
-			toast.success('บันทึกคาบในตารางแล้ว');
-		} catch (error) {
-			errorMessage = error instanceof Error ? error.message : 'บันทึกคาบไม่สำเร็จ';
-			toast.error(errorMessage);
-		} finally {
-			busy = false;
-		}
-	}
-
-	async function removeEntry(): Promise<void> {
-		if (!selectedEntry || !selectedVersion || !canEditSelected) return;
-		busy = true;
-		try {
-			await deleteTimetableEntry(selectedEntry.id, selectedEntry.rowVersion, selectedVersion.id);
-			await refreshEntries();
-			draftRevision += 1;
-			resetForm();
-			toast.success('ลบคาบออกจากตารางแล้ว');
-		} catch (error) {
-			errorMessage = error instanceof Error ? error.message : 'ลบคาบไม่สำเร็จ';
-			toast.error(errorMessage);
-		} finally {
-			busy = false;
-		}
-	}
-
-	const teacherLoadFontName = 'TH Sarabun New';
-
-	function styleTeacherLoadCell(cell: Cell, emphasized = false): void {
-		cell.font = { name: teacherLoadFontName, size: 16, bold: emphasized };
-		cell.alignment = { vertical: 'middle', wrapText: true };
-		cell.border = {
-			top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
-			left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
-			bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
-			right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
-		};
-	}
-
-	function styleTeacherLoadRow(row: Row, kind: 'header' | 'group' | 'detail'): void {
-		row.height = kind === 'header' ? 28 : 24;
-		row.eachCell({ includeEmpty: true }, (cell) => {
-			styleTeacherLoadCell(cell, kind !== 'detail');
-			if (kind !== 'detail') {
-				cell.fill = {
-					type: 'pattern',
-					pattern: 'solid',
-					fgColor: { argb: kind === 'header' ? 'FFE2E8F0' : 'FFF1F5F9' }
-				};
-			}
-		});
-	}
-
-	function appendTeacherLoadSheet(
-		workbook: Workbook,
-		name: string,
-		rows: Array<Array<string | number>>,
-		widthOptions:
-			| typeof TEACHER_LOAD_SUMMARY_COLUMN_WIDTH_OPTIONS
-			| typeof TEACHER_LOAD_DETAIL_COLUMN_WIDTH_OPTIONS
-	): Worksheet {
-		const worksheet = workbook.addWorksheet(name);
-		worksheet.columns = calculateTeacherLoadColumnWidths(rows, widthOptions).map((width) => ({
-			width
-		}));
-		worksheet.properties.defaultRowHeight = 24;
-
-		for (const [index, values] of rows.entries()) {
-			const row = worksheet.addRow(values);
-			const firstCell = String(values[0] ?? '');
-			styleTeacherLoadRow(
-				row,
-				index === 0 ? 'header' : firstCell.startsWith('กลุ่มสาระ:') ? 'group' : 'detail'
-			);
-		}
-
-		worksheet.views = [{ state: 'frozen', ySplit: 1 }];
-		worksheet.pageSetup = {
-			orientation: 'landscape',
-			fitToPage: true,
-			fitToWidth: 1,
-			fitToHeight: 0
-		};
-		return worksheet;
-	}
-
-	function appendTeacherLoadSummarySheet(
-		workbook: Workbook,
-		exportRows: TeacherLoadExportRows
-	): void {
-		appendTeacherLoadSheet(
-			workbook,
-			'สรุปต่อครู',
-			exportRows.summarySheetRows,
-			TEACHER_LOAD_SUMMARY_COLUMN_WIDTH_OPTIONS
-		);
-	}
-
-	function appendTeacherLoadDetailSheet(
-		workbook: Workbook,
-		exportRows: TeacherLoadExportRows
-	): void {
-		appendTeacherLoadSheet(
-			workbook,
-			'รายละเอียด',
-			exportRows.detailSheetRows,
-			TEACHER_LOAD_DETAIL_COLUMN_WIDTH_OPTIONS
-		);
-	}
-
-	function safeFileName(value: string): string {
-		return (
-			value
-				.replace(/[\\/:*?"<>|]/g, '-')
-				.replace(/\s+/g, ' ')
-				.trim() || 'สรุปคาบสอนครู'
-		);
-	}
-
-	function saveTeacherLoadWorkbookBuffer(buffer: ArrayBuffer, fileName: string): void {
-		const blob = new Blob([buffer], {
-			type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-		});
-		const url = URL.createObjectURL(blob);
-		const link = document.createElement('a');
-		link.href = url;
-		link.download = fileName;
-		document.body.appendChild(link);
-		link.click();
-		link.remove();
-		URL.revokeObjectURL(url);
-	}
-
-	async function handleExportTeacherLoadXlsx(): Promise<void> {
-		if (!academicTermId || isTeacherLoadExporting) return;
-		const exportRows = buildTeacherLoadExportRows(entries);
-		if (exportRows.summaryRows.length === 0) {
-			toast.error('ไม่พบคาบสอนสำหรับภาคเรียนนี้');
-			return;
-		}
-
-		isTeacherLoadExporting = true;
-		try {
-			const ExcelJSModule = await import('exceljs');
-			const ExcelJS = ExcelJSModule.default;
-			const workbook = new ExcelJS.Workbook();
-			workbook.creator = 'SchoolOrbit';
-			workbook.created = new Date();
-			workbook.modified = new Date();
-			appendTeacherLoadSummarySheet(workbook, exportRows);
-			appendTeacherLoadDetailSheet(workbook, exportRows);
-
-			const selectedTerm = $academicContext.options?.terms.find(
-				(term) => term.id === academicTermId
-			);
-			const selectedYear = $academicContext.options?.years.find(
-				(year) => year.id === academicYearId
-			);
-			const fileName = safeFileName(
-				`สรุปคาบสอนครู-${selectedTerm?.name ?? 'ภาคเรียน'}-${selectedYear?.name ?? 'ปีการศึกษา'}`
-			);
-			const buffer = await workbook.xlsx.writeBuffer();
-			saveTeacherLoadWorkbookBuffer(buffer, `${fileName}.xlsx`);
-			toast.success(`ดาวน์โหลดสรุปคาบสอน ${exportRows.summaryRows.length} คนแล้ว`);
-		} catch (error) {
-			console.error('Failed to export teacher load workbook', error);
-			toast.error('ส่งออกสรุปคาบสอนไม่สำเร็จ');
-		} finally {
-			isTeacherLoadExporting = false;
-		}
 	}
 
 	onMount(() => {
@@ -799,12 +743,15 @@
 		let connectedSocketKey = '';
 		let observedRefresh: number | null = null;
 
-		function synchronizeContext() {
+		function synchronizeContext(): void {
 			if (!selectedTermId || !selectedYearId) return;
 			const contextKey = `${selectedYearId}:${selectedTermId}`;
 			if (contextKey !== loadedContextKey) {
 				loadedContextKey = contextKey;
-				void loadWorkspace(selectedTermId, selectedYearId);
+				controller = null;
+				versions = [];
+				selectedChangeSet = null;
+				void loadWorkspaceContext(selectedTermId, selectedYearId);
 			}
 			if (!currentUserId) return;
 			const socketKey = `${selectedTermId}:${currentUserId}`;
@@ -814,7 +761,6 @@
 			}
 		}
 
-		const unregisterDirty = registerAcademicContextDirtySource('academic-timetable', () => dirty);
 		const unsubscribeContext = academicContext.subscribe((state) => {
 			selectedTermId = state.selected.academicTermId ?? '';
 			selectedYearId = state.selected.academicYearId ?? '';
@@ -831,21 +777,14 @@
 			}
 			if (value === observedRefresh) return;
 			observedRefresh = value;
-			if (!selectedTermId || !selectedYearId) return;
-			if (dirty) {
-				toast.warning(
-					'มีการเปลี่ยนแปลงตารางจากผู้ใช้อื่น กรุณาบันทึกหรือยกเลิกแบบร่างก่อนโหลดใหม่'
-				);
-				return;
-			}
-			void loadWorkspace(selectedTermId, selectedYearId);
+			void reloadSelectedWorkspace('ตารางถูกแก้จากอีกหน้าหนึ่ง ระบบโหลดข้อมูลล่าสุดแล้ว');
 		});
+
 		return () => {
 			request.abort();
 			unsubscribeRefresh();
 			unsubscribeAuth();
 			unsubscribeContext();
-			unregisterDirty();
 			disconnectTimetableSocket();
 		};
 	});
@@ -855,14 +794,14 @@
 
 <PageShell
 	title="จัดตารางสอน"
-	description="จัดคาบตามกลุ่มเรียนหรือห้องประจำชั้น โดยใช้ตารางเวลาและรายการเปิดสอนของภาคเรียนที่เลือก"
+	description="จัดครั้งละหนึ่งคาบในมุมมองห้องประจำชั้นหรือกลุ่มเรียน ระบบตรวจห้อง ครู และผู้เรียนชนกันก่อนบันทึก"
 >
 	{#snippet actions()}
-		{#if canManage && academicTermId && !dirty}
+		{#if canManage && academicTermId}
 			{#if activeDraftVersion}
 				<Button
 					variant="outline"
-					disabled={selectedVersion?.id === activeDraftVersion.id}
+					disabled={selectedVersion?.id === activeDraftVersion.id || loading}
 					onclick={() => changeVersion(activeDraftVersion.id)}
 				>
 					<History />
@@ -880,15 +819,10 @@
 		{/if}
 		<Button
 			variant="outline"
-			disabled={isTeacherLoadExporting || loading || entries.length === 0 || !academicTermId}
-			onclick={handleExportTeacherLoadXlsx}
+			disabled={loading || !controller}
+			onclick={() => reloadSelectedWorkspace()}
 		>
-			{#if isTeacherLoadExporting}
-				<Loader2 class="animate-spin" />
-			{:else}
-				<FileSpreadsheet />
-			{/if}
-			สรุปคาบ XLSX
+			<RefreshCw class={controller?.isRefreshing ? 'animate-spin' : ''} /> โหลดล่าสุด
 		</Button>
 	{/snippet}
 
@@ -904,70 +838,72 @@
 			title="เลือกภาคเรียนก่อน"
 			description="ใช้ตัวเลือกปีการศึกษาและภาคเรียนบนแถบด้านบน"
 		/>
-	{:else if loading}
+	{:else if loading && !controller}
 		<PageSkeleton variant="table" rows={7} />
-	{:else if errorMessage && entries.length === 0}
+	{:else if errorMessage && !controller}
 		<PageState
 			variant="error"
 			title="โหลดตารางสอนไม่สำเร็จ"
 			description={errorMessage}
 			actionLabel="ลองอีกครั้ง"
-			onaction={() => loadWorkspace(academicTermId, academicYearId)}
+			onaction={() => loadWorkspaceContext(academicTermId, academicYearId)}
 		/>
-	{:else if versions.length === 0}
+	{:else if versions.length === 0 || !controller}
 		<PageState
 			variant="empty"
 			title="ยังไม่มีรุ่นตารางสอน"
-			description="ต้องเตรียมและเผยแพร่รุ่นตารางสอนของภาคเรียนนี้ก่อนจึงจะแสดงตารางได้"
+			description="เตรียมรุ่นตารางสอนของภาคเรียนนี้ก่อนเริ่มจัดคาบ"
 		/>
 	{:else}
 		<div class="space-y-5">
-			<Card.Root class="gap-0 overflow-hidden border-primary/20 bg-primary/[0.025] py-0">
-				<Card.Content class="grid gap-4 p-4 lg:grid-cols-[minmax(15rem,1fr)_auto] lg:items-center">
-					<div class="flex min-w-0 items-start gap-3">
-						<div
-							class="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
-						>
-							<History class="size-4" />
-						</div>
-						<div class="min-w-0">
-							<div class="flex flex-wrap items-center gap-2">
-								<p class="font-semibold">รุ่นตารางสอน</p>
-								{#if selectedVersion}
-									<Badge variant={selectedVersion.status === 'draft' ? 'secondary' : 'default'}>
-										{versionStatusLabel(selectedVersion)}
-									</Badge>
-								{/if}
-							</div>
-							<p class="mt-1 text-xs text-muted-foreground">
-								{#if selectedVersion}
-									มีผล {versionPeriodLabel(selectedVersion)} · {selectedVersion.status === 'draft'
-										? canManage
-											? 'แก้ไขคาบได้'
-											: 'อ่านอย่างเดียว คุณไม่มีสิทธิ์แก้ไขคาบ'
-										: 'อ่านอย่างเดียว ข้อมูลที่เผยแพร่แล้วไม่ถูกแก้ย้อนหลัง'}
-								{:else}
-									เลือกรุ่นตารางสอน
-								{/if}
-							</p>
-						</div>
-					</div>
-					<div class="w-full lg:w-80">
+			<TimetableWorkspaceHeader
+				version={controller.workspace.version}
+				view={controller.view}
+				isSaving={busy || previewing || controller.pendingMutation !== null}
+				isRefreshing={controller.isRefreshing}
+				onViewChange={changeView}
+			/>
+
+			<Card.Root class="gap-0 py-0">
+				<Card.Content class="grid gap-3 p-3 sm:p-4 lg:grid-cols-2">
+					<div class="space-y-1.5">
+						<p class="text-xs font-medium text-muted-foreground">รุ่นตารางสอน</p>
 						<Select.Root
 							type="single"
 							bind:value={versionSelectValue}
 							onValueChange={changeVersion}
+							disabled={loading || busy}
 						>
-							<Select.Trigger class="w-full bg-background" aria-label="เลือกรุ่นตารางสอน">
-								{selectedVersion
-									? `${versionStatusLabel(selectedVersion)} · เริ่ม ${selectedVersion.effectiveFrom}`
-									: 'เลือกรุ่นตารางสอน'}
+							<Select.Trigger class="w-full" aria-label="เลือกรุ่นตารางสอน">
+								{versionStatusLabel(controller.workspace.version)} · {versionPeriodLabel(
+									controller.workspace.version
+								)}
 							</Select.Trigger>
 							<Select.Content>
 								{#each versions as version (version.id)}
 									<Select.Item value={version.id}>
 										{versionStatusLabel(version)} · {versionPeriodLabel(version)}
 									</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					</div>
+					<div class="space-y-1.5">
+						<p class="text-xs font-medium text-muted-foreground">
+							{controller.view === 'homeroom' ? 'ห้องประจำชั้น' : 'กลุ่มเรียน'}
+						</p>
+						<Select.Root
+							type="single"
+							value={controller.selectedOwnerId ?? ''}
+							onValueChange={changeOwner}
+							disabled={busy}
+						>
+							<Select.Trigger class="w-full" aria-label="เลือกรายการที่ต้องการจัด">
+								{selectedOwner ? `${selectedOwner.code} · ${selectedOwner.label}` : 'เลือกรายการ'}
+							</Select.Trigger>
+							<Select.Content>
+								{#each controller.rows as row (row.id)}
+									<Select.Item value={row.id}>{row.code} · {row.label}</Select.Item>
 								{/each}
 							</Select.Content>
 						</Select.Root>
@@ -989,401 +925,151 @@
 						</div>
 					</Card.Header>
 					<Card.Content class="p-4 sm:p-5">
-						{#if dirty}
-							<p
-								class="rounded-xl border border-amber-500/30 bg-amber-500/8 p-3 text-sm text-amber-900"
-							>
-								บันทึกหรือยกเลิกคาบที่กำลังแก้ก่อนตรวจความพร้อมและเผยแพร่รุ่นนี้
-							</p>
-						{:else}
-							{#key `${selectedChangeSet.id}:${draftRevision}`}
-								<AcademicChangeReadiness
-									changeSet={selectedChangeSet}
-									{canManage}
-									onChanged={handleChangeSetChanged}
-								/>
-							{/key}
-						{/if}
+						{#key `${selectedChangeSet.id}:${draftRevision}`}
+							<AcademicChangeReadiness
+								changeSet={selectedChangeSet}
+								{canManage}
+								onChanged={handleChangeSetChanged}
+							/>
+						{/key}
 					</Card.Content>
 				</Card.Root>
 			{/if}
 
-			{#if groups.length === 0}
+			{#if controller.workspace.learningGroups.length === 0}
 				<AcademicPrerequisiteNotice prerequisite={missingGroupsPrerequisite} />
 			{/if}
 			{#if groupsWithoutTeachers > 0}
 				<AcademicPrerequisiteNotice prerequisite={missingTeachersPrerequisite} />
 			{/if}
-			{#if schedules.length === 0 || periods.length === 0}
+			{#if controller.workspace.bellPeriods.length === 0}
 				<AcademicPrerequisiteNotice prerequisite={missingPeriodsPrerequisite} />
 			{/if}
-			{#if rooms.length === 0}
+			{#if controller.workspace.rooms.length === 0}
 				<AcademicPrerequisiteNotice prerequisite={missingRoomsPrerequisite} />
 			{/if}
 
-			<Card.Root class="gap-0 py-0">
-				<Card.Content class="grid gap-4 pt-6 lg:grid-cols-[14rem_auto_minmax(16rem,1fr)]">
-					<div class="space-y-2">
-						<Label>ตารางเวลา</Label>
-						<div class="flex h-9 items-center rounded-md border bg-muted/30 px-3 text-sm">
-							{selectedSchedule
-								? `${selectedSchedule.code} · ${selectedSchedule.name}`
-								: 'ไม่พบตารางเวลา'}
-						</div>
-					</div>
-					<div class="space-y-2">
-						<Label>มุมมอง</Label>
-						<div class="flex gap-2">
-							<Button
-								variant={viewKind === 'learning_group' ? 'default' : 'outline'}
-								disabled={groups.length === 0}
-								onclick={() => changeViewKind('learning_group')}>กลุ่มเรียน</Button
-							>
-							<Button
-								variant={viewKind === 'homeroom' ? 'default' : 'outline'}
-								onclick={() => changeViewKind('homeroom')}>ห้องประจำชั้น</Button
-							>
-						</div>
-					</div>
-					<div class="space-y-2">
-						<Label for="timetable-target"
-							>{viewKind === 'learning_group' ? 'กลุ่มเรียน' : 'ห้องประจำชั้น'}</Label
-						>
-						<Select.Root type="single" bind:value={targetSelectValue} onValueChange={changeTarget}>
-							<Select.Trigger id="timetable-target" class="w-full">
-								{#if viewKind === 'learning_group'}
-									{@const group = groups.find((item) => item.id === selectedTargetId)}
-									{group ? groupLabel(group) : 'เลือกกลุ่มเรียน'}
-								{:else}
-									{@const homeroom = homerooms.find((item) => item.id === selectedTargetId)}
-									{homeroom ? `${homeroom.code} · ${homeroom.name}` : 'เลือกห้องประจำชั้น'}
-								{/if}
-							</Select.Trigger>
-							<Select.Content>
-								{#if viewKind === 'learning_group'}
-									{#each groups as group (group.id)}
-										<Select.Item value={group.id}>{groupLabel(group)}</Select.Item>
-									{/each}
-								{:else}
-									{#each homerooms as homeroom (homeroom.id)}
-										<Select.Item value={homeroom.id}>{homeroom.code} · {homeroom.name}</Select.Item>
-									{/each}
-								{/if}
-							</Select.Content>
-						</Select.Root>
-					</div>
-				</Card.Content>
-			</Card.Root>
-
-			{#if dirty}
-				<p class="text-amber-700 dark:text-amber-300 text-sm">
-					มีแบบร่างคาบที่ยังไม่บันทึก — ต้องบันทึกหรือยกเลิกก่อนเปลี่ยนบริบท
-				</p>
-			{/if}
 			{#if errorMessage}
 				<div
-					class="border-destructive/30 bg-destructive/5 text-destructive rounded-lg border p-3 text-sm"
+					class="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
 				>
-					{errorMessage}
+					<AlertTriangle class="mt-0.5 size-4 shrink-0" />
+					<span>{errorMessage}</span>
 				</div>
 			{/if}
 
-			<div class="grid items-start gap-5 xl:grid-cols-[minmax(0,1.7fr)_22rem]">
-				<Card.Root class="overflow-hidden">
-					<Card.Header>
-						<Card.Title class="flex items-center gap-2"
-							><CalendarClock /> ตารางรายสัปดาห์</Card.Title
-						>
-						<Card.Description>
-							{canEditSelected
-								? 'คลิกช่องว่างเพื่อเพิ่มคาบ หรือคลิกคาบเดิมเพื่อแก้ไข'
-								: selectedVersion?.status === 'draft'
-									? 'คุณดูแบบร่างนี้ได้ แต่ไม่มีสิทธิ์เพิ่ม แก้ไข หรือลบคาบ'
-									: 'รุ่นที่เผยแพร่แล้วเป็นข้อมูลอ่านอย่างเดียว'}
-						</Card.Description>
-					</Card.Header>
-					<Card.Content class="overflow-x-auto">
-						<table class="w-full min-w-[760px] border-separate border-spacing-0 text-sm">
-							<thead>
-								<tr>
-									<th class="bg-muted/70 sticky left-0 z-10 border p-2 text-left">คาบ</th>
-									{#each activeDays as day (day.value)}<th
-											class="bg-muted/70 border p-2 text-center">{day.label}</th
-										>{/each}
-								</tr>
-							</thead>
-							<tbody>
-								{#each periods as period (period.id)}
-									<tr>
-										<th
-											class="bg-background sticky left-0 z-10 w-28 border p-2 text-left font-normal"
-										>
-											<p class="font-medium">{period.name ?? `คาบ ${period.orderIndex}`}</p>
-											<p class="text-muted-foreground text-xs">
-												{period.startTime.slice(0, 5)}–{period.endTime.slice(0, 5)}
-											</p>
-										</th>
-										{#each activeDays as day (day.value)}
-											{@const cellEntries = entriesForCell(day.value, period.id)}
-											<td class="h-24 min-w-32 border p-1 align-top">
-												{#if cellEntries.length === 0}
-													<button
-														type="button"
-														class="hover:bg-muted text-muted-foreground flex size-full min-h-20 items-center justify-center rounded-md border border-dashed"
-														disabled={!canEditSelected || !selectedTargetId}
-														onclick={() => startAtCell(day.value, period.id)}
-														title="เพิ่มคาบ"><Plus class="size-4" /></button
-													>
-												{:else}
-													<div class="space-y-1">
-														{#each cellEntries as entry (entry.id)}
-															<button
-																type="button"
-																class="bg-primary/10 hover:bg-primary/15 border-primary/20 w-full rounded-md border p-2 text-left {selectedEntryId ===
-																entry.id
-																	? 'ring-primary ring-2'
-																	: ''}"
-																onclick={() => editEntry(entry)}
-															>
-																<p class="truncate font-medium">{entryTitle(entry)}</p>
-																<p class="text-muted-foreground mt-1 truncate text-xs">
-																	{entry.roomCode ??
-																		entry.learningGroupCode ??
-																		entry.homeroomName ??
-																		'ไม่ระบุห้อง'}
-																</p>
-																{#if entry.instructors.length > 0}
-																	<p class="mt-1 truncate text-[0.7rem] text-primary/80">
-																		{entry.instructors
-																			.map((instructor) => instructor.displayName)
-																			.join(', ')}
-																	</p>
-																{/if}
-															</button>
-														{/each}
-													</div>
-												{/if}
-											</td>
-										{/each}
-									</tr>
-								{/each}
-							</tbody>
-						</table>
-					</Card.Content>
-				</Card.Root>
+			{#if controller.dragSource}
+				<div
+					class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/25 bg-primary/5 px-4 py-3"
+				>
+					<p class="flex items-center gap-2 text-sm font-medium text-primary">
+						<MousePointer2 class="size-4" /> เลือกช่องสีเขียวเพื่อวาง 1 คาบ หรือกด Esc เพื่อยกเลิก
+					</p>
+					<Button variant="ghost" size="sm" onclick={cancelDrag}>ยกเลิก</Button>
+				</div>
+			{/if}
 
-				<Card.Root>
-					<Card.Header>
-						<div class="flex items-center justify-between gap-2">
-							<div>
-								<Card.Title>
-									{canEditSelected ? (selectedEntry ? 'แก้ไขคาบ' : 'เพิ่มคาบ') : 'รายละเอียดคาบ'}
-								</Card.Title>
-								<Card.Description
-									>{selectedEntry
-										? `เวอร์ชัน ${selectedEntry.rowVersion}`
-										: 'เลือกวันและคาบที่ต้องการ'}</Card.Description
-								>
-							</div>
-							{#if dirty}<Badge variant="secondary">ยังไม่บันทึก</Badge>{/if}
-						</div>
-					</Card.Header>
-					<Card.Content class="space-y-4">
-						<div class="grid grid-cols-2 gap-3">
-							<div class="space-y-2">
-								<Label for="entry-day">วัน</Label>
-								<Select.Root
-									type="single"
-									bind:value={formDay}
-									disabled={!canEditSelected}
-									onValueChange={markDirty}
-								>
-									<Select.Trigger id="entry-day" class="w-full">
-										{activeDays.find((day) => day.value === formDay)?.label ?? 'เลือกวัน'}
-									</Select.Trigger>
-									<Select.Content>
-										{#each activeDays as day (day.value)}
-											<Select.Item value={day.value}>{day.label}</Select.Item>
-										{/each}
-									</Select.Content>
-								</Select.Root>
-							</div>
-							<div class="space-y-2">
-								<Label for="entry-period">คาบ</Label>
-								<Select.Root
-									type="single"
-									bind:value={formPeriodId}
-									disabled={!canEditSelected}
-									onValueChange={markDirty}
-								>
-									<Select.Trigger id="entry-period" class="w-full">
-										{periods.find((period) => period.id === formPeriodId)?.name ??
-											periods.find((period) => period.id === formPeriodId)?.orderIndex ??
-											'เลือกคาบ'}
-									</Select.Trigger>
-									<Select.Content>
-										{#each periods as period (period.id)}
-											<Select.Item value={period.id}>{period.name ?? period.orderIndex}</Select.Item
-											>
-										{/each}
-									</Select.Content>
-								</Select.Root>
-							</div>
-						</div>
-						<div class="space-y-2">
-							<Label for="entry-type">ประเภทคาบ</Label>
-							<Select.Root
-								type="single"
-								bind:value={formEntryType}
-								disabled={!canEditSelected || Boolean(selectedEntry)}
-								onValueChange={changeEntryType}
-							>
-								<Select.Trigger id="entry-type" class="w-full">
-									{entryTypeOptions.find((option) => option.value === formEntryType)?.label ??
-										'เลือกประเภทคาบ'}
-								</Select.Trigger>
-								<Select.Content>
-									{#each entryTypeOptions as option (option.value)}
-										<Select.Item value={option.value}>{option.label}</Select.Item>
-									{/each}
-								</Select.Content>
-							</Select.Root>
-						</div>
-						{#if canEditSelected && showsInstructorPicker}
-							<TimetableInstructorPicker
-								options={selectedGroupInstructorOptions}
-								bind:value={
-									() => formInstructorIds,
-									(value) => {
-										formInstructorIds = value;
-										markDirty();
-									}
-								}
-								disabled={busy}
-								label="ครูผู้สอนของคาบนี้"
-							/>
-							{#if unavailableSelectedInstructors.length > 0}
-								<div
-									class="space-y-3 rounded-lg border border-amber-500/35 bg-amber-500/8 p-3 text-amber-950 dark:text-amber-100"
-									role="alert"
-								>
-									<div class="flex items-start gap-2">
-										<AlertTriangle class="mt-0.5 size-4 shrink-0" />
-										<div>
-											<p class="text-sm font-medium">มีครูเดิมที่ใช้กับรุ่นนี้ไม่ได้</p>
-											<p class="mt-0.5 text-xs text-amber-900/80 dark:text-amber-100/75">
-												รายชื่อต่อไปนี้ไม่ได้อยู่ในช่วงวันที่ของรุ่นตารางสอนนี้
-												ต้องนำออกแล้วเลือกครูที่มีผลก่อนบันทึก
-											</p>
-										</div>
-									</div>
-									<div class="flex flex-wrap gap-2">
-										{#each unavailableSelectedInstructors as instructor (instructor.userId)}
-											<Button
-												type="button"
-												size="sm"
-												variant="outline"
-												class="h-auto border-amber-500/40 bg-background py-1.5"
-												aria-label={`นำ ${instructor.displayName} ออกจากคาบ`}
-												onclick={() => removeUnavailableInstructor(instructor.userId)}
-											>
-												นำ {instructor.displayName} ออก
-											</Button>
-										{/each}
-									</div>
-								</div>
-							{/if}
-						{:else if selectedEntry && !canEditSelected}
-							<div class="space-y-2">
-								<Label>ครูผู้สอนของคาบนี้</Label>
-								{#if selectedEntry.instructors.length === 0}
-									<p
-										class="rounded-lg border border-dashed px-3 py-2 text-sm text-muted-foreground"
-									>
-										ยังไม่ได้ระบุครูผู้สอนสำหรับคาบนี้
-									</p>
-								{:else}
-									<div class="flex flex-wrap gap-2">
-										{#each selectedEntry.instructors as instructor (instructor.userId)}
-											<Badge variant="outline" class="gap-1.5 py-1">
-												{instructor.displayName}
-												<span class="text-muted-foreground text-[0.7rem]">
-													{instructorRoleLabel(instructor.role)}
-												</span>
-											</Badge>
-										{/each}
-									</div>
-								{/if}
-							</div>
-						{/if}
-						<div class="space-y-2">
-							<Label for="entry-room">ห้องเรียน</Label>
-							<Select.Root
-								type="single"
-								value={formRoomId || NO_ROOM_VALUE}
-								disabled={!canEditSelected}
-								onValueChange={(value) => {
-									formRoomId = value === NO_ROOM_VALUE ? '' : value;
-									markDirty();
-								}}
-							>
-								<Select.Trigger id="entry-room" class="w-full">
-									{@const room = rooms.find((item) => item.id === formRoomId)}
-									{room ? `${room.code ? `${room.code} · ` : ''}${room.name_th}` : 'ไม่ระบุ'}
-								</Select.Trigger>
-								<Select.Content>
-									<Select.Item value={NO_ROOM_VALUE}>ไม่ระบุ</Select.Item>
-									{#each rooms as room (room.id)}
-										<Select.Item value={room.id}
-											>{room.code ? `${room.code} · ` : ''}{room.name_th}</Select.Item
-										>
-									{/each}
-								</Select.Content>
-							</Select.Root>
-						</div>
-						<div class="space-y-2">
-							<Label for="entry-title">ชื่อแสดงเพิ่มเติม</Label>
-							<Input
-								id="entry-title"
-								bind:value={formTitle}
-								disabled={!canEditSelected}
-								oninput={markDirty}
-							/>
-						</div>
-						<div class="space-y-2">
-							<Label for="entry-note">หมายเหตุ</Label>
-							<Input
-								id="entry-note"
-								bind:value={formNote}
-								disabled={!canEditSelected}
-								oninput={markDirty}
-							/>
-						</div>
-						{#if canEditSelected}
-							<div class="flex flex-wrap gap-2 pt-2">
-								<Button
-									disabled={busy ||
-										!dirty ||
-										!selectedTargetId ||
-										!formPeriodId ||
-										unavailableSelectedInstructors.length > 0}
-									onclick={saveEntry}
-									>{#if busy}<Loader2 class="animate-spin" />{:else}<Save />{/if} บันทึก</Button
-								>
-								<Button variant="outline" disabled={busy || !dirty} onclick={resetForm}
-									><RotateCcw /> ยกเลิก</Button
-								>
-								{#if selectedEntry}<Button
-										variant="destructive"
-										class="ml-auto"
-										disabled={busy}
-										onclick={removeEntry}><Trash2 /> ลบคาบ</Button
-									>{/if}
-							</div>
-						{/if}
-					</Card.Content>
-				</Card.Root>
-			</div>
+			{#if controller.selectedRow && controller.workspace.bellPeriods.length > 0}
+				<div class="grid min-h-0 gap-4 xl:grid-cols-[19rem_minmax(0,1fr)]">
+					<TimetableUnscheduledTray
+						demands={visibleDemands}
+						groups={controller.workspace.learningGroups}
+						staff={controller.workspace.staff}
+						disabled={!canEditSelected}
+						remainingForGroup={controller.remainingDemand}
+						onChooseDemand={chooseDemand}
+						onDragStartDemand={(source, candidate) => controller?.startPlacement(source, candidate)}
+						onCancelDrag={cancelDrag}
+					/>
+					<TimetableBoard
+						state={controller.board}
+						view={controller.view}
+						row={controller.selectedRow}
+						selectedEntryId={inspectorEntryId}
+						canEdit={canEditSelected}
+						{cellState}
+						onDropIntent={attemptPlacement}
+						onActivateIntent={attemptPlacement}
+						onSelectEntry={inspectEntry}
+						onDragStart={(entry) => startExistingPlacement(entry)}
+						onCancelDrag={cancelDrag}
+						onMoveEntry={openMoveDialog}
+						onEditEntry={inspectEntry}
+						onRemoveEntry={requestRemove}
+					/>
+				</div>
+			{:else}
+				<PageState
+					variant="empty"
+					title="ยังไม่มีข้อมูลสำหรับสร้างตาราง"
+					description="ตรวจกลุ่มเรียน ห้องประจำชั้น และคาบเรียนของภาคเรียนนี้"
+				/>
+			{/if}
 		</div>
 	{/if}
+
+	<Dialog.Root bind:open={teacherDialogOpen}>
+		<Dialog.Content class="sm:max-w-lg">
+			<Dialog.Header>
+				<Dialog.Title>เลือกครูของคาบนี้</Dialog.Title>
+				<Dialog.Description>
+					กลุ่มนี้มีครูมากกว่าหนึ่งคน เลือกเฉพาะผู้ที่สอนคาบที่จะนำไปวาง
+				</Dialog.Description>
+			</Dialog.Header>
+			<TimetableInstructorPicker
+				options={pendingDemandInstructorOptions}
+				bind:value={pendingDemandInstructorIds}
+			/>
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (teacherDialogOpen = false)}>ยกเลิก</Button>
+				<Button
+					disabled={pendingDemandInstructorIds.length === 0}
+					onclick={startDemandAfterTeacherSelection}
+				>
+					เริ่มวาง 1 คาบ
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+
+	<TimetableEntryInspector
+		bind:open={inspectorOpen}
+		entry={selectedEntry}
+		rooms={controller?.workspace.rooms ?? []}
+		instructorOptions={instructorOptionsForEntry(selectedEntry)}
+		readOnly={!canEditSelected}
+		{busy}
+		onSave={saveEntryDetails}
+		onMove={openMoveDialog}
+		onRemove={requestRemove}
+	/>
+
+	<TimetableMoveDialog
+		bind:open={moveDialogOpen}
+		entry={moveEntry}
+		periods={controller?.workspace.bellPeriods ?? []}
+		{busy}
+		onConfirm={confirmMove}
+	/>
+
+	<AlertDialog.Root bind:open={removeDialogOpen}>
+		<AlertDialog.Content>
+			<AlertDialog.Header>
+				<AlertDialog.Title>นำคาบนี้ออกจากตารางหรือไม่</AlertDialog.Title>
+				<AlertDialog.Description>
+					{removeEntry?.offeringCode ?? removeEntry?.entryType ?? ''} · {removeEntry?.offeringName ??
+						removeEntry?.title ??
+						''}
+					จะกลับไปอยู่ในรายการคาบที่รอจัด และสามารถนำมาวางใหม่ได้
+				</AlertDialog.Description>
+			</AlertDialog.Header>
+			<AlertDialog.Footer>
+				<AlertDialog.Cancel disabled={busy}>ยกเลิก</AlertDialog.Cancel>
+				<AlertDialog.Action variant="destructive" disabled={busy} onclick={confirmRemove}>
+					{#if busy}<LoaderCircle class="size-4 animate-spin" />{/if}
+					{busy ? 'กำลังนำออก...' : 'นำออกจากตาราง'}
+				</AlertDialog.Action>
+			</AlertDialog.Footer>
+		</AlertDialog.Content>
+	</AlertDialog.Root>
 </PageShell>

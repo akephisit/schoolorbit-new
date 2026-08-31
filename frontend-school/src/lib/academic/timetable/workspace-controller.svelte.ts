@@ -71,6 +71,10 @@ class TimetableWorkspaceController {
 		this.clearPlacement();
 	};
 
+	failMutation = () => {
+		this.pendingMutation = null;
+	};
+
 	setRefreshing = (refreshing: boolean) => {
 		this.isRefreshing = refreshing;
 	};

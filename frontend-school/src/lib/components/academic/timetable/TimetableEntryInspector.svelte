@@ -82,7 +82,7 @@
 					>นำออกจากตาราง</Button
 				>
 				<Button
-					disabled={busy || selectedInstructorIds.length === 0}
+					disabled={busy || (instructorOptions.length > 0 && selectedInstructorIds.length === 0)}
 					onclick={() =>
 						onSave({
 							roomId: selectedRoomValue === homeroomRoomValue ? null : selectedRoomValue,

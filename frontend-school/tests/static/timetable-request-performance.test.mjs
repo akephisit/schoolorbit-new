@@ -6,19 +6,23 @@ import test from 'node:test';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
-test('timetable workspace uses one cancellable term collection load', async () => {
+test('timetable workspace uses one cancellable set-based board load', async () => {
 	const page = await readFile(
 		path.join(projectRoot, 'src/routes/(app)/staff/academic/timetable/+page.svelte'),
 		'utf8'
 	);
 
-	assert.match(page, /loadTimetableCollections/);
-	assert.match(page, /listLearningGroupsForTerm/);
+	assert.match(page, /getTimetableWorkspace/);
+	assert.equal((page.match(/getTimetableWorkspace\(/g) ?? []).length, 1);
+	assert.match(page, /listTimetableVersions/);
 	assert.match(page, /LatestRequest/);
 	assert.match(page, /isAbortError/);
 	assert.match(page, /request\.begin\(\)/);
 	assert.match(page, /request\.isCurrent\(revision\)/);
 	assert.match(page, /request\.abort\(\)/);
+	assert.doesNotMatch(page, /loadTimetableCollections/);
+	assert.doesNotMatch(page, /listLearningGroupsForTerm|listLearningOfferings|listHomerooms/);
+	assert.doesNotMatch(page, /listTimetableEntries|listBellSchedulePeriods|lookupRooms/);
 	assert.doesNotMatch(page, /listLearningGroups\(offering\.id\)/);
 	assert.doesNotMatch(page, /getActivitySlotTimetableContext/);
 	assert.doesNotMatch(page, /listSlotInstructors|listSlotClassroomAssignments/);
@@ -36,13 +40,16 @@ test('academic delivery workspace uses one bounded overview request', async () =
 	assert.doesNotMatch(page, /listLearningGroups\(offering\.id\)/);
 });
 
-test('timetable derives separate setup notices from its existing term collections', async () => {
+test('timetable derives setup notices from its set-based workspace', async () => {
 	const page = await readFile(
 		path.join(projectRoot, 'src/routes/(app)/staff/academic/timetable/+page.svelte'),
 		'utf8'
 	);
 
 	assert.match(page, /AcademicPrerequisiteNotice/);
+	assert.match(page, /controller\.workspace\.learningGroups/);
+	assert.match(page, /controller\.workspace\.bellPeriods/);
+	assert.match(page, /controller\.workspace\.rooms/);
 	assert.match(page, /missingGroupsPrerequisite/);
 	assert.match(page, /missingTeachersPrerequisite/);
 	assert.match(page, /missingPeriodsPrerequisite/);

@@ -11,6 +11,7 @@
 
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import { Button } from '$lib/components/ui/button';
 	import {
 		AlertTriangle,
 		ArrowRight,
@@ -27,6 +28,7 @@
 		disabled = false,
 		onDropIntent,
 		onHoverIntent,
+		onActivateIntent,
 		children
 	}: {
 		dayLabel: string;
@@ -35,6 +37,7 @@
 		disabled?: boolean;
 		onDropIntent?: (event: DragEvent) => void;
 		onHoverIntent?: () => void;
+		onActivateIntent?: () => void;
 		children?: Snippet;
 	} = $props();
 
@@ -103,4 +106,15 @@
 		</div>
 	{/if}
 	<div class="min-h-28 space-y-1.5">{@render children?.()}</div>
+	{#if !disabled && (state === 'move' || state === 'swap')}
+		<Button
+			type="button"
+			size="sm"
+			variant="outline"
+			class="mt-1.5 h-7 w-full text-xs"
+			onclick={onActivateIntent}
+		>
+			{state === 'swap' ? 'สลับกับคาบนี้' : 'วางคาบที่นี่'}
+		</Button>
+	{/if}
 </td>
