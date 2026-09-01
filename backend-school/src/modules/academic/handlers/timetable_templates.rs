@@ -38,7 +38,7 @@ pub async fn list_templates(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
-        .require_permission(codes::LEARNING_OFFERING_READ_SCHOOL)?;
+        .require_permission(codes::ACADEMIC_TIMETABLE_READ_SCHOOL)?;
     Ok(Json(ApiResponse::ok(
         timetable_template_service::list_templates(&context.tenant.pool).await?,
     ))
@@ -66,7 +66,7 @@ pub async fn get_template(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
-        .require_permission(codes::LEARNING_OFFERING_READ_SCHOOL)?;
+        .require_permission(codes::ACADEMIC_TIMETABLE_READ_SCHOOL)?;
     Ok(Json(ApiResponse::ok(
         timetable_template_service::get_template(&context.tenant.pool, id).await?,
     ))
@@ -94,7 +94,7 @@ pub async fn create_template(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
-        .require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
+        .require_permission(codes::ACADEMIC_TIMETABLE_MANAGE_SCHOOL)?;
     let template = timetable_template_service::create_template(
         &context.tenant.pool,
         context.actor.user_id,
@@ -128,7 +128,7 @@ pub async fn update_template(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
-        .require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
+        .require_permission(codes::ACADEMIC_TIMETABLE_MANAGE_SCHOOL)?;
     let template =
         timetable_template_service::update_template(&context.tenant.pool, id, payload).await?;
     Ok(Json(ApiResponse::ok(template)).into_response())
@@ -155,7 +155,7 @@ pub async fn delete_template(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
-        .require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
+        .require_permission(codes::ACADEMIC_TIMETABLE_MANAGE_SCHOOL)?;
     timetable_template_service::delete_template(&context.tenant.pool, id).await?;
     Ok(Json(ApiResponse::empty()).into_response())
 }
@@ -181,7 +181,7 @@ pub async fn from_current(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
-        .require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
+        .require_permission(codes::ACADEMIC_TIMETABLE_MANAGE_SCHOOL)?;
     let template = timetable_template_service::from_current(
         &context.tenant.pool,
         context.actor.user_id,
@@ -216,8 +216,9 @@ pub async fn apply_template(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
-        .require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
+        .require_permission(codes::ACADEMIC_TIMETABLE_MANAGE_SCHOOL)?;
     let academic_term_id = payload.academic_term_id;
+    let timetable_version_id = payload.timetable_version_id;
     let result = timetable_template_service::apply_template(
         &context.tenant.pool,
         context.actor.user_id,
@@ -230,6 +231,8 @@ pub async fn apply_template(
         &headers,
         context.actor.user_id,
         academic_term_id,
+        timetable_version_id,
+        result.entry_ids.first().copied(),
         result.applied as i64,
     );
     Ok(Json(ApiResponse::ok(result)).into_response())
@@ -237,11 +240,11 @@ pub async fn apply_template(
 
 #[utoipa::path(
     delete,
-    path = "/api/academic/timetable/clear",
+    path = "/api/academic/timetable-blocks/clear",
     operation_id = "clearTimetable",
     request_body = ClearTimetableRequest,
     responses(
-        (status = 200, description = "Cleared timetable entries", body = ApiResponse<Vec<crate::modules::academic::models::timetable::TimetableEntry>>),
+        (status = 200, description = "Cleared timetable blocks", body = ApiResponse<Vec<crate::modules::academic::models::timetable_block::TimetableBlock>>),
         (status = 400, description = "Invalid clear request", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Timetable manage permission denied", body = ApiErrorResponse)
@@ -257,8 +260,9 @@ pub async fn clear_timetable(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
-        .require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
+        .require_permission(codes::ACADEMIC_TIMETABLE_MANAGE_SCHOOL)?;
     let academic_term_id = payload.academic_term_id;
+    let timetable_version_id = payload.timetable_version_id;
     let entries = timetable_template_service::clear_timetable(
         &context.tenant.pool,
         context.actor.user_id,
@@ -275,6 +279,8 @@ pub async fn clear_timetable(
         &headers,
         context.actor.user_id,
         academic_term_id,
+        timetable_version_id,
+        None,
         revision,
     );
     Ok(Json(ApiResponse::ok(entries)).into_response())
@@ -285,6 +291,8 @@ fn broadcast_reload(
     headers: &HeaderMap,
     user_id: Uuid,
     academic_term_id: Uuid,
+    timetable_version_id: Uuid,
+    block_id: Option<Uuid>,
     revision: i64,
 ) {
     let subdomain =
@@ -295,7 +303,8 @@ fn broadcast_reload(
         TimetableEvent::TimetableChanged {
             user_id,
             academic_term_id,
-            learning_group_id: None,
+            timetable_version_id,
+            block_id,
             revision,
         },
     );

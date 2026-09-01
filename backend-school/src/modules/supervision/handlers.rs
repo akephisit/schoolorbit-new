@@ -456,7 +456,7 @@ pub async fn evaluator_availability(
     tag = "supervision",
     params(("id" = Uuid, Path, description = "Supervision observation ID")),
     responses(
-        (status = 200, description = "Timetable options for the observation", body = ApiResponse<ItemsData<crate::modules::academic::models::timetable::TimetableEntry>>),
+        (status = 200, description = "Timetable block-group options for the observation", body = ApiResponse<ItemsData<crate::modules::supervision::models::SupervisionTimetableOption>>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Observation management denied", body = ApiErrorResponse),
         (status = 404, description = "Supervision observation not found", body = ApiErrorResponse)

@@ -6,17 +6,15 @@ use sqlx::{PgPool, Postgres, QueryBuilder, Row};
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::modules::academic::models::timetable::{TimetableEntry, TimetableQuery};
-use crate::modules::academic::services::{timetable_service, timetable_version_service};
+use crate::modules::academic::services::timetable_version_service;
 use crate::modules::supervision::models::{
     ApproveObservationRequest, CancelObservationRequest, LessonSnapshot, ManualLesson,
     ManualLessonInput, RequestSupervisionObservationRequest, ReturnObservationRequest,
     SupervisionAction, SupervisionCycleStatus, SupervisionEvaluator,
     SupervisionEvaluatorAvailability, SupervisionObservation, SupervisionObservationFilter,
-    SupervisionObservationStatus, UpdateRequestedObservationRequest,
+    SupervisionObservationStatus, SupervisionTimetableOption, UpdateRequestedObservationRequest,
     UpdateSupervisionObservationRequest,
 };
-use crate::policies::resource_access_policy::AcademicResourceListFilter;
 use crate::scheduling::SCHOOL_TIMEZONE;
 
 use super::cycles::SupervisionCycleTargetRow;
@@ -197,7 +195,7 @@ pub async fn evaluator_availability(
 pub async fn observation_timetable_options(
     pool: &PgPool,
     observation_id: Uuid,
-) -> Result<Vec<TimetableEntry>, AppError> {
+) -> Result<Vec<SupervisionTimetableOption>, AppError> {
     let observation = get_observation(pool, observation_id).await?;
     let version = timetable_version_service::resolve_for_date(
         pool,
@@ -206,24 +204,49 @@ pub async fn observation_timetable_options(
     )
     .await?;
 
-    timetable_service::list_entries(
-        pool,
-        &TimetableQuery {
-            timetable_version_id: version.id,
-            academic_term_id: observation.academic_term_id,
-            learning_group_id: None,
-            homeroom_id: None,
-            instructor_id: Some(observation.observed_user_id),
-            room_id: None,
-            day_of_week: None,
-            entry_type: None,
-        },
-        &AcademicResourceListFilter {
-            includes_school_owned: true,
-            ..Default::default()
-        },
+    sqlx::query_as(
+        r#"SELECT block_group.id AS block_group_id,
+                  block.id AS block_id,
+                  block.day_of_week,
+                  block.bell_schedule_period_id,
+                  period.order_index AS period_order_index,
+                  period.name AS period_name,
+                  period.start_time,
+                  period.end_time,
+                  block_group.learning_group_id,
+                  learning_group.name AS learning_group_name,
+                  block_group.learning_offering_id,
+                  offering.code_snapshot AS offering_code,
+                  offering.name_snapshot AS offering_name,
+                  ARRAY(
+                      SELECT homeroom.name
+                      FROM learning_group_homerooms coverage
+                      JOIN homerooms homeroom ON homeroom.id = coverage.homeroom_id
+                      WHERE coverage.learning_group_id = block_group.learning_group_id
+                      ORDER BY homeroom.name, homeroom.id
+                  ) AS homeroom_names,
+                  room.name_th AS room_name
+           FROM academic_timetable_blocks block
+           JOIN academic_timetable_block_groups block_group
+             ON block_group.block_id = block.id AND block_group.is_active
+           JOIN academic_timetable_block_group_instructors instructor
+             ON instructor.block_group_id = block_group.id
+           JOIN bell_schedule_periods period ON period.id = block.bell_schedule_period_id
+           JOIN learning_groups learning_group ON learning_group.id = block_group.learning_group_id
+           JOIN learning_offerings offering ON offering.id = block_group.learning_offering_id
+           LEFT JOIN rooms room ON room.id = block_group.room_id
+           WHERE block.timetable_version_id = $1
+             AND block.academic_term_id = $2
+             AND block.is_active
+             AND instructor.instructor_id = $3
+           ORDER BY block.day_of_week, period.order_index, block_group.id"#,
     )
+    .bind(version.id)
+    .bind(observation.academic_term_id)
+    .bind(observation.observed_user_id)
+    .fetch_all(pool)
     .await
+    .map_err(AppError::from)
 }
 
 pub async fn request_observation(
@@ -251,7 +274,7 @@ pub async fn request_observation(
         r#"
         INSERT INTO supervision_observations (
             cycle_id, academic_year_id, academic_term_id, learning_group_id, homeroom_id,
-            observed_user_id, requested_by, template_id, timetable_entry_id,
+            observed_user_id, requested_by, template_id, timetable_block_group_id,
             manual_subject_name, manual_classroom_label, manual_room_label,
             observed_at, manual_period_label, manual_reason, lesson_snapshot
         )
@@ -327,7 +350,7 @@ pub async fn update_requested_observation(
     sqlx::query(
         r#"
         UPDATE supervision_observations
-        SET timetable_entry_id = $2,
+        SET timetable_block_group_id = $2,
             learning_group_id = $3,
             homeroom_id = $4,
             manual_subject_name = $5,
@@ -451,7 +474,7 @@ pub async fn update_observation(
         r#"
         UPDATE supervision_observations
         SET template_id = $2,
-            timetable_entry_id = $3,
+            timetable_block_group_id = $3,
             learning_group_id = $4,
             homeroom_id = $5,
             manual_subject_name = $6,
@@ -738,7 +761,8 @@ fn observation_select_sql() -> &'static str {
            o.learning_group_id, o.homeroom_id, o.observed_user_id,
            NULLIF(TRIM(CONCAT(COALESCE(u.title, ''), u.first_name, ' ', u.last_name)), '')
                AS observed_display_name,
-           o.requested_by, o.approved_by, o.template_id, o.timetable_entry_id,
+           o.requested_by, o.approved_by, o.template_id,
+           o.timetable_block_group_id AS timetable_entry_id,
            o.observed_at,
            o.manual_subject_name, o.manual_classroom_label, o.manual_room_label,
            o.manual_period_label, o.manual_reason,
@@ -1253,16 +1277,19 @@ async fn load_timetable_entry_context_for_teacher(
 ) -> Result<TimetableEntryLessonContext, AppError> {
     let context = sqlx::query_as::<_, TimetableEntryLessonContext>(
         r#"
-        SELECT e.day_of_week, e.learning_group_id, e.homeroom_id
-        FROM academic_timetable_entries e
-        WHERE e.id = $1
-          AND e.timetable_version_id = $2
-          AND e.academic_year_id = $4
-          AND e.academic_term_id = $5
-          AND e.is_active
+        SELECT block.day_of_week, block_group.learning_group_id,
+               NULL::uuid AS homeroom_id
+        FROM academic_timetable_block_groups block_group
+        JOIN academic_timetable_blocks block ON block.id = block_group.block_id
+        WHERE block_group.id = $1
+          AND block.timetable_version_id = $2
+          AND block.academic_year_id = $4
+          AND block.academic_term_id = $5
+          AND block.is_active
+          AND block_group.is_active
           AND EXISTS (
-              SELECT 1 FROM timetable_entry_instructors instructor
-              WHERE instructor.entry_id = e.id
+              SELECT 1 FROM academic_timetable_block_group_instructors instructor
+              WHERE instructor.block_group_id = block_group.id
                 AND instructor.instructor_id = $3
           )
         "#,
@@ -1295,19 +1322,23 @@ async fn load_timetable_lesson_snapshot(
                    coalesce(subject_version.name_th, subject_version.name_en, offering.name_snapshot),
                    ' · v', subject_version.version_no
                ) END AS subject_name,
-               coalesce(learning_group.name, homeroom.name) AS classroom_label,
+               learning_group.name AS classroom_label,
                r.name_th AS room_label,
                p.name AS period_label
-        FROM academic_timetable_entries e
-        LEFT JOIN learning_groups learning_group ON learning_group.id = e.learning_group_id
-        LEFT JOIN learning_offerings offering ON offering.id = e.learning_offering_id
+        FROM academic_timetable_block_groups block_group
+        JOIN academic_timetable_blocks block ON block.id = block_group.block_id
+        LEFT JOIN learning_groups learning_group
+          ON learning_group.id = block_group.learning_group_id
+        LEFT JOIN learning_offerings offering
+          ON offering.id = block_group.learning_offering_id
         LEFT JOIN course_offering_details detail
           ON detail.learning_offering_id = offering.id
         LEFT JOIN subject_versions subject_version ON subject_version.id = detail.subject_version_id
-        LEFT JOIN homerooms homeroom ON homeroom.id = e.homeroom_id
-        LEFT JOIN rooms r ON e.room_id = r.id
-        LEFT JOIN bell_schedule_periods p ON p.id = e.bell_schedule_period_id
-        WHERE e.id = $1
+        LEFT JOIN rooms r ON block_group.room_id = r.id
+        LEFT JOIN bell_schedule_periods p ON p.id = block.bell_schedule_period_id
+        WHERE block_group.id = $1
+          AND block.is_active
+          AND block_group.is_active
         "#,
     )
     .bind(entry_id)
@@ -1470,12 +1501,16 @@ mod tests {
         .unwrap();
         let (entry_id, teacher_id, academic_year_id, academic_term_id): (Uuid, Uuid, Uuid, Uuid) =
             sqlx::query_as(
-                r#"SELECT entry.id, instructor.instructor_id,
-                      entry.academic_year_id, entry.academic_term_id
-               FROM academic_timetable_entries entry
-               JOIN timetable_entry_instructors instructor ON instructor.entry_id = entry.id
-               WHERE entry.timetable_version_id = $1 AND entry.is_active
-               ORDER BY entry.id, instructor.instructor_id
+                r#"SELECT block_group.id, instructor.instructor_id,
+                      block.academic_year_id, block.academic_term_id
+               FROM academic_timetable_blocks block
+               JOIN academic_timetable_block_groups block_group
+                 ON block_group.block_id = block.id
+               JOIN academic_timetable_block_group_instructors instructor
+                 ON instructor.block_group_id = block_group.id
+               WHERE block.timetable_version_id = $1
+                 AND block.is_active AND block_group.is_active
+               ORDER BY block_group.id, instructor.instructor_id
                LIMIT 1"#,
             )
             .bind(draft.id)
@@ -1493,7 +1528,7 @@ mod tests {
         )
         .await
         .expect("active exact timetable entry must be selectable");
-        sqlx::query("UPDATE academic_timetable_entries SET is_active = false WHERE id = $1")
+        sqlx::query("UPDATE academic_timetable_block_groups SET is_active = false WHERE id = $1")
             .bind(entry_id)
             .execute(&pool)
             .await

@@ -483,7 +483,7 @@ pub async fn delete_term(pool: &PgPool, actor_user_id: Uuid, id: Uuid) -> Result
         r#"
         SELECT
             (SELECT count(*) FROM learning_offerings WHERE academic_term_id = $1)
-          + (SELECT count(*) FROM academic_timetable_entries WHERE academic_term_id = $1)
+          + (SELECT count(*) FROM academic_timetable_blocks WHERE academic_term_id = $1)
           + (SELECT count(*) FROM course_assessment_plans WHERE academic_term_id = $1)
           + (SELECT count(*) FROM academic_exam_rounds WHERE academic_term_id = $1)
           + (SELECT count(*) FROM supervision_cycles WHERE academic_term_id = $1)

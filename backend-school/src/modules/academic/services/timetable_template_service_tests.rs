@@ -21,7 +21,7 @@ async fn template_source_apply_and_clear_are_version_scoped() {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 54).await.unwrap();
+    apply_migrations_through(&pool, 58).await.unwrap();
 
     let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
     let (source_id, source_row_version, term_id, term_start): (Uuid, i64, Uuid, NaiveDate) =
@@ -63,7 +63,7 @@ async fn template_source_apply_and_clear_are_version_scoped() {
     assert!(!template.entries.is_empty());
 
     let published_before: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM academic_timetable_entries WHERE timetable_version_id = $1 AND is_active",
+        "SELECT count(*) FROM academic_timetable_blocks WHERE timetable_version_id = $1 AND is_active",
     )
     .bind(source_id)
     .fetch_one(&pool)
@@ -82,7 +82,7 @@ async fn template_source_apply_and_clear_are_version_scoped() {
     .unwrap();
     assert!(!cleared.is_empty());
     let published_after: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM academic_timetable_entries WHERE timetable_version_id = $1 AND is_active",
+        "SELECT count(*) FROM academic_timetable_blocks WHERE timetable_version_id = $1 AND is_active",
     )
     .bind(source_id)
     .fetch_one(&pool)
@@ -103,12 +103,17 @@ async fn template_source_apply_and_clear_are_version_scoped() {
     .unwrap();
     assert_eq!(applied.applied, template.entries.len());
     for (template_entry, applied_entry_id) in template.entries.iter().zip(&applied.entry_ids) {
+        if template_entry.resource_kind == "structural" {
+            continue;
+        }
         let actual: Vec<(Uuid, String)> = sqlx::query_as(
             r#"SELECT instructor_id, role::text
-               FROM timetable_entry_instructors
-               WHERE entry_id = $1
+               FROM academic_timetable_block_group_instructors instructor
+               JOIN academic_timetable_block_groups block_group
+                 ON block_group.id = instructor.block_group_id
+               WHERE block_group.block_id = $1
                ORDER BY CASE role WHEN 'primary' THEN 1 ELSE 2 END,
-                        created_at,
+                        instructor.created_at,
                         instructor_id"#,
         )
         .bind(applied_entry_id)
@@ -130,9 +135,10 @@ async fn template_source_apply_and_clear_are_version_scoped() {
     }
     let exact_group_instructor_count: i64 = sqlx::query_scalar(
         r#"SELECT count(*)
-           FROM timetable_entry_instructors instructor
-           JOIN academic_timetable_entries entry ON entry.id = instructor.entry_id
-           WHERE entry.id = ANY($1) AND entry.learning_group_id IS NOT NULL"#,
+           FROM academic_timetable_block_group_instructors instructor
+           JOIN academic_timetable_block_groups block_group
+             ON block_group.id = instructor.block_group_id
+           WHERE block_group.block_id = ANY($1) AND block_group.is_active"#,
     )
     .bind(&applied.entry_ids)
     .fetch_one(&pool)
@@ -140,7 +146,7 @@ async fn template_source_apply_and_clear_are_version_scoped() {
     .unwrap();
     assert!(exact_group_instructor_count > 0);
     let wrong_version_count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM academic_timetable_entries WHERE id = ANY($1) AND timetable_version_id <> $2",
+        "SELECT count(*) FROM academic_timetable_blocks WHERE id = ANY($1) AND timetable_version_id <> $2",
     )
     .bind(&applied.entry_ids)
     .bind(draft.id)
@@ -184,7 +190,7 @@ async fn template_source_apply_and_clear_are_version_scoped() {
         .execute(&pool)
         .await
         .unwrap();
-    let applied_with_ineligible_teacher = timetable_template_service::apply_template(
+    let ineligible_result = timetable_template_service::apply_template(
         &pool,
         actor_id,
         template.template.id,
@@ -193,23 +199,11 @@ async fn template_source_apply_and_clear_are_version_scoped() {
             academic_term_id: term_id,
         },
     )
-    .await
-    .expect("an ineligible template teacher must not abort the whole template");
-    let group_entries_without_instructors: i64 = sqlx::query_scalar(
-        r#"SELECT count(*)
-           FROM academic_timetable_entries entry
-           WHERE entry.id = ANY($1)
-             AND entry.learning_group_id IS NOT NULL
-             AND NOT EXISTS (
-                 SELECT 1 FROM timetable_entry_instructors instructor
-                 WHERE instructor.entry_id = entry.id
-             )"#,
-    )
-    .bind(&applied_with_ineligible_teacher.entry_ids)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(group_entries_without_instructors, 1);
+    .await;
+    assert!(matches!(
+        ineligible_result,
+        Err(AppError::ValidationError(_))
+    ));
 
     let published_apply = timetable_template_service::apply_template(
         &pool,

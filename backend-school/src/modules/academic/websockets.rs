@@ -96,7 +96,8 @@ pub enum TimetableEvent {
     TimetableChanged {
         user_id: Uuid,
         academic_term_id: Uuid,
-        learning_group_id: Option<Uuid>,
+        timetable_version_id: Uuid,
+        block_id: Option<Uuid>,
         revision: i64,
     },
 
@@ -1235,7 +1236,8 @@ mod security_tests {
         let signal = TimetableEvent::TimetableChanged {
             user_id: forged,
             academic_term_id: Uuid::new_v4(),
-            learning_group_id: None,
+            timetable_version_id: Uuid::new_v4(),
+            block_id: None,
             revision: 1,
         };
         assert!(sanitize_client_event(signal, actor, true).is_none());

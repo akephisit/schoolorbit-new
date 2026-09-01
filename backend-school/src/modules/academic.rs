@@ -122,52 +122,55 @@ pub fn academic_routes() -> Router<AppState> {
                 "/timetable-versions/{source_id}/clone",
                 post(handlers::timetable_versions::clone_version),
             )
-            // Timetable: Entries
+            // Canonical timetable blocks. Literal action paths must precede block IDs.
             .route(
-                "/timetable/workspace",
-                get(handlers::timetable::get_timetable_workspace),
+                "/timetable-blocks/workspace",
+                get(handlers::timetable_blocks::get_workspace),
             )
             .route(
-                "/timetable/whole-school",
-                get(handlers::timetable::get_whole_school_timetable_overview),
+                "/timetable-blocks/placement-preview",
+                post(handlers::timetable_blocks::preview_placement),
             )
             .route(
-                "/timetable",
-                get(handlers::timetable::list_timetable_entries)
-                    .post(handlers::timetable::create_timetable_entry),
+                "/timetable-blocks/ordinary",
+                post(handlers::timetable_blocks::create_ordinary),
             )
             .route(
-                "/timetable/batch",
-                post(handlers::timetable::create_batch_timetable_entries),
+                "/timetable-blocks/synchronized",
+                post(handlers::timetable_blocks::create_synchronized),
             )
             .route(
-                "/timetable/batch-group/{batch_id}",
-                axum::routing::delete(handlers::timetable::delete_batch_group),
+                "/timetable-blocks/structural",
+                post(handlers::timetable_blocks::create_structural),
             )
             .route(
-                "/timetable/swap",
-                post(handlers::timetable::swap_timetable_entries),
+                "/timetable-blocks/swap",
+                post(handlers::timetable_blocks::swap_blocks),
             )
             .route(
-                "/timetable/validate-moves",
-                post(handlers::timetable::validate_timetable_moves),
+                "/timetable-blocks/series/{series_id}",
+                delete(handlers::timetable_blocks::delete_series),
             )
             .route(
-                "/timetable/placement-preview",
-                post(handlers::timetable::preview_timetable_placement),
+                "/timetable-blocks/{block_id}/targets",
+                delete(handlers::timetable_blocks::remove_target),
             )
             .route(
-                "/timetable/occupancy",
-                get(handlers::timetable::get_timetable_occupancy),
+                "/timetable-blocks/{block_id}/sync",
+                post(handlers::timetable_blocks::retry_sync),
+            )
+            .route(
+                "/timetable-blocks/{block_id}/restore",
+                post(handlers::timetable_blocks::restore_group),
+            )
+            .route(
+                "/timetable-blocks/{block_id}",
+                put(handlers::timetable_blocks::update_block)
+                    .delete(handlers::timetable_blocks::delete_block),
             )
             .route(
                 "/timetable/daily-teaching",
-                get(handlers::timetable::daily_teaching_overview),
-            )
-            .route(
-                "/timetable/{id}",
-                axum::routing::put(handlers::timetable::update_timetable_entry)
-                    .delete(handlers::timetable::delete_timetable_entry),
+                get(handlers::timetable_blocks::daily_teaching_overview),
             )
             // Phase F: Timetable Templates
             // from-current + clear ต้อง register ก่อน /{id} กัน Axum match path เป็น id
@@ -176,7 +179,7 @@ pub fn academic_routes() -> Router<AppState> {
                 post(handlers::timetable_templates::from_current),
             )
             .route(
-                "/timetable/clear",
+                "/timetable-blocks/clear",
                 axum::routing::delete(handlers::timetable_templates::clear_timetable),
             )
             .route(

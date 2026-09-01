@@ -9,7 +9,7 @@ use crate::modules::academic::models::timetable_version::{
     CloneTimetableVersionRequest, TimetableVersion, TimetableVersionDisplayState,
     TimetableVersionStatus, TimetableVersionTarget,
 };
-use crate::modules::academic::services::timetable_service;
+use crate::modules::academic::services::timetable_block_conflicts::map_write_error;
 
 #[derive(Debug, Clone, FromRow)]
 struct TimetableVersionRow {
@@ -284,102 +284,207 @@ pub(crate) async fn clone_draft_in_transaction(
     .await?;
 
     sqlx::query(
-        r#"WITH source_entries AS MATERIALIZED (
-               SELECT entry.*,
-                      gen_random_uuid() AS new_entry_id,
-                      CASE
-                          WHEN entry.batch_id IS NULL THEN NULL
-                          ELSE uuid_generate_v5(
-                              $1,
-                              'batch:' || entry.batch_id::text
-                          )
-                      END AS new_batch_id
-               FROM academic_timetable_entries entry
-               WHERE entry.timetable_version_id = $2
-                 AND entry.is_active
-           ), inserted_entries AS (
-               INSERT INTO academic_timetable_entries (
-                   id, day_of_week, bell_schedule_period_id, room_id, note,
-                   is_active, created_by, updated_by, entry_type, title,
-                   homeroom_id, academic_term_id, batch_id, academic_year_id,
-                   learning_offering_id, learning_group_id, bell_schedule_id,
-                   migration_provenance, row_version, timetable_version_id,
-                   created_at, updated_at
-               )
-               SELECT source.new_entry_id,
-                      source.day_of_week,
-                      source.bell_schedule_period_id,
-                      source.room_id,
-                      source.note,
-                      true,
-                      $3,
-                      $3,
-                      source.entry_type,
-                      source.title,
-                      source.homeroom_id,
-                      source.academic_term_id,
-                      source.new_batch_id,
-                      source.academic_year_id,
-                      source.learning_offering_id,
-                      source.learning_group_id,
-                      source.bell_schedule_id,
-                      source.migration_provenance || jsonb_build_object(
-                          'clonedFromEntryId', source.id::text,
-                          'sourceVersionId', $2::text
-                      ),
-                      1,
-                      $1,
-                      now(),
-                      now()
-               FROM source_entries source
-               RETURNING id
+        r#"CREATE TEMP TABLE timetable_clone_block_map ON COMMIT DROP AS
+           SELECT block.id AS source_id,
+                  uuid_generate_v5($1, 'block:' || block.id::text) AS target_id
+           FROM academic_timetable_blocks block
+           WHERE block.timetable_version_id = $2 AND block.is_active"#,
+    )
+    .bind(new_version_id)
+    .bind(source.id)
+    .execute(&mut **transaction)
+    .await?;
+    sqlx::query(
+        r#"CREATE TEMP TABLE timetable_clone_group_map ON COMMIT DROP AS
+           SELECT block_group.id AS source_id,
+                  uuid_generate_v5($1, 'block-group:' || block_group.id::text) AS target_id
+           FROM academic_timetable_block_groups block_group
+           JOIN timetable_clone_block_map block_map ON block_map.source_id = block_group.block_id
+           WHERE block_group.is_active"#,
+    )
+    .bind(new_version_id)
+    .execute(&mut **transaction)
+    .await?;
+    sqlx::query(
+        r#"INSERT INTO academic_timetable_blocks (
+               id, timetable_version_id, academic_term_id, academic_year_id,
+               bell_schedule_id, bell_schedule_period_id, day_of_week,
+               block_kind, scheduling_mode, learning_offering_id, structural_kind,
+               title, note, series_id, row_version, is_active, migration_provenance,
+               created_by, updated_by, created_at, updated_at
            )
-           INSERT INTO timetable_entry_instructors (
-               id, entry_id, instructor_id, role
-           )
-           SELECT gen_random_uuid(),
-                  source.new_entry_id,
-                  instructor.instructor_id,
-                  instructor.role
-           FROM source_entries source
-           JOIN inserted_entries inserted ON inserted.id = source.new_entry_id
-           JOIN timetable_entry_instructors instructor ON instructor.entry_id = source.id"#,
+           SELECT block_map.target_id, $1, source.academic_term_id, source.academic_year_id,
+                  source.bell_schedule_id, source.bell_schedule_period_id, source.day_of_week,
+                  source.block_kind, source.scheduling_mode, source.learning_offering_id,
+                  source.structural_kind, source.title, source.note,
+                  CASE WHEN source.series_id IS NULL THEN NULL
+                       ELSE uuid_generate_v5($1, 'series:' || source.series_id::text) END,
+                  1, true,
+                  source.migration_provenance || jsonb_build_object(
+                      'clonedFromBlockId', source.id::text,
+                      'sourceVersionId', $2::text
+                  ),
+                  $3, $3, now(), now()
+           FROM timetable_clone_block_map block_map
+           JOIN academic_timetable_blocks source ON source.id = block_map.source_id"#,
     )
     .bind(new_version_id)
     .bind(source.id)
     .bind(actor_id)
     .execute(&mut **transaction)
     .await
-    .map_err(|error| timetable_service::map_timetable_write_error(AppError::DbError(error)))?;
-    let (source_entry_count, cloned_entry_count, source_instructor_count, cloned_instructor_count): (
+    .map_err(map_write_error)?;
+    sqlx::query(
+        r#"INSERT INTO academic_timetable_block_groups (
+               id, block_id, learning_group_id, learning_offering_id,
+               academic_term_id, academic_year_id, room_id, row_version,
+               is_active, migration_provenance, created_by, updated_by,
+               created_at, updated_at
+           )
+           SELECT group_map.target_id, block_map.target_id, source.learning_group_id,
+                  source.learning_offering_id, source.academic_term_id,
+                  source.academic_year_id, source.room_id, 1, true,
+                  source.migration_provenance || jsonb_build_object(
+                      'clonedFromBlockGroupId', source.id::text,
+                      'sourceVersionId', $2::text
+                  ),
+                  $3, $3, now(), now()
+           FROM timetable_clone_group_map group_map
+           JOIN academic_timetable_block_groups source ON source.id = group_map.source_id
+           JOIN timetable_clone_block_map block_map ON block_map.source_id = source.block_id"#,
+    )
+    .bind(new_version_id)
+    .bind(source.id)
+    .bind(actor_id)
+    .execute(&mut **transaction)
+    .await
+    .map_err(map_write_error)?;
+    sqlx::query(
+        r#"INSERT INTO academic_timetable_block_group_instructors (
+               id, block_group_id, instructor_id, role, display_order,
+               row_version, created_at, updated_at
+           )
+           SELECT gen_random_uuid(), group_map.target_id, source.instructor_id,
+                  source.role, source.display_order, 1, now(), now()
+           FROM timetable_clone_group_map group_map
+           JOIN academic_timetable_block_group_instructors source
+             ON source.block_group_id = group_map.source_id"#,
+    )
+    .execute(&mut **transaction)
+    .await
+    .map_err(map_write_error)?;
+    sqlx::query(
+        r#"INSERT INTO academic_timetable_block_homerooms (
+               id, block_id, homeroom_id, academic_term_id, academic_year_id,
+               target_kind, room_id, row_version, is_active, migration_provenance,
+               created_by, updated_by, created_at, updated_at
+           )
+           SELECT uuid_generate_v5($1, 'homeroom-target:' || source.id::text),
+                  block_map.target_id, source.homeroom_id, source.academic_term_id,
+                  source.academic_year_id, source.target_kind, source.room_id,
+                  1, true,
+                  source.migration_provenance || jsonb_build_object(
+                      'clonedFromTargetId', source.id::text,
+                      'sourceVersionId', $2::text
+                  ),
+                  $3, $3, now(), now()
+           FROM timetable_clone_block_map block_map
+           JOIN academic_timetable_block_homerooms source
+             ON source.block_id = block_map.source_id
+           WHERE source.is_active"#,
+    )
+    .bind(new_version_id)
+    .bind(source.id)
+    .bind(actor_id)
+    .execute(&mut **transaction)
+    .await
+    .map_err(map_write_error)?;
+    sqlx::query(
+        r#"INSERT INTO academic_timetable_block_teachers (
+               id, block_id, teacher_id, academic_term_id, academic_year_id,
+               row_version, is_active, migration_provenance,
+               created_by, updated_by, created_at, updated_at
+           )
+           SELECT uuid_generate_v5($1, 'teacher-target:' || source.id::text),
+                  block_map.target_id, source.teacher_id, source.academic_term_id,
+                  source.academic_year_id, 1, true,
+                  source.migration_provenance || jsonb_build_object(
+                      'clonedFromTargetId', source.id::text,
+                      'sourceVersionId', $2::text
+                  ),
+                  $3, $3, now(), now()
+           FROM timetable_clone_block_map block_map
+           JOIN academic_timetable_block_teachers source
+             ON source.block_id = block_map.source_id
+           WHERE source.is_active"#,
+    )
+    .bind(new_version_id)
+    .bind(source.id)
+    .bind(actor_id)
+    .execute(&mut **transaction)
+    .await
+    .map_err(map_write_error)?;
+    sqlx::query(
+        r#"INSERT INTO academic_timetable_block_group_sync (
+               id, block_id, learning_group_id, learning_offering_id,
+               academic_term_id, academic_year_id, status, linked_block_group_id,
+               conflict_code, conflict_message, attempted_group_row_version,
+               row_version, created_by, updated_by, created_at, updated_at
+           )
+           SELECT uuid_generate_v5($1, 'sync:' || source.id::text),
+                  block_map.target_id, source.learning_group_id,
+                  source.learning_offering_id, source.academic_term_id,
+                  source.academic_year_id, source.status, group_map.target_id,
+                  source.conflict_code, source.conflict_message,
+                  source.attempted_group_row_version, 1, $3, $3, now(), now()
+           FROM timetable_clone_block_map block_map
+           JOIN academic_timetable_block_group_sync source
+             ON source.block_id = block_map.source_id
+           LEFT JOIN timetable_clone_group_map group_map
+             ON group_map.source_id = source.linked_block_group_id"#,
+    )
+    .bind(new_version_id)
+    .bind(source.id)
+    .bind(actor_id)
+    .execute(&mut **transaction)
+    .await
+    .map_err(map_write_error)?;
+
+    let (source_block_count, cloned_block_count, source_child_count, cloned_child_count): (
         i64,
         i64,
         i64,
         i64,
     ) = sqlx::query_as(
         r#"SELECT
-               (SELECT count(*)
-                FROM academic_timetable_entries
+               (SELECT count(*) FROM academic_timetable_blocks
                 WHERE timetable_version_id = $1 AND is_active),
-               (SELECT count(*)
-                FROM academic_timetable_entries
+               (SELECT count(*) FROM academic_timetable_blocks
                 WHERE timetable_version_id = $2 AND is_active),
-               (SELECT count(*)
-                FROM timetable_entry_instructors instructor
-                JOIN academic_timetable_entries entry ON entry.id = instructor.entry_id
-                WHERE entry.timetable_version_id = $1 AND entry.is_active),
-               (SELECT count(*)
-                FROM timetable_entry_instructors instructor
-                JOIN academic_timetable_entries entry ON entry.id = instructor.entry_id
-                WHERE entry.timetable_version_id = $2 AND entry.is_active)"#,
+               (SELECT count(*) FROM academic_timetable_block_groups child
+                JOIN academic_timetable_blocks block ON block.id = child.block_id
+                WHERE block.timetable_version_id = $1 AND block.is_active AND child.is_active)
+                 + (SELECT count(*) FROM academic_timetable_block_homerooms child
+                    JOIN academic_timetable_blocks block ON block.id = child.block_id
+                    WHERE block.timetable_version_id = $1 AND block.is_active AND child.is_active)
+                 + (SELECT count(*) FROM academic_timetable_block_teachers child
+                    JOIN academic_timetable_blocks block ON block.id = child.block_id
+                    WHERE block.timetable_version_id = $1 AND block.is_active AND child.is_active),
+               (SELECT count(*) FROM academic_timetable_block_groups child
+                JOIN academic_timetable_blocks block ON block.id = child.block_id
+                WHERE block.timetable_version_id = $2 AND block.is_active AND child.is_active)
+                 + (SELECT count(*) FROM academic_timetable_block_homerooms child
+                    JOIN academic_timetable_blocks block ON block.id = child.block_id
+                    WHERE block.timetable_version_id = $2 AND block.is_active AND child.is_active)
+                 + (SELECT count(*) FROM academic_timetable_block_teachers child
+                    JOIN academic_timetable_blocks block ON block.id = child.block_id
+                    WHERE block.timetable_version_id = $2 AND block.is_active AND child.is_active)"#,
     )
     .bind(source.id)
     .bind(new_version_id)
     .fetch_one(&mut **transaction)
     .await?;
-    if source_entry_count != cloned_entry_count
-        || source_instructor_count != cloned_instructor_count
-    {
+    if source_block_count != cloned_block_count || source_child_count != cloned_child_count {
         return Err(AppError::InternalServerError(
             "คัดลอกรุ่นตารางสอนไม่ครบถ้วน กรุณาลองใหม่".to_string(),
         ));

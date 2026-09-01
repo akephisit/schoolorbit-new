@@ -106,7 +106,7 @@ fn academic_group_a_handlers_use_typed_session_identity() {
 fn academic_group_b_handlers_use_typed_session_identity() {
     assert_typed_session_handlers(&[
         "src/modules/academic/handlers/exam_schedule.rs",
-        "src/modules/academic/handlers/timetable.rs",
+        "src/modules/academic/handlers/timetable_blocks.rs",
         "src/modules/academic/handlers/timetable_templates.rs",
     ]);
 }
@@ -302,16 +302,16 @@ fn supervision_service_facade_is_thin_and_preserves_public_surface() {
 }
 
 #[test]
-fn timetable_service_uses_only_canonical_delivery_identity() {
+fn timetable_block_service_uses_only_canonical_delivery_identity() {
     let service = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/services/timetable_service.rs"),
+        manifest_dir().join("src/modules/academic/services/timetable_block_service.rs"),
     ));
 
     for required in [
         "academic_term_id",
-        "learning_group_id",
-        "learning_offering_id",
-        "bell_schedule_period_id",
+        "academic_timetable_blocks",
+        "academic_timetable_block_groups",
+        "academic_timetable_block_group_instructors",
         "row_version",
         "learning_group_teachers",
     ] {
@@ -336,27 +336,18 @@ fn timetable_service_uses_only_canonical_delivery_identity() {
 }
 
 #[test]
-fn timetable_relationship_indexes_use_exact_entry_instructors() {
+fn timetable_blocks_hydrate_exact_block_group_instructors() {
     let service = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/services/timetable_service.rs"),
+        manifest_dir().join("src/modules/academic/services/timetable_block_queries.rs"),
     ));
-    let relationship_struct = service
-        .split("struct RelationshipIndexes")
+    let relationship_loader = service
+        .split("let instructor_rows: Vec<InstructorRow>")
         .nth(1)
-        .and_then(|source| source.split("pub async fn list_entries").next())
-        .expect("timetable service must define its relationship-index structure");
-    let relationship_loaders = service
-        .split("async fn load_relationship_indexes(")
-        .nth(1)
-        .and_then(|source| source.split("fn relationship_owner_ids").next())
-        .expect("timetable service must define its relationship-index loaders");
+        .and_then(|source| source.split("let homeroom_rows").next())
+        .expect("timetable block query service must isolate its instructor loader");
 
-    assert!(!relationship_struct.contains("instructors_by_group"));
-    assert!(!relationship_loaders.contains("FROM learning_group_teachers"));
-    assert!(
-        relationship_loaders.contains("FROM timetable_entry_instructors"),
-        "timetable relationship indexes must hydrate exact entry instructors"
-    );
+    assert!(relationship_loader.contains("academic_timetable_block_group_instructors"));
+    assert!(!relationship_loader.contains("learning_group_teachers"));
 }
 
 #[test]
@@ -385,7 +376,7 @@ fn timetable_exact_instructor_consumers_do_not_fallback_to_group_teachers() {
         .split_once("Ok(build_overview")
         .expect("daily teaching exact scheduled-entry query must remain bounded")
         .0;
-    assert!(scheduled_entry_query.contains("FROM timetable_entry_instructors"));
+    assert!(scheduled_entry_query.contains("academic_timetable_block_group_instructors"));
     assert!(
         !scheduled_entry_query.contains("learning_group_teachers"),
         "daily teaching scheduled membership must derive only from exact entry children"
@@ -394,13 +385,13 @@ fn timetable_exact_instructor_consumers_do_not_fallback_to_group_teachers() {
         !daily_teaching.contains("effective_teacher"),
         "daily teaching must not reintroduce an ambiguous teacher-membership union"
     );
-    assert!(supervision_entry_lookup.contains("FROM timetable_entry_instructors"));
+    assert!(supervision_entry_lookup.contains("academic_timetable_block_group_instructors"));
     assert!(
         !supervision_entry_lookup.contains("learning_group_teachers"),
         "supervision timetable validation must not authorize a group teacher who is absent from the entry"
     );
     assert!(
-        parents.contains("timetable_service::list_student_entries"),
+        parents.contains("timetable_block_service::list_student_blocks"),
         "parent timetable must remain on the canonical exact-instructor timetable reader"
     );
 }
@@ -408,12 +399,12 @@ fn timetable_exact_instructor_consumers_do_not_fallback_to_group_teachers() {
 #[test]
 fn personal_staff_timetable_stays_exact_own_scope_without_academic_list_permission() {
     let handlers = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/handlers/timetable.rs"),
+        manifest_dir().join("src/modules/academic/handlers/timetable_blocks.rs"),
     ));
     let handler = extract_braced_block(&handlers, "pub async fn get_my_timetable", false);
 
     assert!(
-        handler.contains("timetable_service::list_instructor_entries"),
+        handler.contains("timetable_block_service::list_instructor_blocks"),
         "staff self-service timetable must use the exact instructor-owned reader"
     );
     assert!(handler.contains("session.user_id"));
@@ -426,13 +417,13 @@ fn personal_staff_timetable_stays_exact_own_scope_without_academic_list_permissi
 #[test]
 fn student_timetable_uses_requested_date_for_roster_membership() {
     let service = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/services/timetable_service.rs"),
+        manifest_dir().join("src/modules/academic/services/timetable_block_service.rs"),
     ));
     let student_entries = service
-        .split("pub async fn list_student_entries")
+        .split("pub async fn list_student_blocks")
         .nth(1)
         .and_then(|source| source.split("pub async fn ").next())
-        .expect("timetable service must define list_student_entries");
+        .expect("timetable block service must define list_student_blocks");
 
     for required in [
         "on_date: chrono::NaiveDate",
@@ -1982,7 +1973,7 @@ fn staff_dashboard_endpoint_is_staff_scoped_and_aggregate_only() {
 fn daily_teaching_overview_endpoint_is_read_only_and_pii_safe() {
     let routes = strip_comments(&read_source(manifest_dir().join("src/modules/academic.rs")));
     let handler = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/handlers/timetable.rs"),
+        manifest_dir().join("src/modules/academic/handlers/timetable_blocks.rs"),
     ));
     let service = strip_comments(&read_source(
         manifest_dir().join("src/modules/academic/services/daily_teaching_service.rs"),
@@ -1992,21 +1983,17 @@ fn daily_teaching_overview_endpoint_is_read_only_and_pii_safe() {
         extract_braced_block(&handler, "pub async fn daily_teaching_overview", false);
 
     assert!(routes.contains("\"/timetable/daily-teaching\""));
-    assert!(routes.contains("get(handlers::timetable::daily_teaching_overview)"));
-    assert!(
-        routes.find("\"/timetable/daily-teaching\"") < routes.find("\"/timetable/{id}\""),
-        "daily teaching route must be registered before /timetable/{{id}}"
-    );
+    assert!(routes.contains("get(handlers::timetable_blocks::daily_teaching_overview)"));
 
     assert!(daily_handler.contains("actor_tenant_context_from_session(&state, &session).await?"));
-    assert!(daily_handler.contains("LEARNING_OFFERING_READ_SCHOOL"));
-    assert!(!daily_handler.contains("LEARNING_OFFERING_MANAGE_SCHOOL"));
+    assert!(daily_handler.contains("TimetableAction::Read"));
+    assert!(daily_handler.contains("requires_school_scope: true"));
     assert!(daily_handler.contains("daily_teaching_service::get_daily_teaching_overview"));
     assert!(daily_handler.contains("ApiResponse::ok(overview)"));
 
     assert!(service.contains("#[serde(rename_all = \"camelCase\")]"));
     assert!(service.contains("DailyTeachingOverview"));
-    assert!(service.contains("timetable_entry_instructors"));
+    assert!(service.contains("academic_timetable_block_group_instructors"));
     assert!(service.contains("timetable_version_service::resolve_for_date"));
     assert!(!service.contains("FROM academic_terms"));
     assert!(service.contains("bell_schedule_periods"));
@@ -2014,7 +2001,7 @@ fn daily_teaching_overview_endpoint_is_read_only_and_pii_safe() {
     assert!(service.contains("activity_offering_details"));
     assert!(service.contains("subject_versions"));
     assert!(service.contains("activity_versions"));
-    assert!(registry.contains("learning_offering.read.school"));
+    assert!(registry.contains("academic_timetable.read.school"));
 
     for legacy in ["academic_semesters", "classroom_courses", "activity_slots"] {
         assert!(
@@ -2881,6 +2868,19 @@ fn module_service_logic_has_focused_unit_tests() {
             .join("tests.rs");
         let has_focused_family_tests =
             family_tests_path.is_file() && read_source(&family_tests_path).contains("#[test]");
+        let service_stem = file
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or_default();
+        let focused_sibling_path = file.with_file_name(format!("{service_stem}_tests.rs"));
+        let block_family_path = file
+            .parent()
+            .map(|parent| parent.join("timetable_block_service_tests.rs"));
+        let has_focused_sibling_tests = focused_sibling_path.is_file()
+            && read_source(&focused_sibling_path).contains("#[tokio::test]");
+        let has_timetable_block_family_tests = service_stem.starts_with("timetable_block_")
+            && block_family_path
+                .is_some_and(|path| path.is_file() && read_source(path).contains("#[tokio::test]"));
         let characterization_tests_path = if file
             .parent()
             .and_then(|parent| parent.file_name())
@@ -2909,6 +2909,8 @@ fn module_service_logic_has_focused_unit_tests() {
 
         if !source.contains("#[cfg(test)]")
             && !has_focused_family_tests
+            && !has_focused_sibling_tests
+            && !has_timetable_block_family_tests
             && !has_characterization_tests
         {
             violations.push(format!(
@@ -6220,15 +6222,17 @@ fn converted_academic_consumers_cannot_reintroduce_legacy_runtime_identity() {
         manifest_dir().join("src/modules/academic.rs"),
         manifest_dir().join("src/modules/academic/handlers/assessment.rs"),
         manifest_dir().join("src/modules/academic/handlers/exam_schedule.rs"),
-        manifest_dir().join("src/modules/academic/handlers/timetable.rs"),
+        manifest_dir().join("src/modules/academic/handlers/timetable_blocks.rs"),
         manifest_dir().join("src/modules/academic/handlers/timetable_templates.rs"),
         manifest_dir().join("src/modules/academic/models/assessment.rs"),
         manifest_dir().join("src/modules/academic/models/exam_schedule.rs"),
         manifest_dir().join("src/modules/academic/models/timetable.rs"),
         manifest_dir().join("src/modules/academic/services/assessment_service.rs"),
         manifest_dir().join("src/modules/academic/services/daily_teaching_service.rs"),
+        manifest_dir().join("src/modules/academic/services/timetable_block_queries.rs"),
+        manifest_dir().join("src/modules/academic/services/timetable_block_service.rs"),
+        manifest_dir().join("src/modules/academic/services/timetable_block_sync.rs"),
         manifest_dir().join("src/modules/academic/services/timetable_realtime_service.rs"),
-        manifest_dir().join("src/modules/academic/services/timetable_service.rs"),
         manifest_dir().join("src/modules/academic/services/timetable_template_service.rs"),
         manifest_dir().join("src/modules/academic/websockets.rs"),
     ];
@@ -6358,12 +6362,12 @@ fn academic_list_hydration_does_not_issue_one_query_per_response_item() {
         manifest_dir().join("src/modules/academic/delivery/services/offerings.rs"),
     ));
     let timetable = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/services/timetable_service.rs"),
+        manifest_dir().join("src/modules/academic/services/timetable_block_queries.rs"),
     ));
     let offering_n_plus_one =
         Regex::new(r"(?s)for\s+row\s+in\s+rows\s*\{.{0,200}hydrate\(pool,\s*row\)\.await").unwrap();
     let timetable_n_plus_one =
-        Regex::new(r"(?s)for\s+row\s+in\s+rows\s*\{.{0,200}hydrate_row\(pool,\s*row\)\.await")
+        Regex::new(r"(?s)for\s+(?:row|id)\s+in\s+(?:rows|block_ids)\s*\{.{0,240}get_block\(pool")
             .unwrap();
 
     assert!(
@@ -6407,7 +6411,7 @@ fn academic_delivery_and_timetable_collection_reads_are_set_based() {
         manifest_dir().join("src/modules/academic/delivery/handlers.rs"),
     ));
     let timetable = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/services/timetable_service.rs"),
+        manifest_dir().join("src/modules/academic/services/timetable_block_queries.rs"),
     ));
     let templates = strip_comments(&read_source(
         manifest_dir().join("src/modules/academic/services/timetable_template_service.rs"),
@@ -6435,46 +6439,19 @@ fn academic_delivery_and_timetable_collection_reads_are_set_based() {
         .unwrap()
         .is_match(&apply_handler));
 
-    for (public_name, implementation_name) in [
-        ("pub async fn create_batch", "async fn create_batch_impl"),
-        (
-            "pub async fn deactivate_batch",
-            "async fn deactivate_batch_impl",
-        ),
-    ] {
-        let public_body = extract_braced_block(&timetable, public_name, false);
-        assert!(
-            public_body.contains(implementation_name.trim_start_matches("async fn ")),
-            "{public_name} must delegate to its guarded implementation"
-        );
-        let function_name = implementation_name;
-        let body = extract_braced_block(&timetable, function_name, false);
-        assert!(body.contains("get_entries(pool"), "{function_name}");
-        assert!(!Regex::new(r"(?s)for\s+.*?get_entry\(pool")
+    let get_blocks = extract_braced_block(&timetable, "pub(crate) async fn get_blocks", false);
+    assert!(timetable.contains("block.id = ANY($1)"));
+    assert!(timetable.contains("target.block_id = ANY($1)"));
+    assert!(
+        !Regex::new(r"(?s)for\s+id\s+in\s+block_ids.*?get_block\(pool")
             .unwrap()
-            .is_match(&body));
-    }
+            .is_match(&get_blocks)
+    );
     let clear_timetable = extract_braced_block(&templates, "pub async fn clear_timetable", false);
-    assert!(clear_timetable.contains("get_entries(pool"));
-    assert!(!Regex::new(r"(?s)for\s+id\s+in\s+ids.*?get_entry\(pool")
+    assert!(clear_timetable.contains("get_blocks(pool"));
+    assert!(!Regex::new(r"(?s)for\s+id\s+in\s+ids.*?get_block\(pool")
         .unwrap()
         .is_match(&clear_timetable));
-
-    let occupancy = extract_braced_block(&timetable, "pub async fn occupancy", false);
-    assert!(occupancy.contains("load_relationship_indexes"));
-    assert!(
-        !Regex::new(r"(?s)for\s+entry\s+in\s+entries.*?effective_(?:homerooms|instructors)")
-            .unwrap()
-            .is_match(&occupancy)
-    );
-
-    let validate_moves = extract_braced_block(&timetable, "pub async fn validate_moves", false);
-    assert!(validate_moves.contains("load_relationship_indexes"));
-    assert!(
-        !Regex::new(r"(?s)for\s+day\s+in\s+VALID_DAYS.*?find_conflicts\(")
-            .unwrap()
-            .is_match(&validate_moves)
-    );
 }
 
 #[test]

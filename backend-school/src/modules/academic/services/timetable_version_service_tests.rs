@@ -17,7 +17,7 @@ async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 54).await.unwrap();
+    apply_migrations_through(&pool, 58).await.unwrap();
     pool
 }
 
@@ -101,14 +101,14 @@ async fn list_resolve_and_clone_preserve_version_isolation_and_targets() {
     );
 
     let source_entry_count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM academic_timetable_entries WHERE timetable_version_id = $1 AND is_active",
+        "SELECT count(*) FROM academic_timetable_blocks WHERE timetable_version_id = $1 AND is_active",
     )
     .bind(source_id)
     .fetch_one(&pool)
     .await
     .unwrap();
     let cloned_entry_count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM academic_timetable_entries WHERE timetable_version_id = $1 AND is_active",
+        "SELECT count(*) FROM academic_timetable_blocks WHERE timetable_version_id = $1 AND is_active",
     )
     .bind(cloned.id)
     .fetch_one(&pool)
@@ -176,27 +176,31 @@ async fn cloned_timetable_version_preserves_exact_instructor_sets() {
         sqlx::query_as(
             r#"SELECT (
                       SELECT count(*)
-                      FROM academic_timetable_entries
+                      FROM academic_timetable_blocks
                       WHERE timetable_version_id = $1 AND is_active
                   ),
                   count(*),
                   count(*) FILTER (
                       WHERE ARRAY(
                           SELECT concat(instructor.instructor_id::text, ':', instructor.role::text)
-                          FROM timetable_entry_instructors instructor
-                          WHERE instructor.entry_id = source.id
+                          FROM academic_timetable_block_groups block_group
+                          JOIN academic_timetable_block_group_instructors instructor
+                            ON instructor.block_group_id = block_group.id
+                          WHERE block_group.block_id = source.id AND block_group.is_active
                           ORDER BY instructor.instructor_id
                       ) <> ARRAY(
                           SELECT concat(instructor.instructor_id::text, ':', instructor.role::text)
-                          FROM timetable_entry_instructors instructor
-                          WHERE instructor.entry_id = target.id
+                          FROM academic_timetable_block_groups block_group
+                          JOIN academic_timetable_block_group_instructors instructor
+                            ON instructor.block_group_id = block_group.id
+                          WHERE block_group.block_id = target.id AND block_group.is_active
                           ORDER BY instructor.instructor_id
                       )
                   )
-           FROM academic_timetable_entries source
-           JOIN academic_timetable_entries target
+           FROM academic_timetable_blocks source
+           JOIN academic_timetable_blocks target
              ON target.timetable_version_id = $2
-            AND target.migration_provenance ->> 'clonedFromEntryId' = source.id::text
+            AND target.migration_provenance ->> 'clonedFromBlockId' = source.id::text
            WHERE source.timetable_version_id = $1 AND source.is_active"#,
         )
         .bind(source_id)

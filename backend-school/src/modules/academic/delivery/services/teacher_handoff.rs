@@ -216,26 +216,33 @@ pub async fn apply(
         }
     }
 
-    sqlx::query("DELETE FROM timetable_entry_instructors WHERE entry_id = ANY($1)")
-        .bind(&entry_ids)
-        .execute(&mut *transaction)
-        .await?;
+    sqlx::query(
+        "DELETE FROM academic_timetable_block_group_instructors WHERE block_group_id = ANY($1)",
+    )
+    .bind(&entry_ids)
+    .execute(&mut *transaction)
+    .await?;
     for entry in &preview.proposed_entries {
-        for instructor in &entry.after_instructors {
+        for (index, instructor) in entry.after_instructors.iter().enumerate() {
             sqlx::query(
-                r#"INSERT INTO timetable_entry_instructors (
-                       id, entry_id, instructor_id, role
-                   ) VALUES ($1, $2, $3, $4)"#,
+                r#"INSERT INTO academic_timetable_block_group_instructors (
+                       id, block_group_id, instructor_id, role, display_order
+                   ) VALUES ($1, $2, $3, $4, $5)"#,
             )
             .bind(Uuid::new_v4())
             .bind(entry.entry_id)
             .bind(instructor.instructor_id)
             .bind(&instructor.role)
+            .bind(
+                i32::try_from(index + 1).map_err(|_| {
+                    AppError::ValidationError("จำนวนครูผู้สอนมากเกินกว่าที่รองรับ".to_string())
+                })?,
+            )
             .execute(&mut *transaction)
             .await?;
         }
         let updated = sqlx::query(
-            r#"UPDATE academic_timetable_entries
+            r#"UPDATE academic_timetable_block_groups
                SET row_version = row_version + 1, updated_by = $1, updated_at = now()
                WHERE id = $2 AND row_version = $3"#,
         )
@@ -265,7 +272,7 @@ pub async fn apply(
                    academic_term_id, actor_user_id, payload
                ) VALUES (
                    'academic_teacher_handoff.applied',
-                   'academic_timetable_entry', $1, $2, $3, $4, $5
+                   'academic_timetable_block_group', $1, $2, $3, $4, $5
                )"#,
         )
         .bind(entry.entry_id)
@@ -534,35 +541,37 @@ async fn load_affected_entries(
     lock_for_apply: bool,
 ) -> Result<Vec<HandoffEntryRow>, AppError> {
     let lock = if lock_for_apply {
-        "FOR UPDATE OF entry"
+        "FOR UPDATE OF block_group"
     } else {
-        "FOR SHARE OF entry"
+        "FOR SHARE OF block_group"
     };
     sqlx::query_as(&format!(
-        r#"SELECT entry.id, entry.row_version, entry.learning_group_id,
+        r#"SELECT block_group.id, block_group.row_version, block_group.learning_group_id,
                   concat_ws(' · ', nullif(learning_group.code, ''), learning_group.name)
                     AS learning_group_label,
                   concat_ws(' · ', nullif(offering.code_snapshot, ''), offering.name_snapshot)
                     AS offering_label,
-                  entry.day_of_week, entry.bell_schedule_period_id,
+                  block.day_of_week, block.bell_schedule_period_id,
                   period.name AS period_label,
                   CASE WHEN room.id IS NULL THEN NULL
                        ELSE concat_ws(' · ', nullif(room.code, ''), room.name_th)
                   END AS room_label
-           FROM academic_timetable_entries entry
-           JOIN learning_groups learning_group ON learning_group.id = entry.learning_group_id
-           JOIN learning_offerings offering ON offering.id = entry.learning_offering_id
-           JOIN bell_schedule_periods period ON period.id = entry.bell_schedule_period_id
-           LEFT JOIN rooms room ON room.id = entry.room_id
-           WHERE entry.timetable_version_id = $1
-             AND entry.learning_group_id = $2
-             AND entry.is_active
+           FROM academic_timetable_block_groups block_group
+           JOIN academic_timetable_blocks block ON block.id = block_group.block_id
+           JOIN learning_groups learning_group ON learning_group.id = block_group.learning_group_id
+           JOIN learning_offerings offering ON offering.id = block_group.learning_offering_id
+           JOIN bell_schedule_periods period ON period.id = block.bell_schedule_period_id
+           LEFT JOIN rooms room ON room.id = block_group.room_id
+           WHERE block.timetable_version_id = $1
+             AND block_group.learning_group_id = $2
+             AND block.is_active
+             AND block_group.is_active
              AND EXISTS (
-                 SELECT 1 FROM timetable_entry_instructors instructor
-                 WHERE instructor.entry_id = entry.id
+                 SELECT 1 FROM academic_timetable_block_group_instructors instructor
+                 WHERE instructor.block_group_id = block_group.id
                    AND instructor.instructor_id = $3
              )
-           ORDER BY entry.day_of_week, period.order_index, entry.id
+           ORDER BY block.day_of_week, period.order_index, block_group.id
            {lock}"#,
     ))
     .bind(version_id)
@@ -587,7 +596,7 @@ async fn load_instructors(
         "FOR SHARE OF instructor"
     };
     let rows: Vec<EntryInstructorRow> = sqlx::query_as(&format!(
-        r#"SELECT instructor.entry_id, instructor.instructor_id,
+        r#"SELECT instructor.block_group_id AS entry_id, instructor.instructor_id,
                   coalesce(
                       nullif(concat_ws(' ',
                           nullif(concat(coalesce(user_account.title, ''), user_account.first_name), ''),
@@ -597,11 +606,12 @@ async fn load_instructors(
                       user_account.email
                   ) AS display_name,
                   instructor.role::text AS role
-           FROM timetable_entry_instructors instructor
+           FROM academic_timetable_block_group_instructors instructor
            JOIN users user_account ON user_account.id = instructor.instructor_id
-           WHERE instructor.entry_id = ANY($1)
-           ORDER BY instructor.entry_id,
+           WHERE instructor.block_group_id = ANY($1)
+           ORDER BY instructor.block_group_id,
                     CASE instructor.role WHEN 'primary' THEN 1 ELSE 2 END,
+                    instructor.display_order,
                     instructor.instructor_id
            {lock}"#,
     ))
@@ -714,14 +724,17 @@ async fn append_instructor_collisions(
         return Ok(());
     }
     let occupied: Vec<OccupiedInstructorRow> = sqlx::query_as(
-        r#"SELECT entry.id AS entry_id, instructor.instructor_id,
-                  entry.day_of_week, entry.bell_schedule_period_id
-           FROM academic_timetable_entries entry
-           JOIN timetable_entry_instructors instructor ON instructor.entry_id = entry.id
-           WHERE entry.timetable_version_id = $1
-             AND entry.is_active
+        r#"SELECT block_group.id AS entry_id, instructor.instructor_id,
+                  block.day_of_week, block.bell_schedule_period_id
+           FROM academic_timetable_block_groups block_group
+           JOIN academic_timetable_blocks block ON block.id = block_group.block_id
+           JOIN academic_timetable_block_group_instructors instructor
+             ON instructor.block_group_id = block_group.id
+           WHERE block.timetable_version_id = $1
+             AND block.is_active
+             AND block_group.is_active
              AND instructor.instructor_id = ANY($2)
-           ORDER BY entry.id, instructor.instructor_id"#,
+           ORDER BY block_group.id, instructor.instructor_id"#,
     )
     .bind(version_id)
     .bind(&proposed_ids)

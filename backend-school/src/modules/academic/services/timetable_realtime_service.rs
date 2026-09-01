@@ -20,10 +20,10 @@ struct RealtimeUser {
 }
 
 fn socket_permission(actor: &ActorContext) -> Result<bool, AppError> {
-    let can_manage = actor.has_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL);
+    let can_manage = actor.has_permission(codes::ACADEMIC_TIMETABLE_MANAGE_SCHOOL);
     if actor.has_any_permission(&[
-        codes::LEARNING_OFFERING_READ_SCHOOL,
-        codes::LEARNING_OFFERING_MANAGE_SCHOOL,
+        codes::ACADEMIC_TIMETABLE_READ_SCHOOL,
+        codes::ACADEMIC_TIMETABLE_MANAGE_SCHOOL,
     ]) {
         Ok(can_manage)
     } else {
@@ -101,12 +101,12 @@ mod tests {
 
     #[test]
     fn reader_connects_without_manage_capability() {
-        assert!(!socket_permission(&actor(&[codes::LEARNING_OFFERING_READ_SCHOOL])).unwrap());
+        assert!(!socket_permission(&actor(&[codes::ACADEMIC_TIMETABLE_READ_SCHOOL])).unwrap());
     }
 
     #[test]
     fn manager_and_wildcard_can_manage() {
-        assert!(socket_permission(&actor(&[codes::LEARNING_OFFERING_MANAGE_SCHOOL])).unwrap());
+        assert!(socket_permission(&actor(&[codes::ACADEMIC_TIMETABLE_MANAGE_SCHOOL])).unwrap());
         assert!(socket_permission(&actor(&[codes::WILDCARD])).unwrap());
     }
 

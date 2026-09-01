@@ -399,7 +399,7 @@ fn protected_routes() -> Router<AppState> {
         )
         .route(
             "/api/me/timetable",
-            get(modules::academic::handlers::timetable::get_my_timetable),
+            get(modules::academic::handlers::timetable_blocks::get_my_timetable),
         )
         .route(
             "/api/me/academic-context/options",

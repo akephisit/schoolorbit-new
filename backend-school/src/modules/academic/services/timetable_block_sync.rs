@@ -71,6 +71,36 @@ pub(crate) async fn restore_group_in_tx(
     sync_groups_in_tx(transaction, block_id, actor_id, &[learning_group_id], true).await
 }
 
+pub(crate) async fn retry_sync_for_group_in_tx(
+    transaction: &mut Transaction<'_, Postgres>,
+    learning_group_id: Uuid,
+    actor_id: Uuid,
+) -> Result<(), AppError> {
+    let block_ids: Vec<Uuid> = sqlx::query_scalar(
+        r#"SELECT block.id
+           FROM learning_groups learning_group
+           JOIN academic_timetable_blocks block
+             ON block.learning_offering_id = learning_group.learning_offering_id
+            AND block.academic_term_id = learning_group.academic_term_id
+            AND block.academic_year_id = learning_group.academic_year_id
+           JOIN academic_timetable_versions version
+             ON version.id = block.timetable_version_id
+           WHERE learning_group.id = $1
+             AND block.scheduling_mode = 'synchronized'
+             AND block.is_active
+             AND version.status = 'draft'
+           ORDER BY block.id
+           FOR UPDATE OF block"#,
+    )
+    .bind(learning_group_id)
+    .fetch_all(&mut **transaction)
+    .await?;
+    for block_id in block_ids {
+        retry_groups_in_tx(transaction, block_id, actor_id, &[learning_group_id]).await?;
+    }
+    Ok(())
+}
+
 async fn sync_groups_in_tx(
     transaction: &mut Transaction<'_, Postgres>,
     block_id: Uuid,

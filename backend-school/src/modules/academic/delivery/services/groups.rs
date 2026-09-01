@@ -289,6 +289,12 @@ pub async fn create(
         &request.preferred_room_ids,
     )
     .await?;
+    crate::modules::academic::services::timetable_block_sync::retry_sync_for_group_in_tx(
+        &mut transaction,
+        id,
+        actor_user_id,
+    )
+    .await?;
     transaction.commit().await?;
     append_audit(
         pool,
@@ -341,6 +347,12 @@ pub async fn update(
         group.academic_term_id,
         group.academic_year_id,
         &request.preferred_room_ids,
+    )
+    .await?;
+    crate::modules::academic::services::timetable_block_sync::retry_sync_for_group_in_tx(
+        &mut transaction,
+        id,
+        actor_user_id,
     )
     .await?;
     transaction.commit().await?;
@@ -403,6 +415,12 @@ pub async fn replace_teachers(
         .await?;
     }
     increment_group_revision(&mut transaction, id).await?;
+    crate::modules::academic::services::timetable_block_sync::retry_sync_for_group_in_tx(
+        &mut transaction,
+        id,
+        actor_user_id,
+    )
+    .await?;
     transaction.commit().await?;
     append_group_audit(
         pool,
@@ -452,6 +470,12 @@ pub async fn replace_homerooms(
     )
     .bind(id)
     .execute(&mut *transaction)
+    .await?;
+    crate::modules::academic::services::timetable_block_sync::retry_sync_for_group_in_tx(
+        &mut transaction,
+        id,
+        actor_user_id,
+    )
     .await?;
     transaction.commit().await?;
     append_group_audit(

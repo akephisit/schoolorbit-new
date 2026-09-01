@@ -43,18 +43,99 @@ struct InstructorAssignment {
 #[derive(Debug, FromRow)]
 struct LockedBlock {
     timetable_version_id: Uuid,
-    academic_term_id: Uuid,
     bell_schedule_id: Uuid,
     bell_schedule_period_id: Uuid,
     day_of_week: String,
     block_kind: String,
     scheduling_mode: Option<String>,
     row_version: i64,
-    series_id: Option<Uuid>,
 }
 
 pub async fn get_block(pool: &PgPool, block_id: Uuid) -> Result<TimetableBlock, AppError> {
     timetable_block_queries::get_block(pool, block_id).await
+}
+
+pub async fn list_student_blocks(
+    pool: &PgPool,
+    timetable_version_id: Uuid,
+    academic_term_id: Uuid,
+    student_id: Uuid,
+    on_date: chrono::NaiveDate,
+) -> Result<Vec<TimetableBlock>, AppError> {
+    let ids: Vec<Uuid> = sqlx::query_scalar(
+        r#"SELECT DISTINCT block.id
+           FROM academic_timetable_blocks block
+           LEFT JOIN academic_timetable_block_groups block_group
+             ON block_group.block_id = block.id AND block_group.is_active
+           LEFT JOIN academic_timetable_block_homerooms homeroom_target
+             ON homeroom_target.block_id = block.id AND homeroom_target.is_active
+           WHERE block.timetable_version_id = $1
+             AND block.academic_term_id = $2
+             AND block.is_active
+             AND (
+                 EXISTS (
+                     SELECT 1
+                     FROM learning_group_students membership
+                     JOIN student_academic_years student_year
+                       ON student_year.id = membership.student_academic_year_id
+                     JOIN learning_groups roster_group
+                       ON roster_group.id = membership.learning_group_id
+                     WHERE membership.learning_group_id = block_group.learning_group_id
+                       AND student_year.student_id = $3
+                       AND membership.published_at IS NOT NULL
+                       AND membership.joined_at <= $4
+                       AND (membership.left_at IS NULL OR membership.left_at >= $4)
+                       AND roster_group.roster_status IN ('published', 'closed')
+                 )
+                 OR EXISTS (
+                     SELECT 1
+                     FROM student_academic_years student_year
+                     JOIN homeroom_placements placement
+                       ON placement.student_academic_year_id = student_year.id
+                     WHERE student_year.student_id = $3
+                       AND student_year.academic_year_id = block.academic_year_id
+                       AND placement.homeroom_id = homeroom_target.homeroom_id
+                       AND placement.status = 'current'
+                 )
+             )
+           ORDER BY block.id"#,
+    )
+    .bind(timetable_version_id)
+    .bind(academic_term_id)
+    .bind(student_id)
+    .bind(on_date)
+    .fetch_all(pool)
+    .await?;
+    timetable_block_queries::get_blocks(pool, &ids).await
+}
+
+pub async fn list_instructor_blocks(
+    pool: &PgPool,
+    timetable_version_id: Uuid,
+    academic_term_id: Uuid,
+    instructor_id: Uuid,
+) -> Result<Vec<TimetableBlock>, AppError> {
+    let ids: Vec<Uuid> = sqlx::query_scalar(
+        r#"SELECT DISTINCT block.id
+           FROM academic_timetable_blocks block
+           LEFT JOIN academic_timetable_block_groups block_group
+             ON block_group.block_id = block.id AND block_group.is_active
+           LEFT JOIN academic_timetable_block_group_instructors instructor
+             ON instructor.block_group_id = block_group.id
+           LEFT JOIN academic_timetable_block_teachers teacher_target
+             ON teacher_target.block_id = block.id AND teacher_target.is_active
+           WHERE block.timetable_version_id = $1
+             AND block.academic_term_id = $2
+             AND block.is_active
+             AND (instructor.instructor_id = $3 OR teacher_target.teacher_id = $3)
+           ORDER BY block.id"#,
+    )
+    .bind(timetable_version_id)
+    .bind(academic_term_id)
+    .bind(instructor_id)
+    .fetch_all(pool)
+    .await?;
+    timetable_block_queries::get_blocks(pool, &ids).await
 }
 
 pub async fn get_workspace(
@@ -896,9 +977,9 @@ async fn load_locked_block(
     block_id: Uuid,
 ) -> Result<LockedBlock, AppError> {
     sqlx::query_as(
-        r#"SELECT timetable_version_id, academic_term_id, bell_schedule_id,
+        r#"SELECT timetable_version_id, bell_schedule_id,
                   bell_schedule_period_id, day_of_week, block_kind,
-                  scheduling_mode, row_version, series_id
+                  scheduling_mode, row_version
            FROM academic_timetable_blocks
            WHERE id = $1 AND is_active FOR UPDATE"#,
     )

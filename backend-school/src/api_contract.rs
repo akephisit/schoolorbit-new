@@ -7,19 +7,9 @@ use crate::modules::academic::delivery::models::*;
 use crate::modules::academic::models::assessment::*;
 use crate::modules::academic::models::exam_schedule::*;
 use crate::modules::academic::models::timetable::{
-    ApplyTemplateRequest, BatchTimetableResult, ClearTimetableRequest,
-    CreateBatchTimetableEntriesRequest, CreateTemplateRequest, CreateTimetableEntryRequest,
-    FromCurrentRequest, MoveValidityCell, SwapTimetableEntriesRequest,
-    SwapTimetableEntriesResponse, TemplateApplyResult, TemplateWithEntries, TimetableConflictType,
-    TimetableEntry, TimetableInstructor, TimetableOccupancyCell, TimetablePlacementCandidate,
-    TimetablePlacementMutationKind, TimetablePlacementPreview, TimetablePlacementPreviewRequest,
-    TimetablePlacementSource, TimetablePlacementState, TimetableTemplate, TimetableTemplateEntry,
-    TimetableTemplateTargetSelector, TimetableUnscheduledDemand, TimetableWorkspace,
-    TimetableWorkspaceHomeroom, TimetableWorkspaceLearningGroup, TimetableWorkspaceRoom,
-    TimetableWorkspaceStaff, UpdateTemplateRequest, UpdateTimetableEntryRequest,
-    ValidateMovesRequest, WholeSchoolTimetableCell, WholeSchoolTimetableIssue,
-    WholeSchoolTimetableIssueKind, WholeSchoolTimetableIssueSeverity, WholeSchoolTimetableLesson,
-    WholeSchoolTimetableOverview, WholeSchoolTimetableRow, WholeSchoolTimetableSummary,
+    ApplyTemplateRequest, ClearTimetableRequest, CreateTemplateRequest, FromCurrentRequest,
+    TemplateApplyResult, TemplateWithEntries, TimetableTemplate, TimetableTemplateEntry,
+    TimetableTemplateTargetSelector, UpdateTemplateRequest,
 };
 use crate::modules::academic::models::timetable_block::*;
 use crate::modules::academic::models::timetable_version::{
@@ -290,21 +280,21 @@ use utoipa::OpenApi;
         crate::modules::parents::handlers::get_child_timetable,
         crate::modules::parents::handlers::get_child_exam_schedule,
         crate::modules::parents::handlers::get_child_calendar_events,
-        crate::modules::academic::handlers::timetable::get_my_timetable,
+        crate::modules::academic::handlers::timetable_blocks::get_my_timetable,
         crate::modules::academic::core::handlers::list_my_context_options,
-        crate::modules::academic::handlers::timetable::list_timetable_entries,
-        crate::modules::academic::handlers::timetable::get_timetable_workspace,
-        crate::modules::academic::handlers::timetable::get_whole_school_timetable_overview,
-        crate::modules::academic::handlers::timetable::create_timetable_entry,
-        crate::modules::academic::handlers::timetable::create_batch_timetable_entries,
-        crate::modules::academic::handlers::timetable::update_timetable_entry,
-        crate::modules::academic::handlers::timetable::delete_timetable_entry,
-        crate::modules::academic::handlers::timetable::delete_batch_group,
-        crate::modules::academic::handlers::timetable::swap_timetable_entries,
-        crate::modules::academic::handlers::timetable::validate_timetable_moves,
-        crate::modules::academic::handlers::timetable::preview_timetable_placement,
-        crate::modules::academic::handlers::timetable::get_timetable_occupancy,
-        crate::modules::academic::handlers::timetable::daily_teaching_overview,
+        crate::modules::academic::handlers::timetable_blocks::get_workspace,
+        crate::modules::academic::handlers::timetable_blocks::preview_placement,
+        crate::modules::academic::handlers::timetable_blocks::create_ordinary,
+        crate::modules::academic::handlers::timetable_blocks::create_synchronized,
+        crate::modules::academic::handlers::timetable_blocks::create_structural,
+        crate::modules::academic::handlers::timetable_blocks::update_block,
+        crate::modules::academic::handlers::timetable_blocks::remove_target,
+        crate::modules::academic::handlers::timetable_blocks::restore_group,
+        crate::modules::academic::handlers::timetable_blocks::retry_sync,
+        crate::modules::academic::handlers::timetable_blocks::delete_block,
+        crate::modules::academic::handlers::timetable_blocks::delete_series,
+        crate::modules::academic::handlers::timetable_blocks::swap_blocks,
+        crate::modules::academic::handlers::timetable_blocks::daily_teaching_overview,
         crate::modules::academic::handlers::timetable_versions::list_versions,
         crate::modules::academic::handlers::timetable_versions::resolve_version,
         crate::modules::academic::handlers::timetable_versions::clone_version,
@@ -1091,39 +1081,6 @@ use utoipa::OpenApi;
         ApiResponse<DatedRosterMembership>,
         ApiResponse<Vec<StudentActivityOfferingOption>>,
         ApiResponse<StudentActivityRegistrationResult>,
-        TimetableEntry,
-        TimetableInstructor,
-        TimetableWorkspace,
-        TimetableWorkspaceLearningGroup,
-        TimetableWorkspaceHomeroom,
-        TimetableWorkspaceRoom,
-        TimetableWorkspaceStaff,
-        TimetableUnscheduledDemand,
-        WholeSchoolTimetableOverview,
-        WholeSchoolTimetableRow,
-        WholeSchoolTimetableCell,
-        WholeSchoolTimetableLesson,
-        WholeSchoolTimetableIssue,
-        WholeSchoolTimetableIssueKind,
-        WholeSchoolTimetableIssueSeverity,
-        WholeSchoolTimetableSummary,
-        ApiResponse<WholeSchoolTimetableOverview>,
-        CreateTimetableEntryRequest,
-        UpdateTimetableEntryRequest,
-        CreateBatchTimetableEntriesRequest,
-        BatchTimetableResult,
-        SwapTimetableEntriesRequest,
-        SwapTimetableEntriesResponse,
-        ValidateMovesRequest,
-        MoveValidityCell,
-        TimetablePlacementState,
-        TimetableConflictType,
-        TimetablePlacementMutationKind,
-        TimetablePlacementSource,
-        TimetablePlacementCandidate,
-        TimetablePlacementPreviewRequest,
-        TimetablePlacementPreview,
-        TimetableOccupancyCell,
         TimetableTemplate,
         TimetableTemplateEntry,
         TimetableTemplateTargetSelector,
@@ -1134,14 +1091,6 @@ use utoipa::OpenApi;
         ApplyTemplateRequest,
         ClearTimetableRequest,
         TemplateApplyResult,
-        ApiResponse<TimetableEntry>,
-        ApiResponse<Vec<TimetableEntry>>,
-        ApiResponse<TimetableWorkspace>,
-        ApiResponse<BatchTimetableResult>,
-        ApiResponse<SwapTimetableEntriesResponse>,
-        ApiResponse<Vec<MoveValidityCell>>,
-        ApiResponse<TimetablePlacementPreview>,
-        ApiResponse<Vec<TimetableOccupancyCell>>,
         TimetableBlockKind,
         TimetableStructuralKind,
         TimetableTargetKind,
@@ -1345,11 +1294,12 @@ use utoipa::OpenApi;
         ListObservationsQuery,
         SupervisionCycleProgress,
         SupervisionTeacherStatusRow,
+        SupervisionTimetableOption,
         ItemsData<SupervisionCycle>,
         ItemsData<SupervisionTemplate>,
         ItemsData<SupervisionObservation>,
         ItemsData<SupervisionEvaluatorAvailability>,
-        ItemsData<TimetableEntry>,
+        ItemsData<SupervisionTimetableOption>,
         ItemsData<SupervisionTeacherStatusRow>,
         ApiResponse<ItemsData<SupervisionCycle>>,
         ApiResponse<ItemsData<SupervisionTemplate>>,
@@ -1359,7 +1309,7 @@ use utoipa::OpenApi;
         ApiResponse<SupervisionObservation>,
         ApiResponse<SupervisionObservationReview>,
         ApiResponse<ItemsData<SupervisionEvaluatorAvailability>>,
-        ApiResponse<ItemsData<TimetableEntry>>,
+        ApiResponse<ItemsData<SupervisionTimetableOption>>,
         ApiResponse<SupervisionCycleProgress>,
         ApiResponse<ItemsData<SupervisionTeacherStatusRow>>,
         RichContent,
@@ -3269,7 +3219,7 @@ mod tests {
         assert_eq!(
             document["paths"]["/api/me/timetable"]["get"]["responses"]["200"]["content"]
                 ["application/json"]["schema"]["$ref"],
-            "#/components/schemas/ApiResponse_Vec_TimetableEntry"
+            "#/components/schemas/ApiResponse_Vec_TimetableBlock"
         );
         assert_eq!(
             document["paths"]["/api/parent/students/{student_id}/exam-schedules"]["get"]
@@ -3313,25 +3263,9 @@ mod tests {
         }
 
         let schemas = &document["components"]["schemas"];
-        let timetable = &schemas["TimetableEntry"];
-        for field in [
-            "learningGroupId",
-            "offeringId",
-            "homeroomId",
-            "roomId",
-            "note",
-            "title",
-            "subjectId",
-            "subjectVersionDisplayLabel",
-            "activityId",
-            "activityVersionDisplayLabel",
-            "activitySchedulingMode",
-        ] {
-            assert!(!required(timetable).contains(&field));
-            assert!(contains_null(&timetable["properties"][field]));
-        }
-        for forbidden in ["semesterId", "classroomCourseId", "classroomId"] {
-            assert!(timetable["properties"].get(forbidden).is_none());
+        let timetable = &schemas["TimetableBlock"];
+        for field in ["groups", "homerooms", "teachers", "syncStates"] {
+            assert!(required(timetable).contains(&field));
         }
 
         let exam_round = &schemas["PersonalExamScheduleRound"];
@@ -3414,12 +3348,12 @@ mod tests {
             assert!(!schemas[schema_name].is_null(), "missing {schema_name}");
         }
         for schema_name in [
-            "TimetableEntry",
-            "CreateTimetableEntryRequest",
-            "UpdateTimetableEntryRequest",
-            "CreateBatchTimetableEntriesRequest",
-            "SwapTimetableEntriesRequest",
-            "ValidateMovesRequest",
+            "CreateOrdinaryTimetableBlockRequest",
+            "CreateSynchronizedTimetableBlockRequest",
+            "CreateStructuralTimetableBlocksRequest",
+            "UpdateTimetableBlockRequest",
+            "TimetableBlockPlacementPreviewRequest",
+            "SwapTimetableBlocksRequest",
             "FromCurrentRequest",
             "ApplyTemplateRequest",
             "ClearTimetableRequest",
@@ -3430,7 +3364,7 @@ mod tests {
             );
         }
         assert!(required(&schemas["LearningGroup"]).contains(&"teachersLocked"));
-        assert!(schemas["UpdateTimetableEntryRequest"]["properties"]["instructorIds"].is_object());
+        assert!(schemas["UpdateTimetableBlockRequest"]["properties"]["instructorIds"].is_object());
         assert!(required(&schemas["LearningGroupTeacherAssignment"]).contains(&"startsOn"));
         assert!(required(&schemas["LearningGroupTeacherAssignment"]).contains(&"displayName"));
         assert!(required(&schemas["HomeroomDeliveryWorkspace"]).contains(&"timetableVersionId"));
@@ -3462,18 +3396,18 @@ mod tests {
     }
 
     #[test]
-    fn documents_timetable_workspace_contract() {
+    fn documents_timetable_block_workspace_contract() {
         let document = school_api_value().expect("document should serialize");
         assert_operations(
             &document,
             &[(
-                "/api/academic/timetable/workspace",
+                "/api/academic/timetable-blocks/workspace",
                 "get",
-                "getTimetableWorkspace",
+                "getTimetableBlockWorkspace",
             )],
         );
         assert_eq!(
-            query_contract(&document, "/api/academic/timetable/workspace", "get"),
+            query_contract(&document, "/api/academic/timetable-blocks/workspace", "get"),
             BTreeSet::from([
                 ("academicTermId".to_string(), true),
                 ("academicYearId".to_string(), true),
@@ -3483,103 +3417,60 @@ mod tests {
 
         let schemas = &document["components"]["schemas"];
         for schema_name in [
-            "TimetableWorkspace",
-            "TimetableWorkspaceLearningGroup",
-            "TimetableWorkspaceHomeroom",
-            "TimetableWorkspaceRoom",
-            "TimetableWorkspaceStaff",
-            "TimetableUnscheduledDemand",
+            "TimetableBlockWorkspace",
+            "TimetableBlockWorkspaceLearningGroup",
+            "TimetableBlockWorkspaceHomeroom",
+            "TimetableBlockWorkspaceRoom",
+            "TimetableBlockWorkspaceStaff",
+            "TimetableOrdinaryDemand",
+            "TimetableSynchronizedDemand",
         ] {
             assert!(!schemas[schema_name].is_null(), "missing {schema_name}");
         }
         for field in [
             "version",
             "bellPeriods",
-            "entries",
+            "blocks",
             "learningGroups",
             "homerooms",
             "rooms",
             "staff",
-            "unscheduledDemands",
+            "ordinaryDemands",
+            "synchronizedDemands",
+            "summary",
         ] {
-            assert!(required(&schemas["TimetableWorkspace"]).contains(&field));
+            assert!(required(&schemas["TimetableBlockWorkspace"]).contains(&field));
         }
     }
 
     #[test]
-    fn documents_day_bounded_whole_school_timetable_contract() {
+    fn documents_typed_timetable_block_placement_preview_contract() {
         let document = school_api_value().expect("document should serialize");
         assert_operations(
             &document,
             &[(
-                "/api/academic/timetable/whole-school",
-                "get",
-                "getWholeSchoolTimetableOverview",
-            )],
-        );
-        assert_eq!(
-            query_contract(&document, "/api/academic/timetable/whole-school", "get"),
-            BTreeSet::from([
-                ("academicTermId".to_string(), true),
-                ("academicYearId".to_string(), true),
-                ("dayOfWeek".to_string(), true),
-                ("timetableVersionId".to_string(), true),
-            ])
-        );
-
-        let schemas = &document["components"]["schemas"];
-        for schema_name in [
-            "WholeSchoolTimetableOverview",
-            "WholeSchoolTimetableRow",
-            "WholeSchoolTimetableCell",
-            "WholeSchoolTimetableLesson",
-            "WholeSchoolTimetableIssue",
-            "WholeSchoolTimetableIssueKind",
-            "WholeSchoolTimetableIssueSeverity",
-            "WholeSchoolTimetableSummary",
-        ] {
-            assert!(!schemas[schema_name].is_null(), "missing {schema_name}");
-        }
-        assert!(required(&schemas["WholeSchoolTimetableOverview"]).contains(&"dayOfWeek"));
-        assert!(required(&schemas["WholeSchoolTimetableOverview"]).contains(&"rows"));
-        assert!(required(&schemas["WholeSchoolTimetableLesson"]).contains(&"instructors"));
-    }
-
-    #[test]
-    fn documents_typed_timetable_placement_preview_contract() {
-        let document = school_api_value().expect("document should serialize");
-        assert_operations(
-            &document,
-            &[(
-                "/api/academic/timetable/placement-preview",
+                "/api/academic/timetable-blocks/placement-preview",
                 "post",
-                "previewTimetablePlacement",
+                "previewTimetableBlockPlacement",
             )],
         );
         let schemas = &document["components"]["schemas"];
         for schema_name in [
-            "TimetablePlacementState",
-            "TimetableConflictType",
-            "TimetablePlacementMutationKind",
-            "TimetablePlacementSource",
-            "TimetablePlacementCandidate",
-            "TimetablePlacementPreviewRequest",
-            "TimetablePlacementPreview",
+            "TimetableBlockPlacementState",
+            "TimetableBlockConflictType",
+            "TimetableBlockMutationKind",
+            "TimetableBlockPlacementSource",
+            "TimetableBlockPlacementCandidate",
+            "TimetableBlockPlacementPreviewRequest",
+            "TimetableBlockPlacementPreview",
         ] {
             assert!(!schemas[schema_name].is_null(), "missing {schema_name}");
         }
-        assert!(
-            required(&schemas["TimetablePlacementPreviewRequest"]).contains(&"timetableVersionId")
-        );
-        assert!(required(&schemas["TimetablePlacementPreviewRequest"])
+        assert!(required(&schemas["TimetableBlockPlacementPreviewRequest"])
+            .contains(&"timetableVersionId"));
+        assert!(required(&schemas["TimetableBlockPlacementPreviewRequest"])
             .contains(&"targetBellSchedulePeriodId"));
-        assert!(required(&schemas["TimetablePlacementPreview"]).contains(&"conflicts"));
-        assert!(schemas["MoveValidityCell"]["properties"]
-            .get("valid")
-            .is_none());
-        assert!(schemas["MoveValidityCell"]["properties"]
-            .get("reason")
-            .is_none());
+        assert!(required(&schemas["TimetableBlockPlacementPreview"]).contains(&"conflicts"));
     }
 
     #[test]
@@ -3620,6 +3511,29 @@ mod tests {
         }
         for field in ["groups", "homerooms", "teachers", "syncStates"] {
             assert!(required(&schemas["TimetableBlock"]).contains(&field));
+        }
+        for removed_schema in [
+            "TimetableEntry",
+            "CreateTimetableEntryRequest",
+            "UpdateTimetableEntryRequest",
+            "TimetableWorkspace",
+            "WholeSchoolTimetableOverview",
+        ] {
+            assert!(
+                schemas.get(removed_schema).is_none(),
+                "legacy timetable schema must be absent: {removed_schema}"
+            );
+        }
+        for removed_path in [
+            "/api/academic/timetable/workspace",
+            "/api/academic/timetable/whole-school",
+            "/api/academic/timetable/placement-preview",
+            "/api/academic/timetable/batch",
+        ] {
+            assert!(
+                document["paths"].get(removed_path).is_none(),
+                "legacy timetable path must be absent: {removed_path}"
+            );
         }
 
         let variants = schemas["TimetableBlockPlacementSource"]["oneOf"]

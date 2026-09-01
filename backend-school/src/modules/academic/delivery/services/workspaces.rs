@@ -416,12 +416,14 @@ pub async fn homeroom_delivery_workspace_for_version(
                      AND teacher_user.user_type = 'staff'
                      AND teacher_user.status = 'active') AS primary_teacher_count,
                   (SELECT count(*)::bigint
-                   FROM academic_timetable_entries entry
-                   WHERE entry.learning_group_id = learning_group.id
-                     AND entry.academic_term_id = learning_group.academic_term_id
-                     AND entry.academic_year_id = learning_group.academic_year_id
-                     AND entry.timetable_version_id = $5
-                     AND entry.is_active) AS timetable_entry_count
+                   FROM academic_timetable_block_groups block_group
+                   JOIN academic_timetable_blocks block ON block.id = block_group.block_id
+                   WHERE block_group.learning_group_id = learning_group.id
+                     AND block_group.academic_term_id = learning_group.academic_term_id
+                     AND block_group.academic_year_id = learning_group.academic_year_id
+                     AND block.timetable_version_id = $5
+                     AND block.is_active
+                     AND block_group.is_active) AS timetable_entry_count
            FROM learning_groups learning_group
            JOIN learning_offerings offering ON offering.id = learning_group.learning_offering_id
            LEFT JOIN learning_group_homerooms coverage

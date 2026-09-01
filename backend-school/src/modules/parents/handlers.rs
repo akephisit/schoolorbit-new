@@ -156,7 +156,7 @@ pub async fn get_child_academic_context_options(
         ChildTimetableQuery
     ),
     responses(
-        (status = 200, description = "Linked child's timetable entries", body = ApiResponse<Vec<crate::modules::academic::models::timetable::TimetableEntry>>),
+        (status = 200, description = "Linked child's timetable blocks", body = ApiResponse<Vec<crate::modules::academic::models::timetable_block::TimetableBlock>>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Parent-child access denied", body = ApiErrorResponse)
     )

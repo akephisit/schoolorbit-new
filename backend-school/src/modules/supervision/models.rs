@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -260,6 +260,28 @@ pub struct LessonSnapshot {
     pub room_label: Option<String>,
     pub observed_at: Option<DateTime<Utc>>,
     pub period_label: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SupervisionTimetableOption {
+    pub block_group_id: Uuid,
+    pub block_id: Uuid,
+    pub day_of_week: String,
+    pub bell_schedule_period_id: Uuid,
+    pub period_order_index: i32,
+    pub period_name: String,
+    #[schema(value_type = String)]
+    pub start_time: NaiveTime,
+    #[schema(value_type = String)]
+    pub end_time: NaiveTime,
+    pub learning_group_id: Uuid,
+    pub learning_group_name: String,
+    pub learning_offering_id: Uuid,
+    pub offering_code: String,
+    pub offering_name: String,
+    pub homeroom_names: Vec<String>,
+    pub room_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

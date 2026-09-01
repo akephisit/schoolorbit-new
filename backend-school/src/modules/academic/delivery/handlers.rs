@@ -1350,7 +1350,8 @@ pub async fn apply_teacher_handoff(
             crate::modules::academic::websockets::TimetableEvent::TimetableChanged {
                 user_id: context.actor.user_id,
                 academic_term_id: outcome.academic_term_id,
-                learning_group_id: Some(entry.learning_group_id),
+                timetable_version_id: outcome.response.handoff.target_timetable_version_id,
+                block_id: None,
                 revision: entry.row_version + 1,
             },
         );

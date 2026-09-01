@@ -6,12 +6,13 @@ use crate::{
             seed_academic_cutover_fixture, CutoverFixture,
         },
         models::{
-            timetable::{
-                CreateTimetableEntryRequest, TimetableWorkspaceQuery, UpdateTimetableEntryRequest,
+            timetable_block::{
+                CreateOrdinaryTimetableBlockRequest, TimetableBlockWorkspaceQuery,
+                UpdateTimetableBlockRequest,
             },
             timetable_version::CloneTimetableVersionRequest,
         },
-        services::{timetable_service, timetable_version_service},
+        services::{timetable_block_service, timetable_version_service},
     },
     test_helpers::create_named_test_pool,
 };
@@ -578,7 +579,7 @@ async fn prepare_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 56).await.unwrap();
+    apply_migrations_through(&pool, 58).await.unwrap();
     pool
 }
 
@@ -885,26 +886,30 @@ async fn fill_change_set_target_deficits(
 ) {
     let deficits: Vec<(Uuid, String, i64)> = sqlx::query_as(
         r#"SELECT learning_group.id, upper(offering.kind)::text,
-                  greatest(target.weekly_period_target - count(entry.id), 0)::bigint
+                  greatest(target.weekly_period_target - count(block_group.id), 0)::bigint
            FROM academic_timetable_version_targets target
            JOIN learning_offerings offering ON offering.id = target.learning_offering_id
            JOIN learning_groups learning_group
              ON learning_group.learning_offering_id = target.learning_offering_id
             AND learning_group.status <> 'closed'
-           LEFT JOIN academic_timetable_entries entry
-             ON entry.timetable_version_id = target.timetable_version_id
-            AND entry.learning_group_id = learning_group.id
-            AND entry.is_active
+           LEFT JOIN academic_timetable_blocks block
+             ON block.timetable_version_id = target.timetable_version_id
+            AND block.learning_offering_id = target.learning_offering_id
+            AND block.is_active
+           LEFT JOIN academic_timetable_block_groups block_group
+             ON block_group.block_id = block.id
+            AND block_group.learning_group_id = learning_group.id
+            AND block_group.is_active
            WHERE target.timetable_version_id = $1
            GROUP BY learning_group.id, offering.kind, target.weekly_period_target
-           HAVING count(entry.id) < target.weekly_period_target
+           HAVING count(block_group.id) < target.weekly_period_target
            ORDER BY learning_group.id"#,
     )
     .bind(timetable_version_id)
     .fetch_all(pool)
     .await
     .unwrap();
-    for (group_id, entry_type, missing_count) in deficits {
+    for (group_id, _entry_type, missing_count) in deficits {
         let instructor_ids: Vec<Uuid> = sqlx::query_scalar(
             r#"SELECT assignment.teacher_id
                FROM learning_group_teachers assignment
@@ -939,20 +944,17 @@ async fn fill_change_set_target_deficits(
             .expect("fixture must leave enough empty timetable slots");
             let mut placed = false;
             for (day_of_week, bell_schedule_period_id) in slots {
-                let result = timetable_service::create_entry(
+                let result = timetable_block_service::create_ordinary_block(
                     pool,
                     actor_user_id,
-                    CreateTimetableEntryRequest {
+                    CreateOrdinaryTimetableBlockRequest {
                         timetable_version_id,
                         academic_term_id,
-                        learning_group_id: Some(group_id),
-                        homeroom_id: None,
+                        learning_group_id: group_id,
                         day_of_week,
                         bell_schedule_period_id,
                         room_id: None,
                         note: Some("เติมคาบสำหรับทดสอบ readiness".to_string()),
-                        entry_type: entry_type.clone(),
-                        title: None,
                         instructor_ids: instructor_ids.clone(),
                     },
                 )
@@ -1200,19 +1202,21 @@ async fn teacher_handoff_preview_and_apply_replace_exact_instructors_atomically(
     .await;
     let (entry_id, group_id, stopped_assignment_id, stopped_teacher_id): (Uuid, Uuid, Uuid, Uuid) =
         sqlx::query_as(
-            r#"SELECT entry.id, entry.learning_group_id, assignment.id,
+            r#"SELECT block_group.id, block_group.learning_group_id, assignment.id,
                   instructor.instructor_id
-           FROM academic_timetable_entries entry
-           JOIN timetable_entry_instructors instructor ON instructor.entry_id = entry.id
+           FROM academic_timetable_block_groups block_group
+           JOIN academic_timetable_blocks block ON block.id = block_group.block_id
+           JOIN academic_timetable_block_group_instructors instructor
+             ON instructor.block_group_id = block_group.id
            JOIN learning_group_teachers assignment
-             ON assignment.learning_group_id = entry.learning_group_id
+             ON assignment.learning_group_id = block_group.learning_group_id
             AND assignment.teacher_id = instructor.instructor_id
-           WHERE entry.timetable_version_id = $1
-             AND entry.learning_group_id IS NOT NULL
-             AND entry.is_active
+           WHERE block.timetable_version_id = $1
+             AND block.is_active
+             AND block_group.is_active
              AND assignment.starts_on < $2
              AND (assignment.ends_on IS NULL OR assignment.ends_on >= $2)
-           ORDER BY entry.id, instructor.instructor_id
+           ORDER BY block_group.id, instructor.instructor_id
            LIMIT 1"#,
         )
         .bind(change_set.target_timetable_version_id)
@@ -1470,7 +1474,7 @@ async fn teacher_handoff_preview_and_apply_replace_exact_instructors_atomically(
         .expect_err("a handoff based on a stale timetable revision must conflict");
     assert!(matches!(stale, AppError::Conflict(_)));
     let unchanged_ids: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT instructor_id FROM timetable_entry_instructors WHERE entry_id = $1 ORDER BY instructor_id",
+        "SELECT instructor_id FROM academic_timetable_block_group_instructors WHERE block_group_id = $1 ORDER BY instructor_id",
     )
     .bind(entry_id)
     .fetch_all(&pool)
@@ -1532,7 +1536,7 @@ async fn teacher_handoff_preview_and_apply_replace_exact_instructors_atomically(
         fresh_proposed.row_version + 1
     );
     let exact_ids: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT instructor_id FROM timetable_entry_instructors WHERE entry_id = $1 ORDER BY instructor_id",
+        "SELECT instructor_id FROM academic_timetable_block_group_instructors WHERE block_group_id = $1 ORDER BY instructor_id",
     )
     .bind(entry_id)
     .fetch_all(&pool)
@@ -1621,16 +1625,16 @@ async fn teacher_handoff_preview_and_apply_replace_exact_instructors_atomically(
             .unwrap();
     assert_eq!(effective_version.id, changed.target_timetable_version_id);
 
-    let published_workspace = timetable_service::get_workspace(
+    let published_workspace = timetable_block_service::get_workspace(
         &pool,
-        TimetableWorkspaceQuery {
+        TimetableBlockWorkspaceQuery {
             academic_year_id: changed.academic_year_id,
             academic_term_id: changed.academic_term_id,
             timetable_version_id: changed.target_timetable_version_id,
         },
-        &AcademicResourceListFilter {
+        &crate::policies::timetable_access_policy::TimetableAccessFilter {
             includes_school_owned: true,
-            ..AcademicResourceListFilter::default()
+            ..Default::default()
         },
     )
     .await
@@ -1641,11 +1645,13 @@ async fn teacher_handoff_preview_and_apply_replace_exact_instructors_atomically(
         .find(|group| group.id == group_id)
         .expect("the changed group must remain in the published workspace");
     assert!(published_group
-        .eligible_instructor_ids
-        .contains(&replacement_teacher_id));
+        .eligible_instructors
+        .iter()
+        .any(|teacher| teacher.teacher_id == replacement_teacher_id));
     assert!(!published_group
-        .eligible_instructor_ids
-        .contains(&stopped_teacher_id));
+        .eligible_instructors
+        .iter()
+        .any(|teacher| teacher.teacher_id == stopped_teacher_id));
 }
 
 async fn add_operational_change_catalog_fixture(
@@ -1782,10 +1788,14 @@ async fn change_set_creation_clones_the_effective_base_and_is_idempotent() {
     let base_counts: (i64, i64, i64) = sqlx::query_as(
         r#"SELECT
                (SELECT count(*) FROM academic_timetable_version_targets WHERE timetable_version_id = $1),
-               (SELECT count(*) FROM academic_timetable_entries WHERE timetable_version_id = $1 AND is_active),
-               (SELECT count(*) FROM timetable_entry_instructors instructor
-                  JOIN academic_timetable_entries entry ON entry.id = instructor.entry_id
-                 WHERE entry.timetable_version_id = $1 AND entry.is_active)"#,
+               (SELECT count(*) FROM academic_timetable_blocks WHERE timetable_version_id = $1 AND is_active),
+               (SELECT count(*) FROM academic_timetable_block_group_instructors instructor
+                  JOIN academic_timetable_block_groups block_group
+                    ON block_group.id = instructor.block_group_id
+                  JOIN academic_timetable_blocks block ON block.id = block_group.block_id
+                 WHERE block.timetable_version_id = $1
+                   AND block.is_active
+                   AND block_group.is_active)"#,
     )
     .bind(base_version_id)
     .fetch_one(&pool)
@@ -1821,10 +1831,14 @@ async fn change_set_creation_clones_the_effective_base_and_is_idempotent() {
     let target_counts: (i64, i64, i64) = sqlx::query_as(
         r#"SELECT
                (SELECT count(*) FROM academic_timetable_version_targets WHERE timetable_version_id = $1),
-               (SELECT count(*) FROM academic_timetable_entries WHERE timetable_version_id = $1 AND is_active),
-               (SELECT count(*) FROM timetable_entry_instructors instructor
-                  JOIN academic_timetable_entries entry ON entry.id = instructor.entry_id
-                 WHERE entry.timetable_version_id = $1 AND entry.is_active)"#,
+               (SELECT count(*) FROM academic_timetable_blocks WHERE timetable_version_id = $1 AND is_active),
+               (SELECT count(*) FROM academic_timetable_block_group_instructors instructor
+                  JOIN academic_timetable_block_groups block_group
+                    ON block_group.id = instructor.block_group_id
+                  JOIN academic_timetable_blocks block ON block.id = block_group.block_id
+                 WHERE block.timetable_version_id = $1
+                   AND block.is_active
+                   AND block_group.is_active)"#,
     )
     .bind(created.target_timetable_version_id)
     .fetch_one(&pool)
@@ -2262,9 +2276,11 @@ async fn adjust_and_stop_items_mutate_only_the_target_version_and_delete_restore
     .unwrap();
     assert_eq!(target_after_restore, base_target);
 
-    let base_entry_count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM academic_timetable_entries \
-         WHERE timetable_version_id = $1 AND learning_offering_id = $2 AND is_active",
+    let base_group_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM academic_timetable_block_groups block_group \
+         JOIN academic_timetable_blocks block ON block.id = block_group.block_id \
+         WHERE block.timetable_version_id = $1 AND block.learning_offering_id = $2 \
+           AND block.is_active AND block_group.is_active",
     )
     .bind(change_set.base_timetable_version_id)
     .bind(offering_id)
@@ -2316,38 +2332,45 @@ async fn adjust_and_stop_items_mutate_only_the_target_version_and_delete_restore
     )
     .await
     .expect("deleting a stop item must restore the base target and entries");
-    let restored_entry_count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM academic_timetable_entries \
-         WHERE timetable_version_id = $1 AND learning_offering_id = $2 AND is_active",
+    let restored_group_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM academic_timetable_block_groups block_group \
+         JOIN academic_timetable_blocks block ON block.id = block_group.block_id \
+         WHERE block.timetable_version_id = $1 AND block.learning_offering_id = $2 \
+           AND block.is_active AND block_group.is_active",
     )
     .bind(change_set.target_timetable_version_id)
     .bind(offering_id)
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(restored_entry_count, base_entry_count);
-    let (mapped_entry_count, mismatched_instructor_sets): (i64, i64) = sqlx::query_as(
+    assert_eq!(restored_group_count, base_group_count);
+    let (mapped_group_count, mismatched_instructor_sets): (i64, i64) = sqlx::query_as(
         r#"SELECT count(*),
                   count(*) FILTER (
                       WHERE ARRAY(
                           SELECT concat(instructor.instructor_id::text, ':', instructor.role::text)
-                          FROM timetable_entry_instructors instructor
-                          WHERE instructor.entry_id = source.id
+                          FROM academic_timetable_block_group_instructors instructor
+                          WHERE instructor.block_group_id = source.id
                           ORDER BY instructor.instructor_id
                       ) <> ARRAY(
                           SELECT concat(instructor.instructor_id::text, ':', instructor.role::text)
-                          FROM timetable_entry_instructors instructor
-                          WHERE instructor.entry_id = restored.id
+                          FROM academic_timetable_block_group_instructors instructor
+                          WHERE instructor.block_group_id = restored.id
                           ORDER BY instructor.instructor_id
                       )
                   )
-           FROM academic_timetable_entries source
-           JOIN academic_timetable_entries restored
-             ON restored.timetable_version_id = $2
-            AND restored.migration_provenance ->> 'restoredFromEntryId' = source.id::text
-           WHERE source.timetable_version_id = $1
+           FROM academic_timetable_block_groups source
+           JOIN academic_timetable_blocks source_block ON source_block.id = source.block_id
+           JOIN academic_timetable_block_groups restored
+             ON restored.migration_provenance ->> 'restoredFromBlockGroupId' = source.id::text
+           JOIN academic_timetable_blocks restored_block ON restored_block.id = restored.block_id
+           WHERE source_block.timetable_version_id = $1
+             AND restored_block.timetable_version_id = $2
              AND source.learning_offering_id = $3
-             AND source.is_active"#,
+             AND source_block.is_active
+             AND source.is_active
+             AND restored_block.is_active
+             AND restored.is_active"#,
     )
     .bind(change_set.base_timetable_version_id)
     .bind(change_set.target_timetable_version_id)
@@ -2355,7 +2378,7 @@ async fn adjust_and_stop_items_mutate_only_the_target_version_and_delete_restore
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(mapped_entry_count, base_entry_count);
+    assert_eq!(mapped_group_count, base_group_count);
     assert_eq!(mismatched_instructor_sets, 0);
 }
 
@@ -2598,27 +2621,29 @@ async fn readiness_blocks_missing_and_ineligible_exact_entry_instructors() {
         "change-set:exact-instructor-readiness:create",
     )
     .await;
-    let (target_entry_id, target_group_id, target_term_id, target_year_id, effective_from): (
-        Uuid,
-        Uuid,
-        Uuid,
-        Uuid,
-        chrono::NaiveDate,
-    ) = sqlx::query_as(
-        r#"SELECT entry.id, entry.learning_group_id, entry.academic_term_id,
-                  entry.academic_year_id, version.effective_from
-           FROM academic_timetable_entries entry
+    let (
+        target_block_id,
+        target_block_group_id,
+        target_group_id,
+        target_term_id,
+        target_year_id,
+        effective_from,
+    ): (Uuid, Uuid, Uuid, Uuid, Uuid, chrono::NaiveDate) = sqlx::query_as(
+        r#"SELECT block.id, block_group.id, block_group.learning_group_id, block.academic_term_id,
+                  block.academic_year_id, version.effective_from
+           FROM academic_timetable_block_groups block_group
+           JOIN academic_timetable_blocks block ON block.id = block_group.block_id
            JOIN academic_timetable_versions version
-             ON version.id = entry.timetable_version_id
-           WHERE entry.timetable_version_id = $1
-             AND entry.is_active
-             AND entry.entry_type IN ('COURSE', 'ACTIVITY')
-             AND entry.learning_group_id IS NOT NULL
+             ON version.id = block.timetable_version_id
+           WHERE block.timetable_version_id = $1
+             AND block.is_active
+             AND block_group.is_active
+             AND block.block_kind IN ('COURSE', 'ACTIVITY')
              AND EXISTS (
-                 SELECT 1 FROM timetable_entry_instructors instructor
-                 WHERE instructor.entry_id = entry.id
+                 SELECT 1 FROM academic_timetable_block_group_instructors instructor
+                 WHERE instructor.block_group_id = block_group.id
              )
-           ORDER BY entry.id
+           ORDER BY block_group.id
            LIMIT 1"#,
     )
     .bind(change_set.target_timetable_version_id)
@@ -2630,8 +2655,8 @@ async fn readiness_blocks_missing_and_ineligible_exact_entry_instructors() {
         .execute(&pool)
         .await
         .unwrap();
-    sqlx::query("DELETE FROM timetable_entry_instructors WHERE entry_id = $1")
-        .bind(target_entry_id)
+    sqlx::query("DELETE FROM academic_timetable_block_group_instructors WHERE block_group_id = $1")
+        .bind(target_block_group_id)
         .execute(&pool)
         .await
         .unwrap();
@@ -2642,7 +2667,7 @@ async fn readiness_blocks_missing_and_ineligible_exact_entry_instructors() {
     assert!(missing_preview.findings.iter().any(|finding| {
         finding.code == AcademicChangeFindingCode::MissingEntryInstructor
             && finding.severity == AcademicChangeFindingSeverity::Blocking
-            && finding.resource_id == Some(target_entry_id)
+            && finding.resource_id == Some(target_block_id)
     }));
 
     let ineligible_teacher_id = Uuid::new_v4();
@@ -2682,10 +2707,11 @@ async fn readiness_blocks_missing_and_ineligible_exact_entry_instructors() {
         .await
         .unwrap();
     sqlx::query(
-        r#"INSERT INTO timetable_entry_instructors (id, entry_id, instructor_id, role)
-           VALUES (gen_random_uuid(), $1, $2, 'primary')"#,
+        r#"INSERT INTO academic_timetable_block_group_instructors (
+               id, block_group_id, instructor_id, role, display_order
+           ) VALUES (gen_random_uuid(), $1, $2, 'primary', 1)"#,
     )
-    .bind(target_entry_id)
+    .bind(target_block_group_id)
     .bind(ineligible_teacher_id)
     .execute(&pool)
     .await
@@ -2697,7 +2723,7 @@ async fn readiness_blocks_missing_and_ineligible_exact_entry_instructors() {
     assert!(ineligible_preview.findings.iter().any(|finding| {
         finding.code == AcademicChangeFindingCode::EntryInstructorNotEffective
             && finding.severity == AcademicChangeFindingSeverity::Blocking
-            && finding.resource_id == Some(target_entry_id)
+            && finding.resource_id == Some(target_block_id)
     }));
     assert!(!ineligible_preview.findings.iter().any(|finding| {
         finding.code == AcademicChangeFindingCode::MissingPrimaryTeacher
@@ -2767,14 +2793,6 @@ async fn schedule_only_change_set_can_preview_and_publish_after_a_draft_entry_ch
     .await
     .expect("fixture term must expose timetable slots");
     for count in schedule {
-        let entry_type: String = sqlx::query_scalar(
-            r#"SELECT CASE offering.kind WHEN 'course' THEN 'COURSE' ELSE 'ACTIVITY' END
-               FROM learning_offerings offering WHERE offering.id = $1"#,
-        )
-        .bind(count.learning_offering_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
         let instructor_id: Uuid = sqlx::query_scalar(
             r#"SELECT assignment.teacher_id
                FROM learning_group_teachers assignment
@@ -2802,20 +2820,17 @@ async fn schedule_only_change_set_can_preview_and_publish_after_a_draft_entry_ch
             if actual_periods >= i64::from(count.target_periods) {
                 break;
             }
-            let result = timetable_service::create_entry(
+            let result = timetable_block_service::create_ordinary_block(
                 &pool,
                 context.teacher_id,
-                CreateTimetableEntryRequest {
+                CreateOrdinaryTimetableBlockRequest {
                     timetable_version_id: change_set.target_timetable_version_id,
                     academic_term_id: context.term_id,
-                    learning_group_id: Some(count.learning_group_id),
-                    homeroom_id: None,
+                    learning_group_id: count.learning_group_id,
                     day_of_week: day_of_week.clone(),
                     bell_schedule_period_id: *period_id,
                     room_id: None,
                     note: None,
-                    entry_type: entry_type.clone(),
-                    title: None,
                     instructor_ids: vec![instructor_id],
                 },
             )
@@ -2833,48 +2848,49 @@ async fn schedule_only_change_set_can_preview_and_publish_after_a_draft_entry_ch
             count.learning_group_label
         );
     }
-    let target_entry_id: Uuid = sqlx::query_scalar(
-        r#"SELECT id FROM academic_timetable_entries
+    let target_block_id: Uuid = sqlx::query_scalar(
+        r#"SELECT id FROM academic_timetable_blocks
            WHERE timetable_version_id = $1 AND is_active
-             AND migration_provenance ? 'clonedFromEntryId'
+             AND migration_provenance ? 'clonedFromBlockId'
            ORDER BY id LIMIT 1"#,
     )
     .bind(change_set.target_timetable_version_id)
     .fetch_one(&pool)
     .await
     .expect("fixture must contain a cloned draft entry");
-    let target_entry = timetable_service::get_entry(&pool, target_entry_id)
+    let target_block = timetable_block_service::get_block(&pool, target_block_id)
         .await
-        .expect("cloned draft entry must be readable");
-    let source_entry_id: Uuid = sqlx::query_scalar(
-        r#"SELECT (migration_provenance ->> 'clonedFromEntryId')::uuid
-           FROM academic_timetable_entries WHERE id = $1"#,
+        .expect("cloned draft block must be readable");
+    let source_block_id: Uuid = sqlx::query_scalar(
+        r#"SELECT (migration_provenance ->> 'clonedFromBlockId')::uuid
+           FROM academic_timetable_blocks WHERE id = $1"#,
     )
-    .bind(target_entry_id)
+    .bind(target_block_id)
     .fetch_one(&pool)
     .await
     .expect("cloned entry must retain its source identity");
     let source_note_before: Option<String> =
-        sqlx::query_scalar("SELECT note FROM academic_timetable_entries WHERE id = $1")
-            .bind(source_entry_id)
+        sqlx::query_scalar("SELECT note FROM academic_timetable_blocks WHERE id = $1")
+            .bind(source_block_id)
             .fetch_one(&pool)
             .await
             .unwrap();
 
-    timetable_service::update_entry(
+    timetable_block_service::update_block(
         &pool,
-        target_entry.id,
+        target_block.id,
         context.teacher_id,
-        UpdateTimetableEntryRequest {
+        UpdateTimetableBlockRequest {
             timetable_version_id: change_set.target_timetable_version_id,
-            row_version: target_entry.row_version,
+            row_version: target_block.row_version,
             day_of_week: None,
             bell_schedule_period_id: None,
             room_id: None,
-            clear_room: None,
+            clear_room: false,
             note: Some("ปรับหมายเหตุในรุ่นใหม่".to_string()),
-            clear_note: None,
+            clear_note: false,
             title: None,
+            clear_title: false,
             instructor_ids: None,
         },
     )
@@ -2920,26 +2936,26 @@ async fn schedule_only_change_set_can_preview_and_publish_after_a_draft_entry_ch
     assert_eq!(published.status, AcademicTermChangeSetStatus::Published);
 
     let (target_status, target_note): (String, Option<String>) = sqlx::query_as(
-        r#"SELECT version.status, entry.note
+        r#"SELECT version.status, block.note
            FROM academic_timetable_versions version
-           JOIN academic_timetable_entries entry
-             ON entry.timetable_version_id = version.id
-           WHERE version.id = $1 AND entry.id = $2"#,
+           JOIN academic_timetable_blocks block
+             ON block.timetable_version_id = version.id
+           WHERE version.id = $1 AND block.id = $2"#,
     )
     .bind(change_set.target_timetable_version_id)
-    .bind(target_entry_id)
+    .bind(target_block_id)
     .fetch_one(&pool)
     .await
     .unwrap();
     let (source_status, source_note): (String, Option<String>) = sqlx::query_as(
-        r#"SELECT version.status, entry.note
+        r#"SELECT version.status, block.note
            FROM academic_timetable_versions version
-           JOIN academic_timetable_entries entry
-             ON entry.timetable_version_id = version.id
-           WHERE version.id = $1 AND entry.id = $2"#,
+           JOIN academic_timetable_blocks block
+             ON block.timetable_version_id = version.id
+           WHERE version.id = $1 AND block.id = $2"#,
     )
     .bind(change_set.base_timetable_version_id)
-    .bind(source_entry_id)
+    .bind(source_block_id)
     .fetch_one(&pool)
     .await
     .unwrap();
@@ -3018,9 +3034,9 @@ async fn change_set_preview_counts_stop_impact_without_exposing_roster_identitie
              (SELECT count(*) FROM learning_group_teachers teacher
                 JOIN learning_groups learning_group ON learning_group.id = teacher.learning_group_id
                 WHERE learning_group.learning_offering_id = $1) AS teacher_assignments,
-             (SELECT count(*) FROM academic_timetable_entries entry
-                WHERE entry.timetable_version_id = $2
-                  AND entry.learning_offering_id = $1 AND entry.is_active) AS target_timetable_entries,
+             (SELECT count(*) FROM academic_timetable_blocks block
+                WHERE block.timetable_version_id = $2
+                  AND block.learning_offering_id = $1 AND block.is_active) AS target_timetable_entries,
              (SELECT count(*) FROM course_assessment_plans plan
                 WHERE plan.learning_offering_id = $1) AS course_assessment_plans,
              (SELECT count(*) FROM course_assessment_phases phase
@@ -3101,14 +3117,17 @@ async fn change_set_preview_reports_each_group_below_its_version_target() {
     .await;
     let (offering_id, group_id, actual_periods): (Uuid, Uuid, i64) = sqlx::query_as(
         r#"SELECT target.learning_offering_id, learning_group.id,
-                  count(entry.id)::bigint
+                  count(block.id)::bigint
            FROM academic_timetable_version_targets target
            JOIN learning_groups learning_group
              ON learning_group.learning_offering_id = target.learning_offering_id
-           LEFT JOIN academic_timetable_entries entry
-             ON entry.timetable_version_id = target.timetable_version_id
-            AND entry.learning_group_id = learning_group.id
-            AND entry.is_active
+           LEFT JOIN academic_timetable_block_groups block_group
+             ON block_group.learning_group_id = learning_group.id
+            AND block_group.is_active
+           LEFT JOIN academic_timetable_blocks block
+             ON block.id = block_group.block_id
+            AND block.timetable_version_id = target.timetable_version_id
+            AND block.is_active
            WHERE target.timetable_version_id = $1
              AND learning_group.status = 'published'
            GROUP BY target.learning_offering_id, learning_group.id
@@ -3164,18 +3183,22 @@ async fn change_set_preview_stays_clean_after_database_rejects_a_draft_collision
         "change-set:preview-conflicts:create",
     )
     .await;
-    let (entry_id, offering_id, group_id, target_periods): (Uuid, Uuid, Uuid, i32) =
+    let (block_group_id, offering_id, group_id, target_periods): (Uuid, Uuid, Uuid, i32) =
         sqlx::query_as(
-            r#"SELECT entry.id, entry.learning_offering_id, entry.learning_group_id,
+            r#"SELECT block_group.id, block.learning_offering_id,
+                  block_group.learning_group_id,
                   target.weekly_period_target
-           FROM academic_timetable_entries entry
+           FROM academic_timetable_block_groups block_group
+           JOIN academic_timetable_blocks block ON block.id = block_group.block_id
            JOIN academic_timetable_version_targets target
-             ON target.timetable_version_id = entry.timetable_version_id
-            AND target.learning_offering_id = entry.learning_offering_id
+             ON target.timetable_version_id = block.timetable_version_id
+            AND target.learning_offering_id = block.learning_offering_id
            JOIN learning_group_homerooms coverage
-             ON coverage.learning_group_id = entry.learning_group_id
-           WHERE entry.timetable_version_id = $1 AND entry.is_active
-           ORDER BY entry.id
+             ON coverage.learning_group_id = block_group.learning_group_id
+           WHERE block.timetable_version_id = $1
+             AND block.is_active
+             AND block_group.is_active
+           ORDER BY block_group.id
            LIMIT 1"#,
         )
         .bind(change_set.target_timetable_version_id)
@@ -3187,33 +3210,46 @@ async fn change_set_preview_stays_clean_after_database_rejects_a_draft_collision
             .fetch_one(&pool)
             .await
             .expect("fixture must contain an active room");
-    sqlx::query("UPDATE academic_timetable_entries SET room_id = $1 WHERE id = $2")
+    sqlx::query("UPDATE academic_timetable_block_groups SET room_id = $1 WHERE id = $2")
         .bind(room_id)
-        .bind(entry_id)
+        .bind(block_group_id)
         .execute(&pool)
         .await
         .unwrap();
     let duplicate_error = sqlx::query(
-        r#"INSERT INTO academic_timetable_entries (
-               id, day_of_week, bell_schedule_period_id, room_id, note,
-               is_active, created_by, updated_by, entry_type, title,
-               homeroom_id, academic_term_id, batch_id, academic_year_id,
-               learning_offering_id, learning_group_id, bell_schedule_id,
-               migration_provenance, row_version, timetable_version_id,
-               created_at, updated_at
+        r#"WITH source AS (
+               SELECT block.*, block_group.learning_group_id
+               FROM academic_timetable_block_groups block_group
+               JOIN academic_timetable_blocks block ON block.id = block_group.block_id
+               WHERE block_group.id = $1
+           ), duplicate_block AS (
+               INSERT INTO academic_timetable_blocks (
+                   id, timetable_version_id, academic_term_id, academic_year_id,
+                   bell_schedule_id, bell_schedule_period_id, day_of_week,
+                   block_kind, scheduling_mode, learning_offering_id,
+                   structural_kind, title, note, series_id, row_version, is_active,
+                   migration_provenance, created_by, updated_by
+               )
+               SELECT gen_random_uuid(), timetable_version_id, academic_term_id,
+                      academic_year_id, bell_schedule_id, bell_schedule_period_id,
+                      day_of_week, block_kind, scheduling_mode, learning_offering_id,
+                      structural_kind, title, 'conflict fixture', series_id, 1, true,
+                      jsonb_build_object('test', 'preview-conflicts'), $3, $3
+               FROM source
+               RETURNING id, academic_term_id, academic_year_id, learning_offering_id
            )
-           SELECT gen_random_uuid(), entry.day_of_week,
-                  entry.bell_schedule_period_id, $2, 'conflict fixture',
-                  true, $3, $3, entry.entry_type, entry.title,
-                  NULL, entry.academic_term_id, NULL,
-                  entry.academic_year_id, entry.learning_offering_id,
-                  entry.learning_group_id, entry.bell_schedule_id,
-                  jsonb_build_object('test', 'preview-conflicts'), 1,
-                  entry.timetable_version_id, now(), now()
-           FROM academic_timetable_entries entry
-           WHERE entry.id = $1"#,
+           INSERT INTO academic_timetable_block_groups (
+               id, block_id, learning_group_id, learning_offering_id,
+               academic_term_id, academic_year_id, room_id, row_version,
+               is_active, migration_provenance, created_by, updated_by
+           )
+           SELECT gen_random_uuid(), duplicate_block.id, source.learning_group_id,
+                  duplicate_block.learning_offering_id, duplicate_block.academic_term_id,
+                  duplicate_block.academic_year_id, $2, 1, true,
+                  jsonb_build_object('test', 'preview-conflicts'), $3, $3
+           FROM source CROSS JOIN duplicate_block"#,
     )
-    .bind(entry_id)
+    .bind(block_group_id)
     .bind(room_id)
     .bind(context.teacher_id)
     .execute(&pool)
@@ -3407,12 +3443,15 @@ async fn publication_requires_the_exact_current_warning_acknowledgements() {
     .await
     .expect("fixture must contain a timetable target");
     let group_counts: Vec<(Uuid, i64)> = sqlx::query_as(
-        r#"SELECT learning_group.id, count(entry.id)::bigint
+        r#"SELECT learning_group.id, count(block.id)::bigint
            FROM learning_groups learning_group
-           LEFT JOIN academic_timetable_entries entry
-             ON entry.timetable_version_id = $2
-            AND entry.learning_group_id = learning_group.id
-            AND entry.is_active
+           LEFT JOIN academic_timetable_block_groups block_group
+             ON block_group.learning_group_id = learning_group.id
+            AND block_group.is_active
+           LEFT JOIN academic_timetable_blocks block
+             ON block.id = block_group.block_id
+            AND block.timetable_version_id = $2
+            AND block.is_active
            WHERE learning_group.learning_offering_id = $1
              AND learning_group.status = 'published'
            GROUP BY learning_group.id
@@ -3434,12 +3473,6 @@ async fn publication_requires_the_exact_current_warning_acknowledgements() {
     )
     .unwrap();
     let desired_periods = i64::from(target) + 1;
-    let entry_type: String =
-        sqlx::query_scalar("SELECT upper(kind) FROM learning_offerings WHERE id = $1")
-            .bind(offering_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
     for (learning_group_id, actual_periods) in group_counts {
         let instructor_id: Uuid = sqlx::query_scalar(
             r#"SELECT assignment.teacher_id
@@ -3472,11 +3505,11 @@ async fn publication_requires_the_exact_current_warning_acknowledgements() {
                  ON period.bell_schedule_id = term.bell_schedule_id
                 AND period.is_active
                WHERE NOT EXISTS (
-                   SELECT 1 FROM academic_timetable_entries entry
-                   WHERE entry.timetable_version_id = $2
-                     AND entry.day_of_week = day.code
-                     AND entry.bell_schedule_period_id = period.id
-                     AND entry.is_active
+                   SELECT 1 FROM academic_timetable_blocks block
+                   WHERE block.timetable_version_id = $2
+                     AND block.day_of_week = day.code
+                     AND block.bell_schedule_period_id = period.id
+                     AND block.is_active
                )
                ORDER BY day.code, period.order_index
                LIMIT 1"#,
@@ -3486,20 +3519,17 @@ async fn publication_requires_the_exact_current_warning_acknowledgements() {
             .fetch_one(&pool)
             .await
             .expect("fixture must leave enough empty timetable slots");
-            crate::modules::academic::services::timetable_service::create_entry(
+            timetable_block_service::create_ordinary_block(
                 &pool,
                 context.teacher_id,
-                crate::modules::academic::models::timetable::CreateTimetableEntryRequest {
+                CreateOrdinaryTimetableBlockRequest {
                     timetable_version_id: change_set.target_timetable_version_id,
                     academic_term_id: context.term_id,
-                    learning_group_id: Some(learning_group_id),
-                    homeroom_id: None,
+                    learning_group_id,
                     day_of_week,
                     bell_schedule_period_id,
                     room_id: None,
                     note: Some("ทดสอบคำเตือนคาบเกิน".to_string()),
-                    entry_type: entry_type.clone(),
-                    title: None,
                     instructor_ids: vec![instructor_id],
                 },
             )
@@ -3715,15 +3745,18 @@ async fn publishing_an_added_course_publishes_its_prepared_groups_and_rosters_to
     let deficit_offering_ids: Vec<Uuid> = sqlx::query_scalar(
         r#"WITH group_counts AS (
                SELECT target.learning_offering_id, target.weekly_period_target,
-                      learning_group.id, count(entry.id)::bigint AS actual_periods
+                      learning_group.id, count(block.id)::bigint AS actual_periods
                FROM academic_timetable_version_targets target
                JOIN learning_groups learning_group
                  ON learning_group.learning_offering_id = target.learning_offering_id
                 AND learning_group.status <> 'closed'
-               LEFT JOIN academic_timetable_entries entry
-                 ON entry.timetable_version_id = target.timetable_version_id
-                AND entry.learning_group_id = learning_group.id
-                AND entry.is_active
+               LEFT JOIN academic_timetable_block_groups block_group
+                 ON block_group.learning_group_id = learning_group.id
+                AND block_group.is_active
+               LEFT JOIN academic_timetable_blocks block
+                 ON block.id = block_group.block_id
+                AND block.timetable_version_id = target.timetable_version_id
+                AND block.is_active
                WHERE target.timetable_version_id = $1
                  AND target.learning_offering_id <> $2
                GROUP BY target.learning_offering_id, target.weekly_period_target,
@@ -3809,11 +3842,11 @@ async fn publishing_an_added_course_publishes_its_prepared_groups_and_rosters_to
                  ON period.bell_schedule_id = term.bell_schedule_id
                 AND period.is_active
                WHERE NOT EXISTS (
-                   SELECT 1 FROM academic_timetable_entries entry
-                   WHERE entry.timetable_version_id = $2
-                     AND entry.day_of_week = day.code
-                     AND entry.bell_schedule_period_id = period.id
-                     AND entry.is_active
+                   SELECT 1 FROM academic_timetable_blocks block
+                   WHERE block.timetable_version_id = $2
+                     AND block.day_of_week = day.code
+                     AND block.bell_schedule_period_id = period.id
+                     AND block.is_active
                )
                ORDER BY day.code, period.order_index
                LIMIT 1"#,
@@ -3823,20 +3856,17 @@ async fn publishing_an_added_course_publishes_its_prepared_groups_and_rosters_to
         .fetch_one(&pool)
         .await
         .expect("fixture must leave enough empty slots for the added course");
-        crate::modules::academic::services::timetable_service::create_entry(
+        timetable_block_service::create_ordinary_block(
             &pool,
             context.teacher_id,
-            crate::modules::academic::models::timetable::CreateTimetableEntryRequest {
+            CreateOrdinaryTimetableBlockRequest {
                 timetable_version_id: changed.target_timetable_version_id,
                 academic_term_id: context.term_id,
-                learning_group_id: Some(draft_group.id),
-                homeroom_id: None,
+                learning_group_id: draft_group.id,
                 day_of_week,
                 bell_schedule_period_id,
                 room_id: None,
                 note: None,
-                entry_type: "COURSE".to_string(),
-                title: None,
                 instructor_ids: vec![context.teacher_id],
             },
         )
