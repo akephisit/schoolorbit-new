@@ -5,6 +5,7 @@ use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::error::AppError;
+use crate::modules::academic::core::models::AcademicTermStatus;
 use crate::modules::academic::models::exam_schedule::{
     BlockedWindow, BlockedWindowInput, CreateExamRoundRequest, ExamDay, ExamDayDetail,
     ExamDayRoomAssignmentView, ExamInvigilatorView, ExamRound, UpdateExamRoundRequest,
@@ -110,6 +111,29 @@ pub async fn create_round(
     }
     let exam_kind = normalize_exam_kind(request.exam_kind.as_deref())?;
 
+    let mut tx = pool.begin().await?;
+    let (academic_year_id, term_status): (Uuid, AcademicTermStatus) = sqlx::query_as(
+        r#"
+        SELECT academic_year_id, status
+        FROM academic_terms
+        WHERE id = $1
+        FOR UPDATE
+        "#,
+    )
+    .bind(request.academic_term_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียน".to_string()))?;
+
+    if matches!(
+        term_status,
+        AcademicTermStatus::Closing | AcademicTermStatus::Closed | AcademicTermStatus::Cancelled
+    ) {
+        return Err(AppError::Conflict(
+            "ไม่สามารถสร้างรอบสอบในภาคเรียนที่กำลังปิด ปิดแล้ว หรือยกเลิกแล้ว".to_string(),
+        ));
+    }
+
     let row = sqlx::query_as::<_, ExamRound>(
         r#"
         INSERT INTO academic_exam_rounds (
@@ -121,9 +145,7 @@ pub async fn create_round(
             created_by,
             updated_by
         )
-        SELECT term.academic_year_id, term.id, $2, $3, $4, $5, $5
-        FROM academic_terms term
-        WHERE term.id = $1 AND term.status IN ('setup', 'open')
+        VALUES ($1, $2, $3, $4, $5, $6, $6)
         RETURNING id,
                   academic_year_id,
                   academic_term_id,
@@ -137,13 +159,16 @@ pub async fn create_round(
                   updated_at
         "#,
     )
+    .bind(academic_year_id)
     .bind(request.academic_term_id)
     .bind(name)
     .bind(request.description)
     .bind(exam_kind)
     .bind(actor_user_id)
-    .fetch_one(pool)
+    .fetch_one(&mut *tx)
     .await?;
+
+    tx.commit().await?;
 
     Ok(row)
 }

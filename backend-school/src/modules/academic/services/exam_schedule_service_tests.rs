@@ -341,6 +341,73 @@ async fn round_reads_are_explicitly_term_scoped() {
 }
 
 #[tokio::test]
+async fn creating_exam_round_accepts_canonical_writable_term_statuses() {
+    let pool = migrated_pool("exam_round_create_term_statuses").await;
+    let term_id: Uuid =
+        sqlx::query_scalar("SELECT academic_term_id FROM academic_exam_rounds ORDER BY id LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
+
+    for status in ["planning", "ready", "active"] {
+        sqlx::query("UPDATE academic_terms SET status = $2 WHERE id = $1")
+            .bind(term_id)
+            .bind(status)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let round = exam_schedule_service::create_round(
+            &pool,
+            CreateExamRoundRequest {
+                academic_term_id: term_id,
+                name: format!("สอบสถานะ {status}"),
+                description: None,
+                exam_kind: Some("midterm".to_string()),
+            },
+            actor_id,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(round.academic_term_id, term_id);
+    }
+}
+
+#[tokio::test]
+async fn creating_exam_round_in_closed_term_returns_conflict() {
+    let pool = migrated_pool("exam_round_create_closed_term").await;
+    let term_id: Uuid =
+        sqlx::query_scalar("SELECT academic_term_id FROM academic_exam_rounds ORDER BY id LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
+
+    sqlx::query("UPDATE academic_terms SET status = 'closed' WHERE id = $1")
+        .bind(term_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let error = exam_schedule_service::create_round(
+        &pool,
+        CreateExamRoundRequest {
+            academic_term_id: term_id,
+            name: "สอบในภาคเรียนที่ปิดแล้ว".to_string(),
+            description: None,
+            exam_kind: Some("final".to_string()),
+        },
+        actor_id,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(matches!(error, crate::error::AppError::Conflict(_)));
+}
+
+#[tokio::test]
 async fn deleting_an_exam_round_cascades_owned_schedule_data() {
     let pool = migrated_pool("exam_round_delete_cascade").await;
     let round_id = Uuid::parse_str("84000000-0000-0000-0000-000000000001").unwrap();
