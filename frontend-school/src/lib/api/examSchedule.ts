@@ -112,6 +112,15 @@ export async function updateExamRound(
 	);
 }
 
+export async function deleteExamRound(roundId: string): Promise<Schemas['EmptyData']> {
+	return apiData(
+		await apiClient.delete<Schemas['EmptyData']>(
+			`/api/academic/exam-schedules/${encodeURIComponent(roundId)}`
+		),
+		'ไม่สามารถลบรอบตารางสอบได้'
+	);
+}
+
 export async function getExamScheduleWorkspace(roundId: string): Promise<ExamScheduleWorkspace> {
 	return apiData(
 		await apiClient.get<ExamScheduleWorkspace>(

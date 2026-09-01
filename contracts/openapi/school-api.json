@@ -43796,6 +43796,67 @@
       }
     },
     "/api/academic/exam-schedules/{round_id}": {
+      "delete": {
+        "operationId": "deleteExamRound",
+        "parameters": [
+          {
+            "description": "Exam round ID",
+            "in": "path",
+            "name": "round_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Exam round deleted"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Exam round not found"
+          }
+        },
+        "summary": "DELETE /api/academic/exam-schedules/{round_id}",
+        "tags": [
+          "academic"
+        ]
+      },
       "get": {
         "operationId": "getExamScheduleWorkspace",
         "parameters": [

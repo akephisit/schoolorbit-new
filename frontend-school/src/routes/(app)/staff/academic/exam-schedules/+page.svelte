@@ -7,6 +7,7 @@
 	import { getAcademicContextStore } from '$lib/academic-context/store';
 	import {
 		createExamRound,
+		deleteExamRound,
 		listExamRounds,
 		type CreateExamRoundInput,
 		type ExamRound,
@@ -19,6 +20,7 @@
 		type AcademicPrerequisite
 	} from '$lib/components/academic-workflow';
 	import ExamRoundDialog from '$lib/components/academic/exam-schedule/ExamRoundDialog.svelte';
+	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
@@ -32,7 +34,7 @@
 	} from '$lib/components/ui/table';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
-	import { CalendarClock, Plus, RefreshCw } from 'lucide-svelte';
+	import { CalendarClock, Plus, RefreshCw, Trash2 } from 'lucide-svelte';
 
 	let { data }: PageProps = $props();
 
@@ -47,6 +49,9 @@
 	let rounds = $state<ExamRound[]>([]);
 	let createDialogOpen = $state(false);
 	let creatingRound = $state(false);
+	let deleteDialogOpen = $state(false);
+	let deleteTarget = $state<ExamRound | null>(null);
+	let deletingRoundId = $state<string | null>(null);
 	const assessmentPrerequisite: AcademicPrerequisite = {
 		key: 'exam-schedule-assessments',
 		status: 'warning',
@@ -60,6 +65,38 @@
 	const canManageExamSchedules = $derived(
 		$can.has(PERMISSIONS.ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL)
 	);
+	const canPublishExamSchedules = $derived(
+		$can.has(PERMISSIONS.ACADEMIC_EXAM_SCHEDULE_PUBLISH_SCHOOL)
+	);
+
+	function canDeleteExamRound(round: ExamRound): boolean {
+		return canManageExamSchedules && (round.status === 'draft' || canPublishExamSchedules);
+	}
+
+	function requestDeleteRound(round: ExamRound) {
+		if (!canDeleteExamRound(round) || deletingRoundId) return;
+		deleteTarget = round;
+		deleteDialogOpen = true;
+	}
+
+	async function confirmDeleteRound() {
+		const target = deleteTarget;
+		if (!target || deletingRoundId || !canDeleteExamRound(target)) return;
+
+		deletingRoundId = target.id;
+		try {
+			await deleteExamRound(target.id);
+			rounds = rounds.filter((round) => round.id !== target.id);
+			toast.success(`ลบรอบสอบ “${target.name}” แล้ว`);
+			deleteDialogOpen = false;
+			deleteTarget = null;
+		} catch (deleteError) {
+			toast.error(deleteError instanceof Error ? deleteError.message : 'ไม่สามารถลบรอบตารางสอบได้');
+		} finally {
+			deletingRoundId = null;
+		}
+	}
+
 	async function loadRounds(termId: string | null = academicTermId) {
 		if (!termId) {
 			rounds = [];
@@ -196,7 +233,7 @@
 							<TableHead class="w-36">สถานะ</TableHead>
 							<TableHead>ภาคเรียน</TableHead>
 							<TableHead class="w-36">เผยแพร่</TableHead>
-							<TableHead class="w-32 text-right">จัดการ</TableHead>
+							<TableHead class="w-40 text-right">จัดการ</TableHead>
 						</TableRow>
 					</TableHeader>
 					<TableBody>
@@ -234,17 +271,35 @@
 								<TableCell class="text-sm text-muted-foreground">
 									{formatDate(round.publishedAt)}
 								</TableCell>
-								<TableCell class="text-right">
-									<Button
-										variant="outline"
-										size="sm"
-										onclick={(event) => {
-											event.stopPropagation();
-											goto(resolve(`/staff/academic/exam-schedules/${round.id}`));
-										}}
-									>
-										เปิด
-									</Button>
+								<TableCell>
+									<div class="flex items-center justify-end gap-1">
+										<Button
+											variant="outline"
+											size="sm"
+											onclick={(event) => {
+												event.stopPropagation();
+												goto(resolve(`/staff/academic/exam-schedules/${round.id}`));
+											}}
+										>
+											เปิด
+										</Button>
+										{#if canDeleteExamRound(round)}
+											<Button
+												variant="ghost"
+												size="icon-sm"
+												class="text-destructive hover:bg-destructive/10 hover:text-destructive"
+												aria-label={`ลบรอบสอบ ${round.name}`}
+												title={`ลบรอบสอบ ${round.name}`}
+												disabled={deletingRoundId !== null}
+												onclick={(event) => {
+													event.stopPropagation();
+													requestDeleteRound(round);
+												}}
+											>
+												<Trash2 class="h-4 w-4" />
+											</Button>
+										{/if}
+									</div>
 								</TableCell>
 							</TableRow>
 						{/each}
@@ -261,4 +316,31 @@
 		saving={creatingRound}
 		onCreate={handleCreateRound}
 	/>
+
+	<AlertDialog.Root bind:open={deleteDialogOpen}>
+		<AlertDialog.Content>
+			<AlertDialog.Header>
+				<AlertDialog.Title>ลบรอบสอบ “{deleteTarget?.name ?? ''}” หรือไม่</AlertDialog.Title>
+				<AlertDialog.Description>
+					การดำเนินการนี้ย้อนกลับไม่ได้ และจะลบวันสอบ รายการสอบ เวลา ห้องสอบ ที่นั่ง
+					และกรรมการทั้งหมดในรอบนี้ โดยไม่ลบโครงสร้างคะแนนต้นทาง
+					{#if deleteTarget?.status === 'published'}
+						<span class="mt-2 block font-medium text-destructive">
+							รอบนี้เผยแพร่แล้ว เมื่อลบ ครูและนักเรียนจะไม่เห็นตารางสอบรอบนี้อีก
+						</span>
+					{/if}
+				</AlertDialog.Description>
+			</AlertDialog.Header>
+			<AlertDialog.Footer>
+				<AlertDialog.Cancel disabled={deletingRoundId !== null}>ยกเลิก</AlertDialog.Cancel>
+				<AlertDialog.Action
+					variant="destructive"
+					disabled={deletingRoundId !== null}
+					onclick={confirmDeleteRound}
+				>
+					{deletingRoundId ? 'กำลังลบ...' : 'ลบรอบสอบถาวร'}
+				</AlertDialog.Action>
+			</AlertDialog.Footer>
+		</AlertDialog.Content>
+	</AlertDialog.Root>
 </PageShell>

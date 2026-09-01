@@ -323,6 +323,7 @@ use utoipa::OpenApi;
         crate::modules::academic::handlers::exam_schedule::list_rounds,
         crate::modules::academic::handlers::exam_schedule::create_round,
         crate::modules::academic::handlers::exam_schedule::update_round,
+        crate::modules::academic::handlers::exam_schedule::delete_round,
         crate::modules::academic::handlers::exam_schedule::get_workspace,
         crate::modules::academic::handlers::exam_schedule::preview_sources,
         crate::modules::academic::handlers::exam_schedule::sync_sources,
@@ -3178,6 +3179,20 @@ mod tests {
             document["paths"]["/api/parent/academic-context/options"]["get"]["responses"]["200"]
                 ["content"]["application/json"]["schema"]["$ref"],
             "#/components/schemas/ApiResponse_AcademicContextOptions"
+        );
+    }
+
+    #[test]
+    fn documents_exam_round_deletion() {
+        let document = school_api_value().expect("document should serialize");
+        assert_eq!(
+            document["paths"]["/api/academic/exam-schedules/{round_id}"]["delete"]["operationId"],
+            "deleteExamRound"
+        );
+        assert_eq!(
+            document["paths"]["/api/academic/exam-schedules/{round_id}"]["delete"]["responses"]
+                ["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_EmptyData"
         );
     }
 

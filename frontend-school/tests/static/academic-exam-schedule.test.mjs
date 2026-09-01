@@ -175,6 +175,11 @@ test('academic exam schedule API client maps functions to backend routes and met
 			routeFragment: '/api/academic/exam-schedules/${encodeURIComponent(roundId)}'
 		},
 		{
+			functionName: 'deleteExamRound',
+			method: 'delete',
+			routeFragment: '/api/academic/exam-schedules/${encodeURIComponent(roundId)}'
+		},
+		{
 			functionName: 'getExamScheduleWorkspace',
 			method: 'get',
 			routeFragment: '/api/academic/exam-schedules/${encodeURIComponent(roundId)}'
@@ -289,6 +294,17 @@ test('academic exam schedule API client maps functions to backend routes and met
 			`${functionName} should call apiClient.${method} with ${routeFragment}`
 		);
 	}
+});
+
+test('exam round list deletes only authorized rounds through destructive confirmation', async () => {
+	const page = await readProjectFile('src/routes/(app)/staff/academic/exam-schedules/+page.svelte');
+
+	assert.match(page, /PERMISSIONS\.ACADEMIC_EXAM_SCHEDULE_PUBLISH_SCHOOL/);
+	assert.match(page, /round\.status === 'draft' \|\| canPublishExamSchedules/);
+	assert.match(page, /await deleteExamRound\(target\.id\)/);
+	assert.match(page, /rounds = rounds\.filter\(\(round\) => round\.id !== target\.id\)/);
+	assert.match(page, /<AlertDialog\.Title>ลบรอบสอบ/);
+	assert.match(page, /variant="destructive"/);
 });
 
 test('exam schedule API exposes staff-level invigilator drag actions', () => {

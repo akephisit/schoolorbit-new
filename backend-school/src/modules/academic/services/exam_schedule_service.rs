@@ -22,7 +22,8 @@ pub use self::room_assignments::{
     generate_seats_for_assignment, list_day_room_assignments, upsert_day_room_assignment,
 };
 pub use self::rounds_and_days::{
-    create_round, delete_exam_day, list_rounds, update_exam_day, update_round, upsert_exam_day,
+    create_round, delete_exam_day, delete_round, list_rounds, update_exam_day, update_round,
+    upsert_exam_day,
 };
 pub use self::sessions_and_conflicts::{delete_exam_session, place_exam_session};
 pub use self::workspace::{get_workspace, preview_exam_sources, sync_exam_sources};

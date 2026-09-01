@@ -18,8 +18,8 @@ use super::room_assignments::{
     build_default_seat_assignments, validate_seat_generation_capacity, SeatStudent,
 };
 use super::rounds_and_days::{
-    ensure_exam_round_is_mutable, normalize_blocked_windows, normalize_exam_kind,
-    normalize_update_round_request,
+    ensure_exam_round_can_be_deleted, ensure_exam_round_is_mutable, normalize_blocked_windows,
+    normalize_exam_kind, normalize_update_round_request,
 };
 use super::sessions_and_conflicts::grade_level_allowed_by_day_scope;
 use super::shared::{
@@ -342,6 +342,13 @@ fn remove_invigilator_from_assignment_only_deletes_target_assignment() {
 fn exam_round_mutation_guard_rejects_published_rounds() {
     assert!(ensure_exam_round_is_mutable("draft").is_ok());
     assert!(ensure_exam_round_is_mutable("published").is_err());
+}
+
+#[test]
+fn published_exam_round_deletion_requires_publish_permission() {
+    assert!(ensure_exam_round_can_be_deleted("draft", false).is_ok());
+    assert!(ensure_exam_round_can_be_deleted("published", false).is_err());
+    assert!(ensure_exam_round_can_be_deleted("published", true).is_ok());
 }
 
 #[test]

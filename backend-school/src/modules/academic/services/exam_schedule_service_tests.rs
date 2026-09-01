@@ -340,6 +340,67 @@ async fn round_reads_are_explicitly_term_scoped() {
     assert!(rounds.iter().all(|round| round.academic_term_id == term_id));
 }
 
+#[tokio::test]
+async fn deleting_an_exam_round_cascades_owned_schedule_data() {
+    let pool = migrated_pool("exam_round_delete_cascade").await;
+    let round_id = Uuid::parse_str("84000000-0000-0000-0000-000000000001").unwrap();
+
+    exam_schedule_service::delete_round(&pool, round_id, true)
+        .await
+        .unwrap();
+
+    let round_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM academic_exam_rounds WHERE id = $1")
+            .bind(round_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let day_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM academic_exam_days WHERE exam_round_id = $1")
+            .bind(round_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let item_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM academic_exam_schedule_items WHERE exam_round_id = $1",
+    )
+    .bind(round_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(round_count, 0);
+    assert_eq!(day_count, 0);
+    assert_eq!(item_count, 0);
+}
+
+#[tokio::test]
+async fn deleting_a_published_exam_round_without_publish_permission_is_denied() {
+    let pool = migrated_pool("exam_round_delete_published_denied").await;
+    let round_id = Uuid::parse_str("84000000-0000-0000-0000-000000000001").unwrap();
+
+    sqlx::query(
+        "UPDATE academic_exam_rounds SET status = 'published', published_at = now() WHERE id = $1",
+    )
+    .bind(round_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let error = exam_schedule_service::delete_round(&pool, round_id, false)
+        .await
+        .unwrap_err();
+
+    assert!(matches!(error, crate::error::AppError::Forbidden(_)));
+    let round_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM academic_exam_rounds WHERE id = $1")
+            .bind(round_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(round_count, 1);
+}
+
 #[test]
 fn exam_round_wire_rejects_legacy_semester_identity() {
     let payload = serde_json::json!({

@@ -133,6 +133,35 @@ pub async fn update_round(
     Ok(Json(ApiResponse::ok(round)).into_response())
 }
 
+/// DELETE /api/academic/exam-schedules/{round_id}
+#[utoipa::path(
+    delete,
+    path = "/api/academic/exam-schedules/{round_id}",
+    operation_id = "deleteExamRound",
+    tag = "academic",
+    params(("round_id" = Uuid, Path, description = "Exam round ID")),
+    responses(
+        (status = 200, description = "Exam round deleted", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Exam round not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn delete_round(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(round_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL)?;
+    let can_delete_published = actor.has_permission(codes::ACADEMIC_EXAM_SCHEDULE_PUBLISH_SCHOOL);
+
+    exam_schedule_service::delete_round(&pool, round_id, can_delete_published).await?;
+    Ok(Json(ApiResponse::empty()).into_response())
+}
+
 /// GET /api/academic/exam-schedules/{round_id}
 #[utoipa::path(
     get,

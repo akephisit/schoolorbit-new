@@ -658,7 +658,8 @@ export interface paths {
 		get: operations['getExamScheduleWorkspace'];
 		put?: never;
 		post?: never;
-		delete?: never;
+		/** DELETE /api/academic/exam-schedules/{round_id} */
+		delete: operations['deleteExamRound'];
 		options?: never;
 		head?: never;
 		/** PATCH /api/academic/exam-schedules/{round_id} */
@@ -18871,6 +18872,56 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['ApiResponse_ExamScheduleWorkspace'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Exam round not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteExamRound: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Exam round ID */
+				round_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Exam round deleted */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
 				};
 			};
 			/** @description Authentication required */

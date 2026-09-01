@@ -194,6 +194,36 @@ pub async fn update_round(
     Ok(row)
 }
 
+pub async fn delete_round(
+    pool: &PgPool,
+    round_id: Uuid,
+    can_delete_published: bool,
+) -> Result<(), AppError> {
+    let mut tx = pool.begin().await?;
+    let status: String = sqlx::query_scalar(
+        r#"
+        SELECT status
+        FROM academic_exam_rounds
+        WHERE id = $1
+        FOR UPDATE
+        "#,
+    )
+    .bind(round_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Exam round not found".to_string()))?;
+
+    ensure_exam_round_can_be_deleted(&status, can_delete_published)?;
+
+    sqlx::query("DELETE FROM academic_exam_rounds WHERE id = $1")
+        .bind(round_id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+
+    Ok(())
+}
+
 pub async fn upsert_exam_day(
     pool: &PgPool,
     round_id: Uuid,
@@ -432,6 +462,19 @@ pub(super) fn ensure_exam_round_is_mutable(status: &str) -> Result<(), AppError>
     if status == "published" {
         return Err(AppError::BadRequest(
             "Published exam rounds cannot be changed".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+pub(super) fn ensure_exam_round_can_be_deleted(
+    status: &str,
+    can_delete_published: bool,
+) -> Result<(), AppError> {
+    if status == "published" && !can_delete_published {
+        return Err(AppError::Forbidden(
+            "การลบรอบสอบที่เผยแพร่แล้วต้องใช้สิทธิ์เผยแพร่ตารางสอบ".to_string(),
         ));
     }
 

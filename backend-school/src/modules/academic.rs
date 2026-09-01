@@ -51,7 +51,8 @@ pub fn academic_routes() -> Router<AppState> {
             .route(
                 "/exam-schedules/{round_id}",
                 get(handlers::exam_schedule::get_workspace)
-                    .patch(handlers::exam_schedule::update_round),
+                    .patch(handlers::exam_schedule::update_round)
+                    .delete(handlers::exam_schedule::delete_round),
             )
             .route(
                 "/exam-schedules/{round_id}/source-preview",
