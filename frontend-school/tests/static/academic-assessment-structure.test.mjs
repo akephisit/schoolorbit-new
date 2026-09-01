@@ -235,3 +235,15 @@ test('assessment phase controls separate plan editing from score entry without l
 	assert.doesNotMatch(page, /teacherAccessEnabled|toggleTeacherAccess/);
 	assert.doesNotMatch(capabilityBlock, /LEARNING_OFFERING/);
 });
+
+test('assessment UI asks for duration only in the exam timetable and hides controls from readers', async () => {
+	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
+	const controlHeading = page.indexOf('<h2 class="font-semibold">ช่วงการทำงานของครู</h2>');
+	const controlStart = page.lastIndexOf('{#if canManageSchool}', controlHeading);
+	const controlCard = page.slice(controlStart, page.indexOf('{#if plans.length === 0}'));
+
+	assert.match(page, /phase\.examArrangement === 'in_timetable'/);
+	assert.match(page, /if \(arrangement !== 'in_timetable'\) phase\.examDurationMinutes = null/);
+	assert.match(controlCard, /\{#if canManageSchool\}/);
+	assert.doesNotMatch(controlCard, /ดูสถานะเท่านั้น/);
+});

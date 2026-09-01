@@ -105,11 +105,11 @@ pub fn validate_plan_payload(payload: &SaveAssessmentPlanRequest) -> Result<(), 
                 phase.phase_code.label_th()
             )));
         }
-        if phase.exam_arrangement == AssessmentExamArrangement::None
+        if phase.exam_arrangement != AssessmentExamArrangement::InTimetable
             && phase.exam_duration_minutes.is_some()
         {
             return Err(AppError::ValidationError(format!(
-                "ช่วง{}ที่ไม่จัดสอบต้องไม่มีระยะเวลาสอบ",
+                "ช่วง{}กำหนดเวลาได้เฉพาะการสอบในตารางสอบ",
                 phase.phase_code.label_th()
             )));
         }
@@ -1177,6 +1177,18 @@ mod tests {
                 AssessmentReadinessFinding::MidtermMissingExamDuration,
             ]
         );
+    }
+
+    #[test]
+    fn exam_duration_is_only_allowed_for_in_timetable_exams() {
+        let mut payload = complete_payload();
+        payload.phases[3].exam_duration_minutes = Some(60);
+
+        assert!(matches!(
+            validate_plan_payload(&payload),
+            Err(AppError::ValidationError(message))
+                if message.contains("เฉพาะการสอบในตารางสอบ")
+        ));
     }
 
     #[test]

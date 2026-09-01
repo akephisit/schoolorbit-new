@@ -223,7 +223,7 @@
 				return `คะแนนช่วง${phaseLabel(phase.phaseCode)}ต้องเป็นเลขตั้งแต่ 0 และมีทศนิยมไม่เกิน 2 ตำแหน่ง`;
 			}
 			if (
-				phase.examArrangement !== 'none' &&
+				phase.examArrangement === 'in_timetable' &&
 				phase.examDurationMinutes != null &&
 				phase.examDurationMinutes <= 0
 			) {
@@ -329,7 +329,8 @@
 		const revisionAtStart = draftRevision;
 		const payloadPhases = draftPhases.map((phase) => ({
 			...phase,
-			examDurationMinutes: phase.examArrangement === 'none' ? null : phase.examDurationMinutes
+			examDurationMinutes:
+				phase.examArrangement === 'in_timetable' ? phase.examDurationMinutes : null
 		}));
 		saving = true;
 		saveState = 'saving';
@@ -377,7 +378,7 @@
 		arrangement: AssessmentExamArrangement
 	): void {
 		phase.examArrangement = arrangement;
-		if (arrangement === 'none') phase.examDurationMinutes = null;
+		if (arrangement !== 'in_timetable') phase.examDurationMinutes = null;
 		markDirty();
 	}
 
@@ -453,49 +454,50 @@
 		/>
 	{:else}
 		<div class="space-y-5">
-			<section class="overflow-hidden rounded-xl border bg-card shadow-sm">
-				<div class="flex flex-wrap items-center justify-between gap-4 border-b px-5 py-4">
-					<div>
-						<div class="flex items-center gap-2">
-							<CalendarClock class="size-5 text-primary" />
-							<h2 class="font-semibold">ช่วงการทำงานของครู</h2>
+			{#if canManageSchool}
+				<section class="overflow-hidden rounded-xl border bg-card shadow-sm">
+					<div class="flex flex-wrap items-center justify-between gap-4 border-b px-5 py-4">
+						<div>
+							<div class="flex items-center gap-2">
+								<CalendarClock class="size-5 text-primary" />
+								<h2 class="font-semibold">ช่วงการทำงานของครู</h2>
+							</div>
+							<p class="mt-1 text-sm text-muted-foreground">
+								เปิดการแก้โครงสร้างสำหรับผู้รับผิดชอบรายวิชา
+								และเปิดการจัดรายการย่อยพร้อมกรอกคะแนนนักเรียนแยกตามช่วง
+							</p>
 						</div>
-						<p class="mt-1 text-sm text-muted-foreground">
-							เปิดการแก้โครงสร้างสำหรับผู้รับผิดชอบรายวิชา
-							และเปิดการจัดรายการย่อยพร้อมกรอกคะแนนนักเรียนแยกตามช่วง
-						</p>
 					</div>
-					{#if !canManageSchool}<Badge variant="outline">ดูสถานะเท่านั้น</Badge>{/if}
-				</div>
-				<div class="grid divide-y sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
-					{#each phaseControls as control (control.id)}
-						<div class="space-y-3 px-5 py-4">
-							<div class="flex items-center justify-between gap-3">
-								<p class="font-medium">{control.label}</p>
-								<span class="font-mono text-xs text-muted-foreground">0{control.order}</span>
+					<div class="grid divide-y sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
+						{#each phaseControls as control (control.id)}
+							<div class="space-y-3 px-5 py-4">
+								<div class="flex items-center justify-between gap-3">
+									<p class="font-medium">{control.label}</p>
+									<span class="font-mono text-xs text-muted-foreground">0{control.order}</span>
+								</div>
+								<div class="flex items-center justify-between gap-3 text-sm">
+									<Label for={`plan-control-${control.id}`}>แก้โครงสร้างคะแนนรายวิชา</Label>
+									<Switch
+										id={`plan-control-${control.id}`}
+										checked={control.planEditingEnabled}
+										disabled={Boolean(controlBusyId)}
+										onclick={() => togglePhaseControl(control, 'planEditingEnabled')}
+									/>
+								</div>
+								<div class="flex items-center justify-between gap-3 text-sm">
+									<Label for={`score-control-${control.id}`}>กรอกคะแนนนักเรียน</Label>
+									<Switch
+										id={`score-control-${control.id}`}
+										checked={control.scoreEntryEnabled}
+										disabled={Boolean(controlBusyId)}
+										onclick={() => togglePhaseControl(control, 'scoreEntryEnabled')}
+									/>
+								</div>
 							</div>
-							<div class="flex items-center justify-between gap-3 text-sm">
-								<Label for={`plan-control-${control.id}`}>แก้โครงสร้างคะแนนรายวิชา</Label>
-								<Switch
-									id={`plan-control-${control.id}`}
-									checked={control.planEditingEnabled}
-									disabled={!canManageSchool || Boolean(controlBusyId)}
-									onclick={() => togglePhaseControl(control, 'planEditingEnabled')}
-								/>
-							</div>
-							<div class="flex items-center justify-between gap-3 text-sm">
-								<Label for={`score-control-${control.id}`}>กรอกคะแนนนักเรียน</Label>
-								<Switch
-									id={`score-control-${control.id}`}
-									checked={control.scoreEntryEnabled}
-									disabled={!canManageSchool || Boolean(controlBusyId)}
-									onclick={() => togglePhaseControl(control, 'scoreEntryEnabled')}
-								/>
-							</div>
-						</div>
-					{/each}
-				</div>
-			</section>
+						{/each}
+					</div>
+				</section>
+			{/if}
 
 			{#if plans.length === 0}
 				<AcademicPrerequisiteNotice prerequisite={noCourseOfferingPrerequisite} />
@@ -803,7 +805,7 @@
 											>
 										</Select.Root>
 									</div>
-									{#if phase.examArrangement !== 'none'}
+									{#if phase.examArrangement === 'in_timetable'}
 										<div class="space-y-2 sm:col-start-2">
 											<Label for={`phase-duration-${phase.phaseCode}`}>เวลาสอบ (นาที)</Label><Input
 												id={`phase-duration-${phase.phaseCode}`}
