@@ -25,6 +25,21 @@ async function readSupervisionServices() {
 	return (await Promise.all(supervisionServiceFiles.map(readRepoFile))).join('\n');
 }
 
+test('teaching supervision names canonical timetable block-group references end to end', async () => {
+	const supervisionModels = await readRepoFile('backend-school/src/modules/supervision/models.rs');
+	const supervisionServices = await readSupervisionServices();
+	const generatedSchoolApi = await readRepoFile(
+		'frontend-school/src/lib/api/generated/school-api.ts'
+	);
+
+	assert.match(supervisionModels, /timetable_block_group_id/);
+	assert.match(supervisionServices, /timetable_block_group_id/);
+	assert.match(generatedSchoolApi, /timetableBlockGroupId/);
+	assert.doesNotMatch(supervisionModels, /timetable_entry_id/);
+	assert.doesNotMatch(supervisionServices, /timetable_entry_id/);
+	assert.doesNotMatch(generatedSchoolApi, /timetableEntryId/);
+});
+
 test('teaching supervision booking uses a weekly timetable grid with exact observed dates', async () => {
 	const supervisionApi = await readRepoFile('frontend-school/src/lib/api/supervision.ts');
 	const supervisionPage = await readRepoFile(
@@ -277,11 +292,11 @@ test('teaching supervision observation detail supports safe edit actions', async
 	assert.match(detailPage, /getSupervisionEvaluatorAvailability/);
 	assert.match(detailPage, /getSupervisionObservationTimetableOptions/);
 	assert.match(detailPage, /availableEvaluators/);
-	assert.match(detailPage, /editTimetableEntries/);
-	assert.match(detailPage, /selectLessonTimetableEntry/);
-	assert.match(detailPage, /selectedEditTimetableEntryId/);
+	assert.match(detailPage, /editTimetableBlockGroups/);
+	assert.match(detailPage, /selectLessonTimetableBlockGroup/);
+	assert.match(detailPage, /selectedEditTimetableBlockGroupId/);
 	assert.match(detailPage, /editTimetableObservedAt/);
-	assert.match(detailPage, /timetableEntryId:\s*selectedEditTimetableEntryId/);
+	assert.match(detailPage, /timetableBlockGroupId:\s*selectedEditTimetableBlockGroupId/);
 	assert.doesNotMatch(detailPage, /การแก้จากหน้ารายละเอียดจะบันทึกเป็นคาบกำหนดเอง/);
 	assert.match(detailPage, /cancelSupervisionObservation/);
 	assert.match(detailPage, /PageShell/);

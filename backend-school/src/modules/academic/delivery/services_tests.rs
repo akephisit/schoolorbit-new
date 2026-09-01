@@ -2878,8 +2878,8 @@ async fn schedule_only_change_set_can_preview_and_publish_after_a_draft_entry_ch
 
     timetable_block_service::update_block(
         &pool,
-        target_block.id,
         context.teacher_id,
+        target_block.id,
         UpdateTimetableBlockRequest {
             timetable_version_id: change_set.target_timetable_version_id,
             row_version: target_block.row_version,

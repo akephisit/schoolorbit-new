@@ -10,8 +10,8 @@
 	import {
 		currentLocalDate,
 		getMyTimetable,
-		periodsFromTimetableEntries,
-		type TimetableEntry,
+		periodsFromTimetableBlocks,
+		type TimetableBlock,
 		type TimetablePeriodSummary
 	} from '$lib/api/timetable';
 	import { PageShell } from '$lib/components/app-layout';
@@ -34,7 +34,7 @@
 	let selectedYearId = $state('');
 	let selectedTermId = $state('');
 	let periods = $state<TimetablePeriodSummary[]>([]);
-	let entries = $state<TimetableEntry[]>([]);
+	let blocks = $state<TimetableBlock[]>([]);
 	let loading = $state(true);
 	let errorMessage = $state('');
 	let revision = 0;
@@ -43,7 +43,7 @@
 		contextOptions?.terms.filter((term) => term.academicYearId === selectedYearId) ?? []
 	);
 	const schoolDays = $derived.by(() => {
-		const configured = new Set(entries.map((entry) => entry.dayOfWeek));
+		const configured = new Set(blocks.map((block) => block.dayOfWeek));
 		return configured.size > 0
 			? dayOptions.filter((day) => configured.has(day.value))
 			: dayOptions.slice(0, 5);
@@ -92,13 +92,13 @@
 		loading = true;
 		errorMessage = '';
 		try {
-			const loadedEntries = await getMyTimetable({
+			const loadedBlocks = await getMyTimetable({
 				academicTermId: termId,
 				date: currentLocalDate()
 			});
 			if (current !== revision) return;
-			periods = periodsFromTimetableEntries(loadedEntries);
-			entries = loadedEntries;
+			periods = periodsFromTimetableBlocks(loadedBlocks);
+			blocks = loadedBlocks;
 		} catch (error) {
 			if (current === revision) {
 				errorMessage = error instanceof Error ? error.message : 'โหลดตารางเรียนไม่สำเร็จ';
@@ -132,30 +132,38 @@
 		await loadTimetable(selectedYearId, selectedTermId);
 	}
 
-	function entriesForCell(day: string, periodId: string): TimetableEntry[] {
-		return entries.filter(
-			(entry) => entry.dayOfWeek === day && entry.bellSchedulePeriodId === periodId
+	function blocksForCell(day: string, periodId: string): TimetableBlock[] {
+		return blocks.filter(
+			(block) => block.dayOfWeek === day && block.bellSchedulePeriodId === periodId
 		);
 	}
 
-	function entryTitle(entry: TimetableEntry): string {
-		return (
-			entry.offeringCode ??
-			entry.title ??
-			entry.subjectVersionDisplayLabel ??
-			entry.activityVersionDisplayLabel ??
-			entry.entryType
-		);
+	function blockTitle(block: TimetableBlock): string {
+		return block.offeringCode ?? block.title ?? 'กิจกรรม';
 	}
 
-	function entryColor(entryType: string): string {
-		if (entryType === 'COURSE')
+	function blockColor(blockKind: TimetableBlock['blockKind']): string {
+		if (blockKind === 'course')
 			return 'border-blue-200 bg-blue-50 text-blue-950 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-100';
-		if (entryType === 'ACTIVITY')
+		if (blockKind === 'activity')
 			return 'border-emerald-200 bg-emerald-50 text-emerald-950 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-100';
-		if (entryType === 'BREAK')
-			return 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100';
-		return 'border-violet-200 bg-violet-50 text-violet-950 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-100';
+		return 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100';
+	}
+
+	function groupLabel(block: TimetableBlock): string {
+		return [
+			...block.groups.map((group) => group.name),
+			...block.homerooms.map((room) => room.name)
+		].join(', ');
+	}
+
+	function roomLabel(block: TimetableBlock): string {
+		return [
+			...block.groups.map((group) => group.roomCode),
+			...block.homerooms.map((room) => room.roomCode)
+		]
+			.filter(Boolean)
+			.join(', ');
 	}
 
 	onMount(loadHistory);
@@ -217,7 +225,7 @@
 			title="ยังไม่มีประวัติปีการศึกษา"
 			description="เมื่อโรงเรียนสร้างข้อมูลนักเรียนประจำปีแล้ว ประวัติจะปรากฏที่นี่"
 		/>
-	{:else if entries.length === 0}
+	{:else if blocks.length === 0}
 		<PageState
 			title="ยังไม่มีตารางเรียน"
 			description="โรงเรียนยังไม่ได้จัดตารางเรียนในภาคเรียนที่เลือก"
@@ -240,26 +248,26 @@
 				<tbody
 					>{#each schoolDays as day (day.value)}<tr
 							><th class="bg-muted/30 border p-2 text-xs">{day.label}</th
-							>{#each periods as period (period.id)}{@const cellEntries = entriesForCell(
+							>{#each periods as period (period.id)}{@const cellBlocks = blocksForCell(
 									day.value,
 									period.id
 								)}<td class="h-24 border p-1 align-top"
-									>{#each cellEntries as entry (entry.id)}<div
-											class={`mb-1 flex min-h-20 flex-col rounded-md border p-2 text-xs ${entryColor(entry.entryType)}`}
+									>{#each cellBlocks as block (block.id)}<div
+											class={`mb-1 flex min-h-20 flex-col rounded-md border p-2 text-xs ${blockColor(block.blockKind)}`}
 										>
-											<p class="truncate font-semibold">{entryTitle(entry)}</p>
-											{#if entry.offeringName}<p class="mt-1 line-clamp-2 opacity-80">
-													{entry.offeringName}
-												</p>{/if}{#if entry.learningGroupName || entry.homeroomName}<p
+											<p class="truncate font-semibold">{blockTitle(block)}</p>
+											{#if block.offeringName}<p class="mt-1 line-clamp-2 opacity-80">
+													{block.offeringName}
+												</p>{/if}{#if groupLabel(block)}<p
 													class="mt-auto flex items-center gap-1 truncate opacity-70"
 												>
 													<School class="size-3" />
-													{entry.learningGroupName ?? entry.homeroomName}
-												</p>{/if}{#if entry.roomCode}<p
+													{groupLabel(block)}
+												</p>{/if}{#if roomLabel(block)}<p
 													class="flex items-center gap-1 truncate opacity-70"
 												>
 													<MapPin class="size-3" />
-													{entry.roomCode}
+													{roomLabel(block)}
 												</p>{/if}
 										</div>{/each}</td
 								>{/each}</tr

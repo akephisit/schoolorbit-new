@@ -1,15 +1,15 @@
 import type {
-	TimetableEntry,
-	TimetablePlacementCandidate,
-	TimetablePlacementSource,
-	TimetablePlacementState,
-	TimetableUnscheduledDemand,
-	TimetableWorkspace
+	TimetableBlock,
+	TimetableBlockPlacementCandidate,
+	TimetableBlockPlacementSource,
+	TimetableBlockPlacementState,
+	TimetableBlockWorkspace,
+	TimetableOrdinaryDemand
 } from '../../api/timetable';
 
 export type TimetableBoardView = 'homeroom' | 'learning_group' | 'teacher';
 export type TimetablePageView = TimetableBoardView | 'wholeSchool';
-export type LocalTimetableConflict = 'learning_group' | 'homeroom' | 'instructor' | 'room';
+export type LocalTimetableConflict = 'learning_group' | 'homeroom' | 'teacher' | 'room';
 
 export interface TimetableBoardRow {
 	id: string;
@@ -26,48 +26,48 @@ export interface TimetableCellAddress {
 }
 
 export interface LocalPlacementRequest extends TimetableCellAddress {
-	source: TimetablePlacementSource;
-	candidate: TimetablePlacementCandidate;
+	source: TimetableBlockPlacementSource;
+	candidate: TimetableBlockPlacementCandidate;
 }
 
 export interface LocalPlacementPreview {
-	state: TimetablePlacementState;
-	targetEntryId: string | null;
+	state: TimetableBlockPlacementState;
+	targetBlockId: string | null;
 	conflicts: LocalTimetableConflict[];
 }
 
 export interface TimetableBoardState {
-	workspace: TimetableWorkspace;
-	entries: TimetableEntry[];
-	entriesById: ReadonlyMap<string, TimetableEntry>;
-	groupsById: ReadonlyMap<string, TimetableWorkspace['learningGroups'][number]>;
-	homeroomsById: ReadonlyMap<string, TimetableWorkspace['homerooms'][number]>;
-	demandsByGroupId: ReadonlyMap<string, TimetableUnscheduledDemand>;
+	workspace: TimetableBlockWorkspace;
+	blocks: TimetableBlock[];
+	blocksById: ReadonlyMap<string, TimetableBlock>;
+	groupsById: ReadonlyMap<string, TimetableBlockWorkspace['learningGroups'][number]>;
+	homeroomsById: ReadonlyMap<string, TimetableBlockWorkspace['homerooms'][number]>;
+	demandsByGroupId: ReadonlyMap<string, TimetableOrdinaryDemand>;
 	canEdit: boolean;
 }
 
-export function createTimetableBoardState(workspace: TimetableWorkspace): TimetableBoardState {
-	const entries = [...workspace.entries];
+export function createTimetableBoardState(workspace: TimetableBlockWorkspace): TimetableBoardState {
+	const blocks = [...workspace.blocks];
 	return {
 		workspace,
-		entries,
-		entriesById: new Map(entries.map((entry) => [entry.id, entry])),
+		blocks,
+		blocksById: new Map(blocks.map((block) => [block.id, block])),
 		groupsById: new Map(workspace.learningGroups.map((group) => [group.id, group])),
 		homeroomsById: new Map(workspace.homerooms.map((homeroom) => [homeroom.id, homeroom])),
 		demandsByGroupId: new Map(
-			workspace.unscheduledDemands.map((demand) => [demand.learningGroupId, demand])
+			workspace.ordinaryDemands.map((demand) => [demand.learningGroupId, demand])
 		),
 		canEdit: workspace.version.status === 'draft'
 	};
 }
 
-export function replaceTimetableEntries(
+export function replaceTimetableBlocks(
 	state: TimetableBoardState,
-	entries: readonly TimetableEntry[]
+	blocks: readonly TimetableBlock[]
 ): TimetableBoardState {
 	return createTimetableBoardState({
 		...state.workspace,
-		entries: [...entries]
+		blocks: [...blocks]
 	});
 }
 
@@ -99,32 +99,32 @@ export function rowsForTimetableView(
 	}));
 }
 
-export function entriesForTimetableCell(
+export function blocksForTimetableCell(
 	state: TimetableBoardState,
 	address: TimetableCellAddress
-): TimetableEntry[] {
-	return state.entries.filter(
-		(entry) =>
-			entry.dayOfWeek === address.dayOfWeek &&
-			entry.bellSchedulePeriodId === address.bellSchedulePeriodId &&
-			entryBelongsToRow(state, entry, address.view, address.rowId)
+): TimetableBlock[] {
+	return state.blocks.filter(
+		(block) =>
+			block.dayOfWeek === address.dayOfWeek &&
+			block.bellSchedulePeriodId === address.bellSchedulePeriodId &&
+			blockBelongsToRow(block, address.view, address.rowId)
 	);
 }
 
 export function remainingDemandForGroup(state: TimetableBoardState, groupId: string): number {
 	const demand = state.demandsByGroupId.get(groupId);
 	if (!demand) return 0;
-	const scheduled = state.entries.reduce(
-		(count, entry) => count + (entry.learningGroupId === groupId ? 1 : 0),
+	const scheduled = state.blocks.reduce(
+		(count, block) =>
+			count + (block.groups.some((group) => group.learningGroupId === groupId) ? 1 : 0),
 		0
 	);
 	return Math.max(demand.requiredPeriods - scheduled, 0);
 }
 
 export function teacherPeriodCount(state: TimetableBoardState, teacherId: string): number {
-	return state.entries.reduce(
-		(count, entry) =>
-			count + (entry.instructors.some((instructor) => instructor.userId === teacherId) ? 1 : 0),
+	return state.blocks.reduce(
+		(count, block) => count + (blockTeacherIds(block).includes(teacherId) ? 1 : 0),
 		0
 	);
 }
@@ -133,80 +133,98 @@ export function localPlacementPreview(
 	state: TimetableBoardState,
 	request: LocalPlacementRequest
 ): LocalPlacementPreview {
-	const sourceEntryId =
-		request.source.kind === 'existing_entry' ? request.source.entryId : undefined;
-	const slotEntries = state.entries.filter(
-		(entry) =>
-			entry.id !== sourceEntryId &&
-			entry.dayOfWeek === request.dayOfWeek &&
-			entry.bellSchedulePeriodId === request.bellSchedulePeriodId
+	const sourceBlockId =
+		request.source.kind === 'existing_block' ? request.source.blockId : undefined;
+	const slotBlocks = state.blocks.filter(
+		(block) =>
+			block.id !== sourceBlockId &&
+			block.dayOfWeek === request.dayOfWeek &&
+			block.bellSchedulePeriodId === request.bellSchedulePeriodId
 	);
-	const targetEntries = slotEntries.filter((entry) =>
-		entryBelongsToRow(state, entry, request.view, request.rowId)
+	const targetBlocks = slotBlocks.filter((block) =>
+		blockBelongsToRow(block, request.view, request.rowId)
 	);
-	const conflicts = localConflicts(state, request.candidate, slotEntries);
+	const conflicts = localConflicts(state, request.candidate, slotBlocks);
 
-	if (targetEntries.length > 0) {
+	if (targetBlocks.length > 0) {
 		return {
-			state: request.source.kind === 'existing_entry' ? 'swap' : 'blocked',
-			targetEntryId: targetEntries[0]?.id ?? null,
+			state: request.source.kind === 'existing_block' ? 'swap' : 'blocked',
+			targetBlockId: targetBlocks[0]?.id ?? null,
 			conflicts
 		};
 	}
 	return {
 		state: conflicts.length > 0 ? 'blocked' : 'move',
-		targetEntryId: null,
+		targetBlockId: null,
 		conflicts
 	};
 }
 
-function entryBelongsToRow(
-	state: TimetableBoardState,
-	entry: TimetableEntry,
+export function blockBelongsToRow(
+	block: TimetableBlock,
 	view: TimetableBoardView,
 	rowId: string
 ): boolean {
-	if (view === 'learning_group') return entry.learningGroupId === rowId;
-	if (view === 'teacher') {
-		return entry.instructors.some((instructor) => instructor.userId === rowId);
+	if (view === 'learning_group') {
+		return block.groups.some((group) => group.learningGroupId === rowId);
 	}
-	if (entry.learningGroupId) {
-		return state.groupsById.get(entry.learningGroupId)?.homeroomIds.includes(rowId) ?? false;
-	}
-	return entry.homeroomId === rowId;
+	if (view === 'teacher') return blockTeacherIds(block).includes(rowId);
+	return (
+		block.homerooms.some((target) => target.homeroomId === rowId) ||
+		block.groups.some((group) => group.homeroomIds.includes(rowId))
+	);
 }
 
 function localConflicts(
 	state: TimetableBoardState,
-	candidate: TimetablePlacementCandidate,
-	entries: readonly TimetableEntry[]
+	candidate: TimetableBlockPlacementCandidate,
+	blocks: readonly TimetableBlock[]
 ): LocalTimetableConflict[] {
 	const candidateHomerooms = candidate.learningGroupId
 		? (state.groupsById.get(candidate.learningGroupId)?.homeroomIds ?? [])
-		: candidate.homeroomId
-			? [candidate.homeroomId]
-			: [];
-	const candidateInstructors = new Set(candidate.instructorIds ?? []);
+		: (candidate.homeroomIds ?? []);
+	const candidateTeachers = new Set([
+		...(candidate.instructorIds ?? []),
+		...(candidate.teacherIds ?? [])
+	]);
 	const conflicts = new Set<LocalTimetableConflict>();
 
-	for (const entry of entries) {
-		if (candidate.learningGroupId && candidate.learningGroupId === entry.learningGroupId) {
+	for (const block of blocks) {
+		if (
+			candidate.learningGroupId &&
+			block.groups.some((group) => group.learningGroupId === candidate.learningGroupId)
+		) {
 			conflicts.add('learning_group');
 		}
-		const entryHomerooms = entry.learningGroupId
-			? (state.groupsById.get(entry.learningGroupId)?.homeroomIds ?? [])
-			: entry.homeroomId
-				? [entry.homeroomId]
-				: [];
-		if (candidateHomerooms.some((homeroomId) => entryHomerooms.includes(homeroomId))) {
+		const blockHomerooms = blockHomeroomIds(block);
+		if (candidateHomerooms.some((homeroomId) => blockHomerooms.includes(homeroomId))) {
 			conflicts.add('homeroom');
 		}
-		if (candidate.roomId && candidate.roomId === entry.roomId) conflicts.add('room');
-		if (entry.instructors.some((instructor) => candidateInstructors.has(instructor.userId))) {
-			conflicts.add('instructor');
+		if (
+			candidate.roomId &&
+			[...block.groups, ...block.homerooms].some((target) => target.roomId === candidate.roomId)
+		) {
+			conflicts.add('room');
+		}
+		if (blockTeacherIds(block).some((teacherId) => candidateTeachers.has(teacherId))) {
+			conflicts.add('teacher');
 		}
 	}
-	return ['learning_group', 'homeroom', 'instructor', 'room'].filter((conflict) =>
+	return ['learning_group', 'homeroom', 'teacher', 'room'].filter((conflict) =>
 		conflicts.has(conflict as LocalTimetableConflict)
 	) as LocalTimetableConflict[];
+}
+
+export function blockTeacherIds(block: TimetableBlock): string[] {
+	return [
+		...block.groups.flatMap((group) => group.instructors.map((teacher) => teacher.teacherId)),
+		...block.teachers.map((teacher) => teacher.teacherId)
+	].filter((teacherId, index, values) => values.indexOf(teacherId) === index);
+}
+
+export function blockHomeroomIds(block: TimetableBlock): string[] {
+	return [
+		...block.groups.flatMap((group) => group.homeroomIds),
+		...block.homerooms.map((target) => target.homeroomId)
+	].filter((homeroomId, index, values) => values.indexOf(homeroomId) === index);
 }

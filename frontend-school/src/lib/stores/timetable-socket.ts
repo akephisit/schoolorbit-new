@@ -54,7 +54,8 @@ type TimetableChangedEvent = {
 	payload: {
 		user_id: string;
 		academic_term_id: string;
-		learning_group_id?: string | null;
+		timetable_version_id: string;
+		block_id?: string | null;
 		revision: number;
 	};
 };

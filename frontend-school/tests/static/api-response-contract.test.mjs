@@ -385,8 +385,8 @@ test('generated self-service schedule contracts own timetable, exam, and calenda
 		assert.equal(contract.paths?.[route]?.[method]?.operationId, operationId, `${method} ${route}`);
 	}
 
-	assert.match(timetableApi, /export\s+type\s+TimetableEntry\s*=\s*Schemas\['TimetableEntry'\]/);
-	assert.doesNotMatch(timetableApi, /export\s+interface\s+TimetableEntry\b/);
+	assert.match(timetableApi, /export\s+type\s+TimetableBlock\s*=\s*Schemas\['TimetableBlock'\]/);
+	assert.doesNotMatch(timetableApi, /export\s+interface\s+TimetableBlock\b/);
 
 	for (const schemaName of ['PersonalExamScheduleRound', 'PersonalExamSessionView']) {
 		assert.match(
@@ -405,7 +405,7 @@ test('generated self-service schedule contracts own timetable, exam, and calenda
 	assert.doesNotMatch(calendarApi, /export\s+interface\s+CalendarEventTag\b/);
 
 	for (const schemaName of [
-		'TimetableEntry',
+		'TimetableBlock',
 		'PersonalExamScheduleRound',
 		'PersonalExamSessionView',
 		'CalendarViewerEvent',
@@ -628,7 +628,7 @@ test('daily teaching overview API uses typed response contracts', async () => {
 		'backend-school/src/modules/academic/services/daily_teaching_service.rs'
 	);
 	const backendHandler = await readRepoFile(
-		'backend-school/src/modules/academic/handlers/timetable.rs'
+		'backend-school/src/modules/academic/handlers/timetable_blocks.rs'
 	);
 
 	const dailyTeachingPath = '/api/academic/timetable/daily-teaching';
@@ -822,7 +822,7 @@ test('parent self-service API uses typed student and timetable responses', async
 	assert.match(parentsApi, /getChildProfile[\s\S]*Promise<Student>/);
 	assert.match(parentsApi, /operations\['getParentChildProfile'\]\['parameters'\]\['query'\]/);
 	assert.match(parentsApi, /apiClient\.get<Student>/);
-	assert.match(parentsApi, /getChildTimetable[\s\S]*Promise<TimetableEntry\[\]>/);
+	assert.match(parentsApi, /getChildTimetable[\s\S]*Promise<TimetableBlock\[\]>/);
 	assert.match(parentsApi, /requireApiData\(/);
 	assert.match(parentsApi, /operations\['getParentChildTimetable'\]\['parameters'\]\['query'\]/);
 	assert.match(parentsApi, /\{ query \}/);
@@ -953,7 +953,7 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.match(supervisionWorkspace, /entry\.academicTermId === termId/);
 	assert.match(supervisionWorkspace, /timetableGridDays/);
 	assert.match(supervisionWorkspace, /timetablePeriodRows/);
-	assert.match(supervisionWorkspace, /selectTimetableEntry/);
+	assert.match(supervisionWorkspace, /selectTimetableBlockGroup/);
 	assert.match(supervisionWorkspace, /entry\.periodName/);
 	assert.doesNotMatch(supervisionWorkspace, /period_name\?\.match\(/);
 	assert.match(supervisionWorkspace, /class="overflow-x-auto rounded-md border"/);
@@ -972,7 +972,7 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.match(supervisionWorkspace, /formatShortDate\(day\.date\)/);
 	assert.doesNotMatch(
 		supervisionWorkspace,
-		/grid gap-2 md:hidden[\s\S]*timetableEntriesForSelectedCycle/
+		/grid gap-2 md:hidden[\s\S]*timetableBlockGroupsForSelectedCycle/
 	);
 	assert.match(supervisionWorkspace, /cycleStatusCreateOptions/);
 	assert.match(supervisionWorkspace, /status:\s*cycleForm\.status/);
@@ -1031,7 +1031,7 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.doesNotMatch(supervisionWorkspace, /status:\s*'draft',\s*\n\s*targets:/);
 	assert.doesNotMatch(
 		supervisionWorkspace,
-		/Select\.Root[^>]*bind:value=\{selectedTimetableEntryId\}/
+		/Select\.Root[^>]*bind:value=\{selectedTimetableBlockGroupId\}/
 	);
 	assert.doesNotMatch(
 		supervisionWorkspace,
@@ -1211,38 +1211,38 @@ test('timetable API exposes typed loaded responses and conflict unions without r
 	const timetableApi = await readRepoFile('frontend-school/src/lib/api/timetable.ts');
 	const generated = await readRepoFile('frontend-school/src/lib/api/generated/school-api.ts');
 	const timetableService = await readRepoFile(
-		'backend-school/src/modules/academic/services/timetable_service.rs'
+		'backend-school/src/modules/academic/services/timetable_block_service.rs'
 	);
 	const timetablePage = await readRepoFile(
 		'frontend-school/src/routes/(app)/staff/academic/timetable/+page.svelte'
 	);
 
-	assert.match(timetableApi, /TimetableEntry\s*=\s*Schemas\['TimetableEntry'\]/);
-	assert.match(timetableApi, /TimetableFilters\s*=\s*operations\['listTimetableEntries'\]/);
+	assert.match(timetableApi, /TimetableBlock\s*=\s*Schemas\['TimetableBlock'\]/);
+	assert.match(timetableApi, /TimetableBlockWorkspaceQuery\s*=\s*NonNullable/);
 	assert.match(timetableApi, /MyTimetableFilters\s*=\s*operations\['getMyTimetable'\]/);
 	assert.match(timetableApi, /async function timetableData<T>/);
 	assert.match(timetableApi, /response\.status === 409/);
 	assert.match(timetableApi, /requireApiData\(response, fallback\)/);
 	assert.match(timetableApi, /academicTermId:\s*requiredTerm\(filters\.academicTermId\)/);
-	assert.match(timetableApi, /apiClient\.post<TimetableEntry>/);
-	assert.match(timetableApi, /apiClient\.put<TimetableEntry>/);
-	assert.match(timetableApi, /periodsFromTimetableEntries/);
+	assert.match(timetableApi, /apiClient\.post<TimetableBlock>/);
+	assert.match(timetableApi, /apiClient\.put<TimetableBlock>/);
+	assert.match(timetableApi, /periodsFromTimetableBlocks/);
 	assert.match(
-		extractGeneratedSchemaBlock(generated, 'TimetableEntry'),
+		extractGeneratedSchemaBlock(generated, 'TimetableBlock'),
 		/bellSchedulePeriodId:\s*string/
 	);
-	assert.match(timetableApi, /apiClient\.post<MoveValidityCell\[\]>/);
-	assert.match(timetableApi, /apiClient\.get<TimetableOccupancyCell\[\]>/);
+	assert.match(timetableApi, /apiClient\.post<TimetableBlockPlacementPreview>/);
+	assert.match(timetableApi, /apiClient\.post<SwapTimetableBlocksResponse>/);
 	assert.doesNotMatch(timetableApi, /return response as T/);
 	assert.doesNotMatch(timetableApi, /ApiResponse<unknown>/);
 	assert.doesNotMatch(timetableApi, /response\.data as/);
-	assert.match(timetableService, /Result<Vec<TimetableEntry>,\s*AppError>/);
-	assert.match(timetableService, /period\.order_index/);
-	assert.match(timetableService, /conflicts:\s*&mut Vec<ConflictInfo>/);
+	assert.match(timetableService, /Result<Vec<TimetableBlock>,\s*AppError>/);
+	assert.match(timetableService, /preview_placement/);
+	assert.match(timetableService, /TimetableBlockPlacementPreview/);
 	assert.doesNotMatch(timetableService, /serde_json::Value/);
 
-	assert.doesNotMatch(timetablePage, /await createTimetableEntry\([^)]*\)\) as/);
-	assert.doesNotMatch(timetablePage, /await updateTimetableEntry\([^)]*\)\) as/);
+	assert.doesNotMatch(timetablePage, /await createOrdinaryTimetableBlock\([^)]*\)\) as/);
+	assert.doesNotMatch(timetablePage, /await updateTimetableBlock\([^)]*\)\) as/);
 	assert.doesNotMatch(
 		timetablePage,
 		/res as \{ success\?: boolean; conflicts\?: ConflictInfo\[\] \}/

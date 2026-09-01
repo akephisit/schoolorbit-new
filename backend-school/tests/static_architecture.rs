@@ -358,12 +358,12 @@ fn timetable_exact_instructor_consumers_do_not_fallback_to_group_teachers() {
     let supervision = strip_comments(&read_source(
         manifest_dir().join("src/modules/supervision/services/observations.rs"),
     ));
-    let supervision_entry_lookup = supervision
-        .split_once("async fn load_timetable_entry_context_for_teacher")
-        .expect("supervision timetable entry lookup must exist")
+    let supervision_block_group_lookup = supervision
+        .split_once("async fn load_timetable_block_group_context_for_teacher")
+        .expect("supervision timetable block-group lookup must exist")
         .1
-        .split_once("async fn load_timetable_lesson_snapshot")
-        .expect("supervision timetable entry lookup must remain isolated")
+        .split_once("async fn load_timetable_block_group_lesson_snapshot")
+        .expect("supervision timetable block-group lookup must remain isolated")
         .0;
     let parents = strip_comments(&read_source(
         manifest_dir().join("src/modules/parents/services.rs"),
@@ -385,11 +385,11 @@ fn timetable_exact_instructor_consumers_do_not_fallback_to_group_teachers() {
         !daily_teaching.contains("effective_teacher"),
         "daily teaching must not reintroduce an ambiguous teacher-membership union"
     );
-    assert!(supervision_entry_lookup.contains("academic_timetable_block_group_instructors"));
+    assert!(supervision_block_group_lookup.contains("academic_timetable_block_group_instructors"));
     assert!(
-        !supervision_entry_lookup.contains("learning_group_teachers"),
-        "supervision timetable validation must not authorize a group teacher who is absent from the entry"
-    );
+		!supervision_block_group_lookup.contains("learning_group_teachers"),
+		"supervision timetable validation must not authorize a group teacher who is absent from the block group"
+	);
     assert!(
         parents.contains("timetable_block_service::list_student_blocks"),
         "parent timetable must remain on the canonical exact-instructor timetable reader"

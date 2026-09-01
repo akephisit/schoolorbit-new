@@ -4,78 +4,66 @@ import path from 'node:path';
 import test from 'node:test';
 
 const projectRoot = path.resolve(import.meta.dirname, '../..');
-const componentRoot = 'src/lib/components/academic/timetable';
-const componentNames = [
-	'TimetableWorkspaceHeader.svelte',
-	'TimetableViewSelector.svelte',
-	'TimetableTeacherView.svelte',
-	'TimetableUnscheduledTray.svelte',
-	'TimetableBoard.svelte',
-	'TimetableCell.svelte',
-	'TimetableLessonCard.svelte',
-	'TimetableEntryInspector.svelte',
-	'TimetableMoveDialog.svelte'
-];
-
 const read = (relativePath) => readFile(path.join(projectRoot, relativePath), 'utf8');
 
-test('timetable drag board is decomposed into presentation-only components', async () => {
-	const sources = await Promise.all(componentNames.map((name) => read(`${componentRoot}/${name}`)));
+test('canonical timetable board keeps API mutations in the route controller', async () => {
+	const componentNames = [
+		'TimetableWorkspaceHeader.svelte',
+		'TimetableViewSelector.svelte',
+		'TimetableUnscheduledTray.svelte',
+		'TimetableBoard.svelte',
+		'TimetableCell.svelte',
+		'TimetableLessonCard.svelte',
+		'TimetableInstructorPicker.svelte'
+	];
+	const sources = await Promise.all(
+		componentNames.map((name) => read(`src/lib/components/academic/timetable/${name}`))
+	);
 	const combined = sources.join('\n');
 
-	assert.doesNotMatch(
-		combined,
-		/\b(?:getTimetableWorkspace|previewTimetablePlacement|createTimetableEntry|updateTimetableEntry|swapTimetableEntries|deleteTimetableEntry)\s*\(/
-	);
+	assert.doesNotMatch(combined, /apiClient\.|getTimetableBlockWorkspace\s*\(/);
 	assert.doesNotMatch(combined, /<select(?:\s|>)/i);
-	assert.match(combined, /Select\.Root/);
+	assert.match(combined, /Select\.Root|Popover\.Root/);
 	assert.match(combined, /\$props\(\)/);
 });
 
-test('lesson cards and cells expose drag state plus complete keyboard parity', async () => {
-	const card = await read(`${componentRoot}/TimetableLessonCard.svelte`);
-	const tray = await read(`${componentRoot}/TimetableUnscheduledTray.svelte`);
-	const cell = await read(`${componentRoot}/TimetableCell.svelte`);
-	const board = await read(`${componentRoot}/TimetableBoard.svelte`);
+test('lesson tray and board expose native drag with tap-to-place parity', async () => {
+	const page = await read('src/routes/(app)/staff/academic/timetable/+page.svelte');
+	const card = await read('src/lib/components/academic/timetable/TimetableLessonCard.svelte');
+	const tray = await read('src/lib/components/academic/timetable/TimetableUnscheduledTray.svelte');
+	const cell = await read('src/lib/components/academic/timetable/TimetableCell.svelte');
+	const board = await read('src/lib/components/academic/timetable/TimetableBoard.svelte');
 
 	assert.match(card, /draggable=/);
+	assert.match(card, /data-block-id=/);
 	assert.match(card, /aria-label=/);
-	assert.match(card, /ย้ายคาบ/);
-	assert.match(card, /แก้รายละเอียด/);
-	assert.match(card, /นำออกจากตาราง/);
+	assert.match(card, /onRemove/);
+	assert.doesNotMatch(card, /ย้ายคาบ|แก้รายละเอียด/);
 	assert.match(tray, /draggable=/);
+	assert.match(tray, /eligibleInstructors/);
 	assert.match(tray, /onDragStartDemand/);
-	assert.match(cell, /dayLabel/);
-	assert.match(cell, /periodLabel/);
-	assert.match(cell, /stateLabel/);
 	assert.match(cell, /onActivateIntent/);
 	assert.match(cell, /วางคาบที่นี่/);
-	assert.match(board, /entry\.id.*row\.id|row\.id.*entry\.id/s);
+	assert.match(board, /block\.id.*row\.id|row\.id.*block\.id/s);
 	assert.match(board, /Escape/);
+	assert.match(page, /previewTimetableBlockPlacement/);
+	assert.match(page, /swapTimetableBlocks/);
+	assert.match(page, /controller\.preview\.conflicts/);
+	assert.match(page, /conflict\.message/);
+	assert.match(page, /previewCellKey === targetCellKey[\s\S]*controller\.preview/);
 });
 
-test('non-drag move dialog uses shadcn selectors for one day and one period', async () => {
-	const dialog = await read(`${componentRoot}/TimetableMoveDialog.svelte`);
-
-	assert.match(dialog, /Select\.Root/);
-	assert.match(dialog, /selectedDay/);
-	assert.match(dialog, /selectedPeriodId/);
-	assert.match(dialog, /ย้ายคาบ/);
-	assert.doesNotMatch(dialog, /ช่วงคาบ|สองคาบ|2\s*คาบ/);
-});
-
-test('teacher board is an exact-instructor projection with searchable selection', async () => {
+test('teacher projection and structural blocks are first-class scheduling views', async () => {
 	const page = await read('src/routes/(app)/staff/academic/timetable/+page.svelte');
-	const selector = await read(`${componentRoot}/TimetableViewSelector.svelte`);
-	const teacherView = await read(`${componentRoot}/TimetableTeacherView.svelte`);
-	const lessonCard = await read(`${componentRoot}/TimetableLessonCard.svelte`);
+	const selector = await read('src/lib/components/academic/timetable/TimetableViewSelector.svelte');
+	const boardState = await read('src/lib/academic/timetable/board-state.ts');
 
 	assert.match(selector, /onViewChange\('teacher'\)/);
-	assert.match(teacherView, /Command\.Input/);
-	assert.match(teacherView, /คาบต่อสัปดาห์/);
-	assert.match(page, /view === 'teacher'/);
-	assert.match(page, /eligibleInstructorIds\.includes\(ownerId\)/);
-	assert.match(page, /ย้ายรายการเดียวกันสำหรับครูทุกคนในทีม/);
-	assert.match(lessonCard, /ครูร่วมสอน/);
-	assert.doesNotMatch(teacherView, /createTimetableEntry|updateTimetableEntry/);
+	assert.match(boardState, /blockTeacherIds/);
+	assert.match(boardState, /blockBelongsToRow/);
+	assert.match(page, /createStructuralTimetableBlocks/);
+	assert.match(page, /allHomerooms/);
+	assert.match(page, /allTeachers/);
+	assert.match(page, /removeTimetableBlockTarget/);
+	assert.match(page, /deleteTimetableBlockSeries/);
 });

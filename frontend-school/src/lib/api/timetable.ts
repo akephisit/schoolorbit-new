@@ -9,42 +9,48 @@ import type { components, operations } from '$lib/api/generated/school-api';
 
 type Schemas = components['schemas'];
 
-export type TimetableEntry = Schemas['TimetableEntry'];
-export type TimetableInstructor = Schemas['TimetableInstructor'];
+export type TimetableBlock = Schemas['TimetableBlock'];
+export type TimetableBlockKind = Schemas['TimetableBlockKind'];
+export type TimetableBlockGroup = Schemas['TimetableBlockGroup'];
+export type TimetableBlockHomeroom = Schemas['TimetableBlockHomeroom'];
+export type TimetableBlockTeacher = Schemas['TimetableBlockTeacher'];
+export type TimetableBlockInstructor = Schemas['TimetableBlockInstructor'];
+export type TimetableBlockSyncState = Schemas['TimetableBlockSyncState'];
+export type TimetableBlockSyncStatus = Schemas['TimetableBlockSyncStatus'];
+export type TimetableStructuralKind = Schemas['TimetableStructuralKind'];
+export type TimetableTargetKind = Schemas['TimetableTargetKind'];
 export type TimetableVersion = Schemas['TimetableVersion'];
 export type TimetableVersionStatus = Schemas['TimetableVersionStatus'];
 export type TimetableVersionTarget = Schemas['TimetableVersionTarget'];
-export type TimetableWorkspace = Schemas['TimetableWorkspace'];
-export type TimetableWorkspaceLearningGroup = Schemas['TimetableWorkspaceLearningGroup'];
-export type TimetableWorkspaceHomeroom = Schemas['TimetableWorkspaceHomeroom'];
-export type TimetableWorkspaceRoom = Schemas['TimetableWorkspaceRoom'];
-export type TimetableWorkspaceStaff = Schemas['TimetableWorkspaceStaff'];
-export type TimetableUnscheduledDemand = Schemas['TimetableUnscheduledDemand'];
-export type WholeSchoolTimetableOverview = Schemas['WholeSchoolTimetableOverview'];
-export type WholeSchoolTimetableRow = Schemas['WholeSchoolTimetableRow'];
-export type WholeSchoolTimetableCell = Schemas['WholeSchoolTimetableCell'];
-export type WholeSchoolTimetableLesson = Schemas['WholeSchoolTimetableLesson'];
-export type WholeSchoolTimetableIssue = Schemas['WholeSchoolTimetableIssue'];
-export type WholeSchoolTimetableIssueKind = Schemas['WholeSchoolTimetableIssueKind'];
-export type WholeSchoolTimetableIssueSeverity = Schemas['WholeSchoolTimetableIssueSeverity'];
-export type WholeSchoolTimetableSummary = Schemas['WholeSchoolTimetableSummary'];
-export type TimetablePlacementState = Schemas['TimetablePlacementState'];
-export type TimetableConflictType = Schemas['TimetableConflictType'];
-export type TimetablePlacementMutationKind = Schemas['TimetablePlacementMutationKind'];
-export type TimetablePlacementSource = Schemas['TimetablePlacementSource'];
-export type TimetablePlacementCandidate = Schemas['TimetablePlacementCandidate'];
-export type TimetablePlacementPreviewRequest = Schemas['TimetablePlacementPreviewRequest'];
-export type TimetablePlacementPreview = Schemas['TimetablePlacementPreview'];
+export type TimetableBlockWorkspace = Schemas['TimetableBlockWorkspace'];
+export type TimetableBlockWorkspaceLearningGroup = Schemas['TimetableBlockWorkspaceLearningGroup'];
+export type TimetableBlockWorkspaceHomeroom = Schemas['TimetableBlockWorkspaceHomeroom'];
+export type TimetableBlockWorkspaceRoom = Schemas['TimetableBlockWorkspaceRoom'];
+export type TimetableBlockWorkspaceStaff = Schemas['TimetableBlockWorkspaceStaff'];
+export type TimetableOrdinaryDemand = Schemas['TimetableOrdinaryDemand'];
+export type TimetableSynchronizedDemand = Schemas['TimetableSynchronizedDemand'];
+export type TimetableBlockSummary = Schemas['TimetableBlockSummary'];
+export type TimetableBlockPlacementState = Schemas['TimetableBlockPlacementState'];
+export type TimetableBlockConflictType = Schemas['TimetableBlockConflictType'];
+export type TimetableBlockMutationKind = Schemas['TimetableBlockMutationKind'];
+export type TimetableBlockPlacementSource = Schemas['TimetableBlockPlacementSource'];
+export type TimetableBlockPlacementCandidate = Schemas['TimetableBlockPlacementCandidate'];
+export type TimetableBlockPlacementPreviewRequest =
+	Schemas['TimetableBlockPlacementPreviewRequest'];
+export type TimetableBlockPlacementPreview = Schemas['TimetableBlockPlacementPreview'];
 export type CloneTimetableVersionRequest =
 	operations['cloneTimetableVersion']['requestBody']['content']['application/json'];
-export type CreateTimetableEntryRequest = Schemas['CreateTimetableEntryRequest'];
-export type UpdateTimetableEntryRequest = Schemas['UpdateTimetableEntryRequest'];
-export type CreateBatchTimetableEntriesRequest = Schemas['CreateBatchTimetableEntriesRequest'];
-export type BatchTimetableResult = Schemas['BatchTimetableResult'];
-export type SwapTimetableEntriesRequest = Schemas['SwapTimetableEntriesRequest'];
-export type SwapTimetableEntriesResponse = Schemas['SwapTimetableEntriesResponse'];
-export type MoveValidityCell = Schemas['MoveValidityCell'];
-export type TimetableOccupancyCell = Schemas['TimetableOccupancyCell'];
+export type CreateOrdinaryTimetableBlockRequest = Schemas['CreateOrdinaryTimetableBlockRequest'];
+export type CreateSynchronizedTimetableBlockRequest =
+	Schemas['CreateSynchronizedTimetableBlockRequest'];
+export type CreateStructuralTimetableBlocksRequest =
+	Schemas['CreateStructuralTimetableBlocksRequest'];
+export type UpdateTimetableBlockRequest = Schemas['UpdateTimetableBlockRequest'];
+export type RemoveTimetableBlockTargetRequest = Schemas['RemoveTimetableBlockTargetRequest'];
+export type RetryTimetableBlockSyncRequest = Schemas['RetryTimetableBlockSyncRequest'];
+export type RestoreTimetableBlockGroupRequest = Schemas['RestoreTimetableBlockGroupRequest'];
+export type SwapTimetableBlocksRequest = Schemas['SwapTimetableBlocksRequest'];
+export type SwapTimetableBlocksResponse = Schemas['SwapTimetableBlocksResponse'];
 export type TimetableTemplate = Schemas['TimetableTemplate'];
 export type TimetableTemplateEntry = Schemas['TimetableTemplateEntry'];
 export type TemplateWithEntries = Schemas['TemplateWithEntries'];
@@ -60,7 +66,6 @@ export type DailyTeachingPeriodCell = Schemas['DailyTeachingPeriodCell'];
 export type DailyTeachingTeacher = Schemas['DailyTeachingTeacher'];
 export type DailyTeachingSummary = Schemas['DailyTeachingSummary'];
 export type DailyTeachingOverview = Schemas['DailyTeachingOverview'];
-export type TimetableFilters = operations['listTimetableEntries']['parameters']['query'];
 export type MyTimetableFilters = operations['getMyTimetable']['parameters']['query'];
 export type DailyTeachingFilters = operations['getDailyTeachingOverview']['parameters']['query'];
 type ListTimetableVersionsQuery = NonNullable<
@@ -69,20 +74,14 @@ type ListTimetableVersionsQuery = NonNullable<
 type ResolveTimetableVersionQuery = NonNullable<
 	operations['resolveTimetableVersion']['parameters']['query']
 >;
-type DeleteTimetableEntryQuery = NonNullable<
-	operations['deleteTimetableEntry']['parameters']['query']
+type DeleteTimetableBlockQuery = NonNullable<
+	operations['deleteTimetableBlock']['parameters']['query']
 >;
-type DeleteTimetableBatchQuery = NonNullable<
-	operations['deleteTimetableBatch']['parameters']['query']
+type DeleteTimetableBlockSeriesQuery = NonNullable<
+	operations['deleteTimetableBlockSeries']['parameters']['query']
 >;
-type TimetableOccupancyQuery = NonNullable<
-	operations['getTimetableOccupancy']['parameters']['query']
->;
-export type TimetableWorkspaceQuery = NonNullable<
-	operations['getTimetableWorkspace']['parameters']['query']
->;
-export type WholeSchoolTimetableQuery = NonNullable<
-	operations['getWholeSchoolTimetableOverview']['parameters']['query']
+export type TimetableBlockWorkspaceQuery = NonNullable<
+	operations['getTimetableBlockWorkspace']['parameters']['query']
 >;
 
 export interface TimetablePeriodSummary {
@@ -128,20 +127,6 @@ function requiredDate(date: string): string {
 	return selected;
 }
 
-function timetableQuery(filters: TimetableFilters): string {
-	const params = new URLSearchParams({
-		academicTermId: requiredTerm(filters.academicTermId),
-		timetableVersionId: requiredVersion(filters.timetableVersionId)
-	});
-	if (filters.learningGroupId) params.set('learningGroupId', filters.learningGroupId);
-	if (filters.homeroomId) params.set('homeroomId', filters.homeroomId);
-	if (filters.instructorId) params.set('instructorId', filters.instructorId);
-	if (filters.roomId) params.set('roomId', filters.roomId);
-	if (filters.dayOfWeek) params.set('dayOfWeek', filters.dayOfWeek);
-	if (filters.entryType) params.set('entryType', filters.entryType);
-	return `?${params.toString()}`;
-}
-
 function personalTimetableQuery(filters: MyTimetableFilters): string {
 	const params = new URLSearchParams({
 		academicTermId: requiredTerm(filters.academicTermId),
@@ -150,15 +135,15 @@ function personalTimetableQuery(filters: MyTimetableFilters): string {
 	return `?${params.toString()}`;
 }
 
-export function periodsFromTimetableEntries(entries: TimetableEntry[]): TimetablePeriodSummary[] {
+export function periodsFromTimetableBlocks(blocks: TimetableBlock[]): TimetablePeriodSummary[] {
 	const periods = new Map<string, TimetablePeriodSummary>();
-	for (const entry of entries) {
-		if (!periods.has(entry.bellSchedulePeriodId)) {
-			periods.set(entry.bellSchedulePeriodId, {
-				id: entry.bellSchedulePeriodId,
-				name: entry.periodName ?? null,
-				startTime: entry.startTime,
-				endTime: entry.endTime
+	for (const block of blocks) {
+		if (!periods.has(block.bellSchedulePeriodId)) {
+			periods.set(block.bellSchedulePeriodId, {
+				id: block.bellSchedulePeriodId,
+				name: block.periodName,
+				startTime: block.startTime,
+				endTime: block.endTime
 			});
 		}
 	}
@@ -170,39 +155,21 @@ export function periodsFromTimetableEntries(entries: TimetableEntry[]): Timetabl
 	);
 }
 
-export const listTimetableEntries = (filters: TimetableFilters, options: ApiRequestOptions = {}) =>
-	timetableData(
-		apiClient.get<TimetableEntry[]>(`/api/academic/timetable${timetableQuery(filters)}`, options),
-		'ไม่สามารถโหลดตารางสอนได้'
-	);
-
-export const getTimetableWorkspace = (
-	query: TimetableWorkspaceQuery,
+export const getTimetableBlockWorkspace = (
+	query: TimetableBlockWorkspaceQuery,
 	options: ApiRequestOptions = {}
 ) =>
 	timetableData(
-		apiClient.get<TimetableWorkspace>('/api/academic/timetable/workspace', {
+		apiClient.get<TimetableBlockWorkspace>('/api/academic/timetable-blocks/workspace', {
 			...options,
 			query
 		}),
 		'ไม่สามารถโหลดพื้นที่จัดตารางสอนได้'
 	);
 
-export const getWholeSchoolTimetableOverview = (
-	query: WholeSchoolTimetableQuery,
-	options: ApiRequestOptions = {}
-) =>
-	timetableData(
-		apiClient.get<WholeSchoolTimetableOverview>('/api/academic/timetable/whole-school', {
-			...options,
-			query
-		}),
-		'ไม่สามารถโหลดภาพรวมตารางสอนทั้งโรงเรียนได้'
-	);
-
 export const getMyTimetable = (filters: MyTimetableFilters, options: ApiRequestOptions = {}) =>
 	timetableData(
-		apiClient.get<TimetableEntry[]>(`/api/me/timetable${personalTimetableQuery(filters)}`, options),
+		apiClient.get<TimetableBlock[]>(`/api/me/timetable${personalTimetableQuery(filters)}`, options),
 		'ไม่สามารถโหลดตารางสอนของฉันได้'
 	);
 
@@ -243,25 +210,31 @@ export const cloneTimetableVersion = (sourceId: string, body: CloneTimetableVers
 		'สร้างแบบร่างตารางสอนไม่สำเร็จ'
 	);
 
-export const createTimetableEntry = (body: CreateTimetableEntryRequest) =>
+export const createOrdinaryTimetableBlock = (body: CreateOrdinaryTimetableBlockRequest) =>
 	timetableData(
-		apiClient.post<TimetableEntry>('/api/academic/timetable', body),
+		apiClient.post<TimetableBlock>('/api/academic/timetable-blocks/ordinary', body),
 		'สร้างคาบในตารางไม่สำเร็จ'
 	);
 
-export const createBatchTimetableEntries = (body: CreateBatchTimetableEntriesRequest) =>
+export const createSynchronizedTimetableBlock = (body: CreateSynchronizedTimetableBlockRequest) =>
 	timetableData(
-		apiClient.post<BatchTimetableResult>('/api/academic/timetable/batch', body),
-		'สร้างคาบแบบกลุ่มไม่สำเร็จ'
+		apiClient.post<TimetableBlock>('/api/academic/timetable-blocks/synchronized', body),
+		'สร้างช่วงกิจกรรมพร้อมกันไม่สำเร็จ'
 	);
 
-export const updateTimetableEntry = (id: string, body: UpdateTimetableEntryRequest) =>
+export const createStructuralTimetableBlocks = (body: CreateStructuralTimetableBlocksRequest) =>
 	timetableData(
-		apiClient.put<TimetableEntry>(`/api/academic/timetable/${encodeURIComponent(id)}`, body),
+		apiClient.post<TimetableBlock[]>('/api/academic/timetable-blocks/structural', body),
+		'เพิ่มคาบพิเศษไม่สำเร็จ'
+	);
+
+export const updateTimetableBlock = (id: string, body: UpdateTimetableBlockRequest) =>
+	timetableData(
+		apiClient.put<TimetableBlock>(`/api/academic/timetable-blocks/${encodeURIComponent(id)}`, body),
 		'แก้ไขคาบในตารางไม่สำเร็จ'
 	);
 
-export const deleteTimetableEntry = (
+export const deleteTimetableBlock = (
 	id: string,
 	rowVersion: number,
 	timetableVersionId: string
@@ -269,84 +242,83 @@ export const deleteTimetableEntry = (
 	const query = {
 		rowVersion,
 		timetableVersionId: requiredVersion(timetableVersionId)
-	} satisfies DeleteTimetableEntryQuery;
+	} satisfies DeleteTimetableBlockQuery;
 	const params = new URLSearchParams({
 		rowVersion: String(query.rowVersion),
 		timetableVersionId: query.timetableVersionId
 	});
 	return timetableData(
-		apiClient.delete<TimetableEntry>(
-			`/api/academic/timetable/${encodeURIComponent(id)}?${params.toString()}`
+		apiClient.delete<TimetableBlock>(
+			`/api/academic/timetable-blocks/${encodeURIComponent(id)}?${params.toString()}`
 		),
 		'ลบคาบในตารางไม่สำเร็จ'
 	);
 };
 
-export const deleteTimetableBatch = (batchId: string, timetableVersionId: string) => {
+export const deleteTimetableBlockSeries = (seriesId: string, timetableVersionId: string) => {
 	const query = {
 		timetableVersionId: requiredVersion(timetableVersionId)
-	} satisfies DeleteTimetableBatchQuery;
+	} satisfies DeleteTimetableBlockSeriesQuery;
 	const params = new URLSearchParams(query);
 	return timetableData(
-		apiClient.delete<TimetableEntry[]>(
-			`/api/academic/timetable/batch-group/${encodeURIComponent(batchId)}?${params.toString()}`
+		apiClient.delete<TimetableBlock[]>(
+			`/api/academic/timetable-blocks/series/${encodeURIComponent(seriesId)}?${params.toString()}`
 		),
-		'ลบชุดคาบในตารางไม่สำเร็จ'
+		'ลบชุดคาบพิเศษไม่สำเร็จ'
 	);
 };
 
-export const swapTimetableEntries = (body: SwapTimetableEntriesRequest) =>
+export const removeTimetableBlockTarget = (
+	blockId: string,
+	body: RemoveTimetableBlockTargetRequest
+) =>
 	timetableData(
-		apiClient.post<SwapTimetableEntriesResponse>('/api/academic/timetable/swap', body),
+		apiClient.deleteWithBody<TimetableBlock>(
+			`/api/academic/timetable-blocks/${encodeURIComponent(blockId)}/targets`,
+			body
+		),
+		'นำห้องหรือครูออกจากคาบไม่สำเร็จ'
+	);
+
+export const retryTimetableBlockSync = (blockId: string, body: RetryTimetableBlockSyncRequest) =>
+	timetableData(
+		apiClient.post<TimetableBlock>(
+			`/api/academic/timetable-blocks/${encodeURIComponent(blockId)}/sync`,
+			body
+		),
+		'ซิงค์กลุ่มกิจกรรมไม่สำเร็จ'
+	);
+
+export const restoreTimetableBlockGroup = (
+	blockId: string,
+	body: RestoreTimetableBlockGroupRequest
+) =>
+	timetableData(
+		apiClient.post<TimetableBlock>(
+			`/api/academic/timetable-blocks/${encodeURIComponent(blockId)}/restore`,
+			body
+		),
+		'คืนกลุ่มกิจกรรมเข้าคาบไม่สำเร็จ'
+	);
+
+export const swapTimetableBlocks = (body: SwapTimetableBlocksRequest) =>
+	timetableData(
+		apiClient.post<SwapTimetableBlocksResponse>('/api/academic/timetable-blocks/swap', body),
 		'สลับคาบไม่สำเร็จ'
 	);
 
-export const validateTimetableMoves = (
-	academicTermId: string,
-	timetableVersionId: string,
-	entryId: string
-) =>
-	timetableData(
-		apiClient.post<MoveValidityCell[]>('/api/academic/timetable/validate-moves', {
-			academicTermId: requiredTerm(academicTermId),
-			timetableVersionId: requiredVersion(timetableVersionId),
-			entryId
-		}),
-		'ตรวจสอบตำแหน่งย้ายคาบไม่สำเร็จ'
-	);
-
-export const previewTimetablePlacement = (
-	body: TimetablePlacementPreviewRequest,
+export const previewTimetableBlockPlacement = (
+	body: TimetableBlockPlacementPreviewRequest,
 	options: ApiRequestOptions = {}
 ) =>
 	timetableData(
-		apiClient.post<TimetablePlacementPreview>(
-			'/api/academic/timetable/placement-preview',
+		apiClient.post<TimetableBlockPlacementPreview>(
+			'/api/academic/timetable-blocks/placement-preview',
 			body,
 			options
 		),
 		'ตรวจสอบตำแหน่งวางคาบไม่สำเร็จ'
 	);
-
-export const getTimetableOccupancy = (
-	academicTermId: string,
-	timetableVersionId: string,
-	options: ApiRequestOptions = {}
-) => {
-	const query = {
-		academicTermId: requiredTerm(academicTermId),
-		timetableVersionId: requiredVersion(timetableVersionId)
-	} satisfies TimetableOccupancyQuery;
-	const params = new URLSearchParams(query);
-	return timetableData(
-		apiClient.get<TimetableOccupancyCell[]>(
-			`/api/academic/timetable/occupancy?${params.toString()}`,
-			options
-		),
-		'โหลดข้อมูลการใช้คาบไม่สำเร็จ'
-	);
-};
-
 export const getDailyTeachingOverview = (filters: DailyTeachingFilters) => {
 	const params = new URLSearchParams({ academicTermId: requiredTerm(filters.academicTermId) });
 	if (filters.date) params.set('date', filters.date);
@@ -408,6 +380,6 @@ export const applyTimetableTemplate = (id: string, body: ApplyTemplateRequest) =
 	);
 export const clearTimetable = (body: ClearTimetableRequest) =>
 	timetableData(
-		apiClient.deleteWithBody<TimetableEntry[]>('/api/academic/timetable/clear', body),
+		apiClient.deleteWithBody<TimetableBlock[]>('/api/academic/timetable-blocks/clear', body),
 		'ล้างตารางสอนไม่สำเร็จ'
 	);

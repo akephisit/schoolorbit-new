@@ -20,7 +20,7 @@
 	import { toast } from 'svelte-sonner';
 	import { getAcademicContextStore } from '$lib/academic-context/store';
 	import { isAbortError, LatestRequest } from '$lib/async/latest-request';
-	import { currentLocalDate, getMyTimetable, type TimetableEntry } from '$lib/api/timetable';
+	import { currentLocalDate, getMyTimetable, type TimetableBlock } from '$lib/api/timetable';
 	import {
 		acknowledgeSupervisionObservation,
 		approveSupervisionObservationRequest,
@@ -97,6 +97,21 @@
 	};
 
 	type ResponseDraft = RubricResponseDraft;
+	type TimetableTeachingBlockGroup = {
+		id: string;
+		academicTermId: string;
+		dayOfWeek: string;
+		bellSchedulePeriodId: string;
+		periodName: string;
+		startTime: string;
+		endTime: string;
+		offeringCode: string | null;
+		offeringName: string | null;
+		title: string | null;
+		learningGroupName: string;
+		homeroomName: string;
+		roomCode: string | null;
+	};
 	type TemplateFormState = {
 		title: string;
 		description: string;
@@ -239,11 +254,11 @@
 	let cycles = $state<SupervisionCycle[]>([]);
 	let templates = $state<SupervisionTemplate[]>([]);
 	let observations = $state<SupervisionObservation[]>([]);
-	let timetableEntries = $state<TimetableEntry[]>([]);
+	let timetableBlockGroups = $state<TimetableTeachingBlockGroup[]>([]);
 	let requestEvaluatorAvailability = $state<Record<string, SupervisionEvaluatorAvailability[]>>({});
 	let requestEvaluatorAvailabilityLoading = $state<Record<string, boolean>>({});
 	let selectedCycleId = $state('');
-	let selectedTimetableEntryId = $state('');
+	let selectedTimetableBlockGroupId = $state('');
 	let selectedBookingDate = $state('');
 	let bookingWeekStartDate = $state('');
 	let bookingWeekCycleId = $state('');
@@ -344,7 +359,8 @@
 	);
 	const timetableSchoolDays = $derived(
 		timetableGridDays.filter(
-			(day, index) => index < 5 || timetableEntries.some((entry) => entry.dayOfWeek === day.value)
+			(day, index) =>
+				index < 5 || timetableBlockGroups.some((entry) => entry.dayOfWeek === day.value)
 		)
 	);
 	const bookingWeekDays = $derived(
@@ -353,8 +369,8 @@
 			date: dateForTimetableDay(day.value)
 		}))
 	);
-	const selectedTimetableEntry = $derived(
-		timetableEntries.find((entry) => entry.id === selectedTimetableEntryId) ?? null
+	const selectedTimetableBlockGroup = $derived(
+		timetableBlockGroups.find((entry) => entry.id === selectedTimetableBlockGroupId) ?? null
 	);
 	const myObservations = $derived(
 		observations.filter((observation) => observation.observedUserId === currentUserId)
@@ -426,18 +442,20 @@
 		if (bookingWeekCycleId !== currentBookingCycle.id) {
 			bookingWeekCycleId = currentBookingCycle.id;
 			bookingWeekStartDate = defaultBookingWeekStartDate(currentBookingCycle);
-			selectedTimetableEntryId = '';
+			selectedTimetableBlockGroupId = '';
 			selectedBookingDate = '';
 		}
 	});
 
 	$effect(() => {
 		if (section !== 'mine') return;
-		if (!selectedTimetableEntryId) return;
+		if (!selectedTimetableBlockGroupId) return;
 		if (
-			!timetableEntriesForSelectedCycle().some((entry) => entry.id === selectedTimetableEntryId)
+			!timetableBlockGroupsForSelectedCycle().some(
+				(entry) => entry.id === selectedTimetableBlockGroupId
+			)
 		) {
-			selectedTimetableEntryId = '';
+			selectedTimetableBlockGroupId = '';
 			selectedBookingDate = '';
 		}
 	});
@@ -639,25 +657,25 @@
 	function goToPreviousBookingWeek() {
 		if (!canNavigateBookingWeek(-1)) return;
 		bookingWeekStartDate = addWeeks(bookingWeekStartDate, -1);
-		selectedTimetableEntryId = '';
+		selectedTimetableBlockGroupId = '';
 		selectedBookingDate = '';
 	}
 
 	function goToNextBookingWeek() {
 		if (!canNavigateBookingWeek(1)) return;
 		bookingWeekStartDate = addWeeks(bookingWeekStartDate, 1);
-		selectedTimetableEntryId = '';
+		selectedTimetableBlockGroupId = '';
 		selectedBookingDate = '';
 	}
 
 	function resetToCurrentBookingWeek() {
 		if (!currentBookingCycle) return;
 		bookingWeekStartDate = defaultBookingWeekStartDate(currentBookingCycle);
-		selectedTimetableEntryId = '';
+		selectedTimetableBlockGroupId = '';
 		selectedBookingDate = '';
 	}
 
-	function timetableLabel(entry: TimetableEntry): string {
+	function timetableLabel(entry: TimetableTeachingBlockGroup): string {
 		const title = entry.offeringName || entry.title || entry.offeringCode || 'คาบสอน';
 		const period = entry.periodName ? ` ${entry.periodName}` : '';
 		const room = entry.roomCode ? ` ห้อง ${entry.roomCode}` : '';
@@ -665,7 +683,7 @@
 		return `${entry.dayOfWeek}${period} - ${title}${classroom}${room}`;
 	}
 
-	function timetableObservedAt(entry: TimetableEntry, bookingDate: string): string {
+	function timetableObservedAt(entry: TimetableTeachingBlockGroup, bookingDate: string): string {
 		const startTime = entry.startTime?.slice(0, 5) || '08:00';
 		return combineLocalDateTime(bookingDate, startTime);
 	}
@@ -679,7 +697,7 @@
 	}
 
 	function observationForTimetableCell(
-		entry: TimetableEntry,
+		entry: TimetableTeachingBlockGroup,
 		bookingDate: string
 	): SupervisionObservation | null {
 		const matches = observations
@@ -687,7 +705,7 @@
 				(observation) =>
 					observation.cycleId === currentBookingCycle?.id &&
 					observation.observedUserId === currentUserId &&
-					observation.timetableEntryId === entry.id &&
+					observation.timetableBlockGroupId === entry.id &&
 					observation.status !== 'cancelled' &&
 					observationDate(observation) === bookingDate
 			)
@@ -695,27 +713,27 @@
 		return matches[0] ?? null;
 	}
 
-	function timetableEntryTitle(entry: TimetableEntry): string {
+	function timetableBlockGroupTitle(entry: TimetableTeachingBlockGroup): string {
 		return entry.offeringName || entry.title || entry.offeringCode || 'คาบสอน';
 	}
 
-	function timetablePeriodKey(entry: TimetableEntry): string {
+	function timetablePeriodKey(entry: TimetableTeachingBlockGroup): string {
 		return (
 			entry.bellSchedulePeriodId ||
 			`${entry.startTime ?? ''}-${entry.endTime ?? ''}-${entry.periodName ?? ''}`
 		);
 	}
 
-	function timetablePeriodLabel(entry: TimetableEntry): string {
+	function timetablePeriodLabel(entry: TimetableTeachingBlockGroup): string {
 		return entry.periodName || entry.title || 'ไม่ระบุคาบ';
 	}
 
-	function timetableTimeLabel(entry: TimetableEntry): string {
+	function timetableTimeLabel(entry: TimetableTeachingBlockGroup): string {
 		if (!entry.startTime && !entry.endTime) return '';
 		return `${entry.startTime?.slice(0, 5) ?? ''}-${entry.endTime?.slice(0, 5) ?? ''}`;
 	}
 
-	function timetablePeriodSort(entry: TimetableEntry): number {
+	function timetablePeriodSort(entry: TimetableTeachingBlockGroup): number {
 		if (entry.startTime) {
 			const [hour = '0', minute = '0'] = entry.startTime.split(':');
 			return Number(hour) * 60 + Number(minute);
@@ -723,14 +741,14 @@
 		return 9999;
 	}
 
-	function timetableEntriesForSelectedCycle(): TimetableEntry[] {
+	function timetableBlockGroupsForSelectedCycle(): TimetableTeachingBlockGroup[] {
 		const termId = selectedCycleDetail?.academicTermId ?? academicTermId;
-		return termId ? timetableEntries.filter((entry) => entry.academicTermId === termId) : [];
+		return termId ? timetableBlockGroups.filter((entry) => entry.academicTermId === termId) : [];
 	}
 
 	function timetablePeriodRows(): TimetablePeriodRow[] {
 		const rows: TimetablePeriodRow[] = [];
-		for (const entry of timetableEntriesForSelectedCycle()) {
+		for (const entry of timetableBlockGroupsForSelectedCycle()) {
 			const key = timetablePeriodKey(entry);
 			if (!rows.some((row) => row.key === key)) {
 				rows.push({
@@ -746,20 +764,51 @@
 		);
 	}
 
-	function timetableEntryFor(day: string, row: TimetablePeriodRow): TimetableEntry | null {
+	function timetableBlockGroupFor(
+		day: string,
+		row: TimetablePeriodRow
+	): TimetableTeachingBlockGroup | null {
 		return (
-			timetableEntriesForSelectedCycle().find(
+			timetableBlockGroupsForSelectedCycle().find(
 				(entry) => entry.dayOfWeek === day && timetablePeriodKey(entry) === row.key
 			) ?? null
 		);
 	}
 
-	function selectTimetableEntry(entry: TimetableEntry, bookingDate: string) {
+	function selectTimetableBlockGroup(entry: TimetableTeachingBlockGroup, bookingDate: string) {
 		if (!canRequest) return;
 		const existingObservation = observationForTimetableCell(entry, bookingDate);
 		if (existingObservation && existingObservation.status !== 'returned') return;
-		selectedTimetableEntryId = entry.id;
+		selectedTimetableBlockGroupId = entry.id;
 		selectedBookingDate = bookingDate;
+	}
+
+	function teachingBlockGroupsFromBlocks(
+		blocks: TimetableBlock[],
+		teacherId: string
+	): TimetableTeachingBlockGroup[] {
+		return blocks.flatMap((block) =>
+			block.groups
+				.filter(
+					(group) =>
+						!teacherId || group.instructors.some((instructor) => instructor.teacherId === teacherId)
+				)
+				.map((group) => ({
+					id: group.id,
+					academicTermId: block.academicTermId,
+					dayOfWeek: block.dayOfWeek,
+					bellSchedulePeriodId: block.bellSchedulePeriodId,
+					periodName: block.periodName,
+					startTime: block.startTime,
+					endTime: block.endTime,
+					offeringCode: block.offeringCode,
+					offeringName: block.offeringName,
+					title: block.title,
+					learningGroupName: group.name,
+					homeroomName: group.name,
+					roomCode: group.roomCode
+				}))
+		);
 	}
 
 	async function refreshTimetableForCycle(cycleId: string) {
@@ -773,14 +822,14 @@
 		if (loadedTimetableCycleId === contextKey) return;
 		const { revision, signal } = timetableRequest.begin();
 		if (!termId) {
-			timetableEntries = [];
+			timetableBlockGroups = [];
 			loadedTimetableCycleId = contextKey;
 			loadingTimetable = false;
 			return;
 		}
 		loadingTimetable = true;
 		try {
-			const entries = await getMyTimetable(
+			const blocks = await getMyTimetable(
 				{
 					academicTermId: termId,
 					date: cycle ? defaultBookingWeekStartDate(cycle) : currentLocalDate()
@@ -788,7 +837,7 @@
 				{ signal }
 			);
 			if (!timetableRequest.isCurrent(revision)) return;
-			timetableEntries = entries;
+			timetableBlockGroups = teachingBlockGroupsFromBlocks(blocks, currentUserId);
 			loadedTimetableCycleId = contextKey;
 		} catch (error) {
 			if (isAbortError(error)) return;
@@ -1014,7 +1063,7 @@
 			return;
 		}
 
-		if (!manualMode && (!selectedTimetableEntryId || !selectedBookingDate)) {
+		if (!manualMode && (!selectedTimetableBlockGroupId || !selectedBookingDate)) {
 			toast.error('เลือกคาบจากตารางสอนก่อน');
 			return;
 		}
@@ -1035,11 +1084,11 @@
 			const response = await requestSupervisionObservation({
 				cycleId: currentBookingCycle.id,
 				academicTermId: bookingTermId,
-				timetableEntryId: manualMode ? null : selectedTimetableEntryId,
+				timetableBlockGroupId: manualMode ? null : selectedTimetableBlockGroupId,
 				observedAt:
-					manualMode || !selectedTimetableEntry
+					manualMode || !selectedTimetableBlockGroup
 						? null
-						: timetableObservedAt(selectedTimetableEntry, selectedBookingDate),
+						: timetableObservedAt(selectedTimetableBlockGroup, selectedBookingDate),
 				manualLesson: manualMode
 					? {
 							subjectName: manualLesson.subjectName,
@@ -1930,7 +1979,7 @@
 											เมื่อฝ่ายวิชาการเปิดรอบนิเทศในช่วงเวลาปัจจุบัน ตารางจองจะแสดงอัตโนมัติ
 										</Alert.Description>
 									</Alert.Root>
-								{:else if timetableEntriesForSelectedCycle().length === 0}
+								{:else if timetableBlockGroupsForSelectedCycle().length === 0}
 									<Alert.Root>
 										<Alert.Title>ไม่พบคาบสอนในภาคเรียนนี้</Alert.Title>
 										<Alert.Description>
@@ -1977,7 +2026,7 @@
 															</div>
 														</Table.Cell>
 														{#each timetablePeriodRows() as row (row.key)}
-															{@const entry = timetableEntryFor(day.value, row)}
+															{@const entry = timetableBlockGroupFor(day.value, row)}
 															{@const cellObservation = entry
 																? observationForTimetableCell(entry, day.date)
 																: null}
@@ -1988,17 +2037,17 @@
 																		type="button"
 																		class={cn(
 																			'min-h-20 w-full rounded-md border p-2 text-left transition hover:border-primary hover:bg-primary/5',
-																			selectedTimetableEntryId === entry.id &&
+																			selectedTimetableBlockGroupId === entry.id &&
 																				selectedBookingDate === day.date &&
 																				'border-primary bg-primary/10 shadow-sm'
 																		)}
 																		disabled={isOutsideCycle ||
 																			(!!cellObservation && cellObservation.status !== 'returned')}
-																		onclick={() => selectTimetableEntry(entry, day.date)}
+																		onclick={() => selectTimetableBlockGroup(entry, day.date)}
 																	>
 																		<div class="flex items-start justify-between gap-2">
 																			<div class="text-sm font-medium leading-snug">
-																				{timetableEntryTitle(entry)}
+																				{timetableBlockGroupTitle(entry)}
 																			</div>
 																			{#if cellObservation}
 																				<Badge variant="secondary" class="shrink-0 text-[10px]">
@@ -2035,10 +2084,10 @@
 										</Table.Root>
 									</div>
 								{/if}
-								{#if selectedTimetableEntry}
+								{#if selectedTimetableBlockGroup}
 									<p class="text-xs text-muted-foreground">
 										เลือกแล้ว: {formatShortDate(selectedBookingDate)} · {timetableLabel(
-											selectedTimetableEntry
+											selectedTimetableBlockGroup
 										)}
 									</p>
 								{/if}

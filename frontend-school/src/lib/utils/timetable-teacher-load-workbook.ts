@@ -1,6 +1,6 @@
 import type { Cell, Row, Workbook, Worksheet } from 'exceljs';
 
-import type { TimetableEntry } from '$lib/api/timetable';
+import type { TimetableBlock } from '$lib/api/timetable';
 import {
 	buildTeacherLoadExportRows,
 	calculateTeacherLoadColumnWidths,
@@ -105,7 +105,7 @@ function saveBuffer(buffer: ArrayBuffer, fileName: string): void {
 }
 
 export async function downloadTeacherLoadWorkbook(
-	entries: TimetableEntry[],
+	entries: TimetableBlock[],
 	fileLabel: string
 ): Promise<number> {
 	const rows = buildTeacherLoadExportRows(entries);

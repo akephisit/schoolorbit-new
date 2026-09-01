@@ -2875,40 +2875,6 @@
         ],
         "type": "object"
       },
-      "ApiResponse_BatchTimetableResult": {
-        "properties": {
-          "data": {
-            "properties": {
-              "batchId": {
-                "format": "uuid",
-                "type": "string"
-              },
-              "entries": {
-                "items": {
-                  "$ref": "#/components/schemas/TimetableEntry"
-                },
-                "type": "array"
-              }
-            },
-            "required": [
-              "batchId",
-              "entries"
-            ],
-            "type": "object"
-          },
-          "message": {
-            "type": "string"
-          },
-          "success": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "success",
-          "data"
-        ],
-        "type": "object"
-      },
       "ApiResponse_BellSchedule": {
         "properties": {
           "data": {
@@ -6559,7 +6525,7 @@
                       "format": "uuid",
                       "type": "string"
                     },
-                    "timetableEntryId": {
+                    "timetableBlockGroupId": {
                       "format": "uuid",
                       "type": [
                         "string",
@@ -6800,61 +6766,23 @@
         ],
         "type": "object"
       },
-      "ApiResponse_ItemsData_TimetableEntry": {
+      "ApiResponse_ItemsData_SupervisionTimetableOption": {
         "properties": {
           "data": {
             "properties": {
               "items": {
                 "items": {
                   "properties": {
-                    "academicTermId": {
-                      "format": "uuid",
-                      "type": "string"
-                    },
-                    "academicYearId": {
-                      "format": "uuid",
-                      "type": "string"
-                    },
-                    "activityId": {
-                      "format": "uuid",
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "activitySchedulingMode": {
-                      "oneOf": [
-                        {
-                          "type": "null"
-                        },
-                        {
-                          "$ref": "#/components/schemas/ActivitySchedulingMode"
-                        }
-                      ]
-                    },
-                    "activityVersionDisplayLabel": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "batchId": {
-                      "format": "uuid",
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "bellScheduleId": {
-                      "format": "uuid",
-                      "type": "string"
-                    },
                     "bellSchedulePeriodId": {
                       "format": "uuid",
                       "type": "string"
                     },
-                    "createdAt": {
-                      "format": "date-time",
+                    "blockGroupId": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "blockId": {
+                      "format": "uuid",
                       "type": "string"
                     },
                     "dayOfWeek": {
@@ -6863,170 +6791,61 @@
                     "endTime": {
                       "type": "string"
                     },
-                    "entryType": {
-                      "type": "string"
-                    },
-                    "homeroomId": {
-                      "format": "uuid",
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "homeroomName": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "id": {
-                      "format": "uuid",
-                      "type": "string"
-                    },
-                    "instructors": {
+                    "homeroomNames": {
                       "items": {
-                        "$ref": "#/components/schemas/TimetableInstructor"
+                        "type": "string"
                       },
                       "type": "array"
                     },
-                    "isActive": {
-                      "type": "boolean"
-                    },
-                    "learningGroupCode": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
                     "learningGroupId": {
                       "format": "uuid",
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": "string"
                     },
                     "learningGroupName": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": "string"
                     },
-                    "note": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                    "learningOfferingId": {
+                      "format": "uuid",
+                      "type": "string"
                     },
                     "offeringCode": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "offeringId": {
-                      "format": "uuid",
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": "string"
                     },
                     "offeringName": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": "string"
                     },
                     "periodName": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": "string"
                     },
-                    "roomCode": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "roomId": {
-                      "format": "uuid",
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "rowVersion": {
-                      "format": "int64",
+                    "periodOrderIndex": {
+                      "format": "int32",
                       "type": "integer"
                     },
+                    "roomName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "startTime": {
-                      "type": "string"
-                    },
-                    "subjectGroupDisplayOrder": {
-                      "format": "int32",
-                      "type": [
-                        "integer",
-                        "null"
-                      ]
-                    },
-                    "subjectGroupId": {
-                      "format": "uuid",
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "subjectGroupName": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "subjectId": {
-                      "description": "Stable catalog identity. A selected version is represented by its display label only.",
-                      "format": "uuid",
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "subjectVersionDisplayLabel": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "timetableVersionId": {
-                      "format": "uuid",
-                      "type": "string"
-                    },
-                    "title": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "updatedAt": {
-                      "format": "date-time",
                       "type": "string"
                     }
                   },
                   "required": [
-                    "id",
-                    "timetableVersionId",
-                    "academicTermId",
-                    "academicYearId",
-                    "bellScheduleId",
-                    "bellSchedulePeriodId",
+                    "blockGroupId",
+                    "blockId",
                     "dayOfWeek",
-                    "entryType",
-                    "rowVersion",
-                    "isActive",
+                    "bellSchedulePeriodId",
+                    "periodOrderIndex",
+                    "periodName",
                     "startTime",
                     "endTime",
-                    "instructors",
-                    "createdAt",
-                    "updatedAt"
+                    "learningGroupId",
+                    "learningGroupName",
+                    "learningOfferingId",
+                    "offeringCode",
+                    "offeringName",
+                    "homeroomNames"
                   ],
                   "type": "object"
                 },
@@ -9865,7 +9684,7 @@
                 "format": "uuid",
                 "type": "string"
               },
-              "timetableEntryId": {
+              "timetableBlockGroupId": {
                 "format": "uuid",
                 "type": [
                   "string",
@@ -10041,20 +9860,20 @@
         ],
         "type": "object"
       },
-      "ApiResponse_SwapTimetableEntriesResponse": {
+      "ApiResponse_SwapTimetableBlocksResponse": {
         "properties": {
           "data": {
             "properties": {
-              "entryA": {
-                "$ref": "#/components/schemas/TimetableEntry"
+              "blockA": {
+                "$ref": "#/components/schemas/TimetableBlock"
               },
-              "entryB": {
-                "$ref": "#/components/schemas/TimetableEntry"
+              "blockB": {
+                "$ref": "#/components/schemas/TimetableBlock"
               }
             },
             "required": [
-              "entryA",
-              "entryB"
+              "blockA",
+              "blockB"
             ],
             "type": "object"
           },
@@ -10274,7 +10093,7 @@
         ],
         "type": "object"
       },
-      "ApiResponse_TimetableEntry": {
+      "ApiResponse_TimetableBlock": {
         "properties": {
           "data": {
             "properties": {
@@ -10286,36 +10105,6 @@
                 "format": "uuid",
                 "type": "string"
               },
-              "activityId": {
-                "format": "uuid",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "activitySchedulingMode": {
-                "oneOf": [
-                  {
-                    "type": "null"
-                  },
-                  {
-                    "$ref": "#/components/schemas/ActivitySchedulingMode"
-                  }
-                ]
-              },
-              "activityVersionDisplayLabel": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "batchId": {
-                "format": "uuid",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
               "bellScheduleId": {
                 "format": "uuid",
                 "type": "string"
@@ -10323,6 +10112,9 @@
               "bellSchedulePeriodId": {
                 "format": "uuid",
                 "type": "string"
+              },
+              "blockKind": {
+                "$ref": "#/components/schemas/TimetableBlockKind"
               },
               "createdAt": {
                 "format": "date-time",
@@ -10334,49 +10126,27 @@
               "endTime": {
                 "type": "string"
               },
-              "entryType": {
-                "type": "string"
+              "groups": {
+                "items": {
+                  "$ref": "#/components/schemas/TimetableBlockGroup"
+                },
+                "type": "array"
               },
-              "homeroomId": {
-                "format": "uuid",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "homeroomName": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+              "homerooms": {
+                "items": {
+                  "$ref": "#/components/schemas/TimetableBlockHomeroom"
+                },
+                "type": "array"
               },
               "id": {
                 "format": "uuid",
                 "type": "string"
               },
-              "instructors": {
-                "items": {
-                  "$ref": "#/components/schemas/TimetableInstructor"
-                },
-                "type": "array"
-              },
               "isActive": {
                 "type": "boolean"
               },
-              "learningGroupCode": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "learningGroupId": {
+              "learningOfferingId": {
                 "format": "uuid",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "learningGroupName": {
                 "type": [
                   "string",
                   "null"
@@ -10394,13 +10164,6 @@
                   "null"
                 ]
               },
-              "offeringId": {
-                "format": "uuid",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
               "offeringName": {
                 "type": [
                   "string",
@@ -10408,64 +10171,53 @@
                 ]
               },
               "periodName": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "roomCode": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "roomId": {
-                "format": "uuid",
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "string"
               },
               "rowVersion": {
                 "format": "int64",
                 "type": "integer"
               },
+              "schedulingMode": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ActivitySchedulingMode"
+                  }
+                ]
+              },
+              "seriesId": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "startTime": {
                 "type": "string"
               },
-              "subjectGroupDisplayOrder": {
-                "format": "int32",
-                "type": [
-                  "integer",
-                  "null"
+              "structuralKind": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/TimetableStructuralKind"
+                  }
                 ]
               },
-              "subjectGroupId": {
-                "format": "uuid",
-                "type": [
-                  "string",
-                  "null"
-                ]
+              "syncStates": {
+                "items": {
+                  "$ref": "#/components/schemas/TimetableBlockSyncState"
+                },
+                "type": "array"
               },
-              "subjectGroupName": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "subjectId": {
-                "description": "Stable catalog identity. A selected version is represented by its display label only.",
-                "format": "uuid",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "subjectVersionDisplayLabel": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+              "teachers": {
+                "items": {
+                  "$ref": "#/components/schemas/TimetableBlockTeacher"
+                },
+                "type": "array"
               },
               "timetableVersionId": {
                 "format": "uuid",
@@ -10489,13 +10241,25 @@
               "academicYearId",
               "bellScheduleId",
               "bellSchedulePeriodId",
-              "dayOfWeek",
-              "entryType",
-              "rowVersion",
-              "isActive",
+              "periodName",
               "startTime",
               "endTime",
-              "instructors",
+              "dayOfWeek",
+              "blockKind",
+              "schedulingMode",
+              "learningOfferingId",
+              "offeringCode",
+              "offeringName",
+              "structuralKind",
+              "title",
+              "note",
+              "seriesId",
+              "groups",
+              "homerooms",
+              "teachers",
+              "syncStates",
+              "rowVersion",
+              "isActive",
               "createdAt",
               "updatedAt"
             ],
@@ -10514,13 +10278,13 @@
         ],
         "type": "object"
       },
-      "ApiResponse_TimetablePlacementPreview": {
+      "ApiResponse_TimetableBlockPlacementPreview": {
         "properties": {
           "data": {
             "properties": {
               "conflicts": {
                 "items": {
-                  "$ref": "#/components/schemas/ConflictInfo"
+                  "$ref": "#/components/schemas/TimetableBlockConflict"
                 },
                 "type": "array"
               },
@@ -10530,14 +10294,14 @@
                     "type": "null"
                   },
                   {
-                    "$ref": "#/components/schemas/TimetablePlacementMutationKind"
+                    "$ref": "#/components/schemas/TimetableBlockMutationKind"
                   }
                 ]
               },
               "normalizedCandidate": {
-                "$ref": "#/components/schemas/TimetablePlacementCandidate"
+                "$ref": "#/components/schemas/TimetableBlockPlacementCandidate"
               },
-              "sourceEntryId": {
+              "sourceBlockId": {
                 "format": "uuid",
                 "type": [
                   "string",
@@ -10545,31 +10309,118 @@
                 ]
               },
               "state": {
-                "$ref": "#/components/schemas/TimetablePlacementState"
+                "$ref": "#/components/schemas/TimetableBlockPlacementState"
               },
               "targetBellSchedulePeriodId": {
                 "format": "uuid",
                 "type": "string"
               },
-              "targetDayOfWeek": {
-                "type": "string"
-              },
-              "targetEntryId": {
+              "targetBlockId": {
                 "format": "uuid",
                 "type": [
                   "string",
                   "null"
                 ]
+              },
+              "targetDayOfWeek": {
+                "type": "string"
               }
             },
             "required": [
               "state",
-              "sourceEntryId",
-              "targetEntryId",
+              "sourceBlockId",
+              "targetBlockId",
               "targetDayOfWeek",
               "targetBellSchedulePeriodId",
               "normalizedCandidate",
-              "conflicts"
+              "conflicts",
+              "mutation"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_TimetableBlockWorkspace": {
+        "properties": {
+          "data": {
+            "properties": {
+              "bellPeriods": {
+                "items": {
+                  "$ref": "#/components/schemas/BellSchedulePeriod"
+                },
+                "type": "array"
+              },
+              "blocks": {
+                "items": {
+                  "$ref": "#/components/schemas/TimetableBlock"
+                },
+                "type": "array"
+              },
+              "homerooms": {
+                "items": {
+                  "$ref": "#/components/schemas/TimetableBlockWorkspaceHomeroom"
+                },
+                "type": "array"
+              },
+              "learningGroups": {
+                "items": {
+                  "$ref": "#/components/schemas/TimetableBlockWorkspaceLearningGroup"
+                },
+                "type": "array"
+              },
+              "ordinaryDemands": {
+                "items": {
+                  "$ref": "#/components/schemas/TimetableOrdinaryDemand"
+                },
+                "type": "array"
+              },
+              "rooms": {
+                "items": {
+                  "$ref": "#/components/schemas/TimetableBlockWorkspaceRoom"
+                },
+                "type": "array"
+              },
+              "staff": {
+                "items": {
+                  "$ref": "#/components/schemas/TimetableBlockWorkspaceStaff"
+                },
+                "type": "array"
+              },
+              "summary": {
+                "$ref": "#/components/schemas/TimetableBlockSummary"
+              },
+              "synchronizedDemands": {
+                "items": {
+                  "$ref": "#/components/schemas/TimetableSynchronizedDemand"
+                },
+                "type": "array"
+              },
+              "version": {
+                "$ref": "#/components/schemas/TimetableVersion"
+              }
+            },
+            "required": [
+              "version",
+              "bellPeriods",
+              "blocks",
+              "ordinaryDemands",
+              "synchronizedDemands",
+              "learningGroups",
+              "homerooms",
+              "rooms",
+              "staff",
+              "summary"
             ],
             "type": "object"
           },
@@ -10756,81 +10607,6 @@
               "createdAt",
               "updatedAt",
               "targets"
-            ],
-            "type": "object"
-          },
-          "message": {
-            "type": "string"
-          },
-          "success": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "success",
-          "data"
-        ],
-        "type": "object"
-      },
-      "ApiResponse_TimetableWorkspace": {
-        "properties": {
-          "data": {
-            "properties": {
-              "bellPeriods": {
-                "items": {
-                  "$ref": "#/components/schemas/BellSchedulePeriod"
-                },
-                "type": "array"
-              },
-              "entries": {
-                "items": {
-                  "$ref": "#/components/schemas/TimetableEntry"
-                },
-                "type": "array"
-              },
-              "homerooms": {
-                "items": {
-                  "$ref": "#/components/schemas/TimetableWorkspaceHomeroom"
-                },
-                "type": "array"
-              },
-              "learningGroups": {
-                "items": {
-                  "$ref": "#/components/schemas/TimetableWorkspaceLearningGroup"
-                },
-                "type": "array"
-              },
-              "rooms": {
-                "items": {
-                  "$ref": "#/components/schemas/TimetableWorkspaceRoom"
-                },
-                "type": "array"
-              },
-              "staff": {
-                "items": {
-                  "$ref": "#/components/schemas/TimetableWorkspaceStaff"
-                },
-                "type": "array"
-              },
-              "unscheduledDemands": {
-                "items": {
-                  "$ref": "#/components/schemas/TimetableUnscheduledDemand"
-                },
-                "type": "array"
-              },
-              "version": {
-                "$ref": "#/components/schemas/TimetableVersion"
-              }
-            },
-            "required": [
-              "version",
-              "bellPeriods",
-              "entries",
-              "learningGroups",
-              "homerooms",
-              "rooms",
-              "staff",
-              "unscheduledDemands"
             ],
             "type": "object"
           },
@@ -14778,59 +14554,6 @@
         ],
         "type": "object"
       },
-      "ApiResponse_Vec_MoveValidityCell": {
-        "properties": {
-          "data": {
-            "items": {
-              "properties": {
-                "bellSchedulePeriodId": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "conflicts": {
-                  "items": {
-                    "$ref": "#/components/schemas/ConflictInfo"
-                  },
-                  "type": "array"
-                },
-                "dayOfWeek": {
-                  "type": "string"
-                },
-                "state": {
-                  "$ref": "#/components/schemas/TimetablePlacementState"
-                },
-                "targetEntryId": {
-                  "format": "uuid",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                }
-              },
-              "required": [
-                "dayOfWeek",
-                "bellSchedulePeriodId",
-                "state",
-                "targetEntryId",
-                "conflicts"
-              ],
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "message": {
-            "type": "string"
-          },
-          "success": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "success",
-          "data"
-        ],
-        "type": "object"
-      },
       "ApiResponse_Vec_OrganizationMemberItem": {
         "properties": {
           "data": {
@@ -16261,7 +15984,7 @@
         ],
         "type": "object"
       },
-      "ApiResponse_Vec_TimetableEntry": {
+      "ApiResponse_Vec_TimetableBlock": {
         "properties": {
           "data": {
             "items": {
@@ -16274,36 +15997,6 @@
                   "format": "uuid",
                   "type": "string"
                 },
-                "activityId": {
-                  "format": "uuid",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "activitySchedulingMode": {
-                  "oneOf": [
-                    {
-                      "type": "null"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ActivitySchedulingMode"
-                    }
-                  ]
-                },
-                "activityVersionDisplayLabel": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "batchId": {
-                  "format": "uuid",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
                 "bellScheduleId": {
                   "format": "uuid",
                   "type": "string"
@@ -16311,6 +16004,9 @@
                 "bellSchedulePeriodId": {
                   "format": "uuid",
                   "type": "string"
+                },
+                "blockKind": {
+                  "$ref": "#/components/schemas/TimetableBlockKind"
                 },
                 "createdAt": {
                   "format": "date-time",
@@ -16322,49 +16018,27 @@
                 "endTime": {
                   "type": "string"
                 },
-                "entryType": {
-                  "type": "string"
+                "groups": {
+                  "items": {
+                    "$ref": "#/components/schemas/TimetableBlockGroup"
+                  },
+                  "type": "array"
                 },
-                "homeroomId": {
-                  "format": "uuid",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "homeroomName": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                "homerooms": {
+                  "items": {
+                    "$ref": "#/components/schemas/TimetableBlockHomeroom"
+                  },
+                  "type": "array"
                 },
                 "id": {
                   "format": "uuid",
                   "type": "string"
                 },
-                "instructors": {
-                  "items": {
-                    "$ref": "#/components/schemas/TimetableInstructor"
-                  },
-                  "type": "array"
-                },
                 "isActive": {
                   "type": "boolean"
                 },
-                "learningGroupCode": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "learningGroupId": {
+                "learningOfferingId": {
                   "format": "uuid",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "learningGroupName": {
                   "type": [
                     "string",
                     "null"
@@ -16382,13 +16056,6 @@
                     "null"
                   ]
                 },
-                "offeringId": {
-                  "format": "uuid",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
                 "offeringName": {
                   "type": [
                     "string",
@@ -16396,64 +16063,53 @@
                   ]
                 },
                 "periodName": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "roomCode": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "roomId": {
-                  "format": "uuid",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": "string"
                 },
                 "rowVersion": {
                   "format": "int64",
                   "type": "integer"
                 },
+                "schedulingMode": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ActivitySchedulingMode"
+                    }
+                  ]
+                },
+                "seriesId": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "startTime": {
                   "type": "string"
                 },
-                "subjectGroupDisplayOrder": {
-                  "format": "int32",
-                  "type": [
-                    "integer",
-                    "null"
+                "structuralKind": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TimetableStructuralKind"
+                    }
                   ]
                 },
-                "subjectGroupId": {
-                  "format": "uuid",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                "syncStates": {
+                  "items": {
+                    "$ref": "#/components/schemas/TimetableBlockSyncState"
+                  },
+                  "type": "array"
                 },
-                "subjectGroupName": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "subjectId": {
-                  "description": "Stable catalog identity. A selected version is represented by its display label only.",
-                  "format": "uuid",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "subjectVersionDisplayLabel": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                "teachers": {
+                  "items": {
+                    "$ref": "#/components/schemas/TimetableBlockTeacher"
+                  },
+                  "type": "array"
                 },
                 "timetableVersionId": {
                   "format": "uuid",
@@ -16477,84 +16133,27 @@
                 "academicYearId",
                 "bellScheduleId",
                 "bellSchedulePeriodId",
-                "dayOfWeek",
-                "entryType",
-                "rowVersion",
-                "isActive",
+                "periodName",
                 "startTime",
                 "endTime",
-                "instructors",
+                "dayOfWeek",
+                "blockKind",
+                "schedulingMode",
+                "learningOfferingId",
+                "offeringCode",
+                "offeringName",
+                "structuralKind",
+                "title",
+                "note",
+                "seriesId",
+                "groups",
+                "homerooms",
+                "teachers",
+                "syncStates",
+                "rowVersion",
+                "isActive",
                 "createdAt",
                 "updatedAt"
-              ],
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "message": {
-            "type": "string"
-          },
-          "success": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "success",
-          "data"
-        ],
-        "type": "object"
-      },
-      "ApiResponse_Vec_TimetableOccupancyCell": {
-        "properties": {
-          "data": {
-            "items": {
-              "properties": {
-                "bellSchedulePeriodId": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "dayOfWeek": {
-                  "type": "string"
-                },
-                "entryId": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "homeroomIds": {
-                  "items": {
-                    "format": "uuid",
-                    "type": "string"
-                  },
-                  "type": "array"
-                },
-                "instructorIds": {
-                  "items": {
-                    "format": "uuid",
-                    "type": "string"
-                  },
-                  "type": "array"
-                },
-                "learningGroupId": {
-                  "format": "uuid",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "roomId": {
-                  "format": "uuid",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                }
-              },
-              "required": [
-                "entryId",
-                "homeroomIds",
-                "instructorIds",
-                "dayOfWeek",
-                "bellSchedulePeriodId"
               ],
               "type": "object"
             },
@@ -16837,61 +16436,6 @@
               "type": "object"
             },
             "type": "array"
-          },
-          "message": {
-            "type": "string"
-          },
-          "success": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "success",
-          "data"
-        ],
-        "type": "object"
-      },
-      "ApiResponse_WholeSchoolTimetableOverview": {
-        "properties": {
-          "data": {
-            "properties": {
-              "dayOfWeek": {
-                "type": "string"
-              },
-              "issues": {
-                "items": {
-                  "$ref": "#/components/schemas/WholeSchoolTimetableIssue"
-                },
-                "type": "array"
-              },
-              "periods": {
-                "items": {
-                  "$ref": "#/components/schemas/BellSchedulePeriod"
-                },
-                "type": "array"
-              },
-              "rows": {
-                "items": {
-                  "$ref": "#/components/schemas/WholeSchoolTimetableRow"
-                },
-                "type": "array"
-              },
-              "summary": {
-                "$ref": "#/components/schemas/WholeSchoolTimetableSummary"
-              },
-              "version": {
-                "$ref": "#/components/schemas/TimetableVersion"
-              }
-            },
-            "required": [
-              "version",
-              "dayOfWeek",
-              "periods",
-              "rows",
-              "issues",
-              "summary"
-            ],
-            "type": "object"
           },
           "message": {
             "type": "string"
@@ -17620,25 +17164,6 @@
         },
         "required": [
           "fileIds"
-        ],
-        "type": "object"
-      },
-      "BatchTimetableResult": {
-        "properties": {
-          "batchId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "entries": {
-            "items": {
-              "$ref": "#/components/schemas/TimetableEntry"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "batchId",
-          "entries"
         ],
         "type": "object"
       },
@@ -21191,29 +20716,6 @@
         ],
         "type": "object"
       },
-      "ConflictInfo": {
-        "properties": {
-          "conflictType": {
-            "$ref": "#/components/schemas/TimetableConflictType"
-          },
-          "existingEntryId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "message": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "conflictType",
-          "message",
-          "existingEntryId"
-        ],
-        "type": "object"
-      },
       "CourseGradingPolicy": {
         "additionalProperties": false,
         "properties": {
@@ -21585,83 +21087,6 @@
           "schedulingMode",
           "effectiveFrom",
           "gradeLevelIds"
-        ],
-        "type": "object"
-      },
-      "CreateBatchTimetableEntriesRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "academicTermId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "bellSchedulePeriodIds": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "daysOfWeek": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "entryType": {
-            "type": "string"
-          },
-          "homeroomIds": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "instructorIds": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "learningGroupIds": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "note": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "roomId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "timetableVersionId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "title": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "timetableVersionId",
-          "academicTermId",
-          "daysOfWeek",
-          "bellSchedulePeriodIds",
-          "entryType"
         ],
         "type": "object"
       },
@@ -22307,6 +21732,60 @@
         ],
         "type": "object"
       },
+      "CreateOrdinaryTimetableBlockRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "bellSchedulePeriodId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "dayOfWeek": {
+            "type": "string"
+          },
+          "instructorIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "learningGroupId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "roomId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timetableVersionId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "timetableVersionId",
+          "academicTermId",
+          "learningGroupId",
+          "dayOfWeek",
+          "bellSchedulePeriodId",
+          "roomId",
+          "instructorIds"
+        ],
+        "type": "object"
+      },
       "CreateOrganizationUnitRequest": {
         "properties": {
           "category": {
@@ -22633,6 +22112,73 @@
           "first_name",
           "last_name",
           "role_ids"
+        ],
+        "type": "object"
+      },
+      "CreateStructuralTimetableBlocksRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "allHomerooms": {
+            "type": "boolean"
+          },
+          "allTeachers": {
+            "type": "boolean"
+          },
+          "homeroomIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "roomId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "slots": {
+            "items": {
+              "$ref": "#/components/schemas/TimetableStructuralSlotInput"
+            },
+            "type": "array"
+          },
+          "structuralKind": {
+            "$ref": "#/components/schemas/TimetableStructuralKind"
+          },
+          "teacherIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "timetableVersionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "timetableVersionId",
+          "academicTermId",
+          "structuralKind",
+          "title",
+          "slots",
+          "roomId"
         ],
         "type": "object"
       },
@@ -23142,25 +22688,7 @@
         ],
         "type": "object"
       },
-      "CreateTemplateRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "description": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "name": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "name"
-        ],
-        "type": "object"
-      },
-      "CreateTimetableEntryRequest": {
+      "CreateSynchronizedTimetableBlockRequest": {
         "additionalProperties": false,
         "properties": {
           "academicTermId": {
@@ -23174,29 +22702,16 @@
           "dayOfWeek": {
             "type": "string"
           },
-          "entryType": {
-            "type": "string"
-          },
-          "homeroomId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "instructorIds": {
+          "intendedHomeroomIds": {
             "items": {
               "format": "uuid",
               "type": "string"
             },
             "type": "array"
           },
-          "learningGroupId": {
+          "learningOfferingId": {
             "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "note": {
             "type": [
@@ -23214,20 +22729,34 @@
           "timetableVersionId": {
             "format": "uuid",
             "type": "string"
-          },
-          "title": {
-            "type": [
-              "string",
-              "null"
-            ]
           }
         },
         "required": [
           "timetableVersionId",
           "academicTermId",
+          "learningOfferingId",
           "dayOfWeek",
           "bellSchedulePeriodId",
-          "entryType"
+          "intendedHomeroomIds",
+          "roomId"
+        ],
+        "type": "object"
+      },
+      "CreateTemplateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
         ],
         "type": "object"
       },
@@ -27746,7 +27275,7 @@
                   "format": "uuid",
                   "type": "string"
                 },
-                "timetableEntryId": {
+                "timetableBlockGroupId": {
                   "format": "uuid",
                   "type": [
                     "string",
@@ -27944,59 +27473,21 @@
         ],
         "type": "object"
       },
-      "ItemsData_TimetableEntry": {
+      "ItemsData_SupervisionTimetableOption": {
         "properties": {
           "items": {
             "items": {
               "properties": {
-                "academicTermId": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "academicYearId": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "activityId": {
-                  "format": "uuid",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "activitySchedulingMode": {
-                  "oneOf": [
-                    {
-                      "type": "null"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ActivitySchedulingMode"
-                    }
-                  ]
-                },
-                "activityVersionDisplayLabel": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "batchId": {
-                  "format": "uuid",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "bellScheduleId": {
-                  "format": "uuid",
-                  "type": "string"
-                },
                 "bellSchedulePeriodId": {
                   "format": "uuid",
                   "type": "string"
                 },
-                "createdAt": {
-                  "format": "date-time",
+                "blockGroupId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "blockId": {
+                  "format": "uuid",
                   "type": "string"
                 },
                 "dayOfWeek": {
@@ -28005,170 +27496,61 @@
                 "endTime": {
                   "type": "string"
                 },
-                "entryType": {
-                  "type": "string"
-                },
-                "homeroomId": {
-                  "format": "uuid",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "homeroomName": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "id": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "instructors": {
+                "homeroomNames": {
                   "items": {
-                    "$ref": "#/components/schemas/TimetableInstructor"
+                    "type": "string"
                   },
                   "type": "array"
                 },
-                "isActive": {
-                  "type": "boolean"
-                },
-                "learningGroupCode": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
                 "learningGroupId": {
                   "format": "uuid",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": "string"
                 },
                 "learningGroupName": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": "string"
                 },
-                "note": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                "learningOfferingId": {
+                  "format": "uuid",
+                  "type": "string"
                 },
                 "offeringCode": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "offeringId": {
-                  "format": "uuid",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": "string"
                 },
                 "offeringName": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": "string"
                 },
                 "periodName": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": "string"
                 },
-                "roomCode": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "roomId": {
-                  "format": "uuid",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "rowVersion": {
-                  "format": "int64",
+                "periodOrderIndex": {
+                  "format": "int32",
                   "type": "integer"
                 },
+                "roomName": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "startTime": {
-                  "type": "string"
-                },
-                "subjectGroupDisplayOrder": {
-                  "format": "int32",
-                  "type": [
-                    "integer",
-                    "null"
-                  ]
-                },
-                "subjectGroupId": {
-                  "format": "uuid",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "subjectGroupName": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "subjectId": {
-                  "description": "Stable catalog identity. A selected version is represented by its display label only.",
-                  "format": "uuid",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "subjectVersionDisplayLabel": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "timetableVersionId": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "title": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "updatedAt": {
-                  "format": "date-time",
                   "type": "string"
                 }
               },
               "required": [
-                "id",
-                "timetableVersionId",
-                "academicTermId",
-                "academicYearId",
-                "bellScheduleId",
-                "bellSchedulePeriodId",
+                "blockGroupId",
+                "blockId",
                 "dayOfWeek",
-                "entryType",
-                "rowVersion",
-                "isActive",
+                "bellSchedulePeriodId",
+                "periodOrderIndex",
+                "periodName",
                 "startTime",
                 "endTime",
-                "instructors",
-                "createdAt",
-                "updatedAt"
+                "learningGroupId",
+                "learningGroupName",
+                "learningOfferingId",
+                "offeringCode",
+                "offeringName",
+                "homeroomNames"
               ],
               "type": "object"
             },
@@ -28747,7 +28129,7 @@
               "null"
             ]
           },
-          "timetableEntryId": {
+          "timetableBlockGroupId": {
             "format": "uuid",
             "type": [
               "string",
@@ -29276,41 +28658,6 @@
         },
         "required": [
           "group_id"
-        ],
-        "type": "object"
-      },
-      "MoveValidityCell": {
-        "properties": {
-          "bellSchedulePeriodId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "conflicts": {
-            "items": {
-              "$ref": "#/components/schemas/ConflictInfo"
-            },
-            "type": "array"
-          },
-          "dayOfWeek": {
-            "type": "string"
-          },
-          "state": {
-            "$ref": "#/components/schemas/TimetablePlacementState"
-          },
-          "targetEntryId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "dayOfWeek",
-          "bellSchedulePeriodId",
-          "state",
-          "targetEntryId",
-          "conflicts"
         ],
         "type": "object"
       },
@@ -31145,6 +30492,38 @@
         ],
         "type": "object"
       },
+      "RemoveTimetableBlockTargetRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "blockRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "targetId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "targetKind": {
+            "$ref": "#/components/schemas/TimetableTargetKind"
+          },
+          "targetRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "timetableVersionId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "timetableVersionId",
+          "blockRowVersion",
+          "targetKind",
+          "targetId",
+          "targetRowVersion"
+        ],
+        "type": "object"
+      },
       "ReorderGroupsRequest": {
         "properties": {
           "groups": {
@@ -31410,7 +30789,7 @@
               "null"
             ]
           },
-          "timetableEntryId": {
+          "timetableBlockGroupId": {
             "format": "uuid",
             "type": [
               "string",
@@ -31438,6 +30817,54 @@
           "activity"
         ],
         "type": "string"
+      },
+      "RestoreTimetableBlockGroupRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "blockRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "learningGroupId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "timetableVersionId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "timetableVersionId",
+          "blockRowVersion",
+          "learningGroupId"
+        ],
+        "type": "object"
+      },
+      "RetryTimetableBlockSyncRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "blockRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "learningGroupIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "timetableVersionId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "timetableVersionId",
+          "blockRowVersion"
+        ],
+        "type": "object"
       },
       "ReturnCertificateIssueRequest": {
         "additionalProperties": false,
@@ -34377,7 +33804,7 @@
             "format": "uuid",
             "type": "string"
           },
-          "timetableEntryId": {
+          "timetableBlockGroupId": {
             "format": "uuid",
             "type": [
               "string",
@@ -34907,22 +34334,100 @@
         ],
         "type": "string"
       },
-      "SwapTimetableEntriesRequest": {
-        "additionalProperties": false,
+      "SupervisionTimetableOption": {
         "properties": {
-          "entryAId": {
+          "bellSchedulePeriodId": {
             "format": "uuid",
             "type": "string"
           },
-          "entryARowVersion": {
+          "blockGroupId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "blockId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "dayOfWeek": {
+            "type": "string"
+          },
+          "endTime": {
+            "type": "string"
+          },
+          "homeroomNames": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "learningGroupId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "learningGroupName": {
+            "type": "string"
+          },
+          "learningOfferingId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "offeringCode": {
+            "type": "string"
+          },
+          "offeringName": {
+            "type": "string"
+          },
+          "periodName": {
+            "type": "string"
+          },
+          "periodOrderIndex": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "roomName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "startTime": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "blockGroupId",
+          "blockId",
+          "dayOfWeek",
+          "bellSchedulePeriodId",
+          "periodOrderIndex",
+          "periodName",
+          "startTime",
+          "endTime",
+          "learningGroupId",
+          "learningGroupName",
+          "learningOfferingId",
+          "offeringCode",
+          "offeringName",
+          "homeroomNames"
+        ],
+        "type": "object"
+      },
+      "SwapTimetableBlocksRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "blockAId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "blockARowVersion": {
             "format": "int64",
             "type": "integer"
           },
-          "entryBId": {
+          "blockBId": {
             "format": "uuid",
             "type": "string"
           },
-          "entryBRowVersion": {
+          "blockBRowVersion": {
             "format": "int64",
             "type": "integer"
           },
@@ -34933,25 +34438,25 @@
         },
         "required": [
           "timetableVersionId",
-          "entryAId",
-          "entryARowVersion",
-          "entryBId",
-          "entryBRowVersion"
+          "blockAId",
+          "blockARowVersion",
+          "blockBId",
+          "blockBRowVersion"
         ],
         "type": "object"
       },
-      "SwapTimetableEntriesResponse": {
+      "SwapTimetableBlocksResponse": {
         "properties": {
-          "entryA": {
-            "$ref": "#/components/schemas/TimetableEntry"
+          "blockA": {
+            "$ref": "#/components/schemas/TimetableBlock"
           },
-          "entryB": {
-            "$ref": "#/components/schemas/TimetableEntry"
+          "blockB": {
+            "$ref": "#/components/schemas/TimetableBlock"
           }
         },
         "required": [
-          "entryA",
-          "entryB"
+          "blockA",
+          "blockB"
         ],
         "type": "object"
       },
@@ -35481,18 +34986,7 @@
         ],
         "type": "object"
       },
-      "TimetableConflictType": {
-        "enum": [
-          "learning_group",
-          "homeroom",
-          "instructor",
-          "room",
-          "version",
-          "stale_entry"
-        ],
-        "type": "string"
-      },
-      "TimetableEntry": {
+      "TimetableBlock": {
         "properties": {
           "academicTermId": {
             "format": "uuid",
@@ -35502,36 +34996,6 @@
             "format": "uuid",
             "type": "string"
           },
-          "activityId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "activitySchedulingMode": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/ActivitySchedulingMode"
-              }
-            ]
-          },
-          "activityVersionDisplayLabel": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "batchId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "bellScheduleId": {
             "format": "uuid",
             "type": "string"
@@ -35539,6 +35003,9 @@
           "bellSchedulePeriodId": {
             "format": "uuid",
             "type": "string"
+          },
+          "blockKind": {
+            "$ref": "#/components/schemas/TimetableBlockKind"
           },
           "createdAt": {
             "format": "date-time",
@@ -35550,49 +35017,27 @@
           "endTime": {
             "type": "string"
           },
-          "entryType": {
-            "type": "string"
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/TimetableBlockGroup"
+            },
+            "type": "array"
           },
-          "homeroomId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "homeroomName": {
-            "type": [
-              "string",
-              "null"
-            ]
+          "homerooms": {
+            "items": {
+              "$ref": "#/components/schemas/TimetableBlockHomeroom"
+            },
+            "type": "array"
           },
           "id": {
             "format": "uuid",
             "type": "string"
           },
-          "instructors": {
-            "items": {
-              "$ref": "#/components/schemas/TimetableInstructor"
-            },
-            "type": "array"
-          },
           "isActive": {
             "type": "boolean"
           },
-          "learningGroupCode": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "learningGroupId": {
+          "learningOfferingId": {
             "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "learningGroupName": {
             "type": [
               "string",
               "null"
@@ -35610,13 +35055,6 @@
               "null"
             ]
           },
-          "offeringId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "offeringName": {
             "type": [
               "string",
@@ -35624,64 +35062,53 @@
             ]
           },
           "periodName": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "roomCode": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "roomId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "rowVersion": {
             "format": "int64",
             "type": "integer"
           },
+          "schedulingMode": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ActivitySchedulingMode"
+              }
+            ]
+          },
+          "seriesId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "startTime": {
             "type": "string"
           },
-          "subjectGroupDisplayOrder": {
-            "format": "int32",
-            "type": [
-              "integer",
-              "null"
+          "structuralKind": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TimetableStructuralKind"
+              }
             ]
           },
-          "subjectGroupId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
+          "syncStates": {
+            "items": {
+              "$ref": "#/components/schemas/TimetableBlockSyncState"
+            },
+            "type": "array"
           },
-          "subjectGroupName": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "subjectId": {
-            "description": "Stable catalog identity. A selected version is represented by its display label only.",
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "subjectVersionDisplayLabel": {
-            "type": [
-              "string",
-              "null"
-            ]
+          "teachers": {
+            "items": {
+              "$ref": "#/components/schemas/TimetableBlockTeacher"
+            },
+            "type": "array"
           },
           "timetableVersionId": {
             "format": "uuid",
@@ -35705,69 +35132,92 @@
           "academicYearId",
           "bellScheduleId",
           "bellSchedulePeriodId",
-          "dayOfWeek",
-          "entryType",
-          "rowVersion",
-          "isActive",
+          "periodName",
           "startTime",
           "endTime",
-          "instructors",
+          "dayOfWeek",
+          "blockKind",
+          "schedulingMode",
+          "learningOfferingId",
+          "offeringCode",
+          "offeringName",
+          "structuralKind",
+          "title",
+          "note",
+          "seriesId",
+          "groups",
+          "homerooms",
+          "teachers",
+          "syncStates",
+          "rowVersion",
+          "isActive",
           "createdAt",
           "updatedAt"
         ],
         "type": "object"
       },
-      "TimetableInstructor": {
+      "TimetableBlockConflict": {
         "properties": {
-          "displayName": {
+          "code": {
             "type": "string"
           },
-          "role": {
-            "type": "string"
+          "conflictType": {
+            "$ref": "#/components/schemas/TimetableBlockConflictType"
           },
-          "subjectGroupDisplayOrder": {
-            "format": "int32",
-            "type": [
-              "integer",
-              "null"
-            ]
-          },
-          "subjectGroupId": {
+          "existingBlockId": {
             "format": "uuid",
             "type": [
               "string",
               "null"
             ]
           },
-          "subjectGroupName": {
+          "message": {
+            "type": "string"
+          },
+          "targetId": {
+            "format": "uuid",
             "type": [
               "string",
               "null"
             ]
           },
-          "userId": {
-            "format": "uuid",
-            "type": "string"
+          "targetKind": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TimetableTargetKind"
+              }
+            ]
           }
         },
         "required": [
-          "userId",
-          "displayName",
-          "role"
+          "conflictType",
+          "code",
+          "message",
+          "existingBlockId",
+          "targetKind",
+          "targetId"
         ],
         "type": "object"
       },
-      "TimetableOccupancyCell": {
+      "TimetableBlockConflictType": {
+        "enum": [
+          "learning_group",
+          "homeroom",
+          "teacher",
+          "room",
+          "version",
+          "stale_block",
+          "missing_instructor",
+          "outside_scope"
+        ],
+        "type": "string"
+      },
+      "TimetableBlockGroup": {
         "properties": {
-          "bellSchedulePeriodId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "dayOfWeek": {
-            "type": "string"
-          },
-          "entryId": {
-            "format": "uuid",
+          "code": {
             "type": "string"
           },
           "homeroomIds": {
@@ -35777,15 +35227,31 @@
             },
             "type": "array"
           },
-          "instructorIds": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "instructors": {
             "items": {
-              "format": "uuid",
-              "type": "string"
+              "$ref": "#/components/schemas/TimetableBlockInstructor"
             },
             "type": "array"
           },
+          "isActive": {
+            "type": "boolean"
+          },
           "learningGroupId": {
             "format": "uuid",
+            "type": "string"
+          },
+          "learningOfferingId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "roomCode": {
             "type": [
               "string",
               "null"
@@ -35797,29 +35263,141 @@
               "string",
               "null"
             ]
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "syncStatus": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TimetableBlockSyncStatus"
+              }
+            ]
           }
         },
         "required": [
-          "entryId",
+          "id",
+          "learningGroupId",
+          "learningOfferingId",
+          "code",
+          "name",
           "homeroomIds",
-          "instructorIds",
-          "dayOfWeek",
-          "bellSchedulePeriodId"
+          "roomId",
+          "roomCode",
+          "instructors",
+          "syncStatus",
+          "rowVersion",
+          "isActive"
         ],
         "type": "object"
       },
-      "TimetablePlacementCandidate": {
-        "additionalProperties": false,
+      "TimetableBlockHomeroom": {
         "properties": {
-          "entryType": {
+          "code": {
             "type": "string"
           },
           "homeroomId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "roomCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "roomId": {
             "format": "uuid",
             "type": [
               "string",
               "null"
             ]
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "homeroomId",
+          "code",
+          "name",
+          "roomId",
+          "roomCode",
+          "rowVersion",
+          "isActive"
+        ],
+        "type": "object"
+      },
+      "TimetableBlockInstructor": {
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "orderIndex": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "role": {
+            "type": "string"
+          },
+          "teacherId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "teacherId",
+          "displayName",
+          "role",
+          "orderIndex"
+        ],
+        "type": "object"
+      },
+      "TimetableBlockKind": {
+        "enum": [
+          "course",
+          "activity",
+          "structural"
+        ],
+        "type": "string"
+      },
+      "TimetableBlockMutationKind": {
+        "enum": [
+          "create",
+          "update",
+          "move",
+          "swap"
+        ],
+        "type": "string"
+      },
+      "TimetableBlockPlacementCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "blockKind": {
+            "$ref": "#/components/schemas/TimetableBlockKind"
+          },
+          "homeroomIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
           },
           "instructorIds": {
             "items": {
@@ -35848,32 +35426,28 @@
               "string",
               "null"
             ]
+          },
+          "teacherIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "required": [
-          "entryType",
+          "blockKind",
           "learningGroupId",
           "learningOfferingId",
-          "homeroomId",
-          "roomId",
-          "instructorIds"
+          "roomId"
         ],
         "type": "object"
       },
-      "TimetablePlacementMutationKind": {
-        "enum": [
-          "create",
-          "update",
-          "move",
-          "swap"
-        ],
-        "type": "string"
-      },
-      "TimetablePlacementPreview": {
+      "TimetableBlockPlacementPreview": {
         "properties": {
           "conflicts": {
             "items": {
-              "$ref": "#/components/schemas/ConflictInfo"
+              "$ref": "#/components/schemas/TimetableBlockConflict"
             },
             "type": "array"
           },
@@ -35883,14 +35457,14 @@
                 "type": "null"
               },
               {
-                "$ref": "#/components/schemas/TimetablePlacementMutationKind"
+                "$ref": "#/components/schemas/TimetableBlockMutationKind"
               }
             ]
           },
           "normalizedCandidate": {
-            "$ref": "#/components/schemas/TimetablePlacementCandidate"
+            "$ref": "#/components/schemas/TimetableBlockPlacementCandidate"
           },
-          "sourceEntryId": {
+          "sourceBlockId": {
             "format": "uuid",
             "type": [
               "string",
@@ -35898,35 +35472,36 @@
             ]
           },
           "state": {
-            "$ref": "#/components/schemas/TimetablePlacementState"
+            "$ref": "#/components/schemas/TimetableBlockPlacementState"
           },
           "targetBellSchedulePeriodId": {
             "format": "uuid",
             "type": "string"
           },
-          "targetDayOfWeek": {
-            "type": "string"
-          },
-          "targetEntryId": {
+          "targetBlockId": {
             "format": "uuid",
             "type": [
               "string",
               "null"
             ]
+          },
+          "targetDayOfWeek": {
+            "type": "string"
           }
         },
         "required": [
           "state",
-          "sourceEntryId",
-          "targetEntryId",
+          "sourceBlockId",
+          "targetBlockId",
           "targetDayOfWeek",
           "targetBellSchedulePeriodId",
           "normalizedCandidate",
-          "conflicts"
+          "conflicts",
+          "mutation"
         ],
         "type": "object"
       },
-      "TimetablePlacementPreviewRequest": {
+      "TimetableBlockPlacementPreviewRequest": {
         "additionalProperties": false,
         "properties": {
           "academicTermId": {
@@ -35934,9 +35509,9 @@
             "type": "string"
           },
           "candidate": {
-            "$ref": "#/components/schemas/TimetablePlacementCandidate"
+            "$ref": "#/components/schemas/TimetableBlockPlacementCandidate"
           },
-          "expectedTargetEntryId": {
+          "expectedTargetBlockId": {
             "format": "uuid",
             "type": [
               "string",
@@ -35951,7 +35526,7 @@
             ]
           },
           "source": {
-            "$ref": "#/components/schemas/TimetablePlacementSource"
+            "$ref": "#/components/schemas/TimetableBlockPlacementSource"
           },
           "targetBellSchedulePeriodId": {
             "format": "uuid",
@@ -35975,17 +35550,17 @@
         ],
         "type": "object"
       },
-      "TimetablePlacementSource": {
+      "TimetableBlockPlacementSource": {
         "oneOf": [
           {
             "properties": {
-              "entryId": {
+              "blockId": {
                 "format": "uuid",
                 "type": "string"
               },
               "kind": {
                 "enum": [
-                  "existing_entry"
+                  "existing_block"
                 ],
                 "type": "string"
               },
@@ -35995,7 +35570,7 @@
               }
             },
             "required": [
-              "entryId",
+              "blockId",
               "rowVersion",
               "kind"
             ],
@@ -36005,7 +35580,7 @@
             "properties": {
               "kind": {
                 "enum": [
-                  "unscheduled_demand"
+                  "ordinary_demand"
                 ],
                 "type": "string"
               },
@@ -36024,15 +35599,549 @@
               "kind"
             ],
             "type": "object"
+          },
+          {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "synchronized_offering"
+                ],
+                "type": "string"
+              },
+              "learningOfferingId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "learningOfferingId",
+              "kind"
+            ],
+            "type": "object"
           }
         ]
       },
-      "TimetablePlacementState": {
+      "TimetableBlockPlacementState": {
         "enum": [
           "source",
           "move",
           "swap",
           "blocked"
+        ],
+        "type": "string"
+      },
+      "TimetableBlockSummary": {
+        "properties": {
+          "blockCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "conflictGroupCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "excludedGroupCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "linkedGroupCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "ordinaryDemandCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "synchronizedDemandCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "waitingGroupCount": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "blockCount",
+          "ordinaryDemandCount",
+          "synchronizedDemandCount",
+          "linkedGroupCount",
+          "waitingGroupCount",
+          "conflictGroupCount",
+          "excludedGroupCount"
+        ],
+        "type": "object"
+      },
+      "TimetableBlockSyncState": {
+        "properties": {
+          "attemptedGroupRowVersion": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "conflictCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "conflictMessage": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "learningGroupId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "learningOfferingId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "linkedBlockGroupId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TimetableBlockSyncStatus"
+          }
+        },
+        "required": [
+          "id",
+          "learningGroupId",
+          "learningOfferingId",
+          "status",
+          "linkedBlockGroupId",
+          "conflictCode",
+          "conflictMessage",
+          "attemptedGroupRowVersion",
+          "rowVersion"
+        ],
+        "type": "object"
+      },
+      "TimetableBlockSyncStatus": {
+        "enum": [
+          "linked",
+          "waiting_for_data",
+          "conflict",
+          "outside_scope",
+          "excluded"
+        ],
+        "type": "string"
+      },
+      "TimetableBlockTeacher": {
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "teacherId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "teacherId",
+          "displayName",
+          "rowVersion",
+          "isActive"
+        ],
+        "type": "object"
+      },
+      "TimetableBlockWorkspace": {
+        "properties": {
+          "bellPeriods": {
+            "items": {
+              "$ref": "#/components/schemas/BellSchedulePeriod"
+            },
+            "type": "array"
+          },
+          "blocks": {
+            "items": {
+              "$ref": "#/components/schemas/TimetableBlock"
+            },
+            "type": "array"
+          },
+          "homerooms": {
+            "items": {
+              "$ref": "#/components/schemas/TimetableBlockWorkspaceHomeroom"
+            },
+            "type": "array"
+          },
+          "learningGroups": {
+            "items": {
+              "$ref": "#/components/schemas/TimetableBlockWorkspaceLearningGroup"
+            },
+            "type": "array"
+          },
+          "ordinaryDemands": {
+            "items": {
+              "$ref": "#/components/schemas/TimetableOrdinaryDemand"
+            },
+            "type": "array"
+          },
+          "rooms": {
+            "items": {
+              "$ref": "#/components/schemas/TimetableBlockWorkspaceRoom"
+            },
+            "type": "array"
+          },
+          "staff": {
+            "items": {
+              "$ref": "#/components/schemas/TimetableBlockWorkspaceStaff"
+            },
+            "type": "array"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/TimetableBlockSummary"
+          },
+          "synchronizedDemands": {
+            "items": {
+              "$ref": "#/components/schemas/TimetableSynchronizedDemand"
+            },
+            "type": "array"
+          },
+          "version": {
+            "$ref": "#/components/schemas/TimetableVersion"
+          }
+        },
+        "required": [
+          "version",
+          "bellPeriods",
+          "blocks",
+          "ordinaryDemands",
+          "synchronizedDemands",
+          "learningGroups",
+          "homerooms",
+          "rooms",
+          "staff",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "TimetableBlockWorkspaceHomeroom": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "gradeLevelId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "gradeLevelType": {
+            "type": "string"
+          },
+          "gradeLevelYear": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "roomNumber": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "gradeLevelId",
+          "gradeLevelType",
+          "gradeLevelYear",
+          "roomNumber",
+          "isActive"
+        ],
+        "type": "object"
+      },
+      "TimetableBlockWorkspaceLearningGroup": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "eligibleInstructors": {
+            "items": {
+              "$ref": "#/components/schemas/TimetableBlockInstructor"
+            },
+            "type": "array"
+          },
+          "homeroomIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "learningOfferingId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "offeringCode": {
+            "type": "string"
+          },
+          "offeringKind": {
+            "type": "string"
+          },
+          "offeringName": {
+            "type": "string"
+          },
+          "rosterStatus": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "learningOfferingId",
+          "code",
+          "name",
+          "status",
+          "rosterStatus",
+          "offeringKind",
+          "offeringCode",
+          "offeringName",
+          "homeroomIds",
+          "eligibleInstructors"
+        ],
+        "type": "object"
+      },
+      "TimetableBlockWorkspaceRoom": {
+        "properties": {
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "status"
+        ],
+        "type": "object"
+      },
+      "TimetableBlockWorkspaceStaff": {
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "status"
+        ],
+        "type": "object"
+      },
+      "TimetableOrdinaryDemand": {
+        "properties": {
+          "eligibleInstructors": {
+            "items": {
+              "$ref": "#/components/schemas/TimetableBlockInstructor"
+            },
+            "type": "array"
+          },
+          "homeroomIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "learningGroupId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "learningOfferingId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "offeringCode": {
+            "type": "string"
+          },
+          "offeringName": {
+            "type": "string"
+          },
+          "remainingPeriods": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "requiredPeriods": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "scheduledPeriods": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "learningGroupId",
+          "learningOfferingId",
+          "offeringCode",
+          "offeringName",
+          "requiredPeriods",
+          "scheduledPeriods",
+          "remainingPeriods",
+          "homeroomIds",
+          "eligibleInstructors"
+        ],
+        "type": "object"
+      },
+      "TimetableStructuralKind": {
+        "enum": [
+          "break",
+          "homeroom",
+          "flag_ceremony",
+          "teacher_meeting",
+          "academic",
+          "other"
+        ],
+        "type": "string"
+      },
+      "TimetableStructuralSlotInput": {
+        "additionalProperties": false,
+        "properties": {
+          "bellSchedulePeriodId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "dayOfWeek": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "dayOfWeek",
+          "bellSchedulePeriodId"
+        ],
+        "type": "object"
+      },
+      "TimetableSynchronizedDemand": {
+        "properties": {
+          "conflictGroupCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "excludedGroupCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "intendedHomeroomIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "learningOfferingId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "linkedGroupCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "offeringCode": {
+            "type": "string"
+          },
+          "offeringName": {
+            "type": "string"
+          },
+          "pendingGroupCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "requiredPeriods": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "scheduledPeriods": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "learningOfferingId",
+          "offeringCode",
+          "offeringName",
+          "requiredPeriods",
+          "scheduledPeriods",
+          "intendedHomeroomIds",
+          "linkedGroupCount",
+          "pendingGroupCount",
+          "conflictGroupCount",
+          "excludedGroupCount"
+        ],
+        "type": "object"
+      },
+      "TimetableTargetKind": {
+        "enum": [
+          "group",
+          "homeroom",
+          "teacher"
         ],
         "type": "string"
       },
@@ -36174,62 +36283,6 @@
             ]
           }
         },
-        "type": "object"
-      },
-      "TimetableUnscheduledDemand": {
-        "properties": {
-          "eligibleInstructorIds": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "homeroomIds": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "learningGroupId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "learningOfferingId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "offeringCode": {
-            "type": "string"
-          },
-          "offeringName": {
-            "type": "string"
-          },
-          "remainingPeriods": {
-            "format": "int32",
-            "type": "integer"
-          },
-          "requiredPeriods": {
-            "format": "int32",
-            "type": "integer"
-          },
-          "scheduledPeriods": {
-            "format": "int32",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "learningGroupId",
-          "learningOfferingId",
-          "offeringCode",
-          "offeringName",
-          "requiredPeriods",
-          "scheduledPeriods",
-          "remainingPeriods",
-          "homeroomIds",
-          "eligibleInstructorIds"
-        ],
         "type": "object"
       },
       "TimetableVersion": {
@@ -36392,219 +36445,6 @@
           "learningOfferingId",
           "weeklyPeriodTarget",
           "standardPeriodsPerWeek"
-        ],
-        "type": "object"
-      },
-      "TimetableWorkspace": {
-        "properties": {
-          "bellPeriods": {
-            "items": {
-              "$ref": "#/components/schemas/BellSchedulePeriod"
-            },
-            "type": "array"
-          },
-          "entries": {
-            "items": {
-              "$ref": "#/components/schemas/TimetableEntry"
-            },
-            "type": "array"
-          },
-          "homerooms": {
-            "items": {
-              "$ref": "#/components/schemas/TimetableWorkspaceHomeroom"
-            },
-            "type": "array"
-          },
-          "learningGroups": {
-            "items": {
-              "$ref": "#/components/schemas/TimetableWorkspaceLearningGroup"
-            },
-            "type": "array"
-          },
-          "rooms": {
-            "items": {
-              "$ref": "#/components/schemas/TimetableWorkspaceRoom"
-            },
-            "type": "array"
-          },
-          "staff": {
-            "items": {
-              "$ref": "#/components/schemas/TimetableWorkspaceStaff"
-            },
-            "type": "array"
-          },
-          "unscheduledDemands": {
-            "items": {
-              "$ref": "#/components/schemas/TimetableUnscheduledDemand"
-            },
-            "type": "array"
-          },
-          "version": {
-            "$ref": "#/components/schemas/TimetableVersion"
-          }
-        },
-        "required": [
-          "version",
-          "bellPeriods",
-          "entries",
-          "learningGroups",
-          "homerooms",
-          "rooms",
-          "staff",
-          "unscheduledDemands"
-        ],
-        "type": "object"
-      },
-      "TimetableWorkspaceHomeroom": {
-        "properties": {
-          "code": {
-            "type": "string"
-          },
-          "gradeLevelId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "gradeLevelType": {
-            "type": "string"
-          },
-          "gradeLevelYear": {
-            "format": "int32",
-            "type": "integer"
-          },
-          "id": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "isActive": {
-            "type": "boolean"
-          },
-          "name": {
-            "type": "string"
-          },
-          "roomNumber": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "id",
-          "code",
-          "name",
-          "gradeLevelId",
-          "gradeLevelType",
-          "gradeLevelYear",
-          "roomNumber",
-          "isActive"
-        ],
-        "type": "object"
-      },
-      "TimetableWorkspaceLearningGroup": {
-        "properties": {
-          "code": {
-            "type": "string"
-          },
-          "eligibleInstructorIds": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "homeroomIds": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "id": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "learningOfferingId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "offeringCode": {
-            "type": "string"
-          },
-          "offeringKind": {
-            "type": "string"
-          },
-          "offeringName": {
-            "type": "string"
-          },
-          "rosterStatus": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "learningOfferingId",
-          "code",
-          "name",
-          "status",
-          "rosterStatus",
-          "offeringKind",
-          "offeringCode",
-          "offeringName",
-          "homeroomIds",
-          "eligibleInstructorIds"
-        ],
-        "type": "object"
-      },
-      "TimetableWorkspaceRoom": {
-        "properties": {
-          "code": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "id": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "code",
-          "name",
-          "status"
-        ],
-        "type": "object"
-      },
-      "TimetableWorkspaceStaff": {
-        "properties": {
-          "displayName": {
-            "type": "string"
-          },
-          "id": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "status": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "displayName",
-          "status"
         ],
         "type": "object"
       },
@@ -37802,7 +37642,7 @@
               "null"
             ]
           },
-          "timetableEntryId": {
+          "timetableBlockGroupId": {
             "format": "uuid",
             "type": [
               "string",
@@ -38324,7 +38164,7 @@
               "null"
             ]
           },
-          "timetableEntryId": {
+          "timetableBlockGroupId": {
             "format": "uuid",
             "type": [
               "string",
@@ -38411,7 +38251,7 @@
         },
         "type": "object"
       },
-      "UpdateTimetableEntryRequest": {
+      "UpdateTimetableBlockRequest": {
         "additionalProperties": false,
         "properties": {
           "bellSchedulePeriodId": {
@@ -38422,16 +38262,13 @@
             ]
           },
           "clearNote": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": "boolean"
           },
           "clearRoom": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": "boolean"
+          },
+          "clearTitle": {
+            "type": "boolean"
           },
           "dayOfWeek": {
             "type": [
@@ -39001,29 +38838,6 @@
         ],
         "type": "object"
       },
-      "ValidateMovesRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "academicTermId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "entryId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "timetableVersionId": {
-            "format": "uuid",
-            "type": "string"
-          }
-        },
-        "required": [
-          "timetableVersionId",
-          "academicTermId",
-          "entryId"
-        ],
-        "type": "object"
-      },
       "VersionStatus": {
         "enum": [
           "draft",
@@ -39031,320 +38845,6 @@
           "archived"
         ],
         "type": "string"
-      },
-      "WholeSchoolTimetableCell": {
-        "properties": {
-          "bellSchedulePeriodId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "lessons": {
-            "items": {
-              "$ref": "#/components/schemas/WholeSchoolTimetableLesson"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "bellSchedulePeriodId",
-          "lessons"
-        ],
-        "type": "object"
-      },
-      "WholeSchoolTimetableIssue": {
-        "properties": {
-          "bellSchedulePeriodId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "entryIds": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "homeroomIds": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "instructorIds": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "kind": {
-            "$ref": "#/components/schemas/WholeSchoolTimetableIssueKind"
-          },
-          "learningGroupId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "message": {
-            "type": "string"
-          },
-          "roomId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "severity": {
-            "$ref": "#/components/schemas/WholeSchoolTimetableIssueSeverity"
-          }
-        },
-        "required": [
-          "kind",
-          "severity",
-          "message",
-          "entryIds",
-          "homeroomIds",
-          "instructorIds",
-          "roomId",
-          "bellSchedulePeriodId",
-          "learningGroupId"
-        ],
-        "type": "object"
-      },
-      "WholeSchoolTimetableIssueKind": {
-        "enum": [
-          "homeroom_conflict",
-          "instructor_conflict",
-          "room_conflict",
-          "unscheduled_demand",
-          "over_scheduled_demand",
-          "missing_instructor",
-          "missing_room",
-          "unresolved_teacher_handoff"
-        ],
-        "type": "string"
-      },
-      "WholeSchoolTimetableIssueSeverity": {
-        "enum": [
-          "blocking",
-          "warning"
-        ],
-        "type": "string"
-      },
-      "WholeSchoolTimetableLesson": {
-        "properties": {
-          "coveredHomeroomIds": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "entryId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "entryType": {
-            "type": "string"
-          },
-          "instructors": {
-            "items": {
-              "$ref": "#/components/schemas/TimetableInstructor"
-            },
-            "type": "array"
-          },
-          "isSharedGroup": {
-            "type": "boolean"
-          },
-          "learningGroupCode": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "learningGroupId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "learningGroupName": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "offeringCode": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "offeringName": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "roomCode": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "roomId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "title": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "entryId",
-          "entryType",
-          "learningGroupId",
-          "learningGroupCode",
-          "learningGroupName",
-          "offeringCode",
-          "offeringName",
-          "title",
-          "coveredHomeroomIds",
-          "instructors",
-          "roomId",
-          "roomCode",
-          "isSharedGroup"
-        ],
-        "type": "object"
-      },
-      "WholeSchoolTimetableOverview": {
-        "properties": {
-          "dayOfWeek": {
-            "type": "string"
-          },
-          "issues": {
-            "items": {
-              "$ref": "#/components/schemas/WholeSchoolTimetableIssue"
-            },
-            "type": "array"
-          },
-          "periods": {
-            "items": {
-              "$ref": "#/components/schemas/BellSchedulePeriod"
-            },
-            "type": "array"
-          },
-          "rows": {
-            "items": {
-              "$ref": "#/components/schemas/WholeSchoolTimetableRow"
-            },
-            "type": "array"
-          },
-          "summary": {
-            "$ref": "#/components/schemas/WholeSchoolTimetableSummary"
-          },
-          "version": {
-            "$ref": "#/components/schemas/TimetableVersion"
-          }
-        },
-        "required": [
-          "version",
-          "dayOfWeek",
-          "periods",
-          "rows",
-          "issues",
-          "summary"
-        ],
-        "type": "object"
-      },
-      "WholeSchoolTimetableRow": {
-        "properties": {
-          "cells": {
-            "items": {
-              "$ref": "#/components/schemas/WholeSchoolTimetableCell"
-            },
-            "type": "array"
-          },
-          "gradeLevelType": {
-            "type": "string"
-          },
-          "gradeLevelYear": {
-            "format": "int32",
-            "type": "integer"
-          },
-          "homeroomCode": {
-            "type": "string"
-          },
-          "homeroomId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "homeroomName": {
-            "type": "string"
-          },
-          "roomNumber": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "homeroomId",
-          "homeroomCode",
-          "homeroomName",
-          "gradeLevelType",
-          "gradeLevelYear",
-          "roomNumber",
-          "cells"
-        ],
-        "type": "object"
-      },
-      "WholeSchoolTimetableSummary": {
-        "properties": {
-          "blockingIssueCount": {
-            "format": "int32",
-            "type": "integer"
-          },
-          "homeroomCount": {
-            "format": "int32",
-            "type": "integer"
-          },
-          "issueCount": {
-            "format": "int32",
-            "type": "integer"
-          },
-          "uniqueLessonCount": {
-            "format": "int32",
-            "type": "integer"
-          },
-          "warningIssueCount": {
-            "format": "int32",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "homeroomCount",
-          "uniqueLessonCount",
-          "issueCount",
-          "blockingIssueCount",
-          "warningIssueCount"
-        ],
-        "type": "object"
       }
     }
   },
@@ -50344,10 +49844,19 @@
         ]
       }
     },
-    "/api/academic/timetable": {
-      "get": {
-        "operationId": "listTimetableEntries",
+    "/api/academic/timetable-blocks/{block_id}": {
+      "delete": {
+        "operationId": "deleteTimetableBlock",
         "parameters": [
+          {
+            "in": "path",
+            "name": "block_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
           {
             "in": "query",
             "name": "timetableVersionId",
@@ -50359,63 +49868,11 @@
           },
           {
             "in": "query",
-            "name": "academicTermId",
+            "name": "rowVersion",
             "required": true,
             "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "learningGroupId",
-            "required": false,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "homeroomId",
-            "required": false,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "instructorId",
-            "required": false,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "roomId",
-            "required": false,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "dayOfWeek",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "entryType",
-            "required": false,
-            "schema": {
-              "type": "string"
+              "format": "int64",
+              "type": "integer"
             }
           }
         ],
@@ -50424,13 +49881,13 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_TimetableEntry"
+                  "$ref": "#/components/schemas/ApiResponse_TimetableBlock"
                 }
               }
             },
-            "description": "Timetable entries in the selected term"
+            "description": ""
           },
-          "401": {
+          "409": {
             "content": {
               "application/json": {
                 "schema": {
@@ -50438,30 +49895,31 @@
                 }
               }
             },
-            "description": "Authentication required"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Timetable read permission denied"
+            "description": ""
           }
         },
         "tags": [
           "academic"
         ]
       },
-      "post": {
-        "operationId": "createTimetableEntry",
+      "put": {
+        "operationId": "updateTimetableBlock",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "block_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateTimetableEntryRequest"
+                "$ref": "#/components/schemas/UpdateTimetableBlockRequest"
               }
             }
           },
@@ -50472,11 +49930,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_TimetableEntry"
+                  "$ref": "#/components/schemas/ApiResponse_TimetableBlock"
                 }
               }
             },
-            "description": "Created timetable entry"
+            "description": ""
           },
           "400": {
             "content": {
@@ -50486,7 +49944,280 @@
                 }
               }
             },
-            "description": "Invalid timetable entry"
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/timetable-blocks/{block_id}/restore": {
+      "post": {
+        "operationId": "restoreTimetableBlockGroup",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "block_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestoreTimetableBlockGroupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TimetableBlock"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/timetable-blocks/{block_id}/sync": {
+      "post": {
+        "operationId": "retryTimetableBlockSync",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "block_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetryTimetableBlockSyncRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TimetableBlock"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/timetable-blocks/{block_id}/targets": {
+      "delete": {
+        "operationId": "removeTimetableBlockTarget",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "block_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoveTimetableBlockTargetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TimetableBlock"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/timetable-blocks/clear": {
+      "delete": {
+        "operationId": "clearTimetable",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClearTimetableRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_TimetableBlock"
+                }
+              }
+            },
+            "description": "Cleared timetable blocks"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid clear request"
           },
           "401": {
             "content": {
@@ -50507,6 +50238,66 @@
               }
             },
             "description": "Timetable manage permission denied"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/timetable-blocks/ordinary": {
+      "post": {
+        "operationId": "createOrdinaryTimetableBlock",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrdinaryTimetableBlockRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TimetableBlock"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
           },
           "409": {
             "content": {
@@ -50516,7 +50307,396 @@
                 }
               }
             },
-            "description": "Timetable conflict"
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/timetable-blocks/placement-preview": {
+      "post": {
+        "operationId": "previewTimetableBlockPlacement",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TimetableBlockPlacementPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TimetableBlockPlacementPreview"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/timetable-blocks/series/{series_id}": {
+      "delete": {
+        "operationId": "deleteTimetableBlockSeries",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "series_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "timetableVersionId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_TimetableBlock"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/timetable-blocks/structural": {
+      "post": {
+        "operationId": "createStructuralTimetableBlocks",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateStructuralTimetableBlocksRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_TimetableBlock"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/timetable-blocks/swap": {
+      "post": {
+        "operationId": "swapTimetableBlocks",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SwapTimetableBlocksRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SwapTimetableBlocksResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/timetable-blocks/synchronized": {
+      "post": {
+        "operationId": "createSynchronizedTimetableBlock",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSynchronizedTimetableBlockRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TimetableBlock"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/timetable-blocks/workspace": {
+      "get": {
+        "operationId": "getTimetableBlockWorkspace",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "timetableVersionId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TimetableBlockWorkspace"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
           }
         },
         "tags": [
@@ -51179,377 +51359,6 @@
         ]
       }
     },
-    "/api/academic/timetable/{entry_id}": {
-      "delete": {
-        "operationId": "deleteTimetableEntry",
-        "parameters": [
-          {
-            "description": "Timetable entry ID",
-            "in": "path",
-            "name": "entry_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "timetableVersionId",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "rowVersion",
-            "required": true,
-            "schema": {
-              "format": "int64",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_TimetableEntry"
-                }
-              }
-            },
-            "description": "Deactivated timetable entry"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Authentication required"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Timetable manage permission denied"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Timetable entry not found"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Stale timetable entry version"
-          }
-        },
-        "tags": [
-          "academic"
-        ]
-      },
-      "put": {
-        "operationId": "updateTimetableEntry",
-        "parameters": [
-          {
-            "description": "Timetable entry ID",
-            "in": "path",
-            "name": "entry_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateTimetableEntryRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_TimetableEntry"
-                }
-              }
-            },
-            "description": "Updated timetable entry"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid timetable update"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Authentication required"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Timetable manage permission denied"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Timetable entry not found"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Stale version or timetable conflict"
-          }
-        },
-        "tags": [
-          "academic"
-        ]
-      }
-    },
-    "/api/academic/timetable/batch": {
-      "post": {
-        "operationId": "createBatchTimetableEntries",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateBatchTimetableEntriesRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_BatchTimetableResult"
-                }
-              }
-            },
-            "description": "Created timetable entries"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid timetable batch"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Authentication required"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Timetable manage permission denied"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Timetable conflict"
-          }
-        },
-        "tags": [
-          "academic"
-        ]
-      }
-    },
-    "/api/academic/timetable/batch-group/{batch_id}": {
-      "delete": {
-        "operationId": "deleteTimetableBatch",
-        "parameters": [
-          {
-            "description": "Timetable batch ID",
-            "in": "path",
-            "name": "batch_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "timetableVersionId",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_TimetableEntry"
-                }
-              }
-            },
-            "description": "Deactivated timetable batch"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Authentication required"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Timetable manage permission denied"
-          }
-        },
-        "tags": [
-          "academic"
-        ]
-      }
-    },
-    "/api/academic/timetable/clear": {
-      "delete": {
-        "operationId": "clearTimetable",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ClearTimetableRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_TimetableEntry"
-                }
-              }
-            },
-            "description": "Cleared timetable entries"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid clear request"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Authentication required"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Timetable manage permission denied"
-          }
-        },
-        "tags": [
-          "academic"
-        ]
-      }
-    },
     "/api/academic/timetable/daily-teaching": {
       "get": {
         "operationId": "getDailyTeachingOverview",
@@ -51591,442 +51400,6 @@
               }
             },
             "description": ""
-          }
-        },
-        "tags": [
-          "academic"
-        ]
-      }
-    },
-    "/api/academic/timetable/occupancy": {
-      "get": {
-        "operationId": "getTimetableOccupancy",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "timetableVersionId",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "academicTermId",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_TimetableOccupancyCell"
-                }
-              }
-            },
-            "description": "Timetable occupancy for the selected term"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Authentication required"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Timetable read permission denied"
-          }
-        },
-        "tags": [
-          "academic"
-        ]
-      }
-    },
-    "/api/academic/timetable/placement-preview": {
-      "post": {
-        "operationId": "previewTimetablePlacement",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TimetablePlacementPreviewRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_TimetablePlacementPreview"
-                }
-              }
-            },
-            "description": "Authoritative placement, move, or swap preview"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid placement shape or academic context"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Authentication required"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Timetable manage permission denied"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Timetable version, group, or entry not found"
-          }
-        },
-        "tags": [
-          "academic"
-        ]
-      }
-    },
-    "/api/academic/timetable/swap": {
-      "post": {
-        "operationId": "swapTimetableEntries",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SwapTimetableEntriesRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_SwapTimetableEntriesResponse"
-                }
-              }
-            },
-            "description": "Swapped timetable entries"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid timetable swap"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Authentication required"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Timetable manage permission denied"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Stale version or timetable conflict"
-          }
-        },
-        "tags": [
-          "academic"
-        ]
-      }
-    },
-    "/api/academic/timetable/validate-moves": {
-      "post": {
-        "operationId": "validateTimetableMoves",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ValidateMovesRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_MoveValidityCell"
-                }
-              }
-            },
-            "description": "Valid timetable destinations"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Authentication required"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Timetable manage permission denied"
-          }
-        },
-        "tags": [
-          "academic"
-        ]
-      }
-    },
-    "/api/academic/timetable/whole-school": {
-      "get": {
-        "operationId": "getWholeSchoolTimetableOverview",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "academicYearId",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "academicTermId",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "timetableVersionId",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "dayOfWeek",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_WholeSchoolTimetableOverview"
-                }
-              }
-            },
-            "description": "Read-only whole-school timetable overview for one selected day"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid day or academic context"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Authentication required"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Timetable read permission denied"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Timetable version not found"
-          }
-        },
-        "tags": [
-          "academic"
-        ]
-      }
-    },
-    "/api/academic/timetable/workspace": {
-      "get": {
-        "operationId": "getTimetableWorkspace",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "academicYearId",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "academicTermId",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "timetableVersionId",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_TimetableWorkspace"
-                }
-              }
-            },
-            "description": "Bounded timetable workspace for the selected version"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Timetable version does not match the academic context"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Authentication required"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Timetable read permission denied"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Timetable version not found"
           }
         },
         "tags": [
@@ -59859,21 +59232,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_TimetableEntry"
+                  "$ref": "#/components/schemas/ApiResponse_Vec_TimetableBlock"
                 }
               }
             },
-            "description": "Current staff or student timetable in the selected term"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Authentication required"
+            "description": ""
           },
           "403": {
             "content": {
@@ -59883,7 +59246,7 @@
                 }
               }
             },
-            "description": "Staff timetable access denied"
+            "description": ""
           }
         },
         "tags": [
@@ -61408,11 +60771,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_TimetableEntry"
+                  "$ref": "#/components/schemas/ApiResponse_Vec_TimetableBlock"
                 }
               }
             },
-            "description": "Linked child's timetable entries"
+            "description": "Linked child's timetable blocks"
           },
           "401": {
             "content": {
@@ -65097,11 +64460,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ItemsData_TimetableEntry"
+                  "$ref": "#/components/schemas/ApiResponse_ItemsData_SupervisionTimetableOption"
                 }
               }
             },
-            "description": "Timetable options for the observation"
+            "description": "Timetable block-group options for the observation"
           },
           "401": {
             "content": {

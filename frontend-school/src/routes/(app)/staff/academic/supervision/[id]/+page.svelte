@@ -34,9 +34,9 @@
 		type SupervisionObservationStatus,
 		type SupervisionReviewEvaluatorResult,
 		type SupervisionReviewResponse,
-		type SupervisionTemplate
+		type SupervisionTemplate,
+		type SupervisionTimetableOption
 	} from '$lib/api/supervision';
-	import type { TimetableEntry } from '$lib/api/timetable';
 	import {
 		calculateRubricDraftSummary,
 		qualityLevelFromPercentage,
@@ -94,9 +94,9 @@
 	let reviewError = $state('');
 	let selectedReviewEvaluatorId = $state('summary');
 	let loadingEvaluatorAvailability = $state(false);
-	let editTimetableEntries = $state<TimetableEntry[]>([]);
+	let editTimetableBlockGroups = $state<SupervisionTimetableOption[]>([]);
 	let loadingEditTimetable = $state(false);
-	let selectedEditTimetableEntryId = $state('');
+	let selectedEditTimetableBlockGroupId = $state('');
 	let selectedEditTimetableDate = $state('');
 	let editWeekStartDate = $state('');
 	let editLessonOpen = $state(false);
@@ -173,8 +173,10 @@
 	const unavailableEvaluatorCount = $derived(
 		availableEvaluators.filter((evaluator) => !evaluator.available).length
 	);
-	const selectedEditTimetableEntry = $derived(
-		editTimetableEntries.find((entry) => entry.id === selectedEditTimetableEntryId) ?? null
+	const selectedEditTimetableBlockGroup = $derived(
+		editTimetableBlockGroups.find(
+			(entry) => entry.blockGroupId === selectedEditTimetableBlockGroupId
+		) ?? null
 	);
 	const reviewRubricSections = $derived(
 		review ? templateSectionsToRubricForm(review.template) : []
@@ -448,8 +450,8 @@
 	}
 
 	function editTimetableDayValues(): string[] {
-		const order: TimetableEntry['dayOfWeek'][] = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
-		const days = new Set(editTimetableEntries.map((entry) => entry.dayOfWeek));
+		const order = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+		const days = new Set(editTimetableBlockGroups.map((entry) => entry.dayOfWeek));
 		return order.filter((day) => days.has(day));
 	}
 
@@ -488,7 +490,10 @@
 		}).format(parseLocalDate(date));
 	}
 
-	function editTimetableObservedAt(entry: TimetableEntry, observedDate: string): string {
+	function editTimetableObservedAt(
+		entry: SupervisionTimetableOption,
+		observedDate: string
+	): string {
 		const startTime = entry.startTime?.slice(0, 5) || '08:00';
 		return toIsoDateTime(observedDate, startTime);
 	}
@@ -498,23 +503,23 @@
 		return date >= formatDateInput(cycle.startsAt) && date <= formatDateInput(cycle.endsAt);
 	}
 
-	function editTimetablePeriodKey(entry: TimetableEntry): string {
+	function editTimetablePeriodKey(entry: SupervisionTimetableOption): string {
 		return (
 			entry.bellSchedulePeriodId ||
 			`${entry.startTime ?? ''}-${entry.endTime ?? ''}-${entry.periodName ?? ''}`
 		);
 	}
 
-	function editTimetablePeriodLabel(entry: TimetableEntry): string {
-		return entry.periodName || entry.title || 'ไม่ระบุคาบ';
+	function editTimetablePeriodLabel(entry: SupervisionTimetableOption): string {
+		return entry.periodName || 'ไม่ระบุคาบ';
 	}
 
-	function editTimetableTimeLabel(entry: TimetableEntry): string {
+	function editTimetableTimeLabel(entry: SupervisionTimetableOption): string {
 		if (!entry.startTime && !entry.endTime) return '';
 		return `${entry.startTime?.slice(0, 5) ?? ''}-${entry.endTime?.slice(0, 5) ?? ''}`;
 	}
 
-	function editTimetablePeriodSort(entry: TimetableEntry): number {
+	function editTimetablePeriodSort(entry: SupervisionTimetableOption): number {
 		if (entry.startTime) {
 			const [hour = '0', minute = '0'] = entry.startTime.split(':');
 			return Number(hour) * 60 + Number(minute);
@@ -524,7 +529,7 @@
 
 	function editTimetablePeriodRows() {
 		const rows: { key: string; label: string; timeLabel: string; sort: number }[] = [];
-		for (const entry of editTimetableEntries) {
+		for (const entry of editTimetableBlockGroups) {
 			const key = editTimetablePeriodKey(entry);
 			if (!rows.some((row) => row.key === key)) {
 				rows.push({
@@ -540,32 +545,38 @@
 		);
 	}
 
-	function editTimetableEntryFor(day: string, row: { key: string }): TimetableEntry | null {
+	function editTimetableBlockGroupFor(
+		day: string,
+		row: { key: string }
+	): SupervisionTimetableOption | null {
 		return (
-			editTimetableEntries.find(
+			editTimetableBlockGroups.find(
 				(entry) => entry.dayOfWeek === day && editTimetablePeriodKey(entry) === row.key
 			) ?? null
 		);
 	}
 
-	function editTimetableEntryTitle(entry: TimetableEntry): string {
-		return entry.offeringName || entry.title || entry.offeringCode || 'คาบสอน';
+	function editTimetableBlockGroupTitle(entry: SupervisionTimetableOption): string {
+		return entry.offeringName || entry.offeringCode || 'คาบสอน';
 	}
 
-	function editTimetableEntryMeta(entry: TimetableEntry): string {
-		const classroom = entry.learningGroupName ?? entry.homeroomName ?? '';
-		const room = entry.roomCode ? `ห้อง ${entry.roomCode}` : '';
+	function editTimetableBlockGroupMeta(entry: SupervisionTimetableOption): string {
+		const classroom = entry.learningGroupName || entry.homeroomNames.join(', ');
+		const room = entry.roomName ? `ห้อง ${entry.roomName}` : '';
 		return [classroom, room].filter(Boolean).join(' · ') || 'ไม่มีรายละเอียดเพิ่มเติม';
 	}
 
-	function selectLessonTimetableEntry(entry: TimetableEntry, observedDate: string) {
+	function selectLessonTimetableBlockGroup(
+		entry: SupervisionTimetableOption,
+		observedDate: string
+	) {
 		if (!editDateInCycle(observedDate)) return;
-		selectedEditTimetableEntryId = entry.id;
+		selectedEditTimetableBlockGroupId = entry.blockGroupId;
 		selectedEditTimetableDate = observedDate;
-		lessonForm.subjectName = editTimetableEntryTitle(entry);
-		lessonForm.classroomLabel = entry.learningGroupName ?? entry.homeroomName ?? '';
-		lessonForm.roomLabel = entry.roomCode ?? '';
-		lessonForm.periodLabel = entry.periodName ?? entry.title ?? '';
+		lessonForm.subjectName = editTimetableBlockGroupTitle(entry);
+		lessonForm.classroomLabel = entry.learningGroupName || entry.homeroomNames.join(', ');
+		lessonForm.roomLabel = entry.roomName ?? '';
+		lessonForm.periodLabel = entry.periodName;
 		lessonForm.observedDate = observedDate;
 		lessonForm.observedTime = entry.startTime?.slice(0, 5) || '08:00';
 	}
@@ -593,7 +604,7 @@
 			{ label: 'ชั้น/ห้อง', value: observationClassroomLabel(item) },
 			{ label: 'ห้องเรียน', value: observationRoomLabel(item) },
 			{ label: 'วันที่/เวลา', value: formatDateTime(item.observedAt) },
-			{ label: 'ที่มา', value: item.timetableEntryId ? 'ตารางสอน' : 'กำหนดเอง' }
+			{ label: 'ที่มา', value: item.timetableBlockGroupId ? 'ตารางสอน' : 'กำหนดเอง' }
 		];
 	}
 
@@ -716,10 +727,10 @@
 
 	async function loadEditTimetableOptions(force = false) {
 		if (!observation || !canEditLesson) return;
-		if (!force && editTimetableEntries.length > 0) return;
+		if (!force && editTimetableBlockGroups.length > 0) return;
 		loadingEditTimetable = true;
 		try {
-			editTimetableEntries = await getSupervisionObservationTimetableOptions(observation.id);
+			editTimetableBlockGroups = await getSupervisionObservationTimetableOptions(observation.id);
 		} catch (loadError) {
 			toast.error(loadError instanceof Error ? loadError.message : 'โหลดคาบสอนไม่สำเร็จ');
 		} finally {
@@ -729,7 +740,7 @@
 
 	async function openLessonEditor() {
 		if (!observation || !canEditLesson) return;
-		selectedEditTimetableEntryId = observation.timetableEntryId ?? '';
+		selectedEditTimetableBlockGroupId = observation.timetableBlockGroupId ?? '';
 		selectedEditTimetableDate = formatDateInput(observation.observedAt);
 		editWeekStartDate = toLocalDateInputValue(startOfWeek(new Date(observation.observedAt)));
 		lessonForm = {
@@ -747,12 +758,12 @@
 
 	async function saveLessonEdit() {
 		if (!observation || !canEditLesson) return;
-		if (selectedEditTimetableEntry && !selectedEditTimetableDate) {
+		if (selectedEditTimetableBlockGroup && !selectedEditTimetableDate) {
 			toast.error('เลือกวันที่จากตารางสอนก่อน');
 			return;
 		}
 		if (
-			!selectedEditTimetableEntry &&
+			!selectedEditTimetableBlockGroup &&
 			(!lessonForm.subjectName ||
 				!lessonForm.classroomLabel ||
 				!lessonForm.periodLabel ||
@@ -762,11 +773,11 @@
 			return;
 		}
 		const payload =
-			selectedEditTimetableEntry && selectedEditTimetableDate
+			selectedEditTimetableBlockGroup && selectedEditTimetableDate
 				? {
-						timetableEntryId: selectedEditTimetableEntryId,
+						timetableBlockGroupId: selectedEditTimetableBlockGroupId,
 						observedAt: editTimetableObservedAt(
-							selectedEditTimetableEntry,
+							selectedEditTimetableBlockGroup,
 							selectedEditTimetableDate
 						),
 						manualLesson: null
@@ -1379,7 +1390,7 @@
 
 			{#if loadingEditTimetable}
 				<PageState title="กำลังโหลดตารางสอน" description="กำลังดึงคาบสอนสำหรับแก้ไขรายการนิเทศ" />
-			{:else if editTimetableEntries.length === 0}
+			{:else if editTimetableBlockGroups.length === 0}
 				<PageState
 					title="ไม่พบคาบสอนในตาราง"
 					description="ใช้คาบกำหนดเองด้านล่างเมื่อคาบนิเทศไม่ได้อยู่ในตารางสอน"
@@ -1412,23 +1423,23 @@
 										{/if}
 									</Table.Cell>
 									{#each editTimetableDayValues() as day (day)}
-										{@const entry = editTimetableEntryFor(day, row)}
+										{@const entry = editTimetableBlockGroupFor(day, row)}
 										{@const observedDate = dateForEditTimetableDay(day)}
 										<Table.Cell class="align-top">
 											{#if entry}
 												<Button
 													type="button"
-													variant={selectedEditTimetableEntryId === entry.id &&
+													variant={selectedEditTimetableBlockGroupId === entry.blockGroupId &&
 													selectedEditTimetableDate === observedDate
 														? 'default'
 														: 'outline'}
 													class="h-auto w-full justify-start whitespace-normal px-3 py-2 text-left"
 													disabled={!editDateInCycle(observedDate)}
-													onclick={() => selectLessonTimetableEntry(entry, observedDate)}
+													onclick={() => selectLessonTimetableBlockGroup(entry, observedDate)}
 												>
 													<div class="space-y-1">
-														<p class="font-medium">{editTimetableEntryTitle(entry)}</p>
-														<p class="text-xs opacity-80">{editTimetableEntryMeta(entry)}</p>
+														<p class="font-medium">{editTimetableBlockGroupTitle(entry)}</p>
+														<p class="text-xs opacity-80">{editTimetableBlockGroupMeta(entry)}</p>
 													</div>
 												</Button>
 											{:else}
@@ -1478,7 +1489,7 @@
 						required
 						ariaLabel="เลือกวันที่นิเทศ"
 						onValueChange={() => {
-							selectedEditTimetableEntryId = '';
+							selectedEditTimetableBlockGroupId = '';
 							selectedEditTimetableDate = '';
 						}}
 					/>
@@ -1489,7 +1500,7 @@
 						type="time"
 						bind:value={lessonForm.observedTime}
 						oninput={() => {
-							selectedEditTimetableEntryId = '';
+							selectedEditTimetableBlockGroupId = '';
 							selectedEditTimetableDate = '';
 						}}
 					/>
@@ -1500,7 +1511,7 @@
 						bind:value={lessonForm.reason}
 						rows={3}
 						oninput={() => {
-							selectedEditTimetableEntryId = '';
+							selectedEditTimetableBlockGroupId = '';
 							selectedEditTimetableDate = '';
 						}}
 					/>

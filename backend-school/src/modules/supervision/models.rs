@@ -254,7 +254,7 @@ impl SupervisionEvaluatorStatus {
 #[serde(rename_all = "camelCase")]
 pub struct LessonSnapshot {
     pub source: Option<String>,
-    pub timetable_entry_id: Option<Uuid>,
+    pub timetable_block_group_id: Option<Uuid>,
     pub subject_name: Option<String>,
     pub classroom_label: Option<String>,
     pub room_label: Option<String>,
@@ -440,7 +440,7 @@ pub struct SupervisionObservation {
     pub requested_by: Option<Uuid>,
     pub approved_by: Option<Uuid>,
     pub template_id: Uuid,
-    pub timetable_entry_id: Option<Uuid>,
+    pub timetable_block_group_id: Option<Uuid>,
     pub observed_at: DateTime<Utc>,
     pub manual_lesson: Option<ManualLesson>,
     pub lesson_snapshot: LessonSnapshot,
@@ -637,7 +637,7 @@ impl ManualLessonInput {
     pub fn snapshot(&self) -> LessonSnapshot {
         LessonSnapshot {
             source: Some("manual".to_string()),
-            timetable_entry_id: None,
+            timetable_block_group_id: None,
             subject_name: Some(self.subject_name.clone()),
             classroom_label: Some(self.classroom_label.clone()),
             room_label: self.room_label.clone(),
@@ -652,7 +652,7 @@ impl ManualLessonInput {
 pub struct RequestSupervisionObservationRequest {
     pub cycle_id: Uuid,
     pub academic_term_id: Uuid,
-    pub timetable_entry_id: Option<Uuid>,
+    pub timetable_block_group_id: Option<Uuid>,
     pub observed_at: Option<DateTime<Utc>>,
     pub manual_lesson: Option<ManualLessonInput>,
 }
@@ -660,7 +660,7 @@ pub struct RequestSupervisionObservationRequest {
 #[derive(Debug, Clone, Default, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateRequestedObservationRequest {
-    pub timetable_entry_id: Option<Uuid>,
+    pub timetable_block_group_id: Option<Uuid>,
     pub observed_at: Option<DateTime<Utc>>,
     pub manual_lesson: Option<ManualLessonInput>,
 }
@@ -669,7 +669,7 @@ pub struct UpdateRequestedObservationRequest {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateSupervisionObservationRequest {
     pub template_id: Option<Uuid>,
-    pub timetable_entry_id: Option<Uuid>,
+    pub timetable_block_group_id: Option<Uuid>,
     pub observed_at: Option<DateTime<Utc>>,
     pub manual_lesson: Option<ManualLessonInput>,
 }

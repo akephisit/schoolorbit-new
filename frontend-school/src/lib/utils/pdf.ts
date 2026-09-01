@@ -4,7 +4,7 @@ import type {
 	TableCell,
 	Content
 } from 'pdfmake/interfaces';
-import type { TimetableEntry } from '$lib/api/timetable';
+import type { TimetableBlock } from '$lib/api/timetable';
 import { getRequiredPublicSchoolInfo } from '$lib/api/school';
 import { downloadPublicFile } from '$lib/api/files';
 import { resolveTimetablePdfDayValues } from '$lib/utils/timetable-pdf-days';
@@ -57,24 +57,41 @@ function fitTimeRange(
 	return { text: `${s}\n${e}`, fontSize: 7 };
 }
 
-// Helper: Get entry
-const getEntry = (entries: TimetableEntry[], day: string, periodId: string) => {
-	return entries.find(
-		(e) => e.dayOfWeek === day && e.bellSchedulePeriodId === periodId && e.isActive
+// Helper: Get block
+const getBlock = (blocks: TimetableBlock[], day: string, periodId: string) => {
+	return blocks.find(
+		(block) => block.dayOfWeek === day && block.bellSchedulePeriodId === periodId && block.isActive
 	);
 };
 
-const primaryInstructorName = (entry: TimetableEntry) =>
-	entry.instructors.find((instructor) => instructor.role === 'primary')?.displayName ??
-	entry.instructors[0]?.displayName ??
-	'';
+const blockInstructors = (block: TimetableBlock) =>
+	block.groups.flatMap((group) => group.instructors);
 
-const timetableResourceName = (entry: TimetableEntry) =>
-	entry.offeringName ??
-	entry.subjectVersionDisplayLabel ??
-	entry.activityVersionDisplayLabel ??
-	entry.title ??
-	'กิจกรรม';
+const primaryInstructorName = (block: TimetableBlock) => {
+	const instructors = blockInstructors(block);
+	return (
+		instructors.find((instructor) => instructor.role === 'primary')?.displayName ??
+		instructors[0]?.displayName ??
+		''
+	);
+};
+
+const timetableResourceName = (block: TimetableBlock) =>
+	block.offeringName ?? block.title ?? 'กิจกรรม';
+
+const blockGroupName = (block: TimetableBlock) =>
+	[...block.groups.map((group) => group.name), ...block.homerooms.map((room) => room.name)].join(
+		', '
+	);
+
+const blockRoom = (block: TimetableBlock) => {
+	const group = block.groups.find((item) => item.roomId || item.roomCode);
+	const homeroom = block.homerooms.find((item) => item.roomId || item.roomCode);
+	return {
+		id: group?.roomId ?? homeroom?.roomId ?? null,
+		code: group?.roomCode ?? homeroom?.roomCode ?? null
+	};
+};
 
 // Helper: Strip "ตารางเรียน " / "ตารางสอน " prefix → คง "ชั้นมัธยมศึกษาปีที่..." / "ครู..." ไว้
 const stripTitlePrefix = (title: string): string => {
@@ -288,10 +305,10 @@ export interface TimetablePage {
 	/** Ordered school-day codes to render. Defaults to Monday-Friday for existing callers. */
 	dayValues?: string[];
 	periods: PdfPeriod[];
-	timetableEntries: TimetableEntry[];
+	timetableBlocks: TimetableBlock[];
 	viewMode?: 'CLASSROOM' | 'INSTRUCTOR';
 	/** room_id → name_th — ใช้แสดงชื่อห้องเต็ม (เช่น "ห้องคณิตศาสตร์ 1")
-	 *  ถ้าไม่ส่งมาจะ fallback ไปใช้ entry.roomCode (รหัสสั้น) */
+	 *  ถ้าไม่ส่งมาจะ fallback ไปใช้ block roomCode (รหัสสั้น) */
 	roomNames?: Record<string, string>;
 }
 
@@ -305,7 +322,7 @@ function buildPageContent(
 		subTitle,
 		dayValues,
 		periods,
-		timetableEntries,
+		timetableBlocks,
 		viewMode = 'CLASSROOM',
 		roomNames
 	} = page;
@@ -474,22 +491,22 @@ function buildPageContent(
 		});
 
 		periods.forEach((p) => {
-			const entry = getEntry(timetableEntries, day.value, p.id);
-			if (entry) {
+			const block = getBlock(timetableBlocks, day.value, p.id);
+			if (block) {
 				const stack: Content[] = [];
 
-				if (entry.entryType === 'COURSE') {
+				if (block.blockKind === 'course') {
 					stack.push(
-						{ text: entry.offeringCode || '', bold: true, fontSize: 8, color: '#1e3a8a' },
+						{ text: block.offeringCode || '', bold: true, fontSize: 8, color: '#1e3a8a' },
 						{
-							text: wrapThaiToLines(timetableResourceName(entry), cellContentWidth, 7),
+							text: wrapThaiToLines(timetableResourceName(block), cellContentWidth, 7),
 							fontSize: 7,
 							margin: [0, 0]
 						}
 					);
 				} else {
 					stack.push({
-						text: wrapThaiToLines(timetableResourceName(entry), cellContentWidth, 8),
+						text: wrapThaiToLines(timetableResourceName(block), cellContentWidth, 8),
 						bold: true,
 						fontSize: 8,
 						color: '#047857',
@@ -500,8 +517,8 @@ function buildPageContent(
 				// SLOT-sync activity: ห้อง+ครูไม่ได้ผูกกัน 1-to-1 (sync = ทุกห้องร่วมกัน,
 				// ครูหลายคน) — ซ่อน meta side ที่ไม่ตรงกับ view เพื่อกัน confusion
 				const isSlotSync =
-					entry.entryType === 'ACTIVITY' && entry.activitySchedulingMode === 'synchronized';
-				const instructorName = primaryInstructorName(entry).trim();
+					block.blockKind === 'activity' && block.schedulingMode === 'synchronized';
+				const instructorName = primaryInstructorName(block).trim();
 
 				if (viewMode === 'CLASSROOM') {
 					// Student PDF — แสดงชื่อครู (ยกเว้น sync activity เพราะมีหลายครู)
@@ -517,13 +534,9 @@ function buildPageContent(
 					}
 				} else {
 					// Teacher PDF — แสดงห้อง (ยกเว้น sync activity เพราะเป็นกิจกรรมรวมทุกห้อง)
-					if (!isSlotSync && (entry.homeroomName || entry.learningGroupName)) {
+					if (!isSlotSync && blockGroupName(block)) {
 						stack.push({
-							text: wrapThaiToLines(
-								entry.homeroomName ?? entry.learningGroupName ?? '',
-								cellContentWidth,
-								7
-							),
+							text: wrapThaiToLines(blockGroupName(block), cellContentWidth, 7),
 							fontSize: 7,
 							color: '#d97706',
 							bold: true,
@@ -534,12 +547,9 @@ function buildPageContent(
 
 				// ชื่อห้องเต็ม (name_th) ถ้ามี — ไม่งั้น fallback เป็นรหัสสั้น (code)
 				// name_th มักมีคำว่า "ห้อง" อยู่ในชื่ออยู่แล้ว → ไม่ใส่ prefix
-				const roomFullName = entry.roomId ? roomNames?.[entry.roomId] : undefined;
-				const roomDisplay = roomFullName
-					? roomFullName
-					: entry.roomCode
-						? `ห้อง ${entry.roomCode}`
-						: null;
+				const room = blockRoom(block);
+				const roomFullName = room.id ? roomNames?.[room.id] : undefined;
+				const roomDisplay = roomFullName ? roomFullName : room.code ? `ห้อง ${room.code}` : null;
 				if (roomDisplay) {
 					stack.push({
 						text: wrapThaiToLines(roomDisplay, cellContentWidth, 7),
@@ -638,7 +648,7 @@ function buildMiniTable(
 	miniAreaWidth: number = 400,
 	logoDataUrl: string | null = null
 ): Content {
-	const { dayValues, periods, timetableEntries, title, viewMode = 'CLASSROOM', roomNames } = page;
+	const { dayValues, periods, timetableBlocks, title, viewMode = 'CLASSROOM', roomNames } = page;
 	const tableBody: TableCell[][] = [];
 	const resolvedDayValues = new Set(resolveTimetablePdfDayValues(dayValues));
 	const renderedDays = DAYS.filter((day) => resolvedDayValues.has(day.value));
@@ -781,20 +791,20 @@ function buildMiniTable(
 		];
 
 		periods.forEach((p) => {
-			const entry = getEntry(timetableEntries, day.value, p.id);
-			if (entry) {
+			const block = getBlock(timetableBlocks, day.value, p.id);
+			if (block) {
 				const stack: Content[] = [];
-				if (entry.entryType === 'COURSE') {
+				if (block.blockKind === 'course') {
 					// ใน mini mode แสดงแค่ subject code (ตัดชื่อวิชาออกตามที่ user ขอ)
 					stack.push({
-						text: entry.offeringCode || '',
+						text: block.offeringCode || '',
 						bold: true,
 						fontSize: 5,
 						color: '#1e3a8a'
 					});
 				} else {
 					stack.push({
-						text: wrapThaiToLines(timetableResourceName(entry), cellContentWidth, 4),
+						text: wrapThaiToLines(timetableResourceName(block), cellContentWidth, 4),
 						bold: true,
 						fontSize: 4,
 						color: '#047857',
@@ -804,8 +814,8 @@ function buildMiniTable(
 
 				// SLOT-sync activity (ครูหลายคน, ห้องหลายห้อง) — ซ่อน meta side
 				const isSlotSync =
-					entry.entryType === 'ACTIVITY' && entry.activitySchedulingMode === 'synchronized';
-				const instructorName = primaryInstructorName(entry).trim();
+					block.blockKind === 'activity' && block.schedulingMode === 'synchronized';
+				const instructorName = primaryInstructorName(block).trim();
 
 				if (viewMode === 'CLASSROOM') {
 					if (!isSlotSync && instructorName && instructorName !== '-') {
@@ -822,13 +832,9 @@ function buildMiniTable(
 						});
 					}
 				} else {
-					if (!isSlotSync && (entry.homeroomName || entry.learningGroupName)) {
+					if (!isSlotSync && blockGroupName(block)) {
 						stack.push({
-							text: wrapThaiToLines(
-								entry.homeroomName ?? entry.learningGroupName ?? '',
-								cellContentWidth,
-								3.5
-							),
+							text: wrapThaiToLines(blockGroupName(block), cellContentWidth, 3.5),
 							fontSize: 3.5,
 							color: '#d97706',
 							bold: true,
@@ -838,12 +844,9 @@ function buildMiniTable(
 				}
 
 				// ชื่อห้อง — ใช้ name_th ถ้ามี, fallback เป็น room_code
-				const roomFullName = entry.roomId ? roomNames?.[entry.roomId] : undefined;
-				const roomDisplay = roomFullName
-					? roomFullName
-					: entry.roomCode
-						? `ห้อง ${entry.roomCode}`
-						: null;
+				const room = blockRoom(block);
+				const roomFullName = room.id ? roomNames?.[room.id] : undefined;
+				const roomDisplay = roomFullName ? roomFullName : room.code ? `ห้อง ${room.code}` : null;
 				if (roomDisplay) {
 					stack.push({
 						text: wrapThaiToLines(roomDisplay, cellContentWidth, 3.5),

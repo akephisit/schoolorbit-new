@@ -5,13 +5,13 @@ test('builds one instructor PDF page from the loaded self-service timetable', as
 	const module = await import('../../src/lib/utils/staff-own-timetable-pdf.ts').catch(() => ({}));
 	assert.equal(typeof module.buildStaffOwnTimetablePdfDownload, 'function');
 
-	const entries = [{ id: 'entry-1', room_code: 'MATH-1' }];
+	const blocks = [{ id: 'block-1', room_code: 'MATH-1' }];
 	const result = module.buildStaffOwnTimetablePdfDownload({
 		teacherName: 'สายใจ / วิทยา',
 		termName: '',
 		termCode: '1',
 		academicYearName: 'ปีการศึกษา 2569',
-		entries,
+		blocks,
 		dayValues: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'],
 		periods: [
 			{
@@ -46,7 +46,7 @@ test('builds one instructor PDF page from the loaded self-service timetable', as
 					end_time: ''
 				}
 			],
-			timetableEntries: entries,
+			timetableBlocks: blocks,
 			viewMode: 'INSTRUCTOR'
 		}
 	]);
@@ -63,7 +63,7 @@ test('allows export only for loaded data matching the current valid selection', 
 		selectedAcademicTermId: 'term-1',
 		selectedTermYearId: 'year-2569',
 		loadedSelectionKey: 'year-2569:term-1',
-		entryCount: 5,
+		blockCount: 5,
 		periodCount: 8
 	};
 
@@ -84,7 +84,7 @@ test('allows export only for loaded data matching the current valid selection', 
 	);
 	assert.equal(module.canDownloadStaffOwnTimetablePdf({ ...readyState, loading: true }), false);
 	assert.equal(module.canDownloadStaffOwnTimetablePdf({ ...readyState, isExporting: true }), false);
-	assert.equal(module.canDownloadStaffOwnTimetablePdf({ ...readyState, entryCount: 0 }), false);
+	assert.equal(module.canDownloadStaffOwnTimetablePdf({ ...readyState, blockCount: 0 }), false);
 	assert.equal(module.canDownloadStaffOwnTimetablePdf({ ...readyState, periodCount: 0 }), false);
 });
 

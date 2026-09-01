@@ -35,6 +35,7 @@ export type SupervisionReviewItemSummary = Schemas['SupervisionReviewItemSummary
 export type SupervisionObservationReview = Schemas['SupervisionObservationReview'];
 export type SupervisionCycleProgress = Schemas['SupervisionCycleProgress'];
 export type SupervisionTeacherStatusRow = Schemas['SupervisionTeacherStatusRow'];
+export type SupervisionTimetableOption = Schemas['SupervisionTimetableOption'];
 export type EvaluatorAssignmentInput = Schemas['EvaluatorAssignmentInput'];
 export type EvaluationResponseInput = Schemas['EvaluationResponseInput'];
 
@@ -84,7 +85,7 @@ type SupervisionCycleItems = Schemas['ItemsData_SupervisionCycle'];
 type SupervisionTemplateItems = Schemas['ItemsData_SupervisionTemplate'];
 type SupervisionObservationItems = Schemas['ItemsData_SupervisionObservation'];
 type SupervisionEvaluatorAvailabilityItems = Schemas['ItemsData_SupervisionEvaluatorAvailability'];
-type SupervisionTimetableItems = Schemas['ItemsData_TimetableEntry'];
+type SupervisionTimetableItems = Schemas['ItemsData_SupervisionTimetableOption'];
 type SupervisionTeacherStatusItems = Schemas['ItemsData_SupervisionTeacherStatusRow'];
 
 function requiredAcademicYearId(value: string): string {
@@ -253,7 +254,7 @@ export async function getSupervisionEvaluatorAvailability(
 export async function getSupervisionObservationTimetableOptions(
 	id: ObservationId,
 	options: ApiRequestOptions = {}
-): Promise<Schemas['TimetableEntry'][]> {
+): Promise<Schemas['SupervisionTimetableOption'][]> {
 	const response = await apiClient.get<SupervisionTimetableItems>(
 		`/api/supervision/observations/${id}/timetable-options`,
 		options

@@ -282,8 +282,8 @@ pub async fn update_block(
     .await?;
     let block = timetable_block_service::update_block(
         &context.tenant.pool,
-        block_id,
         context.actor.user_id,
+        block_id,
         payload,
     )
     .await?;

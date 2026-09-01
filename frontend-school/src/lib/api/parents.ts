@@ -1,6 +1,6 @@
 import { apiClient, requireApiData } from '$lib/api/client';
 import type { components, operations } from '$lib/api/generated/school-api';
-import type { TimetableEntry } from './timetable';
+import type { TimetableBlock } from './timetable';
 import type { Student } from './students';
 
 type Schemas = components['schemas'];
@@ -43,7 +43,7 @@ export async function getChildTimetable(
 	studentId: string,
 	academicTermId: string,
 	date: string
-): Promise<TimetableEntry[]> {
+): Promise<TimetableBlock[]> {
 	const trimmedAcademicTermId = academicTermId.trim();
 	if (!trimmedAcademicTermId) throw new Error('กรุณาเลือกภาคเรียนก่อน');
 	const requiredDate = date.trim();
@@ -53,7 +53,7 @@ export async function getChildTimetable(
 		date: requiredDate
 	} satisfies NonNullable<operations['getParentChildTimetable']['parameters']['query']>;
 	return requireApiData(
-		await apiClient.get<TimetableEntry[]>(
+		await apiClient.get<TimetableBlock[]>(
 			`/api/parent/students/${encodeURIComponent(studentId)}/timetable`,
 			{ query }
 		),

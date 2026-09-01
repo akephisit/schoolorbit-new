@@ -1,4 +1,4 @@
-import type { TimetableEntry, TimetablePeriodSummary } from '$lib/api/timetable';
+import type { TimetableBlock, TimetablePeriodSummary } from '$lib/api/timetable';
 import type { GeneratePdfOptions, TimetablePage } from '$lib/utils/pdf';
 
 export interface StaffOwnTimetablePdfInput {
@@ -6,7 +6,7 @@ export interface StaffOwnTimetablePdfInput {
 	termName?: string | null;
 	termCode?: string | null;
 	academicYearName?: string | null;
-	entries: TimetableEntry[];
+	blocks: TimetableBlock[];
 	dayValues: string[];
 	periods: TimetablePeriodSummary[];
 }
@@ -23,7 +23,7 @@ export interface StaffOwnTimetablePdfReadiness {
 	selectedAcademicTermId: string;
 	selectedTermYearId?: string;
 	loadedSelectionKey: string;
-	entryCount: number;
+	blockCount: number;
 	periodCount: number;
 }
 
@@ -54,7 +54,7 @@ export function canDownloadStaffOwnTimetablePdf(state: StaffOwnTimetablePdfReadi
 		selectedSelectionKey &&
 		state.selectedTermYearId === state.selectedYearId &&
 		state.loadedSelectionKey === selectedSelectionKey &&
-		state.entryCount > 0 &&
+		state.blockCount > 0 &&
 		state.periodCount > 0
 	);
 }
@@ -104,7 +104,7 @@ export function buildStaffOwnTimetablePdfDownload(
 					start_time: period.startTime ?? '',
 					end_time: period.endTime ?? ''
 				})),
-				timetableEntries: input.entries,
+				timetableBlocks: input.blocks,
 				viewMode: 'INSTRUCTOR'
 			}
 		]

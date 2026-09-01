@@ -25,7 +25,9 @@ test('timetable owns a generated permission boundary independent from Delivery',
 	const policyModules = await readProjectFile('../backend-school/src/policies.rs');
 	const route = await readProjectFile('src/routes/(app)/staff/academic/timetable/+page.ts');
 	const page = await readProjectFile('src/routes/(app)/staff/academic/timetable/+page.svelte');
-	const handlers = await readProjectFile('../backend-school/src/modules/academic/handlers/timetable.rs');
+	const handlers = await readProjectFile(
+		'../backend-school/src/modules/academic/handlers/timetable_blocks.rs'
+	);
 
 	const contractCodes = permissionContract.permissions.map(
 		(permission) => `${permission.module}.${permission.action}.${permission.scope}`

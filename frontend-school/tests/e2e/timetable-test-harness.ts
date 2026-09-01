@@ -19,30 +19,21 @@ export const timetableIds = {
 	publishedVersion: 'a1000000-0000-4000-8000-000000000201',
 	draftVersion: 'a1000000-0000-4000-8000-000000000202',
 	changeSet: 'b1000000-0000-4000-8000-000000000201',
-	entryA: 'c1000000-0000-4000-8000-000000000201',
-	entryB: 'c1000000-0000-4000-8000-000000000202',
-	createdEntry: 'c1000000-0000-4000-8000-000000000203'
+	blockA: 'c1000000-0000-4000-8000-000000000201',
+	blockB: 'c1000000-0000-4000-8000-000000000202',
+	createdBlock: 'c1000000-0000-4000-8000-000000000203',
+	blockGroupA: 'd1000000-0000-4000-8000-000000000201',
+	blockGroupB: 'd1000000-0000-4000-8000-000000000202'
 } as const;
 
-export type MockEntry = ReturnType<typeof makeTimetableEntry>;
+export type MockBlock = ReturnType<typeof makeTimetableBlock>;
 
 export interface TimetableMockOptions {
 	status?: 'draft' | 'published';
-	entries?: MockEntry[];
+	blocks?: MockBlock[];
 	requiredPeriods?: number;
 	eligibleInstructorIds?: string[];
 	blockedPeriodId?: string;
-	overviewIssues?: Array<{
-		kind: string;
-		severity: 'blocking' | 'warning';
-		message: string;
-		bellSchedulePeriodId: string | null;
-		entryIds: string[];
-		homeroomIds: string[];
-		instructorIds: string[];
-		learningGroupId: string | null;
-		roomId: string | null;
-	}>;
 }
 
 function fulfill(route: Route, data: unknown, status = 200) {
@@ -72,29 +63,34 @@ export function makeTimetableVersion(status: 'draft' | 'published') {
 		createdBy: timetableIds.user,
 		createdAt: '2026-05-01T00:00:00Z',
 		updatedAt: '2026-08-31T00:00:00Z',
-		targets: [
-			{
-				timetableVersionId: id,
-				learningOfferingId: timetableIds.offeringA,
-				standardPeriodsPerWeek: 3,
-				weeklyPeriodTarget: 3
-			}
-		]
+		targets: []
+	};
+}
+
+function instructor(teacherId: string, index = 0) {
+	return {
+		teacherId,
+		displayName: teacherId === timetableIds.teacherA ? 'ครูคณิตศาสตร์ A' : 'ครูคณิตศาสตร์ B',
+		role: index === 0 ? 'primary' : 'secondary',
+		orderIndex: index
 	};
 }
 
 function instructors(ids: string[]) {
-	return ids.map((userId, index) => ({
-		userId,
-		displayName: userId === timetableIds.teacherA ? 'ครูคณิตศาสตร์ A' : 'ครูคณิตศาสตร์ B',
-		role: index === 0 ? 'primary' : 'secondary',
-		subjectGroupId: null,
-		subjectGroupName: null,
-		subjectGroupDisplayOrder: null
-	}));
+	return ids.map(instructor);
 }
 
-export function makeTimetableEntry(
+function periodDetails(periodId: string) {
+	if (periodId === timetableIds.period1) {
+		return { periodName: 'คาบ 1', startTime: '08:30:00', endTime: '09:20:00' };
+	}
+	if (periodId === timetableIds.period2) {
+		return { periodName: 'คาบ 2', startTime: '09:20:00', endTime: '10:10:00' };
+	}
+	return { periodName: 'คาบ 3', startTime: '10:10:00', endTime: '11:00:00' };
+}
+
+export function makeTimetableBlock(
 	id: string,
 	periodId: string,
 	options: {
@@ -110,6 +106,8 @@ export function makeTimetableEntry(
 	const offeringId = options.offeringId ?? timetableIds.offeringA;
 	const code = options.code ?? 'ค21101';
 	const name = options.name ?? 'คณิตศาสตร์พื้นฐาน';
+	const blockGroupId =
+		groupId === timetableIds.groupA ? timetableIds.blockGroupA : timetableIds.blockGroupB;
 	return {
 		id,
 		timetableVersionId: options.versionId ?? timetableIds.draftVersion,
@@ -117,40 +115,37 @@ export function makeTimetableEntry(
 		academicYearId: timetableIds.year,
 		bellScheduleId: timetableIds.schedule,
 		bellSchedulePeriodId: periodId,
-		learningGroupId: groupId,
-		learningGroupCode: groupId === timetableIds.groupA ? 'M1-1-A' : 'M1-1-B',
-		learningGroupName: groupId === timetableIds.groupA ? 'ม.1/1 คณิตศาสตร์' : 'ม.1/1 วิทยาศาสตร์',
-		offeringId,
+		blockKind: 'course',
+		learningOfferingId: offeringId,
 		offeringCode: code,
 		offeringName: name,
-		homeroomId: null,
-		homeroomName: null,
-		roomId: timetableIds.room,
-		roomCode: 'MATH-1',
+		schedulingMode: null,
+		structuralKind: null,
+		seriesId: null,
 		dayOfWeek: 'MON',
-		startTime:
-			periodId === timetableIds.period1
-				? '08:30:00'
-				: periodId === timetableIds.period2
-					? '09:20:00'
-					: '10:10:00',
-		endTime:
-			periodId === timetableIds.period1
-				? '09:20:00'
-				: periodId === timetableIds.period2
-					? '10:10:00'
-					: '11:00:00',
-		periodName:
-			periodId === timetableIds.period1
-				? 'คาบ 1'
-				: periodId === timetableIds.period2
-					? 'คาบ 2'
-					: 'คาบ 3',
-		entryType: 'COURSE',
+		...periodDetails(periodId),
 		title: null,
 		note: null,
 		isActive: true,
-		instructors: instructors(options.instructorIds ?? [timetableIds.teacherA]),
+		groups: [
+			{
+				id: blockGroupId,
+				learningGroupId: groupId,
+				learningOfferingId: offeringId,
+				code: groupId === timetableIds.groupA ? 'M1-1-A' : 'M1-1-B',
+				name: groupId === timetableIds.groupA ? 'ม.1/1 คณิตศาสตร์' : 'ม.1/1 วิทยาศาสตร์',
+				homeroomIds: [timetableIds.homeroom],
+				instructors: instructors(options.instructorIds ?? [timetableIds.teacherA]),
+				roomId: timetableIds.room,
+				roomCode: 'MATH-1',
+				rowVersion: 1,
+				isActive: true,
+				syncStatus: null
+			}
+		],
+		homerooms: [],
+		teachers: [],
+		syncStates: [],
 		rowVersion: 1,
 		createdAt: '2026-08-31T00:00:00Z',
 		updatedAt: '2026-08-31T00:00:00Z'
@@ -158,12 +153,11 @@ export function makeTimetableEntry(
 }
 
 function periods() {
-	const periodRows: Array<[string, number, string, string, string]> = [
+	return [
 		[timetableIds.period1, 1, 'คาบ 1', '08:30:00', '09:20:00'],
 		[timetableIds.period2, 2, 'คาบ 2', '09:20:00', '10:10:00'],
 		[timetableIds.period3, 3, 'คาบ 3', '10:10:00', '11:00:00']
-	];
-	return periodRows.map(([id, orderIndex, name, startTime, endTime]) => ({
+	].map(([id, orderIndex, name, startTime, endTime]) => ({
 		id,
 		bellScheduleId: timetableIds.schedule,
 		orderIndex,
@@ -201,132 +195,90 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 	const status = options.status ?? 'draft';
 	const selectedVersion = makeTimetableVersion(status);
 	const versions = [makeTimetableVersion('published'), makeTimetableVersion('draft')];
-	let entries = [...(options.entries ?? [])];
+	let blocks = [...(options.blocks ?? [])];
 	const eligibleInstructorIds = options.eligibleInstructorIds ?? [timetableIds.teacherA];
 	const requiredPeriods = options.requiredPeriods ?? 3;
 	let workspaceRequests = 0;
-	let overviewRequests = 0;
-	const overviewDays: string[] = [];
 	let previewRequests = 0;
 	let createRequests = 0;
 	let updateRequests = 0;
 	let swapRequests = 0;
 
-	const workspace = () => ({
-		version: selectedVersion,
-		bellPeriods: periods(),
-		entries,
-		learningGroups: [
-			{
-				id: timetableIds.groupA,
-				learningOfferingId: timetableIds.offeringA,
-				code: 'M1-1-A',
-				name: 'ม.1/1 คณิตศาสตร์',
-				status: 'published',
-				rosterStatus: 'published',
-				offeringKind: 'course',
-				offeringCode: 'ค21101',
-				offeringName: 'คณิตศาสตร์พื้นฐาน',
-				homeroomIds: [timetableIds.homeroom],
-				eligibleInstructorIds
-			},
-			{
-				id: timetableIds.groupB,
-				learningOfferingId: timetableIds.offeringB,
-				code: 'M1-1-B',
-				name: 'ม.1/1 วิทยาศาสตร์',
-				status: 'published',
-				rosterStatus: 'published',
-				offeringKind: 'course',
-				offeringCode: 'ว21101',
-				offeringName: 'วิทยาศาสตร์พื้นฐาน',
-				homeroomIds: [timetableIds.homeroom],
-				eligibleInstructorIds: [timetableIds.teacherB]
-			}
-		],
-		homerooms: [
-			{
-				id: timetableIds.homeroom,
-				code: 'M1-1',
-				name: 'ม.1/1',
-				gradeLevelId: '81000000-0000-4000-8000-000000000301',
-				gradeLevelType: 'secondary',
-				gradeLevelYear: 1,
-				roomNumber: '1',
-				isActive: true
-			}
-		],
-		rooms: [{ id: timetableIds.room, code: 'MATH-1', name: 'ห้องคณิตศาสตร์', status: 'ACTIVE' }],
-		staff: [
-			{ id: timetableIds.teacherA, displayName: 'ครูคณิตศาสตร์ A', status: 'active' },
-			{ id: timetableIds.teacherB, displayName: 'ครูคณิตศาสตร์ B', status: 'active' }
-		],
-		unscheduledDemands: [
-			{
-				learningGroupId: timetableIds.groupA,
-				learningOfferingId: timetableIds.offeringA,
-				offeringCode: 'ค21101',
-				offeringName: 'คณิตศาสตร์พื้นฐาน',
-				requiredPeriods,
-				scheduledPeriods: entries.filter((entry) => entry.learningGroupId === timetableIds.groupA)
-					.length,
-				remainingPeriods: Math.max(
-					requiredPeriods -
-						entries.filter((entry) => entry.learningGroupId === timetableIds.groupA).length,
-					0
-				),
-				homeroomIds: [timetableIds.homeroom],
-				eligibleInstructorIds
-			}
-		]
-	});
-
-	const wholeSchoolOverview = (dayOfWeek: string) => {
-		const dayEntries = entries.filter((entry) => entry.dayOfWeek === dayOfWeek);
-		const lessons = (periodId: string) =>
-			dayEntries
-				.filter((entry) => entry.bellSchedulePeriodId === periodId)
-				.map((entry) => ({
-					entryId: entry.id,
-					entryType: entry.entryType,
-					learningGroupId: entry.learningGroupId,
-					learningGroupCode: entry.learningGroupCode,
-					learningGroupName: entry.learningGroupName,
-					offeringCode: entry.offeringCode,
-					offeringName: entry.offeringName,
-					title: entry.title,
-					coveredHomeroomIds: [timetableIds.homeroom],
-					instructors: entry.instructors,
-					roomId: entry.roomId,
-					roomCode: entry.roomCode,
-					isSharedGroup: false
-				}));
-		const issues = options.overviewIssues ?? [];
+	const workspace = () => {
+		const scheduledPeriods = blocks.filter((block) =>
+			block.groups.some((group) => group.learningGroupId === timetableIds.groupA)
+		).length;
 		return {
 			version: selectedVersion,
-			dayOfWeek,
-			periods: periods(),
-			rows: [
+			bellPeriods: periods(),
+			blocks,
+			learningGroups: [
 				{
-					homeroomId: timetableIds.homeroom,
-					homeroomCode: 'M1-1',
-					homeroomName: 'ม.1/1',
+					id: timetableIds.groupA,
+					learningOfferingId: timetableIds.offeringA,
+					code: 'M1-1-A',
+					name: 'ม.1/1 คณิตศาสตร์',
+					status: 'published',
+					rosterStatus: 'published',
+					offeringKind: 'course',
+					offeringCode: 'ค21101',
+					offeringName: 'คณิตศาสตร์พื้นฐาน',
+					homeroomIds: [timetableIds.homeroom],
+					eligibleInstructors: instructors(eligibleInstructorIds)
+				},
+				{
+					id: timetableIds.groupB,
+					learningOfferingId: timetableIds.offeringB,
+					code: 'M1-1-B',
+					name: 'ม.1/1 วิทยาศาสตร์',
+					status: 'published',
+					rosterStatus: 'published',
+					offeringKind: 'course',
+					offeringCode: 'ว21101',
+					offeringName: 'วิทยาศาสตร์พื้นฐาน',
+					homeroomIds: [timetableIds.homeroom],
+					eligibleInstructors: instructors([timetableIds.teacherB])
+				}
+			],
+			homerooms: [
+				{
+					id: timetableIds.homeroom,
+					code: 'M1-1',
+					name: 'ม.1/1',
+					gradeLevelId: '81000000-0000-4000-8000-000000000301',
 					gradeLevelType: 'secondary',
 					gradeLevelYear: 1,
 					roomNumber: '1',
-					cells: periods().map((period) => ({
-						bellSchedulePeriodId: period.id,
-						lessons: lessons(period.id)
-					}))
+					isActive: true
 				}
 			],
-			issues,
+			rooms: [{ id: timetableIds.room, code: 'MATH-1', name: 'ห้องคณิตศาสตร์', status: 'ACTIVE' }],
+			staff: [
+				{ id: timetableIds.teacherA, displayName: 'ครูคณิตศาสตร์ A', status: 'active' },
+				{ id: timetableIds.teacherB, displayName: 'ครูคณิตศาสตร์ B', status: 'active' }
+			],
+			ordinaryDemands: [
+				{
+					learningGroupId: timetableIds.groupA,
+					learningOfferingId: timetableIds.offeringA,
+					offeringCode: 'ค21101',
+					offeringName: 'คณิตศาสตร์พื้นฐาน',
+					requiredPeriods,
+					scheduledPeriods,
+					remainingPeriods: Math.max(requiredPeriods - scheduledPeriods, 0),
+					homeroomIds: [timetableIds.homeroom],
+					eligibleInstructors: instructors(eligibleInstructorIds)
+				}
+			],
+			synchronizedDemands: [],
 			summary: {
-				homeroomCount: 1,
-				uniqueLessonCount: dayEntries.length,
-				issueCount: issues.length,
-				blockingIssueCount: issues.filter((issue) => issue.severity === 'blocking').length,
-				warningIssueCount: issues.filter((issue) => issue.severity === 'warning').length
+				blockCount: blocks.length,
+				ordinaryDemandCount: Math.max(requiredPeriods - scheduledPeriods, 0) > 0 ? 1 : 0,
+				synchronizedDemandCount: 0,
+				linkedGroupCount: 0,
+				waitingGroupCount: 0,
+				conflictGroupCount: 0,
+				excludedGroupCount: 0
 			}
 		};
 	};
@@ -385,16 +337,9 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 				await fulfill(route, versions);
 				return;
 			}
-			if (url.pathname === '/api/academic/timetable/workspace') {
+			if (url.pathname === '/api/academic/timetable-blocks/workspace') {
 				workspaceRequests += 1;
 				await fulfill(route, workspace());
-				return;
-			}
-			if (url.pathname === '/api/academic/timetable/whole-school') {
-				overviewRequests += 1;
-				const dayOfWeek = url.searchParams.get('dayOfWeek') ?? 'MON';
-				overviewDays.push(dayOfWeek);
-				await fulfill(route, wholeSchoolOverview(dayOfWeek));
 				return;
 			}
 			if (url.pathname === `/api/academic/term-change-sets/${timetableIds.changeSet}`) {
@@ -415,28 +360,31 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 				});
 				return;
 			}
-			if (url.pathname === '/api/academic/timetable/placement-preview') {
+			if (url.pathname === '/api/academic/timetable-blocks/placement-preview') {
 				previewRequests += 1;
 				const body = route.request().postDataJSON();
-				const sourceEntryId = body.source.kind === 'existing_entry' ? body.source.entryId : null;
-				const target = entries.find(
-					(entry) =>
-						entry.id !== sourceEntryId &&
-						entry.dayOfWeek === body.targetDayOfWeek &&
-						entry.bellSchedulePeriodId === body.targetBellSchedulePeriodId
+				const sourceBlockId = body.source.kind === 'existing_block' ? body.source.blockId : null;
+				const target = blocks.find(
+					(block) =>
+						block.id !== sourceBlockId &&
+						block.dayOfWeek === body.targetDayOfWeek &&
+						block.bellSchedulePeriodId === body.targetBellSchedulePeriodId
 				);
 				if (body.targetBellSchedulePeriodId === options.blockedPeriodId) {
 					await fulfill(route, {
 						state: 'blocked',
-						sourceEntryId,
-						targetEntryId: target?.id ?? null,
+						sourceBlockId,
+						targetBlockId: target?.id ?? null,
 						targetDayOfWeek: body.targetDayOfWeek,
 						targetBellSchedulePeriodId: body.targetBellSchedulePeriodId,
 						normalizedCandidate: body.candidate,
 						conflicts: [
 							{
-								conflictType: 'instructor',
-								existingEntryId: timetableIds.entryB,
+								code: 'teacher_conflict',
+								conflictType: 'teacher',
+								existingBlockId: timetableIds.blockB,
+								targetKind: 'teacher',
+								targetId: timetableIds.teacherA,
 								message: 'ครูคณิตศาสตร์ A มีคาบสอนอยู่แล้ว'
 							}
 						],
@@ -444,86 +392,89 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 					});
 					return;
 				}
-				const mutation =
-					body.source.kind === 'unscheduled_demand' ? 'create' : target ? 'swap' : 'move';
 				await fulfill(route, {
 					state: target ? 'swap' : 'move',
-					sourceEntryId,
-					targetEntryId: target?.id ?? null,
+					sourceBlockId,
+					targetBlockId: target?.id ?? null,
 					targetDayOfWeek: body.targetDayOfWeek,
 					targetBellSchedulePeriodId: body.targetBellSchedulePeriodId,
 					normalizedCandidate: body.candidate,
 					conflicts: [],
-					mutation
+					mutation: body.source.kind === 'ordinary_demand' ? 'create' : target ? 'swap' : 'move'
 				});
 				return;
 			}
-			if (url.pathname === '/api/academic/timetable' && method === 'POST') {
+			if (url.pathname === '/api/academic/timetable-blocks/ordinary' && method === 'POST') {
 				createRequests += 1;
 				const body = route.request().postDataJSON();
 				const created = {
-					...makeTimetableEntry(timetableIds.createdEntry, body.bellSchedulePeriodId, {
+					...makeTimetableBlock(timetableIds.createdBlock, body.bellSchedulePeriodId, {
 						versionId: body.timetableVersionId,
 						groupId: body.learningGroupId,
 						instructorIds: body.instructorIds
 					}),
 					dayOfWeek: body.dayOfWeek
 				};
-				entries = [...entries, created];
+				blocks = [...blocks, created];
 				await fulfill(route, created, 201);
 				return;
 			}
-			if (url.pathname === '/api/academic/timetable/swap' && method === 'POST') {
+			if (url.pathname === '/api/academic/timetable-blocks/swap' && method === 'POST') {
 				swapRequests += 1;
 				const body = route.request().postDataJSON();
-				const entryA = entries.find((entry) => entry.id === body.entryAId);
-				const entryB = entries.find((entry) => entry.id === body.entryBId);
-				if (!entryA || !entryB) throw new Error('Mock swap entries not found');
+				const blockA = blocks.find((block) => block.id === body.blockAId);
+				const blockB = blocks.find((block) => block.id === body.blockBId);
+				if (!blockA || !blockB) throw new Error('Mock swap blocks not found');
 				const nextA = {
-					...entryA,
-					dayOfWeek: entryB.dayOfWeek,
-					bellSchedulePeriodId: entryB.bellSchedulePeriodId,
-					periodName: entryB.periodName,
-					rowVersion: entryA.rowVersion + 1
+					...blockA,
+					dayOfWeek: blockB.dayOfWeek,
+					bellSchedulePeriodId: blockB.bellSchedulePeriodId,
+					...periodDetails(blockB.bellSchedulePeriodId),
+					rowVersion: blockA.rowVersion + 1
 				};
 				const nextB = {
-					...entryB,
-					dayOfWeek: entryA.dayOfWeek,
-					bellSchedulePeriodId: entryA.bellSchedulePeriodId,
-					periodName: entryA.periodName,
-					rowVersion: entryB.rowVersion + 1
+					...blockB,
+					dayOfWeek: blockA.dayOfWeek,
+					bellSchedulePeriodId: blockA.bellSchedulePeriodId,
+					...periodDetails(blockA.bellSchedulePeriodId),
+					rowVersion: blockB.rowVersion + 1
 				};
-				entries = entries.map((entry) =>
-					entry.id === nextA.id ? nextA : entry.id === nextB.id ? nextB : entry
+				blocks = blocks.map((block) =>
+					block.id === nextA.id ? nextA : block.id === nextB.id ? nextB : block
 				);
-				await fulfill(route, { entryA: nextA, entryB: nextB });
+				await fulfill(route, { blockA: nextA, blockB: nextB });
 				return;
 			}
-			if (url.pathname.startsWith('/api/academic/timetable/') && method === 'PUT') {
+			if (/^\/api\/academic\/timetable-blocks\/[^/]+$/.test(url.pathname) && method === 'PUT') {
 				updateRequests += 1;
 				const id = url.pathname.split('/').at(-1);
 				const body = route.request().postDataJSON();
-				const existing = entries.find((entry) => entry.id === id);
-				if (!existing) throw new Error('Mock update entry not found');
+				const existing = blocks.find((block) => block.id === id);
+				if (!existing) throw new Error('Mock update block not found');
+				const periodId = body.bellSchedulePeriodId ?? existing.bellSchedulePeriodId;
 				const updated = {
 					...existing,
 					dayOfWeek: body.dayOfWeek ?? existing.dayOfWeek,
-					bellSchedulePeriodId: body.bellSchedulePeriodId ?? existing.bellSchedulePeriodId,
-					roomId: body.clearRoom ? null : (body.roomId ?? existing.roomId),
-					instructors: body.instructorIds ? instructors(body.instructorIds) : existing.instructors,
+					bellSchedulePeriodId: periodId,
+					...periodDetails(periodId),
+					groups: body.instructorIds
+						? existing.groups.map((group) => ({
+								...group,
+								instructors: instructors(body.instructorIds)
+							}))
+						: existing.groups,
 					rowVersion: existing.rowVersion + 1
 				};
-				entries = entries.map((entry) => (entry.id === updated.id ? updated : entry));
+				blocks = blocks.map((block) => (block.id === updated.id ? updated : block));
 				await fulfill(route, updated);
 				return;
 			}
-			if (url.pathname.startsWith('/api/academic/timetable/') && method === 'DELETE') {
+			if (/^\/api\/academic\/timetable-blocks\/[^/]+$/.test(url.pathname) && method === 'DELETE') {
 				const id = url.pathname.split('/').at(-1);
-				const existing = entries.find((entry) => entry.id === id);
-				if (!existing) throw new Error('Mock delete entry not found');
-				const deleted = { ...existing, isActive: false, rowVersion: existing.rowVersion + 1 };
-				entries = entries.filter((entry) => entry.id !== id);
-				await fulfill(route, deleted);
+				const existing = blocks.find((block) => block.id === id);
+				if (!existing) throw new Error('Mock delete block not found');
+				blocks = blocks.filter((block) => block.id !== id);
+				await fulfill(route, { ...existing, isActive: false, rowVersion: existing.rowVersion + 1 });
 				return;
 			}
 			if (url.pathname === '/api/menu/user') {
@@ -555,12 +506,10 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 
 	return {
 		workspaceRequestCount: () => workspaceRequests,
-		overviewRequestCount: () => overviewRequests,
-		overviewDays: () => overviewDays,
 		previewRequestCount: () => previewRequests,
 		createRequestCount: () => createRequests,
 		updateRequestCount: () => updateRequests,
 		swapRequestCount: () => swapRequests,
-		entries: () => entries
+		blocks: () => blocks
 	};
 }

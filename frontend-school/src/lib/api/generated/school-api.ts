@@ -1610,16 +1610,192 @@ export interface paths {
 		patch: operations['updateAcademicTerm'];
 		trace?: never;
 	};
-	'/api/academic/timetable': {
+	'/api/academic/timetable-blocks/{block_id}': {
 		parameters: {
 			query?: never;
 			header?: never;
 			path?: never;
 			cookie?: never;
 		};
-		get: operations['listTimetableEntries'];
+		get?: never;
+		put: operations['updateTimetableBlock'];
+		post?: never;
+		delete: operations['deleteTimetableBlock'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/timetable-blocks/{block_id}/restore': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
 		put?: never;
-		post: operations['createTimetableEntry'];
+		post: operations['restoreTimetableBlockGroup'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/timetable-blocks/{block_id}/sync': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['retryTimetableBlockSync'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/timetable-blocks/{block_id}/targets': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['removeTimetableBlockTarget'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/timetable-blocks/clear': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['clearTimetable'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/timetable-blocks/ordinary': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['createOrdinaryTimetableBlock'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/timetable-blocks/placement-preview': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['previewTimetableBlockPlacement'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/timetable-blocks/series/{series_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['deleteTimetableBlockSeries'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/timetable-blocks/structural': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['createStructuralTimetableBlocks'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/timetable-blocks/swap': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['swapTimetableBlocks'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/timetable-blocks/synchronized': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['createSynchronizedTimetableBlock'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/timetable-blocks/workspace': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getTimetableBlockWorkspace'];
+		put?: never;
+		post?: never;
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -1738,70 +1914,6 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
-	'/api/academic/timetable/{entry_id}': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put: operations['updateTimetableEntry'];
-		post?: never;
-		delete: operations['deleteTimetableEntry'];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/timetable/batch': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post: operations['createBatchTimetableEntries'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/timetable/batch-group/{batch_id}': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post?: never;
-		delete: operations['deleteTimetableBatch'];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/timetable/clear': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post?: never;
-		delete: operations['clearTimetable'];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
 	'/api/academic/timetable/daily-teaching': {
 		parameters: {
 			query?: never;
@@ -1810,102 +1922,6 @@ export interface paths {
 			cookie?: never;
 		};
 		get: operations['getDailyTeachingOverview'];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/timetable/occupancy': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['getTimetableOccupancy'];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/timetable/placement-preview': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post: operations['previewTimetablePlacement'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/timetable/swap': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post: operations['swapTimetableEntries'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/timetable/validate-moves': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post: operations['validateTimetableMoves'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/timetable/whole-school': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['getWholeSchoolTimetableOverview'];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/timetable/workspace': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['getTimetableWorkspace'];
 		put?: never;
 		post?: never;
 		delete?: never;
@@ -5417,15 +5433,6 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
-		ApiResponse_BatchTimetableResult: {
-			data: {
-				/** Format: uuid */
-				batchId: string;
-				entries: components['schemas']['TimetableEntry'][];
-			};
-			message?: string;
-			success: boolean;
-		};
 		ApiResponse_BellSchedule: {
 			data: {
 				/** Format: uuid */
@@ -6418,7 +6425,7 @@ export interface components {
 					/** Format: uuid */
 					templateId: string;
 					/** Format: uuid */
-					timetableEntryId?: string | null;
+					timetableBlockGroupId?: string | null;
 					/** Format: date-time */
 					updatedAt: string;
 				}[];
@@ -6473,67 +6480,30 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
-		ApiResponse_ItemsData_TimetableEntry: {
+		ApiResponse_ItemsData_SupervisionTimetableOption: {
 			data: {
 				items: {
 					/** Format: uuid */
-					academicTermId: string;
-					/** Format: uuid */
-					academicYearId: string;
-					/** Format: uuid */
-					activityId?: string | null;
-					activitySchedulingMode?: null | components['schemas']['ActivitySchedulingMode'];
-					activityVersionDisplayLabel?: string | null;
-					/** Format: uuid */
-					batchId?: string | null;
-					/** Format: uuid */
-					bellScheduleId: string;
-					/** Format: uuid */
 					bellSchedulePeriodId: string;
-					/** Format: date-time */
-					createdAt: string;
+					/** Format: uuid */
+					blockGroupId: string;
+					/** Format: uuid */
+					blockId: string;
 					dayOfWeek: string;
 					endTime: string;
-					entryType: string;
+					homeroomNames: string[];
 					/** Format: uuid */
-					homeroomId?: string | null;
-					homeroomName?: string | null;
+					learningGroupId: string;
+					learningGroupName: string;
 					/** Format: uuid */
-					id: string;
-					instructors: components['schemas']['TimetableInstructor'][];
-					isActive: boolean;
-					learningGroupCode?: string | null;
-					/** Format: uuid */
-					learningGroupId?: string | null;
-					learningGroupName?: string | null;
-					note?: string | null;
-					offeringCode?: string | null;
-					/** Format: uuid */
-					offeringId?: string | null;
-					offeringName?: string | null;
-					periodName?: string | null;
-					roomCode?: string | null;
-					/** Format: uuid */
-					roomId?: string | null;
-					/** Format: int64 */
-					rowVersion: number;
-					startTime: string;
+					learningOfferingId: string;
+					offeringCode: string;
+					offeringName: string;
+					periodName: string;
 					/** Format: int32 */
-					subjectGroupDisplayOrder?: number | null;
-					/** Format: uuid */
-					subjectGroupId?: string | null;
-					subjectGroupName?: string | null;
-					/**
-					 * Format: uuid
-					 * @description Stable catalog identity. A selected version is represented by its display label only.
-					 */
-					subjectId?: string | null;
-					subjectVersionDisplayLabel?: string | null;
-					/** Format: uuid */
-					timetableVersionId: string;
-					title?: string | null;
-					/** Format: date-time */
-					updatedAt: string;
+					periodOrderIndex: number;
+					roomName?: string | null;
+					startTime: string;
 				}[];
 			};
 			message?: string;
@@ -7288,7 +7258,7 @@ export interface components {
 				/** Format: uuid */
 				templateId: string;
 				/** Format: uuid */
-				timetableEntryId?: string | null;
+				timetableBlockGroupId?: string | null;
 				/** Format: date-time */
 				updatedAt: string;
 			};
@@ -7330,10 +7300,10 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
-		ApiResponse_SwapTimetableEntriesResponse: {
+		ApiResponse_SwapTimetableBlocksResponse: {
 			data: {
-				entryA: components['schemas']['TimetableEntry'];
-				entryB: components['schemas']['TimetableEntry'];
+				blockA: components['schemas']['TimetableBlock'];
+				blockB: components['schemas']['TimetableBlock'];
 			};
 			message?: string;
 			success: boolean;
@@ -7392,83 +7362,79 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
-		ApiResponse_TimetableEntry: {
+		ApiResponse_TimetableBlock: {
 			data: {
 				/** Format: uuid */
 				academicTermId: string;
 				/** Format: uuid */
 				academicYearId: string;
 				/** Format: uuid */
-				activityId?: string | null;
-				activitySchedulingMode?: null | components['schemas']['ActivitySchedulingMode'];
-				activityVersionDisplayLabel?: string | null;
-				/** Format: uuid */
-				batchId?: string | null;
-				/** Format: uuid */
 				bellScheduleId: string;
 				/** Format: uuid */
 				bellSchedulePeriodId: string;
+				blockKind: components['schemas']['TimetableBlockKind'];
 				/** Format: date-time */
 				createdAt: string;
 				dayOfWeek: string;
 				endTime: string;
-				entryType: string;
-				/** Format: uuid */
-				homeroomId?: string | null;
-				homeroomName?: string | null;
+				groups: components['schemas']['TimetableBlockGroup'][];
+				homerooms: components['schemas']['TimetableBlockHomeroom'][];
 				/** Format: uuid */
 				id: string;
-				instructors: components['schemas']['TimetableInstructor'][];
 				isActive: boolean;
-				learningGroupCode?: string | null;
 				/** Format: uuid */
-				learningGroupId?: string | null;
-				learningGroupName?: string | null;
-				note?: string | null;
-				offeringCode?: string | null;
-				/** Format: uuid */
-				offeringId?: string | null;
-				offeringName?: string | null;
-				periodName?: string | null;
-				roomCode?: string | null;
-				/** Format: uuid */
-				roomId?: string | null;
+				learningOfferingId: string | null;
+				note: string | null;
+				offeringCode: string | null;
+				offeringName: string | null;
+				periodName: string;
 				/** Format: int64 */
 				rowVersion: number;
-				startTime: string;
-				/** Format: int32 */
-				subjectGroupDisplayOrder?: number | null;
+				schedulingMode: null | components['schemas']['ActivitySchedulingMode'];
 				/** Format: uuid */
-				subjectGroupId?: string | null;
-				subjectGroupName?: string | null;
-				/**
-				 * Format: uuid
-				 * @description Stable catalog identity. A selected version is represented by its display label only.
-				 */
-				subjectId?: string | null;
-				subjectVersionDisplayLabel?: string | null;
+				seriesId: string | null;
+				startTime: string;
+				structuralKind: null | components['schemas']['TimetableStructuralKind'];
+				syncStates: components['schemas']['TimetableBlockSyncState'][];
+				teachers: components['schemas']['TimetableBlockTeacher'][];
 				/** Format: uuid */
 				timetableVersionId: string;
-				title?: string | null;
+				title: string | null;
 				/** Format: date-time */
 				updatedAt: string;
 			};
 			message?: string;
 			success: boolean;
 		};
-		ApiResponse_TimetablePlacementPreview: {
+		ApiResponse_TimetableBlockPlacementPreview: {
 			data: {
-				conflicts: components['schemas']['ConflictInfo'][];
-				mutation?: null | components['schemas']['TimetablePlacementMutationKind'];
-				normalizedCandidate: components['schemas']['TimetablePlacementCandidate'];
+				conflicts: components['schemas']['TimetableBlockConflict'][];
+				mutation: null | components['schemas']['TimetableBlockMutationKind'];
+				normalizedCandidate: components['schemas']['TimetableBlockPlacementCandidate'];
 				/** Format: uuid */
-				sourceEntryId: string | null;
-				state: components['schemas']['TimetablePlacementState'];
+				sourceBlockId: string | null;
+				state: components['schemas']['TimetableBlockPlacementState'];
 				/** Format: uuid */
 				targetBellSchedulePeriodId: string;
-				targetDayOfWeek: string;
 				/** Format: uuid */
-				targetEntryId: string | null;
+				targetBlockId: string | null;
+				targetDayOfWeek: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_TimetableBlockWorkspace: {
+			data: {
+				bellPeriods: components['schemas']['BellSchedulePeriod'][];
+				blocks: components['schemas']['TimetableBlock'][];
+				homerooms: components['schemas']['TimetableBlockWorkspaceHomeroom'][];
+				learningGroups: components['schemas']['TimetableBlockWorkspaceLearningGroup'][];
+				ordinaryDemands: components['schemas']['TimetableOrdinaryDemand'][];
+				rooms: components['schemas']['TimetableBlockWorkspaceRoom'][];
+				staff: components['schemas']['TimetableBlockWorkspaceStaff'][];
+				summary: components['schemas']['TimetableBlockSummary'];
+				synchronizedDemands: components['schemas']['TimetableSynchronizedDemand'][];
+				version: components['schemas']['TimetableVersion'];
 			};
 			message?: string;
 			success: boolean;
@@ -7522,20 +7488,6 @@ export interface components {
 				targets: components['schemas']['TimetableVersionTarget'][];
 				/** Format: date-time */
 				updatedAt: string;
-			};
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_TimetableWorkspace: {
-			data: {
-				bellPeriods: components['schemas']['BellSchedulePeriod'][];
-				entries: components['schemas']['TimetableEntry'][];
-				homerooms: components['schemas']['TimetableWorkspaceHomeroom'][];
-				learningGroups: components['schemas']['TimetableWorkspaceLearningGroup'][];
-				rooms: components['schemas']['TimetableWorkspaceRoom'][];
-				staff: components['schemas']['TimetableWorkspaceStaff'][];
-				unscheduledDemands: components['schemas']['TimetableUnscheduledDemand'][];
-				version: components['schemas']['TimetableVersion'];
 			};
 			message?: string;
 			success: boolean;
@@ -8616,19 +8568,6 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
-		ApiResponse_Vec_MoveValidityCell: {
-			data: {
-				/** Format: uuid */
-				bellSchedulePeriodId: string;
-				conflicts: components['schemas']['ConflictInfo'][];
-				dayOfWeek: string;
-				state: components['schemas']['TimetablePlacementState'];
-				/** Format: uuid */
-				targetEntryId: string | null;
-			}[];
-			message?: string;
-			success: boolean;
-		};
 		ApiResponse_Vec_OrganizationMemberItem: {
 			data: {
 				is_primary: boolean;
@@ -9009,83 +8948,46 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
-		ApiResponse_Vec_TimetableEntry: {
+		ApiResponse_Vec_TimetableBlock: {
 			data: {
 				/** Format: uuid */
 				academicTermId: string;
 				/** Format: uuid */
 				academicYearId: string;
 				/** Format: uuid */
-				activityId?: string | null;
-				activitySchedulingMode?: null | components['schemas']['ActivitySchedulingMode'];
-				activityVersionDisplayLabel?: string | null;
-				/** Format: uuid */
-				batchId?: string | null;
-				/** Format: uuid */
 				bellScheduleId: string;
 				/** Format: uuid */
 				bellSchedulePeriodId: string;
+				blockKind: components['schemas']['TimetableBlockKind'];
 				/** Format: date-time */
 				createdAt: string;
 				dayOfWeek: string;
 				endTime: string;
-				entryType: string;
-				/** Format: uuid */
-				homeroomId?: string | null;
-				homeroomName?: string | null;
+				groups: components['schemas']['TimetableBlockGroup'][];
+				homerooms: components['schemas']['TimetableBlockHomeroom'][];
 				/** Format: uuid */
 				id: string;
-				instructors: components['schemas']['TimetableInstructor'][];
 				isActive: boolean;
-				learningGroupCode?: string | null;
 				/** Format: uuid */
-				learningGroupId?: string | null;
-				learningGroupName?: string | null;
-				note?: string | null;
-				offeringCode?: string | null;
-				/** Format: uuid */
-				offeringId?: string | null;
-				offeringName?: string | null;
-				periodName?: string | null;
-				roomCode?: string | null;
-				/** Format: uuid */
-				roomId?: string | null;
+				learningOfferingId: string | null;
+				note: string | null;
+				offeringCode: string | null;
+				offeringName: string | null;
+				periodName: string;
 				/** Format: int64 */
 				rowVersion: number;
-				startTime: string;
-				/** Format: int32 */
-				subjectGroupDisplayOrder?: number | null;
+				schedulingMode: null | components['schemas']['ActivitySchedulingMode'];
 				/** Format: uuid */
-				subjectGroupId?: string | null;
-				subjectGroupName?: string | null;
-				/**
-				 * Format: uuid
-				 * @description Stable catalog identity. A selected version is represented by its display label only.
-				 */
-				subjectId?: string | null;
-				subjectVersionDisplayLabel?: string | null;
+				seriesId: string | null;
+				startTime: string;
+				structuralKind: null | components['schemas']['TimetableStructuralKind'];
+				syncStates: components['schemas']['TimetableBlockSyncState'][];
+				teachers: components['schemas']['TimetableBlockTeacher'][];
 				/** Format: uuid */
 				timetableVersionId: string;
-				title?: string | null;
+				title: string | null;
 				/** Format: date-time */
 				updatedAt: string;
-			}[];
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_Vec_TimetableOccupancyCell: {
-			data: {
-				/** Format: uuid */
-				bellSchedulePeriodId: string;
-				dayOfWeek: string;
-				/** Format: uuid */
-				entryId: string;
-				homeroomIds: string[];
-				instructorIds: string[];
-				/** Format: uuid */
-				learningGroupId?: string | null;
-				/** Format: uuid */
-				roomId?: string | null;
 			}[];
 			message?: string;
 			success: boolean;
@@ -9165,18 +9067,6 @@ export interface components {
 				/** Format: uuid */
 				user_id: string;
 			}[];
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_WholeSchoolTimetableOverview: {
-			data: {
-				dayOfWeek: string;
-				issues: components['schemas']['WholeSchoolTimetableIssue'][];
-				periods: components['schemas']['BellSchedulePeriod'][];
-				rows: components['schemas']['WholeSchoolTimetableRow'][];
-				summary: components['schemas']['WholeSchoolTimetableSummary'];
-				version: components['schemas']['TimetableVersion'];
-			};
 			message?: string;
 			success: boolean;
 		};
@@ -9376,11 +9266,6 @@ export interface components {
 		AttachSchoolFontBatchRequest: {
 			fileIds: string[];
 			rightsConfirmed?: boolean;
-		};
-		BatchTimetableResult: {
-			/** Format: uuid */
-			batchId: string;
-			entries: components['schemas']['TimetableEntry'][];
 		};
 		BellSchedule: {
 			/** Format: uuid */
@@ -10350,12 +10235,6 @@ export interface components {
 			/** Format: int64 */
 			sourceRowVersion: number;
 		};
-		ConflictInfo: {
-			conflictType: components['schemas']['TimetableConflictType'];
-			/** Format: uuid */
-			existingEntryId: string | null;
-			message: string;
-		};
 		CourseGradingPolicy: {
 			passingScore?: string | null;
 			policyCode: string;
@@ -10457,22 +10336,6 @@ export interface components {
 			name: string;
 			schedulingMode: string;
 			termCode?: string | null;
-		};
-		CreateBatchTimetableEntriesRequest: {
-			/** Format: uuid */
-			academicTermId: string;
-			bellSchedulePeriodIds: string[];
-			daysOfWeek: string[];
-			entryType: string;
-			homeroomIds?: string[];
-			instructorIds?: string[];
-			learningGroupIds?: string[];
-			note?: string | null;
-			/** Format: uuid */
-			roomId?: string | null;
-			/** Format: uuid */
-			timetableVersionId: string;
-			title?: string | null;
 		};
 		CreateBellScheduleRequest: {
 			/** Format: uuid */
@@ -10637,6 +10500,21 @@ export interface components {
 			name: string;
 			name_en?: string | null;
 		};
+		CreateOrdinaryTimetableBlockRequest: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			bellSchedulePeriodId: string;
+			dayOfWeek: string;
+			instructorIds: string[];
+			/** Format: uuid */
+			learningGroupId: string;
+			note?: string | null;
+			/** Format: uuid */
+			roomId: string | null;
+			/** Format: uuid */
+			timetableVersionId: string;
+		};
 		CreateOrganizationUnitRequest: {
 			category?: string | null;
 			code: string;
@@ -10704,6 +10582,22 @@ export interface components {
 			staff_info?: null | components['schemas']['CreateStaffInfoRequest'];
 			title?: string | null;
 			username?: string | null;
+		};
+		CreateStructuralTimetableBlocksRequest: {
+			/** Format: uuid */
+			academicTermId: string;
+			allHomerooms?: boolean;
+			allTeachers?: boolean;
+			homeroomIds?: string[];
+			note?: string | null;
+			/** Format: uuid */
+			roomId: string | null;
+			slots: components['schemas']['TimetableStructuralSlotInput'][];
+			structuralKind: components['schemas']['TimetableStructuralKind'];
+			teacherIds?: string[];
+			/** Format: uuid */
+			timetableVersionId: string;
+			title: string;
 		};
 		CreateStudentAcademicYearRequest: {
 			/** Format: uuid */
@@ -10836,28 +10730,24 @@ export interface components {
 			/** Format: int32 */
 			stepOrder: number;
 		};
-		CreateTemplateRequest: {
-			description?: string | null;
-			name: string;
-		};
-		CreateTimetableEntryRequest: {
+		CreateSynchronizedTimetableBlockRequest: {
 			/** Format: uuid */
 			academicTermId: string;
 			/** Format: uuid */
 			bellSchedulePeriodId: string;
 			dayOfWeek: string;
-			entryType: string;
+			intendedHomeroomIds: string[];
 			/** Format: uuid */
-			homeroomId?: string | null;
-			instructorIds?: string[];
-			/** Format: uuid */
-			learningGroupId?: string | null;
+			learningOfferingId: string;
 			note?: string | null;
 			/** Format: uuid */
-			roomId?: string | null;
+			roomId: string | null;
 			/** Format: uuid */
 			timetableVersionId: string;
-			title?: string | null;
+		};
+		CreateTemplateRequest: {
+			description?: string | null;
+			name: string;
 		};
 		CurrentUserResponse: {
 			firstName: string;
@@ -12150,7 +12040,7 @@ export interface components {
 				/** Format: uuid */
 				templateId: string;
 				/** Format: uuid */
-				timetableEntryId?: string | null;
+				timetableBlockGroupId?: string | null;
 				/** Format: date-time */
 				updatedAt: string;
 			}[];
@@ -12194,66 +12084,29 @@ export interface components {
 				updatedAt: string;
 			}[];
 		};
-		ItemsData_TimetableEntry: {
+		ItemsData_SupervisionTimetableOption: {
 			items: {
 				/** Format: uuid */
-				academicTermId: string;
-				/** Format: uuid */
-				academicYearId: string;
-				/** Format: uuid */
-				activityId?: string | null;
-				activitySchedulingMode?: null | components['schemas']['ActivitySchedulingMode'];
-				activityVersionDisplayLabel?: string | null;
-				/** Format: uuid */
-				batchId?: string | null;
-				/** Format: uuid */
-				bellScheduleId: string;
-				/** Format: uuid */
 				bellSchedulePeriodId: string;
-				/** Format: date-time */
-				createdAt: string;
+				/** Format: uuid */
+				blockGroupId: string;
+				/** Format: uuid */
+				blockId: string;
 				dayOfWeek: string;
 				endTime: string;
-				entryType: string;
+				homeroomNames: string[];
 				/** Format: uuid */
-				homeroomId?: string | null;
-				homeroomName?: string | null;
+				learningGroupId: string;
+				learningGroupName: string;
 				/** Format: uuid */
-				id: string;
-				instructors: components['schemas']['TimetableInstructor'][];
-				isActive: boolean;
-				learningGroupCode?: string | null;
-				/** Format: uuid */
-				learningGroupId?: string | null;
-				learningGroupName?: string | null;
-				note?: string | null;
-				offeringCode?: string | null;
-				/** Format: uuid */
-				offeringId?: string | null;
-				offeringName?: string | null;
-				periodName?: string | null;
-				roomCode?: string | null;
-				/** Format: uuid */
-				roomId?: string | null;
-				/** Format: int64 */
-				rowVersion: number;
-				startTime: string;
+				learningOfferingId: string;
+				offeringCode: string;
+				offeringName: string;
+				periodName: string;
 				/** Format: int32 */
-				subjectGroupDisplayOrder?: number | null;
-				/** Format: uuid */
-				subjectGroupId?: string | null;
-				subjectGroupName?: string | null;
-				/**
-				 * Format: uuid
-				 * @description Stable catalog identity. A selected version is represented by its display label only.
-				 */
-				subjectId?: string | null;
-				subjectVersionDisplayLabel?: string | null;
-				/** Format: uuid */
-				timetableVersionId: string;
-				title?: string | null;
-				/** Format: date-time */
-				updatedAt: string;
+				periodOrderIndex: number;
+				roomName?: string | null;
+				startTime: string;
 			}[];
 		};
 		LearningDeliveryOverview: {
@@ -12415,7 +12268,7 @@ export interface components {
 			source?: string | null;
 			subjectName?: string | null;
 			/** Format: uuid */
-			timetableEntryId?: string | null;
+			timetableBlockGroupId?: string | null;
 		};
 		ListMembersQuery: {
 			include_children?: boolean | null;
@@ -12556,15 +12409,6 @@ export interface components {
 		MoveItemToGroupRequest: {
 			/** Format: uuid */
 			group_id: string;
-		};
-		MoveValidityCell: {
-			/** Format: uuid */
-			bellSchedulePeriodId: string;
-			conflicts: components['schemas']['ConflictInfo'][];
-			dayOfWeek: string;
-			state: components['schemas']['TimetablePlacementState'];
-			/** Format: uuid */
-			targetEntryId: string | null;
 		};
 		Notification: {
 			/** Format: date-time */
@@ -13046,6 +12890,17 @@ export interface components {
 			/** Format: int64 */
 			membershipRowVersion: number;
 		};
+		RemoveTimetableBlockTargetRequest: {
+			/** Format: int64 */
+			blockRowVersion: number;
+			/** Format: uuid */
+			targetId: string;
+			targetKind: components['schemas']['TimetableTargetKind'];
+			/** Format: int64 */
+			targetRowVersion: number;
+			/** Format: uuid */
+			timetableVersionId: string;
+		};
 		ReorderGroupsRequest: {
 			groups: components['schemas']['ReorderItem'][];
 		};
@@ -13115,12 +12970,27 @@ export interface components {
 			/** Format: date-time */
 			observedAt?: string | null;
 			/** Format: uuid */
-			timetableEntryId?: string | null;
+			timetableBlockGroupId?: string | null;
 		};
 		/** @enum {string} */
 		RequirementKind: 'required' | 'elective' | 'optional';
 		/** @enum {string} */
 		RequirementResourceKind: 'course' | 'activity';
+		RestoreTimetableBlockGroupRequest: {
+			/** Format: int64 */
+			blockRowVersion: number;
+			/** Format: uuid */
+			learningGroupId: string;
+			/** Format: uuid */
+			timetableVersionId: string;
+		};
+		RetryTimetableBlockSyncRequest: {
+			/** Format: int64 */
+			blockRowVersion: number;
+			learningGroupIds?: string[];
+			/** Format: uuid */
+			timetableVersionId: string;
+		};
 		ReturnCertificateIssueRequest: {
 			issueCodes: components['schemas']['CertificateIssueCode'][];
 			returnNote: string;
@@ -13924,7 +13794,7 @@ export interface components {
 			/** Format: uuid */
 			templateId: string;
 			/** Format: uuid */
-			timetableEntryId?: string | null;
+			timetableBlockGroupId?: string | null;
 			/** Format: date-time */
 			updatedAt: string;
 		};
@@ -14083,21 +13953,44 @@ export interface components {
 			| 'observed_teacher'
 			| 'permission'
 			| 'organization_position';
-		SwapTimetableEntriesRequest: {
+		SupervisionTimetableOption: {
 			/** Format: uuid */
-			entryAId: string;
-			/** Format: int64 */
-			entryARowVersion: number;
+			bellSchedulePeriodId: string;
 			/** Format: uuid */
-			entryBId: string;
+			blockGroupId: string;
+			/** Format: uuid */
+			blockId: string;
+			dayOfWeek: string;
+			endTime: string;
+			homeroomNames: string[];
+			/** Format: uuid */
+			learningGroupId: string;
+			learningGroupName: string;
+			/** Format: uuid */
+			learningOfferingId: string;
+			offeringCode: string;
+			offeringName: string;
+			periodName: string;
+			/** Format: int32 */
+			periodOrderIndex: number;
+			roomName?: string | null;
+			startTime: string;
+		};
+		SwapTimetableBlocksRequest: {
+			/** Format: uuid */
+			blockAId: string;
 			/** Format: int64 */
-			entryBRowVersion: number;
+			blockARowVersion: number;
+			/** Format: uuid */
+			blockBId: string;
+			/** Format: int64 */
+			blockBRowVersion: number;
 			/** Format: uuid */
 			timetableVersionId: string;
 		};
-		SwapTimetableEntriesResponse: {
-			entryA: components['schemas']['TimetableEntry'];
-			entryB: components['schemas']['TimetableEntry'];
+		SwapTimetableBlocksResponse: {
+			blockA: components['schemas']['TimetableBlock'];
+			blockB: components['schemas']['TimetableBlock'];
 		};
 		SyncExamSourcesRequest: {
 			previewToken: string;
@@ -14248,159 +14141,329 @@ export interface components {
 			/** Format: double */
 			offsetY: number;
 		};
-		/** @enum {string} */
-		TimetableConflictType:
-			| 'learning_group'
-			| 'homeroom'
-			| 'instructor'
-			| 'room'
-			| 'version'
-			| 'stale_entry';
-		TimetableEntry: {
+		TimetableBlock: {
 			/** Format: uuid */
 			academicTermId: string;
 			/** Format: uuid */
 			academicYearId: string;
 			/** Format: uuid */
-			activityId?: string | null;
-			activitySchedulingMode?: null | components['schemas']['ActivitySchedulingMode'];
-			activityVersionDisplayLabel?: string | null;
-			/** Format: uuid */
-			batchId?: string | null;
-			/** Format: uuid */
 			bellScheduleId: string;
 			/** Format: uuid */
 			bellSchedulePeriodId: string;
+			blockKind: components['schemas']['TimetableBlockKind'];
 			/** Format: date-time */
 			createdAt: string;
 			dayOfWeek: string;
 			endTime: string;
-			entryType: string;
-			/** Format: uuid */
-			homeroomId?: string | null;
-			homeroomName?: string | null;
+			groups: components['schemas']['TimetableBlockGroup'][];
+			homerooms: components['schemas']['TimetableBlockHomeroom'][];
 			/** Format: uuid */
 			id: string;
-			instructors: components['schemas']['TimetableInstructor'][];
 			isActive: boolean;
-			learningGroupCode?: string | null;
 			/** Format: uuid */
-			learningGroupId?: string | null;
-			learningGroupName?: string | null;
-			note?: string | null;
-			offeringCode?: string | null;
-			/** Format: uuid */
-			offeringId?: string | null;
-			offeringName?: string | null;
-			periodName?: string | null;
-			roomCode?: string | null;
-			/** Format: uuid */
-			roomId?: string | null;
+			learningOfferingId: string | null;
+			note: string | null;
+			offeringCode: string | null;
+			offeringName: string | null;
+			periodName: string;
 			/** Format: int64 */
 			rowVersion: number;
-			startTime: string;
-			/** Format: int32 */
-			subjectGroupDisplayOrder?: number | null;
+			schedulingMode: null | components['schemas']['ActivitySchedulingMode'];
 			/** Format: uuid */
-			subjectGroupId?: string | null;
-			subjectGroupName?: string | null;
-			/**
-			 * Format: uuid
-			 * @description Stable catalog identity. A selected version is represented by its display label only.
-			 */
-			subjectId?: string | null;
-			subjectVersionDisplayLabel?: string | null;
+			seriesId: string | null;
+			startTime: string;
+			structuralKind: null | components['schemas']['TimetableStructuralKind'];
+			syncStates: components['schemas']['TimetableBlockSyncState'][];
+			teachers: components['schemas']['TimetableBlockTeacher'][];
 			/** Format: uuid */
 			timetableVersionId: string;
-			title?: string | null;
+			title: string | null;
 			/** Format: date-time */
 			updatedAt: string;
 		};
-		TimetableInstructor: {
-			displayName: string;
-			role: string;
-			/** Format: int32 */
-			subjectGroupDisplayOrder?: number | null;
+		TimetableBlockConflict: {
+			code: string;
+			conflictType: components['schemas']['TimetableBlockConflictType'];
 			/** Format: uuid */
-			subjectGroupId?: string | null;
-			subjectGroupName?: string | null;
+			existingBlockId: string | null;
+			message: string;
 			/** Format: uuid */
-			userId: string;
+			targetId: string | null;
+			targetKind: null | components['schemas']['TimetableTargetKind'];
 		};
-		TimetableOccupancyCell: {
-			/** Format: uuid */
-			bellSchedulePeriodId: string;
-			dayOfWeek: string;
-			/** Format: uuid */
-			entryId: string;
+		/** @enum {string} */
+		TimetableBlockConflictType:
+			| 'learning_group'
+			| 'homeroom'
+			| 'teacher'
+			| 'room'
+			| 'version'
+			| 'stale_block'
+			| 'missing_instructor'
+			| 'outside_scope';
+		TimetableBlockGroup: {
+			code: string;
 			homeroomIds: string[];
-			instructorIds: string[];
 			/** Format: uuid */
-			learningGroupId?: string | null;
+			id: string;
+			instructors: components['schemas']['TimetableBlockInstructor'][];
+			isActive: boolean;
 			/** Format: uuid */
-			roomId?: string | null;
+			learningGroupId: string;
+			/** Format: uuid */
+			learningOfferingId: string;
+			name: string;
+			roomCode: string | null;
+			/** Format: uuid */
+			roomId: string | null;
+			/** Format: int64 */
+			rowVersion: number;
+			syncStatus: null | components['schemas']['TimetableBlockSyncStatus'];
 		};
-		TimetablePlacementCandidate: {
-			entryType: string;
+		TimetableBlockHomeroom: {
+			code: string;
 			/** Format: uuid */
-			homeroomId: string | null;
-			instructorIds: string[];
+			homeroomId: string;
+			/** Format: uuid */
+			id: string;
+			isActive: boolean;
+			name: string;
+			roomCode: string | null;
+			/** Format: uuid */
+			roomId: string | null;
+			/** Format: int64 */
+			rowVersion: number;
+		};
+		TimetableBlockInstructor: {
+			displayName: string;
+			/** Format: int32 */
+			orderIndex: number;
+			role: string;
+			/** Format: uuid */
+			teacherId: string;
+		};
+		/** @enum {string} */
+		TimetableBlockKind: 'course' | 'activity' | 'structural';
+		/** @enum {string} */
+		TimetableBlockMutationKind: 'create' | 'update' | 'move' | 'swap';
+		TimetableBlockPlacementCandidate: {
+			blockKind: components['schemas']['TimetableBlockKind'];
+			homeroomIds?: string[];
+			instructorIds?: string[];
 			/** Format: uuid */
 			learningGroupId: string | null;
 			/** Format: uuid */
 			learningOfferingId: string | null;
 			/** Format: uuid */
 			roomId: string | null;
+			teacherIds?: string[];
 		};
-		/** @enum {string} */
-		TimetablePlacementMutationKind: 'create' | 'update' | 'move' | 'swap';
-		TimetablePlacementPreview: {
-			conflicts: components['schemas']['ConflictInfo'][];
-			mutation?: null | components['schemas']['TimetablePlacementMutationKind'];
-			normalizedCandidate: components['schemas']['TimetablePlacementCandidate'];
+		TimetableBlockPlacementPreview: {
+			conflicts: components['schemas']['TimetableBlockConflict'][];
+			mutation: null | components['schemas']['TimetableBlockMutationKind'];
+			normalizedCandidate: components['schemas']['TimetableBlockPlacementCandidate'];
 			/** Format: uuid */
-			sourceEntryId: string | null;
-			state: components['schemas']['TimetablePlacementState'];
+			sourceBlockId: string | null;
+			state: components['schemas']['TimetableBlockPlacementState'];
 			/** Format: uuid */
 			targetBellSchedulePeriodId: string;
-			targetDayOfWeek: string;
 			/** Format: uuid */
-			targetEntryId: string | null;
+			targetBlockId: string | null;
+			targetDayOfWeek: string;
 		};
-		TimetablePlacementPreviewRequest: {
+		TimetableBlockPlacementPreviewRequest: {
 			/** Format: uuid */
 			academicTermId: string;
-			candidate: components['schemas']['TimetablePlacementCandidate'];
+			candidate: components['schemas']['TimetableBlockPlacementCandidate'];
 			/** Format: uuid */
-			expectedTargetEntryId?: string | null;
+			expectedTargetBlockId?: string | null;
 			/** Format: int64 */
 			expectedTargetRowVersion?: number | null;
-			source: components['schemas']['TimetablePlacementSource'];
+			source: components['schemas']['TimetableBlockPlacementSource'];
 			/** Format: uuid */
 			targetBellSchedulePeriodId: string;
 			targetDayOfWeek: string;
 			/** Format: uuid */
 			timetableVersionId: string;
 		};
-		TimetablePlacementSource:
+		TimetableBlockPlacementSource:
 			| {
 					/** Format: uuid */
-					entryId: string;
+					blockId: string;
 					/** @enum {string} */
-					kind: 'existing_entry';
+					kind: 'existing_block';
 					/** Format: int64 */
 					rowVersion: number;
 			  }
 			| {
 					/** @enum {string} */
-					kind: 'unscheduled_demand';
+					kind: 'ordinary_demand';
 					/** Format: uuid */
 					learningGroupId: string;
 					/** Format: uuid */
 					learningOfferingId: string;
+			  }
+			| {
+					/** @enum {string} */
+					kind: 'synchronized_offering';
+					/** Format: uuid */
+					learningOfferingId: string;
 			  };
 		/** @enum {string} */
-		TimetablePlacementState: 'source' | 'move' | 'swap' | 'blocked';
+		TimetableBlockPlacementState: 'source' | 'move' | 'swap' | 'blocked';
+		TimetableBlockSummary: {
+			/** Format: int32 */
+			blockCount: number;
+			/** Format: int32 */
+			conflictGroupCount: number;
+			/** Format: int32 */
+			excludedGroupCount: number;
+			/** Format: int32 */
+			linkedGroupCount: number;
+			/** Format: int32 */
+			ordinaryDemandCount: number;
+			/** Format: int32 */
+			synchronizedDemandCount: number;
+			/** Format: int32 */
+			waitingGroupCount: number;
+		};
+		TimetableBlockSyncState: {
+			/** Format: int64 */
+			attemptedGroupRowVersion: number | null;
+			conflictCode: string | null;
+			conflictMessage: string | null;
+			/** Format: uuid */
+			id: string;
+			/** Format: uuid */
+			learningGroupId: string;
+			/** Format: uuid */
+			learningOfferingId: string;
+			/** Format: uuid */
+			linkedBlockGroupId: string | null;
+			/** Format: int64 */
+			rowVersion: number;
+			status: components['schemas']['TimetableBlockSyncStatus'];
+		};
+		/** @enum {string} */
+		TimetableBlockSyncStatus:
+			| 'linked'
+			| 'waiting_for_data'
+			| 'conflict'
+			| 'outside_scope'
+			| 'excluded';
+		TimetableBlockTeacher: {
+			displayName: string;
+			/** Format: uuid */
+			id: string;
+			isActive: boolean;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: uuid */
+			teacherId: string;
+		};
+		TimetableBlockWorkspace: {
+			bellPeriods: components['schemas']['BellSchedulePeriod'][];
+			blocks: components['schemas']['TimetableBlock'][];
+			homerooms: components['schemas']['TimetableBlockWorkspaceHomeroom'][];
+			learningGroups: components['schemas']['TimetableBlockWorkspaceLearningGroup'][];
+			ordinaryDemands: components['schemas']['TimetableOrdinaryDemand'][];
+			rooms: components['schemas']['TimetableBlockWorkspaceRoom'][];
+			staff: components['schemas']['TimetableBlockWorkspaceStaff'][];
+			summary: components['schemas']['TimetableBlockSummary'];
+			synchronizedDemands: components['schemas']['TimetableSynchronizedDemand'][];
+			version: components['schemas']['TimetableVersion'];
+		};
+		TimetableBlockWorkspaceHomeroom: {
+			code: string;
+			/** Format: uuid */
+			gradeLevelId: string;
+			gradeLevelType: string;
+			/** Format: int32 */
+			gradeLevelYear: number;
+			/** Format: uuid */
+			id: string;
+			isActive: boolean;
+			name: string;
+			roomNumber: string | null;
+		};
+		TimetableBlockWorkspaceLearningGroup: {
+			code: string;
+			eligibleInstructors: components['schemas']['TimetableBlockInstructor'][];
+			homeroomIds: string[];
+			/** Format: uuid */
+			id: string;
+			/** Format: uuid */
+			learningOfferingId: string;
+			name: string;
+			offeringCode: string;
+			offeringKind: string;
+			offeringName: string;
+			rosterStatus: string;
+			status: string;
+		};
+		TimetableBlockWorkspaceRoom: {
+			code: string | null;
+			/** Format: uuid */
+			id: string;
+			name: string;
+			status: string;
+		};
+		TimetableBlockWorkspaceStaff: {
+			displayName: string;
+			/** Format: uuid */
+			id: string;
+			status: string;
+		};
+		TimetableOrdinaryDemand: {
+			eligibleInstructors: components['schemas']['TimetableBlockInstructor'][];
+			homeroomIds: string[];
+			/** Format: uuid */
+			learningGroupId: string;
+			/** Format: uuid */
+			learningOfferingId: string;
+			offeringCode: string;
+			offeringName: string;
+			/** Format: int32 */
+			remainingPeriods: number;
+			/** Format: int32 */
+			requiredPeriods: number;
+			/** Format: int32 */
+			scheduledPeriods: number;
+		};
+		/** @enum {string} */
+		TimetableStructuralKind:
+			| 'break'
+			| 'homeroom'
+			| 'flag_ceremony'
+			| 'teacher_meeting'
+			| 'academic'
+			| 'other';
+		TimetableStructuralSlotInput: {
+			/** Format: uuid */
+			bellSchedulePeriodId: string;
+			dayOfWeek: string;
+		};
+		TimetableSynchronizedDemand: {
+			/** Format: int32 */
+			conflictGroupCount: number;
+			/** Format: int32 */
+			excludedGroupCount: number;
+			intendedHomeroomIds: string[];
+			/** Format: uuid */
+			learningOfferingId: string;
+			/** Format: int32 */
+			linkedGroupCount: number;
+			offeringCode: string;
+			offeringName: string;
+			/** Format: int32 */
+			pendingGroupCount: number;
+			/** Format: int32 */
+			requiredPeriods: number;
+			/** Format: int32 */
+			scheduledPeriods: number;
+		};
+		/** @enum {string} */
+		TimetableTargetKind: 'group' | 'homeroom' | 'teacher';
 		TimetableTemplate: {
 			/** Format: date-time */
 			createdAt: string;
@@ -14439,22 +14502,6 @@ export interface components {
 			roomNumber?: string | null;
 			/** Format: uuid */
 			studyProgramId?: string | null;
-		};
-		TimetableUnscheduledDemand: {
-			eligibleInstructorIds: string[];
-			homeroomIds: string[];
-			/** Format: uuid */
-			learningGroupId: string;
-			/** Format: uuid */
-			learningOfferingId: string;
-			offeringCode: string;
-			offeringName: string;
-			/** Format: int32 */
-			remainingPeriods: number;
-			/** Format: int32 */
-			requiredPeriods: number;
-			/** Format: int32 */
-			scheduledPeriods: number;
 		};
 		TimetableVersion: {
 			/** Format: uuid */
@@ -14502,57 +14549,6 @@ export interface components {
 			timetableVersionId: string;
 			/** Format: int32 */
 			weeklyPeriodTarget: number;
-		};
-		TimetableWorkspace: {
-			bellPeriods: components['schemas']['BellSchedulePeriod'][];
-			entries: components['schemas']['TimetableEntry'][];
-			homerooms: components['schemas']['TimetableWorkspaceHomeroom'][];
-			learningGroups: components['schemas']['TimetableWorkspaceLearningGroup'][];
-			rooms: components['schemas']['TimetableWorkspaceRoom'][];
-			staff: components['schemas']['TimetableWorkspaceStaff'][];
-			unscheduledDemands: components['schemas']['TimetableUnscheduledDemand'][];
-			version: components['schemas']['TimetableVersion'];
-		};
-		TimetableWorkspaceHomeroom: {
-			code: string;
-			/** Format: uuid */
-			gradeLevelId: string;
-			gradeLevelType: string;
-			/** Format: int32 */
-			gradeLevelYear: number;
-			/** Format: uuid */
-			id: string;
-			isActive: boolean;
-			name: string;
-			roomNumber: string | null;
-		};
-		TimetableWorkspaceLearningGroup: {
-			code: string;
-			eligibleInstructorIds: string[];
-			homeroomIds: string[];
-			/** Format: uuid */
-			id: string;
-			/** Format: uuid */
-			learningOfferingId: string;
-			name: string;
-			offeringCode: string;
-			offeringKind: string;
-			offeringName: string;
-			rosterStatus: string;
-			status: string;
-		};
-		TimetableWorkspaceRoom: {
-			code: string | null;
-			/** Format: uuid */
-			id: string;
-			name: string;
-			status: string;
-		};
-		TimetableWorkspaceStaff: {
-			displayName: string;
-			/** Format: uuid */
-			id: string;
-			status: string;
 		};
 		TransferHomeroomPlacementRequest: {
 			/** Format: int32 */
@@ -14846,7 +14842,7 @@ export interface components {
 			/** Format: date-time */
 			observedAt?: string | null;
 			/** Format: uuid */
-			timetableEntryId?: string | null;
+			timetableBlockGroupId?: string | null;
 		};
 		UpdateRoleRequest: {
 			description?: string | null;
@@ -14967,7 +14963,7 @@ export interface components {
 			/** Format: uuid */
 			templateId?: string | null;
 			/** Format: uuid */
-			timetableEntryId?: string | null;
+			timetableBlockGroupId?: string | null;
 		};
 		UpdateSupervisionTemplateRequest: {
 			description?: string | null;
@@ -14984,11 +14980,12 @@ export interface components {
 			description?: string | null;
 			name?: string | null;
 		};
-		UpdateTimetableEntryRequest: {
+		UpdateTimetableBlockRequest: {
 			/** Format: uuid */
 			bellSchedulePeriodId?: string | null;
-			clearNote?: boolean | null;
-			clearRoom?: boolean | null;
+			clearNote?: boolean;
+			clearRoom?: boolean;
+			clearTitle?: boolean;
 			dayOfWeek?: string | null;
 			instructorIds?: string[] | null;
 			note?: string | null;
@@ -15151,96 +15148,8 @@ export interface components {
 			/** Format: uuid */
 			id: string;
 		};
-		ValidateMovesRequest: {
-			/** Format: uuid */
-			academicTermId: string;
-			/** Format: uuid */
-			entryId: string;
-			/** Format: uuid */
-			timetableVersionId: string;
-		};
 		/** @enum {string} */
 		VersionStatus: 'draft' | 'published' | 'archived';
-		WholeSchoolTimetableCell: {
-			/** Format: uuid */
-			bellSchedulePeriodId: string;
-			lessons: components['schemas']['WholeSchoolTimetableLesson'][];
-		};
-		WholeSchoolTimetableIssue: {
-			/** Format: uuid */
-			bellSchedulePeriodId: string | null;
-			entryIds: string[];
-			homeroomIds: string[];
-			instructorIds: string[];
-			kind: components['schemas']['WholeSchoolTimetableIssueKind'];
-			/** Format: uuid */
-			learningGroupId: string | null;
-			message: string;
-			/** Format: uuid */
-			roomId: string | null;
-			severity: components['schemas']['WholeSchoolTimetableIssueSeverity'];
-		};
-		/** @enum {string} */
-		WholeSchoolTimetableIssueKind:
-			| 'homeroom_conflict'
-			| 'instructor_conflict'
-			| 'room_conflict'
-			| 'unscheduled_demand'
-			| 'over_scheduled_demand'
-			| 'missing_instructor'
-			| 'missing_room'
-			| 'unresolved_teacher_handoff';
-		/** @enum {string} */
-		WholeSchoolTimetableIssueSeverity: 'blocking' | 'warning';
-		WholeSchoolTimetableLesson: {
-			coveredHomeroomIds: string[];
-			/** Format: uuid */
-			entryId: string;
-			entryType: string;
-			instructors: components['schemas']['TimetableInstructor'][];
-			isSharedGroup: boolean;
-			learningGroupCode: string | null;
-			/** Format: uuid */
-			learningGroupId: string | null;
-			learningGroupName: string | null;
-			offeringCode: string | null;
-			offeringName: string | null;
-			roomCode: string | null;
-			/** Format: uuid */
-			roomId: string | null;
-			title: string | null;
-		};
-		WholeSchoolTimetableOverview: {
-			dayOfWeek: string;
-			issues: components['schemas']['WholeSchoolTimetableIssue'][];
-			periods: components['schemas']['BellSchedulePeriod'][];
-			rows: components['schemas']['WholeSchoolTimetableRow'][];
-			summary: components['schemas']['WholeSchoolTimetableSummary'];
-			version: components['schemas']['TimetableVersion'];
-		};
-		WholeSchoolTimetableRow: {
-			cells: components['schemas']['WholeSchoolTimetableCell'][];
-			gradeLevelType: string;
-			/** Format: int32 */
-			gradeLevelYear: number;
-			homeroomCode: string;
-			/** Format: uuid */
-			homeroomId: string;
-			homeroomName: string;
-			roomNumber: string | null;
-		};
-		WholeSchoolTimetableSummary: {
-			/** Format: int32 */
-			blockingIssueCount: number;
-			/** Format: int32 */
-			homeroomCount: number;
-			/** Format: int32 */
-			issueCount: number;
-			/** Format: int32 */
-			uniqueLessonCount: number;
-			/** Format: int32 */
-			warningIssueCount: number;
-		};
 	};
 	responses: never;
 	parameters: never;
@@ -24022,34 +23931,37 @@ export interface operations {
 			};
 		};
 	};
-	listTimetableEntries: {
+	updateTimetableBlock: {
 		parameters: {
-			query: {
-				academicTermId: string;
-				dayOfWeek?: string;
-				entryType?: string;
-				homeroomId?: string;
-				instructorId?: string;
-				learningGroupId?: string;
-				roomId?: string;
-				timetableVersionId: string;
-			};
+			query?: never;
 			header?: never;
-			path?: never;
+			path: {
+				block_id: string;
+			};
 			cookie?: never;
 		};
-		requestBody?: never;
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateTimetableBlockRequest'];
+			};
+		};
 		responses: {
-			/** @description Timetable entries in the selected term */
 			200: {
 				headers: {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_TimetableEntry'];
+					'application/json': components['schemas']['ApiResponse_TimetableBlock'];
 				};
 			};
-			/** @description Authentication required */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -24058,8 +23970,23 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Timetable read permission denied */
 			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -24069,7 +23996,170 @@ export interface operations {
 			};
 		};
 	};
-	createTimetableEntry: {
+	deleteTimetableBlock: {
+		parameters: {
+			query: {
+				rowVersion: number;
+				timetableVersionId: string;
+			};
+			header?: never;
+			path: {
+				block_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TimetableBlock'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	restoreTimetableBlockGroup: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				block_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['RestoreTimetableBlockGroupRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TimetableBlock'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	retryTimetableBlockSync: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				block_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['RetryTimetableBlockSyncRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TimetableBlock'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	removeTimetableBlockTarget: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				block_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['RemoveTimetableBlockTargetRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TimetableBlock'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	clearTimetable: {
 		parameters: {
 			query?: never;
 			header?: never;
@@ -24078,20 +24168,20 @@ export interface operations {
 		};
 		requestBody: {
 			content: {
-				'application/json': components['schemas']['CreateTimetableEntryRequest'];
+				'application/json': components['schemas']['ClearTimetableRequest'];
 			};
 		};
 		responses: {
-			/** @description Created timetable entry */
+			/** @description Cleared timetable blocks */
 			200: {
 				headers: {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiResponse_TimetableEntry'];
+					'application/json': components['schemas']['ApiResponse_Vec_TimetableBlock'];
 				};
 			};
-			/** @description Invalid timetable entry */
+			/** @description Invalid clear request */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -24118,8 +24208,336 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Timetable conflict */
+		};
+	};
+	createOrdinaryTimetableBlock: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateOrdinaryTimetableBlockRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TimetableBlock'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	previewTimetableBlockPlacement: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['TimetableBlockPlacementPreviewRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TimetableBlockPlacementPreview'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteTimetableBlockSeries: {
+		parameters: {
+			query: {
+				timetableVersionId: string;
+			};
+			header?: never;
+			path: {
+				series_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_TimetableBlock'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createStructuralTimetableBlocks: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateStructuralTimetableBlocksRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_TimetableBlock'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	swapTimetableBlocks: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SwapTimetableBlocksRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SwapTimetableBlocksResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createSynchronizedTimetableBlock: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateSynchronizedTimetableBlockRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TimetableBlock'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getTimetableBlockWorkspace: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+				timetableVersionId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TimetableBlockWorkspace'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -24657,294 +25075,6 @@ export interface operations {
 			};
 		};
 	};
-	updateTimetableEntry: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Timetable entry ID */
-				entry_id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['UpdateTimetableEntryRequest'];
-			};
-		};
-		responses: {
-			/** @description Updated timetable entry */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_TimetableEntry'];
-				};
-			};
-			/** @description Invalid timetable update */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Timetable manage permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Timetable entry not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Stale version or timetable conflict */
-			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	deleteTimetableEntry: {
-		parameters: {
-			query: {
-				rowVersion: number;
-				timetableVersionId: string;
-			};
-			header?: never;
-			path: {
-				/** @description Timetable entry ID */
-				entry_id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Deactivated timetable entry */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_TimetableEntry'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Timetable manage permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Timetable entry not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Stale timetable entry version */
-			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	createBatchTimetableEntries: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['CreateBatchTimetableEntriesRequest'];
-			};
-		};
-		responses: {
-			/** @description Created timetable entries */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_BatchTimetableResult'];
-				};
-			};
-			/** @description Invalid timetable batch */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Timetable manage permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Timetable conflict */
-			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	deleteTimetableBatch: {
-		parameters: {
-			query: {
-				timetableVersionId: string;
-			};
-			header?: never;
-			path: {
-				/** @description Timetable batch ID */
-				batch_id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Deactivated timetable batch */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_TimetableEntry'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Timetable manage permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	clearTimetable: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['ClearTimetableRequest'];
-			};
-		};
-		responses: {
-			/** @description Cleared timetable entries */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_TimetableEntry'];
-				};
-			};
-			/** @description Invalid clear request */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Timetable manage permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
 	getDailyTeachingOverview: {
 		parameters: {
 			query: {
@@ -24964,330 +25094,6 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['ApiResponse_DailyTeachingOverview'];
-				};
-			};
-		};
-	};
-	getTimetableOccupancy: {
-		parameters: {
-			query: {
-				academicTermId: string;
-				timetableVersionId: string;
-			};
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Timetable occupancy for the selected term */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_TimetableOccupancyCell'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Timetable read permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	previewTimetablePlacement: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['TimetablePlacementPreviewRequest'];
-			};
-		};
-		responses: {
-			/** @description Authoritative placement, move, or swap preview */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_TimetablePlacementPreview'];
-				};
-			};
-			/** @description Invalid placement shape or academic context */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Timetable manage permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Timetable version, group, or entry not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	swapTimetableEntries: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['SwapTimetableEntriesRequest'];
-			};
-		};
-		responses: {
-			/** @description Swapped timetable entries */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_SwapTimetableEntriesResponse'];
-				};
-			};
-			/** @description Invalid timetable swap */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Timetable manage permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Stale version or timetable conflict */
-			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	validateTimetableMoves: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['ValidateMovesRequest'];
-			};
-		};
-		responses: {
-			/** @description Valid timetable destinations */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_MoveValidityCell'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Timetable manage permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	getWholeSchoolTimetableOverview: {
-		parameters: {
-			query: {
-				academicTermId: string;
-				academicYearId: string;
-				dayOfWeek: string;
-				timetableVersionId: string;
-			};
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Read-only whole-school timetable overview for one selected day */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_WholeSchoolTimetableOverview'];
-				};
-			};
-			/** @description Invalid day or academic context */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Timetable read permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Timetable version not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	getTimetableWorkspace: {
-		parameters: {
-			query: {
-				academicTermId: string;
-				academicYearId: string;
-				timetableVersionId: string;
-			};
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Bounded timetable workspace for the selected version */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_TimetableWorkspace'];
-				};
-			};
-			/** @description Timetable version does not match the academic context */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Timetable read permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Timetable version not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
 		};
@@ -31291,25 +31097,14 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
-			/** @description Current staff or student timetable in the selected term */
 			200: {
 				headers: {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_TimetableEntry'];
+					'application/json': components['schemas']['ApiResponse_Vec_TimetableBlock'];
 				};
 			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Staff timetable access denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -32430,13 +32225,13 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
-			/** @description Linked child's timetable entries */
+			/** @description Linked child's timetable blocks */
 			200: {
 				headers: {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_TimetableEntry'];
+					'application/json': components['schemas']['ApiResponse_Vec_TimetableBlock'];
 				};
 			};
 			/** @description Authentication required */
@@ -35289,13 +35084,13 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
-			/** @description Timetable options for the observation */
+			/** @description Timetable block-group options for the observation */
 			200: {
 				headers: {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiResponse_ItemsData_TimetableEntry'];
+					'application/json': components['schemas']['ApiResponse_ItemsData_SupervisionTimetableOption'];
 				};
 			};
 			/** @description Authentication required */

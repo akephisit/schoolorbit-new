@@ -1,16 +1,15 @@
 <script lang="ts">
-	import { replaceState } from '$app/navigation';
-	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { onMount, tick } from 'svelte';
-	import { SvelteMap } from 'svelte/reactivity';
+	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import { getAcademicContextStore } from '$lib/academic-context/store';
 	import {
-		entriesForTimetableCell,
+		blockBelongsToRow,
+		blockHomeroomIds,
+		blockTeacherIds,
+		blocksForTimetableCell,
 		localPlacementPreview,
-		teacherPeriodCount,
 		type TimetablePageView
 	} from '$lib/academic/timetable/board-state';
 	import {
@@ -21,33 +20,32 @@
 	import { ApiClientError } from '$lib/api/client';
 	import { getAcademicTermChangeSet, type AcademicTermChangeSet } from '$lib/api/learning-delivery';
 	import {
-		createTimetableEntry,
-		currentLocalDate,
-		deleteTimetableEntry,
-		getTimetableWorkspace,
-		getWholeSchoolTimetableOverview,
+		createOrdinaryTimetableBlock,
+		createStructuralTimetableBlocks,
+		createSynchronizedTimetableBlock,
+		deleteTimetableBlock,
+		deleteTimetableBlockSeries,
+		getTimetableBlockWorkspace,
 		listTimetableVersions,
-		previewTimetablePlacement,
-		swapTimetableEntries,
-		updateTimetableEntry,
-		type TimetableEntry,
-		type TimetablePlacementCandidate,
-		type TimetablePlacementPreview,
-		type TimetablePlacementPreviewRequest,
-		type TimetablePlacementSource,
+		previewTimetableBlockPlacement,
+		removeTimetableBlockTarget,
+		swapTimetableBlocks,
+		updateTimetableBlock,
+		type CreateStructuralTimetableBlocksRequest,
+		type TimetableBlock,
+		type TimetableBlockPlacementCandidate,
+		type TimetableBlockPlacementPreview,
+		type TimetableBlockPlacementSource,
+		type TimetableStructuralKind,
+		type TimetableTargetKind,
 		type TimetableVersion,
-		type TimetableWorkspace,
-		type WholeSchoolTimetableOverview
+		type TimetableBlockWorkspace
 	} from '$lib/api/timetable';
 	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
 	import TimetableBoard from '$lib/components/academic/timetable/TimetableBoard.svelte';
 	import type { TimetableCellState } from '$lib/components/academic/timetable/TimetableCell.svelte';
-	import TimetableEntryInspector from '$lib/components/academic/timetable/TimetableEntryInspector.svelte';
 	import TimetableInstructorPicker from '$lib/components/academic/timetable/TimetableInstructorPicker.svelte';
-	import TimetableMoveDialog from '$lib/components/academic/timetable/TimetableMoveDialog.svelte';
-	import TimetableTeacherView from '$lib/components/academic/timetable/TimetableTeacherView.svelte';
 	import TimetableUnscheduledTray from '$lib/components/academic/timetable/TimetableUnscheduledTray.svelte';
-	import TimetableWholeSchoolOverview from '$lib/components/academic/timetable/TimetableWholeSchoolOverview.svelte';
 	import TimetableWorkspaceHeader from '$lib/components/academic/timetable/TimetableWorkspaceHeader.svelte';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
@@ -63,7 +61,10 @@
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import * as Dialog from '$lib/components/ui/dialog';
+	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
+	import { Textarea } from '$lib/components/ui/textarea';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { authStore } from '$lib/stores/auth';
 	import { can } from '$lib/stores/permissions';
@@ -74,19 +75,28 @@
 	} from '$lib/stores/timetable-socket';
 	import {
 		AlertTriangle,
+		Check,
 		FileSpreadsheet,
 		History,
 		LoaderCircle,
 		MousePointer2,
-		RefreshCw
+		Plus,
+		RefreshCw,
+		Trash2
 	} from 'lucide-svelte';
 
-	type InstructorOption = {
-		id: string;
-		displayName: string;
-		role: 'primary' | 'secondary' | 'assistant';
+	type RemovalMode = 'target' | 'block' | 'series';
+	type StructuralForm = {
+		kind: TimetableStructuralKind;
+		title: string;
+		note: string;
+		roomId: string;
+		allHomerooms: boolean;
+		allTeachers: boolean;
+		homeroomIds: string[];
+		teacherIds: string[];
+		slots: string[];
 	};
-
 	const missingGroupsPrerequisite: AcademicPrerequisite = {
 		key: 'timetable-learning-groups',
 		status: 'missing',
@@ -99,33 +109,40 @@
 		key: 'timetable-teachers',
 		status: 'warning',
 		title: 'บางกลุ่มยังไม่มีครูผู้สอน',
-		description: 'กำหนดครูในหน้าจัดการเรียนก่อนวางคาบ เพื่อให้ตรวจตารางชนได้ถูกต้อง',
+		description: 'กำหนดครูในหน้าจัดการเรียนก่อน เพื่อให้ระบบตรวจตารางครูชนได้ถูกต้อง',
 		actionLabel: 'ไปกำหนดครู',
 		href: '/staff/academic/delivery'
 	};
 	const missingPeriodsPrerequisite: AcademicPrerequisite = {
 		key: 'timetable-periods',
 		status: 'missing',
-		title: 'ยังไม่มีคาบเรียนในตารางเวลา',
-		description: 'ตั้งเวลาเริ่มและสิ้นสุดของแต่ละคาบก่อนจัดตารางสอน',
-		actionLabel: 'ไปตั้งค่าคาบเรียน',
+		title: 'ยังไม่มีคาบในตารางเวลา',
+		description: 'ตั้งชื่อ เวลาเริ่ม และเวลาสิ้นสุดของแต่ละคาบก่อนจัดตาราง',
+		actionLabel: 'ไปตั้งค่าคาบ',
 		href: '/staff/academic/core#bell-schedules'
 	};
 	const missingRoomsPrerequisite: AcademicPrerequisite = {
 		key: 'timetable-rooms',
 		status: 'warning',
 		title: 'ยังไม่มีห้องเรียนให้เลือก',
-		description: 'เพิ่มอาคารและห้องเรียนก่อนกำหนดห้องเฉพาะให้คาบ',
+		description: 'เพิ่มอาคารและห้องเรียนก่อน หากต้องการตรวจการใช้ห้องชนกัน',
 		actionLabel: 'ไปจัดการห้อง',
 		href: '/staff/facility/buildings'
 	};
 
+	const days = [
+		{ id: 'MON', label: 'จันทร์' },
+		{ id: 'TUE', label: 'อังคาร' },
+		{ id: 'WED', label: 'พุธ' },
+		{ id: 'THU', label: 'พฤหัสบดี' },
+		{ id: 'FRI', label: 'ศุกร์' }
+	];
+	const noRoomValue = '__none__';
 	const academicContext = getAcademicContextStore();
 	const academicTermId = $derived($academicContext.selected.academicTermId);
 	const academicYearId = $derived($academicContext.selected.academicYearId);
 	const request = new LatestRequest();
-	const overviewRequest = new LatestRequest();
-	const overviewCache = new SvelteMap<string, WholeSchoolTimetableOverview>();
+	const placementRequest = new LatestRequest();
 
 	let versions = $state<TimetableVersion[]>([]);
 	let controller = $state.raw<TimetableWorkspaceController | null>(null);
@@ -133,25 +150,22 @@
 	let loading = $state(false);
 	let busy = $state(false);
 	let previewing = $state(false);
+	let exportingTeacherLoad = $state(false);
 	let errorMessage = $state('');
 	let draftRevision = $state(0);
-	let inspectorOpen = $state(false);
-	let inspectorEntryId = $state<string | null>(null);
-	let moveDialogOpen = $state(false);
-	let moveEntryId = $state<string | null>(null);
-	let removeDialogOpen = $state(false);
-	let removeEntryId = $state<string | null>(null);
-	let teacherDialogOpen = $state(false);
-	let pendingDemandSource = $state.raw<TimetablePlacementSource | null>(null);
-	let pendingDemandCandidate = $state.raw<TimetablePlacementCandidate | null>(null);
-	let pendingDemandInstructorIds = $state<string[]>([]);
-	let teamMoveWarningShown = $state(false);
-	let isTeacherLoadExporting = $state(false);
 	let activeView = $state<TimetablePageView>('homeroom');
-	let selectedOverviewDay = $state('MON');
-	let wholeSchoolOverview = $state.raw<WholeSchoolTimetableOverview | null>(null);
-	let overviewLoading = $state(false);
-	let overviewErrorMessage = $state('');
+	let previewCellKey = $state('');
+	let selectedBlockId = $state<string | null>(null);
+	let editOpen = $state(false);
+	let editTitle = $state('');
+	let editNote = $state('');
+	let editRoomId = $state(noRoomValue);
+	let editInstructorIds = $state<string[]>([]);
+	let removeOpen = $state(false);
+	let removeMode = $state<RemovalMode>('block');
+	let structuralOpen = $state(false);
+	let structuralForm = $state<StructuralForm>(newStructuralForm());
+	let overviewDay = $state('MON');
 
 	const canRead = $derived(
 		$can.hasAny(
@@ -174,217 +188,102 @@
 			PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_ASSIGNED
 		)
 	);
+	const canEdit = $derived(Boolean(canManage && controller?.canEdit && !busy));
 	const selectedVersion = $derived(controller?.workspace.version ?? null);
 	let versionSelectValue = $derived(selectedVersion?.id ?? '');
-	const activeDraftVersion = $derived(
-		versions.find((version) => version.status === 'draft' && version.changeSetId) ?? null
-	);
-	const canEditSelected = $derived(
-		Boolean(canManage && controller?.canEdit && !busy && !previewing)
-	);
-	const groupsWithoutTeachers = $derived(
-		controller?.workspace.learningGroups.filter((group) => group.eligibleInstructorIds.length === 0)
-			.length ?? 0
-	);
-	const selectedEntry = $derived(
-		controller?.workspace.entries.find((entry) => entry.id === inspectorEntryId) ?? null
-	);
-	const moveEntry = $derived(
-		controller?.workspace.entries.find((entry) => entry.id === moveEntryId) ?? null
-	);
-	const removeEntry = $derived(
-		controller?.workspace.entries.find((entry) => entry.id === removeEntryId) ?? null
-	);
 	const selectedOwner = $derived(
 		controller?.rows.find((row) => row.id === controller?.selectedOwnerId) ?? null
 	);
-	const visibleDemands = $derived.by(() => {
+	const selectedBlock = $derived(
+		controller?.workspace.blocks.find((block) => block.id === selectedBlockId) ?? null
+	);
+	const activeDraftVersion = $derived(
+		versions.find((version) => version.status === 'draft' && version.changeSetId) ?? null
+	);
+	const groupsWithoutTeachers = $derived(
+		controller?.workspace.learningGroups.filter((group) => group.eligibleInstructors.length === 0)
+			.length ?? 0
+	);
+	const visibleOrdinaryDemands = $derived.by(() => {
 		if (!controller || !controller.selectedOwnerId) return [];
-		const current = controller;
-		const ownerId = controller.selectedOwnerId;
-		if (current.view === 'learning_group') {
-			return current.workspace.unscheduledDemands.filter(
-				(demand) => demand.learningGroupId === ownerId
+		if (controller.view === 'homeroom') {
+			return controller.workspace.ordinaryDemands.filter((demand) =>
+				demand.homeroomIds.includes(controller?.selectedOwnerId ?? '')
 			);
 		}
-		if (current.view === 'teacher') {
-			const groupIds = new Set(
-				current.workspace.learningGroups
-					.filter((group) => group.eligibleInstructorIds.includes(ownerId))
-					.map((group) => group.id)
-			);
-			return current.workspace.unscheduledDemands.filter((demand) =>
-				groupIds.has(demand.learningGroupId)
+		if (controller.view === 'teacher') {
+			return controller.workspace.ordinaryDemands.filter((demand) =>
+				demand.eligibleInstructors.some(
+					(teacher) => teacher.teacherId === controller?.selectedOwnerId
+				)
 			);
 		}
-		const groupIds = new Set(
-			current.workspace.learningGroups
-				.filter((group) => group.homeroomIds.includes(ownerId))
-				.map((group) => group.id)
-		);
-		return current.workspace.unscheduledDemands.filter((demand) =>
-			groupIds.has(demand.learningGroupId)
+		return controller.workspace.ordinaryDemands.filter(
+			(demand) => demand.learningGroupId === controller?.selectedOwnerId
 		);
 	});
-	const pendingDemandInstructorOptions = $derived(
-		pendingDemandCandidate?.learningGroupId
-			? instructorOptionsForGroup(pendingDemandCandidate.learningGroupId)
-			: []
-	);
+	const visibleSynchronizedDemands = $derived.by(() => {
+		if (!controller || !controller.selectedOwnerId) return [];
+		if (controller.view === 'homeroom') {
+			return controller.workspace.synchronizedDemands.filter((demand) =>
+				demand.intendedHomeroomIds.includes(controller?.selectedOwnerId ?? '')
+			);
+		}
+		return controller.workspace.synchronizedDemands;
+	});
 
-	function selectPreferredVersion(loadedVersions: TimetableVersion[]): TimetableVersion | null {
-		const requestedId = page.url.searchParams.get('timetableVersionId');
-		const explicit = loadedVersions.find((version) => version.id === requestedId);
-		if (explicit) return explicit;
-
-		const today = currentLocalDate();
-		const current = loadedVersions.find(
-			(version) =>
-				version.status === 'published' &&
-				(version.displayState === 'current' ||
-					(version.effectiveFrom <= today &&
-						(!version.effectiveUntil || version.effectiveUntil >= today)))
-		);
-		if (current) return current;
-
-		const upcoming = loadedVersions
-			.filter(
-				(version) =>
-					version.status === 'published' &&
-					(version.displayState === 'upcoming' || version.effectiveFrom > today)
-			)
-			.toSorted((left, right) => left.effectiveFrom.localeCompare(right.effectiveFrom))[0];
-		return upcoming ?? loadedVersions.find((version) => version.status === 'draft') ?? null;
-	}
-
-	function versionStatusLabel(version: TimetableVersion): string {
-		if (version.status === 'draft') return 'แบบร่าง';
-		if (version.status === 'cancelled') return 'ยกเลิกแล้ว';
-		if (version.displayState === 'current') return 'เผยแพร่แล้ว · กำลังใช้';
-		if (version.displayState === 'upcoming') return 'เผยแพร่แล้ว · รอเริ่มใช้';
-		return 'เผยแพร่แล้ว · ประวัติ';
-	}
-
-	function versionPeriodLabel(version: TimetableVersion): string {
-		return `${version.effectiveFrom} – ${version.effectiveUntil ?? 'ต่อเนื่อง'}`;
+	function newStructuralForm(): StructuralForm {
+		return {
+			kind: 'flag_ceremony',
+			title: 'กิจกรรมหน้าเสาธง',
+			note: '',
+			roomId: noRoomValue,
+			allHomerooms: true,
+			allTeachers: false,
+			homeroomIds: [],
+			teacherIds: [],
+			slots: []
+		};
 	}
 
 	function requestedView(): TimetablePageView {
-		const view = page.url.searchParams.get('view');
-		if (view === 'learningGroup') return 'learning_group';
-		if (view === 'teacher') return 'teacher';
-		if (view === 'wholeSchool') return 'wholeSchool';
-		return 'homeroom';
+		const value = page.url.searchParams.get('view');
+		return value === 'teacher' || value === 'learning_group' || value === 'wholeSchool'
+			? value
+			: 'homeroom';
 	}
 
-	function syncUrl(focusPeriodId: string | null = null): void {
-		if (!controller) return;
-		const nextUrl = new URL(page.url);
-		nextUrl.searchParams.set('timetableVersionId', controller.workspace.version.id);
-		const view =
-			activeView === 'wholeSchool'
-				? 'wholeSchool'
-				: controller.view === 'learning_group'
-					? 'learningGroup'
-					: controller.view === 'teacher'
-						? 'teacher'
-						: 'homeroom';
-		nextUrl.searchParams.set('view', view);
-		if (activeView !== 'wholeSchool' && controller.selectedOwnerId) {
-			nextUrl.searchParams.set('ownerId', controller.selectedOwnerId);
-		} else nextUrl.searchParams.delete('ownerId');
-		if (focusPeriodId) nextUrl.searchParams.set('focusPeriodId', focusPeriodId);
-		else nextUrl.searchParams.delete('focusPeriodId');
-		replaceState(
-			resolve(`/staff/academic/timetable?${nextUrl.searchParams.toString()}`),
-			page.state
+	function selectPreferredVersion(items: TimetableVersion[]): TimetableVersion | null {
+		const requested = page.url.searchParams.get('timetableVersionId');
+		return (
+			items.find((version) => version.id === requested) ??
+			items.find((version) => version.status === 'draft') ??
+			items.find((version) => version.displayState === 'current') ??
+			items[0] ??
+			null
 		);
 	}
 
-	function initializeController(workspace: TimetableWorkspace): TimetableWorkspaceController {
+	function versionLabel(version: TimetableVersion): string {
+		const state =
+			version.status === 'draft'
+				? 'แบบร่าง'
+				: version.status === 'published'
+					? 'เผยแพร่'
+					: 'ยกเลิก';
+		return `${state} · เริ่ม ${version.effectiveFrom}`;
+	}
+
+	function initializeController(workspace: TimetableBlockWorkspace): void {
 		const next = createTimetableWorkspaceController(workspace);
-		const view = requestedView();
-		activeView = view;
-		next.setView(view === 'wholeSchool' ? 'homeroom' : view);
+		activeView = requestedView();
+		next.setView(activeView === 'wholeSchool' ? 'homeroom' : activeView);
 		const ownerId = page.url.searchParams.get('ownerId');
-		if (ownerId && view !== 'wholeSchool') next.selectOwner(ownerId);
-		return next;
+		if (ownerId && activeView !== 'wholeSchool') next.selectOwner(ownerId);
+		controller = next;
 	}
 
-	function fetchWorkspace(
-		yearId: string,
-		termId: string,
-		versionId: string,
-		signal?: AbortSignal
-	): Promise<TimetableWorkspace> {
-		return getTimetableWorkspace(
-			{
-				academicYearId: yearId,
-				academicTermId: termId,
-				timetableVersionId: versionId
-			},
-			{ signal }
-		);
-	}
-
-	function overviewCacheKey(versionId: string, dayOfWeek: string): string {
-		return `${versionId}:${dayOfWeek}`;
-	}
-
-	function invalidateOverview(versionId: string): void {
-		for (const key of overviewCache.keys()) {
-			if (key.startsWith(`${versionId}:`)) overviewCache.delete(key);
-		}
-	}
-
-	async function loadWholeSchoolOverview(force = false): Promise<void> {
-		if (!controller || !academicYearId || !academicTermId || activeView !== 'wholeSchool') return;
-		const versionId = controller.workspace.version.id;
-		const dayOfWeek = selectedOverviewDay;
-		const key = overviewCacheKey(versionId, dayOfWeek);
-		if (!force) {
-			const cached = overviewCache.get(key);
-			if (cached) {
-				wholeSchoolOverview = cached;
-				overviewErrorMessage = '';
-				return;
-			}
-		}
-
-		const { revision, signal } = overviewRequest.begin();
-		overviewLoading = true;
-		overviewErrorMessage = '';
-		try {
-			const loaded = await getWholeSchoolTimetableOverview(
-				{
-					academicYearId,
-					academicTermId,
-					timetableVersionId: versionId,
-					dayOfWeek
-				},
-				{ signal }
-			);
-			if (!overviewRequest.isCurrent(revision)) return;
-			overviewCache.set(key, loaded);
-			wholeSchoolOverview = loaded;
-		} catch (error) {
-			if (!isAbortError(error) && overviewRequest.isCurrent(revision)) {
-				overviewErrorMessage =
-					error instanceof Error ? error.message : 'โหลดภาพรวมตารางสอนไม่สำเร็จ';
-			}
-		} finally {
-			if (overviewRequest.isCurrent(revision)) overviewLoading = false;
-		}
-	}
-
-	function changeOverviewDay(dayOfWeek: string): void {
-		if (dayOfWeek === selectedOverviewDay) return;
-		selectedOverviewDay = dayOfWeek;
-		wholeSchoolOverview = null;
-		void loadWholeSchoolOverview();
-	}
-
-	async function loadChangeSet(
+	function loadChangeSet(
 		version: TimetableVersion,
 		signal?: AbortSignal
 	): Promise<AcademicTermChangeSet | null> {
@@ -393,221 +292,162 @@
 			: Promise.resolve(null);
 	}
 
-	async function loadWorkspaceContext(termId: string, yearId: string): Promise<void> {
+	function syncUrl(): void {
+		if (!controller) return;
+		const next = new URL(page.url);
+		next.searchParams.set('timetableVersionId', controller.workspace.version.id);
+		next.searchParams.set('view', activeView);
+		if (activeView !== 'wholeSchool' && controller.selectedOwnerId) {
+			next.searchParams.set('ownerId', controller.selectedOwnerId);
+		} else {
+			next.searchParams.delete('ownerId');
+		}
+		window.history.replaceState(window.history.state, '', next);
+	}
+
+	async function loadContext(termId: string, yearId: string): Promise<void> {
 		const { revision, signal } = request.begin();
 		loading = true;
 		errorMessage = '';
 		try {
 			const loadedVersions = await listTimetableVersions(termId, { signal });
-			const preferred = selectPreferredVersion(loadedVersions);
-			if (!preferred) {
-				if (request.isCurrent(revision)) {
-					versions = loadedVersions;
-					controller = null;
-				}
+			const selected = selectPreferredVersion(loadedVersions);
+			if (!selected) {
+				if (!request.isCurrent(revision)) return;
+				versions = loadedVersions;
+				controller = null;
+				selectedChangeSet = null;
 				return;
 			}
-			const workspace = await fetchWorkspace(yearId, termId, preferred.id, signal);
+			const workspace = await getTimetableBlockWorkspace(
+				{ academicYearId: yearId, academicTermId: termId, timetableVersionId: selected.id },
+				{ signal }
+			);
 			const changeSet = await loadChangeSet(workspace.version, signal);
 			if (!request.isCurrent(revision)) return;
 			versions = loadedVersions;
-			controller = initializeController(workspace);
+			initializeController(workspace);
 			selectedChangeSet = changeSet;
 			draftRevision += 1;
 			syncUrl();
-			if (activeView === 'wholeSchool') void loadWholeSchoolOverview();
 		} catch (error) {
 			if (!isAbortError(error) && request.isCurrent(revision)) {
-				errorMessage = error instanceof Error ? error.message : 'โหลดพื้นที่จัดตารางสอนไม่สำเร็จ';
+				errorMessage = error instanceof Error ? error.message : 'โหลดตารางสอนไม่สำเร็จ';
 			}
 		} finally {
 			if (request.isCurrent(revision)) loading = false;
 		}
 	}
 
-	async function changeVersion(versionId: string, force = false): Promise<void> {
-		if (!academicYearId || !academicTermId || (!force && versionId === selectedVersion?.id)) return;
-		const version = versions.find((item) => item.id === versionId);
-		if (!version) return;
+	async function loadVersion(versionId: string, force = false): Promise<void> {
+		if (
+			!academicTermId ||
+			!academicYearId ||
+			(!force && versionId === controller?.workspace.version.id)
+		)
+			return;
 		const { revision, signal } = request.begin();
 		loading = true;
-		errorMessage = '';
 		try {
-			const workspace = await fetchWorkspace(academicYearId, academicTermId, version.id, signal);
+			const workspace = await getTimetableBlockWorkspace(
+				{ academicYearId, academicTermId, timetableVersionId: versionId },
+				{ signal }
+			);
 			const changeSet = await loadChangeSet(workspace.version, signal);
 			if (!request.isCurrent(revision)) return;
-			controller = initializeController(workspace);
+			initializeController(workspace);
 			selectedChangeSet = changeSet;
 			draftRevision += 1;
 			syncUrl();
-			if (activeView === 'wholeSchool') void loadWholeSchoolOverview();
 		} catch (error) {
 			if (!isAbortError(error) && request.isCurrent(revision)) {
-				errorMessage = error instanceof Error ? error.message : 'โหลดรุ่นตารางสอนไม่สำเร็จ';
-				toast.error(errorMessage);
+				toast.error(error instanceof Error ? error.message : 'เปลี่ยนรุ่นตารางสอนไม่สำเร็จ');
 			}
 		} finally {
 			if (request.isCurrent(revision)) loading = false;
 		}
 	}
 
-	async function reloadSelectedWorkspace(message?: string): Promise<void> {
-		if (!controller || !academicYearId || !academicTermId) return;
-		const versionId = controller.workspace.version.id;
+	async function reload(message?: string): Promise<void> {
+		if (!controller || !academicTermId || !academicYearId) return;
 		controller.setRefreshing(true);
 		try {
-			const workspace = await fetchWorkspace(academicYearId, academicTermId, versionId);
+			const workspace = await getTimetableBlockWorkspace({
+				academicYearId,
+				academicTermId,
+				timetableVersionId: controller.workspace.version.id
+			});
 			controller.setWorkspace(workspace);
-			controller.clearPlacement();
-			invalidateOverview(versionId);
 			draftRevision += 1;
-			if (activeView === 'wholeSchool') await loadWholeSchoolOverview(true);
-			if (message) toast.info(message);
+			if (message) toast.success(message);
 		} catch (error) {
-			errorMessage = error instanceof Error ? error.message : 'โหลดข้อมูลตารางล่าสุดไม่สำเร็จ';
-			toast.error(errorMessage);
+			toast.error(error instanceof Error ? error.message : 'โหลดข้อมูลล่าสุดไม่สำเร็จ');
 		} finally {
-			controller.setRefreshing(false);
+			controller?.setRefreshing(false);
 		}
 	}
 
 	function changeView(view: TimetablePageView): void {
 		if (!controller) return;
 		activeView = view;
-		if (view === 'wholeSchool') {
-			controller.clearPlacement();
-			wholeSchoolOverview = null;
-			void loadWholeSchoolOverview();
-		} else {
-			overviewRequest.abort();
-			overviewLoading = false;
-			controller.setView(view);
-		}
-		syncUrl();
-	}
-
-	function changeOwner(ownerId: string): void {
-		if (!controller) return;
-		controller.selectOwner(ownerId);
+		if (view !== 'wholeSchool') controller.setView(view);
 		controller.clearPlacement();
 		syncUrl();
 	}
 
-	async function focusEditableCell(periodId: string | null): Promise<void> {
-		if (!periodId) return;
-		await tick();
-		document
-			.querySelector<HTMLElement>(
-				`[data-timetable-day="${selectedOverviewDay}"][data-timetable-period-id="${periodId}"]`
-			)
-			?.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' });
+	function changeOwner(ownerId: string): void {
+		controller?.selectOwner(ownerId);
+		syncUrl();
 	}
 
-	function openOverviewHomeroom(homeroomId: string, periodId: string | null): void {
-		if (!controller) return;
-		activeView = 'homeroom';
-		controller.setView('homeroom');
-		controller.selectOwner(homeroomId);
-		syncUrl(periodId);
-		void focusEditableCell(periodId);
-	}
-
-	function openOverviewTeacher(teacherId: string, periodId: string | null): void {
-		if (!controller) return;
-		activeView = 'teacher';
-		controller.setView('teacher');
-		controller.selectOwner(teacherId);
-		syncUrl(periodId);
-		void focusEditableCell(periodId);
-	}
-
-	function candidateForEntry(
-		entry: TimetableEntry,
-		overrides?: { roomId: string | null; instructorIds: string[] }
-	): TimetablePlacementCandidate {
+	function candidateForBlock(block: TimetableBlock): TimetableBlockPlacementCandidate {
+		const group = block.groups[0];
+		const teacherIds = blockTeacherIds(block);
 		return {
-			entryType: entry.entryType,
-			learningGroupId: entry.learningGroupId ?? null,
-			learningOfferingId: entry.offeringId ?? null,
-			homeroomId: entry.homeroomId ?? null,
-			roomId: overrides?.roomId ?? entry.roomId ?? null,
-			instructorIds:
-				overrides?.instructorIds ?? entry.instructors.map((instructor) => instructor.userId)
+			blockKind: block.blockKind,
+			learningGroupId: block.groups.length === 1 ? (group?.learningGroupId ?? null) : null,
+			learningOfferingId: block.learningOfferingId,
+			roomId: group?.roomId ?? block.homerooms[0]?.roomId ?? null,
+			instructorIds: block.blockKind === 'structural' ? [] : teacherIds,
+			homeroomIds: blockHomeroomIds(block),
+			teacherIds: block.blockKind === 'structural' ? teacherIds : []
 		};
 	}
 
-	function startExistingPlacement(entry: TimetableEntry): void {
-		announceTeamMove(entry);
+	function startExistingPlacement(block: TimetableBlock): void {
 		controller?.startPlacement(
-			{ kind: 'existing_entry', entryId: entry.id, rowVersion: entry.rowVersion },
-			candidateForEntry(entry)
+			{ kind: 'existing_block', blockId: block.id, rowVersion: block.rowVersion },
+			candidateForBlock(block)
 		);
 	}
 
-	function cancelDrag(): void {
-		if (!previewing) controller?.clearPlacement();
-	}
-
 	function chooseDemand(
-		source: TimetablePlacementSource,
-		candidate: TimetablePlacementCandidate
+		source: TimetableBlockPlacementSource,
+		candidate: TimetableBlockPlacementCandidate
 	): void {
-		if (!controller) return;
-		if (controller.view === 'teacher' && controller.selectedOwnerId && candidate.learningGroupId) {
-			const selectedTeacherId = controller.selectedOwnerId;
-			const options = instructorOptionsForGroup(candidate.learningGroupId);
-			const preselected = options.some((option) => option.id === selectedTeacherId)
-				? [selectedTeacherId]
-				: [];
-			if (options.length > 1) {
-				pendingDemandSource = source;
-				pendingDemandCandidate = { ...candidate, instructorIds: preselected };
-				pendingDemandInstructorIds = preselected;
-				teacherDialogOpen = true;
-				return;
-			}
-			candidate = { ...candidate, instructorIds: preselected };
-		}
-		if (candidate.instructorIds.length === 1) {
-			controller.startPlacement(source, candidate);
-			toast.info('เลือกช่องสีเขียวเพื่อวาง 1 คาบ');
-			return;
-		}
-		pendingDemandSource = source;
-		pendingDemandCandidate = candidate;
-		pendingDemandInstructorIds = [];
-		teacherDialogOpen = true;
+		controller?.startPlacement(source, candidate);
 	}
 
-	function startDemandAfterTeacherSelection(): void {
-		if (
-			!controller ||
-			!pendingDemandSource ||
-			!pendingDemandCandidate ||
-			pendingDemandInstructorIds.length === 0
-		)
-			return;
-		controller.startPlacement(pendingDemandSource, {
-			...pendingDemandCandidate,
-			instructorIds: pendingDemandInstructorIds
-		});
-		teacherDialogOpen = false;
-		toast.info('เลือกช่องสีเขียวเพื่อวาง 1 คาบ');
+	function cancelPlacement(): void {
+		placementRequest.abort();
+		previewing = false;
+		previewCellKey = '';
+		controller?.clearPlacement();
+	}
+
+	function cellKey(dayOfWeek: string, periodId: string): string {
+		return `${dayOfWeek}:${periodId}`;
 	}
 
 	function cellState(dayOfWeek: string, periodId: string): TimetableCellState {
 		if (!controller?.dragSource || !controller.selectedOwnerId) return 'neutral';
 		const source = controller.dragSource.source;
-		if (source.kind === 'existing_entry') {
-			const entry = controller.board.entriesById.get(source.entryId);
-			if (entry?.dayOfWeek === dayOfWeek && entry.bellSchedulePeriodId === periodId) {
+		if (source.kind === 'existing_block') {
+			const block = controller.board.blocksById.get(source.blockId);
+			if (block?.dayOfWeek === dayOfWeek && block.bellSchedulePeriodId === periodId)
 				return 'dragging';
-			}
 		}
-		if (
-			controller.preview?.targetDayOfWeek === dayOfWeek &&
-			controller.preview.targetBellSchedulePeriodId === periodId
-		) {
+		if (controller.preview && previewCellKey === cellKey(dayOfWeek, periodId)) {
 			return controller.preview.state === 'source' ? 'dragging' : controller.preview.state;
 		}
 		const local = localPlacementPreview(controller.board, {
@@ -615,176 +455,132 @@
 			rowId: controller.selectedOwnerId,
 			dayOfWeek,
 			bellSchedulePeriodId: periodId,
-			source,
-			candidate: controller.dragSource.candidate
-		}).state;
-		return local === 'source' ? 'dragging' : local;
+			...controller.dragSource
+		});
+		return local.state === 'source' ? 'dragging' : local.state;
 	}
 
-	function targetEntryFor(dayOfWeek: string, periodId: string): TimetableEntry | null {
-		if (!controller?.selectedRow) return null;
-		const sourceEntryId =
-			controller.dragSource?.source.kind === 'existing_entry'
-				? controller.dragSource.source.entryId
+	function targetBlock(dayOfWeek: string, periodId: string): TimetableBlock | null {
+		if (!controller?.selectedOwnerId) return null;
+		const sourceId =
+			controller.dragSource?.source.kind === 'existing_block'
+				? controller.dragSource.source.blockId
 				: null;
 		return (
-			entriesForTimetableCell(controller.board, {
+			blocksForTimetableCell(controller.board, {
 				view: controller.view,
-				rowId: controller.selectedRow.id,
+				rowId: controller.selectedOwnerId,
 				dayOfWeek,
 				bellSchedulePeriodId: periodId
-			}).find((entry) => entry.id !== sourceEntryId) ?? null
+			}).find((block) => block.id !== sourceId) ?? null
 		);
 	}
 
-	function patchEntries(changedEntries: TimetableEntry[]): void {
-		if (!controller) return;
-		const changedById = new Map(changedEntries.map((entry) => [entry.id, entry]));
-		const existingIds = new Set(controller.workspace.entries.map((entry) => entry.id));
-		const nextEntries = controller.workspace.entries
-			.map((entry) => changedById.get(entry.id) ?? entry)
-			.filter((entry) => entry.isActive)
-			.concat(changedEntries.filter((entry) => entry.isActive && !existingIds.has(entry.id)));
-		controller.setWorkspace({ ...controller.workspace, entries: nextEntries });
-		draftRevision += 1;
-	}
-
-	async function applyPlacementPreview(
-		preview: TimetablePlacementPreview,
-		dragSource: TimetableDragSource
-	): Promise<boolean> {
-		if (!controller || !preview.mutation || !academicTermId) return false;
-		controller.beginMutation(preview.mutation);
-		busy = true;
+	async function fetchPlacementPreview(
+		dayOfWeek: string,
+		periodId: string
+	): Promise<TimetableBlockPlacementPreview | null> {
+		if (!controller?.dragSource || !academicTermId) return null;
+		const target = targetBlock(dayOfWeek, periodId);
+		const requestedCellKey = cellKey(dayOfWeek, periodId);
+		const { revision, signal } = placementRequest.begin();
+		previewCellKey = requestedCellKey;
+		controller.setPreview(null);
+		previewing = true;
 		try {
-			if (preview.mutation === 'create') {
-				const created = await createTimetableEntry({
+			const preview = await previewTimetableBlockPlacement(
+				{
 					academicTermId,
 					timetableVersionId: controller.workspace.version.id,
-					learningGroupId: preview.normalizedCandidate.learningGroupId,
-					homeroomId: preview.normalizedCandidate.homeroomId,
-					dayOfWeek: preview.targetDayOfWeek,
-					bellSchedulePeriodId: preview.targetBellSchedulePeriodId,
-					roomId: preview.normalizedCandidate.roomId,
-					note: null,
-					entryType: preview.normalizedCandidate.entryType,
-					title: null,
-					instructorIds: preview.normalizedCandidate.instructorIds
-				});
-				patchEntries([created]);
-			} else if (preview.mutation === 'swap') {
-				if (dragSource.source.kind !== 'existing_entry' || !preview.targetEntryId) {
-					throw new Error('ข้อมูลสำหรับสลับคาบไม่ครบ');
-				}
-				const targetEntry = controller.board.entriesById.get(preview.targetEntryId);
-				if (!targetEntry) throw new Error('ไม่พบคาบปลายทาง กรุณาโหลดข้อมูลล่าสุด');
-				const swapped = await swapTimetableEntries({
+					targetDayOfWeek: dayOfWeek,
+					targetBellSchedulePeriodId: periodId,
+					expectedTargetBlockId: target?.id ?? null,
+					expectedTargetRowVersion: target?.rowVersion ?? null,
+					...controller.dragSource
+				},
+				{ signal }
+			);
+			if (!placementRequest.isCurrent(revision) || previewCellKey !== requestedCellKey) return null;
+			controller.setPreview(preview);
+			return preview;
+		} catch (error) {
+			if (!isAbortError(error) && !(error instanceof ApiClientError && error.status === 409)) {
+				toast.error(error instanceof Error ? error.message : 'ตรวจตำแหน่งวางคาบไม่สำเร็จ');
+			}
+			return null;
+		} finally {
+			if (placementRequest.isCurrent(revision)) previewing = false;
+		}
+	}
+
+	async function applyPlacement(dayOfWeek: string, periodId: string): Promise<void> {
+		if (!controller?.dragSource || !academicTermId || busy) return;
+		const dragSource: TimetableDragSource = controller.dragSource;
+		const targetCellKey = cellKey(dayOfWeek, periodId);
+		const preview =
+			!previewing && previewCellKey === targetCellKey && controller.preview
+				? controller.preview
+				: await fetchPlacementPreview(dayOfWeek, periodId);
+		if (!preview || preview.state === 'blocked' || preview.state === 'source') return;
+		busy = true;
+		try {
+			if (dragSource.source.kind === 'ordinary_demand') {
+				await createOrdinaryTimetableBlock({
+					academicTermId,
 					timetableVersionId: controller.workspace.version.id,
-					entryAId: dragSource.source.entryId,
-					entryARowVersion: dragSource.source.rowVersion,
-					entryBId: targetEntry.id,
-					entryBRowVersion: targetEntry.rowVersion
+					learningGroupId: dragSource.source.learningGroupId,
+					dayOfWeek,
+					bellSchedulePeriodId: periodId,
+					roomId: dragSource.candidate.roomId,
+					instructorIds: dragSource.candidate.instructorIds ?? [],
+					note: null
 				});
-				patchEntries([swapped.entryA, swapped.entryB]);
+			} else if (dragSource.source.kind === 'synchronized_offering') {
+				await createSynchronizedTimetableBlock({
+					academicTermId,
+					timetableVersionId: controller.workspace.version.id,
+					learningOfferingId: dragSource.source.learningOfferingId,
+					intendedHomeroomIds: dragSource.candidate.homeroomIds ?? [],
+					dayOfWeek,
+					bellSchedulePeriodId: periodId,
+					roomId: dragSource.candidate.roomId,
+					note: null
+				});
+			} else if (preview.state === 'swap' && preview.targetBlockId) {
+				const other = controller.board.blocksById.get(preview.targetBlockId);
+				if (!other) throw new Error('ไม่พบคาบปลายทาง กรุณาโหลดข้อมูลล่าสุด');
+				await swapTimetableBlocks({
+					timetableVersionId: controller.workspace.version.id,
+					blockAId: dragSource.source.blockId,
+					blockARowVersion: dragSource.source.rowVersion,
+					blockBId: other.id,
+					blockBRowVersion: other.rowVersion
+				});
 			} else {
-				if (dragSource.source.kind !== 'existing_entry') {
-					throw new Error('ข้อมูลสำหรับย้ายคาบไม่ครบ');
-				}
-				const updated = await updateTimetableEntry(dragSource.source.entryId, {
+				await updateTimetableBlock(dragSource.source.blockId, {
 					timetableVersionId: controller.workspace.version.id,
 					rowVersion: dragSource.source.rowVersion,
-					dayOfWeek: preview.targetDayOfWeek,
-					bellSchedulePeriodId: preview.targetBellSchedulePeriodId,
-					roomId: preview.normalizedCandidate.roomId,
-					clearRoom: preview.normalizedCandidate.roomId === null,
-					instructorIds: preview.normalizedCandidate.instructorIds
+					dayOfWeek,
+					bellSchedulePeriodId: periodId
 				});
-				patchEntries([updated]);
 			}
-			controller.finishMutation();
-			toast.success(preview.mutation === 'swap' ? 'สลับคาบแล้ว' : 'บันทึกตำแหน่งคาบแล้ว');
-			return true;
+			cancelPlacement();
+			await reload('บันทึกตำแหน่งคาบแล้ว');
 		} catch (error) {
-			controller.failMutation();
-			if (error instanceof ApiClientError && error.status === 409) {
-				await reloadSelectedWorkspace('มีผู้ใช้อื่นเปลี่ยนตาราง ระบบโหลดข้อมูลล่าสุดให้แล้ว');
-				return false;
-			}
-			errorMessage = error instanceof Error ? error.message : 'บันทึกตำแหน่งคาบไม่สำเร็จ';
-			toast.error(errorMessage);
-			return false;
+			toast.error(error instanceof Error ? error.message : 'วางคาบไม่สำเร็จ');
 		} finally {
 			busy = false;
 		}
 	}
 
-	async function attemptPlacement(
-		dayOfWeek: string,
-		periodId: string,
-		dragSource: TimetableDragSource | null = controller?.dragSource ?? null
-	): Promise<boolean> {
-		if (!controller || !dragSource || !academicTermId || busy || previewing) return false;
-		const targetEntry = targetEntryFor(dayOfWeek, periodId);
-		const payload = {
-			timetableVersionId: controller.workspace.version.id,
-			academicTermId,
-			source: dragSource.source,
-			candidate: dragSource.candidate,
-			targetDayOfWeek: dayOfWeek,
-			targetBellSchedulePeriodId: periodId,
-			expectedTargetEntryId: targetEntry?.id ?? null,
-			expectedTargetRowVersion: targetEntry?.rowVersion ?? null
-		} satisfies TimetablePlacementPreviewRequest;
-		previewing = true;
-		try {
-			const preview = await previewTimetablePlacement(payload);
-			controller.setPreview(preview);
-			if (preview.state === 'blocked' || !preview.mutation) {
-				toast.error(
-					preview.conflicts.map((conflict) => conflict.message).join(' · ') ||
-						'วางคาบในตำแหน่งนี้ไม่ได้'
-				);
-				return false;
-			}
-			return await applyPlacementPreview(preview, dragSource);
-		} catch (error) {
-			if (error instanceof ApiClientError && error.status === 409) {
-				await reloadSelectedWorkspace('ข้อมูลตารางเปลี่ยนแล้ว ระบบโหลดข้อมูลล่าสุดให้แล้ว');
-				return false;
-			}
-			errorMessage = error instanceof Error ? error.message : 'ตรวจสอบตำแหน่งคาบไม่สำเร็จ';
-			toast.error(errorMessage);
-			return false;
-		} finally {
-			previewing = false;
-		}
+	function previewPlacement(dayOfWeek: string, periodId: string): void {
+		if (!controller?.dragSource || previewCellKey === cellKey(dayOfWeek, periodId)) return;
+		void fetchPlacementPreview(dayOfWeek, periodId);
 	}
 
-	function inspectEntry(entry: TimetableEntry): void {
-		inspectorEntryId = entry.id;
-		inspectorOpen = true;
-	}
-
-	function openMoveDialog(entry: TimetableEntry): void {
-		announceTeamMove(entry);
-		inspectorOpen = false;
-		moveEntryId = entry.id;
-		moveDialogOpen = true;
-	}
-
-	function announceTeamMove(entry: TimetableEntry): void {
-		if (entry.instructors.length < 2 || teamMoveWarningShown) return;
-		teamMoveWarningShown = true;
-		toast.warning('ย้ายรายการเดียวกันสำหรับครูทุกคนในทีม');
-	}
-
-	function periodsForTeacher(teacherId: string): number {
-		return controller ? teacherPeriodCount(controller.board, teacherId) : 0;
-	}
-
-	async function handleExportTeacherLoadXlsx(): Promise<void> {
-		if (!controller || !academicTermId || isTeacherLoadExporting) return;
-		isTeacherLoadExporting = true;
+	async function exportTeacherLoad(): Promise<void> {
+		if (!controller || exportingTeacherLoad) return;
+		exportingTeacherLoad = true;
 		try {
 			const { downloadTeacherLoadWorkbook } =
 				await import('$lib/utils/timetable-teacher-load-workbook');
@@ -795,132 +591,23 @@
 				(year) => year.id === academicYearId
 			);
 			const teacherCount = await downloadTeacherLoadWorkbook(
-				controller.workspace.entries,
+				controller.workspace.blocks,
 				`สรุปคาบสอนครู-${selectedTerm?.name ?? 'ภาคเรียน'}-${selectedYear?.name ?? 'ปีการศึกษา'}`
 			);
 			if (teacherCount === 0) toast.error('ไม่พบคาบสอนสำหรับภาคเรียนนี้');
 			else toast.success(`ดาวน์โหลดสรุปคาบสอน ${teacherCount} คนแล้ว`);
 		} catch (error) {
-			console.error('Failed to export teacher load workbook', error);
-			toast.error('ส่งออกสรุปคาบสอนไม่สำเร็จ');
+			toast.error(error instanceof Error ? error.message : 'ส่งออกสรุปคาบสอนไม่สำเร็จ');
 		} finally {
-			isTeacherLoadExporting = false;
+			exportingTeacherLoad = false;
 		}
-	}
-
-	async function confirmMove(dayOfWeek: string, periodId: string): Promise<void> {
-		if (!moveEntry || !controller) return;
-		const source: TimetableDragSource = {
-			source: {
-				kind: 'existing_entry',
-				entryId: moveEntry.id,
-				rowVersion: moveEntry.rowVersion
-			},
-			candidate: candidateForEntry(moveEntry)
-		};
-		controller.startPlacement(source.source, source.candidate);
-		if (await attemptPlacement(dayOfWeek, periodId, source)) moveDialogOpen = false;
-	}
-
-	async function saveEntryDetails(value: {
-		roomId: string | null;
-		instructorIds: string[];
-	}): Promise<void> {
-		if (!selectedEntry || !controller) return;
-		const source: TimetableDragSource = {
-			source: {
-				kind: 'existing_entry',
-				entryId: selectedEntry.id,
-				rowVersion: selectedEntry.rowVersion
-			},
-			candidate: candidateForEntry(selectedEntry, value)
-		};
-		controller.startPlacement(source.source, source.candidate);
-		if (
-			await attemptPlacement(selectedEntry.dayOfWeek, selectedEntry.bellSchedulePeriodId, source)
-		) {
-			inspectorOpen = false;
-		}
-	}
-
-	function requestRemove(entry: TimetableEntry): void {
-		inspectorOpen = false;
-		removeEntryId = entry.id;
-		removeDialogOpen = true;
-	}
-
-	async function confirmRemove(): Promise<void> {
-		if (!removeEntry || !controller || busy) return;
-		busy = true;
-		try {
-			const deleted = await deleteTimetableEntry(
-				removeEntry.id,
-				removeEntry.rowVersion,
-				controller.workspace.version.id
-			);
-			patchEntries([deleted]);
-			controller.clearPlacement();
-			removeDialogOpen = false;
-			toast.success('นำคาบออกจากตารางแล้ว');
-		} catch (error) {
-			if (error instanceof ApiClientError && error.status === 409) {
-				await reloadSelectedWorkspace('คาบนี้ถูกเปลี่ยนแล้ว ระบบโหลดข้อมูลล่าสุดให้แล้ว');
-				return;
-			}
-			errorMessage = error instanceof Error ? error.message : 'นำคาบออกจากตารางไม่สำเร็จ';
-			toast.error(errorMessage);
-		} finally {
-			busy = false;
-		}
-	}
-
-	function normalizedInstructorRole(
-		role: string | undefined,
-		index: number
-	): InstructorOption['role'] {
-		if (role === 'primary' || role === 'secondary' || role === 'assistant') return role;
-		return index === 0 ? 'primary' : 'secondary';
-	}
-
-	function instructorOptionsForGroup(
-		groupId: string,
-		entry: TimetableEntry | null = null
-	): InstructorOption[] {
-		if (!controller) return [];
-		const group = controller.workspace.learningGroups.find((item) => item.id === groupId);
-		if (!group) return [];
-		const ids = [
-			...group.eligibleInstructorIds,
-			...(entry?.instructors.map((instructor) => instructor.userId) ?? []).filter(
-				(id) => !group.eligibleInstructorIds.includes(id)
-			)
-		];
-		return ids.map((id, index) => {
-			const staff = controller?.workspace.staff.find((item) => item.id === id);
-			const currentInstructor = entry?.instructors.find((item) => item.userId === id);
-			return {
-				id,
-				displayName: staff?.displayName ?? currentInstructor?.displayName ?? 'ครูที่อ้างอิง',
-				role: normalizedInstructorRole(currentInstructor?.role, index)
-			};
-		});
-	}
-
-	function instructorOptionsForEntry(entry: TimetableEntry | null): InstructorOption[] {
-		if (!entry) return [];
-		if (entry.learningGroupId) return instructorOptionsForGroup(entry.learningGroupId, entry);
-		return entry.instructors.map((instructor, index) => ({
-			id: instructor.userId,
-			displayName: instructor.displayName,
-			role: normalizedInstructorRole(instructor.role, index)
-		}));
 	}
 
 	async function handleRevisionCreated(created: AcademicTermChangeSet): Promise<void> {
 		if (!academicTermId) return;
 		selectedChangeSet = created;
 		versions = await listTimetableVersions(academicTermId);
-		await changeVersion(created.targetTimetableVersionId);
+		await loadVersion(created.targetTimetableVersionId, true);
 		toast.success('สร้างรุ่นตารางสอนแบบร่างแล้ว');
 	}
 
@@ -928,75 +615,302 @@
 		selectedChangeSet = updated;
 		if (!academicTermId) return;
 		versions = await listTimetableVersions(academicTermId);
-		await changeVersion(updated.targetTimetableVersionId, true);
+		await loadVersion(updated.targetTimetableVersionId, true);
 		if (updated.status === 'published') toast.success('เผยแพร่รุ่นตารางสอนใหม่แล้ว');
 		if (updated.status === 'cancelled') toast.success('ยกเลิกรุ่นตารางสอนแบบร่างแล้ว');
 	}
 
-	onMount(() => {
-		let selectedTermId = '';
-		let selectedYearId = '';
-		let currentUserId = '';
-		let loadedContextKey = '';
-		let connectedSocketKey = '';
-		let observedRefresh: number | null = null;
+	function openEditor(block: TimetableBlock): void {
+		selectedBlockId = block.id;
+		editTitle = block.title ?? '';
+		editNote = block.note ?? '';
+		editRoomId = block.groups[0]?.roomId ?? block.homerooms[0]?.roomId ?? noRoomValue;
+		editInstructorIds = block.groups.flatMap((group) =>
+			group.instructors.map((teacher) => teacher.teacherId)
+		);
+		editOpen = true;
+	}
 
-		function synchronizeContext(): void {
-			if (!selectedTermId || !selectedYearId) return;
-			const contextKey = `${selectedYearId}:${selectedTermId}`;
-			if (contextKey !== loadedContextKey) {
-				loadedContextKey = contextKey;
-				overviewRequest.abort();
-				overviewCache.clear();
-				wholeSchoolOverview = null;
+	function instructorOptionsForBlock(block: TimetableBlock | null) {
+		if (!controller || !block || block.groups.length !== 1) return [];
+		const blockGroup = block.groups[0];
+		const learningGroup = controller.workspace.learningGroups.find(
+			(item) => item.id === block.groups[0]?.learningGroupId
+		);
+		const attached = (blockGroup?.instructors ?? []).map((teacher) => ({
+			id: teacher.teacherId,
+			displayName: teacher.displayName,
+			role:
+				teacher.role === 'assistant'
+					? ('assistant' as const)
+					: teacher.role === 'primary'
+						? ('primary' as const)
+						: ('secondary' as const)
+		}));
+		const eligible = (learningGroup?.eligibleInstructors ?? []).map((teacher) => ({
+			id: teacher.teacherId,
+			displayName: teacher.displayName,
+			role:
+				teacher.role === 'assistant'
+					? ('assistant' as const)
+					: teacher.role === 'primary'
+						? ('primary' as const)
+						: ('secondary' as const)
+		}));
+		return [
+			...attached,
+			...eligible.filter(
+				(option) => !attached.some((attachedOption) => attachedOption.id === option.id)
+			)
+		];
+	}
+
+	async function saveBlock(): Promise<void> {
+		if (!controller || !selectedBlock || busy) return;
+		busy = true;
+		try {
+			await updateTimetableBlock(selectedBlock.id, {
+				timetableVersionId: controller.workspace.version.id,
+				rowVersion: selectedBlock.rowVersion,
+				title: editTitle.trim() || null,
+				clearTitle: editTitle.trim().length === 0,
+				note: editNote.trim() || null,
+				clearNote: editNote.trim().length === 0,
+				roomId: editRoomId === noRoomValue ? null : editRoomId,
+				clearRoom: editRoomId === noRoomValue,
+				instructorIds:
+					selectedBlock.blockKind !== 'structural' && selectedBlock.groups.length === 1
+						? editInstructorIds
+						: null
+			});
+			editOpen = false;
+			await reload('แก้รายละเอียดคาบแล้ว');
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : 'แก้รายละเอียดคาบไม่สำเร็จ');
+		} finally {
+			busy = false;
+		}
+	}
+
+	function currentRemovalTarget(block: TimetableBlock | null): {
+		kind: TimetableTargetKind;
+		id: string;
+		rowVersion: number;
+		label: string;
+	} | null {
+		if (!block || !controller?.selectedOwnerId) return null;
+		const ownerId = controller.selectedOwnerId;
+		if (controller.view === 'teacher') {
+			const teacher = block.teachers.find((item) => item.teacherId === ownerId);
+			return teacher
+				? {
+						kind: 'teacher',
+						id: teacher.id,
+						rowVersion: teacher.rowVersion,
+						label: teacher.displayName
+					}
+				: null;
+		}
+		if (controller.view === 'homeroom') {
+			const homeroom = block.homerooms.find((item) => item.homeroomId === ownerId);
+			if (homeroom) {
+				return {
+					kind: 'homeroom',
+					id: homeroom.id,
+					rowVersion: homeroom.rowVersion,
+					label: homeroom.name
+				};
+			}
+			const group = block.groups.find((item) => item.homeroomIds.includes(ownerId));
+			return group
+				? { kind: 'group', id: group.id, rowVersion: group.rowVersion, label: group.name }
+				: null;
+		}
+		const group = block.groups.find((item) => item.learningGroupId === ownerId);
+		return group
+			? { kind: 'group', id: group.id, rowVersion: group.rowVersion, label: group.name }
+			: null;
+	}
+
+	function requestRemove(block: TimetableBlock): void {
+		selectedBlockId = block.id;
+		removeMode =
+			currentRemovalTarget(block) && (block.blockKind !== 'course' || block.groups.length > 1)
+				? 'target'
+				: 'block';
+		removeOpen = true;
+	}
+
+	async function confirmRemove(): Promise<void> {
+		if (!controller || !selectedBlock || busy) return;
+		busy = true;
+		try {
+			if (removeMode === 'target') {
+				const target = currentRemovalTarget(selectedBlock);
+				if (!target) throw new Error('ไม่พบห้องหรือครูที่จะนำออกจากคาบ');
+				await removeTimetableBlockTarget(selectedBlock.id, {
+					timetableVersionId: controller.workspace.version.id,
+					blockRowVersion: selectedBlock.rowVersion,
+					targetKind: target.kind,
+					targetId: target.id,
+					targetRowVersion: target.rowVersion
+				});
+			} else if (removeMode === 'series') {
+				if (!selectedBlock.seriesId) throw new Error('คาบนี้ไม่ได้อยู่ในชุดคาบพิเศษ');
+				await deleteTimetableBlockSeries(selectedBlock.seriesId, controller.workspace.version.id);
+			} else {
+				await deleteTimetableBlock(
+					selectedBlock.id,
+					selectedBlock.rowVersion,
+					controller.workspace.version.id
+				);
+			}
+			removeOpen = false;
+			selectedBlockId = null;
+			await reload('นำรายการออกจากตารางแล้ว');
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : 'นำรายการออกไม่สำเร็จ');
+		} finally {
+			busy = false;
+		}
+	}
+
+	function openStructuralDialog(): void {
+		structuralForm = newStructuralForm();
+		structuralOpen = true;
+	}
+
+	function setStructuralKind(kind: TimetableStructuralKind): void {
+		const titles: Record<TimetableStructuralKind, string> = {
+			break: 'พัก',
+			homeroom: 'โฮมรูม',
+			flag_ceremony: 'กิจกรรมหน้าเสาธง',
+			teacher_meeting: 'ประชุมครู',
+			academic: 'กิจกรรมวิชาการ',
+			other: 'กิจกรรมอื่น'
+		};
+		structuralForm.kind = kind;
+		structuralForm.title = titles[kind];
+		if (kind === 'teacher_meeting') {
+			structuralForm.allTeachers = true;
+			structuralForm.allHomerooms = false;
+		}
+	}
+
+	function toggleListValue(key: 'homeroomIds' | 'teacherIds' | 'slots', value: string): void {
+		const current = structuralForm[key];
+		structuralForm[key] = current.includes(value)
+			? current.filter((item) => item !== value)
+			: [...current, value];
+	}
+
+	async function createStructural(): Promise<void> {
+		if (!controller || !academicTermId || busy) return;
+		if (!structuralForm.title.trim() || structuralForm.slots.length === 0) {
+			toast.error('กรอกชื่อและเลือกอย่างน้อย 1 ช่องเวลา');
+			return;
+		}
+		if (
+			!structuralForm.allHomerooms &&
+			!structuralForm.allTeachers &&
+			structuralForm.homeroomIds.length === 0 &&
+			structuralForm.teacherIds.length === 0
+		) {
+			toast.error('เลือกห้องหรือครูอย่างน้อย 1 รายการ');
+			return;
+		}
+		const body: CreateStructuralTimetableBlocksRequest = {
+			academicTermId,
+			timetableVersionId: controller.workspace.version.id,
+			structuralKind: structuralForm.kind,
+			title: structuralForm.title.trim(),
+			note: structuralForm.note.trim() || null,
+			roomId: structuralForm.roomId === noRoomValue ? null : structuralForm.roomId,
+			allHomerooms: structuralForm.allHomerooms,
+			allTeachers: structuralForm.allTeachers,
+			homeroomIds: structuralForm.homeroomIds,
+			teacherIds: structuralForm.teacherIds,
+			slots: structuralForm.slots.map((slot) => {
+				const [dayOfWeek, bellSchedulePeriodId] = slot.split(':');
+				return { dayOfWeek, bellSchedulePeriodId };
+			})
+		};
+		busy = true;
+		try {
+			await createStructuralTimetableBlocks(body);
+			structuralOpen = false;
+			await reload('เพิ่มคาบพิเศษแล้ว แต่ละห้องและครูสามารถนำออกแยกกันได้');
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : 'เพิ่มคาบพิเศษไม่สำเร็จ');
+		} finally {
+			busy = false;
+		}
+	}
+
+	function periodLabel(period: TimetableBlockWorkspace['bellPeriods'][number]): string {
+		return period.name ?? `คาบ ${period.orderIndex}`;
+	}
+
+	function handleKeydown(event: KeyboardEvent): void {
+		if (event.key === 'Escape') cancelPlacement();
+	}
+
+	onMount(() => {
+		let currentTermId = '';
+		let currentYearId = '';
+		let userId = '';
+		let socketKey = '';
+		let loadedContextKey = '';
+		const synchronize = () => {
+			const key = `${currentYearId}:${currentTermId}`;
+			if (currentYearId && currentTermId && key !== loadedContextKey) {
+				loadedContextKey = key;
+				void loadContext(currentTermId, currentYearId);
+			} else if (!currentYearId || !currentTermId) {
+				loadedContextKey = '';
 				controller = null;
 				versions = [];
 				selectedChangeSet = null;
-				void loadWorkspaceContext(selectedTermId, selectedYearId);
 			}
-			if (!currentUserId) return;
-			const socketKey = `${selectedTermId}:${currentUserId}`;
-			if (socketKey !== connectedSocketKey) {
-				connectedSocketKey = socketKey;
-				connectTimetableSocket({ academicTermId: selectedTermId, currentUserId });
+			const nextSocketKey = `${currentTermId}:${userId}`;
+			if (currentTermId && userId && nextSocketKey !== socketKey) {
+				disconnectTimetableSocket();
+				connectTimetableSocket({ academicTermId: currentTermId, currentUserId: userId });
+				socketKey = nextSocketKey;
 			}
-		}
-
+		};
 		const unsubscribeContext = academicContext.subscribe((state) => {
-			selectedTermId = state.selected.academicTermId ?? '';
-			selectedYearId = state.selected.academicYearId ?? '';
-			synchronizeContext();
+			const nextTerm = state.selected.academicTermId ?? '';
+			const nextYear = state.selected.academicYearId ?? '';
+			if (nextTerm === currentTermId && nextYear === currentYearId) return;
+			currentTermId = nextTerm;
+			currentYearId = nextYear;
+			synchronize();
 		});
 		const unsubscribeAuth = authStore.subscribe((state) => {
-			currentUserId = state.user?.id ?? '';
-			synchronizeContext();
+			userId = state.user?.id ?? '';
+			synchronize();
 		});
 		const unsubscribeRefresh = refreshTrigger.subscribe((value) => {
-			if (observedRefresh === null) {
-				observedRefresh = value;
-				return;
-			}
-			if (value === observedRefresh) return;
-			observedRefresh = value;
-			void reloadSelectedWorkspace('ตารางถูกแก้จากอีกหน้าหนึ่ง ระบบโหลดข้อมูลล่าสุดแล้ว');
+			if (value > 0 && controller) void reload();
 		});
-
 		return () => {
 			request.abort();
-			overviewRequest.abort();
-			unsubscribeRefresh();
-			unsubscribeAuth();
+			placementRequest.abort();
 			unsubscribeContext();
+			unsubscribeAuth();
+			unsubscribeRefresh();
 			disconnectTimetableSocket();
 		};
 	});
 </script>
 
+<svelte:window onkeydown={handleKeydown} />
 <MobileDragDropPolyfill />
 
 <PageShell
 	title="จัดตารางสอน"
-	description="จัดครั้งละหนึ่งคาบจากมุมมองห้อง กลุ่มเรียน หรือครู และตรวจภาพรวมทั้งโรงเรียนก่อนเผยแพร่"
+	description="ลากรายวิชาและกิจกรรมลงตาราง ตรวจการชนของห้อง ครู และห้องเรียนก่อนบันทึก"
 >
 	{#snippet actions()}
 		{#if canManage && academicTermId}
@@ -1004,9 +918,9 @@
 				<Button
 					variant="outline"
 					disabled={selectedVersion?.id === activeDraftVersion.id || loading}
-					onclick={() => changeVersion(activeDraftVersion.id)}
+					onclick={() => loadVersion(activeDraftVersion.id)}
 				>
-					<History />
+					<History class="size-4" />
 					{selectedVersion?.id === activeDraftVersion.id
 						? 'กำลังแก้รุ่นแบบร่าง'
 						: 'เปิดรุ่นแบบร่าง'}
@@ -1021,22 +935,18 @@
 		{/if}
 		<Button
 			variant="outline"
-			disabled={isTeacherLoadExporting || loading || !controller?.workspace.entries.length}
-			onclick={handleExportTeacherLoadXlsx}
+			disabled={exportingTeacherLoad || loading || !controller?.workspace.blocks.length}
+			onclick={exportTeacherLoad}
 		>
-			{#if isTeacherLoadExporting}
-				<LoaderCircle class="animate-spin" />
+			{#if exportingTeacherLoad}
+				<LoaderCircle class="size-4 animate-spin" />
 			{:else}
-				<FileSpreadsheet />
+				<FileSpreadsheet class="size-4" />
 			{/if}
 			สรุปคาบ XLSX
 		</Button>
-		<Button
-			variant="outline"
-			disabled={loading || !controller}
-			onclick={() => reloadSelectedWorkspace()}
-		>
-			<RefreshCw class={controller?.isRefreshing ? 'animate-spin' : ''} /> โหลดล่าสุด
+		<Button variant="outline" disabled={loading || !controller} onclick={() => reload()}>
+			<RefreshCw class={`size-4 ${controller?.isRefreshing ? 'animate-spin' : ''}`} /> โหลดล่าสุด
 		</Button>
 	{/snippet}
 
@@ -1044,13 +954,13 @@
 		<PageState
 			variant="permission"
 			title="ไม่มีสิทธิ์ดูตารางสอน"
-			description="ต้องมีสิทธิ์อ่านรายการเปิดสอนที่เกี่ยวข้อง"
+			description="ติดต่อผู้ดูแลเพื่อขอสิทธิ์ดูหรือจัดตารางสอน"
 		/>
 	{:else if !academicTermId || !academicYearId}
 		<PageState
 			variant="empty"
-			title="เลือกภาคเรียนก่อน"
-			description="ใช้ตัวเลือกปีการศึกษาและภาคเรียนบนแถบด้านบน"
+			title="เลือกปีการศึกษาและภาคเรียนก่อน"
+			description="ใช้ตัวเลือกบนแถบด้านบนเพื่อกำหนดบริบทของตารางสอน"
 		/>
 	{:else if loading && !controller}
 		<PageSkeleton variant="table" rows={7} />
@@ -1060,76 +970,74 @@
 			title="โหลดตารางสอนไม่สำเร็จ"
 			description={errorMessage}
 			actionLabel="ลองอีกครั้ง"
-			onaction={() => loadWorkspaceContext(academicTermId, academicYearId)}
+			onaction={() => loadContext(academicTermId, academicYearId)}
 		/>
 	{:else if versions.length === 0 || !controller}
 		<PageState
 			variant="empty"
 			title="ยังไม่มีรุ่นตารางสอน"
-			description="เตรียมรุ่นตารางสอนของภาคเรียนนี้ก่อนเริ่มจัดคาบ"
+			description="สร้างรุ่นตารางสอนของภาคเรียนนี้จากหน้าจัดการเรียนก่อน"
 		/>
 	{:else}
-		<div class="space-y-5">
+		<div class="space-y-4">
 			<TimetableWorkspaceHeader
 				version={controller.workspace.version}
 				view={activeView}
-				isSaving={busy || previewing || controller.pendingMutation !== null}
+				isSaving={busy || previewing}
 				isRefreshing={controller.isRefreshing}
 				onViewChange={changeView}
 			/>
 
 			<Card.Root class="gap-0 py-0">
-				<Card.Content
-					class={['grid gap-3 p-3 sm:p-4', activeView !== 'wholeSchool' && 'lg:grid-cols-2']}
-				>
+				<Card.Content class="grid gap-3 p-3 sm:p-4 lg:grid-cols-2">
 					<div class="space-y-1.5">
-						<p class="text-xs font-medium text-muted-foreground">รุ่นตารางสอน</p>
+						<Label class="text-xs text-muted-foreground">รุ่นตารางสอน</Label>
 						<Select.Root
 							type="single"
 							bind:value={versionSelectValue}
-							onValueChange={changeVersion}
+							onValueChange={loadVersion}
 							disabled={loading || busy}
 						>
 							<Select.Trigger class="w-full" aria-label="เลือกรุ่นตารางสอน">
-								{versionStatusLabel(controller.workspace.version)} · {versionPeriodLabel(
-									controller.workspace.version
-								)}
+								{versionLabel(controller.workspace.version)}
 							</Select.Trigger>
 							<Select.Content>
 								{#each versions as version (version.id)}
-									<Select.Item value={version.id}>
-										{versionStatusLabel(version)} · {versionPeriodLabel(version)}
-									</Select.Item>
+									<Select.Item value={version.id}>{versionLabel(version)}</Select.Item>
 								{/each}
 							</Select.Content>
 						</Select.Root>
 					</div>
 					{#if activeView === 'wholeSchool'}
-						<div
-							class="flex items-center rounded-lg border bg-muted/20 px-3 py-2 text-sm text-muted-foreground"
-						>
-							เลือกวันด้านล่างเพื่อโหลดภาพรวมครั้งละหนึ่งวัน
+						<div class="space-y-1.5">
+							<Label class="text-xs text-muted-foreground">วันที่ดูภาพรวม</Label>
+							<Select.Root type="single" bind:value={overviewDay}>
+								<Select.Trigger class="w-full" aria-label="เลือกวันดูภาพรวม">
+									{days.find((day) => day.id === overviewDay)?.label ?? 'เลือกวัน'}
+								</Select.Trigger>
+								<Select.Content>
+									{#each days as day (day.id)}
+										<Select.Item value={day.id}>วัน{day.label}</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
 						</div>
-					{:else if controller.view === 'teacher'}
-						<TimetableTeacherView
-							teachers={controller.workspace.staff}
-							selectedTeacherId={controller.selectedOwnerId}
-							periodCount={periodsForTeacher}
-							disabled={busy}
-							onSelect={changeOwner}
-						/>
 					{:else}
 						<div class="space-y-1.5">
-							<p class="text-xs font-medium text-muted-foreground">
-								{controller.view === 'homeroom' ? 'ห้องประจำชั้น' : 'กลุ่มเรียน'}
-							</p>
+							<Label class="text-xs text-muted-foreground">
+								{controller.view === 'homeroom'
+									? 'ห้องประจำชั้น'
+									: controller.view === 'teacher'
+										? 'ครูผู้สอน'
+										: 'กลุ่มเรียน'}
+							</Label>
 							<Select.Root
 								type="single"
 								value={controller.selectedOwnerId ?? ''}
 								onValueChange={changeOwner}
 								disabled={busy}
 							>
-								<Select.Trigger class="w-full" aria-label="เลือกรายการที่ต้องการจัด">
+								<Select.Trigger class="w-full" aria-label="เลือกรายการสำหรับจัดตาราง">
 									{selectedOwner ? `${selectedOwner.code} · ${selectedOwner.label}` : 'เลือกรายการ'}
 								</Select.Trigger>
 								<Select.Content>
@@ -1143,6 +1051,14 @@
 				</Card.Content>
 			</Card.Root>
 
+			{#if errorMessage}
+				<div
+					class="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+				>
+					<AlertTriangle class="mt-0.5 size-4 shrink-0" />
+					{errorMessage}
+				</div>
+			{/if}
 			{#if selectedChangeSet}
 				<Card.Root class="gap-0 overflow-hidden border-amber-500/25 py-0">
 					<Card.Header class="border-b border-amber-500/20 bg-amber-500/5 py-4">
@@ -1167,7 +1083,6 @@
 					</Card.Content>
 				</Card.Root>
 			{/if}
-
 			{#if controller.workspace.learningGroups.length === 0}
 				<AcademicPrerequisiteNotice prerequisite={missingGroupsPrerequisite} />
 			{/if}
@@ -1181,64 +1096,154 @@
 				<AcademicPrerequisiteNotice prerequisite={missingRoomsPrerequisite} />
 			{/if}
 
-			{#if errorMessage}
-				<div
-					class="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
-				>
-					<AlertTriangle class="mt-0.5 size-4 shrink-0" />
-					<span>{errorMessage}</span>
+			<div class="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
+				<div class="rounded-lg border bg-background px-3 py-2">
+					<p class="text-[0.68rem] text-muted-foreground">คาบบนตาราง</p>
+					<p class="text-lg font-semibold">{controller.workspace.summary.blockCount}</p>
 				</div>
-			{/if}
+				<div class="rounded-lg border bg-background px-3 py-2">
+					<p class="text-[0.68rem] text-muted-foreground">รายวิชารอจัด</p>
+					<p class="text-lg font-semibold">{controller.workspace.summary.ordinaryDemandCount}</p>
+				</div>
+				<div
+					class="rounded-lg border border-violet-500/25 bg-violet-50/40 px-3 py-2 dark:bg-violet-950/10"
+				>
+					<p class="text-[0.68rem] text-muted-foreground">กิจกรรมพร้อมกัน</p>
+					<p class="text-lg font-semibold">
+						{controller.workspace.summary.synchronizedDemandCount}
+					</p>
+				</div>
+				<div class="rounded-lg border bg-background px-3 py-2">
+					<p class="text-[0.68rem] text-muted-foreground">กลุ่มเชื่อมแล้ว</p>
+					<p class="text-lg font-semibold">{controller.workspace.summary.linkedGroupCount}</p>
+				</div>
+				<div class="rounded-lg border bg-background px-3 py-2">
+					<p class="text-[0.68rem] text-muted-foreground">รอข้อมูลกลุ่ม</p>
+					<p class="text-lg font-semibold">{controller.workspace.summary.waitingGroupCount}</p>
+				</div>
+				<div class="rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2">
+					<p class="text-[0.68rem] text-muted-foreground">กลุ่มมีปัญหา</p>
+					<p class="text-lg font-semibold">{controller.workspace.summary.conflictGroupCount}</p>
+				</div>
+			</div>
 
 			{#if activeView !== 'wholeSchool' && controller.dragSource}
 				<div
 					class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/25 bg-primary/5 px-4 py-3"
 				>
 					<p class="flex items-center gap-2 text-sm font-medium text-primary">
-						<MousePointer2 class="size-4" /> เลือกช่องสีเขียวเพื่อวาง 1 คาบ หรือกด Esc เพื่อยกเลิก
+						<MousePointer2 class="size-4" /> ลากหรือแตะช่องสีเขียวเพื่อวาง 1 คาบ ช่องสีแดงมีรายการชน
 					</p>
-					<Button variant="ghost" size="sm" onclick={cancelDrag}>ยกเลิก</Button>
+					<Button variant="ghost" size="sm" onclick={cancelPlacement}>ยกเลิก</Button>
 				</div>
+				{#if controller.preview?.state === 'blocked' && controller.preview.conflicts.length > 0}
+					<div
+						role="alert"
+						class="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+					>
+						<p class="font-medium">ช่องนี้วางไม่ได้</p>
+						<ul class="mt-1 list-disc space-y-0.5 pl-5">
+							{#each controller.preview.conflicts as conflict (`${conflict.code}:${conflict.targetKind}:${conflict.targetId}:${conflict.existingBlockId}`)}
+								<li>{conflict.message}</li>
+							{/each}
+						</ul>
+					</div>
+				{/if}
 			{/if}
 
 			{#if activeView === 'wholeSchool'}
-				<TimetableWholeSchoolOverview
-					overview={wholeSchoolOverview}
-					selectedDay={selectedOverviewDay}
-					loading={overviewLoading}
-					errorMessage={overviewErrorMessage}
-					onDayChange={changeOverviewDay}
-					onRetry={() => loadWholeSchoolOverview(true)}
-					onOpenHomeroom={openOverviewHomeroom}
-					onOpenTeacher={openOverviewTeacher}
-				/>
+				<section class="overflow-hidden rounded-xl border bg-background">
+					<div class="border-b bg-muted/20 px-4 py-3">
+						<h2 class="font-semibold">
+							ภาพรวมทั้งโรงเรียน · วัน{days.find((day) => day.id === overviewDay)?.label}
+						</h2>
+						<p class="text-xs text-muted-foreground">
+							มุมมองนี้ใช้ตรวจภาพรวม หากต้องการจัดให้เปิดมุมมองห้องหรือครู
+						</p>
+					</div>
+					<div class="overflow-x-auto">
+						<table class="w-full border-collapse text-left text-xs">
+							<thead>
+								<tr class="bg-muted/35">
+									<th class="sticky left-0 z-10 min-w-36 border-b border-r bg-muted/70 px-3 py-2"
+										>ห้อง</th
+									>
+									{#each controller.workspace.bellPeriods as period (period.id)}
+										<th class="min-w-44 border-b border-r px-3 py-2 text-center">
+											<p class="font-semibold">{periodLabel(period)}</p>
+											<p class="font-mono text-[0.65rem] font-normal text-muted-foreground">
+												{period.startTime.slice(0, 5)}–{period.endTime.slice(0, 5)}
+											</p>
+										</th>
+									{/each}
+								</tr>
+							</thead>
+							<tbody>
+								{#each controller.workspace.homerooms as homeroom (homeroom.id)}
+									<tr>
+										<th class="sticky left-0 z-10 border-b border-r bg-background px-3 py-2"
+											>{homeroom.name}</th
+										>
+										{#each controller.workspace.bellPeriods as period (period.id)}
+											{@const blocks = controller.workspace.blocks.filter(
+												(block) =>
+													block.dayOfWeek === overviewDay &&
+													block.bellSchedulePeriodId === period.id &&
+													blockBelongsToRow(block, 'homeroom', homeroom.id)
+											)}
+											<td class="border-b border-r p-1.5 align-top">
+												{#each blocks as block (block.id)}
+													<button
+														type="button"
+														class={[
+															'mb-1 w-full rounded-md border bg-background p-2 text-left',
+															block.blockKind === 'activity' && 'border-l-4 border-l-violet-500',
+															block.blockKind === 'structural' && 'border-l-4 border-l-amber-500'
+														]}
+														onclick={() => openEditor(block)}
+													>
+														<p class="font-mono text-[0.65rem] font-semibold text-primary">
+															{block.offeringCode ?? 'กิจกรรม'}
+														</p>
+														<p class="line-clamp-2 font-medium">
+															{block.offeringName ?? block.title}
+														</p>
+													</button>
+												{/each}
+											</td>
+										{/each}
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				</section>
 			{:else if controller.selectedRow && controller.workspace.bellPeriods.length > 0}
-				<div class="grid min-h-0 gap-4 xl:grid-cols-[19rem_minmax(0,1fr)]">
+				<div class="grid min-h-0 gap-4 xl:grid-cols-[20rem_minmax(0,1fr)]">
 					<TimetableUnscheduledTray
-						demands={visibleDemands}
+						ordinaryDemands={visibleOrdinaryDemands}
+						synchronizedDemands={visibleSynchronizedDemands}
 						groups={controller.workspace.learningGroups}
-						staff={controller.workspace.staff}
-						disabled={!canEditSelected}
-						remainingForGroup={controller.remainingDemand}
+						disabled={!canEdit}
 						onChooseDemand={chooseDemand}
 						onDragStartDemand={(source, candidate) => controller?.startPlacement(source, candidate)}
-						onCancelDrag={cancelDrag}
+						onCancelDrag={cancelPlacement}
+						onOpenStructural={openStructuralDialog}
 					/>
 					<TimetableBoard
 						state={controller.board}
 						view={controller.view}
 						row={controller.selectedRow}
-						selectedEntryId={inspectorEntryId}
-						canEdit={canEditSelected}
+						{selectedBlockId}
+						{canEdit}
 						{cellState}
-						onDropIntent={attemptPlacement}
-						onActivateIntent={attemptPlacement}
-						onSelectEntry={inspectEntry}
-						onDragStart={(entry) => startExistingPlacement(entry)}
-						onCancelDrag={cancelDrag}
-						onMoveEntry={openMoveDialog}
-						onEditEntry={inspectEntry}
-						onRemoveEntry={requestRemove}
+						onHoverIntent={previewPlacement}
+						onDropIntent={applyPlacement}
+						onActivateIntent={applyPlacement}
+						onSelectBlock={openEditor}
+						onDragStart={startExistingPlacement}
+						onCancelDrag={cancelPlacement}
+						onRemoveBlock={requestRemove}
 					/>
 				</div>
 			{:else}
@@ -1251,66 +1256,310 @@
 		</div>
 	{/if}
 
-	<Dialog.Root bind:open={teacherDialogOpen}>
-		<Dialog.Content class="sm:max-w-lg">
+	<Dialog.Root bind:open={editOpen}>
+		<Dialog.Content class="sm:max-w-xl">
 			<Dialog.Header>
-				<Dialog.Title>เลือกครูของคาบนี้</Dialog.Title>
+				<Dialog.Title>รายละเอียดคาบ</Dialog.Title>
 				<Dialog.Description>
-					กลุ่มนี้มีครูมากกว่าหนึ่งคน เลือกเฉพาะผู้ที่สอนคาบที่จะนำไปวาง
+					{selectedBlock?.offeringCode ?? 'คาบพิเศษ'} · {selectedBlock?.offeringName ??
+						selectedBlock?.title ??
+						''}
 				</Dialog.Description>
 			</Dialog.Header>
-			<TimetableInstructorPicker
-				options={pendingDemandInstructorOptions}
-				bind:value={pendingDemandInstructorIds}
-			/>
+			<div class="space-y-4 py-2">
+				<div class="space-y-1.5">
+					<Label for="timetable-block-title">ชื่อที่แสดงในตาราง</Label>
+					<Input
+						id="timetable-block-title"
+						bind:value={editTitle}
+						disabled={!canEdit}
+						placeholder={selectedBlock?.offeringName ?? 'ใช้ชื่อจากรายการเปิดสอน'}
+					/>
+				</div>
+				<div class="space-y-1.5">
+					<Label>ห้องเรียน</Label>
+					<Select.Root type="single" bind:value={editRoomId} disabled={!canEdit}>
+						<Select.Trigger class="w-full" aria-label="เลือกห้องเรียน">
+							{editRoomId === noRoomValue
+								? 'ไม่ระบุห้อง'
+								: (controller?.workspace.rooms.find((room) => room.id === editRoomId)?.name ??
+									'เลือกห้อง')}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value={noRoomValue}>ไม่ระบุห้อง</Select.Item>
+							{#each controller?.workspace.rooms ?? [] as room (room.id)}
+								<Select.Item value={room.id}
+									>{room.code ? `${room.code} · ` : ''}{room.name}</Select.Item
+								>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+				{#if selectedBlock?.blockKind !== 'structural' && selectedBlock?.groups.length === 1}
+					<TimetableInstructorPicker
+						options={instructorOptionsForBlock(selectedBlock)}
+						bind:value={editInstructorIds}
+						disabled={!canEdit}
+					/>
+				{:else if selectedBlock?.blockKind === 'activity'}
+					<div
+						class="rounded-lg border border-violet-500/25 bg-violet-50/40 p-3 text-xs text-muted-foreground dark:bg-violet-950/10"
+					>
+						กิจกรรมพร้อมกันจะดึงกลุ่มและครูจากหน้าจัดการเรียน หากเพิ่มกลุ่มภายหลัง
+						ระบบจะซิงค์เข้าช่วงกิจกรรมนี้
+					</div>
+				{/if}
+				<div class="space-y-1.5">
+					<Label for="timetable-block-note">หมายเหตุ</Label>
+					<Textarea id="timetable-block-note" bind:value={editNote} disabled={!canEdit} rows={3} />
+				</div>
+			</div>
 			<Dialog.Footer>
-				<Button variant="outline" onclick={() => (teacherDialogOpen = false)}>ยกเลิก</Button>
-				<Button
-					disabled={pendingDemandInstructorIds.length === 0}
-					onclick={startDemandAfterTeacherSelection}
+				<Button variant="outline" onclick={() => (editOpen = false)}>ปิด</Button>
+				{#if canEdit}
+					<Button disabled={busy} onclick={saveBlock}>
+						{#if busy}<LoaderCircle class="size-4 animate-spin" />{/if} บันทึก
+					</Button>
+				{/if}
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+
+	<Dialog.Root bind:open={structuralOpen}>
+		<Dialog.Content class="max-h-[92vh] overflow-y-auto sm:max-w-3xl">
+			<Dialog.Header>
+				<Dialog.Title>เพิ่มคาบพิเศษ</Dialog.Title>
+				<Dialog.Description>
+					สร้างพร้อมกันได้หลายห้อง หลายครู และหลายวัน แต่ภายหลังสามารถนำแต่ละห้องหรือครูออกแยกกันได้
+				</Dialog.Description>
+			</Dialog.Header>
+			<div class="grid gap-5 py-2 lg:grid-cols-2">
+				<div class="space-y-4">
+					<div class="space-y-1.5">
+						<Label>ประเภท</Label>
+						<Select.Root
+							type="single"
+							value={structuralForm.kind}
+							onValueChange={(value) => setStructuralKind(value as TimetableStructuralKind)}
+						>
+							<Select.Trigger class="w-full" aria-label="เลือกประเภทคาบพิเศษ">
+								{structuralForm.title}
+							</Select.Trigger>
+							<Select.Content>
+								<Select.Item value="flag_ceremony">กิจกรรมหน้าเสาธง</Select.Item>
+								<Select.Item value="homeroom">โฮมรูม</Select.Item>
+								<Select.Item value="break">พัก</Select.Item>
+								<Select.Item value="teacher_meeting">ประชุมครู</Select.Item>
+								<Select.Item value="academic">กิจกรรมวิชาการ</Select.Item>
+								<Select.Item value="other">กิจกรรมอื่น</Select.Item>
+							</Select.Content>
+						</Select.Root>
+					</div>
+					<div class="space-y-1.5">
+						<Label for="structural-title">ชื่อที่แสดง</Label>
+						<Input id="structural-title" bind:value={structuralForm.title} />
+					</div>
+					<div class="space-y-1.5">
+						<Label>ห้องที่ใช้</Label>
+						<Select.Root type="single" bind:value={structuralForm.roomId}>
+							<Select.Trigger class="w-full" aria-label="เลือกห้องสำหรับคาบพิเศษ">
+								{structuralForm.roomId === noRoomValue
+									? 'ไม่ระบุห้อง'
+									: (controller?.workspace.rooms.find((room) => room.id === structuralForm.roomId)
+											?.name ?? 'เลือกห้อง')}
+							</Select.Trigger>
+							<Select.Content>
+								<Select.Item value={noRoomValue}>ไม่ระบุห้อง</Select.Item>
+								{#each controller?.workspace.rooms ?? [] as room (room.id)}
+									<Select.Item value={room.id}
+										>{room.code ? `${room.code} · ` : ''}{room.name}</Select.Item
+									>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					</div>
+					<div class="space-y-1.5">
+						<Label for="structural-note">หมายเหตุ</Label>
+						<Textarea id="structural-note" bind:value={structuralForm.note} rows={3} />
+					</div>
+				</div>
+
+				<div class="space-y-5">
+					<section class="space-y-2">
+						<div class="flex items-center justify-between gap-2">
+							<Label>ห้องประจำชั้น</Label>
+							<Button
+								type="button"
+								size="sm"
+								variant={structuralForm.allHomerooms ? 'default' : 'outline'}
+								onclick={() => (structuralForm.allHomerooms = !structuralForm.allHomerooms)}
+							>
+								{#if structuralForm.allHomerooms}<Check class="size-3.5" />{/if} ทุกห้อง
+							</Button>
+						</div>
+						{#if !structuralForm.allHomerooms}
+							<div class="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto rounded-lg border p-2">
+								{#each controller?.workspace.homerooms ?? [] as homeroom (homeroom.id)}
+									<Button
+										type="button"
+										size="sm"
+										variant={structuralForm.homeroomIds.includes(homeroom.id)
+											? 'default'
+											: 'outline'}
+										onclick={() => toggleListValue('homeroomIds', homeroom.id)}
+									>
+										{homeroom.name}
+									</Button>
+								{/each}
+							</div>
+						{/if}
+					</section>
+					<section class="space-y-2">
+						<div class="flex items-center justify-between gap-2">
+							<Label>ครู</Label>
+							<Button
+								type="button"
+								size="sm"
+								variant={structuralForm.allTeachers ? 'default' : 'outline'}
+								onclick={() => (structuralForm.allTeachers = !structuralForm.allTeachers)}
+							>
+								{#if structuralForm.allTeachers}<Check class="size-3.5" />{/if} ครูทุกคน
+							</Button>
+						</div>
+						{#if !structuralForm.allTeachers}
+							<div class="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto rounded-lg border p-2">
+								{#each controller?.workspace.staff ?? [] as teacher (teacher.id)}
+									<Button
+										type="button"
+										size="sm"
+										variant={structuralForm.teacherIds.includes(teacher.id) ? 'default' : 'outline'}
+										onclick={() => toggleListValue('teacherIds', teacher.id)}
+									>
+										{teacher.displayName}
+									</Button>
+								{/each}
+							</div>
+						{/if}
+					</section>
+				</div>
+			</div>
+
+			<section class="space-y-2 border-t pt-4">
+				<div class="flex items-center justify-between gap-2">
+					<div>
+						<Label>ช่องเวลาที่ต้องการเพิ่ม</Label>
+						<p class="text-xs text-muted-foreground">เลือกได้หลายวันและหลายคาบในครั้งเดียว</p>
+					</div>
+					<Badge variant="secondary">{structuralForm.slots.length} ช่อง</Badge>
+				</div>
+				<div class="overflow-x-auto rounded-lg border">
+					<table class="w-full border-collapse text-xs">
+						<thead>
+							<tr class="bg-muted/35">
+								<th class="min-w-24 border-b border-r p-2 text-left">วัน / คาบ</th>
+								{#each controller?.workspace.bellPeriods ?? [] as period (period.id)}
+									<th class="min-w-28 border-b border-r p-2 text-center">{periodLabel(period)}</th>
+								{/each}
+							</tr>
+						</thead>
+						<tbody>
+							{#each days as day (day.id)}
+								<tr>
+									<th class="border-b border-r p-2 text-left">{day.label}</th>
+									{#each controller?.workspace.bellPeriods ?? [] as period (period.id)}
+										{@const slot = `${day.id}:${period.id}`}
+										<td class="border-b border-r p-1">
+											<Button
+												type="button"
+												size="sm"
+												variant={structuralForm.slots.includes(slot) ? 'default' : 'ghost'}
+												class="w-full"
+												aria-pressed={structuralForm.slots.includes(slot)}
+												onclick={() => toggleListValue('slots', slot)}
+											>
+												{#if structuralForm.slots.includes(slot)}<Check class="size-3.5" /> เลือกแล้ว{:else}เลือก{/if}
+											</Button>
+										</td>
+									{/each}
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			</section>
+			<Dialog.Footer>
+				<Button variant="outline" disabled={busy} onclick={() => (structuralOpen = false)}
+					>ยกเลิก</Button
 				>
-					เริ่มวาง 1 คาบ
+				<Button disabled={busy} onclick={createStructural}>
+					{#if busy}<LoaderCircle class="size-4 animate-spin" />{:else}<Plus class="size-4" />{/if}
+					เพิ่ม {structuralForm.slots.length} ช่อง
 				</Button>
 			</Dialog.Footer>
 		</Dialog.Content>
 	</Dialog.Root>
 
-	<TimetableEntryInspector
-		bind:open={inspectorOpen}
-		entry={selectedEntry}
-		rooms={controller?.workspace.rooms ?? []}
-		instructorOptions={instructorOptionsForEntry(selectedEntry)}
-		readOnly={!canEditSelected}
-		{busy}
-		onSave={saveEntryDetails}
-		onMove={openMoveDialog}
-		onRemove={requestRemove}
-	/>
-
-	<TimetableMoveDialog
-		bind:open={moveDialogOpen}
-		entry={moveEntry}
-		periods={controller?.workspace.bellPeriods ?? []}
-		{busy}
-		onConfirm={confirmMove}
-	/>
-
-	<AlertDialog.Root bind:open={removeDialogOpen}>
+	<AlertDialog.Root bind:open={removeOpen}>
 		<AlertDialog.Content>
 			<AlertDialog.Header>
-				<AlertDialog.Title>นำคาบนี้ออกจากตารางหรือไม่</AlertDialog.Title>
+				<AlertDialog.Title>นำรายการออกจากตาราง</AlertDialog.Title>
 				<AlertDialog.Description>
-					{removeEntry?.offeringCode ?? removeEntry?.entryType ?? ''} · {removeEntry?.offeringName ??
-						removeEntry?.title ??
-						''}
-					จะกลับไปอยู่ในรายการคาบที่รอจัด และสามารถนำมาวางใหม่ได้
+					เลือกขอบเขตที่ต้องการลบ ระบบจะไม่ลบรายวิชาหรือกลุ่มต้นทางจากหน้าจัดการเรียน
 				</AlertDialog.Description>
 			</AlertDialog.Header>
+			<div class="space-y-2 py-2">
+				{#if currentRemovalTarget(selectedBlock) && (selectedBlock?.blockKind !== 'course' || (selectedBlock?.groups.length ?? 0) > 1)}
+					<button
+						type="button"
+						class={[
+							'w-full rounded-lg border p-3 text-left',
+							removeMode === 'target' && 'border-primary bg-primary/5 ring-1 ring-primary'
+						]}
+						onclick={() => (removeMode = 'target')}
+					>
+						<p class="text-sm font-medium">
+							นำออกเฉพาะ {currentRemovalTarget(selectedBlock)?.label}
+						</p>
+						<p class="text-xs text-muted-foreground">
+							ห้องหรือครูอื่นที่เพิ่มมาพร้อมกันยังอยู่ตามเดิม
+						</p>
+					</button>
+				{/if}
+				<button
+					type="button"
+					class={[
+						'w-full rounded-lg border p-3 text-left',
+						removeMode === 'block' && 'border-primary bg-primary/5 ring-1 ring-primary'
+					]}
+					onclick={() => (removeMode = 'block')}
+				>
+					<p class="text-sm font-medium">ลบคาบนี้ทั้งช่อง</p>
+					<p class="text-xs text-muted-foreground">
+						ลบเฉพาะวันและคาบที่เลือก รายการช่องอื่นไม่เปลี่ยน
+					</p>
+				</button>
+				{#if selectedBlock?.seriesId}
+					<button
+						type="button"
+						class={[
+							'w-full rounded-lg border p-3 text-left',
+							removeMode === 'series' &&
+								'border-destructive bg-destructive/5 ring-1 ring-destructive'
+						]}
+						onclick={() => (removeMode = 'series')}
+					>
+						<p class="text-sm font-medium text-destructive">ลบทั้งชุดที่สร้างพร้อมกัน</p>
+						<p class="text-xs text-muted-foreground">ลบทุกวันและทุกคาบในชุดนี้</p>
+					</button>
+				{/if}
+			</div>
 			<AlertDialog.Footer>
 				<AlertDialog.Cancel disabled={busy}>ยกเลิก</AlertDialog.Cancel>
 				<AlertDialog.Action variant="destructive" disabled={busy} onclick={confirmRemove}>
-					{#if busy}<LoaderCircle class="size-4 animate-spin" />{/if}
-					{busy ? 'กำลังนำออก...' : 'นำออกจากตาราง'}
+					{#if busy}<LoaderCircle class="size-4 animate-spin" />{:else}<Trash2
+							class="size-4"
+						/>{/if}
+					ยืนยันนำออก
 				</AlertDialog.Action>
 			</AlertDialog.Footer>
 		</AlertDialog.Content>

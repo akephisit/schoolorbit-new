@@ -1,9 +1,9 @@
 import type {
-	TimetablePlacementCandidate,
-	TimetablePlacementMutationKind,
-	TimetablePlacementPreview,
-	TimetablePlacementSource,
-	TimetableWorkspace
+	TimetableBlockMutationKind,
+	TimetableBlockPlacementCandidate,
+	TimetableBlockPlacementPreview,
+	TimetableBlockPlacementSource,
+	TimetableBlockWorkspace
 } from '../../api/timetable';
 import {
 	createTimetableBoardState,
@@ -13,17 +13,17 @@ import {
 } from './board-state';
 
 export interface TimetableDragSource {
-	source: TimetablePlacementSource;
-	candidate: TimetablePlacementCandidate;
+	source: TimetableBlockPlacementSource;
+	candidate: TimetableBlockPlacementCandidate;
 }
 
 class TimetableWorkspaceController {
-	workspace!: TimetableWorkspace;
+	workspace!: TimetableBlockWorkspace;
 	view = $state<TimetableBoardView>('homeroom');
 	selectedOwnerId!: string | null;
 	dragSource = $state.raw<TimetableDragSource | null>(null);
-	preview = $state.raw<TimetablePlacementPreview | null>(null);
-	pendingMutation = $state<TimetablePlacementMutationKind | null>(null);
+	preview = $state.raw<TimetableBlockPlacementPreview | null>(null);
+	pendingMutation = $state<TimetableBlockMutationKind | null>(null);
 	isRefreshing = $state(false);
 
 	board = $derived.by(() => createTimetableBoardState(this.workspace));
@@ -31,12 +31,12 @@ class TimetableWorkspaceController {
 	selectedRow = $derived(this.rows.find((row) => row.id === this.selectedOwnerId) ?? null);
 	canEdit = $derived(this.board.canEdit && this.pendingMutation === null);
 
-	constructor(workspace: TimetableWorkspace) {
+	constructor(workspace: TimetableBlockWorkspace) {
 		this.workspace = $state.raw(workspace);
 		this.selectedOwnerId = $state(this.initialOwnerId('homeroom'));
 	}
 
-	setWorkspace = (workspace: TimetableWorkspace) => {
+	setWorkspace = (workspace: TimetableBlockWorkspace) => {
 		this.workspace = workspace;
 		if (!this.rows.some((row) => row.id === this.selectedOwnerId)) {
 			this.selectedOwnerId = this.initialOwnerId(this.view);
@@ -53,16 +53,19 @@ class TimetableWorkspaceController {
 		if (this.rows.some((row) => row.id === ownerId)) this.selectedOwnerId = ownerId;
 	};
 
-	startPlacement = (source: TimetablePlacementSource, candidate: TimetablePlacementCandidate) => {
+	startPlacement = (
+		source: TimetableBlockPlacementSource,
+		candidate: TimetableBlockPlacementCandidate
+	) => {
 		this.dragSource = { source, candidate };
 		this.preview = null;
 	};
 
-	setPreview = (preview: TimetablePlacementPreview | null) => {
+	setPreview = (preview: TimetableBlockPlacementPreview | null) => {
 		this.preview = preview;
 	};
 
-	beginMutation = (mutation: TimetablePlacementMutationKind) => {
+	beginMutation = (mutation: TimetableBlockMutationKind) => {
 		this.pendingMutation = mutation;
 	};
 
@@ -88,18 +91,19 @@ class TimetableWorkspaceController {
 
 	private initialOwnerId(view: TimetableBoardView): string | null {
 		if (view === 'teacher') {
-			const scheduledTeacher = this.workspace.entries
-				.flatMap((entry) => entry.instructors)
-				.find((instructor) =>
-					this.workspace.staff.some((teacher) => teacher.id === instructor.userId)
-				);
-			if (scheduledTeacher) return scheduledTeacher.userId;
+			const scheduledTeacherId = this.workspace.blocks
+				.flatMap((block) => [
+					...block.groups.flatMap((group) => group.instructors.map((teacher) => teacher.teacherId)),
+					...block.teachers.map((teacher) => teacher.teacherId)
+				])
+				.find((teacherId) => this.workspace.staff.some((teacher) => teacher.id === teacherId));
+			if (scheduledTeacherId) return scheduledTeacherId;
 		}
 		return rowsForTimetableView(this.board, view)[0]?.id ?? null;
 	}
 }
 
-export function createTimetableWorkspaceController(workspace: TimetableWorkspace) {
+export function createTimetableWorkspaceController(workspace: TimetableBlockWorkspace) {
 	return new TimetableWorkspaceController(workspace);
 }
 

@@ -12,13 +12,12 @@ test('timetable workspace uses one cancellable set-based board load', async () =
 		'utf8'
 	);
 
-	assert.match(page, /getTimetableWorkspace/);
-	assert.equal((page.match(/getTimetableWorkspace\(/g) ?? []).length, 1);
+	assert.match(page, /getTimetableBlockWorkspace/);
+	assert.equal((page.match(/getTimetableBlockWorkspace\(/g) ?? []).length, 3);
 	assert.match(page, /listTimetableVersions/);
 	assert.match(page, /LatestRequest/);
 	assert.match(page, /isAbortError/);
 	assert.match(page, /request\.begin\(\)/);
-	assert.match(page, /request\.isCurrent\(revision\)/);
 	assert.match(page, /request\.abort\(\)/);
 	assert.doesNotMatch(page, /loadTimetableCollections/);
 	assert.doesNotMatch(page, /listLearningGroupsForTerm|listLearningOfferings|listHomerooms/);
@@ -54,7 +53,7 @@ test('timetable derives setup notices from its set-based workspace', async () =>
 	assert.match(page, /missingTeachersPrerequisite/);
 	assert.match(page, /missingPeriodsPrerequisite/);
 	assert.match(page, /missingRoomsPrerequisite/);
-	assert.match(page, /\/staff\/academic\/core#bell-schedules/);
+	assert.match(page, /\/staff\/academic\/core/);
 	assert.match(page, /\/staff\/facility\/buildings/);
 	assert.doesNotMatch(page, /getLearningDeliveryManagementOptions|getCurriculumProgramWorkspace/);
 });

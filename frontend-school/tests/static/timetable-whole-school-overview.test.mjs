@@ -6,46 +6,23 @@ import test from 'node:test';
 const projectRoot = path.resolve(import.meta.dirname, '../..');
 const read = (relativePath) => readFile(path.join(projectRoot, relativePath), 'utf8');
 
-test('whole-school view loads one bounded day and remains outside editable board state', async () => {
+test('whole-school view is a read-only projection of one canonical workspace', async () => {
 	const page = await read('src/routes/(app)/staff/academic/timetable/+page.svelte');
-	const overview = await read(
-		'src/lib/components/academic/timetable/TimetableWholeSchoolOverview.svelte'
-	);
 
-	assert.match(page, /getWholeSchoolTimetableOverview/);
-	assert.match(page, /overviewCache/);
-	assert.match(page, /timetableVersionId.*selectedOverviewDay/s);
 	assert.match(page, /activeView === 'wholeSchool'/);
-	assert.match(overview, /ภาพรวมทั้งโรงเรียน · ดูอย่างเดียว/);
-	assert.doesNotMatch(
-		overview,
-		/createTimetableEntry|updateTimetableEntry|swapTimetableEntries|deleteTimetableEntry/
-	);
-	assert.doesNotMatch(overview, /draggable=|onDropIntent|onDragStart/);
+	assert.match(page, /overviewDay/);
+	assert.match(page, /controller\.workspace\.blocks\.filter/);
+	assert.match(page, /blockBelongsToRow\(block, 'homeroom', homeroom\.id\)/);
+	assert.match(page, /ภาพรวมทั้งโรงเรียน/);
+	assert.match(page, /มุมมองนี้ใช้ตรวจภาพรวม/);
 });
 
-test('whole-school issue recovery links preserve the exact version and owner projection', async () => {
+test('whole-school matrix keeps sticky workbook headers and opens block details read-only', async () => {
 	const page = await read('src/routes/(app)/staff/academic/timetable/+page.svelte');
-	const summary = await read('src/lib/components/academic/timetable/TimetableIssueSummary.svelte');
 
-	assert.match(page, /openOverviewHomeroom/);
-	assert.match(page, /openOverviewTeacher/);
-	assert.match(page, /focusPeriodId/);
-	assert.match(summary, /onOpenHomeroom/);
-	assert.match(summary, /onOpenTeacher/);
-	assert.match(summary, /instructorIds/);
-	assert.match(summary, /homeroomIds/);
-});
-
-test('whole-school matrix has sticky workbook headers and a compact mobile slice', async () => {
-	const overview = await read(
-		'src/lib/components/academic/timetable/TimetableWholeSchoolOverview.svelte'
-	);
-
-	assert.match(overview, /sticky top-0/);
-	assert.match(overview, /sticky left-0/);
-	assert.match(overview, /sm:hidden/);
-	assert.match(overview, /selectedMobilePeriodId/);
-	assert.match(overview, /selectedMobileHomeroomId/);
-	assert.match(overview, /Select\.Root/);
+	assert.match(page, /sticky left-0/);
+	assert.match(page, /overflow-x-auto/);
+	assert.match(page, /onclick=\{\(\) => openEditor\(block\)\}/);
+	assert.match(page, /selectedBlock\?\.blockKind/);
+	assert.match(page, /\{#if canEdit\}[\s\S]*บันทึก/);
 });

@@ -184,7 +184,7 @@ async fn request_observation(
         RequestSupervisionObservationRequest {
             cycle_id: fixture.cycle.id,
             academic_term_id: fixture.academic_term_id,
-            timetable_entry_id: None,
+            timetable_block_group_id: None,
             observed_at: None,
             manual_lesson: Some(ManualLessonInput {
                 subject_name: "Mathematics".to_string(),
@@ -637,7 +637,7 @@ async fn list_hydrators_preserve_multi_parent_relations() {
         RequestSupervisionObservationRequest {
             cycle_id: fixture.cycle.id,
             academic_term_id: fixture.academic_term_id,
-            timetable_entry_id: None,
+            timetable_block_group_id: None,
             observed_at: None,
             manual_lesson: Some(ManualLessonInput {
                 subject_name: "Science".to_string(),
@@ -674,7 +674,7 @@ async fn list_hydrators_preserve_multi_parent_relations() {
         RequestSupervisionObservationRequest {
             cycle_id: fixture.cycle.id,
             academic_term_id: fixture.academic_term_id,
-            timetable_entry_id: None,
+            timetable_block_group_id: None,
             observed_at: None,
             manual_lesson: Some(ManualLessonInput {
                 subject_name: "English".to_string(),

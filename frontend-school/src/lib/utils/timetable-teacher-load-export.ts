@@ -1,4 +1,4 @@
-import type { TimetableEntry } from '$lib/api/timetable';
+import type { TimetableBlock, TimetableBlockInstructor } from '$lib/api/timetable';
 
 export type TeacherLoadCategory =
 	| 'course'
@@ -15,7 +15,7 @@ export type TeacherLoadDetailKind =
 	| 'synchronizedActivity'
 	| 'unspecifiedActivity';
 
-export type TeacherLoadEntry = TimetableEntry;
+export type TeacherLoadEntry = TimetableBlock;
 
 export interface TeacherLoadSummaryRow {
 	teacherId: string;
@@ -152,10 +152,10 @@ const DAY_ORDER: Record<string, number> = {
 };
 
 export function teacherLoadCategoryForEntry(entry: TeacherLoadEntry): TeacherLoadCategory | null {
-	if (entry.entryType === 'COURSE') return 'course';
-	if (entry.entryType !== 'ACTIVITY') return null;
-	if (entry.activitySchedulingMode === 'independent') return 'independentActivity';
-	if (entry.activitySchedulingMode === 'synchronized') return 'synchronizedActivity';
+	if (entry.blockKind === 'course') return 'course';
+	if (entry.blockKind !== 'activity') return null;
+	if (entry.schedulingMode === 'independent') return 'independentActivity';
+	if (entry.schedulingMode === 'synchronized') return 'synchronizedActivity';
 	return 'unspecifiedActivity';
 }
 
@@ -167,8 +167,8 @@ export function buildTeacherLoadExportRows(entries: TeacherLoadEntry[]): Teacher
 		const category = teacherLoadCategoryForEntry(entry);
 		if (!category) continue;
 
-		for (const instructor of entry.instructors) {
-			const teacherId = instructor.userId;
+		for (const instructor of instructorsForBlock(entry)) {
+			const teacherId = instructor.teacherId;
 			const teacherName = instructor.displayName;
 			const teacherSubjectGroup = teacherSubjectGroupForInstructor(instructor);
 			const instructorRole = instructor.role === 'primary' ? 'primary' : 'secondary';
@@ -182,7 +182,8 @@ export function buildTeacherLoadExportRows(entries: TeacherLoadEntry[]): Teacher
 			const existingDetail = details.get(detailKey);
 
 			if (existingDetail) {
-				appendUnique(existingDetail.homeroomNames, entry.homeroomName ?? '');
+				for (const name of blockTargetNames(entry))
+					appendUnique(existingDetail.homeroomNames, name);
 				existingDetail.homeroomName = existingDetail.homeroomNames.join(', ');
 				continue;
 			}
@@ -191,7 +192,7 @@ export function buildTeacherLoadExportRows(entries: TeacherLoadEntry[]): Teacher
 			incrementSummary(summary, detailKind);
 
 			const itemSubjectGroup = itemSubjectGroupForEntry(entry, category);
-			const homeroomNames = uniqueNonEmpty([entry.homeroomName ?? '']);
+			const homeroomNames = uniqueNonEmpty(blockTargetNames(entry));
 			details.set(detailKey, {
 				teacherId,
 				teacherName,
@@ -320,7 +321,7 @@ function teacherLoadDetailKey(
 	teacherId: string
 ): string {
 	if (category === 'synchronizedActivity' || category === 'unspecifiedActivity') {
-		const logicalActivityId = entry.offeringId || entry.id;
+		const logicalActivityId = entry.learningOfferingId || entry.id;
 		return [
 			teacherId,
 			category,
@@ -342,10 +343,7 @@ function detailKindForEntry(
 	if (category === 'synchronizedActivity') return 'synchronizedActivity';
 	if (category === 'unspecifiedActivity') return 'unspecifiedActivity';
 
-	const isHomeGroup =
-		!!entry.subjectGroupId &&
-		!!teacherSubjectGroupId &&
-		entry.subjectGroupId === teacherSubjectGroupId;
+	const isHomeGroup = false;
 	const isPrimary = instructorRole === 'primary';
 
 	if (isHomeGroup && isPrimary) return 'homeGroupPrimaryCourse';
@@ -360,13 +358,11 @@ interface SubjectGroupMeta {
 	displayOrder: number | null;
 }
 
-function teacherSubjectGroupForInstructor(
-	instructor: TeacherLoadEntry['instructors'][number]
-): SubjectGroupMeta {
+function teacherSubjectGroupForInstructor(_instructor: TimetableBlockInstructor): SubjectGroupMeta {
 	return {
-		id: instructor.subjectGroupId ?? null,
-		name: instructor.subjectGroupName || UNKNOWN_SUBJECT_GROUP_NAME,
-		displayOrder: instructor.subjectGroupDisplayOrder ?? null
+		id: null,
+		name: UNKNOWN_SUBJECT_GROUP_NAME,
+		displayOrder: null
 	};
 }
 
@@ -383,24 +379,33 @@ function itemSubjectGroupForEntry(
 	}
 
 	return {
-		id: entry.subjectGroupId ?? null,
-		name: entry.subjectGroupName || UNKNOWN_SUBJECT_GROUP_NAME,
-		displayOrder: entry.subjectGroupDisplayOrder ?? null
+		id: null,
+		name: UNKNOWN_SUBJECT_GROUP_NAME,
+		displayOrder: null
 	};
 }
 
 function entryTitle(entry: TeacherLoadEntry, category: TeacherLoadCategory): string {
 	if (category === 'course') {
-		return [entry.offeringCode, entry.offeringName ?? entry.subjectVersionDisplayLabel]
-			.filter(Boolean)
-			.join(' - ');
+		return [entry.offeringCode, entry.offeringName].filter(Boolean).join(' - ');
 	}
-	return (
-		entry.offeringName ||
-		entry.activityVersionDisplayLabel ||
-		entry.title ||
-		CATEGORY_LABELS[category]
-	);
+	return entry.offeringName || entry.title || CATEGORY_LABELS[category];
+}
+
+function instructorsForBlock(entry: TeacherLoadEntry): TimetableBlockInstructor[] {
+	const byTeacher = new Map<string, TimetableBlockInstructor>();
+	for (const instructor of entry.groups.flatMap((group) => group.instructors)) {
+		const current = byTeacher.get(instructor.teacherId);
+		if (!current || instructor.role === 'primary') byTeacher.set(instructor.teacherId, instructor);
+	}
+	return [...byTeacher.values()];
+}
+
+function blockTargetNames(entry: TeacherLoadEntry): string[] {
+	return [
+		...entry.groups.map((group) => group.name),
+		...entry.homerooms.map((homeroom) => homeroom.name)
+	];
 }
 
 function formatTimeRange(start?: string | null, end?: string | null): string {

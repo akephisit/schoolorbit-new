@@ -4,8 +4,8 @@
 		TimetableBoardState,
 		TimetableBoardView
 	} from '$lib/academic/timetable/board-state';
-	import { entriesForTimetableCell } from '$lib/academic/timetable/board-state';
-	import type { TimetableEntry } from '$lib/api/timetable';
+	import { blocksForTimetableCell } from '$lib/academic/timetable/board-state';
+	import type { TimetableBlock } from '$lib/api/timetable';
 
 	import TimetableCell, { type TimetableCellState } from './TimetableCell.svelte';
 	import TimetableLessonCard from './TimetableLessonCard.svelte';
@@ -16,34 +16,30 @@
 		state,
 		view,
 		row,
-		selectedEntryId = null,
+		selectedBlockId = null,
 		canEdit = false,
 		cellState,
 		onDropIntent,
 		onActivateIntent,
 		onHoverIntent,
-		onSelectEntry,
+		onSelectBlock,
 		onDragStart,
 		onCancelDrag,
-		onMoveEntry,
-		onEditEntry,
-		onRemoveEntry
+		onRemoveBlock
 	}: {
 		state: TimetableBoardState;
 		view: TimetableBoardView;
 		row: TimetableBoardRow;
-		selectedEntryId?: string | null;
+		selectedBlockId?: string | null;
 		canEdit?: boolean;
 		cellState?: (dayOfWeek: string, periodId: string) => TimetableCellState;
 		onDropIntent?: (dayOfWeek: string, periodId: string) => void;
 		onActivateIntent?: (dayOfWeek: string, periodId: string) => void;
 		onHoverIntent?: (dayOfWeek: string, periodId: string) => void;
-		onSelectEntry?: (entry: TimetableEntry) => void;
-		onDragStart?: (entry: TimetableEntry, event: DragEvent) => void;
+		onSelectBlock?: (block: TimetableBlock) => void;
+		onDragStart?: (block: TimetableBlock, event: DragEvent) => void;
 		onCancelDrag?: () => void;
-		onMoveEntry?: (entry: TimetableEntry) => void;
-		onEditEntry?: (entry: TimetableEntry) => void;
-		onRemoveEntry?: (entry: TimetableEntry) => void;
+		onRemoveBlock?: (block: TimetableBlock) => void;
 	} = $props();
 
 	const days: Day[] = [
@@ -74,7 +70,7 @@
 			<p class="font-mono text-xs font-semibold text-primary">{row.code}</p>
 			<h2 class="font-semibold">{row.label}</h2>
 		</div>
-		<p class="text-xs text-muted-foreground">ลากหรือกด “ย้ายคาบ” · ครั้งละ 1 คาบ</p>
+		<p class="text-xs text-muted-foreground">ลากคาบไปยังช่องใหม่ · ครั้งละ 1 คาบ</p>
 	</div>
 	<div class="overflow-x-auto">
 		<table class="w-full border-collapse text-left">
@@ -101,7 +97,7 @@
 							<p class="text-xs font-semibold">{day.label}</p>
 						</th>
 						{#each state.workspace.bellPeriods as period (period.id)}
-							{@const entries = entriesForTimetableCell(state, {
+							{@const blocks = blocksForTimetableCell(state, {
 								view,
 								rowId: row.id,
 								dayOfWeek: day.id,
@@ -118,18 +114,16 @@
 								onDropIntent={() => onDropIntent?.(day.id, period.id)}
 								onActivateIntent={() => onActivateIntent?.(day.id, period.id)}
 							>
-								{#each entries as entry (`${entry.id}:${row.id}`)}
+								{#each blocks as block (`${block.id}:${row.id}`)}
 									<TimetableLessonCard
-										{entry}
+										{block}
 										rowId={row.id}
-										selected={selectedEntryId === entry.id}
+										selected={selectedBlockId === block.id}
 										{canEdit}
-										onSelect={onSelectEntry}
+										onSelect={onSelectBlock}
 										{onDragStart}
 										onDragEnd={onCancelDrag}
-										onMove={onMoveEntry}
-										onEdit={onEditEntry}
-										onRemove={onRemoveEntry}
+										onRemove={onRemoveBlock}
 									/>
 								{/each}
 							</TimetableCell>

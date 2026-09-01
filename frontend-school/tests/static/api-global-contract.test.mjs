@@ -768,7 +768,7 @@ test('staff module workspace routes use module-level menu permission gates', asy
 			'STUDENT_ACADEMIC_YEAR'
 		],
 		['frontend-school/src/routes/(app)/staff/academic/admission/+page.ts', 'ADMISSION'],
-		['frontend-school/src/routes/(app)/staff/academic/timetable/+page.ts', 'LEARNING_OFFERING'],
+		['frontend-school/src/routes/(app)/staff/academic/timetable/+page.ts', 'ACADEMIC_TIMETABLE'],
 		['frontend-school/src/routes/(app)/staff/academic/core/+page.ts', 'ACADEMIC_YEAR'],
 		['frontend-school/src/routes/(app)/staff/academic/homerooms/+page.ts', 'HOMEROOM'],
 		['frontend-school/src/routes/(app)/staff/academic/curricula/+page.ts', 'ACADEMIC_CURRICULUM'],
@@ -1077,7 +1077,16 @@ test('academic course planning pages gate read and manage actions', async () => 
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/timetable/+page.svelte',
 			imports: ['$lib/components/app-state'],
-			permissions: offeringPermissions,
+			permissions: [
+				'PERMISSIONS.ACADEMIC_TIMETABLE_READ_SCHOOL',
+				'PERMISSIONS.ACADEMIC_TIMETABLE_READ_ORGANIZATION_UNIT',
+				'PERMISSIONS.ACADEMIC_TIMETABLE_READ_ORGANIZATION_TREE',
+				'PERMISSIONS.ACADEMIC_TIMETABLE_READ_ASSIGNED',
+				'PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_SCHOOL',
+				'PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_ORGANIZATION_UNIT',
+				'PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_ORGANIZATION_TREE',
+				'PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_ASSIGNED'
+			],
 			identifiers: ['canRead', 'canManage']
 		},
 		{
@@ -1522,20 +1531,20 @@ test('dashboard and self-view routes stay user-scoped with permission-filtered s
 	assert.doesNotMatch(staffDashboard, /href="\/staff\/(?:manage|students|school-settings)"/);
 
 	assert.match(staffTimetable, /getMyTimetable/);
-	assert.match(staffTimetable, /periodsFromTimetableEntries/);
+	assert.match(staffTimetable, /periodsFromTimetableBlocks/);
 	assert.doesNotMatch(staffTimetable, /periods\s*=\s*entriesRes\.periods/);
 	assert.doesNotMatch(
 		staffTimetable,
 		/PERMISSION_MODULES|PERMISSIONS|getTimetableEntries|listPeriods/
 	);
 	assert.match(studentTimetable, /getMyTimetable/);
-	assert.match(studentTimetable, /periodsFromTimetableEntries/);
+	assert.match(studentTimetable, /periodsFromTimetableBlocks/);
 	assert.doesNotMatch(
 		studentTimetable,
 		/PERMISSION_MODULES|PERMISSIONS|getTimetableEntries|listPeriods/
 	);
 	assert.match(parentTimetable, /getChildTimetable/);
-	assert.match(parentTimetable, /periodsFromTimetableEntries/);
+	assert.match(parentTimetable, /periodsFromTimetableBlocks/);
 	assert.doesNotMatch(parentTimetable, /getMyTimetable|getTimetableEntries|listPeriods/);
 	assert.match(
 		parentApi,

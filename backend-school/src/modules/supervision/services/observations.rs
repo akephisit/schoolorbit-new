@@ -43,7 +43,7 @@ struct SupervisionObservationRow {
     requested_by: Option<Uuid>,
     approved_by: Option<Uuid>,
     template_id: Uuid,
-    timetable_entry_id: Option<Uuid>,
+    timetable_block_group_id: Option<Uuid>,
     observed_at: DateTime<Utc>,
     manual_subject_name: Option<String>,
     manual_classroom_label: Option<String>,
@@ -264,7 +264,7 @@ pub async fn request_observation(
         &cycle,
         input.academic_term_id,
         actor_user_id,
-        input.timetable_entry_id,
+        input.timetable_block_group_id,
         input.observed_at,
         input.manual_lesson,
     )
@@ -290,7 +290,7 @@ pub async fn request_observation(
     .bind(actor_user_id)
     .bind(actor_user_id)
     .bind(cycle.template_id)
-    .bind(lesson.timetable_entry_id)
+    .bind(lesson.timetable_block_group_id)
     .bind(&lesson.manual_subject_name)
     .bind(&lesson.manual_classroom_label)
     .bind(&lesson.manual_room_label)
@@ -341,7 +341,7 @@ pub async fn update_requested_observation(
         &cycle,
         current.academic_term_id,
         actor_user_id,
-        input.timetable_entry_id,
+        input.timetable_block_group_id,
         input.observed_at,
         input.manual_lesson,
     )
@@ -364,7 +364,7 @@ pub async fn update_requested_observation(
         "#,
     )
     .bind(observation_id)
-    .bind(lesson.timetable_entry_id)
+    .bind(lesson.timetable_block_group_id)
     .bind(lesson.learning_group_id)
     .bind(lesson.homeroom_id)
     .bind(&lesson.manual_subject_name)
@@ -427,20 +427,24 @@ pub async fn update_observation(
     let template_id = input.template_id.unwrap_or(current.template_id);
     let manual_lesson = match (input.manual_lesson, current.manual_lesson) {
         (Some(manual), _) => Some(manual),
-        (None, Some(manual)) if input.timetable_entry_id.is_none() => Some(ManualLessonInput {
-            subject_name: manual.subject_name,
-            classroom_label: manual.classroom_label,
-            room_label: manual.room_label,
-            observed_at: input.observed_at.unwrap_or(manual.observed_at),
-            period_label: manual.period_label,
-            reason: manual.reason,
-        }),
+        (None, Some(manual)) if input.timetable_block_group_id.is_none() => {
+            Some(ManualLessonInput {
+                subject_name: manual.subject_name,
+                classroom_label: manual.classroom_label,
+                room_label: manual.room_label,
+                observed_at: input.observed_at.unwrap_or(manual.observed_at),
+                period_label: manual.period_label,
+                reason: manual.reason,
+            })
+        }
         (None, _) => None,
     };
-    let timetable_entry_id = if manual_lesson.is_some() {
+    let timetable_block_group_id = if manual_lesson.is_some() {
         None
     } else {
-        input.timetable_entry_id.or(current.timetable_entry_id)
+        input
+            .timetable_block_group_id
+            .or(current.timetable_block_group_id)
     };
     let observed_at = if manual_lesson.is_some() {
         None
@@ -452,7 +456,7 @@ pub async fn update_observation(
         &cycle,
         current.academic_term_id,
         current.observed_user_id,
-        timetable_entry_id,
+        timetable_block_group_id,
         observed_at,
         manual_lesson,
     )
@@ -489,7 +493,7 @@ pub async fn update_observation(
     )
     .bind(observation_id)
     .bind(template_id)
-    .bind(lesson.timetable_entry_id)
+    .bind(lesson.timetable_block_group_id)
     .bind(lesson.learning_group_id)
     .bind(lesson.homeroom_id)
     .bind(&lesson.manual_subject_name)
@@ -762,7 +766,7 @@ fn observation_select_sql() -> &'static str {
            NULLIF(TRIM(CONCAT(COALESCE(u.title, ''), u.first_name, ' ', u.last_name)), '')
                AS observed_display_name,
            o.requested_by, o.approved_by, o.template_id,
-           o.timetable_block_group_id AS timetable_entry_id,
+           o.timetable_block_group_id AS timetable_block_group_id,
            o.observed_at,
            o.manual_subject_name, o.manual_classroom_label, o.manual_room_label,
            o.manual_period_label, o.manual_reason,
@@ -803,7 +807,7 @@ async fn hydrate_observations(
                 requested_by: row.requested_by,
                 approved_by: row.approved_by,
                 template_id: row.template_id,
-                timetable_entry_id: row.timetable_entry_id,
+                timetable_block_group_id: row.timetable_block_group_id,
                 observed_at: row.observed_at,
                 manual_lesson,
                 lesson_snapshot: row.lesson_snapshot.0,
@@ -1136,7 +1140,7 @@ async fn validate_observation_context(
 }
 
 struct ResolvedLessonInput {
-    timetable_entry_id: Option<Uuid>,
+    timetable_block_group_id: Option<Uuid>,
     learning_group_id: Option<Uuid>,
     homeroom_id: Option<Uuid>,
     observed_at: DateTime<Utc>,
@@ -1153,20 +1157,20 @@ async fn resolve_lesson_input(
     cycle: &CycleForRequestRow,
     academic_term_id: Uuid,
     actor_user_id: Uuid,
-    timetable_entry_id: Option<Uuid>,
+    timetable_block_group_id: Option<Uuid>,
     observed_at: Option<DateTime<Utc>>,
     manual_lesson: Option<ManualLessonInput>,
 ) -> Result<ResolvedLessonInput, AppError> {
-    match (timetable_entry_id, observed_at, manual_lesson) {
-        (Some(entry_id), Some(observed_at), None) => {
+    match (timetable_block_group_id, observed_at, manual_lesson) {
+        (Some(block_group_id), Some(observed_at), None) => {
             validate_observed_at_in_cycle(cycle, observed_at)?;
             let observed_date = bangkok_observation_date(observed_at);
             let timetable_version =
                 timetable_version_service::resolve_for_date(pool, academic_term_id, observed_date)
                     .await?;
-            let entry = load_timetable_entry_context_for_teacher(
+            let entry = load_timetable_block_group_context_for_teacher(
                 pool,
-                entry_id,
+                block_group_id,
                 timetable_version.id,
                 actor_user_id,
                 cycle.academic_year_id,
@@ -1179,7 +1183,7 @@ async fn resolve_lesson_input(
                 ));
             }
             Ok(ResolvedLessonInput {
-                timetable_entry_id: Some(entry_id),
+                timetable_block_group_id: Some(block_group_id),
                 learning_group_id: entry.learning_group_id,
                 homeroom_id: entry.homeroom_id,
                 observed_at,
@@ -1188,7 +1192,12 @@ async fn resolve_lesson_input(
                 manual_room_label: None,
                 manual_period_label: None,
                 manual_reason: None,
-                snapshot: load_timetable_lesson_snapshot(pool, entry_id, observed_at).await?,
+                snapshot: load_timetable_block_group_lesson_snapshot(
+                    pool,
+                    block_group_id,
+                    observed_at,
+                )
+                .await?,
             })
         }
         (Some(_), None, None) => Err(AppError::ValidationError(
@@ -1198,7 +1207,7 @@ async fn resolve_lesson_input(
             validate_manual_lesson(&manual)?;
             validate_observed_at_in_cycle(cycle, manual.observed_at)?;
             Ok(ResolvedLessonInput {
-                timetable_entry_id: None,
+                timetable_block_group_id: None,
                 learning_group_id: None,
                 homeroom_id: None,
                 observed_at: manual.observed_at,
@@ -1261,21 +1270,21 @@ fn validate_manual_lesson(manual: &ManualLessonInput) -> Result<(), AppError> {
 }
 
 #[derive(Debug, sqlx::FromRow)]
-struct TimetableEntryLessonContext {
+struct TimetableBlockGroupLessonContext {
     day_of_week: String,
     learning_group_id: Option<Uuid>,
     homeroom_id: Option<Uuid>,
 }
 
-async fn load_timetable_entry_context_for_teacher(
+async fn load_timetable_block_group_context_for_teacher(
     pool: &PgPool,
-    entry_id: Uuid,
+    block_group_id: Uuid,
     timetable_version_id: Uuid,
     teacher_user_id: Uuid,
     academic_year_id: Uuid,
     academic_term_id: Uuid,
-) -> Result<TimetableEntryLessonContext, AppError> {
-    let context = sqlx::query_as::<_, TimetableEntryLessonContext>(
+) -> Result<TimetableBlockGroupLessonContext, AppError> {
+    let context = sqlx::query_as::<_, TimetableBlockGroupLessonContext>(
         r#"
         SELECT block.day_of_week, block_group.learning_group_id,
                NULL::uuid AS homeroom_id
@@ -1294,7 +1303,7 @@ async fn load_timetable_entry_context_for_teacher(
           )
         "#,
     )
-    .bind(entry_id)
+    .bind(block_group_id)
     .bind(timetable_version_id)
     .bind(teacher_user_id)
     .bind(academic_year_id)
@@ -1311,9 +1320,9 @@ async fn load_timetable_entry_context_for_teacher(
     })
 }
 
-async fn load_timetable_lesson_snapshot(
+async fn load_timetable_block_group_lesson_snapshot(
     pool: &PgPool,
-    entry_id: Uuid,
+    block_group_id: Uuid,
     observed_at: DateTime<Utc>,
 ) -> Result<LessonSnapshot, AppError> {
     let row = sqlx::query(
@@ -1341,7 +1350,7 @@ async fn load_timetable_lesson_snapshot(
           AND block_group.is_active
         "#,
     )
-    .bind(entry_id)
+    .bind(block_group_id)
     .fetch_optional(pool)
     .await
     .map_err(|error| {
@@ -1352,7 +1361,7 @@ async fn load_timetable_lesson_snapshot(
 
     Ok(LessonSnapshot {
         source: Some("timetable".to_string()),
-        timetable_entry_id: Some(entry_id),
+        timetable_block_group_id: Some(block_group_id),
         subject_name: row.try_get("subject_name").ok(),
         classroom_label: row.try_get("classroom_label").ok(),
         room_label: row.try_get("room_label").ok(),
@@ -1445,7 +1454,7 @@ mod tests {
     use chrono::{DateTime, NaiveDate, Utc};
     use uuid::Uuid;
 
-    use super::{bangkok_observation_date, load_timetable_entry_context_for_teacher};
+    use super::{bangkok_observation_date, load_timetable_block_group_context_for_teacher};
     use crate::error::AppError;
     use crate::modules::academic::cutover_test_support::{
         apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
@@ -1468,14 +1477,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn exact_timetable_entry_context_rejects_inactive_entries() {
-        let pool = create_named_test_pool("supervision_exact_active_timetable_entry").await;
+    async fn exact_timetable_block_group_context_rejects_inactive_groups() {
+        let pool = create_named_test_pool("supervision_exact_active_timetable_block_group").await;
         apply_migrations_through(&pool, 40).await.unwrap();
         seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
             .await
             .unwrap();
         apply_phase_b_runtime_migrations(&pool).await.unwrap();
-        apply_migrations_through(&pool, 54).await.unwrap();
+        apply_migrations_through(&pool, 58).await.unwrap();
         let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
         let (source_id, source_row_version, term_start): (Uuid, i64, NaiveDate) = sqlx::query_as(
             r#"SELECT version.id, version.row_version, term.start_date
@@ -1499,9 +1508,13 @@ mod tests {
         )
         .await
         .unwrap();
-        let (entry_id, teacher_id, academic_year_id, academic_term_id): (Uuid, Uuid, Uuid, Uuid) =
-            sqlx::query_as(
-                r#"SELECT block_group.id, instructor.instructor_id,
+        let (block_group_id, teacher_id, academic_year_id, academic_term_id): (
+            Uuid,
+            Uuid,
+            Uuid,
+            Uuid,
+        ) = sqlx::query_as(
+            r#"SELECT block_group.id, instructor.instructor_id,
                       block.academic_year_id, block.academic_term_id
                FROM academic_timetable_blocks block
                JOIN academic_timetable_block_groups block_group
@@ -1512,30 +1525,30 @@ mod tests {
                  AND block.is_active AND block_group.is_active
                ORDER BY block_group.id, instructor.instructor_id
                LIMIT 1"#,
-            )
-            .bind(draft.id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+        )
+        .bind(draft.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
 
-        load_timetable_entry_context_for_teacher(
+        load_timetable_block_group_context_for_teacher(
             &pool,
-            entry_id,
+            block_group_id,
             draft.id,
             teacher_id,
             academic_year_id,
             academic_term_id,
         )
         .await
-        .expect("active exact timetable entry must be selectable");
+        .expect("active exact timetable block group must be selectable");
         sqlx::query("UPDATE academic_timetable_block_groups SET is_active = false WHERE id = $1")
-            .bind(entry_id)
+            .bind(block_group_id)
             .execute(&pool)
             .await
             .unwrap();
-        let inactive = load_timetable_entry_context_for_teacher(
+        let inactive = load_timetable_block_group_context_for_teacher(
             &pool,
-            entry_id,
+            block_group_id,
             draft.id,
             teacher_id,
             academic_year_id,

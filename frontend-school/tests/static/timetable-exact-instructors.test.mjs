@@ -4,26 +4,24 @@ import path from 'node:path';
 import test from 'node:test';
 
 const projectRoot = path.resolve(import.meta.dirname, '../..');
-const readProjectFile = (relativePath) => readFile(path.join(projectRoot, relativePath), 'utf8');
+const read = (relativePath) => readFile(path.join(projectRoot, relativePath), 'utf8');
 
-test('timetable editor sends the exact selected instructors for create and update', async () => {
-	const page = await readProjectFile('src/routes/(app)/staff/academic/timetable/+page.svelte');
-	const inspector = await readProjectFile(
-		'src/lib/components/academic/timetable/TimetableEntryInspector.svelte'
-	);
+test('ordinary blocks send the exact teacher subset selected before placement', async () => {
+	const page = await read('src/routes/(app)/staff/academic/timetable/+page.svelte');
+	const tray = await read('src/lib/components/academic/timetable/TimetableUnscheduledTray.svelte');
 
-	assert.match(page, /import TimetableInstructorPicker from/);
-	assert.match(page, /entry\.instructors\.map\(\(instructor\) => instructor\.userId\)/);
-	assert.match(page, /instructorIds:\s*preview\.normalizedCandidate\.instructorIds/);
-	assert.match(page, /pendingDemandInstructorIds/);
-	assert.match(page, /<TimetableInstructorPicker/);
-	assert.match(inspector, /entry\?\.instructors\.map\(\(teacher\) => teacher\.userId\)/);
-	assert.match(inspector, /instructorIds:\s*selectedInstructorIds/);
+	assert.match(tray, /instructorChoices/);
+	assert.match(tray, /selectedInstructorIds/);
+	assert.match(tray, /toggleInstructor/);
+	assert.match(tray, /aria-pressed=\{selectedIds\.includes\(teacher\.teacherId\)\}/);
+	assert.match(tray, /candidate:[\s\S]*instructorIds:\s*selectedInstructorIds\(demand\)/);
+	assert.match(page, /instructorIds:\s*dragSource\.candidate\.instructorIds/);
+	assert.match(page, /instructorIds:[\s\S]*editInstructorIds/);
 	assert.doesNotMatch(page, /teacherAssignments|formInstructorIds/);
 });
 
-test('instructor picker is explicit accessible and keyed by teacher identity', async () => {
-	const picker = await readProjectFile(
+test('instructor picker remains explicit accessible and keyed by teacher identity', async () => {
+	const picker = await read(
 		'src/lib/components/academic/timetable/TimetableInstructorPicker.svelte'
 	);
 
@@ -32,18 +30,14 @@ test('instructor picker is explicit accessible and keyed by teacher identity', a
 	assert.match(picker, /aria-pressed=/);
 	assert.match(picker, /\{#each options as option \(option\.id\)\}/);
 	assert.match(picker, /ครูผู้สอนของคาบนี้/);
-	assert.match(picker, /ยังไม่มีครูผู้สอนที่เลือกได้/);
 });
 
-test('published timetable exposes exact instructor names without an editable picker', async () => {
-	const card = await readProjectFile(
-		'src/lib/components/academic/timetable/TimetableLessonCard.svelte'
-	);
-	const inspector = await readProjectFile(
-		'src/lib/components/academic/timetable/TimetableEntryInspector.svelte'
-	);
+test('published cards expose canonical instructor names without edit controls', async () => {
+	const card = await read('src/lib/components/academic/timetable/TimetableLessonCard.svelte');
+	const page = await read('src/routes/(app)/staff/academic/timetable/+page.svelte');
 
-	assert.match(card, /entry\.instructors\.map\(\(teacher\) => teacher\.displayName\)/);
-	assert.match(inspector, /disabled=\{readOnly \|\| busy\}/);
-	assert.match(inspector, /\{#if entry && !readOnly\}/);
+	assert.match(card, /group\.instructors\.map\(\(teacher\) => teacher\.displayName\)/);
+	assert.match(card, /block\.teachers\.map\(\(teacher\) => teacher\.displayName\)/);
+	assert.match(card, /\{#if canEdit\}/);
+	assert.match(page, /controller\?\.canEdit/);
 });

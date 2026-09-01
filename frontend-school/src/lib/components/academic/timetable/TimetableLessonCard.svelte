@@ -1,56 +1,74 @@
 <script lang="ts">
-	import type { TimetableEntry } from '$lib/api/timetable';
+	import type { TimetableBlock } from '$lib/api/timetable';
 	import { Button } from '$lib/components/ui/button';
-	import { DoorOpen, GripVertical, Move, Pencil, Trash2, Users } from 'lucide-svelte';
+	import { DoorOpen, GripVertical, Trash2, Users } from 'lucide-svelte';
 
 	let {
-		entry,
+		block,
 		rowId,
 		selected = false,
 		canEdit = false,
 		onSelect,
 		onDragStart,
 		onDragEnd,
-		onMove,
-		onEdit,
 		onRemove
 	}: {
-		entry: TimetableEntry;
+		block: TimetableBlock;
 		rowId: string;
 		selected?: boolean;
 		canEdit?: boolean;
-		onSelect?: (entry: TimetableEntry) => void;
-		onDragStart?: (entry: TimetableEntry, event: DragEvent) => void;
+		onSelect?: (block: TimetableBlock) => void;
+		onDragStart?: (block: TimetableBlock, event: DragEvent) => void;
 		onDragEnd?: () => void;
-		onMove?: (entry: TimetableEntry) => void;
-		onEdit?: (entry: TimetableEntry) => void;
-		onRemove?: (entry: TimetableEntry) => void;
+		onRemove?: (block: TimetableBlock) => void;
 	} = $props();
 
-	const title = $derived(entry.offeringName ?? entry.title ?? 'รายการตารางสอน');
-	const code = $derived(entry.offeringCode ?? entry.entryType);
-	const teacherNames = $derived(entry.instructors.map((teacher) => teacher.displayName));
-	const accessibleLabel = $derived(
-		`${code} ${title} ${entry.learningGroupName ?? ''} ครู ${teacherNames.join(', ') || 'ยังไม่ระบุ'}`
+	const title = $derived(block.offeringName ?? block.title ?? 'รายการตารางสอน');
+	const code = $derived(block.offeringCode ?? structuralLabel(block.structuralKind));
+	const teacherNames = $derived(
+		[
+			...block.groups.flatMap((group) => group.instructors.map((teacher) => teacher.displayName)),
+			...block.teachers.map((teacher) => teacher.displayName)
+		].filter((name, index, names) => names.indexOf(name) === index)
 	);
+	const groupNames = $derived(block.groups.map((group) => group.name));
+	const roomCodes = $derived(
+		[
+			...block.groups.map((group) => group.roomCode),
+			...block.homerooms.map((homeroom) => homeroom.roomCode)
+		].filter((room): room is string => Boolean(room))
+	);
+	const accessibleLabel = $derived(
+		`${code} ${title} ${groupNames.join(', ')} ครู ${teacherNames.join(', ') || 'ยังไม่ระบุ'}`
+	);
+
+	function structuralLabel(kind: TimetableBlock['structuralKind']): string {
+		if (kind === 'flag_ceremony') return 'กิจกรรมหน้าเสาธง';
+		if (kind === 'homeroom') return 'โฮมรูม';
+		if (kind === 'teacher_meeting') return 'ประชุมครู';
+		if (kind === 'break') return 'พัก';
+		return kind === 'academic' ? 'กิจกรรมวิชาการ' : 'คาบพิเศษ';
+	}
 
 	function dragStart(event: DragEvent): void {
 		if (!canEdit) return;
-		event.dataTransfer?.setData('text/plain', entry.id);
+		event.dataTransfer?.setData('text/plain', block.id);
 		if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
-		onDragStart?.(entry, event);
+		onDragStart?.(block, event);
 	}
 </script>
 
 <article
 	data-timetable-lesson-card
-	data-entry-id={entry.id}
+	data-block-id={block.id}
 	data-row-id={rowId}
 	draggable={canEdit}
 	class={[
 		'group rounded-lg border bg-background p-2.5 text-left shadow-xs transition',
 		canEdit && 'cursor-grab active:cursor-grabbing',
-		selected ? 'border-primary ring-2 ring-primary/20' : 'hover:border-primary/45'
+		selected ? 'border-primary ring-2 ring-primary/20' : 'hover:border-primary/45',
+		block.blockKind === 'activity' && 'border-l-4 border-l-violet-500',
+		block.blockKind === 'structural' && 'border-l-4 border-l-amber-500'
 	]}
 	aria-label={accessibleLabel}
 	ondragstart={dragStart}
@@ -66,13 +84,13 @@
 			type="button"
 			class="min-w-0 flex-1 text-left"
 			aria-label={`ดูรายละเอียด ${accessibleLabel}`}
-			onclick={() => onSelect?.(entry)}
+			onclick={() => onSelect?.(block)}
 		>
 			<p class="truncate font-mono text-[0.68rem] font-semibold text-primary">{code}</p>
 			<h4 class="line-clamp-2 text-xs font-semibold leading-4">{title}</h4>
-			{#if entry.learningGroupName}
+			{#if groupNames.length > 0}
 				<p class="mt-0.5 truncate text-[0.68rem] text-muted-foreground">
-					{entry.learningGroupName}
+					{groupNames.join(', ')}
 				</p>
 			{/if}
 		</button>
@@ -85,44 +103,24 @@
 			{/if}
 			{teacherNames.join(', ') || 'ยังไม่ระบุครู'}
 		</p>
-		{#if entry.roomCode}
-			<p class="flex items-center gap-1.5"><DoorOpen class="size-3" /> {entry.roomCode}</p>
+		{#if roomCodes.length > 0}
+			<p class="flex items-center gap-1.5"><DoorOpen class="size-3" /> {roomCodes.join(', ')}</p>
 		{/if}
 	</div>
 	{#if canEdit}
-		<div class="mt-2 flex flex-wrap gap-1 border-t pt-2">
+		<div class="mt-2 flex justify-end border-t pt-1">
 			<Button
-				size="sm"
+				type="button"
+				size="icon"
 				variant="ghost"
-				class="h-7 px-2 text-[0.68rem]"
+				class="size-7 text-destructive"
+				aria-label={`นำ ${title} ออกจากตาราง`}
 				onclick={(event) => {
 					event.stopPropagation();
-					onMove?.(entry);
+					onRemove?.(block);
 				}}
 			>
-				<Move class="size-3" /> ย้ายคาบ
-			</Button>
-			<Button
-				size="sm"
-				variant="ghost"
-				class="h-7 px-2 text-[0.68rem]"
-				onclick={(event) => {
-					event.stopPropagation();
-					onEdit?.(entry);
-				}}
-			>
-				<Pencil class="size-3" /> แก้รายละเอียด
-			</Button>
-			<Button
-				size="sm"
-				variant="ghost"
-				class="h-7 px-2 text-[0.68rem] text-destructive"
-				onclick={(event) => {
-					event.stopPropagation();
-					onRemove?.(entry);
-				}}
-			>
-				<Trash2 class="size-3" /> นำออกจากตาราง
+				<Trash2 class="size-3.5" />
 			</Button>
 		</div>
 	{/if}

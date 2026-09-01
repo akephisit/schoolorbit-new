@@ -74,11 +74,14 @@ test('change set and readiness panels expose teacher handoff without reviving di
 	assert.match(readiness, /entry_instructor_not_effective/);
 });
 
-test('whole-school issue summary recognizes unresolved teacher handoffs', async () => {
-	const issues = await readProjectFile(
-		'src/lib/components/academic/timetable/TimetableIssueSummary.svelte'
+test('teacher handoff findings remain in readiness and link to the canonical timetable', async () => {
+	const readiness = await readProjectFile(
+		'src/lib/components/learning-delivery/AcademicChangeReadiness.svelte'
 	);
+	const page = await readProjectFile('src/routes/(app)/staff/academic/timetable/+page.svelte');
 
-	assert.match(issues, /unresolved_teacher_handoff/);
-	assert.match(issues, /ครูผู้สอน/);
+	assert.match(readiness, /stopped_teacher_still_scheduled/);
+	assert.match(readiness, /entry_instructor_not_effective/);
+	assert.match(page, /blockTeacherIds/);
+	assert.match(page, /updateTimetableBlock/);
 });

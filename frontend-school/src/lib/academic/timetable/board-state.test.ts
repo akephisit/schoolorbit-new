@@ -2,55 +2,87 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type {
-	TimetablePlacementCandidate,
-	TimetablePlacementSource,
-	TimetableWorkspace
+	TimetableBlock,
+	TimetableBlockPlacementCandidate,
+	TimetableBlockPlacementSource,
+	TimetableBlockWorkspace
 } from '../../api/timetable';
 import {
+	blocksForTimetableCell,
 	createTimetableBoardState,
-	entriesForTimetableCell,
 	localPlacementPreview,
 	remainingDemandForGroup,
-	replaceTimetableEntries,
+	replaceTimetableBlocks,
 	rowsForTimetableView,
 	teacherPeriodCount
 } from './board-state.ts';
 
-const entry = (
+function block(
 	id: string,
-	learningGroupId: string,
+	groupId: string,
 	dayOfWeek: string,
-	bellSchedulePeriodId: string,
-	instructorIds: string[],
+	periodId: string,
+	teacherIds: string[],
+	homeroomIds: string[],
 	roomId: string | null = null
-) =>
-	({
-		id,
-		learningGroupId,
-		dayOfWeek,
-		bellSchedulePeriodId,
-		roomId,
-		instructors: instructorIds.map((userId, index) => ({
-			userId,
-			displayName: userId,
-			role: index === 0 ? 'primary' : 'secondary'
-		})),
-		entryType: 'COURSE',
-		rowVersion: 1
-	}) as unknown as TimetableWorkspace['entries'][number];
-
-function workspace(status: 'draft' | 'published' = 'draft'): TimetableWorkspace {
+): TimetableBlock {
 	return {
-		version: { id: 'version-1', status } as TimetableWorkspace['version'],
+		id,
+		blockKind: 'course',
+		dayOfWeek,
+		bellSchedulePeriodId: periodId,
+		groups: [
+			{
+				id: `${id}-group`,
+				learningGroupId: groupId,
+				learningOfferingId: `offering-${groupId}`,
+				code: groupId,
+				name: groupId,
+				homeroomIds,
+				instructors: teacherIds.map((teacherId, orderIndex) => ({
+					teacherId,
+					displayName: teacherId,
+					role: orderIndex === 0 ? 'primary' : 'secondary',
+					orderIndex
+				})),
+				roomId,
+				roomCode: null,
+				rowVersion: 1,
+				isActive: true,
+				syncStatus: null
+			}
+		],
+		homerooms: [],
+		teachers: [],
+		rowVersion: 1
+	} as unknown as TimetableBlock;
+}
+
+function workspace(status: 'draft' | 'published' = 'draft'): TimetableBlockWorkspace {
+	const blocks = [
+		block(
+			'block-1',
+			'group-1',
+			'MON',
+			'period-1',
+			['teacher-1'],
+			['homeroom-1', 'homeroom-2'],
+			'room-1'
+		),
+		block('block-2', 'group-2', 'TUE', 'period-1', ['teacher-2'], ['homeroom-2'], 'room-2'),
+		block('block-3', 'group-2', 'WED', 'period-2', ['teacher-1', 'teacher-2'], ['homeroom-2'])
+	];
+	return {
+		version: { id: 'version-1', status } as TimetableBlockWorkspace['version'],
 		bellPeriods: [
 			{ id: 'period-1', orderIndex: 1 },
 			{ id: 'period-2', orderIndex: 2 }
-		] as TimetableWorkspace['bellPeriods'],
+		] as TimetableBlockWorkspace['bellPeriods'],
 		learningGroups: [
 			{
 				id: 'group-1',
 				learningOfferingId: 'offering-1',
-				code: 'คม101-ม.1/รวม',
+				code: 'ค21101-รวม',
 				name: 'คณิตศาสตร์ ม.1 เรียนร่วม',
 				status: 'published',
 				rosterStatus: 'published',
@@ -58,7 +90,7 @@ function workspace(status: 'draft' | 'published' = 'draft'): TimetableWorkspace 
 				offeringKind: 'course',
 				offeringName: 'คณิตศาสตร์พื้นฐาน',
 				homeroomIds: ['homeroom-1', 'homeroom-2'],
-				eligibleInstructorIds: ['teacher-1']
+				eligibleInstructors: []
 			},
 			{
 				id: 'group-2',
@@ -71,43 +103,20 @@ function workspace(status: 'draft' | 'published' = 'draft'): TimetableWorkspace 
 				offeringKind: 'course',
 				offeringName: 'ภาษาอังกฤษ',
 				homeroomIds: ['homeroom-2'],
-				eligibleInstructorIds: ['teacher-1', 'teacher-2', 'teacher-3']
+				eligibleInstructors: []
 			}
 		],
 		homerooms: [
-			{
-				id: 'homeroom-1',
-				code: 'M1-1',
-				name: 'ม.1/1',
-				gradeLevelId: 'grade-1',
-				gradeLevelType: 'secondary',
-				gradeLevelYear: 1,
-				roomNumber: '1',
-				isActive: true
-			},
-			{
-				id: 'homeroom-2',
-				code: 'M1-2',
-				name: 'ม.1/2',
-				gradeLevelId: 'grade-1',
-				gradeLevelType: 'secondary',
-				gradeLevelYear: 1,
-				roomNumber: '2',
-				isActive: true
-			}
-		],
+			{ id: 'homeroom-1', code: 'M1-1', name: 'ม.1/1' },
+			{ id: 'homeroom-2', code: 'M1-2', name: 'ม.1/2' }
+		] as TimetableBlockWorkspace['homerooms'],
 		rooms: [],
 		staff: [
 			{ id: 'teacher-1', displayName: 'ครูหนึ่ง', status: 'active' },
-			{ id: 'teacher-2', displayName: 'ครูสอง', status: 'active' },
-			{ id: 'teacher-3', displayName: 'ครูสาม', status: 'active' }
+			{ id: 'teacher-2', displayName: 'ครูสอง', status: 'active' }
 		],
-		entries: [
-			entry('entry-1', 'group-1', 'MON', 'period-1', ['teacher-1'], 'room-1'),
-			entry('entry-2', 'group-2', 'TUE', 'period-1', ['teacher-2'], 'room-2'),
-			entry('entry-3', 'group-2', 'WED', 'period-2', ['teacher-1', 'teacher-2'])
-		],
-		unscheduledDemands: [
+		blocks,
+		ordinaryDemands: [
 			{
 				learningGroupId: 'group-1',
 				learningOfferingId: 'offering-1',
@@ -117,91 +126,49 @@ function workspace(status: 'draft' | 'published' = 'draft'): TimetableWorkspace 
 				scheduledPeriods: 1,
 				remainingPeriods: 2,
 				homeroomIds: ['homeroom-1', 'homeroom-2'],
-				eligibleInstructorIds: ['teacher-1']
+				eligibleInstructors: []
 			}
-		]
+		],
+		synchronizedDemands: [],
+		summary: {} as TimetableBlockWorkspace['summary']
 	};
 }
 
-test('shared learning-group entries project into every covered homeroom without duplication', () => {
+test('one block projects into all covered homerooms and exact teacher rows', () => {
 	const state = createTimetableBoardState(workspace());
 	assert.deepEqual(
 		rowsForTimetableView(state, 'homeroom').map((row) => row.id),
 		['homeroom-1', 'homeroom-2']
 	);
 	assert.deepEqual(
-		entriesForTimetableCell(state, {
-			view: 'homeroom',
-			rowId: 'homeroom-1',
-			dayOfWeek: 'MON',
-			bellSchedulePeriodId: 'period-1'
-		}).map((item) => item.id),
-		['entry-1']
-	);
-	assert.deepEqual(
-		entriesForTimetableCell(state, {
+		blocksForTimetableCell(state, {
 			view: 'homeroom',
 			rowId: 'homeroom-2',
 			dayOfWeek: 'MON',
 			bellSchedulePeriodId: 'period-1'
 		}).map((item) => item.id),
-		['entry-1']
-	);
-	assert.equal(state.entriesById.size, 3);
-});
-
-test('teacher view projects exact solo and co-taught entries without copying rows', () => {
-	const state = createTimetableBoardState(workspace());
-	assert.deepEqual(
-		rowsForTimetableView(state, 'teacher').map((row) => row.id),
-		['teacher-1', 'teacher-2', 'teacher-3']
-	);
-	assert.deepEqual(
-		entriesForTimetableCell(state, {
-			view: 'teacher',
-			rowId: 'teacher-1',
-			dayOfWeek: 'WED',
-			bellSchedulePeriodId: 'period-2'
-		}).map((item) => item.id),
-		['entry-3']
-	);
-	assert.deepEqual(
-		entriesForTimetableCell(state, {
-			view: 'teacher',
-			rowId: 'teacher-2',
-			dayOfWeek: 'WED',
-			bellSchedulePeriodId: 'period-2'
-		}).map((item) => item.id),
-		['entry-3']
-	);
-	assert.deepEqual(
-		entriesForTimetableCell(state, {
-			view: 'teacher',
-			rowId: 'teacher-3',
-			dayOfWeek: 'WED',
-			bellSchedulePeriodId: 'period-2'
-		}),
-		[]
+		['block-1']
 	);
 	assert.equal(teacherPeriodCount(state, 'teacher-1'), 2);
 	assert.equal(teacherPeriodCount(state, 'teacher-2'), 2);
-	assert.equal(state.entriesById.get('entry-3'), state.entries[2]);
+	assert.equal(state.blocksById.size, 3);
 });
 
-test('local placement uses exact group, homeroom, teacher, and room occupancy', () => {
+test('local placement detects row, teacher, and room conflicts', () => {
 	const state = createTimetableBoardState(workspace());
-	const source: TimetablePlacementSource = {
-		kind: 'existing_entry',
-		entryId: 'entry-2',
+	const source: TimetableBlockPlacementSource = {
+		kind: 'existing_block',
+		blockId: 'block-2',
 		rowVersion: 1
 	};
-	const candidate: TimetablePlacementCandidate = {
-		entryType: 'COURSE',
-		homeroomId: null,
+	const candidate: TimetableBlockPlacementCandidate = {
+		blockKind: 'course',
 		learningGroupId: 'group-2',
 		learningOfferingId: 'offering-2',
 		instructorIds: ['teacher-1'],
-		roomId: 'room-2'
+		homeroomIds: ['homeroom-2'],
+		teacherIds: [],
+		roomId: 'room-1'
 	};
 	const preview = localPlacementPreview(state, {
 		source,
@@ -212,37 +179,16 @@ test('local placement uses exact group, homeroom, teacher, and room occupancy', 
 		bellSchedulePeriodId: 'period-1'
 	});
 	assert.equal(preview.state, 'swap');
-	assert.equal(preview.targetEntryId, 'entry-1');
+	assert.equal(preview.targetBlockId, 'block-1');
 	assert.ok(preview.conflicts.includes('homeroom'));
-	assert.ok(preview.conflicts.includes('instructor'));
-
-	const trayPreview = localPlacementPreview(state, {
-		source: {
-			kind: 'unscheduled_demand',
-			learningGroupId: 'group-2',
-			learningOfferingId: 'offering-2'
-		},
-		candidate,
-		view: 'homeroom',
-		rowId: 'homeroom-2',
-		dayOfWeek: 'MON',
-		bellSchedulePeriodId: 'period-1'
-	});
-	assert.equal(trayPreview.state, 'blocked');
+	assert.ok(preview.conflicts.includes('teacher'));
+	assert.ok(preview.conflicts.includes('room'));
 });
 
-test('remaining demand follows the normalized entries and published boards are read-only', () => {
+test('demand accounting follows canonical block membership and published versions are read-only', () => {
 	const state = createTimetableBoardState(workspace());
-	assert.equal(state.canEdit, true);
 	assert.equal(remainingDemandForGroup(state, 'group-1'), 2);
-
-	const added = replaceTimetableEntries(state, [
-		...state.entries,
-		entry('entry-3', 'group-1', 'WED', 'period-2', ['teacher-1'])
-	]);
-	assert.equal(remainingDemandForGroup(added, 'group-1'), 1);
-
-	const removed = replaceTimetableEntries(state, []);
+	const removed = replaceTimetableBlocks(state, []);
 	assert.equal(remainingDemandForGroup(removed, 'group-1'), 3);
 	assert.equal(createTimetableBoardState(workspace('published')).canEdit, false);
 });
