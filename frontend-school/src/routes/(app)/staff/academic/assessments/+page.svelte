@@ -52,7 +52,8 @@
 		ShieldCheck,
 		Sparkles,
 		UserRoundCheck,
-		UsersRound
+		UsersRound,
+		X
 	} from 'lucide-svelte';
 
 	type ReadyFilter = 'all' | 'ready' | 'attention';
@@ -382,6 +383,26 @@
 		markDirty();
 	}
 
+	async function requestSheetClose(): Promise<void> {
+		if (saving) {
+			toast.info('กำลังบันทึกข้อมูล กรุณารอสักครู่');
+			return;
+		}
+		if (dirty) {
+			await persistDraft();
+			if (dirty) return;
+		}
+		sheetOpen = false;
+	}
+
+	function handleSheetOpenChange(nextOpen: boolean): void {
+		if (nextOpen) {
+			sheetOpen = true;
+			return;
+		}
+		void requestSheetClose();
+	}
+
 	async function togglePhaseControl(
 		control: AssessmentPhaseControl,
 		field: 'planEditingEnabled' | 'scoreEntryEnabled'
@@ -636,21 +657,44 @@
 	{/if}
 </PageShell>
 
-<Sheet.Root bind:open={sheetOpen}>
-	<Sheet.Content side="right" class="w-full overflow-y-auto p-0 sm:max-w-2xl">
-		{#if detailLoading}
-			<div class="flex min-h-full items-center justify-center">
-				<Loader2 class="size-7 animate-spin text-primary" />
-			</div>
-		{:else if detail}
-			<Sheet.Header class="sticky top-0 z-10 border-b bg-background/95 px-6 py-5 backdrop-blur">
-				<div class="pr-8">
-					<Sheet.Title>{detail.offeringCode} · {detail.offeringName}</Sheet.Title>
-					<Sheet.Description class="mt-1"
-						>{detail.subjectVersionDisplayLabel} · {detail.learningGroupIds.length} กลุ่มเรียน</Sheet.Description
-					>
+<Sheet.Root open={sheetOpen} onOpenChange={handleSheetOpenChange}>
+	<Sheet.Content
+		side="right"
+		class="w-full overflow-y-auto overscroll-contain p-0 sm:max-w-2xl"
+		showCloseButton={false}
+	>
+		<Sheet.Header
+			class="sticky top-0 z-10 gap-3 border-b bg-background/95 px-4 py-3 text-start backdrop-blur sm:px-6 sm:py-5"
+		>
+			<div class="flex items-start justify-between gap-3">
+				<div class="min-w-0 pt-1">
+					{#if detail}
+						<Sheet.Title class="text-base leading-snug sm:text-lg"
+							>{detail.offeringCode} · {detail.offeringName}</Sheet.Title
+						>
+						<Sheet.Description class="mt-1"
+							>{detail.subjectVersionDisplayLabel} · {detail.learningGroupIds.length} กลุ่มเรียน</Sheet.Description
+						>
+					{:else}
+						<Sheet.Title class="text-base leading-snug sm:text-lg">โครงสร้างคะแนน</Sheet.Title>
+						<Sheet.Description class="mt-1">
+							{detailLoading ? 'กำลังโหลดข้อมูลรายวิชา…' : 'ไม่สามารถแสดงรายละเอียดรายวิชาได้'}
+						</Sheet.Description>
+					{/if}
 				</div>
-				<div class="mt-3 flex items-center justify-between gap-4">
+				<Button
+					variant="outline"
+					size="sm"
+					class="min-h-11 min-w-11 shrink-0 gap-1.5 px-3"
+					onclick={requestSheetClose}
+					aria-label="ปิดหน้ากรอกคะแนน"
+				>
+					<X class="size-4" />
+					<span>ปิด</span>
+				</Button>
+			</div>
+			{#if detail}
+				<div class="flex flex-wrap items-center justify-between gap-2 sm:gap-4">
 					<div class="flex items-center gap-2 text-sm">
 						{#if saveState === 'saving'}<Loader2 class="size-4 animate-spin text-primary" /> กำลังบันทึก…
 						{:else if saveState === 'pending'}<Clock3 class="size-4 text-amber-600" /> รอบันทึกอัตโนมัติ
@@ -665,9 +709,17 @@
 						>รวม {draftTotal}/{detail.readiness.expectedTotalScore}</Badge
 					>
 				</div>
-			</Sheet.Header>
+			{/if}
+		</Sheet.Header>
 
-			<div class="space-y-5 px-6 py-6">
+		{#if detailLoading}
+			<div class="flex min-h-72 items-center justify-center">
+				<Loader2 class="size-7 animate-spin text-primary" />
+			</div>
+		{:else if detail}
+			<div
+				class="space-y-5 px-4 py-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:px-6 sm:py-6"
+			>
 				{#if errorMessage}<div
 						class="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
 					>
@@ -830,6 +882,14 @@
 					>
 						ดูข้อมูลได้ แต่การแก้ไขทำได้โดยผู้รับผิดชอบโครงสร้างคะแนนรายวิชาหรือผู้ดูแลวิชาการ
 					</div>{/if}
+			</div>
+		{:else}
+			<div class="px-4 py-6 sm:px-6">
+				<div
+					class="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive"
+				>
+					{errorMessage || 'โหลดรายละเอียดโครงสร้างคะแนนไม่สำเร็จ'}
+				</div>
 			</div>
 		{/if}
 	</Sheet.Content>

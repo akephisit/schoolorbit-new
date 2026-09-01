@@ -247,3 +247,35 @@ test('assessment UI asks for duration only in the exam timetable and hides contr
 	assert.match(controlCard, /\{#if canManageSchool\}/);
 	assert.doesNotMatch(controlCard, /ดูสถานะเท่านั้น/);
 });
+
+test('mobile assessment editor exposes a labeled close action and saves dirty work before closing', async () => {
+	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
+	const closeHandler = page.slice(
+		page.indexOf('async function requestSheetClose'),
+		page.indexOf('async function togglePhaseControl')
+	);
+	const sheetMarkup = page.slice(page.indexOf('<Sheet.Root'), page.indexOf('</Sheet.Root>'));
+	const stickyHeader = sheetMarkup.slice(
+		sheetMarkup.indexOf('<Sheet.Header'),
+		sheetMarkup.indexOf('</Sheet.Header>')
+	);
+
+	assert.match(sheetMarkup, /open=\{sheetOpen\}/);
+	assert.match(sheetMarkup, /onOpenChange=\{handleSheetOpenChange\}/);
+	assert.match(sheetMarkup, /showCloseButton=\{false\}/);
+	assert.match(closeHandler, /await persistDraft\(\)/);
+	assert.match(closeHandler, /if \(dirty\) return/);
+	assert.match(closeHandler, /sheetOpen = false/);
+	assert.match(stickyHeader, /onclick=\{requestSheetClose\}/);
+	assert.match(stickyHeader, /min-h-11 min-w-11/);
+	assert.match(stickyHeader, />ปิด</);
+});
+
+test('mobile assessment editor keeps its close action visible while detail is loading', async () => {
+	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
+	const sheetMarkup = page.slice(page.indexOf('<Sheet.Root'), page.indexOf('</Sheet.Root>'));
+	const beforeLoadingBranch = sheetMarkup.slice(0, sheetMarkup.indexOf('{#if detailLoading}'));
+
+	assert.match(beforeLoadingBranch, /<Sheet.Header/);
+	assert.match(beforeLoadingBranch, /onclick=\{requestSheetClose\}/);
+});
