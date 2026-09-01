@@ -28,7 +28,9 @@ use super::shared::{
     time_ranges_overlap, validate_session_window, CandidateSession, InvigilatorSessionWindow,
     SessionValidationError,
 };
-use super::workspace::{build_readiness, WorkspaceCounts, WORKSPACE_COUNTS_SQL};
+use super::workspace::{
+    build_readiness, build_readiness_with_source_changes, WorkspaceCounts, WORKSPACE_COUNTS_SQL,
+};
 
 fn t(value: &str) -> NaiveTime {
     NaiveTime::parse_from_str(value, "%H:%M").unwrap()
@@ -718,6 +720,28 @@ fn readiness_requires_days_items_rooms_and_sessions() {
         .blockers
         .iter()
         .any(|value| value.contains("unscheduled")));
+}
+
+#[test]
+fn readiness_blocks_publish_until_assessment_source_changes_are_synced() {
+    let readiness = build_readiness_with_source_changes(
+        WorkspaceCounts {
+            day_count: 1,
+            item_count: 4,
+            unscheduled_count: 0,
+            missing_room_assignment_count: 0,
+            invalid_session_count: 0,
+            missing_seat_student_count: 0,
+            invigilator_conflict_count: 0,
+        },
+        2,
+    );
+
+    assert!(!readiness.can_publish);
+    assert!(readiness
+        .blockers
+        .iter()
+        .any(|value| value.contains("assessment source change")));
 }
 
 #[test]

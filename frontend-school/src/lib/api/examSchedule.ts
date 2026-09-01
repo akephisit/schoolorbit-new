@@ -20,8 +20,10 @@ export type ExamScheduleWorkspace = Omit<Schemas['ExamScheduleWorkspace'], 'roun
 	round: ExamRound;
 };
 export type ExamScheduleReadiness = Schemas['ExamScheduleReadiness'];
-export type ImportExamItemsResult = Schemas['ImportExamItemsResult'];
-export type ClearMismatchedExamItemsResult = Schemas['ClearMismatchedExamItemsResult'];
+export type ExamSourceChange = Schemas['ExamSourceChange'];
+export type ExamSourcePreview = Schemas['ExamSourcePreview'];
+export type ExamSourceSyncItemResult = Schemas['ExamSourceSyncItemResult'];
+export type SyncExamSourcesResult = Schemas['SyncExamSourcesResult'];
 export type DayRoomAssignmentView = Schemas['DayRoomAssignmentView'];
 export type InvigilatorView = Schemas['InvigilatorView'];
 export type ExamInvigilatorAssignmentSummary = Schemas['ExamInvigilatorAssignmentSummary'];
@@ -46,7 +48,7 @@ export type UpdateExamRoundInput = Omit<Schemas['UpdateExamRoundRequest'], 'exam
 };
 export type BlockedWindowInput = Schemas['BlockedWindowInput'];
 export type UpsertExamDayInput = Schemas['UpsertExamDayRequest'];
-export type ImportExamItemsInput = Schemas['ImportExamItemsRequest'];
+export type SyncExamSourcesInput = Schemas['SyncExamSourcesRequest'];
 export type UpsertDayRoomAssignmentInput = Schemas['UpsertDayRoomAssignmentRequest'];
 export type GenerateSeatsInput = Schemas['GenerateSeatsRequest'];
 export type UpdateExamInvigilatorsInput = Schemas['UpdateExamInvigilatorsRequest'];
@@ -140,27 +142,25 @@ export async function listExamInvigilatorStaffOptions(
 	);
 }
 
-export async function importExamItems(
-	roundId: string,
-	input: ImportExamItemsInput
-): Promise<ImportExamItemsResult> {
+export async function previewExamSources(roundId: string): Promise<ExamSourcePreview> {
 	return apiData(
-		await apiClient.post<ImportExamItemsResult>(
-			`/api/academic/exam-schedules/${encodeURIComponent(roundId)}/import-items`,
-			input
+		await apiClient.get<ExamSourcePreview>(
+			`/api/academic/exam-schedules/${encodeURIComponent(roundId)}/source-preview`
 		),
-		'ไม่สามารถนำเข้ารายการสอบได้'
+		'ไม่สามารถตรวจการเปลี่ยนแปลงรายการสอบได้'
 	);
 }
 
-export async function clearMismatchedExamItems(
-	roundId: string
-): Promise<ClearMismatchedExamItemsResult> {
+export async function syncExamSources(
+	roundId: string,
+	input: SyncExamSourcesInput
+): Promise<SyncExamSourcesResult> {
 	return apiData(
-		await apiClient.post<ClearMismatchedExamItemsResult>(
-			`/api/academic/exam-schedules/${encodeURIComponent(roundId)}/clear-mismatched-items`
+		await apiClient.post<SyncExamSourcesResult>(
+			`/api/academic/exam-schedules/${encodeURIComponent(roundId)}/source-sync`,
+			input
 		),
-		'ไม่สามารถล้างรายการสอบที่ไม่ตรงรอบสอบได้'
+		'ไม่สามารถซิงก์รายการสอบที่เลือกได้'
 	);
 }
 

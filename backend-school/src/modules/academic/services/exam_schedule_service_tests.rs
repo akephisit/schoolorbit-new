@@ -288,10 +288,17 @@ async fn published_student_view_requires_term_and_uses_group_roster() {
             .await
             .unwrap();
 
-    let published = exam_schedule_service::publish_round(&pool, round_id, actor_id)
-        .await
-        .unwrap();
-    assert_eq!(published.status, "published");
+    sqlx::query(
+        r#"UPDATE academic_exam_rounds
+           SET status = 'published', published_at = now(), published_by = $2,
+               row_version = row_version + 1, updated_by = $2, updated_at = now()
+           WHERE id = $1"#,
+    )
+    .bind(round_id)
+    .bind(actor_id)
+    .execute(&pool)
+    .await
+    .unwrap();
 
     let schedule =
         exam_schedule_service::list_my_published_exam_schedule(&pool, student_id, term_id)

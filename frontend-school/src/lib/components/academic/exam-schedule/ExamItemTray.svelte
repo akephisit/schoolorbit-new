@@ -362,7 +362,7 @@
 						<div class="min-w-0 flex-1">
 							<div class="truncate text-sm font-medium">{itemSubject(item)}</div>
 							<div class="truncate text-xs text-muted-foreground">
-								{item.homeroomName ?? '-'} · {item.assessmentCategoryName ?? '-'}
+								{item.homeroomName ?? '-'} · {item.assessmentPhaseName ?? '-'}
 							</div>
 							<div class="truncate text-xs text-muted-foreground">
 								{item.subjectGroupName ?? 'ไม่ระบุกลุ่มสาระ'} · {item.gradeLevelName ?? '-'} ·

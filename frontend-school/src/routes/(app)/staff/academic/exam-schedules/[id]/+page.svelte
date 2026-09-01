@@ -11,17 +11,16 @@
 	import { getAcademicContextStore } from '$lib/academic-context/store';
 	import {
 		assignExamAssignmentInvigilator,
-		clearMismatchedExamItems,
 		deleteExamDay,
 		deleteExamSession,
 		generateSeatsForAssignment,
 		getExamInvigilatorWorkspace,
 		getExamScheduleWorkspace,
-		importExamItems,
 		listExamInvigilatorStaffOptions,
 		placeExamSession,
 		publishExamRound,
 		removeExamAssignmentInvigilator,
+		syncExamSources,
 		updateExamDay,
 		updateExamRound,
 		upsertDayRoomAssignment,
@@ -34,6 +33,7 @@
 		type ExamScheduleItem,
 		type ExamScheduleWorkspace,
 		type ExamSession,
+		type ExamSourceSyncItemResult,
 		type PlaceExamSessionInput,
 		type UpsertDayRoomAssignmentInput,
 		type UpsertExamDayInput
@@ -44,6 +44,7 @@
 	import ExamInvigilatorPanel from '$lib/components/academic/exam-schedule/ExamInvigilatorPanel.svelte';
 	import ExamRoomAssignmentPanel from '$lib/components/academic/exam-schedule/ExamRoomAssignmentPanel.svelte';
 	import ExamScheduleTimeline from '$lib/components/academic/exam-schedule/ExamScheduleTimeline.svelte';
+	import ExamSourceSyncPanel from '$lib/components/academic/exam-schedule/ExamSourceSyncPanel.svelte';
 	import MobileDragDropPolyfill from '$lib/components/MobileDragDropPolyfill.svelte';
 	import { PageShell } from '$lib/components/app-layout';
 	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
@@ -87,8 +88,9 @@
 	let staffRequested = $state(false);
 	let optionsLoading = $state(false);
 	let optionsRequested = $state(false);
-	let importing = $state(false);
-	let clearingMismatchedItems = $state(false);
+	let syncingSources = $state(false);
+	let selectedSourceIds = $state<string[]>([]);
+	let sourceSyncResults = $state.raw<ExamSourceSyncItemResult[]>([]);
 	let publishing = $state(false);
 	let exportingExamSchedule = $state(false);
 	let savingDay = $state(false);
@@ -106,7 +108,6 @@
 	let savingRoundKind = $state(false);
 	let examKindDialogOpen = $state(false);
 	let pendingExamKind = $state<ExamRoundKind | null>(null);
-	let clearMismatchedDialogOpen = $state(false);
 
 	const canManageExamSchedules = $derived(
 		$can.has(PERMISSIONS.ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL)
@@ -119,9 +120,6 @@
 		$academicContext.options?.terms.find((item) => item.id === workspace?.round.academicTermId)
 			?.name ?? null
 	);
-	const configuredGradeLevelIds = $derived(
-		Array.from(new Set(workspace?.days.flatMap((day) => day.gradeLevelIds) ?? []))
-	);
 	const examScheduleItemCount = $derived(
 		(workspace?.unscheduledItems.length ?? 0) + (workspace?.scheduledSessions.length ?? 0)
 	);
@@ -130,7 +128,7 @@
 		status: 'missing',
 		title: 'ยังไม่มีรายการสอบที่นำเข้าได้',
 		description:
-			'ตรวจว่ารายการเปิดสอนมีกลุ่มเรียน และโครงสร้างคะแนนมีหมวดกลางภาคหรือปลายภาคตรงกับรอบนี้',
+			'ตรวจว่ารายการเปิดสอนมีกลุ่มเรียน ผู้รับผิดชอบ และช่วงกลางภาคหรือปลายภาคเลือกสอบในตารางพร้อมระบุเวลาแล้ว',
 		actionLabel: 'ตรวจรายการเปิดสอนและกลุ่มเรียน',
 		href: '/staff/academic/delivery'
 	};
@@ -157,6 +155,12 @@
 		pendingSessionId: string;
 	};
 
+	function recommendedSourceIds(sourceWorkspace: ExamScheduleWorkspace): string[] {
+		return sourceWorkspace.sourcePreview.changes
+			.filter((change) => change.changeKind !== 'no_longer_eligible')
+			.map((change) => change.sourceId);
+	}
+
 	function resetWorkspaceForRound(roundId: string) {
 		workspaceRequestToken += 1;
 		managementOptionsRequestToken += 1;
@@ -177,8 +181,9 @@
 		staffOptionsRequestToken += 1;
 		optionsRequested = false;
 		optionsLoading = false;
-		importing = false;
-		clearingMismatchedItems = false;
+		syncingSources = false;
+		selectedSourceIds = [];
+		sourceSyncResults = [];
 		publishing = false;
 		exportingExamSchedule = false;
 		savingDay = false;
@@ -190,7 +195,6 @@
 		savingRoundKind = false;
 		examKindDialogOpen = false;
 		pendingExamKind = null;
-		clearMismatchedDialogOpen = false;
 		loading = !!roundId;
 		refreshing = false;
 	}
@@ -209,7 +213,10 @@
 			const loadedGradeLevels = await listGradeLevelOptions(workspaceData.round.academicYearId);
 			if (requestToken !== workspaceRequestToken) return;
 
+			const previewChanged =
+				workspace?.sourcePreview.previewToken !== workspaceData.sourcePreview.previewToken;
 			workspace = workspaceData;
+			if (previewChanged) selectedSourceIds = recommendedSourceIds(workspaceData);
 			gradeLevels = loadedGradeLevels;
 			loadedRoundId = roundId;
 		} catch (loadError) {
@@ -243,7 +250,7 @@
 			examRoundId: session.examRoundId,
 			academicTermId: session.academicTermId,
 			academicYearId: session.academicYearId,
-			assessmentCategoryId: session.assessmentCategoryId,
+			assessmentPhaseId: session.assessmentPhaseId,
 			courseAssessmentPlanId: session.courseAssessmentPlanId,
 			learningOfferingId: session.learningOfferingId,
 			learningGroupId: session.learningGroupId,
@@ -252,7 +259,7 @@
 			gradeLevelId: session.gradeLevelId,
 			durationMinutes: session.durationMinutes,
 			importedAt: session.importedAt,
-			assessmentCategoryName: session.assessmentCategoryName,
+			assessmentPhaseName: session.assessmentPhaseName,
 			subjectCode: session.subjectCode,
 			subjectNameTh: session.subjectNameTh,
 			subjectNameEn: session.subjectNameEn,
@@ -315,7 +322,7 @@
 			endsAt: addMinutes(input.startsAt, source.durationMinutes),
 			academicTermId: source.academicTermId,
 			academicYearId: source.academicYearId,
-			assessmentCategoryId: source.assessmentCategoryId,
+			assessmentPhaseId: source.assessmentPhaseId,
 			courseAssessmentPlanId: source.courseAssessmentPlanId,
 			learningOfferingId: source.learningOfferingId,
 			learningGroupId: source.learningGroupId,
@@ -325,7 +332,7 @@
 			durationMinutes: source.durationMinutes,
 			importedAt: source.importedAt,
 			examDate: day.examDate,
-			assessmentCategoryName: source.assessmentCategoryName,
+			assessmentPhaseName: source.assessmentPhaseName,
 			subjectCode: source.subjectCode,
 			subjectNameTh: source.subjectNameTh,
 			subjectNameEn: source.subjectNameEn,
@@ -855,45 +862,42 @@
 		}
 	}
 
-	async function handleImportItems() {
-		if (!workspace) return;
+	function toggleSourceSelection(sourceId: string, checked: boolean) {
+		selectedSourceIds = checked
+			? Array.from(new Set([...selectedSourceIds, sourceId]))
+			: selectedSourceIds.filter((id) => id !== sourceId);
+	}
 
-		importing = true;
+	function selectRecommendedSources() {
+		if (!workspace) return;
+		selectedSourceIds = recommendedSourceIds(workspace);
+	}
+
+	async function handleSyncSources() {
+		if (!workspace || selectedSourceIds.length === 0) return;
+
+		syncingSources = true;
 		try {
-			const result = await importExamItems(workspace.round.id, {
-				gradeLevelIds: configuredGradeLevelIds.length ? configuredGradeLevelIds : undefined
+			const result = await syncExamSources(workspace.round.id, {
+				roundRowVersion: workspace.sourcePreview.roundRowVersion,
+				previewToken: workspace.sourcePreview.previewToken,
+				sourceIds: selectedSourceIds
 			});
-			toast.success(
-				`นำเข้า ${result.insertedCount} รายการ ข้ามรายการเดิม ${result.skippedExistingCount}`
-			);
+			sourceSyncResults = result.results;
+			const conflictCount = result.results.filter((item) => item.status === 'conflict').length;
+			const appliedCount = result.insertedCount + result.updatedDurationCount + result.removedCount;
+			if (conflictCount > 0) {
+				toast.warning(
+					`อัปเดต ${appliedCount} รายการ และมี ${conflictCount} รายการที่ต้องแก้การชนก่อน`
+				);
+			} else {
+				toast.success(`ซิงก์รายการสอบแล้ว ${appliedCount} รายการ`);
+			}
 			await refreshWorkspace(true);
-		} catch (importError) {
-			toast.error(importError instanceof Error ? importError.message : 'นำเข้ารายการสอบไม่สำเร็จ');
+		} catch (syncError) {
+			toast.error(syncError instanceof Error ? syncError.message : 'ซิงก์รายการสอบไม่สำเร็จ');
 		} finally {
-			importing = false;
-		}
-	}
-
-	function handleClearMismatchedItems() {
-		if (!workspace) return;
-		clearMismatchedDialogOpen = true;
-	}
-
-	async function confirmClearMismatchedItems() {
-		if (!workspace) return;
-
-		clearMismatchedDialogOpen = false;
-		clearingMismatchedItems = true;
-		try {
-			const result = await clearMismatchedExamItems(workspace.round.id);
-			toast.success(`ล้างรายการไม่ตรงรอบสอบ ${result.deletedCount} รายการ`);
-			await refreshWorkspace(true);
-		} catch (clearError) {
-			toast.error(
-				clearError instanceof Error ? clearError.message : 'ล้างรายการสอบที่ไม่ตรงรอบสอบไม่สำเร็จ'
-			);
-		} finally {
-			clearingMismatchedItems = false;
+			syncingSources = false;
 		}
 	}
 
@@ -928,6 +932,7 @@
 			const round = await updateExamRound(workspace.round.id, { examKind: value });
 			workspace = { ...workspace, round };
 			toast.success(`เปลี่ยนชนิดรอบสอบเป็น${examRoundKindLabel(round.examKind)}แล้ว`);
+			await refreshWorkspace(true);
 		} catch (updateError) {
 			toast.error(updateError instanceof Error ? updateError.message : 'บันทึกชนิดรอบสอบไม่สำเร็จ');
 		} finally {
@@ -1280,7 +1285,19 @@
 		<PageState title="ไม่พบรอบตารางสอบ" description="รายการที่เปิดอาจถูกลบหรือไม่มีสิทธิ์เข้าถึง" />
 	{:else}
 		<div class="flex min-h-0 flex-1 flex-col">
-			{#if examScheduleItemCount === 0}
+			<div class="mb-4">
+				<ExamSourceSyncPanel
+					preview={workspace.sourcePreview}
+					{selectedSourceIds}
+					results={sourceSyncResults}
+					readonly={!canManageExamSchedules || workspace.round.status === 'published'}
+					syncing={syncingSources}
+					onToggle={toggleSourceSelection}
+					onSelectRecommended={selectRecommendedSources}
+					onSync={handleSyncSources}
+				/>
+			</div>
+			{#if examScheduleItemCount === 0 && workspace.sourcePreview.changes.length === 0}
 				<div class="mb-4">
 					<AcademicPrerequisiteNotice prerequisite={noExamItemsPrerequisite} />
 				</div>
@@ -1334,14 +1351,8 @@
 						readonly={!canManageExamSchedules || workspace.round.status === 'published'}
 						{placingItemIds}
 						{unschedulingSessionIds}
-						canManageActions={canManageExamSchedules && workspace.round.status !== 'published'}
-						{importing}
-						{clearingMismatchedItems}
-						examKindLabel={examRoundKindLabel(workspace.round.examKind)}
 						onPlaceSession={handlePlaceExamSession}
 						onUnscheduleSession={handleUnscheduleExamSession}
-						onImportItems={handleImportItems}
-						onClearMismatchedItems={handleClearMismatchedItems}
 					/>
 				</Tabs.Content>
 
@@ -1375,24 +1386,6 @@
 						<AlertDialog.Action onclick={confirmExamKindChange}
 							>เปลี่ยนชนิดรอบสอบ</AlertDialog.Action
 						>
-					</AlertDialog.Footer>
-				</AlertDialog.Content>
-			</AlertDialog.Root>
-
-			<AlertDialog.Root bind:open={clearMismatchedDialogOpen}>
-				<AlertDialog.Content>
-					<AlertDialog.Header>
-						<AlertDialog.Title>ยืนยันการล้างรายการสอบ</AlertDialog.Title>
-						<AlertDialog.Description>
-							ล้างรายการสอบที่ไม่ใช่{examRoundKindLabel(workspace.round.examKind)}?
-							รายการที่เคยจัดตารางไว้ของชุดนั้นจะถูกเอาออกด้วย
-						</AlertDialog.Description>
-					</AlertDialog.Header>
-					<AlertDialog.Footer>
-						<AlertDialog.Cancel>ยกเลิก</AlertDialog.Cancel>
-						<AlertDialog.Action variant="destructive" onclick={confirmClearMismatchedItems}>
-							ล้างรายการไม่ตรงรอบสอบ
-						</AlertDialog.Action>
 					</AlertDialog.Footer>
 				</AlertDialog.Content>
 			</AlertDialog.Root>

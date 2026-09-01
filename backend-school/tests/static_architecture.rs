@@ -527,14 +527,12 @@ fn exam_schedule_service_uses_a_thin_private_module_facade() {
 
     for public_function in [
         "assign_invigilator_to_assignment",
-        "clear_mismatched_exam_items",
         "create_round",
         "delete_exam_day",
         "delete_exam_session",
         "generate_seats_for_assignment",
         "get_invigilator_workspace",
         "get_workspace",
-        "import_exam_items",
         "list_child_published_exam_schedule",
         "list_day_room_assignments",
         "list_invigilator_staff_options",
@@ -542,8 +540,10 @@ fn exam_schedule_service_uses_a_thin_private_module_facade() {
         "list_rounds",
         "list_staff_published_exam_schedule",
         "place_exam_session",
+        "preview_exam_sources",
         "publish_round",
         "remove_invigilator_from_assignment",
+        "sync_exam_sources",
         "update_assignment_invigilators",
         "update_exam_day",
         "update_round",
@@ -1798,27 +1798,34 @@ fn academic_assessment_teacher_scope_uses_learning_group_teachers() {
 }
 
 #[test]
-fn academic_assessment_save_persists_saved_status() {
+fn academic_assessment_save_is_statusless_and_optimistically_versioned() {
     let migration_path = manifest_dir()
         .join("migrations")
-        .join("016_academic_assessment_saved_status.sql");
+        .join("056_assessment_phase_gradebook_foundation.sql");
     let migration = read_source(&migration_path);
     let service = strip_comments(&read_source(
         manifest_dir().join("src/modules/academic/services/assessment_service.rs"),
     ));
 
     assert!(
-        migration.contains("'saved'"),
-        "{} must add the saved assessment status to the database constraint",
+        migration.contains("DROP COLUMN status")
+            && migration.contains("DROP COLUMN submitted_at")
+            && migration.contains("DROP COLUMN locked_at"),
+        "{} must remove the retired submit and lock workflow columns",
         repo_relative(&migration_path)
     );
     assert!(
-        service.contains("SET status = 'saved', submitted_at = NULL, submitted_by = NULL"),
-        "saving an assessment plan should persist saved status"
+        service.contains("SET assessment_coordinator_id = $2,")
+            && service.contains("row_version = row_version + 1")
+            && service.contains("WHERE id = $1 AND row_version = $3"),
+        "assessment auto-save must remain coordinator-aware and optimistically versioned"
     );
     assert!(
-        !service.contains("CASE WHEN status = 'submitted' THEN status ELSE 'draft' END"),
-        "assessment save must not keep submitted status when a plan is edited and saved"
+        !service.contains("submitted_at")
+            && !service.contains("submitted_by")
+            && !service.contains("locked_at")
+            && !service.contains("SET status ="),
+        "assessment auto-save must not revive submit, lock, or saved-status compatibility"
     );
 }
 
@@ -2266,8 +2273,8 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
     for route in [
         "\"/exam-schedules\"",
         "\"/exam-schedules/{round_id}\"",
-        "\"/exam-schedules/{round_id}/import-items\"",
-        "\"/exam-schedules/{round_id}/clear-mismatched-items\"",
+        "\"/exam-schedules/{round_id}/source-preview\"",
+        "\"/exam-schedules/{round_id}/source-sync\"",
         "\"/exam-schedules/{round_id}/days\"",
         "\"/exam-schedules/days/{exam_day_id}\"",
         "\"/exam-schedules/days/{exam_day_id}/room-assignments\"",
@@ -2290,8 +2297,8 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
         "post(handlers::exam_schedule::create_round)",
         "get(handlers::exam_schedule::get_workspace)",
         ".patch(handlers::exam_schedule::update_round)",
-        "post(handlers::exam_schedule::import_items)",
-        "post(handlers::exam_schedule::clear_mismatched_items)",
+        "get(handlers::exam_schedule::preview_sources)",
+        "post(handlers::exam_schedule::sync_sources)",
         "post(handlers::exam_schedule::upsert_day)",
         "patch(handlers::exam_schedule::update_day)",
         "delete(handlers::exam_schedule::delete_day)",
@@ -2308,6 +2315,18 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
         assert!(
             academic_routes.contains(handler_ref),
             "missing academic handler registration {handler_ref}"
+        );
+    }
+
+    for retired_registration in [
+        "\"/exam-schedules/{round_id}/import-items\"",
+        "\"/exam-schedules/{round_id}/clear-mismatched-items\"",
+        "handlers::exam_schedule::import_items",
+        "handlers::exam_schedule::clear_mismatched_items",
+    ] {
+        assert!(
+            !academic_routes.contains(retired_registration),
+            "retired exam source compatibility must stay absent: {retired_registration}"
         );
     }
 
@@ -2332,6 +2351,7 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
     for read_handler in [
         "list_rounds",
         "get_workspace",
+        "preview_sources",
         "list_day_room_assignments",
         "get_invigilator_workspace",
     ] {
@@ -2345,8 +2365,7 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
     for manage_handler in [
         "create_round",
         "update_round",
-        "import_items",
-        "clear_mismatched_items",
+        "sync_sources",
         "upsert_day",
         "delete_day",
         "upsert_day_room_assignment",

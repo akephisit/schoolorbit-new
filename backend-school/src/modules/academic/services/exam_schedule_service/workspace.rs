@@ -90,6 +90,20 @@ pub(super) fn build_readiness(counts: WorkspaceCounts) -> ExamScheduleReadiness 
     }
 }
 
+pub(super) fn build_readiness_with_source_changes(
+    counts: WorkspaceCounts,
+    source_change_count: usize,
+) -> ExamScheduleReadiness {
+    let mut readiness = build_readiness(counts);
+    if source_change_count > 0 {
+        readiness.blockers.push(format!(
+            "Sync {source_change_count} pending assessment source change(s)"
+        ));
+        readiness.can_publish = false;
+    }
+    readiness
+}
+
 pub async fn get_workspace(
     pool: &PgPool,
     round_id: Uuid,
@@ -100,6 +114,7 @@ pub async fn get_workspace(
     let scheduled_sessions = fetch_scheduled_sessions(pool, round_id).await?;
     let counts = fetch_workspace_counts(pool, round_id).await?;
     let source_preview = preview_exam_sources(pool, round_id).await?;
+    let readiness = build_readiness_with_source_changes(counts, source_preview.changes.len());
 
     Ok(ExamScheduleWorkspace {
         round,
@@ -107,7 +122,7 @@ pub async fn get_workspace(
         unscheduled_items,
         scheduled_sessions,
         source_preview,
-        readiness: build_readiness(counts),
+        readiness,
     })
 }
 
@@ -437,6 +452,13 @@ async fn fetch_source_change_rows_in_tx(
         .fetch_all(&mut **tx)
         .await
         .map_err(AppError::from)
+}
+
+pub(super) async fn count_source_changes_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    round_id: Uuid,
+) -> Result<usize, AppError> {
+    Ok(fetch_source_change_rows_in_tx(tx, round_id).await?.len())
 }
 
 async fn insert_exam_source_in_tx(

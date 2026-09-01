@@ -21,7 +21,6 @@
 		validateExamSessionPlacement
 	} from '$lib/utils/examScheduleTime';
 	import { compareExamDaysByDate } from '$lib/utils/examScheduleDayOrder';
-	import { Download, Trash2 } from 'lucide-svelte';
 	import ExamItemTray from './ExamItemTray.svelte';
 	import ExamSessionBlock from './ExamSessionBlock.svelte';
 
@@ -55,27 +54,15 @@
 		readonly = false,
 		placingItemIds = [],
 		unschedulingSessionIds = [],
-		canManageActions = false,
-		importing = false,
-		clearingMismatchedItems = false,
-		examKindLabel = '',
 		onPlaceSession,
-		onUnscheduleSession,
-		onImportItems,
-		onClearMismatchedItems
+		onUnscheduleSession
 	}: {
 		workspace: ExamScheduleWorkspace;
 		readonly?: boolean;
 		placingItemIds?: string[];
 		unschedulingSessionIds?: string[];
-		canManageActions?: boolean;
-		importing?: boolean;
-		clearingMismatchedItems?: boolean;
-		examKindLabel?: string;
 		onPlaceSession?: (input: PlaceExamSessionInput) => Promise<boolean> | boolean;
 		onUnscheduleSession?: (sessionId: string) => Promise<boolean> | boolean;
-		onImportItems?: () => void;
-		onClearMismatchedItems?: () => void;
 	} = $props();
 
 	let localError = $state('');
@@ -101,9 +88,6 @@
 			: sortedDays
 	);
 	const placementDisabled = $derived(readonly);
-	const actionPlacementDisabled = $derived(
-		placingItemIds.length > 0 || unschedulingSessionIds.length > 0
-	);
 	const placingItemIdSet = $derived(new Set(placingItemIds));
 	const unschedulingSessionIdSet = $derived(new Set(unschedulingSessionIds));
 	const placingSessionIds = $derived(
@@ -508,30 +492,6 @@
 							{/each}
 						</Select.Content>
 					</Select.Root>
-				{/if}
-				{#if canManageActions}
-					<LoadingButton
-						size="sm"
-						variant="outline"
-						loading={importing}
-						loadingLabel="กำลังนำเข้า..."
-						onclick={onImportItems}
-						disabled={clearingMismatchedItems || actionPlacementDisabled}
-					>
-						<Download class="h-4 w-4" />
-						นำเข้าเฉพาะ {examKindLabel}
-					</LoadingButton>
-					<LoadingButton
-						size="sm"
-						variant="destructive"
-						loading={clearingMismatchedItems}
-						loadingLabel="กำลังล้าง..."
-						onclick={onClearMismatchedItems}
-						disabled={importing || actionPlacementDisabled}
-					>
-						<Trash2 class="h-4 w-4" />
-						ล้างรายการไม่ตรงรอบสอบ
-					</LoadingButton>
 				{/if}
 			</div>
 			{#if localError}

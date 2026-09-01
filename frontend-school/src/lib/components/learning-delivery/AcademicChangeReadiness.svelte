@@ -81,8 +81,8 @@
 					['ครูผู้สอน', preview.impactCounts.teacherAssignments],
 					['คาบในตารางเป้าหมาย', preview.impactCounts.targetTimetableEntries],
 					['แผนโครงสร้างคะแนน', preview.impactCounts.courseAssessmentPlans],
-					['หมวดคะแนน', preview.impactCounts.courseAssessmentCategories],
-					['รายการเก็บคะแนน', preview.impactCounts.courseAssessmentItems],
+					['ช่วงคะแนน', preview.impactCounts.courseAssessmentPhases],
+					['รายการคะแนนรายกลุ่ม', preview.impactCounts.learningGroupScoreItems],
 					['ผลการเรียน', preview.impactCounts.learningResults],
 					['ตารางสอบ', preview.impactCounts.examScheduleItems],
 					['นิเทศการสอน', preview.impactCounts.supervisionObservations]

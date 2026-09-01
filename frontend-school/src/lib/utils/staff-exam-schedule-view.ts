@@ -102,7 +102,7 @@ function compareSessions(
 		left.gradeLevelYear - right.gradeLevelYear ||
 		compareText(left.homeroomName, right.homeroomName) ||
 		compareText(left.subjectName, right.subjectName) ||
-		compareText(left.assessmentCategoryName, right.assessmentCategoryName) ||
+		compareText(left.assessmentPhaseName, right.assessmentPhaseName) ||
 		left.sessionId.localeCompare(right.sessionId)
 	);
 }
@@ -143,7 +143,7 @@ function sessionSearchText(session: StaffExamScheduleSessionRecord): string {
 	return searchableText([
 		session.subjectName,
 		session.subjectCode,
-		session.assessmentCategoryName,
+		session.assessmentPhaseName,
 		session.gradeLevelName,
 		session.homeroomName,
 		session.buildingName,
@@ -161,7 +161,7 @@ function assignmentSearchText(assignment: StaffExamRoomAssignmentRecord): string
 		...assignment.sessions.flatMap((session) => [
 			session.subjectName,
 			session.subjectCode,
-			session.assessmentCategoryName,
+			session.assessmentPhaseName,
 			session.gradeLevelName
 		])
 	]);

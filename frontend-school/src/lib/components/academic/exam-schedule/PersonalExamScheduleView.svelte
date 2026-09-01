@@ -52,7 +52,7 @@
 			session.endsAt,
 			session.homeroomName,
 			session.subjectName,
-			session.assessmentCategoryName,
+			session.assessmentPhaseName,
 			session.buildingName ?? '',
 			session.roomName
 		].join('|');
@@ -129,7 +129,7 @@
 													{session.subjectName || '-'}
 												</TableCell>
 												<TableCell class="text-sm whitespace-normal">
-													{session.assessmentCategoryName || '-'}
+													{session.assessmentPhaseName || '-'}
 												</TableCell>
 												<TableCell class="text-sm">{session.homeroomName || '-'}</TableCell>
 												<TableCell class="text-sm whitespace-normal">{roomLabel(session)}</TableCell

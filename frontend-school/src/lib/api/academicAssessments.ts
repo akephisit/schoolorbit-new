@@ -5,22 +5,23 @@ type Schemas = components['schemas'];
 
 export type AssessmentPlanSummary = Schemas['AssessmentPlanSummary'];
 export type AssessmentPlanDetail = Schemas['AssessmentPlanDetail'];
-export type AssessmentCategory = Schemas['AssessmentCategory'];
-export type AssessmentItem = Schemas['AssessmentItem'];
+export type AssessmentPhase = Schemas['AssessmentPhase'];
+export type AssessmentPhaseCode = Schemas['AssessmentPhaseCode'];
+export type AssessmentExamArrangement = Schemas['AssessmentExamArrangement'];
+export type AssessmentPhaseControl = Schemas['AssessmentPhaseControl'];
+export type AssessmentCoordinatorOption = Schemas['AssessmentCoordinatorOption'];
+export type AssessmentReadiness = Schemas['AssessmentReadiness'];
+export type AssessmentReadinessFinding = Schemas['AssessmentReadinessFinding'];
 export type SaveAssessmentPlanRequest = Schemas['SaveAssessmentPlanRequest'];
-export type SaveAssessmentCategoryRequest = Schemas['SaveAssessmentCategoryRequest'];
-export type SaveAssessmentItemRequest = Schemas['SaveAssessmentItemRequest'];
-export type AssessmentSettings = Schemas['AssessmentSettingsResponse'];
-export type UpdateAssessmentSettingsRequest = Schemas['UpdateAssessmentSettingsRequest'];
-export type AssessmentPlanStatus = AssessmentPlanSummary['status'];
-export type AssessmentExamMode = AssessmentCategory['examMode'];
-export type AssessmentAllocationStatus = AssessmentCategory['allocationStatus'];
+export type SaveAssessmentPhaseRequest = Schemas['SaveAssessmentPhaseRequest'];
+export type UpdateAssessmentPhaseControlRequest = Schemas['UpdateAssessmentPhaseControlRequest'];
 
 export interface AssessmentPlanFilters {
 	academicTermId: string;
 	subjectId?: string;
 	instructorId?: string;
-	status?: AssessmentPlanStatus;
+	ready?: boolean;
+	examArrangement?: AssessmentExamArrangement;
 }
 
 async function assessmentData<T>(request: Promise<ApiResponse<T>>, fallback: string): Promise<T> {
@@ -41,7 +42,8 @@ function assessmentPlanQuery(filters: AssessmentPlanFilters): string {
 	const params = new URLSearchParams({ academicTermId });
 	if (filters.subjectId) params.set('subjectId', filters.subjectId);
 	if (filters.instructorId) params.set('instructorId', filters.instructorId);
-	if (filters.status) params.set('status', filters.status);
+	if (filters.ready !== undefined) params.set('ready', String(filters.ready));
+	if (filters.examArrangement) params.set('examArrangement', filters.examArrangement);
 	return `?${params.toString()}`;
 }
 
@@ -61,16 +63,24 @@ export const getAssessmentPlan = (offeringId: string) =>
 		'ไม่สามารถโหลดโครงสร้างคะแนนของรายการเปิดสอนได้'
 	);
 
-export const getAssessmentSettings = () =>
+export const listAssessmentPhaseControls = (academicTermId: string) =>
 	assessmentData(
-		apiClient.get<AssessmentSettings>('/api/academic/assessments/settings'),
-		'ไม่สามารถโหลดการตั้งค่าโครงสร้างคะแนนได้'
+		apiClient.get<AssessmentPhaseControl[]>(
+			`/api/academic/assessments/phase-controls?academicTermId=${encodeURIComponent(academicTermId)}`
+		),
+		'ไม่สามารถโหลดช่วงเวลาเปิดกรอกคะแนนได้'
 	);
 
-export const updateAssessmentSettings = (payload: UpdateAssessmentSettingsRequest) =>
+export const updateAssessmentPhaseControl = (
+	controlId: string,
+	payload: UpdateAssessmentPhaseControlRequest
+) =>
 	assessmentData(
-		apiClient.put<AssessmentSettings>('/api/academic/assessments/settings', payload),
-		'ไม่สามารถบันทึกการตั้งค่าโครงสร้างคะแนนได้'
+		apiClient.put<AssessmentPhaseControl>(
+			`/api/academic/assessments/phase-controls/${encodeURIComponent(controlId)}`,
+			payload
+		),
+		'ไม่สามารถบันทึกช่วงเวลาเปิดกรอกคะแนนได้'
 	);
 
 export const saveAssessmentPlan = (offeringId: string, payload: SaveAssessmentPlanRequest) =>
@@ -80,12 +90,4 @@ export const saveAssessmentPlan = (offeringId: string, payload: SaveAssessmentPl
 			payload
 		),
 		'ไม่สามารถบันทึกโครงสร้างคะแนนได้'
-	);
-
-export const submitAssessmentPlan = (offeringId: string) =>
-	assessmentData(
-		apiClient.post<AssessmentPlanDetail>(
-			`/api/academic/assessments/offerings/${encodeURIComponent(offeringId)}/submit`
-		),
-		'ไม่สามารถส่งโครงสร้างคะแนนได้'
 	);

@@ -80,7 +80,7 @@
 						<div class="text-xs text-muted-foreground">{row.session.subjectCode}</div>
 					</Table.Cell>
 					<Table.Cell class="whitespace-normal">
-						<Badge variant="secondary">{row.session.assessmentCategoryName}</Badge>
+						<Badge variant="secondary">{row.session.assessmentPhaseName}</Badge>
 					</Table.Cell>
 					<Table.Cell class="text-center whitespace-normal">
 						<Badge variant="outline">{row.session.gradeLevelName}</Badge>

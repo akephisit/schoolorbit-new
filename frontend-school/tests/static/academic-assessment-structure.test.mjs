@@ -38,7 +38,9 @@ test('assessment api uses generated DTOs and offering-scoped endpoints', async (
 		'AssessmentPlanSummary',
 		'AssessmentPlanDetail',
 		'SaveAssessmentPlanRequest',
-		'AssessmentSettingsResponse'
+		'AssessmentPhase',
+		'AssessmentPhaseControl',
+		'UpdateAssessmentPhaseControlRequest'
 	]) {
 		assert.match(api, new RegExp(`Schemas\\['${schema}'\\]`));
 	}
@@ -49,7 +51,8 @@ test('assessment api uses generated DTOs and offering-scoped endpoints', async (
 		/\/api\/academic\/assessments\/offerings\/\$\{encodeURIComponent\(offeringId\)\}/
 	);
 	assert.match(api, /\/api\/academic\/assessments\/plans/);
-	assert.match(api, /\/api\/academic\/assessments\/settings/);
+	assert.match(api, /\/api\/academic\/assessments\/phase-controls/);
+	assert.doesNotMatch(api, /\/api\/academic\/assessments\/settings|submitAssessmentPlan/);
 	for (const retiredToken of [
 		['classroom', 'CourseId'].join(''),
 		['academic', 'SemesterId'].join(''),
@@ -68,15 +71,19 @@ test('generated contract publishes every assessment operation and DTO', async ()
 		'listAssessmentPlans',
 		'getAssessmentPlan',
 		'saveAssessmentPlan',
-		'submitAssessmentPlan',
-		'getAssessmentSettings',
-		'updateAssessmentSettings'
+		'listAssessmentPhaseControls',
+		'updateAssessmentPhaseControl'
 	]) {
 		assert.match(contract, new RegExp(`${operation}:`));
 	}
 	assert.match(contract, /academicTermId:\s*string/);
 	assert.match(contract, /offeringId:\s*string/);
 	assert.match(contract, /rowVersion\?:\s*number \| null/);
+	assert.match(
+		contract,
+		/AssessmentPhaseCode: 'before_midterm' \| 'midterm' \| 'after_midterm' \| 'final'/
+	);
+	assert.doesNotMatch(contract, /submitAssessmentPlan:|getAssessmentSettings:/);
 });
 
 test('backend assessment model is term and offering scoped with optimistic locking', async () => {
@@ -97,14 +104,13 @@ test('backend routes assessment plans through offering IDs and registers OpenAPI
 	const contract = await readRepoFile('backend-school/src/api_contract.rs');
 
 	assert.match(handler, /path = "\/api\/academic\/assessments\/offerings\/\{offering_id\}"/);
-	assert.match(
-		handler,
-		/path = "\/api\/academic\/assessments\/offerings\/\{offering_id\}\/submit"/
-	);
+	assert.match(handler, /path = "\/api\/academic\/assessments\/phase-controls"/);
+	assert.match(handler, /path = "\/api\/academic\/assessments\/phase-controls\/\{control_id\}"/);
 	assert.match(router, /\/assessments\/offerings\/\{offering_id\}/);
+	assert.match(router, /\/assessments\/phase-controls/);
 	assert.match(contract, /crate::modules::academic::handlers::assessment::get_assessment_plan/);
 	assert.match(contract, /AssessmentPlanDetail/);
-	assert.doesNotMatch(router, /quick-scores|assessments\/courses/);
+	assert.doesNotMatch(router, /quick-scores|assessments\/courses|\/submit|\/settings/);
 });
 
 test('assessment route requires an explicit term context', async () => {
@@ -128,8 +134,10 @@ test('assessment workspace exposes offering snapshots instead of classroom cours
 	assert.match(page, /plan\.offeringName/);
 	assert.match(page, /plan\.subjectVersionDisplayLabel/);
 	assert.match(page, /plan\.learningGroupCount/);
-	assert.match(page, /plan\.totalScore/);
-	assert.match(page, /plan\.expectedTotalScore/);
+	assert.match(page, /plan\.readiness\.totalScore/);
+	assert.match(page, /plan\.readiness\.expectedTotalScore/);
+	assert.match(page, /plan\.assessmentCoordinatorName/);
+	assert.match(page, /plan\.phases/);
 	for (const retiredToken of [
 		['classroom', 'CourseId'].join(''),
 		['classroom', 'Name'].join(''),
@@ -148,26 +156,32 @@ test('assessment workspace guides an empty term to Learning Delivery without ext
 	assert.doesNotMatch(page, /getLearningDeliveryManagementOptions|getCurriculumProgramWorkspace/);
 });
 
-test('assessment editor supports categories, items, exam modes, save, and submit', async () => {
+test('assessment editor fixes four phases, assigns a coordinator, and auto-saves', async () => {
 	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
 
-	for (const symbol of [
+	for (const symbol of ['phaseCodes', 'draftCoordinatorId', 'persistDraft', 'saveAssessmentPlan']) {
+		assert.match(page, new RegExp(symbol));
+	}
+	for (const phase of ['before_midterm', 'midterm', 'after_midterm', 'final']) {
+		assert.match(page, new RegExp(`'${phase}'`));
+	}
+	for (const mode of ['none', 'in_timetable', 'outside_timetable']) {
+		assert.match(page, new RegExp(`value: '${mode}'`));
+	}
+	assert.match(page, /bind:value=\{phase\.maxScore\}/);
+	assert.match(page, /bind:value=\{phase\.examDurationMinutes\}/);
+	assert.match(page, /setTimeout\(\(\) => void persistDraft\(\), 750\)/);
+	assert.match(page, /บันทึกอัตโนมัติเมื่อแก้ไข/);
+	for (const retiredSymbol of [
 		'addCategory',
 		'removeCategory',
 		'addItem',
 		'removeItem',
-		'saveAssessmentPlan',
-		'submitAssessmentPlan'
+		'submitAssessmentPlan',
+		"value: 'practical'"
 	]) {
-		assert.match(page, new RegExp(symbol));
+		assert.doesNotMatch(page, new RegExp(retiredSymbol));
 	}
-	for (const mode of ['none', 'in_timetable', 'outside_timetable', 'practical']) {
-		assert.match(page, new RegExp(`value: '${mode}'`));
-	}
-	assert.match(page, /bind:value=\{category\.maxScore\}/);
-	assert.match(page, /bind:value=\{item\.maxScore\}/);
-	assert.match(page, /bind:value=\{category\.examDurationMinutes\}/);
-	assert.match(page, /detail\.status !== 'saved'/);
 });
 
 test('assessment save sends rowVersion and keeps dirty draft on conflicts', async () => {
@@ -179,35 +193,36 @@ test('assessment save sends rowVersion and keeps dirty draft on conflicts', asyn
 
 	assert.match(page, /rowVersion:\s*detail\.rowVersion \?\? null/);
 	assert.match(page, /registerAcademicContextDirtySource/);
-	assert.match(page, /\(\) => dirty/);
-	assert.match(page, /if \(dirty && plan\.offeringId !== selectedOfferingId\)/);
+	assert.match(page, /\(\) => dirty \|\| saving/);
+	assert.match(page, /if \(dirty\) \{/);
 	assert.match(api, /response\.status === 409/);
 	assert.match(api, /เก็บข้อมูลที่แก้ไว้/);
 	assert.match(service, /row_version/);
 	assert.match(service, /conflict|Conflict/i);
 
-	const saveHandler = page.slice(
-		page.indexOf('async function savePlan'),
-		page.indexOf('async function submitPlan')
-	);
+	const saveHandler = page.slice(page.indexOf('async function persistDraft'));
 	const catchBlock = saveHandler.slice(
 		saveHandler.indexOf('} catch (error)'),
 		saveHandler.indexOf('} finally')
 	);
-	assert.doesNotMatch(catchBlock, /draftCategories\s*=|dirty\s*=\s*false/);
+	assert.doesNotMatch(catchBlock, /draftPhases\s*=|dirty\s*=\s*false/);
 });
 
-test('assessment settings still gate assigned teachers while school managers control the switch', async () => {
+test('assessment phase controls and coordinator authorization replace the global teacher switch', async () => {
 	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
 	const service = await readRepoFile(
 		'backend-school/src/modules/academic/services/assessment_service.rs'
 	);
 
-	assert.match(page, /teacherAccessEnabled/);
-	assert.match(page, /toggleTeacherAccess/);
+	assert.match(page, /phaseControls/);
+	assert.match(page, /togglePhaseControl/);
+	assert.match(page, /itemEditingEnabled/);
+	assert.match(page, /scoreEntryEnabled/);
 	assert.match(page, /canManageSchool/);
 	assert.match(page, /ACADEMIC_ASSESSMENT_MANAGE_ASSIGNED/);
 	assert.match(page, /<Switch/);
-	assert.match(service, /require_teacher_access_enabled_for_manager/);
-	assert.match(service, /ยังไม่เปิดให้ครูกรอกโครงสร้างคะแนน/);
+	assert.match(service, /require_phase_controls_manage_access/);
+	assert.match(service, /allowed_coordinator/);
+	assert.match(service, /เฉพาะผู้รับผิดชอบโครงสร้างคะแนนหรือผู้ดูแลวิชาการเท่านั้น/);
+	assert.doesNotMatch(page, /teacherAccessEnabled|toggleTeacherAccess/);
 });

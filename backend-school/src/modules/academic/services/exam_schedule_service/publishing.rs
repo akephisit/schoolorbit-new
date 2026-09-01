@@ -4,7 +4,9 @@ use uuid::Uuid;
 use crate::error::AppError;
 use crate::modules::academic::models::exam_schedule::ExamRound;
 
-use super::workspace::{build_readiness, fetch_workspace_counts_in_tx};
+use super::workspace::{
+    build_readiness_with_source_changes, count_source_changes_in_tx, fetch_workspace_counts_in_tx,
+};
 
 pub async fn publish_round(
     pool: &PgPool,
@@ -26,7 +28,9 @@ pub async fn publish_round(
     .await?
     .ok_or_else(|| AppError::NotFound("Exam round not found".to_string()))?;
 
-    let readiness = build_readiness(fetch_workspace_counts_in_tx(&mut tx, round_id).await?);
+    let counts = fetch_workspace_counts_in_tx(&mut tx, round_id).await?;
+    let source_change_count = count_source_changes_in_tx(&mut tx, round_id).await?;
+    let readiness = build_readiness_with_source_changes(counts, source_change_count);
     if !readiness.can_publish {
         return Err(AppError::BadRequest(format!(
             "Exam round is not ready to publish: {}",

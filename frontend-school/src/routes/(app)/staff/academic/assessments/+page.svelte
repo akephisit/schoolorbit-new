@@ -7,15 +7,18 @@
 	} from '$lib/academic-context/store';
 	import {
 		getAssessmentPlan,
-		getAssessmentSettings,
+		listAssessmentPhaseControls,
 		listAssessmentPlans,
 		saveAssessmentPlan,
-		submitAssessmentPlan,
-		updateAssessmentSettings,
+		updateAssessmentPhaseControl,
+		type AssessmentExamArrangement,
+		type AssessmentPhase,
+		type AssessmentPhaseCode,
+		type AssessmentPhaseControl,
 		type AssessmentPlanDetail,
-		type AssessmentPlanStatus,
 		type AssessmentPlanSummary,
-		type SaveAssessmentCategoryRequest
+		type AssessmentReadinessFinding,
+		type SaveAssessmentPhaseRequest
 	} from '$lib/api/academicAssessments';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
@@ -29,36 +32,58 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
+	import * as Sheet from '$lib/components/ui/sheet';
 	import { Switch } from '$lib/components/ui/switch';
+	import * as Table from '$lib/components/ui/table';
 	import { PERMISSIONS } from '$lib/permissions/registry';
+	import { authStore } from '$lib/stores/auth';
 	import { can } from '$lib/stores/permissions';
 	import {
 		BookOpenCheck,
-		CheckCircle2,
+		CalendarClock,
+		Check,
 		ChevronRight,
-		CirclePlus,
+		CircleAlert,
+		Clock3,
+		CloudAlert,
+		CloudCheck,
 		Loader2,
-		Save,
-		Send,
-		Trash2
+		Search,
+		ShieldCheck,
+		Sparkles,
+		UserRoundCheck,
+		UsersRound
 	} from 'lucide-svelte';
 
-	type StatusFilter = AssessmentPlanStatus | 'all';
+	type ReadyFilter = 'all' | 'ready' | 'attention';
+	type ExamFilter = 'all' | AssessmentExamArrangement;
+	type SaveState = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
 
+	const phaseCodes: AssessmentPhaseCode[] = ['before_midterm', 'midterm', 'after_midterm', 'final'];
 	const academicContext = getAcademicContextStore();
 	const academicTermId = $derived($academicContext.selected.academicTermId);
-	let plans = $state<AssessmentPlanSummary[]>([]);
-	let detail = $state<AssessmentPlanDetail | null>(null);
-	let draftCategories = $state<SaveAssessmentCategoryRequest[]>([]);
-	let selectedOfferingId = $state('');
-	let statusFilter = $state<StatusFilter>('all');
-	let teacherAccessEnabled = $state(true);
+	const currentUserId = $derived($authStore.user?.id ?? '');
+
+	let plans = $state.raw<AssessmentPlanSummary[]>([]);
+	let phaseControls = $state.raw<AssessmentPhaseControl[]>([]);
+	let detail = $state.raw<AssessmentPlanDetail | null>(null);
+	let draftPhases = $state<SaveAssessmentPhaseRequest[]>([]);
+	let draftCoordinatorId = $state('');
+	let searchQuery = $state('');
+	let readyFilter = $state<ReadyFilter>('all');
+	let examFilter = $state<ExamFilter>('all');
+	let sheetOpen = $state(false);
 	let loading = $state(false);
 	let detailLoading = $state(false);
-	let busy = $state(false);
+	let saveState = $state<SaveState>('idle');
 	let dirty = $state(false);
+	let saving = $state(false);
+	let controlBusyId = $state('');
 	let errorMessage = $state('');
+	let lastSavedAt = $state<Date | null>(null);
 	let revision = 0;
+	let draftRevision = 0;
+	let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
 	const canRead = $derived(
 		$can.hasAny(
@@ -77,34 +102,57 @@
 			PERMISSIONS.LEARNING_OFFERING_MANAGE_SCHOOL
 		)
 	);
-	const canManage = $derived(
-		canManageSchool ||
-			(teacherAccessEnabled && $can.has(PERMISSIONS.ACADEMIC_ASSESSMENT_MANAGE_ASSIGNED))
-	);
-	const canEditDetail = $derived(
-		canManage && detail?.status !== 'submitted' && detail?.status !== 'locked'
-	);
-	const filteredPlans = $derived(
-		statusFilter === 'all' ? plans : plans.filter((plan) => plan.status === statusFilter)
-	);
-	const configuredCount = $derived(plans.filter((plan) => plan.status !== 'not_configured').length);
-	const readyCount = $derived(
-		plans.filter((plan) => plan.totalScore === plan.expectedTotalScore).length
+	const canManageAssigned = $derived($can.has(PERMISSIONS.ACADEMIC_ASSESSMENT_MANAGE_ASSIGNED));
+	const canEditDetail = $derived.by(() => {
+		if (!detail) return false;
+		if (canManageSchool) return true;
+		if (!canManageAssigned || !currentUserId) return false;
+		if (detail.assessmentCoordinatorId === currentUserId) return true;
+		return (
+			!detail.id &&
+			detail.coordinatorCandidates.some((candidate) => candidate.teacherId === currentUserId)
+		);
+	});
+	const filteredPlans = $derived.by(() => {
+		const query = searchQuery.trim().toLocaleLowerCase('th');
+		return plans.filter((plan) => {
+			if (readyFilter === 'ready' && !plan.readiness.ready) return false;
+			if (readyFilter === 'attention' && plan.readiness.ready) return false;
+			if (
+				examFilter !== 'all' &&
+				!plan.phases.some((phase) => phase.examArrangement === examFilter)
+			)
+				return false;
+			if (!query) return true;
+			return [
+				plan.offeringCode,
+				plan.offeringName,
+				plan.subjectVersionDisplayLabel,
+				plan.assessmentCoordinatorName ?? ''
+			].some((value) => value.toLocaleLowerCase('th').includes(query));
+		});
+	});
+	const readyCount = $derived(plans.filter((plan) => plan.readiness.ready).length);
+	const attentionCount = $derived(plans.length - readyCount);
+	const draftTotal = $derived(
+		draftPhases.reduce((total, phase) => total + (Number(phase.maxScore) || 0), 0)
 	);
 
-	const statusOptions: Array<{ value: StatusFilter; label: string }> = [
+	const readyOptions: Array<{ value: ReadyFilter; label: string }> = [
 		{ value: 'all', label: 'ทุกสถานะ' },
-		{ value: 'not_configured', label: 'ยังไม่ตั้งค่า' },
-		{ value: 'draft', label: 'ฉบับร่าง' },
-		{ value: 'saved', label: 'บันทึกแล้ว' },
-		{ value: 'submitted', label: 'ส่งแล้ว' },
-		{ value: 'locked', label: 'ล็อกแล้ว' }
+		{ value: 'ready', label: 'พร้อมใช้งาน' },
+		{ value: 'attention', label: 'ต้องตรวจสอบ' }
 	];
-	const examModeOptions = [
-		{ value: 'none', label: 'ไม่ใช่การสอบ' },
+	const examOptions: Array<{ value: ExamFilter; label: string }> = [
+		{ value: 'all', label: 'การสอบทุกแบบ' },
 		{ value: 'in_timetable', label: 'สอบในตาราง' },
 		{ value: 'outside_timetable', label: 'สอบนอกตาราง' },
-		{ value: 'practical', label: 'ปฏิบัติ / ชิ้นงาน' }
+		{ value: 'none', label: 'ไม่จัดสอบ' }
+	];
+	const arrangementOptions: Array<{ value: AssessmentExamArrangement; label: string }> = [
+		{ value: 'none', label: 'ไม่จัดสอบ' },
+		{ value: 'in_timetable', label: 'สอบในตารางสอบ' },
+		{ value: 'outside_timetable', label: 'สอบนอกตารางสอบ' }
 	];
 	const noCourseOfferingPrerequisite: AcademicPrerequisite = {
 		key: 'assessment-course-offering',
@@ -116,40 +164,88 @@
 		href: '/staff/academic/delivery'
 	};
 
-	function statusLabel(status: AssessmentPlanStatus): string {
-		return statusOptions.find((option) => option.value === status)?.label ?? status;
+	function phaseFor(
+		plan: AssessmentPlanSummary,
+		code: AssessmentPhaseCode
+	): AssessmentPhase | null {
+		return plan.phases.find((phase) => phase.phaseCode === code) ?? null;
 	}
 
-	function statusVariant(
-		status: AssessmentPlanStatus
-	): 'default' | 'secondary' | 'outline' | 'destructive' {
-		if (status === 'submitted') return 'default';
-		if (status === 'locked') return 'secondary';
-		if (status === 'not_configured') return 'outline';
-		return 'secondary';
+	function phaseLabel(code: AssessmentPhaseCode): string {
+		return (
+			{
+				before_midterm: 'ก่อนกลางภาค',
+				midterm: 'กลางภาค',
+				after_midterm: 'หลังกลางภาค',
+				final: 'ปลายภาค'
+			} satisfies Record<AssessmentPhaseCode, string>
+		)[code];
 	}
 
-	function cloneCategories(source: AssessmentPlanDetail): SaveAssessmentCategoryRequest[] {
-		return source.categories.map((category) => ({
-			id: category.id ?? null,
-			code: category.code ?? null,
-			name: category.name,
-			maxScore: category.maxScore,
-			examMode: category.examMode,
-			examDurationMinutes: category.examDurationMinutes ?? null,
-			displayOrder: category.displayOrder,
-			items: category.items.map((item) => ({
-				id: item.id,
-				name: item.name,
-				maxScore: item.maxScore,
-				displayOrder: item.displayOrder,
-				isActive: item.isActive
-			}))
-		}));
+	function arrangementLabel(arrangement: AssessmentExamArrangement): string {
+		return (
+			{
+				none: 'ไม่จัดสอบ',
+				in_timetable: 'ในตาราง',
+				outside_timetable: 'นอกตาราง'
+			} satisfies Record<AssessmentExamArrangement, string>
+		)[arrangement];
+	}
+
+	function findingLabel(finding: AssessmentReadinessFinding): string {
+		return (
+			{
+				missing_coordinator: 'ยังไม่ได้กำหนดผู้รับผิดชอบโครงสร้างคะแนน',
+				coordinator_not_candidate: 'ผู้รับผิดชอบไม่ได้สอนรายวิชานี้แล้ว',
+				missing_phase: 'ช่วงคะแนนมาตรฐานยังไม่ครบ 4 ช่วง',
+				total_mismatch: 'คะแนนรวมยังไม่ตรงกับเกณฑ์ของรายวิชา',
+				midterm_missing_exam_duration: 'การสอบกลางภาคยังไม่ระบุเวลา',
+				final_missing_exam_duration: 'การสอบปลายภาคยังไม่ระบุเวลา'
+			} satisfies Record<AssessmentReadinessFinding, string>
+		)[finding];
+	}
+
+	function clonePhases(source: AssessmentPlanDetail): SaveAssessmentPhaseRequest[] {
+		return source.phases
+			.toSorted((left, right) => left.order - right.order)
+			.map((phase) => ({
+				id: phase.id ?? null,
+				phaseCode: phase.phaseCode,
+				maxScore: phase.maxScore,
+				examArrangement: phase.examArrangement,
+				examDurationMinutes: phase.examDurationMinutes ?? null
+			}));
+	}
+
+	function localDraftError(): string | null {
+		if (draftPhases.length !== 4) return 'ช่วงคะแนนต้องมีครบ 4 ช่วง';
+		for (const phase of draftPhases) {
+			if (!/^\d+(\.\d{1,2})?$/.test(phase.maxScore) || Number(phase.maxScore) < 0) {
+				return `คะแนนช่วง${phaseLabel(phase.phaseCode)}ต้องเป็นเลขตั้งแต่ 0 และมีทศนิยมไม่เกิน 2 ตำแหน่ง`;
+			}
+			if (
+				phase.examArrangement !== 'none' &&
+				phase.examDurationMinutes != null &&
+				phase.examDurationMinutes <= 0
+			) {
+				return `เวลาสอบช่วง${phaseLabel(phase.phaseCode)}ต้องมากกว่า 0 นาที`;
+			}
+		}
+		return null;
 	}
 
 	function markDirty(): void {
 		dirty = true;
+		draftRevision += 1;
+		saveState = 'pending';
+		if (saveTimer) clearTimeout(saveTimer);
+		saveTimer = setTimeout(() => void persistDraft(), 750);
+	}
+
+	function flushAutosave(): void {
+		if (saveTimer) clearTimeout(saveTimer);
+		saveTimer = undefined;
+		void persistDraft();
 	}
 
 	async function loadWorkspace(termId: string): Promise<void> {
@@ -157,16 +253,17 @@
 		loading = true;
 		errorMessage = '';
 		try {
-			const settings = await getAssessmentSettings();
-			if (current !== revision) return;
-			teacherAccessEnabled = settings.teacherAccessEnabled;
 			const rows = await listAssessmentPlans({ academicTermId: termId });
 			if (current !== revision) return;
+			const controls = await listAssessmentPhaseControls(termId);
+			if (current !== revision) return;
 			plans = rows;
-			selectedOfferingId = '';
+			phaseControls = controls;
 			detail = null;
-			draftCategories = [];
+			draftPhases = [];
+			draftCoordinatorId = '';
 			dirty = false;
+			saveState = 'idle';
 		} catch (error) {
 			if (current === revision) {
 				errorMessage = error instanceof Error ? error.message : 'โหลดโครงสร้างคะแนนไม่สำเร็จ';
@@ -176,19 +273,40 @@
 		}
 	}
 
+	async function refreshPlans(): Promise<void> {
+		if (!academicTermId) return;
+		plans = await listAssessmentPlans({ academicTermId });
+	}
+
 	async function openPlan(plan: AssessmentPlanSummary): Promise<void> {
-		if (dirty && plan.offeringId !== selectedOfferingId) {
-			toast.warning('กรุณาบันทึกการแก้ไขก่อนเปิดรายการเปิดสอนอื่น');
+		if (saving) {
+			toast.info('กำลังบันทึกรายการเดิม กรุณารอสักครู่');
 			return;
 		}
-		selectedOfferingId = plan.offeringId;
+		if (dirty) {
+			await persistDraft();
+			if (dirty) {
+				toast.warning('แก้ข้อมูลที่แจ้งเตือนให้เรียบร้อยก่อนเปิดรายวิชาอื่น');
+				return;
+			}
+		}
+		sheetOpen = true;
 		detailLoading = true;
 		errorMessage = '';
 		try {
 			const loaded = await getAssessmentPlan(plan.offeringId);
 			detail = loaded;
-			draftCategories = cloneCategories(loaded);
+			draftPhases = clonePhases(loaded);
+			draftCoordinatorId =
+				loaded.assessmentCoordinatorId ??
+				(canManageSchool
+					? (loaded.suggestedCoordinatorId ?? '')
+					: loaded.coordinatorCandidates.some((candidate) => candidate.teacherId === currentUserId)
+						? currentUserId
+						: '');
 			dirty = false;
+			saveState = 'idle';
+			lastSavedAt = null;
 		} catch (error) {
 			errorMessage =
 				error instanceof Error ? error.message : 'โหลดรายละเอียดโครงสร้างคะแนนไม่สำเร็จ';
@@ -197,110 +315,93 @@
 		}
 	}
 
-	function addCategory(): void {
-		draftCategories.push({
-			id: null,
-			code: null,
-			name: '',
-			maxScore: '0',
-			examMode: 'none',
-			examDurationMinutes: null,
-			displayOrder: draftCategories.length + 1,
-			items: []
-		});
-		markDirty();
-	}
+	async function persistDraft(): Promise<void> {
+		if (saveTimer) clearTimeout(saveTimer);
+		saveTimer = undefined;
+		if (!detail || !dirty || !canEditDetail || saving) return;
+		const validationError = localDraftError();
+		if (validationError) {
+			errorMessage = validationError;
+			saveState = 'error';
+			return;
+		}
 
-	function removeCategory(index: number): void {
-		draftCategories.splice(index, 1);
-		markDirty();
-	}
-
-	function addItem(category: SaveAssessmentCategoryRequest): void {
-		category.items.push({
-			id: null,
-			name: '',
-			maxScore: '0',
-			displayOrder: category.items.length + 1,
-			isActive: true
-		});
-		markDirty();
-	}
-
-	function removeItem(category: SaveAssessmentCategoryRequest, itemIndex: number): void {
-		category.items.splice(itemIndex, 1);
-		markDirty();
-	}
-
-	async function refreshPlans(): Promise<void> {
-		if (!academicTermId) return;
-		plans = await listAssessmentPlans({ academicTermId });
-	}
-
-	async function savePlan(): Promise<void> {
-		if (!detail) return;
-		busy = true;
+		const offeringId = detail.offeringId;
+		const revisionAtStart = draftRevision;
+		const payloadPhases = draftPhases.map((phase) => ({
+			...phase,
+			examDurationMinutes: phase.examArrangement === 'none' ? null : phase.examDurationMinutes
+		}));
+		saving = true;
+		saveState = 'saving';
 		errorMessage = '';
 		try {
-			const saved = await saveAssessmentPlan(detail.offeringId, {
+			const saved = await saveAssessmentPlan(offeringId, {
 				rowVersion: detail.rowVersion ?? null,
-				categories: draftCategories.map((category, categoryIndex) => ({
-					...category,
-					code: category.code?.trim() || null,
-					name: category.name.trim(),
-					displayOrder: categoryIndex + 1,
-					examDurationMinutes: category.examMode === 'none' ? null : category.examDurationMinutes,
-					items: category.items.map((item, itemIndex) => ({
-						...item,
-						name: item.name.trim(),
-						displayOrder: itemIndex + 1
-					}))
-				}))
+				assessmentCoordinatorId: draftCoordinatorId || null,
+				phases: payloadPhases
 			});
+			if (detail?.offeringId !== offeringId) return;
 			detail = saved;
-			draftCategories = cloneCategories(saved);
-			dirty = false;
-			await refreshPlans();
-			toast.success('บันทึกโครงสร้างคะแนนแล้ว');
+			lastSavedAt = new Date();
+			if (draftRevision === revisionAtStart) {
+				draftPhases = clonePhases(saved);
+				draftCoordinatorId = saved.assessmentCoordinatorId ?? '';
+				dirty = false;
+				saveState = 'saved';
+			} else {
+				saveState = 'pending';
+			}
+			try {
+				await refreshPlans();
+			} catch {
+				toast.warning('บันทึกแล้ว แต่ยังรีเฟรชตารางภาพรวมไม่ได้');
+			}
 		} catch (error) {
 			errorMessage = error instanceof Error ? error.message : 'บันทึกโครงสร้างคะแนนไม่สำเร็จ';
+			saveState = 'error';
 			toast.error(errorMessage);
 		} finally {
-			busy = false;
+			saving = false;
+			if (dirty && draftRevision !== revisionAtStart && saveState !== 'error') markDirty();
 		}
 	}
 
-	async function submitPlan(): Promise<void> {
-		if (!detail || dirty) return;
-		busy = true;
-		errorMessage = '';
-		try {
-			const submitted = await submitAssessmentPlan(detail.offeringId);
-			detail = submitted;
-			draftCategories = cloneCategories(submitted);
-			await refreshPlans();
-			toast.success('ส่งโครงสร้างคะแนนแล้ว');
-		} catch (error) {
-			errorMessage = error instanceof Error ? error.message : 'ส่งโครงสร้างคะแนนไม่สำเร็จ';
-			toast.error(errorMessage);
-		} finally {
-			busy = false;
-		}
+	function applySuggestedCoordinator(): void {
+		if (!detail?.suggestedCoordinatorId) return;
+		draftCoordinatorId = detail.suggestedCoordinatorId;
+		markDirty();
 	}
 
-	async function toggleTeacherAccess(): Promise<void> {
-		if (!canManageSchool) return;
-		busy = true;
+	function updateArrangement(
+		phase: SaveAssessmentPhaseRequest,
+		arrangement: AssessmentExamArrangement
+	): void {
+		phase.examArrangement = arrangement;
+		if (arrangement === 'none') phase.examDurationMinutes = null;
+		markDirty();
+	}
+
+	async function togglePhaseControl(
+		control: AssessmentPhaseControl,
+		field: 'itemEditingEnabled' | 'scoreEntryEnabled'
+	): Promise<void> {
+		if (!canManageSchool || controlBusyId) return;
+		controlBusyId = control.id;
 		try {
-			const settings = await updateAssessmentSettings({
-				teacherAccessEnabled: !teacherAccessEnabled
+			const saved = await updateAssessmentPhaseControl(control.id, {
+				rowVersion: control.rowVersion,
+				itemEditingEnabled:
+					field === 'itemEditingEnabled' ? !control.itemEditingEnabled : control.itemEditingEnabled,
+				scoreEntryEnabled:
+					field === 'scoreEntryEnabled' ? !control.scoreEntryEnabled : control.scoreEntryEnabled
 			});
-			teacherAccessEnabled = settings.teacherAccessEnabled;
-			toast.success('บันทึกสิทธิ์การจัดทำโครงสร้างคะแนนแล้ว');
+			phaseControls = phaseControls.map((item) => (item.id === saved.id ? saved : item));
+			toast.success(`บันทึกสิทธิ์ช่วง${saved.label}แล้ว`);
 		} catch (error) {
-			toast.error(error instanceof Error ? error.message : 'บันทึกการตั้งค่าไม่สำเร็จ');
+			toast.error(error instanceof Error ? error.message : 'บันทึกการเปิดกรอกคะแนนไม่สำเร็จ');
 		} finally {
-			busy = false;
+			controlBusyId = '';
 		}
 	}
 
@@ -308,7 +409,7 @@
 		let loadedTermId: string | null = null;
 		const unregisterDirty = registerAcademicContextDirtySource(
 			'academic-assessment-plan',
-			() => dirty
+			() => dirty || saving
 		);
 		const unsubscribe = academicContext.subscribe((state) => {
 			const termId = state.selected.academicTermId;
@@ -318,6 +419,7 @@
 			}
 		});
 		return () => {
+			if (saveTimer) clearTimeout(saveTimer);
 			unsubscribe();
 			unregisterDirty();
 		};
@@ -325,8 +427,8 @@
 </script>
 
 <PageShell
-	title="โครงสร้างคะแนน"
-	description="กำหนดหมวดคะแนนและงานย่อยแยกตามรายการเปิดสอนของภาคเรียนที่เลือก"
+	title="โครงสร้างคะแนนรายวิชา"
+	description="ตรวจคะแนนเต็ม ผู้รับผิดชอบ และรูปแบบการสอบของ 4 ช่วงมาตรฐานในภาคเรียนเดียวกัน"
 >
 	{#if !canRead}
 		<PageState
@@ -341,7 +443,7 @@
 			description="ใช้ตัวเลือกปีการศึกษาและภาคเรียนบนแถบด้านบน"
 		/>
 	{:else if loading}
-		<PageSkeleton variant="cards" rows={5} />
+		<PageSkeleton variant="table" rows={8} />
 	{:else if errorMessage && plans.length === 0}
 		<PageState
 			variant="error"
@@ -351,326 +453,379 @@
 			onaction={() => loadWorkspace(academicTermId)}
 		/>
 	{:else}
-		<div class="space-y-6">
-			<div class="grid gap-4 md:grid-cols-3">
-				<Card.Root class="border-primary/20 bg-primary/5">
-					<Card.Header class="pb-3">
-						<Card.Description>รายการเปิดสอนทั้งหมด</Card.Description>
-						<Card.Title class="text-3xl">{plans.length}</Card.Title>
-					</Card.Header>
-				</Card.Root>
-				<Card.Root>
-					<Card.Header class="pb-3">
-						<Card.Description>ตั้งค่าแล้ว</Card.Description>
-						<Card.Title class="text-3xl">{configuredCount}</Card.Title>
-					</Card.Header>
-				</Card.Root>
-				<Card.Root>
-					<Card.Header class="pb-3">
-						<Card.Description>คะแนนรวมตรงตามเกณฑ์</Card.Description>
-						<Card.Title class="text-3xl">{readyCount}</Card.Title>
-					</Card.Header>
-				</Card.Root>
-			</div>
+		<div class="space-y-5">
+			<section class="overflow-hidden rounded-xl border bg-card shadow-sm">
+				<div class="flex flex-wrap items-center justify-between gap-4 border-b px-5 py-4">
+					<div>
+						<div class="flex items-center gap-2">
+							<CalendarClock class="size-5 text-primary" />
+							<h2 class="font-semibold">ช่วงการทำงานของครู</h2>
+						</div>
+						<p class="mt-1 text-sm text-muted-foreground">
+							เปิดแยกได้ระหว่างการสร้างรายการคะแนนย่อยกับการกรอกคะแนนนักเรียน
+						</p>
+					</div>
+					{#if !canManageSchool}<Badge variant="outline">ดูสถานะเท่านั้น</Badge>{/if}
+				</div>
+				<div class="grid divide-y sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
+					{#each phaseControls as control (control.id)}
+						<div class="space-y-3 px-5 py-4">
+							<div class="flex items-center justify-between gap-3">
+								<p class="font-medium">{control.label}</p>
+								<span class="font-mono text-xs text-muted-foreground">0{control.order}</span>
+							</div>
+							<div class="flex items-center justify-between gap-3 text-sm">
+								<Label for={`item-control-${control.id}`}>แก้รายการคะแนน</Label>
+								<Switch
+									id={`item-control-${control.id}`}
+									checked={control.itemEditingEnabled}
+									disabled={!canManageSchool || Boolean(controlBusyId)}
+									onclick={() => togglePhaseControl(control, 'itemEditingEnabled')}
+								/>
+							</div>
+							<div class="flex items-center justify-between gap-3 text-sm">
+								<Label for={`score-control-${control.id}`}>กรอกคะแนนนักเรียน</Label>
+								<Switch
+									id={`score-control-${control.id}`}
+									checked={control.scoreEntryEnabled}
+									disabled={!canManageSchool || Boolean(controlBusyId)}
+									onclick={() => togglePhaseControl(control, 'scoreEntryEnabled')}
+								/>
+							</div>
+						</div>
+					{/each}
+				</div>
+			</section>
 
 			{#if plans.length === 0}
 				<AcademicPrerequisiteNotice prerequisite={noCourseOfferingPrerequisite} />
-			{/if}
-
-			{#if canManageSchool}
+			{:else}
 				<Card.Root class="gap-0 py-0">
-					<Card.Content class="flex flex-wrap items-center justify-between gap-4 pt-6">
-						<div>
-							<p class="font-medium">เปิดให้ครูผู้สอนจัดทำโครงสร้างคะแนน</p>
-							<p class="text-muted-foreground text-sm">
-								มีผลกับครูที่ได้รับมอบหมายในรายการเปิดสอนเท่านั้น
-							</p>
-						</div>
-						<div class="flex items-center gap-3">
-							<Label for="teacher-access">{teacherAccessEnabled ? 'เปิด' : 'ปิด'}</Label>
-							<Switch
-								id="teacher-access"
-								checked={teacherAccessEnabled}
-								disabled={busy}
-								onclick={toggleTeacherAccess}
-							/>
-						</div>
-					</Card.Content>
-				</Card.Root>
-			{/if}
-
-			<div class="grid items-start gap-6 xl:grid-cols-[minmax(20rem,0.8fr)_minmax(0,1.7fr)]">
-				<Card.Root>
-					<Card.Header>
-						<div class="flex items-center justify-between gap-3">
+					<Card.Header class="border-b py-5">
+						<div class="flex flex-wrap items-start justify-between gap-4">
 							<div>
-								<Card.Title>รายการเปิดสอน</Card.Title>
-								<Card.Description>เลือกชุดที่ต้องการกำหนดคะแนน</Card.Description>
+								<Card.Title>ภาพรวมรายวิชา</Card.Title>
+								<Card.Description class="mt-1">
+									{plans.length} รายวิชา · พร้อมใช้ {readyCount} · ต้องตรวจ {attentionCount}
+								</Card.Description>
 							</div>
-							<label class="sr-only" for="assessment-status">กรองสถานะ</label>
-							<Select.Root type="single" bind:value={statusFilter}>
-								<Select.Trigger id="assessment-status" class="w-40">
-									{statusOptions.find((option) => option.value === statusFilter)?.label ??
-										'ทุกสถานะ'}
-								</Select.Trigger>
-								<Select.Content>
-									{#each statusOptions as option (option.value)}
-										<Select.Item value={option.value}>{option.label}</Select.Item>
-									{/each}
-								</Select.Content>
-							</Select.Root>
+							<div class="flex flex-wrap items-center gap-2">
+								<div class="relative min-w-64 flex-1">
+									<Search
+										class="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+									/>
+									<Label class="sr-only" for="assessment-search">ค้นหารายวิชา</Label>
+									<Input
+										id="assessment-search"
+										class="pl-9"
+										placeholder="ค้นหารหัส วิชา หรือผู้รับผิดชอบ"
+										bind:value={searchQuery}
+									/>
+								</div>
+								<Select.Root type="single" bind:value={readyFilter}>
+									<Select.Trigger class="w-40"
+										>{readyOptions.find((option) => option.value === readyFilter)
+											?.label}</Select.Trigger
+									>
+									<Select.Content>
+										{#each readyOptions as option (option.value)}<Select.Item value={option.value}
+												>{option.label}</Select.Item
+											>{/each}
+									</Select.Content>
+								</Select.Root>
+								<Select.Root type="single" bind:value={examFilter}>
+									<Select.Trigger class="w-44"
+										>{examOptions.find((option) => option.value === examFilter)
+											?.label}</Select.Trigger
+									>
+									<Select.Content>
+										{#each examOptions as option (option.value)}<Select.Item value={option.value}
+												>{option.label}</Select.Item
+											>{/each}
+									</Select.Content>
+								</Select.Root>
+							</div>
 						</div>
 					</Card.Header>
-					<Card.Content class="space-y-2">
+					<Card.Content class="p-0">
+						<div class="overflow-x-auto">
+							<Table.Root class="min-w-[1060px]">
+								<Table.Header>
+									<Table.Row class="bg-muted/40 hover:bg-muted/40">
+										<Table.Head class="min-w-64 pl-5">รายวิชา</Table.Head>
+										<Table.Head class="min-w-44">ผู้รับผิดชอบ</Table.Head>
+										{#each phaseCodes as code (code)}<Table.Head class="min-w-32 text-center"
+												>{phaseLabel(code)}</Table.Head
+											>{/each}
+										<Table.Head class="w-36 text-center">ความพร้อม</Table.Head>
+										<Table.Head class="w-12"><span class="sr-only">เปิด</span></Table.Head>
+									</Table.Row>
+								</Table.Header>
+								<Table.Body>
+									{#each filteredPlans as plan (plan.offeringId)}
+										<Table.Row class="group cursor-pointer" onclick={() => openPlan(plan)}>
+											<Table.Cell class="pl-5">
+												<div class="font-medium">{plan.offeringCode} · {plan.offeringName}</div>
+												<div class="mt-1 text-xs text-muted-foreground">
+													{plan.subjectVersionDisplayLabel} · {plan.learningGroupCount} กลุ่มเรียน
+												</div>
+											</Table.Cell>
+											<Table.Cell>
+												{#if plan.assessmentCoordinatorName}
+													<div class="flex items-center gap-2 text-sm">
+														<UserRoundCheck class="size-4 text-primary" /><span
+															>{plan.assessmentCoordinatorName}</span
+														>
+													</div>
+												{:else}<span class="text-sm text-amber-700 dark:text-amber-300"
+														>ยังไม่กำหนด</span
+													>{/if}
+											</Table.Cell>
+											{#each phaseCodes as code (code)}
+												{@const phase = phaseFor(plan, code)}
+												<Table.Cell class="text-center">
+													{#if phase}
+														<div class="font-semibold tabular-nums">{phase.maxScore}</div>
+														{#if code === 'midterm' || code === 'final'}
+															<div class="mt-1 text-[11px] text-muted-foreground">
+																{arrangementLabel(
+																	phase.examArrangement
+																)}{#if phase.examDurationMinutes}
+																	· {phase.examDurationMinutes} นาที{/if}
+															</div>
+														{/if}
+													{:else}<span class="text-muted-foreground">—</span>{/if}
+												</Table.Cell>
+											{/each}
+											<Table.Cell class="text-center">
+												{#if plan.readiness.ready}
+													<Badge class="gap-1 bg-emerald-600 text-white hover:bg-emerald-600"
+														><Check class="size-3" /> พร้อมใช้</Badge
+													>
+												{:else}
+													<Badge
+														variant="outline"
+														class="gap-1 border-amber-300 text-amber-800 dark:text-amber-300"
+														><CircleAlert class="size-3" />
+														{plan.readiness.findings.length} จุด</Badge
+													>
+												{/if}
+												<div class="mt-1 text-xs tabular-nums text-muted-foreground">
+													{plan.readiness.totalScore}/{plan.readiness.expectedTotalScore}
+												</div>
+											</Table.Cell>
+											<Table.Cell><ChevronRight class="size-4 text-muted-foreground" /></Table.Cell>
+										</Table.Row>
+									{/each}
+								</Table.Body>
+							</Table.Root>
+						</div>
 						{#if filteredPlans.length === 0}
-							<div class="border-border rounded-lg border border-dashed p-8 text-center">
-								<BookOpenCheck class="text-muted-foreground mx-auto mb-3 size-8" />
-								<p class="font-medium">ยังไม่มีรายการเปิดสอนในสถานะนี้</p>
-								<p class="text-muted-foreground mt-1 text-sm">
-									สร้างและเผยแพร่รายการเปิดสอนก่อนกำหนดโครงสร้างคะแนน
-								</p>
+							<div class="p-10 text-center">
+								<BookOpenCheck class="mx-auto mb-3 size-8 text-muted-foreground" />
+								<p class="font-medium">ไม่พบรายวิชาตามตัวกรอง</p>
+								<p class="mt-1 text-sm text-muted-foreground">ลองเปลี่ยนคำค้นหรือสถานะที่เลือก</p>
 							</div>
-						{:else}
-							{#each filteredPlans as plan (plan.offeringId)}
-								<button
-									type="button"
-									class="hover:bg-muted/60 focus-visible:ring-ring flex w-full items-center gap-3 rounded-lg border p-3 text-left transition focus-visible:ring-2 focus-visible:outline-none {selectedOfferingId ===
-									plan.offeringId
-										? 'border-primary bg-primary/5'
-										: 'border-border'}"
-									onclick={() => openPlan(plan)}
-								>
-									<div class="min-w-0 flex-1">
-										<div class="flex flex-wrap items-center gap-2">
-											<span class="truncate font-medium"
-												>{plan.offeringCode} · {plan.offeringName}</span
-											>
-											<Badge variant={statusVariant(plan.status)}>{statusLabel(plan.status)}</Badge>
-										</div>
-										<p class="text-muted-foreground mt-1 truncate text-sm">
-											{plan.subjectVersionDisplayLabel} · {plan.learningGroupCount} กลุ่มเรียน
-										</p>
-										<p class="mt-2 text-sm tabular-nums">
-											{plan.totalScore} / {plan.expectedTotalScore} คะแนน
-										</p>
-									</div>
-									<ChevronRight class="text-muted-foreground size-4" />
-								</button>
-							{/each}
 						{/if}
 					</Card.Content>
 				</Card.Root>
-
-				<Card.Root>
-					{#if detailLoading}
-						<Card.Content class="flex min-h-80 items-center justify-center">
-							<Loader2 class="text-primary size-7 animate-spin" />
-						</Card.Content>
-					{:else if !detail}
-						<Card.Content class="flex min-h-80 flex-col items-center justify-center text-center">
-							<BookOpenCheck class="text-muted-foreground mb-4 size-10" />
-							<p class="font-medium">เลือกรายการเปิดสอนเพื่อเริ่มจัดโครงสร้าง</p>
-							<p class="text-muted-foreground mt-1 max-w-md text-sm">
-								คะแนนจะผูกกับรายการเปิดสอนและภาคเรียนโดยตรง ไม่ผูกกับห้องเรียนแบบเดิม
-							</p>
-						</Card.Content>
-					{:else}
-						<Card.Header class="border-b">
-							<div class="flex flex-wrap items-start justify-between gap-4">
-								<div>
-									<div class="flex flex-wrap items-center gap-2">
-										<Card.Title>{detail.offeringCode} · {detail.offeringName}</Card.Title>
-										<Badge variant={statusVariant(detail.status)}
-											>{statusLabel(detail.status)}</Badge
-										>
-									</div>
-									<Card.Description class="mt-2">
-										{detail.subjectVersionDisplayLabel} · เป้าหมาย {detail.expectedTotalScore} คะแนน
-									</Card.Description>
-								</div>
-								{#if canManage}
-									<div class="flex flex-wrap gap-2">
-										<Button
-											variant="outline"
-											disabled={busy || !dirty || !canEditDetail}
-											onclick={savePlan}
-										>
-											{#if busy}<Loader2 class="animate-spin" />{:else}<Save />{/if}
-											บันทึก
-										</Button>
-										<Button
-											disabled={busy || dirty || detail.status !== 'saved'}
-											onclick={submitPlan}
-										>
-											<Send /> ส่งโครงสร้าง
-										</Button>
-									</div>
-								{/if}
-							</div>
-							{#if dirty}
-								<p class="text-amber-700 dark:text-amber-300 text-sm">
-									มีการแก้ไขที่ยังไม่บันทึก — ต้องบันทึกก่อนเปลี่ยนปี ภาคเรียน หรือรายการเปิดสอน
-								</p>
-							{/if}
-						</Card.Header>
-						<Card.Content class="space-y-5 pt-6">
-							{#if errorMessage}
-								<div
-									class="border-destructive/30 bg-destructive/5 text-destructive rounded-lg border p-3 text-sm"
-								>
-									{errorMessage}
-								</div>
-							{/if}
-
-							{#each draftCategories as category, categoryIndex (category.id ?? categoryIndex)}
-								<section class="border-border rounded-xl border p-4">
-									<div class="grid gap-4 md:grid-cols-[8rem_minmax(12rem,1fr)_7rem_11rem_auto]">
-										<div class="space-y-2">
-											<Label for={`category-code-${categoryIndex}`}>รหัส</Label>
-											<Input
-												id={`category-code-${categoryIndex}`}
-												bind:value={category.code}
-												disabled={!canEditDetail}
-												oninput={markDirty}
-											/>
-										</div>
-										<div class="space-y-2">
-											<Label for={`category-name-${categoryIndex}`}>ชื่อหมวดคะแนน</Label>
-											<Input
-												id={`category-name-${categoryIndex}`}
-												bind:value={category.name}
-												disabled={!canEditDetail}
-												oninput={markDirty}
-											/>
-										</div>
-										<div class="space-y-2">
-											<Label for={`category-score-${categoryIndex}`}>คะแนนเต็ม</Label>
-											<Input
-												id={`category-score-${categoryIndex}`}
-												inputmode="decimal"
-												bind:value={category.maxScore}
-												disabled={!canEditDetail}
-												oninput={markDirty}
-											/>
-										</div>
-										<div class="space-y-2">
-											<Label for={`category-mode-${categoryIndex}`}>รูปแบบ</Label>
-											<Select.Root
-												type="single"
-												bind:value={category.examMode}
-												disabled={!canEditDetail}
-												onValueChange={markDirty}
-											>
-												<Select.Trigger id={`category-mode-${categoryIndex}`} class="w-full">
-													{examModeOptions.find((option) => option.value === category.examMode)
-														?.label ?? 'เลือกรูปแบบ'}
-												</Select.Trigger>
-												<Select.Content>
-													{#each examModeOptions as option (option.value)}
-														<Select.Item value={option.value}>{option.label}</Select.Item>
-													{/each}
-												</Select.Content>
-											</Select.Root>
-										</div>
-										<div class="flex items-end justify-end">
-											<Button
-												variant="ghost"
-												size="icon"
-												disabled={!canEditDetail}
-												title="ลบหมวดคะแนน"
-												onclick={() => removeCategory(categoryIndex)}
-											>
-												<Trash2 />
-											</Button>
-										</div>
-									</div>
-
-									{#if category.examMode !== 'none'}
-										<div class="mt-4 max-w-48 space-y-2">
-											<Label for={`category-duration-${categoryIndex}`}>เวลาสอบ (นาที)</Label>
-											<Input
-												id={`category-duration-${categoryIndex}`}
-												type="number"
-												min="1"
-												bind:value={category.examDurationMinutes}
-												disabled={!canEditDetail}
-												oninput={markDirty}
-											/>
-										</div>
-									{/if}
-
-									<div class="bg-muted/40 mt-4 space-y-3 rounded-lg p-3">
-										<div class="flex items-center justify-between gap-3">
-											<div>
-												<p class="text-sm font-medium">รายการเก็บคะแนน</p>
-												<p class="text-muted-foreground text-xs">
-													ผลรวมรายการควรตรงกับคะแนนเต็มของหมวด
-												</p>
-											</div>
-											<Button
-												variant="outline"
-												size="sm"
-												disabled={!canEditDetail}
-												onclick={() => addItem(category)}
-											>
-												<CirclePlus /> เพิ่มรายการ
-											</Button>
-										</div>
-										{#each category.items as item, itemIndex (item.id ?? itemIndex)}
-											<div class="grid gap-3 sm:grid-cols-[minmax(12rem,1fr)_7rem_auto]">
-												<div>
-													<Label class="sr-only" for={`item-name-${categoryIndex}-${itemIndex}`}
-														>ชื่อรายการ</Label
-													>
-													<Input
-														id={`item-name-${categoryIndex}-${itemIndex}`}
-														placeholder="เช่น แบบฝึกหัดครั้งที่ 1"
-														bind:value={item.name}
-														disabled={!canEditDetail}
-														oninput={markDirty}
-													/>
-												</div>
-												<div>
-													<Label class="sr-only" for={`item-score-${categoryIndex}-${itemIndex}`}
-														>คะแนน</Label
-													>
-													<Input
-														id={`item-score-${categoryIndex}-${itemIndex}`}
-														inputmode="decimal"
-														bind:value={item.maxScore}
-														disabled={!canEditDetail}
-														oninput={markDirty}
-													/>
-												</div>
-												<Button
-													variant="ghost"
-													size="icon"
-													disabled={!canEditDetail}
-													title="ลบรายการ"
-													onclick={() => removeItem(category, itemIndex)}
-												>
-													<Trash2 />
-												</Button>
-											</div>
-										{/each}
-									</div>
-								</section>
-							{/each}
-
-							{#if canEditDetail}
-								<Button variant="outline" class="w-full border-dashed" onclick={addCategory}>
-									<CirclePlus /> เพิ่มหมวดคะแนน
-								</Button>
-							{:else if detail.status === 'submitted' || detail.status === 'locked'}
-								<div class="bg-muted flex items-center gap-2 rounded-lg p-3 text-sm">
-									<CheckCircle2 class="text-primary size-4" />
-									โครงสร้างนี้ส่งแล้วและไม่สามารถแก้ไขจากหน้านี้
-								</div>
-							{/if}
-						</Card.Content>
-					{/if}
-				</Card.Root>
-			</div>
+			{/if}
 		</div>
 	{/if}
 </PageShell>
+
+<Sheet.Root bind:open={sheetOpen}>
+	<Sheet.Content side="right" class="w-full overflow-y-auto p-0 sm:max-w-2xl">
+		{#if detailLoading}
+			<div class="flex min-h-full items-center justify-center">
+				<Loader2 class="size-7 animate-spin text-primary" />
+			</div>
+		{:else if detail}
+			<Sheet.Header class="sticky top-0 z-10 border-b bg-background/95 px-6 py-5 backdrop-blur">
+				<div class="pr-8">
+					<Sheet.Title>{detail.offeringCode} · {detail.offeringName}</Sheet.Title>
+					<Sheet.Description class="mt-1"
+						>{detail.subjectVersionDisplayLabel} · {detail.learningGroupIds.length} กลุ่มเรียน</Sheet.Description
+					>
+				</div>
+				<div class="mt-3 flex items-center justify-between gap-4">
+					<div class="flex items-center gap-2 text-sm">
+						{#if saveState === 'saving'}<Loader2 class="size-4 animate-spin text-primary" /> กำลังบันทึก…
+						{:else if saveState === 'pending'}<Clock3 class="size-4 text-amber-600" /> รอบันทึกอัตโนมัติ
+						{:else if saveState === 'saved'}<CloudCheck class="size-4 text-emerald-600" /> บันทึกแล้ว
+							{#if lastSavedAt}<span class="text-xs text-muted-foreground"
+									>{lastSavedAt.toLocaleTimeString('th-TH')}</span
+								>{/if}
+						{:else if saveState === 'error'}<CloudAlert class="size-4 text-destructive" /> ยังบันทึกไม่ได้
+						{:else}<CloudCheck class="size-4 text-muted-foreground" /> บันทึกอัตโนมัติเมื่อแก้ไข{/if}
+					</div>
+					<Badge variant="outline" class="tabular-nums"
+						>รวม {draftTotal}/{detail.readiness.expectedTotalScore}</Badge
+					>
+				</div>
+			</Sheet.Header>
+
+			<div class="space-y-5 px-6 py-6">
+				{#if errorMessage}<div
+						class="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+					>
+						{errorMessage}
+					</div>{/if}
+				{#if detail.readiness.ready}
+					<div
+						class="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-100"
+					>
+						<ShieldCheck class="mt-0.5 size-5 shrink-0" />
+						<div>
+							<p class="font-medium">ข้อมูลพร้อมใช้ต่อ</p>
+							<p class="mt-1 text-sm opacity-80">
+								ระบบตารางสอบจะเห็นเฉพาะช่วงสอบที่พร้อมและเลือก “สอบในตาราง”
+							</p>
+						</div>
+					</div>
+				{:else}
+					<div
+						class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100"
+					>
+						<div class="flex items-center gap-2 font-medium">
+							<CircleAlert class="size-5" /> จุดที่ต้องตรวจ
+						</div>
+						<ul class="mt-2 space-y-1 pl-7 text-sm">
+							{#each detail.readiness.findings as finding (finding)}<li class="list-disc">
+									{findingLabel(finding)}
+								</li>{/each}
+						</ul>
+					</div>
+				{/if}
+
+				<section class="space-y-3 rounded-xl border p-4">
+					<div class="flex items-start justify-between gap-4">
+						<div>
+							<div class="flex items-center gap-2 font-medium">
+								<UsersRound class="size-4 text-primary" /> ผู้รับผิดชอบโครงสร้างคะแนน
+							</div>
+							<p class="mt-1 text-xs text-muted-foreground">
+								เลือกจากครูที่สอนอย่างน้อยหนึ่งกลุ่มของรายวิชานี้
+							</p>
+						</div>
+						{#if detail.suggestedCoordinatorId && canManageSchool}<Button
+								variant="outline"
+								size="sm"
+								onclick={applySuggestedCoordinator}
+								disabled={!canEditDetail}><Sparkles class="size-4" /> ใช้คนที่ระบบแนะนำ</Button
+							>{/if}
+					</div>
+					<Select.Root
+						type="single"
+						value={draftCoordinatorId || '__none__'}
+						disabled={!canEditDetail || !canManageSchool}
+						onValueChange={(value) => {
+							draftCoordinatorId = value === '__none__' ? '' : value;
+							markDirty();
+						}}
+					>
+						<Select.Trigger class="w-full"
+							>{detail.coordinatorCandidates.find(
+								(candidate) => candidate.teacherId === draftCoordinatorId
+							)?.displayName ?? 'ยังไม่ได้กำหนดผู้รับผิดชอบ'}</Select.Trigger
+						>
+						<Select.Content>
+							<Select.Item value="__none__">ยังไม่ได้กำหนด</Select.Item>
+							{#each detail.coordinatorCandidates as candidate (candidate.teacherId)}<Select.Item
+									value={candidate.teacherId}
+									>{candidate.displayName} · ครูหลัก {candidate.primaryLearningGroupCount}/{candidate.learningGroupCount}
+									กลุ่ม</Select.Item
+								>{/each}
+						</Select.Content>
+					</Select.Root>
+					{#if !canManageSchool && detail.assessmentCoordinatorId === currentUserId}<p
+							class="text-xs text-muted-foreground"
+						>
+							คุณเป็นผู้รับผิดชอบรายวิชานี้ จึงแก้คะแนนทั้ง 4 ช่วงได้
+						</p>{/if}
+				</section>
+
+				<div class="space-y-3">
+					<div>
+						<h3 class="font-semibold">คะแนน 4 ช่วงมาตรฐาน</h3>
+						<p class="mt-1 text-sm text-muted-foreground">
+							คะแนนย่อยของแต่ละห้องจะจัดการในหน้ากรอกคะแนนภายหลัง
+						</p>
+					</div>
+					{#each draftPhases as phase, index (phase.phaseCode)}
+						<section class="rounded-xl border bg-card">
+							<div class="flex items-center justify-between border-b bg-muted/30 px-4 py-3">
+								<div class="flex items-center gap-3">
+									<span
+										class="flex size-7 items-center justify-center rounded-full bg-primary/10 font-mono text-xs font-semibold text-primary"
+										>0{index + 1}</span
+									>
+									<p class="font-medium">{phaseLabel(phase.phaseCode)}</p>
+								</div>
+								{#if phase.phaseCode === 'midterm' || phase.phaseCode === 'final'}<Badge
+										variant="outline">{arrangementLabel(phase.examArrangement)}</Badge
+									>{/if}
+							</div>
+							<div class="grid gap-4 p-4 sm:grid-cols-2">
+								<div class="space-y-2">
+									<Label for={`phase-score-${phase.phaseCode}`}>คะแนนเต็ม</Label>
+									<Input
+										id={`phase-score-${phase.phaseCode}`}
+										inputmode="decimal"
+										bind:value={phase.maxScore}
+										disabled={!canEditDetail}
+										oninput={markDirty}
+										onblur={flushAutosave}
+									/>
+								</div>
+								{#if phase.phaseCode === 'midterm' || phase.phaseCode === 'final'}
+									<div class="space-y-2">
+										<Label for={`phase-arrangement-${phase.phaseCode}`}>การจัดสอบ</Label>
+										<Select.Root
+											type="single"
+											value={phase.examArrangement}
+											disabled={!canEditDetail}
+											onValueChange={(value) =>
+												updateArrangement(phase, value as AssessmentExamArrangement)}
+										>
+											<Select.Trigger id={`phase-arrangement-${phase.phaseCode}`} class="w-full"
+												>{arrangementOptions.find(
+													(option) => option.value === phase.examArrangement
+												)?.label}</Select.Trigger
+											>
+											<Select.Content
+												>{#each arrangementOptions as option (option.value)}<Select.Item
+														value={option.value}>{option.label}</Select.Item
+													>{/each}</Select.Content
+											>
+										</Select.Root>
+									</div>
+									{#if phase.examArrangement !== 'none'}
+										<div class="space-y-2 sm:col-start-2">
+											<Label for={`phase-duration-${phase.phaseCode}`}>เวลาสอบ (นาที)</Label><Input
+												id={`phase-duration-${phase.phaseCode}`}
+												type="number"
+												min="1"
+												placeholder="เช่น 60"
+												bind:value={phase.examDurationMinutes}
+												disabled={!canEditDetail}
+												oninput={markDirty}
+												onblur={flushAutosave}
+											/>
+										</div>
+									{/if}
+								{/if}
+							</div>
+						</section>
+					{/each}
+				</div>
+
+				{#if !canEditDetail}<div
+						class="rounded-xl border border-dashed p-4 text-sm text-muted-foreground"
+					>
+						ดูข้อมูลได้ แต่การแก้ไขทำได้โดยผู้รับผิดชอบโครงสร้างคะแนนรายวิชาหรือผู้ดูแลวิชาการ
+					</div>{/if}
+			</div>
+		{/if}
+	</Sheet.Content>
+</Sheet.Root>

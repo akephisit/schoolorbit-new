@@ -21,7 +21,23 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
-	'/api/academic/assessments/offerings/{offering_id}/submit': {
+	'/api/academic/assessments/phase-controls': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listAssessmentPhaseControls'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/assessments/phase-controls/{control_id}': {
 		parameters: {
 			query?: never;
 			header?: never;
@@ -29,8 +45,8 @@ export interface paths {
 			cookie?: never;
 		};
 		get?: never;
-		put?: never;
-		post: operations['submitAssessmentPlan'];
+		put: operations['updateAssessmentPhaseControl'];
+		post?: never;
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -46,22 +62,6 @@ export interface paths {
 		};
 		get: operations['listAssessmentPlans'];
 		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/assessments/settings': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['getAssessmentSettings'];
-		put: operations['updateAssessmentSettings'];
 		post?: never;
 		delete?: never;
 		options?: never;
@@ -665,23 +665,6 @@ export interface paths {
 		patch: operations['updateExamRound'];
 		trace?: never;
 	};
-	'/api/academic/exam-schedules/{round_id}/clear-mismatched-items': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** POST /api/academic/exam-schedules/{round_id}/clear-mismatched-items */
-		post: operations['clearMismatchedExamItems'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
 	'/api/academic/exam-schedules/{round_id}/days': {
 		parameters: {
 			query?: never;
@@ -693,23 +676,6 @@ export interface paths {
 		put?: never;
 		/** POST /api/academic/exam-schedules/{round_id}/days */
 		post: operations['upsertExamDay'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/exam-schedules/{round_id}/import-items': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** POST /api/academic/exam-schedules/{round_id}/import-items */
-		post: operations['importExamItems'];
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -761,6 +727,40 @@ export interface paths {
 		put?: never;
 		/** POST /api/academic/exam-schedules/{round_id}/publish */
 		post: operations['publishExamRound'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/exam-schedules/{round_id}/source-preview': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** GET /api/academic/exam-schedules/{round_id}/source-preview */
+		get: operations['previewExamSources'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/exam-schedules/{round_id}/source-sync': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		/** POST /api/academic/exam-schedules/{round_id}/source-sync */
+		post: operations['syncExamSources'];
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -4593,9 +4593,7 @@ export interface components {
 		AcademicChangeFindingSeverity: 'blocking' | 'warning';
 		AcademicChangeImpactCounts: {
 			/** Format: int64 */
-			courseAssessmentCategories: number;
-			/** Format: int64 */
-			courseAssessmentItems: number;
+			courseAssessmentPhases: number;
 			/** Format: int64 */
 			courseAssessmentPlans: number;
 			/** Format: int64 */
@@ -4604,6 +4602,8 @@ export interface components {
 			groups: number;
 			/** Format: int64 */
 			homerooms: number;
+			/** Format: int64 */
+			learningGroupScoreItems: number;
 			/** Format: int64 */
 			learningResults: number;
 			/** Format: int64 */
@@ -5364,39 +5364,54 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_AssessmentPhaseControl: {
+			data: {
+				/** Format: uuid */
+				academicTermId: string;
+				/** Format: uuid */
+				academicYearId: string;
+				/** Format: uuid */
+				id: string;
+				itemEditingEnabled: boolean;
+				label: string;
+				/** Format: int32 */
+				order: number;
+				phaseCode: components['schemas']['AssessmentPhaseCode'];
+				/** Format: int64 */
+				rowVersion: number;
+				scoreEntryEnabled: boolean;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_AssessmentPlanDetail: {
 			data: {
 				/** Format: uuid */
 				academicTermId: string;
 				/** Format: uuid */
 				academicYearId: string;
-				categories: components['schemas']['AssessmentCategory'][];
-				expectedTotalScore: string;
+				/** Format: uuid */
+				assessmentCoordinatorId?: string | null;
+				assessmentCoordinatorName?: string | null;
+				coordinatorCandidates: components['schemas']['AssessmentCoordinatorOption'][];
 				gradingPolicy: components['schemas']['CourseGradingPolicy'];
 				/** Format: uuid */
 				id?: string | null;
 				learningGroupIds: string[];
-				/** Format: date-time */
-				lockedAt?: string | null;
 				offeringCode: string;
 				/** Format: uuid */
 				offeringId: string;
 				offeringName: string;
+				phases: components['schemas']['AssessmentPhase'][];
+				readiness: components['schemas']['AssessmentReadiness'];
 				/** Format: int64 */
 				rowVersion?: number | null;
-				status: string;
 				/** Format: uuid */
 				subjectId: string;
 				subjectVersionDisplayLabel: string;
-				/** Format: date-time */
-				submittedAt?: string | null;
-			};
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_AssessmentSettingsResponse: {
-			data: {
-				teacherAccessEnabled: boolean;
+				/** Format: uuid */
+				suggestedCoordinatorId?: string | null;
+				suggestedCoordinatorName?: string | null;
 			};
 			message?: string;
 			success: boolean;
@@ -5741,14 +5756,6 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
-		ApiResponse_ClearMismatchedExamItemsResult: {
-			data: {
-				/** Format: int64 */
-				deletedCount: number;
-			};
-			message?: string;
-			success: boolean;
-		};
 		ApiResponse_CreateStudentResponse: {
 			data: {
 				/** Format: uuid */
@@ -6022,6 +6029,8 @@ export interface components {
 				name: string;
 				/** Format: date-time */
 				publishedAt?: string | null;
+				/** Format: int64 */
+				rowVersion: number;
 				status: string;
 				/** Format: date-time */
 				updatedAt: string;
@@ -6035,6 +6044,7 @@ export interface components {
 				readiness: components['schemas']['ExamScheduleReadiness'];
 				round: components['schemas']['ExamRound'];
 				scheduledSessions: components['schemas']['ExamSessionView'][];
+				sourcePreview: components['schemas']['ExamSourcePreview'];
 				unscheduledItems: components['schemas']['ExamScheduleItemView'][];
 			};
 			message?: string;
@@ -6047,8 +6057,8 @@ export interface components {
 				/** Format: uuid */
 				academicYearId: string;
 				/** Format: uuid */
-				assessmentCategoryId: string;
-				assessmentCategoryName?: string | null;
+				assessmentPhaseId: string;
+				assessmentPhaseName?: string | null;
 				buildingName?: string | null;
 				/** Format: uuid */
 				courseAssessmentPlanId: string;
@@ -6097,6 +6107,25 @@ export interface components {
 				subjectNameTh?: string | null;
 				subjectType?: string | null;
 				subjectVersionDisplayLabel?: string | null;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_ExamSourcePreview: {
+			data: {
+				changes: components['schemas']['ExamSourceChange'][];
+				/** Format: int64 */
+				durationChangedCount: number;
+				/** Format: int64 */
+				newCount: number;
+				/** Format: int64 */
+				noLongerEligibleCount: number;
+				previewToken: string;
+				/** Format: uuid */
+				roundId: string;
+				/** Format: int64 */
+				roundRowVersion: number;
+				roundStatus: string;
 			};
 			message?: string;
 			success: boolean;
@@ -6239,18 +6268,6 @@ export interface components {
 				endedPlacement: components['schemas']['HomeroomPlacement'];
 				newPlacement: components['schemas']['HomeroomPlacement'];
 				replayed: boolean;
-			};
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_ImportExamItemsResult: {
-			data: {
-				/** Format: int64 */
-				insertedCount: number;
-				/** Format: int64 */
-				skippedExistingCount: number;
-				/** Format: int64 */
-				skippedMissingDurationCount: number;
 			};
 			message?: string;
 			success: boolean;
@@ -7320,6 +7337,21 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_SyncExamSourcesResult: {
+			data: {
+				/** Format: int64 */
+				insertedCount: number;
+				/** Format: int64 */
+				removedCount: number;
+				results: components['schemas']['ExamSourceSyncItemResult'][];
+				/** Format: int64 */
+				roundRowVersion: number;
+				/** Format: int64 */
+				updatedDurationCount: number;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_TeacherHandoffPreview: {
 			data: {
 				affectedEntries: components['schemas']['TeacherHandoffEntryPreview'][];
@@ -7688,17 +7720,35 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Vec_AssessmentPhaseControl: {
+			data: {
+				/** Format: uuid */
+				academicTermId: string;
+				/** Format: uuid */
+				academicYearId: string;
+				/** Format: uuid */
+				id: string;
+				itemEditingEnabled: boolean;
+				label: string;
+				/** Format: int32 */
+				order: number;
+				phaseCode: components['schemas']['AssessmentPhaseCode'];
+				/** Format: int64 */
+				rowVersion: number;
+				scoreEntryEnabled: boolean;
+			}[];
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Vec_AssessmentPlanSummary: {
 			data: {
 				/** Format: uuid */
 				academicTermId: string;
 				/** Format: uuid */
 				academicYearId: string;
-				/** Format: int64 */
-				categoryCount: number;
-				expectedTotalScore: string;
-				/** Format: int64 */
-				itemCount: number;
+				/** Format: uuid */
+				assessmentCoordinatorId?: string | null;
+				assessmentCoordinatorName?: string | null;
 				/** Format: int64 */
 				learningGroupCount: number;
 				learningGroupIds: string[];
@@ -7706,15 +7756,18 @@ export interface components {
 				/** Format: uuid */
 				offeringId: string;
 				offeringName: string;
+				phases: components['schemas']['AssessmentPhase'][];
 				/** Format: uuid */
 				planId?: string | null;
+				readiness: components['schemas']['AssessmentReadiness'];
 				/** Format: int64 */
 				rowVersion?: number | null;
-				status: string;
 				/** Format: uuid */
 				subjectId: string;
 				subjectVersionDisplayLabel: string;
-				totalScore: string;
+				/** Format: uuid */
+				suggestedCoordinatorId?: string | null;
+				suggestedCoordinatorName?: string | null;
 			}[];
 			message?: string;
 			success: boolean;
@@ -8250,6 +8303,8 @@ export interface components {
 				name: string;
 				/** Format: date-time */
 				publishedAt?: string | null;
+				/** Format: int64 */
+				rowVersion: number;
 				status: string;
 				/** Format: date-time */
 				updatedAt: string;
@@ -9184,68 +9239,85 @@ export interface components {
 		ApproveObservationRequest: {
 			evaluators?: components['schemas']['EvaluatorAssignmentInput'][];
 		};
-		AssessmentCategory: {
-			allocationStatus: string;
-			code?: string | null;
-			/** Format: int32 */
-			displayOrder: number;
+		AssessmentCoordinatorOption: {
+			displayName: string;
+			/** Format: int64 */
+			learningGroupCount: number;
+			/** Format: int64 */
+			primaryLearningGroupCount: number;
+			/** Format: uuid */
+			teacherId: string;
+		};
+		/** @enum {string} */
+		AssessmentExamArrangement: 'none' | 'in_timetable' | 'outside_timetable';
+		AssessmentPhase: {
+			examArrangement: components['schemas']['AssessmentExamArrangement'];
 			/** Format: int32 */
 			examDurationMinutes?: number | null;
-			examMode: string;
 			/** Format: uuid */
 			id?: string | null;
-			items: components['schemas']['AssessmentItem'][];
-			itemTotalScore: string;
+			label: string;
 			maxScore: string;
-			name: string;
-		};
-		AssessmentItem: {
-			/** Format: uuid */
-			categoryId: string;
 			/** Format: int32 */
-			displayOrder: number;
+			order: number;
+			phaseCode: components['schemas']['AssessmentPhaseCode'];
+			/** Format: int64 */
+			rowVersion?: number | null;
+		};
+		/** @enum {string} */
+		AssessmentPhaseCode: 'before_midterm' | 'midterm' | 'after_midterm' | 'final';
+		AssessmentPhaseControl: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			academicYearId: string;
 			/** Format: uuid */
 			id: string;
-			isActive: boolean;
-			maxScore: string;
-			name: string;
+			itemEditingEnabled: boolean;
+			label: string;
+			/** Format: int32 */
+			order: number;
+			phaseCode: components['schemas']['AssessmentPhaseCode'];
+			/** Format: int64 */
+			rowVersion: number;
+			scoreEntryEnabled: boolean;
 		};
 		AssessmentPlanDetail: {
 			/** Format: uuid */
 			academicTermId: string;
 			/** Format: uuid */
 			academicYearId: string;
-			categories: components['schemas']['AssessmentCategory'][];
-			expectedTotalScore: string;
+			/** Format: uuid */
+			assessmentCoordinatorId?: string | null;
+			assessmentCoordinatorName?: string | null;
+			coordinatorCandidates: components['schemas']['AssessmentCoordinatorOption'][];
 			gradingPolicy: components['schemas']['CourseGradingPolicy'];
 			/** Format: uuid */
 			id?: string | null;
 			learningGroupIds: string[];
-			/** Format: date-time */
-			lockedAt?: string | null;
 			offeringCode: string;
 			/** Format: uuid */
 			offeringId: string;
 			offeringName: string;
+			phases: components['schemas']['AssessmentPhase'][];
+			readiness: components['schemas']['AssessmentReadiness'];
 			/** Format: int64 */
 			rowVersion?: number | null;
-			status: string;
 			/** Format: uuid */
 			subjectId: string;
 			subjectVersionDisplayLabel: string;
-			/** Format: date-time */
-			submittedAt?: string | null;
+			/** Format: uuid */
+			suggestedCoordinatorId?: string | null;
+			suggestedCoordinatorName?: string | null;
 		};
 		AssessmentPlanSummary: {
 			/** Format: uuid */
 			academicTermId: string;
 			/** Format: uuid */
 			academicYearId: string;
-			/** Format: int64 */
-			categoryCount: number;
-			expectedTotalScore: string;
-			/** Format: int64 */
-			itemCount: number;
+			/** Format: uuid */
+			assessmentCoordinatorId?: string | null;
+			assessmentCoordinatorName?: string | null;
 			/** Format: int64 */
 			learningGroupCount: number;
 			learningGroupIds: string[];
@@ -9253,19 +9325,33 @@ export interface components {
 			/** Format: uuid */
 			offeringId: string;
 			offeringName: string;
+			phases: components['schemas']['AssessmentPhase'][];
 			/** Format: uuid */
 			planId?: string | null;
+			readiness: components['schemas']['AssessmentReadiness'];
 			/** Format: int64 */
 			rowVersion?: number | null;
-			status: string;
 			/** Format: uuid */
 			subjectId: string;
 			subjectVersionDisplayLabel: string;
+			/** Format: uuid */
+			suggestedCoordinatorId?: string | null;
+			suggestedCoordinatorName?: string | null;
+		};
+		AssessmentReadiness: {
+			expectedTotalScore: string;
+			findings: components['schemas']['AssessmentReadinessFinding'][];
+			ready: boolean;
 			totalScore: string;
 		};
-		AssessmentSettingsResponse: {
-			teacherAccessEnabled: boolean;
-		};
+		/** @enum {string} */
+		AssessmentReadinessFinding:
+			| 'missing_coordinator'
+			| 'coordinator_not_candidate'
+			| 'missing_phase'
+			| 'total_mismatch'
+			| 'midterm_missing_exam_duration'
+			| 'final_missing_exam_duration';
 		AssignRoleRequest: {
 			is_primary?: boolean | null;
 			notes?: string | null;
@@ -10239,10 +10325,6 @@ export interface components {
 			profile_image_file_id: string | null;
 			relationship: string;
 			student_id: string | null;
-		};
-		ClearMismatchedExamItemsResult: {
-			/** Format: int64 */
-			deletedCount: number;
 		};
 		ClearTimetableRequest: {
 			/** Format: uuid */
@@ -11335,6 +11417,8 @@ export interface components {
 			name: string;
 			/** Format: date-time */
 			publishedAt?: string | null;
+			/** Format: int64 */
+			rowVersion: number;
 			status: string;
 			/** Format: date-time */
 			updatedAt: string;
@@ -11345,7 +11429,7 @@ export interface components {
 			/** Format: uuid */
 			academicYearId: string;
 			/** Format: uuid */
-			assessmentCategoryId: string;
+			assessmentPhaseId: string;
 			/** Format: uuid */
 			courseAssessmentPlanId: string;
 			/** Format: int32 */
@@ -11373,8 +11457,8 @@ export interface components {
 			/** Format: uuid */
 			academicYearId: string;
 			/** Format: uuid */
-			assessmentCategoryId: string;
-			assessmentCategoryName?: string | null;
+			assessmentPhaseId: string;
+			assessmentPhaseName?: string | null;
 			/** Format: uuid */
 			courseAssessmentPlanId: string;
 			/** Format: int32 */
@@ -11420,6 +11504,7 @@ export interface components {
 			readiness: components['schemas']['ExamScheduleReadiness'];
 			round: components['schemas']['ExamRound'];
 			scheduledSessions: components['schemas']['ExamSessionView'][];
+			sourcePreview: components['schemas']['ExamSourcePreview'];
 			unscheduledItems: components['schemas']['ExamScheduleItemView'][];
 		};
 		ExamSession: {
@@ -11444,8 +11529,8 @@ export interface components {
 			/** Format: uuid */
 			academicYearId: string;
 			/** Format: uuid */
-			assessmentCategoryId: string;
-			assessmentCategoryName?: string | null;
+			assessmentPhaseId: string;
+			assessmentPhaseName?: string | null;
 			buildingName?: string | null;
 			/** Format: uuid */
 			courseAssessmentPlanId: string;
@@ -11495,6 +11580,57 @@ export interface components {
 			subjectType?: string | null;
 			subjectVersionDisplayLabel?: string | null;
 		};
+		ExamSourceChange: {
+			/** Format: uuid */
+			assessmentPhaseId: string;
+			changeKind: components['schemas']['ExamSourceChangeKind'];
+			/** Format: int32 */
+			currentDurationMinutes?: number | null;
+			/** Format: uuid */
+			examScheduleItemId?: string | null;
+			/** Format: uuid */
+			gradeLevelId: string;
+			/** Format: uuid */
+			homeroomId: string;
+			homeroomName: string;
+			/** Format: uuid */
+			learningGroupId: string;
+			scheduled: boolean;
+			/** Format: int32 */
+			snapshotDurationMinutes?: number | null;
+			/** Format: uuid */
+			sourceId: string;
+			subjectCode: string;
+			/** Format: uuid */
+			subjectId: string;
+			subjectName: string;
+		};
+		/** @enum {string} */
+		ExamSourceChangeKind: 'new' | 'duration_changed' | 'no_longer_eligible';
+		ExamSourcePreview: {
+			changes: components['schemas']['ExamSourceChange'][];
+			/** Format: int64 */
+			durationChangedCount: number;
+			/** Format: int64 */
+			newCount: number;
+			/** Format: int64 */
+			noLongerEligibleCount: number;
+			previewToken: string;
+			/** Format: uuid */
+			roundId: string;
+			/** Format: int64 */
+			roundRowVersion: number;
+			roundStatus: string;
+		};
+		ExamSourceSyncItemResult: {
+			changeKind: components['schemas']['ExamSourceChangeKind'];
+			message?: string | null;
+			/** Format: uuid */
+			sourceId: string;
+			status: components['schemas']['ExamSourceSyncItemStatus'];
+		};
+		/** @enum {string} */
+		ExamSourceSyncItemStatus: 'applied' | 'conflict';
 		FeatureListResponse: {
 			data: components['schemas']['FeatureToggle'][];
 			success: boolean;
@@ -11811,17 +11947,6 @@ export interface components {
 			fileId: string;
 			/** Format: int32 */
 			widthPercent: number;
-		};
-		ImportExamItemsRequest: {
-			gradeLevelIds?: string[] | null;
-		};
-		ImportExamItemsResult: {
-			/** Format: int64 */
-			insertedCount: number;
-			/** Format: int64 */
-			skippedExistingCount: number;
-			/** Format: int64 */
-			skippedMissingDurationCount: number;
 		};
 		InspectSchoolFontUploadsRequest: {
 			fileIds: string[];
@@ -12591,7 +12716,7 @@ export interface components {
 			sessions: components['schemas']['PersonalExamSessionView'][];
 		};
 		PersonalExamSessionView: {
-			assessmentCategoryName: string;
+			assessmentPhaseName: string;
 			buildingName: string | null;
 			endsAt: string;
 			/** Format: date */
@@ -13136,30 +13261,19 @@ export interface components {
 		};
 		/** @enum {string} */
 		RosterStatus: 'draft' | 'published' | 'closed';
-		SaveAssessmentCategoryRequest: {
-			code?: string | null;
-			/** Format: int32 */
-			displayOrder: number;
+		SaveAssessmentPhaseRequest: {
+			examArrangement: components['schemas']['AssessmentExamArrangement'];
 			/** Format: int32 */
 			examDurationMinutes?: number | null;
-			examMode: string;
 			/** Format: uuid */
 			id?: string | null;
-			items: components['schemas']['SaveAssessmentItemRequest'][];
 			maxScore: string;
-			name: string;
-		};
-		SaveAssessmentItemRequest: {
-			/** Format: int32 */
-			displayOrder: number;
-			/** Format: uuid */
-			id?: string | null;
-			isActive: boolean;
-			maxScore: string;
-			name: string;
+			phaseCode: components['schemas']['AssessmentPhaseCode'];
 		};
 		SaveAssessmentPlanRequest: {
-			categories: components['schemas']['SaveAssessmentCategoryRequest'][];
+			/** Format: uuid */
+			assessmentCoordinatorId?: string | null;
+			phases: components['schemas']['SaveAssessmentPhaseRequest'][];
 			/**
 			 * Format: int64
 			 * @description Omit only when the offering does not have a persisted plan yet.
@@ -13362,7 +13476,7 @@ export interface components {
 			roundName: string;
 		};
 		StaffPublishedExamSession: {
-			assessmentCategoryName: string;
+			assessmentPhaseName: string;
 			buildingName: string | null;
 			/** Format: uuid */
 			dayRoomAssignmentId: string;
@@ -13969,6 +14083,23 @@ export interface components {
 			entryA: components['schemas']['TimetableEntry'];
 			entryB: components['schemas']['TimetableEntry'];
 		};
+		SyncExamSourcesRequest: {
+			previewToken: string;
+			/** Format: int64 */
+			roundRowVersion: number;
+			sourceIds: string[];
+		};
+		SyncExamSourcesResult: {
+			/** Format: int64 */
+			insertedCount: number;
+			/** Format: int64 */
+			removedCount: number;
+			results: components['schemas']['ExamSourceSyncItemResult'][];
+			/** Format: int64 */
+			roundRowVersion: number;
+			/** Format: int64 */
+			updatedDurationCount: number;
+		};
 		TeacherAssignmentInput: {
 			role: components['schemas']['LearningTeacherRole'];
 			/** Format: uuid */
@@ -14486,8 +14617,11 @@ export interface components {
 			schedulingMode: string;
 			termCode?: string | null;
 		};
-		UpdateAssessmentSettingsRequest: {
-			teacherAccessEnabled: boolean;
+		UpdateAssessmentPhaseControlRequest: {
+			itemEditingEnabled: boolean;
+			/** Format: int64 */
+			rowVersion: number;
+			scoreEntryEnabled: boolean;
 		};
 		UpdateBellScheduleRequest: {
 			isDefault: boolean;
@@ -15222,28 +15356,72 @@ export interface operations {
 			};
 		};
 	};
-	submitAssessmentPlan: {
+	listAssessmentPhaseControls: {
 		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Learning offering ID */
-				offering_id: string;
+			query: {
+				academicTermId: string;
 			};
+			header?: never;
+			path?: never;
 			cookie?: never;
 		};
 		requestBody?: never;
 		responses: {
-			/** @description Submitted assessment plan */
+			/** @description Assessment phase controls */
 			200: {
 				headers: {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiResponse_AssessmentPlanDetail'];
+					'application/json': components['schemas']['ApiResponse_Vec_AssessmentPhaseControl'];
 				};
 			};
-			/** @description Assessment plan is not ready */
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Assessment phase control read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateAssessmentPhaseControl: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Assessment phase control ID */
+				control_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateAssessmentPhaseControlRequest'];
+			};
+		};
+		responses: {
+			/** @description Updated assessment phase control */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AssessmentPhaseControl'];
+				};
+			};
+			/** @description Invalid assessment phase control */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -15261,7 +15439,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Assessment plan manage permission denied */
+			/** @description Assessment phase control manage permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -15270,16 +15448,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Offering not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Assessment plan state conflict */
+			/** @description Stale assessment phase control version */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -15294,8 +15463,9 @@ export interface operations {
 		parameters: {
 			query: {
 				academicTermId: string;
+				examArrangement?: components['schemas']['AssessmentExamArrangement'];
 				instructorId?: string;
-				status?: string;
+				ready?: boolean;
 				subjectId?: string;
 			};
 			header?: never;
@@ -15323,95 +15493,6 @@ export interface operations {
 				};
 			};
 			/** @description Assessment read permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	getAssessmentSettings: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Assessment settings */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_AssessmentSettingsResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Assessment settings read permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	updateAssessmentSettings: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['UpdateAssessmentSettingsRequest'];
-			};
-		};
-		responses: {
-			/** @description Updated assessment settings */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_AssessmentSettingsResponse'];
-				};
-			};
-			/** @description Invalid assessment settings */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Assessment settings manage permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -18869,47 +18950,6 @@ export interface operations {
 			};
 		};
 	};
-	clearMismatchedExamItems: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Exam round ID */
-				round_id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Mismatched items cleared */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_ClearMismatchedExamItemsResult'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
 	upsertExamDay: {
 		parameters: {
 			query?: never;
@@ -18936,60 +18976,6 @@ export interface operations {
 				};
 			};
 			/** @description Invalid exam day */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	importExamItems: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Exam round ID */
-				round_id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['ImportExamItemsRequest'];
-			};
-		};
-		responses: {
-			/** @description Assessment items imported */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_ImportExamItemsResult'];
-				};
-			};
-			/** @description Import rejected */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -19153,6 +19139,110 @@ export interface operations {
 			};
 			/** @description Exam round not found */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	previewExamSources: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Exam round ID */
+				round_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Assessment source change preview */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ExamSourcePreview'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	syncExamSources: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Exam round ID */
+				round_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SyncExamSourcesRequest'];
+			};
+		};
+		responses: {
+			/** @description Selected assessment source changes synchronized */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SyncExamSourcesResult'];
+				};
+			};
+			/** @description Source synchronization rejected */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Source preview is stale or conflicts with placement */
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};

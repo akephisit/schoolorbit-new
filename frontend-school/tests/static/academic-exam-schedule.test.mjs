@@ -92,7 +92,7 @@ test('exam schedule refresh uses shared shadcn sheet primitive instead of featur
 	}
 });
 
-test('exam schedule detail uses shadcn alert dialogs for destructive confirmations', async () => {
+test('exam schedule detail confirms a populated round kind change with shadcn alert dialog', async () => {
 	const alertDialogIndexPath = 'src/lib/components/ui/alert-dialog/index.ts';
 	assert.equal(
 		existsSync(projectPath(alertDialogIndexPath)),
@@ -105,9 +105,7 @@ test('exam schedule detail uses shadcn alert dialogs for destructive confirmatio
 		'src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'
 	);
 	const handleUpdateExamKind = localFunctionSource(page, 'handleUpdateExamKind');
-	const handleClearMismatchedItems = localFunctionSource(page, 'handleClearMismatchedItems');
 	const confirmExamKindChange = localFunctionSource(page, 'confirmExamKindChange');
-	const confirmClearMismatchedItems = localFunctionSource(page, 'confirmClearMismatchedItems');
 
 	for (const expectedExport of [
 		'Content as AlertDialogContent',
@@ -121,17 +119,12 @@ test('exam schedule detail uses shadcn alert dialogs for destructive confirmatio
 
 	assert.match(page, /\$lib\/components\/ui\/alert-dialog/);
 	assert.match(page, /let examKindDialogOpen = \$state\(false\)/);
-	assert.match(page, /let clearMismatchedDialogOpen = \$state\(false\)/);
 	assert.match(page, /<AlertDialog\.Root bind:open=\{examKindDialogOpen\}>/);
-	assert.match(page, /<AlertDialog\.Root bind:open=\{clearMismatchedDialogOpen\}>/);
 	assert.match(page, /ยืนยันการเปลี่ยนชนิดรอบสอบ/);
-	assert.match(page, /ยืนยันการล้างรายการสอบ/);
 	assert.match(handleUpdateExamKind, /examKindDialogOpen = true/);
-	assert.match(handleClearMismatchedItems, /clearMismatchedDialogOpen = true/);
 	assert.match(confirmExamKindChange, /saveExamKind\(nextKind\)/);
-	assert.match(confirmClearMismatchedItems, /clearMismatchedExamItems\(workspace\.round\.id\)/);
 	assert.doesNotMatch(handleUpdateExamKind, /window\.confirm/);
-	assert.doesNotMatch(handleClearMismatchedItems, /window\.confirm/);
+	assert.doesNotMatch(page, /clearMismatchedDialogOpen/);
 });
 
 test('academic exam schedule routes have compile-ready page placeholders', () => {
@@ -198,14 +191,14 @@ test('academic exam schedule API client maps functions to backend routes and met
 				'/api/academic/exam-schedules/${encodeURIComponent(roundId)}/invigilator-staff-options'
 		},
 		{
-			functionName: 'importExamItems',
-			method: 'post',
-			routeFragment: '/import-items'
+			functionName: 'previewExamSources',
+			method: 'get',
+			routeFragment: '/source-preview'
 		},
 		{
-			functionName: 'clearMismatchedExamItems',
+			functionName: 'syncExamSources',
 			method: 'post',
-			routeFragment: '/clear-mismatched-items'
+			routeFragment: '/source-sync'
 		},
 		{
 			functionName: 'upsertExamDay',
@@ -311,7 +304,7 @@ test('exam schedule API exposes staff-level invigilator drag actions', () => {
 	assert.match(api, /apiClient\.delete<ExamInvigilatorWorkspace>/);
 });
 
-test('exam rounds expose exam kind for midterm and final import filtering', () => {
+test('exam rounds expose exam kind and refresh the source diff when it changes', () => {
 	const api = readFileSync(projectPath('src/lib/api/examSchedule.ts'), 'utf8');
 	const listPage = readFileSync(
 		projectPath('src/routes/(app)/staff/academic/exam-schedules/+page.svelte'),
@@ -325,8 +318,8 @@ test('exam rounds expose exam kind for midterm and final import filtering', () =
 		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),
 		'utf8'
 	);
-	const timeline = readFileSync(
-		projectPath('src/lib/components/academic/exam-schedule/ExamScheduleTimeline.svelte'),
+	const sourcePanel = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/ExamSourceSyncPanel.svelte'),
 		'utf8'
 	);
 
@@ -340,8 +333,11 @@ test('exam rounds expose exam kind for midterm and final import filtering', () =
 	assert.match(listPage, /function examRoundKindLabel\(kind: ExamRoundKind\): string/);
 	assert.match(listPage, /examRoundKindLabel\(round\.examKind\)/);
 	assert.match(detailPage, /examRoundKindLabel\(workspace\.round\.examKind\)/);
-	assert.match(detailPage, /examKindLabel=\{examRoundKindLabel\(workspace\.round\.examKind\)\}/);
-	assert.match(timeline, /นำเข้าเฉพาะ \{examKindLabel\}/);
+	assert.match(detailPage, /await refreshWorkspace\(true\)/);
+	assert.match(detailPage, /<ExamSourceSyncPanel/);
+	assert.match(sourcePanel, /preview\.newCount/);
+	assert.match(sourcePanel, /preview\.durationChangedCount/);
+	assert.match(sourcePanel, /preview\.noLongerEligibleCount/);
 });
 
 test('exam schedule keeps empty guidance local and deep-links imported groups to delivery', async () => {
@@ -361,50 +357,34 @@ test('exam schedule keeps empty guidance local and deep-links imported groups to
 	assert.doesNotMatch(listPage + detailPage, /getLearningDeliveryManagementOptions/);
 });
 
-test('staff schedule tab can clear imported items that do not match the round kind', () => {
+test('staff workspace previews source changes and only removes explicitly selected snapshots', () => {
 	const api = readFileSync(projectPath('src/lib/api/examSchedule.ts'), 'utf8');
 	const detailPage = readFileSync(
 		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),
 		'utf8'
 	);
-	const timeline = readFileSync(
-		projectPath('src/lib/components/academic/exam-schedule/ExamScheduleTimeline.svelte'),
+	const sourcePanel = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/ExamSourceSyncPanel.svelte'),
 		'utf8'
 	);
-	const scheduleTabStart = detailPage.indexOf('<Tabs.Content value="schedule"');
-	assert.notEqual(scheduleTabStart, -1, 'schedule tab should exist');
-	const scheduleTab = detailPage.slice(
-		scheduleTabStart,
-		detailPage.indexOf('<Tabs.Content value="invigilators"')
-	);
-	const handleClearMismatchedItems = localFunctionSource(detailPage, 'handleClearMismatchedItems');
+	const recommendedSourceIds = localFunctionSource(detailPage, 'recommendedSourceIds');
+	const handleSyncSources = localFunctionSource(detailPage, 'handleSyncSources');
 	const resetWorkspaceForRound = localFunctionSource(detailPage, 'resetWorkspaceForRound');
 
-	assert.match(
-		api,
-		/export type ClearMismatchedExamItemsResult = Schemas\['ClearMismatchedExamItemsResult'\]/
-	);
-	assert.match(api, /export async function clearMismatchedExamItems/);
-	assert.match(api, /\/clear-mismatched-items/);
-	assert.match(detailPage, /clearMismatchedExamItems/);
-	assert.match(detailPage, /let clearingMismatchedItems = \$state\(false\)/);
-	assert.match(resetWorkspaceForRound, /clearingMismatchedItems = false/);
-	assert.match(handleClearMismatchedItems, /clearMismatchedDialogOpen = true/);
-	assert.doesNotMatch(handleClearMismatchedItems, /window\.confirm/);
-	assert.match(scheduleTab, /onImportItems=\{handleImportItems\}/);
-	assert.match(scheduleTab, /onClearMismatchedItems=\{handleClearMismatchedItems\}/);
-	assert.match(
-		scheduleTab,
-		/canManageActions=\{canManageExamSchedules && workspace\.round\.status !== 'published'\}/
-	);
-	assert.doesNotMatch(scheduleTab, /รายการสอบสำหรับ\{examRoundKindLabel/);
-	assert.match(scheduleTab, /<ExamScheduleTimeline/);
-	assert.match(timeline, /onImportItems\?: \(\) => void/);
-	assert.match(timeline, /onClearMismatchedItems\?: \(\) => void/);
-	assert.match(timeline, /onclick=\{onImportItems\}/);
-	assert.match(timeline, /onclick=\{onClearMismatchedItems\}/);
-	assert.match(timeline, /นำเข้าเฉพาะ/);
-	assert.match(timeline, /ล้างรายการไม่ตรงรอบสอบ/);
+	assert.match(api, /export type ExamSourcePreview = Schemas\['ExamSourcePreview'\]/);
+	assert.match(api, /export async function previewExamSources/);
+	assert.match(api, /export async function syncExamSources/);
+	assert.match(api, /\/source-preview/);
+	assert.match(api, /\/source-sync/);
+	assert.match(detailPage, /let selectedSourceIds = \$state<string\[\]>\(\[\]\)/);
+	assert.match(resetWorkspaceForRound, /selectedSourceIds = \[\]/);
+	assert.match(recommendedSourceIds, /change\.changeKind !== 'no_longer_eligible'/);
+	assert.match(handleSyncSources, /sourceIds: selectedSourceIds/);
+	assert.match(handleSyncSources, /roundRowVersion: workspace\.sourcePreview\.roundRowVersion/);
+	assert.match(detailPage, /onToggle=\{toggleSourceSelection\}/);
+	assert.match(sourcePanel, /เลือกเมื่อต้องการนำ snapshot นี้ออกจากรอบสอบ/);
+	assert.match(sourcePanel, /disabled=\{readonly \|\| syncing\}/);
+	assert.doesNotMatch(api + detailPage, /clearMismatchedExamItems|importExamItems/);
 });
 
 test('exam schedule workspace tabs inherit app content height instead of recalculating viewport height', () => {
@@ -645,7 +625,7 @@ test('staff workspace refreshes or invalidates invigilator workspace after sourc
 	assert.match(refreshOrInvalidateInvigilators, /invigilatorWorkspace = null/);
 
 	for (const handlerName of [
-		'handleImportItems',
+		'handleSyncSources',
 		'handleSaveDay',
 		'handleDeleteDay',
 		'handleSaveAssignment'
@@ -868,7 +848,7 @@ test('invigilator staff filtering is local to the drag board', () => {
 	assert.doesNotMatch(panel, /staffSearchRequestToken|onSearchStaff|bind:open={editorOpen}/);
 });
 
-test('staff workspace wires setup, import, room assignment, and publish actions', () => {
+test('staff workspace wires setup, source sync, room assignment, and publish actions', () => {
 	const page = readFileSync(
 		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),
 		'utf8'
@@ -878,6 +858,7 @@ test('staff workspace wires setup, import, room assignment, and publish actions'
 		'ExamDaySetupPanel',
 		'ExamRoomAssignmentPanel',
 		'ExamScheduleTimeline',
+		'ExamSourceSyncPanel',
 		'CompactExamScheduleStatus',
 		'getExamScheduleWorkspace',
 		'placeExamSession',
@@ -885,7 +866,7 @@ test('staff workspace wires setup, import, room assignment, and publish actions'
 		'deleteExamDay',
 		'upsertDayRoomAssignment',
 		'generateSeatsForAssignment',
-		'importExamItems',
+		'syncExamSources',
 		'publishExamRound',
 		'ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL',
 		'ACADEMIC_EXAM_SCHEDULE_PUBLISH_SCHOOL'
@@ -1624,7 +1605,7 @@ test('personal exam schedule view groups published sessions and hides staff supe
 		'session.startsAt',
 		'session.endsAt',
 		'session.subjectName',
-		'session.assessmentCategoryName',
+		'session.assessmentPhaseName',
 		'session.homeroomName',
 		'session.buildingName',
 		'session.roomName',
