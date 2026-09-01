@@ -279,14 +279,15 @@ test('cleanup failure makes success fail but does not hide cargo failure', async
     assert.match(both.stderr, /failed to remove disposable PostgreSQL container/);
 });
 
-test('container is loopback-only, volume-free, and durability-tuned', async (t) => {
+test('container is loopback-only, volume-free, and sized for the complete migration suite', async (t) => {
     const f = await fixture(t);
     const result = runRunner(f);
 
     assert.equal(result.status, 0, result.error?.message ?? result.stderr);
     const docker = await read(f.dockerLog);
     assert.match(docker, /arg=127\.0\.0\.1::5432/);
-    assert.match(docker, /arg=\/var\/lib\/postgresql:rw,size=1g/);
+    assert.match(docker, /arg=\/var\/lib\/postgresql:rw,size=5g/);
+    assert.match(docker, /arg=--shm-size\narg=1g/);
     assert.match(docker, /arg=fsync=off/);
     assert.match(docker, /arg=synchronous_commit=off/);
     assert.match(docker, /arg=full_page_writes=off/);
