@@ -13,8 +13,8 @@ use crate::modules::academic::models::assessment::{
 };
 use crate::modules::academic::services::assessment_service;
 use crate::modules::auth::session_service::AuthenticatedSession;
-use crate::policies::learning_offering_access_policy::{
-    require_learning_offering_access, require_learning_offering_list_access, OfferingAction,
+use crate::policies::assessment_access_policy::{
+    require_assessment_plan_access, require_assessment_plan_list_access, AssessmentAction,
 };
 use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
@@ -37,10 +37,10 @@ pub async fn list_assessment_plans(
     Query(query): Query<AssessmentPlanListQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    let access = require_learning_offering_list_access(
+    let access = require_assessment_plan_list_access(
         &context.tenant.pool,
         &context.actor,
-        OfferingAction::Read,
+        AssessmentAction::Read,
     )
     .await?;
     let plans =
@@ -125,11 +125,11 @@ pub async fn get_assessment_plan(
     Path(offering_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    require_learning_offering_access(
+    require_assessment_plan_access(
         &context.tenant.pool,
         &context.actor,
         offering_id,
-        OfferingAction::Read,
+        AssessmentAction::Read,
     )
     .await?;
     let plan = assessment_service::get_plan_detail(&context.tenant.pool, offering_id).await?;
@@ -159,11 +159,11 @@ pub async fn save_assessment_plan(
     Json(payload): Json<SaveAssessmentPlanRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    require_learning_offering_access(
+    require_assessment_plan_access(
         &context.tenant.pool,
         &context.actor,
         offering_id,
-        OfferingAction::Manage,
+        AssessmentAction::Manage,
     )
     .await?;
     let can_manage_school = assessment_service::actor_can_manage_all_plans(&context.actor);

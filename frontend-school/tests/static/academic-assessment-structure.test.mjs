@@ -213,6 +213,10 @@ test('assessment phase controls and coordinator authorization replace the global
 	const service = await readRepoFile(
 		'backend-school/src/modules/academic/services/assessment_service.rs'
 	);
+	const capabilityBlock = page.slice(
+		page.indexOf('const canRead'),
+		page.indexOf('const filteredPlans')
+	);
 
 	assert.match(page, /phaseControls/);
 	assert.match(page, /togglePhaseControl/);
@@ -225,4 +229,5 @@ test('assessment phase controls and coordinator authorization replace the global
 	assert.match(service, /allowed_coordinator/);
 	assert.match(service, /เฉพาะผู้รับผิดชอบโครงสร้างคะแนนหรือผู้ดูแลวิชาการเท่านั้น/);
 	assert.doesNotMatch(page, /teacherAccessEnabled|toggleTeacherAccess/);
+	assert.doesNotMatch(capabilityBlock, /LEARNING_OFFERING/);
 });

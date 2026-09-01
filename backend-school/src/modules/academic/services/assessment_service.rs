@@ -483,23 +483,15 @@ pub fn require_phase_controls_read_access(actor: &ActorContext) -> Result<(), Ap
         codes::ACADEMIC_ASSESSMENT_MANAGE_ASSIGNED,
         codes::ACADEMIC_ASSESSMENT_READ_SCHOOL,
         codes::ACADEMIC_ASSESSMENT_MANAGE_SCHOOL,
-        codes::LEARNING_OFFERING_READ_SCHOOL,
-        codes::LEARNING_OFFERING_MANAGE_SCHOOL,
     ])
 }
 
 pub fn require_phase_controls_manage_access(actor: &ActorContext) -> Result<(), AppError> {
-    actor.require_any_permission(&[
-        codes::ACADEMIC_ASSESSMENT_MANAGE_SCHOOL,
-        codes::LEARNING_OFFERING_MANAGE_SCHOOL,
-    ])
+    actor.require_any_permission(&[codes::ACADEMIC_ASSESSMENT_MANAGE_SCHOOL])
 }
 
 pub fn actor_can_manage_all_plans(actor: &ActorContext) -> bool {
-    actor.has_any_permission(&[
-        codes::ACADEMIC_ASSESSMENT_MANAGE_SCHOOL,
-        codes::LEARNING_OFFERING_MANAGE_SCHOOL,
-    ])
+    actor.has_any_permission(&[codes::ACADEMIC_ASSESSMENT_MANAGE_SCHOOL])
 }
 
 async fn resolve_offering_scope(

@@ -2,6 +2,7 @@ use uuid::Uuid;
 
 use super::assessment_service;
 use crate::error::AppError;
+use crate::middleware::permission::ActorContext;
 use crate::modules::academic::cutover_test_support::{
     apply_migrations_through, record_passing_phase_a_reconciliation_marker,
     seed_academic_cutover_fixture, CutoverFixture,
@@ -10,8 +11,13 @@ use crate::modules::academic::models::assessment::{
     AssessmentPlanListQuery, SaveAssessmentPhaseRequest, SaveAssessmentPlanRequest,
     UpdateAssessmentPhaseControlRequest,
 };
+use crate::permissions::registry::codes;
+use crate::policies::assessment_access_policy::{
+    require_assessment_plan_list_access, AssessmentAction,
+};
 use crate::policies::resource_access_policy::AcademicResourceListFilter;
 use crate::test_helpers::create_named_test_pool;
+use sqlx::postgres::PgPoolOptions;
 
 async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
     let pool = create_named_test_pool(test_name).await;
@@ -35,6 +41,44 @@ fn list_query(academic_term_id: Uuid) -> AssessmentPlanListQuery {
         ready: None,
         exam_arrangement: None,
     }
+}
+
+fn actor(permissions: &[&str]) -> ActorContext {
+    ActorContext {
+        user_id: Uuid::new_v4(),
+        permissions: permissions
+            .iter()
+            .map(|permission| permission.to_string())
+            .collect(),
+    }
+}
+
+fn lazy_pool() -> sqlx::PgPool {
+    PgPoolOptions::new()
+        .connect_lazy("postgres://schoolorbit:schoolorbit@127.0.0.1:1/schoolorbit")
+        .unwrap()
+}
+
+#[tokio::test]
+async fn assessment_assigned_read_permission_resolves_an_assigned_plan_filter() {
+    let actor = actor(&[codes::ACADEMIC_ASSESSMENT_READ_ASSIGNED]);
+
+    let access = require_assessment_plan_list_access(&lazy_pool(), &actor, AssessmentAction::Read)
+        .await
+        .unwrap();
+
+    assert_eq!(access.assigned_actor_id, Some(actor.user_id));
+    assert!(!access.includes_school_owned);
+}
+
+#[tokio::test]
+async fn learning_offering_permission_does_not_grant_assessment_plan_access() {
+    let actor = actor(&[codes::LEARNING_OFFERING_READ_ASSIGNED]);
+
+    let result =
+        require_assessment_plan_list_access(&lazy_pool(), &actor, AssessmentAction::Read).await;
+
+    assert!(matches!(result, Err(AppError::Forbidden(_))));
 }
 
 fn save_payload(
