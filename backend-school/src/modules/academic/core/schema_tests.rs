@@ -3902,3 +3902,92 @@ async fn migration_057_renames_assessment_plan_editing_control_without_compatibi
     .expect("backfilled term controls must be queryable");
     assert_eq!(backfilled_control_count, 4);
 }
+
+#[tokio::test]
+async fn migration_058_reconciles_timetable_blocks() {
+    let pool = phase_a_fixture("academic_core_058_timetable_blocks").await;
+    record_passing_phase_a_reconciliation_marker(&pool)
+        .await
+        .expect("cleanup marker must exist before the post-cutover migrations");
+    apply_migrations_through(&pool, 57)
+        .await
+        .expect("fixture must reach the pre-058 schema");
+
+    let source_counts: (i64, i64, i64) = sqlx::query_as(
+        r#"SELECT
+               (SELECT COUNT(*) FROM academic_timetable_entries
+                 WHERE entry_type IN ('COURSE', 'ACTIVITY')),
+               (SELECT COUNT(*)
+                  FROM timetable_entry_instructors instructor
+                  JOIN academic_timetable_entries entry ON entry.id = instructor.entry_id
+                 WHERE entry.entry_type IN ('COURSE', 'ACTIVITY')),
+               (SELECT COUNT(*) FROM supervision_observations
+                 WHERE timetable_entry_id IS NOT NULL)"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("pre-058 timetable counts must be queryable");
+
+    let source_delivery_ids: Vec<Uuid> = sqlx::query_scalar(
+        r#"SELECT id
+           FROM academic_timetable_entries
+           WHERE entry_type IN ('COURSE', 'ACTIVITY')
+           ORDER BY id"#,
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("pre-058 delivery IDs must be queryable");
+
+    apply_migrations_through(&pool, 58)
+        .await
+        .expect("migration 058 must establish canonical timetable blocks");
+
+    for table_name in [
+        "academic_timetable_blocks",
+        "academic_timetable_block_groups",
+        "academic_timetable_block_group_instructors",
+        "academic_timetable_block_homerooms",
+        "academic_timetable_block_teachers",
+        "academic_timetable_block_group_sync",
+    ] {
+        assert!(
+            table_exists(&pool, table_name).await,
+            "{table_name} must exist after migration 058"
+        );
+    }
+    assert!(!table_exists(&pool, "academic_timetable_entries").await);
+    assert!(!table_exists(&pool, "timetable_entry_instructors").await);
+
+    let target_counts: (i64, i64, i64) = sqlx::query_as(
+        r#"SELECT
+               (SELECT COUNT(*) FROM academic_timetable_block_groups),
+               (SELECT COUNT(*) FROM academic_timetable_block_group_instructors),
+               (SELECT COUNT(*) FROM supervision_observations
+                 WHERE timetable_block_group_id IS NOT NULL)"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("post-058 timetable counts must be queryable");
+    assert_eq!(target_counts, source_counts);
+
+    let target_delivery_ids: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM academic_timetable_block_groups ORDER BY id",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("post-058 group IDs must be queryable");
+    assert_eq!(target_delivery_ids, source_delivery_ids);
+
+    let orphan_count: i64 = sqlx::query_scalar(
+        r#"SELECT COUNT(*)
+           FROM supervision_observations observation
+           LEFT JOIN academic_timetable_block_groups block_group
+             ON block_group.id = observation.timetable_block_group_id
+           WHERE observation.timetable_block_group_id IS NOT NULL
+             AND block_group.id IS NULL"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("post-058 supervision references must be queryable");
+    assert_eq!(orphan_count, 0);
+}
