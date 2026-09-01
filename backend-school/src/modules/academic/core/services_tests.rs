@@ -44,7 +44,7 @@ async fn prepare_core_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 52).await.unwrap();
+    apply_migrations_through(&pool, 57).await.unwrap();
     pool
 }
 
@@ -1158,6 +1158,25 @@ async fn planning_year_and_term_updates_reject_stale_versions_and_unused_term_de
     )
     .await
     .unwrap();
+    let phase_controls: Vec<(String, bool, bool)> = sqlx::query_as(
+        r#"SELECT phase_code, plan_editing_enabled, score_entry_enabled
+           FROM academic_assessment_phase_controls
+           WHERE academic_term_id = $1
+           ORDER BY phase_code"#,
+    )
+    .bind(created.id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        phase_controls,
+        vec![
+            ("after_midterm".to_string(), false, false),
+            ("before_midterm".to_string(), false, false),
+            ("final".to_string(), false, false),
+            ("midterm".to_string(), false, false),
+        ]
+    );
     let update_term = UpdateAcademicTermRequest {
         term_type: AcademicTermType::Custom,
         custom_name: Some("ภาคซ่อมเสริมปรับปรุง".to_string()),

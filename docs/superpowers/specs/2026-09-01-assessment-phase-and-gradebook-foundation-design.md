@@ -213,22 +213,25 @@ Academic managers may select any current candidate manually.
 Each academic term owns exactly four phase-control rows. Each row stores two independent Boolean
 controls:
 
-- `item_editing_enabled`: group teachers may create, rename, reorder, resize, or delete score items
-  in this phase; and
-- `score_entry_enabled`: group teachers may enter or change student scores in this phase.
+- `plan_editing_enabled`: the assigned assessment coordinator may edit the shared phase maximum,
+  exam arrangement, and exam duration; and
+- `score_entry_enabled`: assigned group teachers may create, rename, reorder, resize, or delete
+  score items and may enter or change student scores in this phase.
 
 The controls are school-wide for the selected academic term in the first release. Per-offering,
 per-group, and per-teacher overrides are intentionally omitted.
 
-Academic managers can change the controls from the assessment workspace. The API updates the
-requested phase atomically with row-version checking. The future Gradebook must enforce both the
-exact group assignment and the relevant phase control on the server; hiding a frontend control is
-not authorization.
+Academic managers can change the controls from the assessment workspace and may edit shared plans,
+score items, and student scores regardless of the control state through the school-management
+permission. The API updates the requested phase atomically with row-version checking. Assigned
+coordinators and group teachers must satisfy the relevant phase control on the server; hiding a
+frontend control is not authorization.
 
 The current global teacher-access feature toggle is removed from the assessment workflow rather
 than retained as an additional master switch. Shared-plan edit authority comes from coordinator and
-school-management permission. Group score-item and score-entry authority comes from group teacher
-assignment, exact permission, and the two phase controls.
+school-management permission, with `plan_editing_enabled` additionally gating assigned
+coordinators. Group score-item and score-entry authority uses one boundary: group teacher
+assignment, exact permission, and `score_entry_enabled`.
 
 ### Group-owned score items
 
@@ -467,10 +470,11 @@ query aliases or legacy payload fields remain.
   and edit term phase controls.
 - The persisted assessment coordinator can read and edit only the assigned offering plan.
 - Group teachers can read the shared plan for their assigned groups.
-- Future group score-item mutations require an active teacher assignment to the exact learning
-  group, the exact score-item permission, and `item_editing_enabled` for the phase.
-- Future student-score mutations require an active teacher assignment to the exact learning group,
-  the exact score-entry permission, and `score_entry_enabled` for the phase.
+- Assigned coordinator plan mutations require `plan_editing_enabled` for the exact phase; school
+  assessment managers bypass the phase control.
+- Future group score-item and student-score mutations require an active teacher assignment to the
+  exact learning group, the exact score permission, and `score_entry_enabled` for the phase; school
+  assessment managers bypass the phase control.
 - Exam-schedule permissions remain separate from assessment-plan permissions.
 
 All authorization is enforced before data load and mutation on the backend. Frontend visibility is

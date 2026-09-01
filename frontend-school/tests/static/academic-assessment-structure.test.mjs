@@ -208,7 +208,7 @@ test('assessment save sends rowVersion and keeps dirty draft on conflicts', asyn
 	assert.doesNotMatch(catchBlock, /draftPhases\s*=|dirty\s*=\s*false/);
 });
 
-test('assessment phase controls and coordinator authorization replace the global teacher switch', async () => {
+test('assessment phase controls separate plan editing from score entry without legacy item editing', async () => {
 	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
 	const service = await readRepoFile(
 		'backend-school/src/modules/academic/services/assessment_service.rs'
@@ -220,14 +220,18 @@ test('assessment phase controls and coordinator authorization replace the global
 
 	assert.match(page, /phaseControls/);
 	assert.match(page, /togglePhaseControl/);
-	assert.match(page, /itemEditingEnabled/);
+	assert.match(page, /planEditingEnabled/);
 	assert.match(page, /scoreEntryEnabled/);
+	assert.match(page, /แก้โครงสร้างคะแนนรายวิชา/);
+	assert.match(page, /canEditPlanPhase/);
 	assert.match(page, /canManageSchool/);
 	assert.match(page, /ACADEMIC_ASSESSMENT_MANAGE_ASSIGNED/);
 	assert.match(page, /<Switch/);
 	assert.match(service, /require_phase_controls_manage_access/);
 	assert.match(service, /allowed_coordinator/);
 	assert.match(service, /เฉพาะผู้รับผิดชอบโครงสร้างคะแนนหรือผู้ดูแลวิชาการเท่านั้น/);
+	assert.doesNotMatch(page, /itemEditingEnabled/);
+	assert.doesNotMatch(service, /item_editing_enabled/);
 	assert.doesNotMatch(page, /teacherAccessEnabled|toggleTeacherAccess/);
 	assert.doesNotMatch(capabilityBlock, /LEARNING_OFFERING/);
 });

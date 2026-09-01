@@ -2704,9 +2704,6 @@
                 "format": "uuid",
                 "type": "string"
               },
-              "itemEditingEnabled": {
-                "type": "boolean"
-              },
               "label": {
                 "type": "string"
               },
@@ -2716,6 +2713,9 @@
               },
               "phaseCode": {
                 "$ref": "#/components/schemas/AssessmentPhaseCode"
+              },
+              "planEditingEnabled": {
+                "type": "boolean"
               },
               "rowVersion": {
                 "format": "int64",
@@ -2732,7 +2732,7 @@
               "phaseCode",
               "label",
               "order",
-              "itemEditingEnabled",
+              "planEditingEnabled",
               "scoreEntryEnabled",
               "rowVersion"
             ],
@@ -11492,9 +11492,6 @@
                   "format": "uuid",
                   "type": "string"
                 },
-                "itemEditingEnabled": {
-                  "type": "boolean"
-                },
                 "label": {
                   "type": "string"
                 },
@@ -11504,6 +11501,9 @@
                 },
                 "phaseCode": {
                   "$ref": "#/components/schemas/AssessmentPhaseCode"
+                },
+                "planEditingEnabled": {
+                  "type": "boolean"
                 },
                 "rowVersion": {
                   "format": "int64",
@@ -11520,7 +11520,7 @@
                 "phaseCode",
                 "label",
                 "order",
-                "itemEditingEnabled",
+                "planEditingEnabled",
                 "scoreEntryEnabled",
                 "rowVersion"
               ],
@@ -17248,9 +17248,6 @@
             "format": "uuid",
             "type": "string"
           },
-          "itemEditingEnabled": {
-            "type": "boolean"
-          },
           "label": {
             "type": "string"
           },
@@ -17260,6 +17257,9 @@
           },
           "phaseCode": {
             "$ref": "#/components/schemas/AssessmentPhaseCode"
+          },
+          "planEditingEnabled": {
+            "type": "boolean"
           },
           "rowVersion": {
             "format": "int64",
@@ -17276,7 +17276,7 @@
           "phaseCode",
           "label",
           "order",
-          "itemEditingEnabled",
+          "planEditingEnabled",
           "scoreEntryEnabled",
           "rowVersion"
         ],
@@ -36863,7 +36863,7 @@
       "UpdateAssessmentPhaseControlRequest": {
         "additionalProperties": false,
         "properties": {
-          "itemEditingEnabled": {
+          "planEditingEnabled": {
             "type": "boolean"
           },
           "rowVersion": {
@@ -36876,7 +36876,7 @@
         },
         "required": [
           "rowVersion",
-          "itemEditingEnabled",
+          "planEditingEnabled",
           "scoreEntryEnabled"
         ],
         "type": "object"

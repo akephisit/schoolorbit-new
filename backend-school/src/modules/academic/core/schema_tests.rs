@@ -3810,3 +3810,95 @@ async fn migration_056_establishes_fixed_assessment_phases() {
             .expect("eligible exam sources must be queryable");
     assert!(eligible_source_count > 0);
 }
+
+#[tokio::test]
+async fn migration_057_renames_assessment_plan_editing_control_without_compatibility() {
+    let pool = phase_a_fixture("academic_core_057_assessment_plan_controls").await;
+    record_passing_phase_a_reconciliation_marker(&pool)
+        .await
+        .expect("cleanup marker must exist before the post-cutover migrations");
+    apply_migrations_through(&pool, 56)
+        .await
+        .expect("fixture must reach the pre-057 schema");
+
+    let missing_control_term_id = Uuid::new_v4();
+    sqlx::query(
+        r#"INSERT INTO academic_terms (
+               id, academic_year_id, sequence_no, code, name, term_type,
+               start_date, planned_end_date, included_in_year_result,
+               blocks_year_closure, bell_schedule_id, status
+           )
+           SELECT $1,
+                  source.academic_year_id,
+                  (SELECT max(sequence_no) + 1
+                   FROM academic_terms
+                   WHERE academic_year_id = source.academic_year_id),
+                  'ASSESSMENT-CONTROL-BACKFILL',
+                  'ภาคเรียนทดสอบการเติมตัวควบคุมคะแนน',
+                  'custom',
+                  source.start_date,
+                  source.planned_end_date,
+                  source.included_in_year_result,
+                  source.blocks_year_closure,
+                  source.bell_schedule_id,
+                  'planning'
+           FROM academic_terms source
+           ORDER BY source.id
+           LIMIT 1"#,
+    )
+    .bind(missing_control_term_id)
+    .execute(&pool)
+    .await
+    .expect("pre-057 fixture must permit a term without assessment controls");
+
+    sqlx::query(
+        r#"UPDATE academic_assessment_phase_controls
+           SET item_editing_enabled = true
+           WHERE phase_code = 'midterm'"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("legacy plan-editing value must be writable before migration 057");
+
+    apply_migrations_through(&pool, 57)
+        .await
+        .expect("migration 057 must rename the plan-editing control");
+
+    assert!(
+        column_exists(
+            &pool,
+            "academic_assessment_phase_controls",
+            "plan_editing_enabled"
+        )
+        .await
+    );
+    assert!(
+        !column_exists(
+            &pool,
+            "academic_assessment_phase_controls",
+            "item_editing_enabled"
+        )
+        .await
+    );
+
+    let preserved_midterm_value: bool = sqlx::query_scalar(
+        r#"SELECT plan_editing_enabled
+           FROM academic_assessment_phase_controls
+           WHERE phase_code = 'midterm'
+           ORDER BY academic_term_id
+           LIMIT 1"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("renamed plan-editing value must remain queryable");
+    assert!(preserved_midterm_value);
+
+    let backfilled_control_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM academic_assessment_phase_controls WHERE academic_term_id = $1",
+    )
+    .bind(missing_control_term_id)
+    .fetch_one(&pool)
+    .await
+    .expect("backfilled term controls must be queryable");
+    assert_eq!(backfilled_control_count, 4);
+}

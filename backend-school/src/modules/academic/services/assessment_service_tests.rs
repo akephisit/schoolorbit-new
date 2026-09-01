@@ -8,8 +8,8 @@ use crate::modules::academic::cutover_test_support::{
     seed_academic_cutover_fixture, CutoverFixture,
 };
 use crate::modules::academic::models::assessment::{
-    AssessmentPlanListQuery, SaveAssessmentPhaseRequest, SaveAssessmentPlanRequest,
-    UpdateAssessmentPhaseControlRequest,
+    AssessmentPhaseCode, AssessmentPlanListQuery, SaveAssessmentPhaseRequest,
+    SaveAssessmentPlanRequest, UpdateAssessmentPhaseControlRequest,
 };
 use crate::permissions::registry::codes;
 use crate::policies::assessment_access_policy::{
@@ -29,7 +29,7 @@ async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
     record_passing_phase_a_reconciliation_marker(&pool)
         .await
         .unwrap();
-    apply_migrations_through(&pool, 56).await.unwrap();
+    apply_migrations_through(&pool, 57).await.unwrap();
     pool
 }
 
@@ -212,7 +212,119 @@ async fn auto_save_derives_readiness_and_rejects_stale_versions() {
 }
 
 #[tokio::test]
-async fn phase_controls_update_independently_with_optimistic_versioning() {
+async fn assigned_coordinator_cannot_change_a_locked_plan_phase() {
+    let pool = migrated_pool("assessment_locked_plan_phase").await;
+    let offering_id: Uuid = sqlx::query_scalar(
+        "SELECT learning_offering_id FROM course_assessment_plans ORDER BY id LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let detail = assessment_service::get_plan_detail(&pool, offering_id)
+        .await
+        .unwrap();
+    let mut payload = save_payload(&detail);
+    let coordinator_id = payload.assessment_coordinator_id.unwrap();
+    sqlx::query(
+        "UPDATE course_assessment_plans SET assessment_coordinator_id = $1 WHERE learning_offering_id = $2",
+    )
+    .bind(coordinator_id)
+    .bind(offering_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let before_midterm = payload
+        .phases
+        .iter_mut()
+        .find(|phase| phase.phase_code == AssessmentPhaseCode::BeforeMidterm)
+        .unwrap();
+    before_midterm.max_score = "71.00".to_string();
+
+    let result =
+        assessment_service::save_plan(&pool, offering_id, coordinator_id, false, payload).await;
+
+    assert!(matches!(result, Err(AppError::Forbidden(message)) if message.contains("ก่อนกลางภาค")));
+}
+
+#[tokio::test]
+async fn assigned_coordinator_changes_only_an_enabled_plan_phase() {
+    let pool = migrated_pool("assessment_enabled_plan_phase").await;
+    let offering_id: Uuid = sqlx::query_scalar(
+        "SELECT learning_offering_id FROM course_assessment_plans ORDER BY id LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let detail = assessment_service::get_plan_detail(&pool, offering_id)
+        .await
+        .unwrap();
+    let mut payload = save_payload(&detail);
+    let coordinator_id = payload.assessment_coordinator_id.unwrap();
+    sqlx::query(
+        "UPDATE course_assessment_plans SET assessment_coordinator_id = $1 WHERE learning_offering_id = $2",
+    )
+    .bind(coordinator_id)
+    .bind(offering_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let controls = assessment_service::list_phase_controls(&pool, detail.academic_term_id)
+        .await
+        .unwrap();
+    let before_midterm_control = controls
+        .iter()
+        .find(|control| control.phase_code == AssessmentPhaseCode::BeforeMidterm)
+        .unwrap();
+    assessment_service::update_phase_control(
+        &pool,
+        before_midterm_control.id,
+        coordinator_id,
+        UpdateAssessmentPhaseControlRequest {
+            row_version: before_midterm_control.row_version,
+            plan_editing_enabled: true,
+            score_entry_enabled: false,
+        },
+    )
+    .await
+    .unwrap();
+    let midterm = detail
+        .phases
+        .iter()
+        .find(|phase| phase.phase_code == AssessmentPhaseCode::Midterm)
+        .unwrap();
+    let midterm_id = midterm.id.unwrap();
+    let midterm_version = midterm.row_version.unwrap();
+    payload
+        .phases
+        .iter_mut()
+        .find(|phase| phase.phase_code == AssessmentPhaseCode::BeforeMidterm)
+        .unwrap()
+        .max_score = "71.00".to_string();
+
+    let saved = assessment_service::save_plan(&pool, offering_id, coordinator_id, false, payload)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        saved
+            .phases
+            .iter()
+            .find(|phase| phase.phase_code == AssessmentPhaseCode::BeforeMidterm)
+            .unwrap()
+            .max_score,
+        "71"
+    );
+    let locked_midterm_version: i64 =
+        sqlx::query_scalar("SELECT row_version FROM course_assessment_phases WHERE id = $1")
+            .bind(midterm_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(locked_midterm_version, midterm_version);
+}
+
+#[tokio::test]
+async fn plan_and_score_controls_update_independently_with_optimistic_versioning() {
     let pool = migrated_pool("assessment_phase_controls").await;
     let term_id: Uuid =
         sqlx::query_scalar("SELECT academic_term_id FROM course_assessment_plans LIMIT 1")
@@ -226,7 +338,7 @@ async fn phase_controls_update_independently_with_optimistic_versioning() {
     assert_eq!(controls.len(), 4);
     assert!(controls
         .iter()
-        .all(|control| !control.item_editing_enabled && !control.score_entry_enabled));
+        .all(|control| !control.plan_editing_enabled && !control.score_entry_enabled));
 
     let control = &controls[1];
     let updated = assessment_service::update_phase_control(
@@ -235,13 +347,13 @@ async fn phase_controls_update_independently_with_optimistic_versioning() {
         actor_id,
         UpdateAssessmentPhaseControlRequest {
             row_version: control.row_version,
-            item_editing_enabled: true,
+            plan_editing_enabled: true,
             score_entry_enabled: false,
         },
     )
     .await
     .unwrap();
-    assert!(updated.item_editing_enabled);
+    assert!(updated.plan_editing_enabled);
     assert!(!updated.score_entry_enabled);
 
     let stale = assessment_service::update_phase_control(
@@ -250,7 +362,7 @@ async fn phase_controls_update_independently_with_optimistic_versioning() {
         actor_id,
         UpdateAssessmentPhaseControlRequest {
             row_version: control.row_version,
-            item_editing_enabled: true,
+            plan_editing_enabled: true,
             score_entry_enabled: true,
         },
     )

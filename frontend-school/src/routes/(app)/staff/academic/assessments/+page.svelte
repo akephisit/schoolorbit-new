@@ -164,6 +164,12 @@
 		return plan.phases.find((phase) => phase.phaseCode === code) ?? null;
 	}
 
+	function canEditPlanPhase(code: AssessmentPhaseCode): boolean {
+		if (canManageSchool) return true;
+		if (!canEditDetail) return false;
+		return Boolean(phaseControls.find((control) => control.phaseCode === code)?.planEditingEnabled);
+	}
+
 	function phaseLabel(code: AssessmentPhaseCode): string {
 		return (
 			{
@@ -377,15 +383,15 @@
 
 	async function togglePhaseControl(
 		control: AssessmentPhaseControl,
-		field: 'itemEditingEnabled' | 'scoreEntryEnabled'
+		field: 'planEditingEnabled' | 'scoreEntryEnabled'
 	): Promise<void> {
 		if (!canManageSchool || controlBusyId) return;
 		controlBusyId = control.id;
 		try {
 			const saved = await updateAssessmentPhaseControl(control.id, {
 				rowVersion: control.rowVersion,
-				itemEditingEnabled:
-					field === 'itemEditingEnabled' ? !control.itemEditingEnabled : control.itemEditingEnabled,
+				planEditingEnabled:
+					field === 'planEditingEnabled' ? !control.planEditingEnabled : control.planEditingEnabled,
 				scoreEntryEnabled:
 					field === 'scoreEntryEnabled' ? !control.scoreEntryEnabled : control.scoreEntryEnabled
 			});
@@ -455,7 +461,8 @@
 							<h2 class="font-semibold">ช่วงการทำงานของครู</h2>
 						</div>
 						<p class="mt-1 text-sm text-muted-foreground">
-							เปิดแยกได้ระหว่างการสร้างรายการคะแนนย่อยกับการกรอกคะแนนนักเรียน
+							เปิดการแก้โครงสร้างสำหรับผู้รับผิดชอบรายวิชา
+							และเปิดการจัดรายการย่อยพร้อมกรอกคะแนนนักเรียนแยกตามช่วง
 						</p>
 					</div>
 					{#if !canManageSchool}<Badge variant="outline">ดูสถานะเท่านั้น</Badge>{/if}
@@ -468,12 +475,12 @@
 								<span class="font-mono text-xs text-muted-foreground">0{control.order}</span>
 							</div>
 							<div class="flex items-center justify-between gap-3 text-sm">
-								<Label for={`item-control-${control.id}`}>แก้รายการคะแนน</Label>
+								<Label for={`plan-control-${control.id}`}>แก้โครงสร้างคะแนนรายวิชา</Label>
 								<Switch
-									id={`item-control-${control.id}`}
-									checked={control.itemEditingEnabled}
+									id={`plan-control-${control.id}`}
+									checked={control.planEditingEnabled}
 									disabled={!canManageSchool || Boolean(controlBusyId)}
-									onclick={() => togglePhaseControl(control, 'itemEditingEnabled')}
+									onclick={() => togglePhaseControl(control, 'planEditingEnabled')}
 								/>
 							</div>
 							<div class="flex items-center justify-between gap-3 text-sm">
@@ -734,7 +741,7 @@
 					{#if !canManageSchool && detail.assessmentCoordinatorId === currentUserId}<p
 							class="text-xs text-muted-foreground"
 						>
-							คุณเป็นผู้รับผิดชอบรายวิชานี้ จึงแก้คะแนนทั้ง 4 ช่วงได้
+							คุณเป็นผู้รับผิดชอบรายวิชานี้ จึงแก้ช่วงที่ฝ่ายวิชาการเปิดไว้ได้
 						</p>{/if}
 				</section>
 
@@ -746,6 +753,7 @@
 						</p>
 					</div>
 					{#each draftPhases as phase, index (phase.phaseCode)}
+						{@const phaseEditable = canEditPlanPhase(phase.phaseCode)}
 						<section class="rounded-xl border bg-card">
 							<div class="flex items-center justify-between border-b bg-muted/30 px-4 py-3">
 								<div class="flex items-center gap-3">
@@ -755,7 +763,9 @@
 									>
 									<p class="font-medium">{phaseLabel(phase.phaseCode)}</p>
 								</div>
-								{#if phase.phaseCode === 'midterm' || phase.phaseCode === 'final'}<Badge
+								{#if !phaseEditable && !canManageSchool}
+									<Badge variant="outline">ปิดแก้โครงสร้าง</Badge>
+								{:else if phase.phaseCode === 'midterm' || phase.phaseCode === 'final'}<Badge
 										variant="outline">{arrangementLabel(phase.examArrangement)}</Badge
 									>{/if}
 							</div>
@@ -766,7 +776,7 @@
 										id={`phase-score-${phase.phaseCode}`}
 										inputmode="decimal"
 										bind:value={phase.maxScore}
-										disabled={!canEditDetail}
+										disabled={!phaseEditable}
 										oninput={markDirty}
 										onblur={flushAutosave}
 									/>
@@ -777,7 +787,7 @@
 										<Select.Root
 											type="single"
 											value={phase.examArrangement}
-											disabled={!canEditDetail}
+											disabled={!phaseEditable}
 											onValueChange={(value) =>
 												updateArrangement(phase, value as AssessmentExamArrangement)}
 										>
@@ -801,7 +811,7 @@
 												min="1"
 												placeholder="เช่น 60"
 												bind:value={phase.examDurationMinutes}
-												disabled={!canEditDetail}
+												disabled={!phaseEditable}
 												oninput={markDirty}
 												onblur={flushAutosave}
 											/>

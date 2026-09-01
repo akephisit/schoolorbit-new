@@ -153,7 +153,7 @@ pub struct SaveAssessmentPhaseRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateAssessmentPhaseControlRequest {
     pub row_version: i64,
-    pub item_editing_enabled: bool,
+    pub plan_editing_enabled: bool,
     pub score_entry_enabled: bool,
 }
 
@@ -244,7 +244,7 @@ pub struct AssessmentPhaseControl {
     pub phase_code: AssessmentPhaseCode,
     pub label: String,
     pub order: i32,
-    pub item_editing_enabled: bool,
+    pub plan_editing_enabled: bool,
     pub score_entry_enabled: bool,
     pub row_version: i64,
 }
@@ -288,7 +288,7 @@ pub(crate) struct AssessmentPhaseControlRow {
     pub academic_term_id: Uuid,
     pub academic_year_id: Uuid,
     pub phase_code: String,
-    pub item_editing_enabled: bool,
+    pub plan_editing_enabled: bool,
     pub score_entry_enabled: bool,
     pub row_version: i64,
 }

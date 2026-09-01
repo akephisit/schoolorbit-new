@@ -369,6 +369,24 @@ pub async fn create_term(
         .fetch_one(&mut *transaction)
         .await
         .map_err(map_term_write_error)?;
+    sqlx::query(
+        r#"INSERT INTO academic_assessment_phase_controls (
+               academic_term_id, academic_year_id, phase_code, updated_by
+           )
+           SELECT $1, $2, phase.phase_code, $3
+           FROM (
+               VALUES
+                   ('before_midterm'::text),
+                   ('midterm'::text),
+                   ('after_midterm'::text),
+                   ('final'::text)
+           ) AS phase(phase_code)"#,
+    )
+    .bind(id)
+    .bind(request.academic_year_id)
+    .bind(actor_user_id)
+    .execute(&mut *transaction)
+    .await?;
     append_audit(
         &mut transaction,
         "academic_term.created",

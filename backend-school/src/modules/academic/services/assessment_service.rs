@@ -353,7 +353,7 @@ pub async fn save_plan(
     }
 
     let existing = load_plan_in_tx(&mut transaction, offering_id).await?;
-    if !can_manage_school {
+    let editable_phase_codes = if !can_manage_school {
         let allowed_coordinator = match &existing {
             Some(plan) => plan.assessment_coordinator_id == Some(actor_user_id),
             None => payload.assessment_coordinator_id == Some(actor_user_id),
@@ -363,7 +363,18 @@ pub async fn save_plan(
                 "เฉพาะผู้รับผิดชอบโครงสร้างคะแนนหรือผู้ดูแลวิชาการเท่านั้นที่แก้ไขได้".to_string(),
             ));
         }
-    }
+        Some(
+            require_enabled_plan_phase_changes(
+                &mut transaction,
+                scope.academic_term_id,
+                existing.as_ref().map(|plan| plan.id),
+                &payload.phases,
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
 
     let plan_id = match existing {
         Some(plan) => {
@@ -420,7 +431,14 @@ pub async fn save_plan(
         }
     };
 
-    replace_plan_phases(&mut transaction, plan_id, actor_user_id, &payload.phases).await?;
+    replace_plan_phases(
+        &mut transaction,
+        plan_id,
+        actor_user_id,
+        &payload.phases,
+        editable_phase_codes.as_ref(),
+    )
+    .await?;
     transaction.commit().await?;
     fetch_plan_detail(pool, offering_id).await
 }
@@ -431,7 +449,7 @@ pub async fn list_phase_controls(
 ) -> Result<Vec<AssessmentPhaseControl>, AppError> {
     let rows: Vec<AssessmentPhaseControlRow> = sqlx::query_as(
         r#"SELECT id, academic_term_id, academic_year_id, phase_code,
-                  item_editing_enabled, score_entry_enabled, row_version
+                  plan_editing_enabled, score_entry_enabled, row_version
            FROM academic_assessment_phase_controls
            WHERE academic_term_id = $1
            ORDER BY CASE phase_code
@@ -456,17 +474,17 @@ pub async fn update_phase_control(
 ) -> Result<AssessmentPhaseControl, AppError> {
     let row: AssessmentPhaseControlRow = sqlx::query_as(
         r#"UPDATE academic_assessment_phase_controls
-           SET item_editing_enabled = $2,
+           SET plan_editing_enabled = $2,
                score_entry_enabled = $3,
                row_version = row_version + 1,
                updated_by = $4,
                updated_at = now()
            WHERE id = $1 AND row_version = $5
            RETURNING id, academic_term_id, academic_year_id, phase_code,
-                     item_editing_enabled, score_entry_enabled, row_version"#,
+                     plan_editing_enabled, score_entry_enabled, row_version"#,
     )
     .bind(control_id)
-    .bind(payload.item_editing_enabled)
+    .bind(payload.plan_editing_enabled)
     .bind(payload.score_entry_enabled)
     .bind(actor_user_id)
     .bind(payload.row_version)
@@ -585,11 +603,91 @@ async fn load_plan_in_tx(
     .await?)
 }
 
+async fn require_enabled_plan_phase_changes(
+    transaction: &mut Transaction<'_, Postgres>,
+    academic_term_id: Uuid,
+    plan_id: Option<Uuid>,
+    phases: &[SaveAssessmentPhaseRequest],
+) -> Result<HashSet<String>, AppError> {
+    let controls: Vec<(String, bool)> = sqlx::query_as(
+        r#"SELECT phase_code, plan_editing_enabled
+           FROM academic_assessment_phase_controls
+           WHERE academic_term_id = $1
+           FOR SHARE"#,
+    )
+    .bind(academic_term_id)
+    .fetch_all(&mut **transaction)
+    .await?;
+    if controls.len() != AssessmentPhaseCode::ALL.len() {
+        return Err(AppError::InternalServerError(
+            "การตั้งค่าช่วงคะแนนของภาคเรียนไม่ครบถ้วน".to_string(),
+        ));
+    }
+    let plan_editing_by_code = controls.into_iter().collect::<HashMap<_, _>>();
+    let editable_phase_codes = plan_editing_by_code
+        .iter()
+        .filter(|(_, enabled)| **enabled)
+        .map(|(phase_code, _)| phase_code.clone())
+        .collect::<HashSet<_>>();
+    let existing_phases: Vec<crate::modules::academic::models::assessment::AssessmentPhaseRow> =
+        if let Some(plan_id) = plan_id {
+            sqlx::query_as(
+                r#"SELECT id, plan_id, phase_code, max_score, exam_arrangement,
+                          exam_duration_minutes, row_version
+                   FROM course_assessment_phases
+                   WHERE plan_id = $1
+                   FOR UPDATE"#,
+            )
+            .bind(plan_id)
+            .fetch_all(&mut **transaction)
+            .await?
+        } else {
+            Vec::new()
+        };
+    let existing_by_code = existing_phases
+        .into_iter()
+        .map(|phase| (phase.phase_code.clone(), phase))
+        .collect::<HashMap<_, _>>();
+
+    for phase in phases {
+        if plan_editing_by_code
+            .get(phase.phase_code.as_str())
+            .copied()
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        let requested_max_score = validate_canonical_decimal(&phase.max_score, 2)?;
+        let changed = if plan_id.is_some() {
+            let existing = existing_by_code
+                .get(phase.phase_code.as_str())
+                .ok_or_else(|| {
+                    AppError::InternalServerError("โครงสร้างคะแนนของรายวิชาไม่ครบถ้วน".to_string())
+                })?;
+            existing.max_score != requested_max_score
+                || existing.exam_arrangement != phase.exam_arrangement.as_str()
+                || existing.exam_duration_minutes != phase.exam_duration_minutes
+        } else {
+            requested_max_score != BigDecimal::from(0)
+                || phase.exam_arrangement != AssessmentExamArrangement::None
+                || phase.exam_duration_minutes.is_some()
+        };
+        if changed {
+            return Err(AppError::Forbidden(format!(
+                "ปิดการแก้โครงสร้างคะแนนช่วง{}อยู่",
+                phase.phase_code.label_th()
+            )));
+        }
+    }
+    Ok(editable_phase_codes)
+}
+
 async fn replace_plan_phases(
     transaction: &mut Transaction<'_, Postgres>,
     plan_id: Uuid,
     actor_user_id: Uuid,
     phases: &[SaveAssessmentPhaseRequest],
+    editable_phase_codes: Option<&HashSet<String>>,
 ) -> Result<(), AppError> {
     let existing: Vec<(Uuid, String)> = sqlx::query_as(
         "SELECT id, phase_code FROM course_assessment_phases WHERE plan_id = $1 FOR UPDATE",
@@ -608,6 +706,11 @@ async fn replace_plan_phases(
             return Err(AppError::ValidationError(
                 "ช่วงคะแนนไม่ได้อยู่ในโครงสร้างคะแนนนี้".to_string(),
             ));
+        }
+        if existing_id.is_some()
+            && editable_phase_codes.is_some_and(|codes| !codes.contains(phase.phase_code.as_str()))
+        {
+            continue;
         }
         let phase_id = existing_id.unwrap_or_else(Uuid::new_v4);
         let max_score = validate_canonical_decimal(&phase.max_score, 2)?;
@@ -971,7 +1074,7 @@ fn phase_control_from_row(
         phase_code,
         label: phase_code.label_th().to_string(),
         order: phase_code.order(),
-        item_editing_enabled: row.item_editing_enabled,
+        plan_editing_enabled: row.plan_editing_enabled,
         score_entry_enabled: row.score_entry_enabled,
         row_version: row.row_version,
     })

@@ -5372,11 +5372,11 @@ export interface components {
 				academicYearId: string;
 				/** Format: uuid */
 				id: string;
-				itemEditingEnabled: boolean;
 				label: string;
 				/** Format: int32 */
 				order: number;
 				phaseCode: components['schemas']['AssessmentPhaseCode'];
+				planEditingEnabled: boolean;
 				/** Format: int64 */
 				rowVersion: number;
 				scoreEntryEnabled: boolean;
@@ -7728,11 +7728,11 @@ export interface components {
 				academicYearId: string;
 				/** Format: uuid */
 				id: string;
-				itemEditingEnabled: boolean;
 				label: string;
 				/** Format: int32 */
 				order: number;
 				phaseCode: components['schemas']['AssessmentPhaseCode'];
+				planEditingEnabled: boolean;
 				/** Format: int64 */
 				rowVersion: number;
 				scoreEntryEnabled: boolean;
@@ -9273,11 +9273,11 @@ export interface components {
 			academicYearId: string;
 			/** Format: uuid */
 			id: string;
-			itemEditingEnabled: boolean;
 			label: string;
 			/** Format: int32 */
 			order: number;
 			phaseCode: components['schemas']['AssessmentPhaseCode'];
+			planEditingEnabled: boolean;
 			/** Format: int64 */
 			rowVersion: number;
 			scoreEntryEnabled: boolean;
@@ -14618,7 +14618,7 @@ export interface components {
 			termCode?: string | null;
 		};
 		UpdateAssessmentPhaseControlRequest: {
-			itemEditingEnabled: boolean;
+			planEditingEnabled: boolean;
 			/** Format: int64 */
 			rowVersion: number;
 			scoreEntryEnabled: boolean;
