@@ -21,6 +21,7 @@ use crate::modules::academic::models::timetable::{
     WholeSchoolTimetableIssueKind, WholeSchoolTimetableIssueSeverity, WholeSchoolTimetableLesson,
     WholeSchoolTimetableOverview, WholeSchoolTimetableRow, WholeSchoolTimetableSummary,
 };
+use crate::modules::academic::models::timetable_block::*;
 use crate::modules::academic::models::timetable_version::{
     CloneTimetableVersionRequest, TimetableVersion, TimetableVersionDisplayState,
     TimetableVersionStatus, TimetableVersionTarget,
@@ -1141,6 +1142,47 @@ use utoipa::OpenApi;
         ApiResponse<Vec<MoveValidityCell>>,
         ApiResponse<TimetablePlacementPreview>,
         ApiResponse<Vec<TimetableOccupancyCell>>,
+        TimetableBlockKind,
+        TimetableStructuralKind,
+        TimetableTargetKind,
+        TimetableBlockSyncStatus,
+        TimetableBlockConflictType,
+        TimetableBlockPlacementState,
+        TimetableBlockMutationKind,
+        TimetableBlockInstructor,
+        TimetableBlockGroup,
+        TimetableBlockHomeroom,
+        TimetableBlockTeacher,
+        TimetableBlockSyncState,
+        TimetableBlock,
+        TimetableBlockWorkspaceLearningGroup,
+        TimetableBlockWorkspaceHomeroom,
+        TimetableBlockWorkspaceRoom,
+        TimetableBlockWorkspaceStaff,
+        TimetableOrdinaryDemand,
+        TimetableSynchronizedDemand,
+        TimetableBlockSummary,
+        TimetableBlockWorkspace,
+        CreateOrdinaryTimetableBlockRequest,
+        CreateSynchronizedTimetableBlockRequest,
+        TimetableStructuralSlotInput,
+        CreateStructuralTimetableBlocksRequest,
+        UpdateTimetableBlockRequest,
+        RemoveTimetableBlockTargetRequest,
+        RetryTimetableBlockSyncRequest,
+        RestoreTimetableBlockGroupRequest,
+        TimetableBlockPlacementSource,
+        TimetableBlockPlacementCandidate,
+        TimetableBlockPlacementPreviewRequest,
+        TimetableBlockConflict,
+        TimetableBlockPlacementPreview,
+        SwapTimetableBlocksRequest,
+        SwapTimetableBlocksResponse,
+        ApiResponse<TimetableBlock>,
+        ApiResponse<Vec<TimetableBlock>>,
+        ApiResponse<TimetableBlockWorkspace>,
+        ApiResponse<TimetableBlockPlacementPreview>,
+        ApiResponse<SwapTimetableBlocksResponse>,
         TimetableVersionStatus,
         TimetableVersionDisplayState,
         TimetableVersionTarget,
@@ -3538,6 +3580,65 @@ mod tests {
         assert!(schemas["MoveValidityCell"]["properties"]
             .get("reason")
             .is_none());
+    }
+
+    #[test]
+    fn documents_canonical_timetable_blocks() {
+        let document = school_api_value().expect("document should serialize");
+        let schemas = &document["components"]["schemas"];
+        for schema_name in [
+            "TimetableBlock",
+            "TimetableBlockGroup",
+            "TimetableBlockHomeroom",
+            "TimetableBlockTeacher",
+            "TimetableBlockSyncState",
+            "TimetableBlockWorkspace",
+            "TimetableBlockSummary",
+            "TimetableBlockPlacementSource",
+            "CreateOrdinaryTimetableBlockRequest",
+            "CreateSynchronizedTimetableBlockRequest",
+            "CreateStructuralTimetableBlocksRequest",
+            "UpdateTimetableBlockRequest",
+            "RemoveTimetableBlockTargetRequest",
+            "RetryTimetableBlockSyncRequest",
+            "RestoreTimetableBlockGroupRequest",
+            "TimetableBlockPlacementPreviewRequest",
+        ] {
+            assert!(
+                !schemas[schema_name].is_null(),
+                "missing canonical timetable schema {schema_name}"
+            );
+        }
+
+        for field in [
+            "blocks",
+            "ordinaryDemands",
+            "synchronizedDemands",
+            "summary",
+        ] {
+            assert!(required(&schemas["TimetableBlockWorkspace"]).contains(&field));
+        }
+        for field in ["groups", "homerooms", "teachers", "syncStates"] {
+            assert!(required(&schemas["TimetableBlock"]).contains(&field));
+        }
+
+        let variants = schemas["TimetableBlockPlacementSource"]["oneOf"]
+            .as_array()
+            .expect("placement source must be a tagged union");
+        assert_eq!(variants.len(), 3);
+        let serialized_variants = serde_json::to_string(variants).unwrap();
+        for field in ["blockId", "learningGroupId", "learningOfferingId"] {
+            assert!(
+                serialized_variants.contains(field),
+                "missing placement field {field}"
+            );
+        }
+
+        let candidate = &schemas["TimetableBlockPlacementCandidate"];
+        for nullable_required in ["learningGroupId", "learningOfferingId", "roomId"] {
+            assert!(required(candidate).contains(&nullable_required));
+            assert!(contains_null(&candidate["properties"][nullable_required]));
+        }
     }
 
     #[test]
