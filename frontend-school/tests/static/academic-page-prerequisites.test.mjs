@@ -82,8 +82,9 @@ test('dependent academic pages provide local next actions without a global readi
 	assert.match(timetablePage, /AcademicPrerequisiteNotice/);
 	assert.match(timetablePage, /\/staff\/academic\/core#bell-schedules/);
 	assert.match(timetablePage, /\/staff\/facility\/buildings/);
-	assert.match(examListPage, /\/staff\/academic\/delivery/);
-	assert.match(examDetailPage, /\/staff\/academic\/delivery\/\$\{/);
+	assert.match(examListPage, /\/staff\/academic\/assessments/);
+	assert.match(examDetailPage, /\/staff\/academic\/assessments/);
+	assert.doesNotMatch(examDetailPage, /deliveryTargets|แก้ข้อมูลต้นทาง:/);
 	assert.match(supervisionPage, /AcademicPrerequisiteNotice/);
 	assert.doesNotMatch(allPages, /readinessScore|completionPercent|ศูนย์เตรียมงานวิชาการ/);
 	assert.doesNotMatch(

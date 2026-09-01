@@ -20,6 +20,8 @@ export type ExamScheduleWorkspace = Omit<Schemas['ExamScheduleWorkspace'], 'roun
 	round: ExamRound;
 };
 export type ExamScheduleReadiness = Schemas['ExamScheduleReadiness'];
+export type ExamScheduleReadinessCode = Schemas['ExamScheduleReadinessCode'];
+export type ExamScheduleReadinessFinding = Schemas['ExamScheduleReadinessFinding'];
 export type ExamSourceChange = Schemas['ExamSourceChange'];
 export type ExamSourcePreview = Schemas['ExamSourcePreview'];
 export type ExamSourceSyncItemResult = Schemas['ExamSourceSyncItemResult'];

@@ -6,17 +6,19 @@ import type {
 	ExamScheduleWorkspace,
 	ExamSession
 } from '$lib/api/examSchedule';
-import type { Homeroom } from '$lib/api/academic-core';
+import { examScheduleReadinessLabel } from './exam-schedule-readiness.ts';
 
 type WorksheetCell = string | number;
 type WorksheetRow = WorksheetCell[];
 type WorksheetObjectRow = Record<string, WorksheetCell>;
 type RowRange = { start: number; end: number };
 
-export type ExamScheduleExportHomeroom = Pick<
-	Homeroom,
-	'id' | 'name' | 'gradeLevelId' | 'isActive'
->;
+export type ExamScheduleExportHomeroom = {
+	id: string;
+	name: string;
+	gradeLevelId?: string;
+	isActive?: boolean;
+};
 
 export type ExamScheduleExportOptions = {
 	homerooms?: ExamScheduleExportHomeroom[];
@@ -1187,15 +1189,15 @@ function readinessRows(workspace: ExamScheduleWorkspace): WorksheetObjectRow[] {
 		}
 	];
 
-	for (const blocker of workspace.readiness.blockers) {
+	for (const finding of workspace.readiness.findings) {
 		rows.push({
 			ประเภท: 'ต้องแก้ไข',
-			รายการ: blocker,
+			รายการ: examScheduleReadinessLabel(finding),
 			'สถานะ/รายละเอียด': 'ยังไม่ผ่าน'
 		});
 	}
 
-	if (workspace.readiness.blockers.length === 0) {
+	if (workspace.readiness.findings.length === 0) {
 		rows.push({
 			ประเภท: 'พร้อม',
 			รายการ: 'ไม่พบรายการที่ต้องแก้ไข',

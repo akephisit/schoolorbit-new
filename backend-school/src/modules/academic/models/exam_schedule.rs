@@ -418,7 +418,27 @@ pub struct ExamScheduleWorkspace {
 #[serde(rename_all = "camelCase")]
 pub struct ExamScheduleReadiness {
     pub can_publish: bool,
-    pub blockers: Vec<String>,
+    pub findings: Vec<ExamScheduleReadinessFinding>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ExamScheduleReadinessCode {
+    MissingExamDay,
+    MissingExamItems,
+    UnscheduledExamItems,
+    MissingRoomAssignments,
+    InvalidExamSessions,
+    MissingSeatAssignments,
+    InvigilatorConflicts,
+    PendingSourceChanges,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ExamScheduleReadinessFinding {
+    pub code: ExamScheduleReadinessCode,
+    pub count: i64,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

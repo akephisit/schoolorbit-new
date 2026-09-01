@@ -122,7 +122,7 @@ function exportWorkspace(scheduledSessions, extraDays = []) {
 		scheduledSessions,
 		readiness: {
 			canPublish: true,
-			blockers: []
+			findings: []
 		}
 	};
 }

@@ -11496,8 +11496,23 @@ export interface components {
 			subjectVersionDisplayLabel?: string | null;
 		};
 		ExamScheduleReadiness: {
-			blockers: string[];
 			canPublish: boolean;
+			findings: components['schemas']['ExamScheduleReadinessFinding'][];
+		};
+		/** @enum {string} */
+		ExamScheduleReadinessCode:
+			| 'missing_exam_day'
+			| 'missing_exam_items'
+			| 'unscheduled_exam_items'
+			| 'missing_room_assignments'
+			| 'invalid_exam_sessions'
+			| 'missing_seat_assignments'
+			| 'invigilator_conflicts'
+			| 'pending_source_changes';
+		ExamScheduleReadinessFinding: {
+			code: components['schemas']['ExamScheduleReadinessCode'];
+			/** Format: int64 */
+			count: number;
 		};
 		ExamScheduleWorkspace: {
 			days: components['schemas']['ExamDayDetail'][];

@@ -32,10 +32,9 @@ pub async fn publish_round(
     let source_change_count = count_source_changes_in_tx(&mut tx, round_id).await?;
     let readiness = build_readiness_with_source_changes(counts, source_change_count);
     if !readiness.can_publish {
-        return Err(AppError::BadRequest(format!(
-            "Exam round is not ready to publish: {}",
-            readiness.blockers.join("; ")
-        )));
+        return Err(AppError::BadRequest(
+            "ตารางสอบยังไม่พร้อมเผยแพร่ กรุณาตรวจรายการความพร้อม".to_string(),
+        ));
     }
 
     let round = sqlx::query_as::<_, ExamRound>(

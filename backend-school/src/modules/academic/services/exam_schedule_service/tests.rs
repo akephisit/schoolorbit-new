@@ -5,8 +5,8 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::modules::academic::models::exam_schedule::{
-    BlockedWindow, BlockedWindowInput, ExamInvigilatorView, UpdateExamRoundRequest,
-    UpsertDayRoomAssignmentRequest,
+    BlockedWindow, BlockedWindowInput, ExamInvigilatorView, ExamScheduleReadinessCode,
+    ExamScheduleReadinessFinding, UpdateExamRoundRequest, UpsertDayRoomAssignmentRequest,
 };
 
 use super::invigilation::{
@@ -713,13 +713,12 @@ fn readiness_requires_days_items_rooms_and_sessions() {
     });
     assert!(!readiness.can_publish);
     assert!(readiness
-        .blockers
+        .findings
         .iter()
-        .any(|value| value.contains("exam day")));
-    assert!(readiness
-        .blockers
-        .iter()
-        .any(|value| value.contains("unscheduled")));
+        .any(|finding| finding.code == ExamScheduleReadinessCode::MissingExamDay));
+    assert!(readiness.findings.iter().any(|finding| {
+        finding.code == ExamScheduleReadinessCode::UnscheduledExamItems && finding.count == 4
+    }));
 }
 
 #[test]
@@ -738,10 +737,44 @@ fn readiness_blocks_publish_until_assessment_source_changes_are_synced() {
     );
 
     assert!(!readiness.can_publish);
-    assert!(readiness
-        .blockers
-        .iter()
-        .any(|value| value.contains("assessment source change")));
+    assert!(readiness.findings.iter().any(|finding| {
+        finding.code == ExamScheduleReadinessCode::PendingSourceChanges && finding.count == 2
+    }));
+}
+
+#[test]
+fn readiness_exposes_typed_findings_without_requiring_invigilator_assignments() {
+    let readiness = build_readiness_with_source_changes(
+        WorkspaceCounts {
+            day_count: 1,
+            item_count: 4,
+            unscheduled_count: 2,
+            missing_room_assignment_count: 1,
+            invalid_session_count: 0,
+            missing_seat_student_count: 0,
+            invigilator_conflict_count: 0,
+        },
+        3,
+    );
+
+    assert_eq!(
+        readiness.findings,
+        vec![
+            ExamScheduleReadinessFinding {
+                code: ExamScheduleReadinessCode::UnscheduledExamItems,
+                count: 2,
+            },
+            ExamScheduleReadinessFinding {
+                code: ExamScheduleReadinessCode::MissingRoomAssignments,
+                count: 1,
+            },
+            ExamScheduleReadinessFinding {
+                code: ExamScheduleReadinessCode::PendingSourceChanges,
+                count: 3,
+            },
+        ]
+    );
+    assert!(!readiness.can_publish);
 }
 
 #[test]
@@ -757,10 +790,9 @@ fn readiness_reports_missing_active_student_seats() {
     });
 
     assert!(!readiness.can_publish);
-    assert!(readiness
-        .blockers
-        .iter()
-        .any(|value| value.contains("active student")));
+    assert!(readiness.findings.iter().any(|finding| {
+        finding.code == ExamScheduleReadinessCode::MissingSeatAssignments && finding.count == 3
+    }));
 }
 
 #[test]
@@ -776,10 +808,9 @@ fn readiness_reports_invalid_scheduled_sessions() {
     });
 
     assert!(!readiness.can_publish);
-    assert!(readiness
-        .blockers
-        .iter()
-        .any(|value| value.contains("no longer fit")));
+    assert!(readiness.findings.iter().any(|finding| {
+        finding.code == ExamScheduleReadinessCode::InvalidExamSessions && finding.count == 2
+    }));
 }
 
 #[test]
@@ -795,10 +826,9 @@ fn readiness_reports_invigilator_live_range_conflicts() {
     });
 
     assert!(!readiness.can_publish);
-    assert!(readiness
-        .blockers
-        .iter()
-        .any(|value| value.contains("overlapping invigilator")));
+    assert!(readiness.findings.iter().any(|finding| {
+        finding.code == ExamScheduleReadinessCode::InvigilatorConflicts && finding.count == 2
+    }));
 }
 
 #[test]

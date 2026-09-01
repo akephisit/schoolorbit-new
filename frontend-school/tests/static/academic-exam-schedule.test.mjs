@@ -340,20 +340,25 @@ test('exam rounds expose exam kind and refresh the source diff when it changes',
 	assert.match(sourcePanel, /preview\.noLongerEligibleCount/);
 });
 
-test('exam schedule keeps empty guidance local and deep-links imported groups to delivery', async () => {
+test('exam schedule shows only real source changes and uses permission-safe lookup options', async () => {
 	const listPage = await readProjectFile(
 		'src/routes/(app)/staff/academic/exam-schedules/+page.svelte'
 	);
 	const detailPage = await readProjectFile(
 		'src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'
 	);
+	const roomPanel = await readProjectFile(
+		'src/lib/components/academic/exam-schedule/ExamRoomAssignmentPanel.svelte'
+	);
 
 	assert.match(listPage, /AcademicPrerequisiteNotice/);
-	assert.match(listPage, /\/staff\/academic\/delivery/);
-	assert.match(detailPage, /deliveryTargets/);
-	assert.match(detailPage, /learningOfferingId/);
-	assert.match(detailPage, /learningGroupId/);
-	assert.match(detailPage, /\?groupId=/);
+	assert.match(listPage, /\/staff\/academic\/assessments/);
+	assert.match(detailPage, /\/staff\/academic\/assessments/);
+	assert.doesNotMatch(detailPage, /deliveryTargets|แก้ข้อมูลต้นทาง:/);
+	assert.match(detailPage, /lookupHomerooms/);
+	assert.match(detailPage, /lookupRooms/);
+	assert.doesNotMatch(detailPage, /listHomerooms|listRooms/);
+	assert.match(roomPanel, /HomeroomLookupItem/);
 	assert.doesNotMatch(listPage + detailPage, /getLearningDeliveryManagementOptions/);
 });
 
@@ -452,9 +457,12 @@ test('exam room assignment panel keeps setup actions compact and labels rooms pl
 		'src/lib/components/academic/exam-schedule/ExamRoomAssignmentPanel.svelte'
 	);
 
-	assert.match(panel, /function homeroomLabel\(homeroom: Homeroom \| undefined\): string/);
+	assert.match(
+		panel,
+		/function homeroomLabel\(homeroom: HomeroomLookupItem \| undefined\): string/
+	);
 	assert.match(panel, /return homeroom\?\.name \?\? 'เลือกห้องเรียน'/);
-	assert.match(panel, /function roomOptionLabel\(room: Room \| undefined\): string/);
+	assert.match(panel, /function roomOptionLabel\(room: RoomLookupItem \| undefined\): string/);
 	assert.match(panel, /\$\{building\} \/ \$\{name\} \/ \$\{capacity\} ที่นั่ง/);
 	assert.doesNotMatch(panel, /room\.code/);
 	assert.doesNotMatch(panel, /homeroom\.grade_level_name \? `\$\{homeroom\.grade_level_name\}/);
@@ -583,8 +591,9 @@ test('exam invigilator staff loading is split from room option loading', () => {
 
 	assert.doesNotMatch(loadManagementOptions, /listStaff/);
 	assert.doesNotMatch(loadManagementOptions, /staffResponse/);
-	assert.match(loadManagementOptions, /listHomerooms/);
-	assert.match(loadManagementOptions, /listRooms/);
+	assert.match(loadManagementOptions, /lookupHomerooms/);
+	assert.match(loadManagementOptions, /lookupRooms/);
+	assert.doesNotMatch(loadManagementOptions, /listHomerooms|listRooms/);
 	assert.doesNotMatch(page, /\bimport\s+\{\s*listStaff/);
 	assert.doesNotMatch(page, /\blistStaff\(/);
 	assert.match(page, /listExamInvigilatorStaffOptions/);
@@ -927,7 +936,7 @@ test('compact exam schedule status derives invigilator counts from room assignme
 	assert.match(statusComponent, /invigilatorAssignmentCount \?\? invigilatorAssignmentFallback/);
 	assert.doesNotMatch(statusComponent, /<section/);
 	assert.match(statusComponent, /<Sheet\.Root>/);
-	assert.match(statusComponent, /ยังไม่พร้อม \{readiness\.blockers\.length\}/);
+	assert.match(statusComponent, /ยังไม่พร้อม \{readiness\.findings\.length\}/);
 });
 
 test('staff timeline wires drag drop placement and accessible schedule dialog', () => {

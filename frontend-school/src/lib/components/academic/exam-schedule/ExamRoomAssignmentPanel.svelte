@@ -1,6 +1,5 @@
 <script lang="ts">
-	import type { Homeroom } from '$lib/api/academic-core';
-	import type { Room } from '$lib/api/facility';
+	import type { HomeroomLookupItem, RoomLookupItem } from '$lib/api/lookup';
 	import type {
 		ExamDayDetail,
 		ExamDayRoomAssignmentView,
@@ -35,8 +34,8 @@
 		onGenerateSeats
 	}: {
 		days: ExamDayDetail[];
-		homerooms: Homeroom[];
-		rooms: Room[];
+		homerooms: HomeroomLookupItem[];
+		rooms: RoomLookupItem[];
 		readonly?: boolean;
 		saving?: boolean;
 		generatingAssignmentId?: string | null;
@@ -67,7 +66,8 @@
 			? homerooms.filter(
 					(homeroom) =>
 						selectedDay.gradeLevelIds.length === 0 ||
-						selectedDay.gradeLevelIds.includes(homeroom.gradeLevelId)
+						(homeroom.gradeLevelId !== undefined &&
+							selectedDay.gradeLevelIds.includes(homeroom.gradeLevelId))
 				)
 			: homerooms
 	);
@@ -107,11 +107,11 @@
 		return label ? `${label} · ${dateLabel}` : dateLabel;
 	}
 
-	function homeroomLabel(homeroom: Homeroom | undefined): string {
+	function homeroomLabel(homeroom: HomeroomLookupItem | undefined): string {
 		return homeroom?.name ?? 'เลือกห้องเรียน';
 	}
 
-	function roomOptionLabel(room: Room | undefined): string {
+	function roomOptionLabel(room: RoomLookupItem | undefined): string {
 		if (!room) return 'เลือกห้องสอบ';
 		const building = room.building_name || 'ไม่ระบุอาคาร';
 		const name = room.name_th || room.name_en || 'ไม่ระบุห้อง';

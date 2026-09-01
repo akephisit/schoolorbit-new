@@ -1193,6 +1193,8 @@ use utoipa::OpenApi;
         ExamSessionView,
         ExamScheduleWorkspace,
         ExamScheduleReadiness,
+        ExamScheduleReadinessCode,
+        ExamScheduleReadinessFinding,
         ApiResponse<ExamRound>,
         ApiResponse<Vec<ExamRound>>,
         ApiResponse<ExamScheduleWorkspace>,

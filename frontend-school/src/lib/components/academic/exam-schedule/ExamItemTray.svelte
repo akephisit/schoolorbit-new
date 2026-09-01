@@ -308,7 +308,7 @@
 				<div class="min-w-0">
 					<h2 class="text-sm font-semibold">ยังไม่จัดเวลา</h2>
 					<p class="text-xs text-muted-foreground">
-						{filteredSortedItems.length}/{unscheduledItems.length} รายการจาก in_timetable
+						{filteredSortedItems.length}/{unscheduledItems.length} รายการที่เลือกสอบในตาราง
 					</p>
 					{#if !readonly}
 						<p class="mt-0.5 text-xs text-muted-foreground">

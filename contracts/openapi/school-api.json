@@ -25508,19 +25508,48 @@
       },
       "ExamScheduleReadiness": {
         "properties": {
-          "blockers": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
           "canPublish": {
             "type": "boolean"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/ExamScheduleReadinessFinding"
+            },
+            "type": "array"
           }
         },
         "required": [
           "canPublish",
-          "blockers"
+          "findings"
+        ],
+        "type": "object"
+      },
+      "ExamScheduleReadinessCode": {
+        "enum": [
+          "missing_exam_day",
+          "missing_exam_items",
+          "unscheduled_exam_items",
+          "missing_room_assignments",
+          "invalid_exam_sessions",
+          "missing_seat_assignments",
+          "invigilator_conflicts",
+          "pending_source_changes"
+        ],
+        "type": "string"
+      },
+      "ExamScheduleReadinessFinding": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ExamScheduleReadinessCode"
+          },
+          "count": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "count"
         ],
         "type": "object"
       },

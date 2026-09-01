@@ -6,9 +6,10 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::modules::academic::models::exam_schedule::{
-    ExamScheduleItemView, ExamScheduleReadiness, ExamScheduleWorkspace, ExamSessionView,
-    ExamSourceChange, ExamSourceChangeKind, ExamSourcePreview, ExamSourceSyncItemResult,
-    ExamSourceSyncItemStatus, SyncExamSourcesRequest, SyncExamSourcesResult,
+    ExamScheduleItemView, ExamScheduleReadiness, ExamScheduleReadinessCode,
+    ExamScheduleReadinessFinding, ExamScheduleWorkspace, ExamSessionView, ExamSourceChange,
+    ExamSourceChangeKind, ExamSourcePreview, ExamSourceSyncItemResult, ExamSourceSyncItemStatus,
+    SyncExamSourcesRequest, SyncExamSourcesResult,
 };
 
 use super::invigilation::{fetch_invigilators_by_assignment_ids, invigilators_for_assignment};
@@ -47,46 +48,52 @@ pub(super) struct WorkspaceCounts {
 }
 
 pub(super) fn build_readiness(counts: WorkspaceCounts) -> ExamScheduleReadiness {
-    let mut blockers = Vec::new();
+    let mut findings = Vec::new();
     if counts.day_count == 0 {
-        blockers.push("Add at least one exam day".to_string());
+        findings.push(ExamScheduleReadinessFinding {
+            code: ExamScheduleReadinessCode::MissingExamDay,
+            count: 1,
+        });
     }
     if counts.item_count == 0 {
-        blockers.push("Import ready in-timetable assessment phases".to_string());
+        findings.push(ExamScheduleReadinessFinding {
+            code: ExamScheduleReadinessCode::MissingExamItems,
+            count: 1,
+        });
     }
     if counts.unscheduled_count > 0 {
-        blockers.push(format!(
-            "Schedule {} remaining unscheduled exam item(s)",
-            counts.unscheduled_count
-        ));
+        findings.push(ExamScheduleReadinessFinding {
+            code: ExamScheduleReadinessCode::UnscheduledExamItems,
+            count: counts.unscheduled_count,
+        });
     }
     if counts.missing_room_assignment_count > 0 {
-        blockers.push(format!(
-            "Assign rooms for {} classroom-day group(s)",
-            counts.missing_room_assignment_count
-        ));
+        findings.push(ExamScheduleReadinessFinding {
+            code: ExamScheduleReadinessCode::MissingRoomAssignments,
+            count: counts.missing_room_assignment_count,
+        });
     }
     if counts.invalid_session_count > 0 {
-        blockers.push(format!(
-            "Fix {} scheduled exam session(s) that no longer fit the exam day",
-            counts.invalid_session_count
-        ));
+        findings.push(ExamScheduleReadinessFinding {
+            code: ExamScheduleReadinessCode::InvalidExamSessions,
+            count: counts.invalid_session_count,
+        });
     }
     if counts.missing_seat_student_count > 0 {
-        blockers.push(format!(
-            "Generate seats for {} active student(s) in scheduled classroom-day group(s)",
-            counts.missing_seat_student_count
-        ));
+        findings.push(ExamScheduleReadinessFinding {
+            code: ExamScheduleReadinessCode::MissingSeatAssignments,
+            count: counts.missing_seat_student_count,
+        });
     }
     if counts.invigilator_conflict_count > 0 {
-        blockers.push(format!(
-            "Fix {} overlapping invigilator supervision assignment(s)",
-            counts.invigilator_conflict_count
-        ));
+        findings.push(ExamScheduleReadinessFinding {
+            code: ExamScheduleReadinessCode::InvigilatorConflicts,
+            count: counts.invigilator_conflict_count,
+        });
     }
     ExamScheduleReadiness {
-        can_publish: blockers.is_empty(),
-        blockers,
+        can_publish: findings.is_empty(),
+        findings,
     }
 }
 
@@ -96,9 +103,10 @@ pub(super) fn build_readiness_with_source_changes(
 ) -> ExamScheduleReadiness {
     let mut readiness = build_readiness(counts);
     if source_change_count > 0 {
-        readiness.blockers.push(format!(
-            "Sync {source_change_count} pending assessment source change(s)"
-        ));
+        readiness.findings.push(ExamScheduleReadinessFinding {
+            code: ExamScheduleReadinessCode::PendingSourceChanges,
+            count: source_change_count as i64,
+        });
         readiness.can_publish = false;
     }
     readiness

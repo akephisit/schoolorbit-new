@@ -47,14 +47,14 @@
 	let rounds = $state<ExamRound[]>([]);
 	let createDialogOpen = $state(false);
 	let creatingRound = $state(false);
-	const deliveryPrerequisite: AcademicPrerequisite = {
-		key: 'exam-schedule-delivery',
+	const assessmentPrerequisite: AcademicPrerequisite = {
+		key: 'exam-schedule-assessments',
 		status: 'warning',
-		title: 'เตรียมรายการเปิดสอนและกลุ่มเรียนสำหรับนำเข้ารายการสอบ',
+		title: 'เตรียมโครงสร้างคะแนนสำหรับรอบสอบ',
 		description:
-			'สร้างรอบสอบไว้ก่อนได้ เมื่อโครงสร้างคะแนนและกลุ่มเรียนพร้อมจึงค่อยนำเข้ารายการสอบในรอบนั้น',
-		actionLabel: 'ตรวจรายการเปิดสอน',
-		href: '/staff/academic/delivery'
+			'สร้างรอบสอบไว้ก่อนได้ เมื่อโครงสร้างคะแนนพร้อมและช่วงกลางภาคหรือปลายภาคเลือกสอบในตาราง จึงค่อยนำเข้ารายการสอบในรอบนั้น',
+		actionLabel: 'ตรวจโครงสร้างคะแนน',
+		href: '/staff/academic/assessments'
 	};
 
 	const canManageExamSchedules = $derived(
@@ -173,7 +173,7 @@
 		/>
 	{:else if rounds.length === 0}
 		<div class="space-y-4">
-			<AcademicPrerequisiteNotice prerequisite={deliveryPrerequisite} />
+			<AcademicPrerequisiteNotice prerequisite={assessmentPrerequisite} />
 			<PageState title="ยังไม่มีรอบตารางสอบ" description="ไม่พบรอบสอบในภาคเรียนที่เลือก">
 				{#snippet action()}
 					{#if canManageExamSchedules}

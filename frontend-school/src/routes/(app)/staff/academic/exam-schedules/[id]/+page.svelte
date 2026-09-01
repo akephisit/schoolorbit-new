@@ -2,12 +2,7 @@
 	import { toast } from 'svelte-sonner';
 	import type { Alignment, Borders, Fill, Workbook, Worksheet } from 'exceljs';
 	import type { PageProps } from './$types';
-	import {
-		listGradeLevelOptions,
-		listHomerooms,
-		type GradeLevelOption,
-		type Homeroom
-	} from '$lib/api/academic-core';
+	import { listGradeLevelOptions, type GradeLevelOption } from '$lib/api/academic-core';
 	import { getAcademicContextStore } from '$lib/academic-context/store';
 	import {
 		assignExamAssignmentInvigilator,
@@ -38,7 +33,12 @@
 		type UpsertDayRoomAssignmentInput,
 		type UpsertExamDayInput
 	} from '$lib/api/examSchedule';
-	import { listRooms, type Room } from '$lib/api/facility';
+	import {
+		lookupHomerooms,
+		lookupRooms,
+		type HomeroomLookupItem,
+		type RoomLookupItem
+	} from '$lib/api/lookup';
 	import CompactExamScheduleStatus from '$lib/components/academic/exam-schedule/CompactExamScheduleStatus.svelte';
 	import ExamDaySetupPanel from '$lib/components/academic/exam-schedule/ExamDaySetupPanel.svelte';
 	import ExamInvigilatorPanel from '$lib/components/academic/exam-schedule/ExamInvigilatorPanel.svelte';
@@ -54,7 +54,6 @@
 	} from '$lib/components/academic-workflow';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
 	import * as Select from '$lib/components/ui/select';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { PERMISSIONS } from '$lib/permissions/registry';
@@ -78,8 +77,8 @@
 	let activeTab = $state<'setup' | 'rooms' | 'schedule' | 'invigilators'>('setup');
 	let workspace = $state<ExamScheduleWorkspace | null>(null);
 	let gradeLevels = $state<GradeLevelOption[]>([]);
-	let homerooms = $state<Homeroom[]>([]);
-	let rooms = $state<Room[]>([]);
+	let homerooms = $state<HomeroomLookupItem[]>([]);
+	let rooms = $state<RoomLookupItem[]>([]);
 	let staff = $state<ExamInvigilatorStaffOption[]>([]);
 	let invigilatorWorkspace = $state<ExamInvigilatorWorkspace | null>(null);
 	let loadingInvigilators = $state(false);
@@ -126,28 +125,12 @@
 	const noExamItemsPrerequisite: AcademicPrerequisite = {
 		key: 'exam-schedule-items',
 		status: 'missing',
-		title: 'ยังไม่มีรายการสอบที่นำเข้าได้',
+		title: 'ยังไม่มีรายการสอบที่พร้อมนำเข้า',
 		description:
-			'ตรวจว่ารายการเปิดสอนมีกลุ่มเรียน ผู้รับผิดชอบ และช่วงกลางภาคหรือปลายภาคเลือกสอบในตารางพร้อมระบุเวลาแล้ว',
-		actionLabel: 'ตรวจรายการเปิดสอนและกลุ่มเรียน',
-		href: '/staff/academic/delivery'
+			'ตรวจโครงสร้างคะแนนรายวิชาให้มีผู้รับผิดชอบ คะแนนรวมครบ และช่วงกลางภาคหรือปลายภาคเลือกสอบในตารางพร้อมระบุเวลา',
+		actionLabel: 'ตรวจโครงสร้างคะแนน',
+		href: '/staff/academic/assessments'
 	};
-	const deliveryTargets = $derived.by(() => {
-		const items = [...(workspace?.unscheduledItems ?? []), ...(workspace?.scheduledSessions ?? [])];
-		const seen: string[] = [];
-		return items.flatMap((item) => {
-			const key = `${item.learningOfferingId}:${item.learningGroupId}`;
-			if (seen.includes(key)) return [];
-			seen.push(key);
-			return [
-				{
-					key,
-					label: `${item.subjectCode} · ${item.subjectNameTh} · ${item.homeroomName}`,
-					href: `/staff/academic/delivery/${item.learningOfferingId}?groupId=${encodeURIComponent(item.learningGroupId)}`
-				}
-			];
-		});
-	});
 
 	type PendingPlacementRollback = {
 		restoredItem: ExamScheduleItem | null;
@@ -472,12 +455,12 @@
 		optionsRequested = true;
 		optionsLoading = true;
 		try {
-			const loadedHomerooms = await listHomerooms(yearId);
-			const roomResponse = await listRooms();
+			const loadedHomerooms = await lookupHomerooms({ academicYearId: yearId, limit: 500 });
+			const loadedRooms = await lookupRooms({ limit: 500 });
 			if (!isCurrentManagementOptionsRequest(requestToken, roundId, termId, yearId)) return;
 
 			homerooms = loadedHomerooms;
-			rooms = roomResponse.data;
+			rooms = loadedRooms;
 		} catch (loadError) {
 			if (!isCurrentManagementOptionsRequest(requestToken, roundId, termId, yearId)) return;
 
@@ -1300,15 +1283,6 @@
 			{#if examScheduleItemCount === 0 && workspace.sourcePreview.changes.length === 0}
 				<div class="mb-4">
 					<AcademicPrerequisiteNotice prerequisite={noExamItemsPrerequisite} />
-				</div>
-			{:else if deliveryTargets.length > 0}
-				<div
-					class="mb-4 flex flex-wrap items-center gap-2 rounded-xl border bg-muted/25 p-3 text-sm"
-				>
-					<span class="text-muted-foreground">แก้ข้อมูลต้นทาง:</span>
-					{#each deliveryTargets as target (target.key)}
-						<Button href={target.href} size="sm" variant="outline">{target.label}</Button>
-					{/each}
 				</div>
 			{/if}
 

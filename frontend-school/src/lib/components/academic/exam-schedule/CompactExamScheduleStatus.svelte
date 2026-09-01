@@ -9,6 +9,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Sheet from '$lib/components/ui/sheet';
+	import { examScheduleReadinessLabel } from '$lib/utils/exam-schedule-readiness';
 	import { AlertTriangle, CheckCircle2 } from 'lucide-svelte';
 
 	let {
@@ -69,7 +70,7 @@
 					พร้อม
 				{:else}
 					<AlertTriangle class="h-4 w-4" />
-					ยังไม่พร้อม {readiness.blockers.length}
+					ยังไม่พร้อม {readiness.findings.length}
 				{/if}
 			</Button>
 		{/snippet}
@@ -102,7 +103,7 @@
 				</div>
 			</div>
 
-			{#if readiness.blockers.length === 0}
+			{#if readiness.findings.length === 0}
 				<div
 					class="flex items-start gap-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200"
 				>
@@ -116,10 +117,10 @@
 				</div>
 			{:else}
 				<div class="space-y-2">
-					{#each readiness.blockers as blocker, index (`${index}-${blocker}`)}
+					{#each readiness.findings as finding (`${finding.code}-${finding.count}`)}
 						<div class="flex items-start gap-3 rounded-md border bg-background p-3 text-sm">
 							<AlertTriangle class="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-							<span>{blocker}</span>
+							<span>{examScheduleReadinessLabel(finding)}</span>
 						</div>
 					{/each}
 				</div>

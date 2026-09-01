@@ -7,6 +7,7 @@
 		ExamSession
 	} from '$lib/api/examSchedule';
 	import { Badge } from '$lib/components/ui/badge';
+	import { examScheduleReadinessLabel } from '$lib/utils/exam-schedule-readiness';
 	import { AlertCircle, CheckCircle2, CircleDashed } from 'lucide-svelte';
 
 	let {
@@ -75,7 +76,7 @@
 				ตัวตรวจสอบ
 			</div>
 
-			{#if readiness.blockers.length === 0}
+			{#if readiness.findings.length === 0}
 				<div
 					class="flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900"
 				>
@@ -84,10 +85,10 @@
 				</div>
 			{:else}
 				<div class="space-y-2">
-					{#each readiness.blockers as blocker, index (`${index}-${blocker}`)}
+					{#each readiness.findings as finding (`${finding.code}-${finding.count}`)}
 						<div class="flex items-start gap-2 rounded-md border p-3 text-sm">
 							<CircleDashed class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-							<span>{blocker}</span>
+							<span>{examScheduleReadinessLabel(finding)}</span>
 						</div>
 					{/each}
 				</div>

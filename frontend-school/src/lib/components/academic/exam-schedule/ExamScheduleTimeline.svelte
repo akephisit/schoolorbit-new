@@ -516,7 +516,7 @@
 
 		<div class="min-h-0 min-w-0 overflow-auto">
 			{#if sortedDays.length === 0}
-				<PageState title="ยังไม่มีวันสอบ" description="เพิ่มวันสอบในแท็บ Setup ก่อนจัดเวลา" />
+				<PageState title="ยังไม่มีวันสอบ" description="เพิ่มวันสอบในแท็บตั้งค่าก่อนจัดเวลา" />
 			{:else if visibleDays.every((day) => day.roomAssignments.length === 0)}
 				<PageState
 					title="ยังไม่มีแถวห้องสอบ"
