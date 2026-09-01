@@ -922,6 +922,88 @@ CREATE TRIGGER academic_timetable_block_group_sync_version_immutable
 BEFORE INSERT OR UPDATE OR DELETE ON academic_timetable_block_group_sync
 FOR EACH ROW EXECUTE FUNCTION academic_protect_timetable_block_child();
 
+-- Timetable scheduling owns an explicit permission boundary. Existing Delivery grants are
+-- copied once so this cutover does not silently remove access, while future grants can diverge.
+INSERT INTO permissions (code, name, module, action, scope, description, is_active)
+VALUES
+    ('academic_timetable.read.assigned', 'ดูตารางสอนที่รับผิดชอบ', 'academic_timetable', 'read', 'assigned', 'Read assigned timetable resources', true),
+    ('academic_timetable.read.organization_unit', 'ดูตารางสอนของหน่วยงาน', 'academic_timetable', 'read', 'organization_unit', 'Read timetable resources owned by the exact organization unit', true),
+    ('academic_timetable.read.organization_tree', 'ดูตารางสอนในสายงาน', 'academic_timetable', 'read', 'organization_tree', 'Read timetable resources in the organization tree', true),
+    ('academic_timetable.read.school', 'ดูตารางสอนทั้งโรงเรียน', 'academic_timetable', 'read', 'school', 'Read all school timetable resources', true),
+    ('academic_timetable.manage.assigned', 'จัดตารางสอนที่รับผิดชอบ', 'academic_timetable', 'manage', 'assigned', 'Manage assigned timetable resources', true),
+    ('academic_timetable.manage.organization_unit', 'จัดตารางสอนของหน่วยงาน', 'academic_timetable', 'manage', 'organization_unit', 'Manage timetable resources owned by the exact organization unit', true),
+    ('academic_timetable.manage.organization_tree', 'จัดตารางสอนในสายงาน', 'academic_timetable', 'manage', 'organization_tree', 'Manage timetable resources in the organization tree', true),
+    ('academic_timetable.manage.school', 'จัดตารางสอนทั้งโรงเรียน', 'academic_timetable', 'manage', 'school', 'Manage all school timetable resources', true),
+    ('academic_timetable.publish.school', 'เผยแพร่ตารางสอน', 'academic_timetable', 'publish', 'school', 'Publish a school timetable version', true)
+ON CONFLICT (code) DO UPDATE SET
+    name = EXCLUDED.name,
+    module = EXCLUDED.module,
+    action = EXCLUDED.action,
+    scope = EXCLUDED.scope,
+    description = EXCLUDED.description,
+    is_active = true,
+    updated_at = now();
+
+CREATE TEMP TABLE academic_058_permission_map (
+    source_code TEXT NOT NULL,
+    target_code TEXT NOT NULL,
+    PRIMARY KEY (source_code, target_code)
+) ON COMMIT DROP;
+
+INSERT INTO academic_058_permission_map (source_code, target_code)
+VALUES
+    ('learning_offering.read.assigned', 'academic_timetable.read.assigned'),
+    ('learning_offering.read.organization_unit', 'academic_timetable.read.organization_unit'),
+    ('learning_offering.read.organization_tree', 'academic_timetable.read.organization_tree'),
+    ('learning_offering.read.school', 'academic_timetable.read.school'),
+    ('learning_offering.manage.assigned', 'academic_timetable.manage.assigned'),
+    ('learning_offering.manage.organization_unit', 'academic_timetable.manage.organization_unit'),
+    ('learning_offering.manage.organization_tree', 'academic_timetable.manage.organization_tree'),
+    ('learning_offering.manage.school', 'academic_timetable.manage.school'),
+    ('learning_offering.manage.school', 'academic_timetable.publish.school');
+
+INSERT INTO role_permissions (role_id, permission_id, created_at)
+SELECT source_grant.role_id, target.id, source_grant.created_at
+FROM role_permissions source_grant
+JOIN permissions source ON source.id = source_grant.permission_id
+JOIN academic_058_permission_map mapping ON mapping.source_code = source.code
+JOIN permissions target ON target.code = mapping.target_code
+ON CONFLICT DO NOTHING;
+
+INSERT INTO organization_permission_grants (
+    organization_unit_id, permission_id, created_at, created_by, position_code
+)
+SELECT source_grant.organization_unit_id, target.id, source_grant.created_at,
+       source_grant.created_by, source_grant.position_code
+FROM organization_permission_grants source_grant
+JOIN permissions source ON source.id = source_grant.permission_id
+JOIN academic_058_permission_map mapping ON mapping.source_code = source.code
+JOIN permissions target ON target.code = mapping.target_code
+ON CONFLICT DO NOTHING;
+
+INSERT INTO organization_permission_delegations (
+    id, from_user_id, to_user_id, permission_id, organization_unit_id,
+    reason, started_at, expires_at, revoked_at, created_at
+)
+SELECT uuid_generate_v5(
+           '5c33b984-10df-58db-bf80-62dbc4a03d1b'::uuid,
+           'timetable-permission-delegation:' || source_grant.id::text || ':' || target.code
+       ),
+       source_grant.from_user_id,
+       source_grant.to_user_id,
+       target.id,
+       source_grant.organization_unit_id,
+       source_grant.reason,
+       source_grant.started_at,
+       source_grant.expires_at,
+       source_grant.revoked_at,
+       source_grant.created_at
+FROM organization_permission_delegations source_grant
+JOIN permissions source ON source.id = source_grant.permission_id
+JOIN academic_058_permission_map mapping ON mapping.source_code = source.code
+JOIN permissions target ON target.code = mapping.target_code
+ON CONFLICT DO NOTHING;
+
 COMMENT ON TABLE academic_timetable_blocks IS
     'Canonical one-period timetable event; child targets participate in the same simultaneous block.';
 COMMENT ON TABLE academic_timetable_block_group_sync IS

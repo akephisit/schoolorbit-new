@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "contract_sha256": "bea559099555a56263828fcf8726d4e02a5c95942b0d0d8785cec64c72a484f5",
+  "contract_sha256": "4b70804031975d87b48f8048dbbe41188fd976ef24f929947794cb2083870cbf",
   "permission_codes": [
     "*",
     "academic_assessment.manage.assigned",
@@ -30,6 +30,15 @@
     "academic_question_bank.read.school",
     "academic_term.manage.school",
     "academic_term.read.school",
+    "academic_timetable.manage.assigned",
+    "academic_timetable.manage.organization_tree",
+    "academic_timetable.manage.organization_unit",
+    "academic_timetable.manage.school",
+    "academic_timetable.publish.school",
+    "academic_timetable.read.assigned",
+    "academic_timetable.read.organization_tree",
+    "academic_timetable.read.organization_unit",
+    "academic_timetable.read.school",
     "academic_timetable_today.read.school",
     "academic_year.manage.school",
     "academic_year.read.school",

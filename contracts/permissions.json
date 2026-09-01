@@ -500,6 +500,69 @@
       "description": "จัดการการเปิดสอนและกลุ่มเรียนทั้งหมดของโรงเรียน"
     },
     {
+      "module": "academic_timetable",
+      "action": "read",
+      "scope": "assigned",
+      "name": "ดูตารางสอนที่รับผิดชอบ",
+      "description": "ดูตารางสอนของกลุ่มเรียน ห้องประจำชั้น หรือครูที่ตนรับผิดชอบ"
+    },
+    {
+      "module": "academic_timetable",
+      "action": "read",
+      "scope": "organization_unit",
+      "name": "ดูตารางสอนของหน่วยงาน",
+      "description": "ดูตารางสอนที่อยู่ในความรับผิดชอบของหน่วยงานตนเอง"
+    },
+    {
+      "module": "academic_timetable",
+      "action": "read",
+      "scope": "organization_tree",
+      "name": "ดูตารางสอนในสายงาน",
+      "description": "ดูตารางสอนของหน่วยงานตนเองและหน่วยงานย่อย"
+    },
+    {
+      "module": "academic_timetable",
+      "action": "read",
+      "scope": "school",
+      "name": "ดูตารางสอนทั้งโรงเรียน",
+      "description": "ดูตารางสอนและทรัพยากรจัดตารางทั้งหมดของโรงเรียน"
+    },
+    {
+      "module": "academic_timetable",
+      "action": "manage",
+      "scope": "assigned",
+      "name": "จัดตารางสอนที่รับผิดชอบ",
+      "description": "จัดตารางสอนของกลุ่มเรียน ห้องประจำชั้น หรือครูที่ตนรับผิดชอบ"
+    },
+    {
+      "module": "academic_timetable",
+      "action": "manage",
+      "scope": "organization_unit",
+      "name": "จัดตารางสอนของหน่วยงาน",
+      "description": "จัดตารางสอนที่อยู่ในความรับผิดชอบของหน่วยงานตนเอง"
+    },
+    {
+      "module": "academic_timetable",
+      "action": "manage",
+      "scope": "organization_tree",
+      "name": "จัดตารางสอนในสายงาน",
+      "description": "จัดตารางสอนของหน่วยงานตนเองและหน่วยงานย่อย"
+    },
+    {
+      "module": "academic_timetable",
+      "action": "manage",
+      "scope": "school",
+      "name": "จัดตารางสอนทั้งโรงเรียน",
+      "description": "สร้าง แก้ไข และนำรายการออกจากตารางสอนทั้งโรงเรียน"
+    },
+    {
+      "module": "academic_timetable",
+      "action": "publish",
+      "scope": "school",
+      "name": "เผยแพร่ตารางสอน",
+      "description": "ตรวจความพร้อมและเผยแพร่รุ่นตารางสอนของโรงเรียน"
+    },
+    {
       "module": "academic_timetable_today",
       "action": "read",
       "scope": "school",

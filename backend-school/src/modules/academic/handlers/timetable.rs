@@ -20,9 +20,9 @@ use crate::modules::academic::services::{
 };
 use crate::modules::academic::websockets::TimetableEvent;
 use crate::modules::auth::session_service::AuthenticatedSession;
-use crate::permissions::registry::codes;
-use crate::policies::learning_offering_access_policy::{
-    require_learning_group_access, require_learning_offering_list_access, OfferingAction,
+use crate::policies::timetable_access_policy::{
+    require_timetable_list_access, require_timetable_resources, TimetableAction,
+    TimetableResourceSet,
 };
 use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::utils::subdomain::extract_subdomain_from_request;
@@ -46,13 +46,15 @@ pub async fn list_timetable_entries(
     Query(query): Query<TimetableQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    let access = require_learning_offering_list_access(
+    let access =
+        require_timetable_list_access(&context.tenant.pool, &context.actor, TimetableAction::Read)
+            .await?;
+    let entries = timetable_service::list_entries(
         &context.tenant.pool,
-        &context.actor,
-        OfferingAction::Read,
+        &query,
+        &access.as_academic_resource_filter(),
     )
     .await?;
-    let entries = timetable_service::list_entries(&context.tenant.pool, &query, &access).await?;
     Ok(Json(ApiResponse::ok(entries)).into_response())
 }
 
@@ -76,13 +78,15 @@ pub async fn get_timetable_workspace(
     Query(query): Query<TimetableWorkspaceQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    let access = require_learning_offering_list_access(
+    let access =
+        require_timetable_list_access(&context.tenant.pool, &context.actor, TimetableAction::Read)
+            .await?;
+    let workspace = timetable_service::get_workspace(
         &context.tenant.pool,
-        &context.actor,
-        OfferingAction::Read,
+        query,
+        &access.as_academic_resource_filter(),
     )
     .await?;
-    let workspace = timetable_service::get_workspace(&context.tenant.pool, query, &access).await?;
     Ok(Json(ApiResponse::ok(workspace)).into_response())
 }
 
@@ -106,14 +110,25 @@ pub async fn get_whole_school_timetable_overview(
     Query(query): Query<WholeSchoolTimetableQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    let access = require_learning_offering_list_access(
+    require_timetable_resources(
         &context.tenant.pool,
         &context.actor,
-        OfferingAction::Read,
+        TimetableAction::Read,
+        &TimetableResourceSet {
+            requires_school_scope: true,
+            ..TimetableResourceSet::default()
+        },
     )
     .await?;
-    let overview =
-        timetable_service::get_whole_school_overview(&context.tenant.pool, query, &access).await?;
+    let access =
+        require_timetable_list_access(&context.tenant.pool, &context.actor, TimetableAction::Read)
+            .await?;
+    let overview = timetable_service::get_whole_school_overview(
+        &context.tenant.pool,
+        query,
+        &access.as_academic_resource_filter(),
+    )
+    .await?;
     Ok(Json(ApiResponse::ok(overview)).into_response())
 }
 
@@ -215,21 +230,17 @@ pub async fn create_batch_timetable_entries(
     Json(payload): Json<CreateBatchTimetableEntriesRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    if payload.learning_group_ids.is_empty() {
-        context
-            .actor
-            .require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
-    } else {
-        for group_id in &payload.learning_group_ids {
-            require_learning_group_access(
-                &context.tenant.pool,
-                &context.actor,
-                *group_id,
-                OfferingAction::Manage,
-            )
-            .await?;
-        }
-    }
+    require_timetable_resources(
+        &context.tenant.pool,
+        &context.actor,
+        TimetableAction::Manage,
+        &TimetableResourceSet {
+            learning_group_ids: payload.learning_group_ids.clone(),
+            requires_school_scope: payload.learning_group_ids.is_empty(),
+            ..TimetableResourceSet::default()
+        },
+    )
+    .await?;
     let result =
         timetable_service::create_batch(&context.tenant.pool, context.actor.user_id, payload)
             .await?;
@@ -336,9 +347,16 @@ pub async fn delete_batch_group(
     Query(query): Query<TimetableBatchMutationQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    context
-        .actor
-        .require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
+    require_timetable_resources(
+        &context.tenant.pool,
+        &context.actor,
+        TimetableAction::Manage,
+        &TimetableResourceSet {
+            requires_school_scope: true,
+            ..TimetableResourceSet::default()
+        },
+    )
+    .await?;
     let entries = timetable_service::deactivate_batch(
         &context.tenant.pool,
         batch_id,
@@ -439,11 +457,14 @@ pub async fn preview_timetable_placement(
         TimetablePlacementSource::UnscheduledDemand {
             learning_group_id, ..
         } => {
-            require_learning_group_access(
+            require_timetable_resources(
                 &context.tenant.pool,
                 &context.actor,
-                *learning_group_id,
-                OfferingAction::Manage,
+                TimetableAction::Manage,
+                &TimetableResourceSet {
+                    learning_group_ids: vec![*learning_group_id],
+                    ..TimetableResourceSet::default()
+                },
             )
             .await?;
         }
@@ -473,9 +494,16 @@ pub async fn get_timetable_occupancy(
     Query(query): Query<TimetableOccupancyQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    context
-        .actor
-        .require_permission(codes::LEARNING_OFFERING_READ_SCHOOL)?;
+    require_timetable_resources(
+        &context.tenant.pool,
+        &context.actor,
+        TimetableAction::Read,
+        &TimetableResourceSet {
+            requires_school_scope: true,
+            ..TimetableResourceSet::default()
+        },
+    )
+    .await?;
     let occupancy = timetable_service::occupancy(
         &context.tenant.pool,
         query.timetable_version_id,
@@ -499,9 +527,16 @@ pub async fn daily_teaching_overview(
     Query(query): Query<daily_teaching_service::DailyTeachingQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    context
-        .actor
-        .require_permission(codes::LEARNING_OFFERING_READ_SCHOOL)?;
+    require_timetable_resources(
+        &context.tenant.pool,
+        &context.actor,
+        TimetableAction::Read,
+        &TimetableResourceSet {
+            requires_school_scope: true,
+            ..TimetableResourceSet::default()
+        },
+    )
+    .await?;
     let overview =
         daily_teaching_service::get_daily_teaching_overview(&context.tenant.pool, query).await?;
     Ok(Json(ApiResponse::ok(overview)).into_response())
@@ -512,17 +547,27 @@ async fn require_create_access(
     learning_group_id: Option<Uuid>,
 ) -> Result<(), AppError> {
     if let Some(group_id) = learning_group_id {
-        require_learning_group_access(
+        require_timetable_resources(
             &context.tenant.pool,
             &context.actor,
-            group_id,
-            OfferingAction::Manage,
+            TimetableAction::Manage,
+            &TimetableResourceSet {
+                learning_group_ids: vec![group_id],
+                ..TimetableResourceSet::default()
+            },
         )
         .await?;
     } else {
-        context
-            .actor
-            .require_permission(codes::LEARNING_OFFERING_MANAGE_SCHOOL)?;
+        require_timetable_resources(
+            &context.tenant.pool,
+            &context.actor,
+            TimetableAction::Manage,
+            &TimetableResourceSet {
+                requires_school_scope: true,
+                ..TimetableResourceSet::default()
+            },
+        )
+        .await?;
     }
     Ok(())
 }

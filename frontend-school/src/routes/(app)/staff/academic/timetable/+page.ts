@@ -7,7 +7,7 @@ export const _meta = {
 		icon: 'CalendarDays',
 		group: 'academic_delivery',
 		workspace: 'academic',
-		permission: PERMISSION_MODULES.LEARNING_OFFERING,
+		permission: PERMISSION_MODULES.ACADEMIC_TIMETABLE,
 		order: 40,
 		user_type: 'staff'
 	}

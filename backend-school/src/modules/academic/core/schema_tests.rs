@@ -3970,12 +3970,11 @@ async fn migration_058_reconciles_timetable_blocks() {
     .expect("post-058 timetable counts must be queryable");
     assert_eq!(target_counts, source_counts);
 
-    let target_delivery_ids: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM academic_timetable_block_groups ORDER BY id",
-    )
-    .fetch_all(&pool)
-    .await
-    .expect("post-058 group IDs must be queryable");
+    let target_delivery_ids: Vec<Uuid> =
+        sqlx::query_scalar("SELECT id FROM academic_timetable_block_groups ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .expect("post-058 group IDs must be queryable");
     assert_eq!(target_delivery_ids, source_delivery_ids);
 
     let orphan_count: i64 = sqlx::query_scalar(
