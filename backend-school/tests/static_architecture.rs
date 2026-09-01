@@ -406,6 +406,24 @@ fn timetable_exact_instructor_consumers_do_not_fallback_to_group_teachers() {
 }
 
 #[test]
+fn personal_staff_timetable_stays_exact_own_scope_without_academic_list_permission() {
+    let handlers = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/handlers/timetable.rs"),
+    ));
+    let handler = extract_braced_block(&handlers, "pub async fn get_my_timetable", false);
+
+    assert!(
+        handler.contains("timetable_service::list_instructor_entries"),
+        "staff self-service timetable must use the exact instructor-owned reader"
+    );
+    assert!(handler.contains("session.user_id"));
+    assert!(
+        !handler.contains("require_learning_offering_list_access"),
+        "staff self-service timetable must not require academic list permission"
+    );
+}
+
+#[test]
 fn student_timetable_uses_requested_date_for_roster_membership() {
     let service = strip_comments(&read_source(
         manifest_dir().join("src/modules/academic/services/timetable_service.rs"),

@@ -2189,6 +2189,64 @@ async fn student_timetable_uses_the_membership_interval_for_the_requested_date()
 }
 
 #[tokio::test]
+async fn staff_timetable_returns_only_entries_assigned_to_that_staff_user() {
+    let pool = migrated_pool("timetable_staff_exact_own_scope").await;
+    let fixture = exact_instructor_fixture(&pool).await;
+    let owned_entry = timetable_service::create_entry(
+        &pool,
+        fixture.actor_id,
+        CreateTimetableEntryRequest {
+            timetable_version_id: fixture.draft.id,
+            academic_term_id: fixture.term_id,
+            learning_group_id: Some(fixture.group_id),
+            homeroom_id: None,
+            day_of_week: "TUE".to_string(),
+            bell_schedule_period_id: fixture.period_id,
+            room_id: None,
+            note: None,
+            entry_type: "course".to_string(),
+            title: None,
+            instructor_ids: vec![fixture.teacher_a],
+        },
+    )
+    .await
+    .unwrap();
+    let unrelated_entry_count: i64 = sqlx::query_scalar(
+        r#"SELECT count(*)
+           FROM academic_timetable_entries entry
+           WHERE entry.timetable_version_id = $1
+             AND entry.academic_term_id = $2
+             AND entry.is_active
+             AND NOT EXISTS (
+                 SELECT 1
+                 FROM timetable_entry_instructors instructor
+                 WHERE instructor.entry_id = entry.id
+                   AND instructor.instructor_id = $3
+             )"#,
+    )
+    .bind(fixture.draft.id)
+    .bind(fixture.term_id)
+    .bind(fixture.teacher_a)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(unrelated_entry_count > 0);
+
+    let entries = timetable_service::list_instructor_entries(
+        &pool,
+        fixture.draft.id,
+        fixture.term_id,
+        fixture.teacher_a,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].id, owned_entry.id);
+    assert_eq!(instructor_ids(&entries[0]), vec![fixture.teacher_a]);
+}
+
+#[tokio::test]
 async fn timetable_entry_accepts_a_room_with_active_status() {
     let pool = migrated_pool("timetable_active_room_status").await;
     let draft = clone_editable_version(&pool).await;

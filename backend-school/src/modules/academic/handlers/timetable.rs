@@ -130,7 +130,6 @@ pub async fn get_whole_school_timetable_overview(
     tag = "academic"
 )]
 pub async fn get_my_timetable(
-    State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<PersonalTimetableQuery>,
 ) -> Result<impl IntoResponse, AppError> {
@@ -156,25 +155,13 @@ pub async fn get_my_timetable(
             "บัญชีนี้ไม่มีตารางเรียนหรือตารางสอนส่วนบุคคล".to_string(),
         ));
     }
-    let context = actor_tenant_context_from_session(&state, &session).await?;
-    let access = require_learning_offering_list_access(
-        &context.tenant.pool,
-        &context.actor,
-        OfferingAction::Read,
+    let entries = timetable_service::list_instructor_entries(
+        &session.tenant.pool,
+        version.id,
+        query.academic_term_id,
+        session.user_id,
     )
     .await?;
-    let timetable_query = TimetableQuery {
-        timetable_version_id: version.id,
-        academic_term_id: query.academic_term_id,
-        learning_group_id: None,
-        homeroom_id: None,
-        instructor_id: Some(context.actor.user_id),
-        room_id: None,
-        day_of_week: None,
-        entry_type: None,
-    };
-    let entries =
-        timetable_service::list_entries(&context.tenant.pool, &timetable_query, &access).await?;
     Ok(Json(ApiResponse::ok(entries)).into_response())
 }
 

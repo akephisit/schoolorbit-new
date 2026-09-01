@@ -1363,6 +1363,35 @@ pub async fn list_student_entries(
     hydrate_rows(pool, rows).await
 }
 
+pub async fn list_instructor_entries(
+    pool: &PgPool,
+    timetable_version_id: Uuid,
+    academic_term_id: Uuid,
+    instructor_id: Uuid,
+) -> Result<Vec<TimetableEntry>, AppError> {
+    require_timetable_version(pool, timetable_version_id, Some(academic_term_id), false).await?;
+    let rows: Vec<EntryRow> = sqlx::query_as(&format!(
+        r#"{}
+           WHERE entry.timetable_version_id = $1
+             AND entry.academic_term_id = $2
+             AND entry.is_active
+             AND EXISTS (
+                 SELECT 1
+                 FROM timetable_entry_instructors instructor
+                 WHERE instructor.entry_id = entry.id
+                   AND instructor.instructor_id = $3
+             )
+           ORDER BY period.order_index, entry.day_of_week, entry.id"#,
+        entry_select()
+    ))
+    .bind(timetable_version_id)
+    .bind(academic_term_id)
+    .bind(instructor_id)
+    .fetch_all(pool)
+    .await?;
+    hydrate_rows(pool, rows).await
+}
+
 pub async fn create_entry(
     pool: &PgPool,
     actor_user_id: Uuid,
