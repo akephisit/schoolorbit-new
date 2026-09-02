@@ -248,7 +248,7 @@ test('assessment UI asks for duration only in the exam timetable and hides contr
 	assert.doesNotMatch(controlCard, /ดูสถานะเท่านั้น/);
 });
 
-test('mobile assessment editor exposes a labeled close action and saves dirty work before closing', async () => {
+test('mobile assessment editor queues its labeled close action until dirty work is saved', async () => {
 	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
 	const closeHandler = page.slice(
 		page.indexOf('async function requestSheetClose'),
@@ -263,8 +263,9 @@ test('mobile assessment editor exposes a labeled close action and saves dirty wo
 	assert.match(sheetMarkup, /open=\{sheetOpen\}/);
 	assert.match(sheetMarkup, /onOpenChange=\{handleSheetOpenChange\}/);
 	assert.match(sheetMarkup, /showCloseButton=\{false\}/);
+	assert.match(closeHandler, /closeRequested = true/);
 	assert.match(closeHandler, /await persistDraft\(\)/);
-	assert.match(closeHandler, /if \(dirty\) return/);
+	assert.match(closeHandler, /if \(dirty\) \{[\s\S]*closeRequested = false;[\s\S]*return;/);
 	assert.match(closeHandler, /sheetOpen = false/);
 	assert.match(stickyHeader, /onclick=\{requestSheetClose\}/);
 	assert.match(stickyHeader, /min-h-11 min-w-11/);

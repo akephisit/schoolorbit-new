@@ -82,6 +82,7 @@
 	let controlBusyId = $state('');
 	let errorMessage = $state('');
 	let lastSavedAt = $state<Date | null>(null);
+	let closeRequested = false;
 	let revision = 0;
 	let draftRevision = 0;
 	let saveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -264,6 +265,7 @@
 			draftCoordinatorId = '';
 			dirty = false;
 			saveState = 'idle';
+			closeRequested = false;
 		} catch (error) {
 			if (current === revision) {
 				errorMessage = error instanceof Error ? error.message : 'โหลดโครงสร้างคะแนนไม่สำเร็จ';
@@ -290,6 +292,7 @@
 				return;
 			}
 		}
+		closeRequested = false;
 		sheetOpen = true;
 		detailLoading = true;
 		errorMessage = '';
@@ -359,12 +362,17 @@
 				toast.warning('บันทึกแล้ว แต่ยังรีเฟรชตารางภาพรวมไม่ได้');
 			}
 		} catch (error) {
+			closeRequested = false;
 			errorMessage = error instanceof Error ? error.message : 'บันทึกโครงสร้างคะแนนไม่สำเร็จ';
 			saveState = 'error';
 			toast.error(errorMessage);
 		} finally {
 			saving = false;
 			if (dirty && draftRevision !== revisionAtStart && saveState !== 'error') markDirty();
+			if (closeRequested && !dirty && saveState !== 'error') {
+				closeRequested = false;
+				sheetOpen = false;
+			}
 		}
 	}
 
@@ -384,14 +392,19 @@
 	}
 
 	async function requestSheetClose(): Promise<void> {
+		closeRequested = true;
 		if (saving) {
-			toast.info('กำลังบันทึกข้อมูล กรุณารอสักครู่');
+			toast.info('กำลังบันทึกข้อมูล หน้านี้จะปิดเมื่อบันทึกเสร็จ');
 			return;
 		}
 		if (dirty) {
 			await persistDraft();
-			if (dirty) return;
+			if (dirty) {
+				closeRequested = false;
+				return;
+			}
 		}
+		closeRequested = false;
 		sheetOpen = false;
 	}
 
