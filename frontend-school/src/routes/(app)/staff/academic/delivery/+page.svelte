@@ -3,6 +3,10 @@
 	import { onMount } from 'svelte';
 	import { getAcademicContextStore } from '$lib/academic-context/store';
 	import {
+		buildSynchronizedActivityPreparationTarget,
+		type SynchronizedActivityPreparationTarget
+	} from '$lib/academic/synchronized-activity-delivery';
+	import {
 		getHomeroomDeliveryWorkspace,
 		getLearningDeliveryOverview,
 		listAcademicTermChangeSets,
@@ -41,6 +45,9 @@
 	let overviewLoading = $state(false);
 	let errorMessage = $state('');
 	let viewMode = $state<'homerooms' | 'offerings'>('homerooms');
+	let offeringDialog = $state<{
+		openCurriculumPreparation: (target: SynchronizedActivityPreparationTarget) => Promise<void>;
+	}>();
 	let initialKind = $derived<'all' | 'activity'>(
 		page.url.searchParams.get('kind') === 'activity' ? 'activity' : 'all'
 	);
@@ -179,6 +186,13 @@
 		if (viewMode === 'offerings' || overview) await loadOverview(academicTermId);
 	}
 
+	function prepareSynchronizedActivity(catalogVersionId: string) {
+		if (!workspace || !offeringDialog) return;
+		const target = buildSynchronizedActivityPreparationTarget(workspace, catalogVersionId);
+		if (!target) return;
+		void offeringDialog.openCurriculumPreparation(target);
+	}
+
 	function addChangeSet(created: AcademicTermChangeSet) {
 		changeSets = [created, ...changeSets.filter((changeSet) => changeSet.id !== created.id)];
 		selectedChangeSetId = created.id;
@@ -239,7 +253,12 @@
 >
 	{#snippet actions()}
 		{#if canManage && academicTermId}
-			<OfferingCreateDialog {academicTermId} onCreated={addCreated} onApplied={reloadAfterApply} />
+			<OfferingCreateDialog
+				bind:this={offeringDialog}
+				{academicTermId}
+				onCreated={addCreated}
+				onApplied={reloadAfterApply}
+			/>
 			<AcademicChangeSetDialog {academicTermId} onCreated={addChangeSet} />
 		{/if}
 	{/snippet}
@@ -315,7 +334,11 @@
 				</Tabs.List>
 				<Tabs.Content value="homerooms" class="mt-4">
 					{#if workspace}
-						<HomeroomDeliveryWorkspace {workspace} />
+						<HomeroomDeliveryWorkspace
+							{workspace}
+							{canManage}
+							onPrepareSynchronizedActivity={prepareSynchronizedActivity}
+						/>
 					{/if}
 				</Tabs.Content>
 				<Tabs.Content value="offerings" class="mt-4">

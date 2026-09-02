@@ -15,7 +15,7 @@ use crate::policies::learning_offering_access_policy::learning_offering_owner_al
 use crate::policies::resource_access_policy::AcademicResourceListFilter;
 
 use super::super::models::{
-    CurriculumDeliveryAlignmentState, CurriculumDeliveryExtraOffering,
+    ActivitySchedulingMode, CurriculumDeliveryAlignmentState, CurriculumDeliveryExtraOffering,
     DeliveryCatalogVersionOption, DeliveryManagementOptions, DeliveryPrerequisite,
     HomeroomDeliveryGroupSummary, HomeroomDeliveryItem, HomeroomDeliveryRoom,
     HomeroomDeliveryWorkspace, HomeroomGroupMode, HomeroomOfferingState, HomeroomTeacherState,
@@ -83,6 +83,7 @@ struct ExpectedDeliveryRow {
     name: String,
     requirement_kind: RequirementKind,
     standard_periods_per_week: Option<i32>,
+    scheduling_mode: Option<ActivitySchedulingMode>,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -289,6 +290,7 @@ pub async fn homeroom_delivery_workspace_for_version(
                   version.name_th AS name,
                   requirement.requirement_kind,
                   version.periods_per_week AS standard_periods_per_week,
+                  NULL::text AS scheduling_mode,
                   requirement.display_order
            FROM homerooms homeroom
            JOIN study_programs program ON program.id = homeroom.study_program_id
@@ -312,6 +314,7 @@ pub async fn homeroom_delivery_workspace_for_version(
                   version.name,
                   requirement.requirement_kind,
                   NULL::integer AS standard_periods_per_week,
+                  version.scheduling_mode,
                   requirement.display_order
            FROM homerooms homeroom
            JOIN study_programs program ON program.id = homeroom.study_program_id
@@ -547,6 +550,7 @@ pub async fn homeroom_delivery_workspace_for_version(
                 standard_periods_per_week: expected.standard_periods_per_week,
                 weekly_period_target: applicable_offering
                     .and_then(|offering| offering.weekly_period_target),
+                scheduling_mode: expected.scheduling_mode,
                 offering_id,
                 offering_state: applicable_offering
                     .map(|offering| offering_state(offering.status))

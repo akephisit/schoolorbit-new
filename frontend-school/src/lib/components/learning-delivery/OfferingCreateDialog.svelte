@@ -5,6 +5,7 @@
 		type DeliveryManagementOptions,
 		type LearningOfferingOverviewItem
 	} from '$lib/api/learning-delivery';
+	import type { SynchronizedActivityPreparationTarget } from '$lib/academic/synchronized-activity-delivery';
 	import { LoadingButton } from '$lib/components/app-state';
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -26,6 +27,8 @@
 
 	let open = $state(false);
 	let mode = $state<'curriculum' | 'manual'>('curriculum');
+	let preparationTarget = $state.raw<SynchronizedActivityPreparationTarget | null>(null);
+	let preparationRevision = $state(0);
 	let options = $state.raw<DeliveryManagementOptions | null>(null);
 	let optionsLoading = $state(false);
 	let saving = $state(false);
@@ -47,7 +50,10 @@
 			}))
 	);
 
-	async function showDialog() {
+	async function showDialog(target: SynchronizedActivityPreparationTarget | null) {
+		preparationTarget = target;
+		preparationRevision += 1;
+		mode = 'curriculum';
 		open = true;
 		if (options || optionsLoading) return;
 		optionsLoading = true;
@@ -60,6 +66,10 @@
 		} finally {
 			optionsLoading = false;
 		}
+	}
+
+	export function openCurriculumPreparation(target: SynchronizedActivityPreparationTarget) {
+		return showDialog(target);
 	}
 
 	function selectMode(nextMode: 'curriculum' | 'manual') {
@@ -147,14 +157,20 @@
 	}
 </script>
 
-<Button onclick={showDialog}><Plus class="size-4" /> เปิดการเรียนการสอน</Button>
+<Button onclick={() => showDialog(null)}><Plus class="size-4" /> เปิดการเรียนการสอน</Button>
 
 <Dialog.Root bind:open>
 	<Dialog.Content class="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
 		<Dialog.Header>
-			<Dialog.Title>เปิดการเรียนการสอนในภาคเรียนนี้</Dialog.Title>
+			<Dialog.Title>
+				{preparationTarget
+					? `เปิดใช้งาน ${preparationTarget.code} · ${preparationTarget.name}`
+					: 'เปิดการเรียนการสอนในภาคเรียนนี้'}
+			</Dialog.Title>
 			<Dialog.Description
-				>เลือกนำรายการจากหลักสูตร หรือเพิ่มรายการเฉพาะภาคเรียนเอง</Dialog.Description
+				>{preparationTarget
+					? `นำกิจกรรมจากหลักสูตรมาเปิดเป็นรายการกลางสำหรับ ${preparationTarget.homeroomCount} ห้อง`
+					: 'เลือกนำรายการจากหลักสูตร หรือเพิ่มรายการเฉพาะภาคเรียนเอง'}</Dialog.Description
 			>
 		</Dialog.Header>
 
@@ -164,36 +180,44 @@
 				<div class="h-44 animate-pulse rounded-xl bg-muted"></div>
 			</div>
 		{:else if options}
-			<div
-				class="grid grid-cols-2 gap-2 rounded-xl bg-muted/60 p-1.5"
-				aria-label="วิธีเพิ่มรายการเปิดสอน"
-			>
-				<Button
-					type="button"
-					variant={mode === 'curriculum' ? 'default' : 'ghost'}
-					class="h-auto justify-start px-3 py-2.5"
-					onclick={() => selectMode('curriculum')}
-					><BookCopy class="size-4" /><span class="text-start"
-						><span class="block">นำมาจากหลักสูตร</span><span
-							class="block text-[11px] font-normal opacity-75">เหมาะกับการเปิดภาคเรียนตามแผน</span
-						></span
-					></Button
+			{#if !preparationTarget}<div
+					class="grid grid-cols-2 gap-2 rounded-xl bg-muted/60 p-1.5"
+					aria-label="วิธีเพิ่มรายการเปิดสอน"
 				>
-				<Button
-					type="button"
-					variant={mode === 'manual' ? 'default' : 'ghost'}
-					class="h-auto justify-start px-3 py-2.5"
-					onclick={() => selectMode('manual')}
-					><Sparkles class="size-4" /><span class="text-start"
-						><span class="block">เพิ่มรายการเอง</span><span
-							class="block text-[11px] font-normal opacity-75">สำหรับวิชาหรือกิจกรรมเฉพาะครั้ง</span
-						></span
-					></Button
-				>
-			</div>
+					<Button
+						type="button"
+						variant={mode === 'curriculum' ? 'default' : 'ghost'}
+						class="h-auto justify-start px-3 py-2.5"
+						onclick={() => selectMode('curriculum')}
+						><BookCopy class="size-4" /><span class="text-start"
+							><span class="block">นำมาจากหลักสูตร</span><span
+								class="block text-[11px] font-normal opacity-75">เหมาะกับการเปิดภาคเรียนตามแผน</span
+							></span
+						></Button
+					>
+					<Button
+						type="button"
+						variant={mode === 'manual' ? 'default' : 'ghost'}
+						class="h-auto justify-start px-3 py-2.5"
+						onclick={() => selectMode('manual')}
+						><Sparkles class="size-4" /><span class="text-start"
+							><span class="block">เพิ่มรายการเอง</span><span
+								class="block text-[11px] font-normal opacity-75"
+								>สำหรับวิชาหรือกิจกรรมเฉพาะครั้ง</span
+							></span
+						></Button
+					>
+				</div>{/if}
 
 			{#if mode === 'curriculum'}
-				<OfferingCurriculumPreview {academicTermId} {options} onApplied={applied} />
+				{#key preparationRevision}
+					<OfferingCurriculumPreview
+						{academicTermId}
+						{options}
+						{preparationTarget}
+						onApplied={applied}
+					/>
+				{/key}
 			{:else}
 				<form class="space-y-4" onsubmit={createManual}>
 					<div class="grid gap-4 sm:grid-cols-2">
@@ -274,7 +298,9 @@
 		{:else}
 			<div class="space-y-3 py-5">
 				<p role="alert" class="text-sm text-destructive">{errorMessage}</p>
-				<Button type="button" variant="outline" onclick={showDialog}>ลองโหลดอีกครั้ง</Button>
+				<Button type="button" variant="outline" onclick={() => showDialog(preparationTarget)}
+					>ลองโหลดอีกครั้ง</Button
+				>
 			</div>
 		{/if}
 	</Dialog.Content>

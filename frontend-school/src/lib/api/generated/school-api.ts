@@ -11742,6 +11742,7 @@ export interface components {
 			requirementId: string;
 			requirementKind: components['schemas']['RequirementKind'];
 			resourceKind: components['schemas']['LearningOfferingKind'];
+			schedulingMode: null | components['schemas']['ActivitySchedulingMode'];
 			/** Format: int32 */
 			standardPeriodsPerWeek?: number | null;
 			teacherState: components['schemas']['HomeroomTeacherState'];

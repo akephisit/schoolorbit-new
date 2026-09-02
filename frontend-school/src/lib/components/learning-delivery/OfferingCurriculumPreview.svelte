@@ -8,6 +8,11 @@
 		type CurriculumPreparationProposal,
 		type DeliveryManagementOptions
 	} from '$lib/api/learning-delivery';
+	import {
+		buildFocusedCurriculumPreparationChoices,
+		visibleCurriculumPreparationProposals,
+		type SynchronizedActivityPreparationTarget
+	} from '$lib/academic/synchronized-activity-delivery';
 	import { LoadingButton } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -32,16 +37,19 @@
 	let {
 		academicTermId,
 		options,
-		onApplied
+		onApplied,
+		preparationTarget = null
 	}: {
 		academicTermId: string;
 		options: DeliveryManagementOptions;
 		onApplied: () => Promise<void> | void;
+		preparationTarget?: SynchronizedActivityPreparationTarget | null;
 	} = $props();
 
 	let programPickerOpen = $state(false);
 	let programSearch = $state('');
-	let studyProgramIds = $state<string[]>([]);
+	let selectedStudyProgramIds = $state<string[]>([]);
+	let studyProgramIds = $derived(preparationTarget?.studyProgramIds ?? selectedStudyProgramIds);
 	let owningOrganizationUnitId = $state('');
 	let preview = $state.raw<CurriculumOfferingPreview | null>(null);
 	let choices = $state.raw<CurriculumPreparationChoice[]>([]);
@@ -65,9 +73,19 @@
 			);
 		return `เลือกแล้ว ${studyProgramIds.length} แผน`;
 	});
+	let displayedProposals = $derived(
+		visibleCurriculumPreparationProposals(preview?.proposals ?? [], preparationTarget)
+	);
 	let applyBlocked = $derived.by(() => {
 		if (!preview || !owningOrganizationUnitId || choices.length !== preview.proposals.length)
 			return true;
+		if (preparationTarget) {
+			if (displayedProposals.length !== 1) return true;
+			const focusedChoice = choices.find(
+				(choice) => choice.proposalId === displayedProposals[0]?.proposalId
+			);
+			if (!focusedChoice || focusedChoice.action === 'skip') return true;
+		}
 		return preview.proposals.some((proposal) => {
 			const choice = choices.find((item) => item.proposalId === proposal.proposalId);
 			if (!choice) return true;
@@ -78,7 +96,7 @@
 	});
 
 	function toggleProgram(id: string) {
-		studyProgramIds = studyProgramIds.includes(id)
+		selectedStudyProgramIds = studyProgramIds.includes(id)
 			? studyProgramIds.filter((programId) => programId !== id)
 			: [...studyProgramIds, id];
 		preview = null;
@@ -91,16 +109,6 @@
 
 	function randomGroupKey() {
 		return crypto.randomUUID().replaceAll('-', '').repeat(2);
-	}
-
-	function initialChoice(proposal: CurriculumPreparationProposal): CurriculumPreparationChoice {
-		const canApplyDefaults =
-			proposal.groupingState === 'proposed' && proposal.conflicts.length === 0;
-		return {
-			proposalId: proposal.proposalId,
-			action: canApplyDefaults ? 'apply' : 'defer_groups',
-			groups: canApplyDefaults ? proposal.defaultGroups.map((group) => ({ ...group })) : []
-		};
 	}
 
 	function choiceFor(proposalId: string) {
@@ -207,8 +215,18 @@
 				academicTermId,
 				studyProgramIds
 			});
+			const focusedProposals = visibleCurriculumPreparationProposals(
+				result.proposals,
+				preparationTarget
+			);
+			if (preparationTarget && focusedProposals.length !== 1) {
+				preview = null;
+				choices = [];
+				errorMessage = `ไม่พบ ${preparationTarget.code} · ${preparationTarget.name} ในโครงสร้างของห้องเป้าหมาย`;
+				return;
+			}
 			preview = result;
-			choices = result.proposals.map(initialChoice);
+			choices = buildFocusedCurriculumPreparationChoices(result.proposals, preparationTarget);
 		} catch (error) {
 			errorMessage = error instanceof Error ? error.message : 'สร้างตัวอย่างจากหลักสูตรไม่สำเร็จ';
 		} finally {
@@ -245,9 +263,15 @@
 		<div class="flex items-start gap-3">
 			<div class="rounded-lg bg-primary/10 p-2 text-primary"><WandSparkles class="size-4" /></div>
 			<div>
-				<h3 class="font-medium">เตรียมรายการเปิดสอนและกลุ่มจากหลักสูตร</h3>
+				<h3 class="font-medium">
+					{preparationTarget
+						? `เปิดใช้งาน ${preparationTarget.code} · ${preparationTarget.name}`
+						: 'เตรียมรายการเปิดสอนและกลุ่มจากหลักสูตร'}
+				</h3>
 				<p class="mt-1 text-sm text-muted-foreground">
-					ระบบเสนอหนึ่งกลุ่มต่อห้องสำหรับรายการบังคับ ส่วนรายการเลือกจะรอให้จัดกลุ่มภายหลัง
+					{preparationTarget
+						? `ระบบจะรวมข้อกำหนดของ ${preparationTarget.homeroomCount} ห้องเป็นรายการเปิดสอนกลางเพียงรายการเดียว`
+						: 'ระบบเสนอหนึ่งกลุ่มต่อห้องสำหรับรายการบังคับ ส่วนรายการเลือกจะรอให้จัดกลุ่มภายหลัง'}
 				</p>
 			</div>
 		</div>
@@ -255,57 +279,66 @@
 
 	<div class="grid gap-4 sm:grid-cols-2">
 		<div class="space-y-2">
-			<Label>แผนการเรียน</Label>
-			<Popover.Root bind:open={programPickerOpen}>
-				<Popover.Trigger>
-					{#snippet child({ props })}
-						<Button
-							type="button"
-							variant="outline"
-							role="combobox"
-							aria-label="เลือกแผนการเรียนจากหลักสูตร"
-							aria-expanded={programPickerOpen}
-							class="w-full justify-between font-normal"
-							{...props}
-						>
-							<span class="truncate">{selectedProgramLabel}</span><ChevronsUpDown
-								class="size-4 opacity-50"
+			<Label>{preparationTarget ? 'ขอบเขตจากหลักสูตร' : 'แผนการเรียน'}</Label>
+			{#if preparationTarget}
+				<div class="rounded-md border bg-muted/25 px-3 py-2 text-sm">
+					<p class="font-medium">{selectedProgramLabel} · {preparationTarget.homeroomCount} ห้อง</p>
+					<p class="mt-0.5 text-xs text-muted-foreground">
+						ระบบเลือกทุกแผนการเรียนที่มีกิจกรรมนี้ไว้แล้ว
+					</p>
+				</div>
+			{:else}
+				<Popover.Root bind:open={programPickerOpen}>
+					<Popover.Trigger>
+						{#snippet child({ props })}
+							<Button
+								type="button"
+								variant="outline"
+								role="combobox"
+								aria-label="เลือกแผนการเรียนจากหลักสูตร"
+								aria-expanded={programPickerOpen}
+								class="w-full justify-between font-normal"
+								{...props}
+							>
+								<span class="truncate">{selectedProgramLabel}</span><ChevronsUpDown
+									class="size-4 opacity-50"
+								/>
+							</Button>
+						{/snippet}
+					</Popover.Trigger>
+					<Popover.Content class="w-[--bits-popover-trigger-width] p-0" align="start">
+						<Command.Root shouldFilter={false}>
+							<Command.Input
+								bind:value={programSearch}
+								placeholder="ค้นหาหลักสูตรหรือแผนการเรียน..."
 							/>
-						</Button>
-					{/snippet}
-				</Popover.Trigger>
-				<Popover.Content class="w-[--bits-popover-trigger-width] p-0" align="start">
-					<Command.Root shouldFilter={false}>
-						<Command.Input
-							bind:value={programSearch}
-							placeholder="ค้นหาหลักสูตรหรือแผนการเรียน..."
-						/>
-						<Command.List class="max-h-64">
-							{#if filteredPrograms.length === 0}<Command.Empty>ไม่พบแผนการเรียน</Command.Empty
-								>{:else}<Command.Group>
-									{#each filteredPrograms as program (program.id)}
-										<Command.Item
-											value={`${program.curriculumName} ${program.code} ${program.name}`}
-											onSelect={() => toggleProgram(program.id)}
-										>
-											<Checkbox
-												checked={studyProgramIds.includes(program.id)}
-												class="pointer-events-none"
-												aria-label={`เลือก ${program.name}`}
-											/>
-											<div class="min-w-0">
-												<p class="truncate">{program.name}</p>
-												<p class="truncate text-xs text-muted-foreground">
-													{program.curriculumName} · {program.code}
-												</p>
-											</div>
-										</Command.Item>
-									{/each}
-								</Command.Group>{/if}
-						</Command.List>
-					</Command.Root>
-				</Popover.Content>
-			</Popover.Root>
+							<Command.List class="max-h-64">
+								{#if filteredPrograms.length === 0}<Command.Empty>ไม่พบแผนการเรียน</Command.Empty
+									>{:else}<Command.Group>
+										{#each filteredPrograms as program (program.id)}
+											<Command.Item
+												value={`${program.curriculumName} ${program.code} ${program.name}`}
+												onSelect={() => toggleProgram(program.id)}
+											>
+												<Checkbox
+													checked={studyProgramIds.includes(program.id)}
+													class="pointer-events-none"
+													aria-label={`เลือก ${program.name}`}
+												/>
+												<div class="min-w-0">
+													<p class="truncate">{program.name}</p>
+													<p class="truncate text-xs text-muted-foreground">
+														{program.curriculumName} · {program.code}
+													</p>
+												</div>
+											</Command.Item>
+										{/each}
+									</Command.Group>{/if}
+							</Command.List>
+						</Command.Root>
+					</Popover.Content>
+				</Popover.Root>
+			{/if}
 		</div>
 		<div class="space-y-2">
 			<Label>หน่วยงานเจ้าของรายการเปิดสอน</Label>
@@ -338,13 +371,13 @@
 				<div>
 					<h3 class="font-medium">ผลตรวจจากหลักสูตร</h3>
 					<p class="text-xs text-muted-foreground">
-						{preview.proposals.length} รายการเปิดสอน · ยังไม่บันทึก
+						{displayedProposals.length} รายการเปิดสอน · ยังไม่บันทึก
 					</p>
 				</div>
 				<Badge variant="secondary">ตรวจทานกลุ่มก่อนยืนยัน</Badge>
 			</div>
 			<div class="max-h-[32rem] divide-y overflow-auto">
-				{#each preview.proposals as proposal (proposal.proposalId)}
+				{#each displayedProposals as proposal (proposal.proposalId)}
 					{@const choice = choiceFor(proposal.proposalId)}
 					<div class="space-y-3 p-4">
 						<div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -379,7 +412,8 @@
 												>เปิดสอนและจัดกลุ่ม</Select.Item
 											>{/if}
 										<Select.Item value="defer_groups">เปิดสอน รอจัดกลุ่ม</Select.Item>
-										<Select.Item value="skip">ข้ามรายการนี้</Select.Item>
+										{#if !preparationTarget}<Select.Item value="skip">ข้ามรายการนี้</Select.Item
+											>{/if}
 									</Select.Content>
 								</Select.Root>
 							{/if}
@@ -512,7 +546,10 @@
 					loadingLabel="กำลังนำมาใช้"
 					disabled={applyBlocked}
 					onclick={applyPreview}
-					><WandSparkles class="size-4" /> ยืนยันรายการและกลุ่มที่ตรวจแล้ว</LoadingButton
+					><WandSparkles class="size-4" />
+					{preparationTarget
+						? 'เปิดใช้งานกิจกรรม'
+						: 'ยืนยันรายการและกลุ่มที่ตรวจแล้ว'}</LoadingButton
 				>
 			</div>
 		</div>

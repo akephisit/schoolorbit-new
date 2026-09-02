@@ -26199,6 +26199,16 @@
           "resourceKind": {
             "$ref": "#/components/schemas/LearningOfferingKind"
           },
+          "schedulingMode": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ActivitySchedulingMode"
+              }
+            ]
+          },
           "standardPeriodsPerWeek": {
             "format": "int32",
             "type": [
@@ -26228,6 +26238,7 @@
           "name",
           "requirementKind",
           "weeklyPeriodTarget",
+          "schedulingMode",
           "offeringState",
           "groupMode",
           "teacherState",

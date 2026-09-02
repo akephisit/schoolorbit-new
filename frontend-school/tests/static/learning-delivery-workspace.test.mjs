@@ -36,6 +36,14 @@ test('homeroom delivery contract is camelCase and preparation requires reviewed 
 	assert.ok(proposal.required.includes('defaultGroups'));
 	const apply = openapi.components.schemas.ApplyCurriculumOfferingsRequest;
 	assert.ok(apply.required.includes('choices'));
+	const homeroomItem = openapi.components.schemas.HomeroomDeliveryItem;
+	assert.ok(homeroomItem.required.includes('schedulingMode'));
+	assert.deepEqual(
+		new Set(
+			homeroomItem.properties.schedulingMode.oneOf.map((option) => option.$ref ?? option.type)
+		),
+		new Set(['#/components/schemas/ActivitySchedulingMode', 'null'])
+	);
 });
 
 test('applying a curriculum proposal always requires at least one reviewed group', async () => {

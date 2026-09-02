@@ -10,6 +10,7 @@
 		summarizeHomeroomDelivery,
 		type HomeroomReadinessFilter
 	} from '$lib/academic/homeroom-delivery';
+	import { isPendingSynchronizedActivity } from '$lib/academic/synchronized-activity-delivery';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -20,12 +21,21 @@
 		BookOpenCheck,
 		ChevronDown,
 		CircleAlert,
+		CirclePlus,
 		Clock3,
 		Search,
 		UsersRound
 	} from 'lucide-svelte';
 
-	let { workspace }: { workspace: Workspace } = $props();
+	let {
+		workspace,
+		canManage = false,
+		onPrepareSynchronizedActivity
+	}: {
+		workspace: Workspace;
+		canManage?: boolean;
+		onPrepareSynchronizedActivity?: (catalogVersionId: string) => void;
+	} = $props();
 	let search = $state('');
 	let readiness = $state<HomeroomReadinessFilter>('all');
 	let summary = $derived(summarizeHomeroomDelivery(workspace.homerooms));
@@ -257,7 +267,9 @@
 												<Table.Head class="min-w-[190px]">กลุ่มเรียน</Table.Head>
 												<Table.Head class="min-w-[130px]">ครูหลัก</Table.Head>
 												<Table.Head class="min-w-[150px]">ตารางสอน</Table.Head>
-												<Table.Head class="w-12"><span class="sr-only">จัดการ</span></Table.Head>
+												<Table.Head class="min-w-[150px]"
+													><span class="sr-only">จัดการ</span></Table.Head
+												>
 											</Table.Row>
 										</Table.Header>
 										<Table.Body>
@@ -342,6 +354,21 @@
 															>
 																<ArrowUpRight class="size-4" />
 															</Button>
+														{:else if isPendingSynchronizedActivity(item)}
+															{#if canManage && onPrepareSynchronizedActivity}
+																<Button
+																	type="button"
+																	size="sm"
+																	variant="outline"
+																	onclick={() =>
+																		onPrepareSynchronizedActivity?.(item.catalogVersionId)}
+																>
+																	<CirclePlus class="size-3.5" /> เปิดใช้งาน
+																</Button>
+															{:else}
+																<span class="text-xs text-muted-foreground">ต้องมีสิทธิ์จัดการ</span
+																>
+															{/if}
 														{/if}
 													</Table.Cell>
 												</Table.Row>

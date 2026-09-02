@@ -1062,6 +1062,8 @@ pub struct HomeroomDeliveryItem {
     pub standard_periods_per_week: Option<i32>,
     #[schema(required = true)]
     pub weekly_period_target: Option<i32>,
+    #[schema(required = true)]
+    pub scheduling_mode: Option<ActivitySchedulingMode>,
     pub offering_id: Option<Uuid>,
     pub offering_state: HomeroomOfferingState,
     pub group_mode: HomeroomGroupMode,

@@ -5477,8 +5477,11 @@ async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverag
         LearningOfferingKind::Course => {
             item.standard_periods_per_week
                 .is_some_and(|value| value > 0)
+                && item.scheduling_mode.is_none()
         }
-        LearningOfferingKind::Activity => item.standard_periods_per_week.is_none(),
+        LearningOfferingKind::Activity => {
+            item.standard_periods_per_week.is_none() && item.scheduling_mode.is_some()
+        }
     }));
     let offering_id = room
         .items
