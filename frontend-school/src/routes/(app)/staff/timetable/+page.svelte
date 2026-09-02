@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { getAcademicContextStore } from '$lib/academic-context/store';
+	import { buildTimetableBlockDisplay } from '$lib/academic/timetable/block-display';
 	import {
 		currentLocalDate,
 		getMyTimetable,
@@ -139,22 +140,6 @@
 		return 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100';
 	}
 
-	function groupLabel(block: TimetableBlock): string {
-		return [
-			...block.groups.map((group) => group.name),
-			...block.homerooms.map((room) => room.name)
-		].join(', ');
-	}
-
-	function roomLabel(block: TimetableBlock): string {
-		return [
-			...block.groups.map((group) => group.roomCode),
-			...block.homerooms.map((room) => room.roomCode)
-		]
-			.filter(Boolean)
-			.join(', ');
-	}
-
 	onMount(() => {
 		let loadedTermId: string | null = null;
 		return academicContext.subscribe((state) => {
@@ -216,6 +201,7 @@
 								{@const cellBlocks = blocksForCell(day.value, period.id)}
 								<td class="h-24 border p-1 align-top">
 									{#each cellBlocks as block (block.id)}
+										{@const display = buildTimetableBlockDisplay(block, 'personal')}
 										<div
 											class={`mb-1 flex min-h-20 flex-col rounded-md border p-2 text-xs ${blockColor(block.blockKind)}`}
 										>
@@ -223,15 +209,19 @@
 											{#if block.offeringName}<p class="mt-1 line-clamp-2 opacity-80">
 													{block.offeringName}
 												</p>{/if}
-											{#if groupLabel(block)}<p
+											{#if display.contextLabel}
+												<p class="mt-auto pt-1 text-[0.68rem] font-medium opacity-70">
+													{display.contextLabel}
+												</p>
+											{:else if display.groupLabel}<p
 													class="mt-auto flex items-center gap-1 truncate opacity-70"
 												>
 													<School class="size-3" />
-													{groupLabel(block)}
+													{display.groupLabel}
 												</p>{/if}
-											{#if roomLabel(block)}<p class="flex items-center gap-1 truncate opacity-70">
+											{#if display.roomLabel}<p class="flex items-center gap-1 truncate opacity-70">
 													<MapPin class="size-3" />
-													{roomLabel(block)}
+													{display.roomLabel}
 												</p>{/if}
 										</div>
 									{/each}

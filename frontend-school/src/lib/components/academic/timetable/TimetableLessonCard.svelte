@@ -1,5 +1,7 @@
 <script lang="ts">
+	import { buildTimetableBlockDisplay } from '$lib/academic/timetable/block-display';
 	import type { TimetableBlock } from '$lib/api/timetable';
+	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { DoorOpen, GripVertical, Trash2, Users } from 'lucide-svelte';
 
@@ -25,21 +27,21 @@
 
 	const title = $derived(block.offeringName ?? block.title ?? 'รายการตารางสอน');
 	const code = $derived(block.offeringCode ?? structuralLabel(block.structuralKind));
-	const teacherNames = $derived(
+	const allTeacherNames = $derived(
 		[
 			...block.groups.flatMap((group) => group.instructors.map((teacher) => teacher.displayName)),
 			...block.teachers.map((teacher) => teacher.displayName)
 		].filter((name, index, names) => names.indexOf(name) === index)
 	);
-	const groupNames = $derived(block.groups.map((group) => group.name));
-	const roomCodes = $derived(
+	const allTargetNames = $derived(
 		[
-			...block.groups.map((group) => group.roomCode),
-			...block.homerooms.map((homeroom) => homeroom.roomCode)
-		].filter((room): room is string => Boolean(room))
+			...block.groups.map((group) => group.name),
+			...block.homerooms.map((homeroom) => homeroom.name)
+		].filter((name, index, names) => names.indexOf(name) === index)
 	);
+	const display = $derived(buildTimetableBlockDisplay(block, 'scheduler'));
 	const accessibleLabel = $derived(
-		`${code} ${title} ${groupNames.join(', ')} ครู ${teacherNames.join(', ') || 'ยังไม่ระบุ'}`
+		`${code} ${title} ${allTargetNames.join(', ')} ครู ${allTeacherNames.join(', ') || 'ยังไม่ระบุ'}`
 	);
 
 	function structuralLabel(kind: TimetableBlock['structuralKind']): string {
@@ -88,23 +90,36 @@
 		>
 			<p class="truncate font-mono text-[0.68rem] font-semibold text-primary">{code}</p>
 			<h4 class="line-clamp-2 text-xs font-semibold leading-4">{title}</h4>
-			{#if groupNames.length > 0}
+			{#if display.contextLabel || display.scopeLabel}
+				<div class="mt-1 flex flex-wrap gap-1">
+					{#if display.contextLabel}
+						<Badge variant="outline" class="h-5 px-1.5 text-[0.62rem] font-medium">
+							{display.contextLabel}
+						</Badge>
+					{/if}
+					{#if display.scopeLabel}
+						<Badge variant="secondary" class="h-5 px-1.5 text-[0.62rem] font-medium">
+							{display.scopeLabel}
+						</Badge>
+					{/if}
+				</div>
+			{:else if display.groupLabel}
 				<p class="mt-0.5 truncate text-[0.68rem] text-muted-foreground">
-					{groupNames.join(', ')}
+					{display.groupLabel}
 				</p>
 			{/if}
 		</button>
 	</div>
 	<div class="mt-2 space-y-1 text-[0.68rem] text-muted-foreground">
-		<p class="flex items-center gap-1.5">
-			<Users class="size-3" />
-			{#if teacherNames.length > 1}
-				<span class="font-medium text-primary">ครูร่วมสอน</span>
-			{/if}
-			{teacherNames.join(', ') || 'ยังไม่ระบุครู'}
+		<p class="flex min-w-0 items-center gap-1.5">
+			<Users class="size-3 shrink-0" />
+			<span class="line-clamp-2">{display.teacherLabel ?? 'ยังไม่ระบุครู'}</span>
 		</p>
-		{#if roomCodes.length > 0}
-			<p class="flex items-center gap-1.5"><DoorOpen class="size-3" /> {roomCodes.join(', ')}</p>
+		{#if display.roomLabel}
+			<p class="flex items-center gap-1.5">
+				<DoorOpen class="size-3 shrink-0" />
+				<span class="truncate">{display.roomLabel}</span>
+			</p>
 		{/if}
 	</div>
 	{#if canEdit}
