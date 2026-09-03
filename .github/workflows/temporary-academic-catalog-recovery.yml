@@ -1,0 +1,70 @@
+name: Temporary Academic Catalog Recovery
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-sandbox:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect unresolved sandbox subject affiliations
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -eu
+            admin_database_url="$(sed -n 's/^DATABASE_URL=//p' /opt/stack/.env | tail -n 1)"
+            test -n "$admin_database_url" || { echo 'Admin database URL is unavailable'; exit 1; }
+
+            tenant_database_url="$(
+              podman run --rm docker.io/library/postgres:17-alpine \
+                psql "$admin_database_url" -X -A -t -v ON_ERROR_STOP=1 \
+                -c "SELECT db_connection_string FROM schools WHERE subdomain = 'sandbox' AND status = 'active' LIMIT 1;"
+            )"
+            unset admin_database_url
+            test -n "$tenant_database_url" || { echo 'Sandbox database URL is unavailable'; exit 1; }
+
+            podman run --rm docker.io/library/postgres:17-alpine \
+              psql "$tenant_database_url" -X -A -F '|' -P footer=off -v ON_ERROR_STOP=1 \
+              -c "WITH version_affiliations AS (
+                    SELECT version.subject_id,
+                           min(version.group_id::text)::uuid AS subject_group_id,
+                           count(*) AS version_count,
+                           count(version.group_id) AS grouped_version_count
+                      FROM subject_versions version
+                     GROUP BY version.subject_id
+                  ), resolved AS (
+                    SELECT subject.id,
+                           subject.code,
+                           subject.owning_organization_unit_id,
+                           owner.code AS owner_code,
+                           COALESCE(version_affiliation.subject_group_id, owner.subject_group_id) AS resolved_group_id,
+                           version_affiliation.version_count,
+                           version_affiliation.grouped_version_count
+                      FROM subjects subject
+                      LEFT JOIN version_affiliations version_affiliation
+                        ON version_affiliation.subject_id = subject.id
+                      LEFT JOIN organization_units owner
+                        ON owner.id = subject.owning_organization_unit_id
+                  )
+                  SELECT resolved.id AS subject_id,
+                         resolved.code AS subject_code,
+                         COALESCE(resolved.owner_code, '-') AS owner_code,
+                         COALESCE(subject_group.code, '-') AS resolved_group_code,
+                         COALESCE(subject_group.is_active::text, '-') AS group_active,
+                         COALESCE(resolved.version_count, 0) AS version_count,
+                         COALESCE(resolved.grouped_version_count, 0) AS grouped_version_count
+                    FROM resolved
+                    LEFT JOIN subject_groups subject_group
+                      ON subject_group.id = resolved.resolved_group_id
+                   WHERE resolved.resolved_group_id IS NULL
+                      OR subject_group.id IS NULL
+                      OR subject_group.is_active IS NOT TRUE
+                   ORDER BY resolved.code, resolved.id;"
+            unset tenant_database_url
