@@ -19,7 +19,39 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             set -eu
-            admin_database_url="$(sed -n 's/^DATABASE_URL=//p' /opt/stack/.env | tail -n 1)"
+
+            runtime_database_url() {
+              local line value decoded char
+              local -i index=0
+              line="$(grep -m 1 '^DATABASE_URL=' /opt/stack/.env)" || return
+              value=${line#*=}
+              if [[ ${#value} -lt 2 || ${value:0:1} != "'" || ${value: -1} != "'" ]]; then
+                echo 'Runtime database URL is not installer encoded' >&2
+                return 65
+              fi
+              value=${value:1:${#value}-2}
+              decoded=
+              while ((index < ${#value})); do
+                char=${value:index:1}
+                if [[ $char == \\ ]]; then
+                  ((index += 1))
+                  if ((index >= ${#value})); then
+                    echo 'Runtime database URL has invalid escaping' >&2
+                    return 65
+                  fi
+                  char=${value:index:1}
+                  if [[ $char != \\ && $char != "'" ]]; then
+                    echo 'Runtime database URL has invalid escaping' >&2
+                    return 65
+                  fi
+                fi
+                decoded+=$char
+                ((index += 1))
+              done
+              printf '%s' "$decoded"
+            }
+
+            admin_database_url="$(runtime_database_url)"
             test -n "$admin_database_url" || { echo 'Admin database URL is unavailable'; exit 1; }
 
             tenant_database_url="$(
