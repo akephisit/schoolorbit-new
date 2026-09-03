@@ -36,6 +36,7 @@ use uuid::Uuid;
 
 const CURRENT_YEAR_ID: Uuid = Uuid::from_u128(0x1000_0000_0000_0000_0000_0000_0000_0025);
 const FUTURE_YEAR_ID: Uuid = Uuid::from_u128(0x1000_0000_0000_0000_0000_0000_0000_0026);
+const DEFAULT_SUBJECT_GROUP_ID: Uuid = Uuid::from_u128(0x783a_4a9d_9ff1_4eac_b370_06b5_8daa_1eb7);
 
 async fn prepare_core_fixture(name: &str) -> PgPool {
     let pool = create_named_test_pool(name).await;
@@ -44,7 +45,7 @@ async fn prepare_core_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 57).await.unwrap();
+    apply_migrations_through(&pool, 59).await.unwrap();
     pool
 }
 
@@ -1044,7 +1045,6 @@ fn flat_version_update_contract_rejects_unknown_fields() {
         "credit": "1.50",
         "hoursPerSemester": 60,
         "subjectType": "BASIC",
-        "groupId": null,
         "description": null,
         "effectiveFrom": "2027-05-01",
         "effectiveUntil": null,
@@ -2134,11 +2134,23 @@ async fn catalog_versions_round_trip_exact_values_and_published_rows_are_immutab
         &pool,
         CreateCatalogSubjectRequest {
             code: "TEST-EXACT".to_string(),
-            owning_organization_unit_id: None,
+            subject_group_id,
         },
     )
     .await
     .unwrap();
+    let expected_subject_owner_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM organization_units WHERE subject_group_id = $1 AND is_active = true",
+    )
+    .bind(subject_group_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(subject.subject_group_id, subject_group_id);
+    assert_eq!(
+        subject.owning_organization_unit_id,
+        expected_subject_owner_id
+    );
     let version = catalog::create_subject_version(
         &pool,
         subject.id,
@@ -2148,7 +2160,6 @@ async fn catalog_versions_round_trip_exact_values_and_published_rows_are_immutab
             credit: "1.50".to_string(),
             hours_per_semester: Some(60),
             subject_type: "BASIC".to_string(),
-            group_id: Some(subject_group_id),
             description: None,
             effective_from: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
             effective_until: None,
@@ -2182,7 +2193,6 @@ async fn catalog_versions_round_trip_exact_values_and_published_rows_are_immutab
             credit: published.credit,
             hours_per_semester: published.hours_per_semester,
             subject_type: published.subject_type,
-            group_id: published.group_id,
             description: published.description,
             effective_from: published.effective_from,
             effective_until: published.effective_until,
@@ -2201,7 +2211,7 @@ async fn catalog_versions_round_trip_exact_values_and_published_rows_are_immutab
         subject.id,
         UpdateCatalogSubjectRequest {
             code: subject.code,
-            owning_organization_unit_id: subject.owning_organization_unit_id,
+            subject_group_id: subject.subject_group_id,
             archived: true,
             row_version: subject.row_version,
         },
@@ -2224,11 +2234,20 @@ async fn activity_catalog_versions_round_trip_exact_hours_and_archive_stably() {
         CreateCatalogActivityRequest {
             code: "TEST-GUIDANCE".to_string(),
             activity_type: "guidance".to_string(),
-            owning_organization_unit_id: None,
         },
     )
     .await
     .unwrap();
+    let expected_activity_owner_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM organization_units WHERE code = 'ACAD-ACT' AND is_active = true",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        activity.owning_organization_unit_id,
+        expected_activity_owner_id
+    );
     let version = catalog::create_activity_version(
         &pool,
         activity.id,
@@ -2285,7 +2304,6 @@ async fn activity_catalog_versions_round_trip_exact_hours_and_archive_stably() {
         UpdateCatalogActivityRequest {
             code: activity.code,
             activity_type: activity.activity_type,
-            owning_organization_unit_id: activity.owning_organization_unit_id,
             archived: true,
             row_version: activity.row_version,
         },
@@ -2308,7 +2326,6 @@ async fn activity_catalog_requires_total_hours_before_publishing_a_new_version()
         CreateCatalogActivityRequest {
             code: "TOTAL-HOURS-REQUIRED".to_string(),
             activity_type: "guidance".to_string(),
-            owning_organization_unit_id: None,
         },
     )
     .await
@@ -2359,7 +2376,7 @@ async fn catalog_publication_requires_positive_official_workload() {
         &pool,
         CreateCatalogSubjectRequest {
             code: "WORKLOAD-NO-PERIOD".to_string(),
-            owning_organization_unit_id: None,
+            subject_group_id: DEFAULT_SUBJECT_GROUP_ID,
         },
     )
     .await
@@ -2373,7 +2390,6 @@ async fn catalog_publication_requires_positive_official_workload() {
             credit: "1.00".to_string(),
             hours_per_semester: Some(40),
             subject_type: "BASIC".to_string(),
-            group_id: None,
             description: None,
             effective_from: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
             effective_until: None,
@@ -2401,7 +2417,7 @@ async fn catalog_publication_requires_positive_official_workload() {
         &pool,
         CreateCatalogSubjectRequest {
             code: "WORKLOAD-NO-HOURS".to_string(),
-            owning_organization_unit_id: None,
+            subject_group_id: DEFAULT_SUBJECT_GROUP_ID,
         },
     )
     .await
@@ -2415,7 +2431,6 @@ async fn catalog_publication_requires_positive_official_workload() {
             credit: "1.00".to_string(),
             hours_per_semester: None,
             subject_type: "BASIC".to_string(),
-            group_id: None,
             description: None,
             effective_from: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
             effective_until: None,
@@ -2444,7 +2459,6 @@ async fn catalog_publication_requires_positive_official_workload() {
         CreateCatalogActivityRequest {
             code: "WORKLOAD-ZERO-ACTIVITY".to_string(),
             activity_type: "guidance".to_string(),
-            owning_organization_unit_id: None,
         },
     )
     .await
@@ -2496,7 +2510,6 @@ async fn create_overview_subject_version(
             credit: "1.00".to_string(),
             hours_per_semester: Some(40),
             subject_type: "BASIC".to_string(),
-            group_id: None,
             description: None,
             effective_from,
             effective_until,
@@ -2535,7 +2548,7 @@ async fn catalog_overview_selects_effective_versions_without_promoting_drafts() 
         &pool,
         CreateCatalogSubjectRequest {
             code: "OVERVIEW-CURRENT".to_string(),
-            owning_organization_unit_id: None,
+            subject_group_id: DEFAULT_SUBJECT_GROUP_ID,
         },
     )
     .await
@@ -2565,7 +2578,7 @@ async fn catalog_overview_selects_effective_versions_without_promoting_drafts() 
         &pool,
         CreateCatalogSubjectRequest {
             code: "OVERVIEW-UPCOMING".to_string(),
-            owning_organization_unit_id: None,
+            subject_group_id: DEFAULT_SUBJECT_GROUP_ID,
         },
     )
     .await
@@ -2585,7 +2598,7 @@ async fn catalog_overview_selects_effective_versions_without_promoting_drafts() 
         &pool,
         CreateCatalogSubjectRequest {
             code: "OVERVIEW-EXPIRED".to_string(),
-            owning_organization_unit_id: None,
+            subject_group_id: DEFAULT_SUBJECT_GROUP_ID,
         },
     )
     .await
@@ -2605,7 +2618,7 @@ async fn catalog_overview_selects_effective_versions_without_promoting_drafts() 
         &pool,
         CreateCatalogSubjectRequest {
             code: "OVERVIEW-UNPUBLISHED".to_string(),
-            owning_organization_unit_id: None,
+            subject_group_id: DEFAULT_SUBJECT_GROUP_ID,
         },
     )
     .await
@@ -2665,9 +2678,22 @@ async fn catalog_overview_selects_effective_versions_without_promoting_drafts() 
         .iter()
         .any(|level| level.id == grade_level_id && level.short_name.is_some()));
     assert!(overview
-        .owner_options
+        .subject_group_options
         .iter()
-        .any(|owner| owner.organization_unit_id.is_none()));
+        .any(|option| option.subject_group_id == DEFAULT_SUBJECT_GROUP_ID && option.can_manage));
+
+    let read_only_overview = catalog::list_subject_overview(
+        &pool,
+        &school_filter,
+        &AcademicResourceListFilter::default(),
+        today,
+    )
+    .await
+    .unwrap();
+    assert!(read_only_overview
+        .subject_group_options
+        .iter()
+        .any(|option| option.subject_group_id == DEFAULT_SUBJECT_GROUP_ID && !option.can_manage));
 
     sqlx::query("UPDATE grade_levels SET is_active = false WHERE id = $1")
         .bind(grade_level_id)
@@ -2700,21 +2726,16 @@ async fn catalog_overview_keeps_activity_owner_scope_and_grade_options() {
     .fetch_one(&pool)
     .await
     .unwrap();
-    let owner_id: Uuid =
-        sqlx::query_scalar("SELECT id FROM organization_units ORDER BY id LIMIT 1")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
     let activity = catalog::create_activity(
         &pool,
         CreateCatalogActivityRequest {
             code: "OVERVIEW-ACTIVITY".to_string(),
             activity_type: "guidance".to_string(),
-            owning_organization_unit_id: Some(owner_id),
         },
     )
     .await
     .unwrap();
+    let owner_id = activity.owning_organization_unit_id;
     let version = catalog::create_activity_version(
         &pool,
         activity.id,
@@ -2773,7 +2794,7 @@ async fn catalog_overview_keeps_activity_owner_scope_and_grade_options() {
         .find(|item| item.activity.id == activity.id)
         .unwrap();
     assert!(!school_read_item.can_manage);
-    assert!(school_scope.owner_options.is_empty());
+    assert!(!school_scope.can_create);
 
     let owner_filter = AcademicResourceListFilter {
         organization_unit_ids: vec![owner_id],
@@ -2794,14 +2815,7 @@ async fn catalog_overview_keeps_activity_owner_scope_and_grade_options() {
         .grade_level_options
         .iter()
         .any(|level| level.id == grade_level_id));
-    assert!(owner_scope
-        .owner_options
-        .iter()
-        .any(|owner| { owner.organization_unit_id == Some(owner_id) && owner.code.is_some() }));
-    assert!(!owner_scope
-        .owner_options
-        .iter()
-        .any(|owner| owner.organization_unit_id.is_none()));
+    assert!(owner_scope.can_create);
 }
 
 #[tokio::test]
@@ -2968,12 +2982,25 @@ async fn curriculum_overview_resolves_display_versions_and_labels() {
 #[tokio::test]
 async fn curriculum_management_options_are_published_scoped_and_ordered() {
     let pool = prepare_core_fixture("academic_core_curriculum_management_options").await;
-    let owner_ids: Vec<Uuid> =
-        sqlx::query_scalar("SELECT id FROM organization_units ORDER BY id LIMIT 2")
-            .fetch_all(&pool)
-            .await
-            .unwrap();
-    assert_eq!(owner_ids.len(), 2);
+    let affiliations: Vec<(Uuid, Uuid)> = sqlx::query_as(
+        r#"SELECT subject_group.id, owner.id
+           FROM subject_groups subject_group
+           JOIN organization_units owner ON owner.subject_group_id = subject_group.id
+           WHERE subject_group.code <> 'AC' AND owner.is_active = true
+           ORDER BY subject_group.display_order, subject_group.id
+           LIMIT 2"#,
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(affiliations.len(), 2);
+    let owner_ids = [affiliations[0].1, affiliations[1].1];
+    let activity_owner_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM organization_units WHERE code = 'ACAD-ACT' AND is_active = true",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
     let grade_level_id: Uuid = sqlx::query_scalar(
         "SELECT id FROM grade_levels WHERE is_active = true ORDER BY level_type, year, id LIMIT 1",
     )
@@ -3010,7 +3037,7 @@ async fn curriculum_management_options_are_published_scoped_and_ordered() {
         &pool,
         CreateCatalogSubjectRequest {
             code: "OPTION-SUBJECT".to_string(),
-            owning_organization_unit_id: Some(owner_ids[0]),
+            subject_group_id: affiliations[0].0,
         },
     )
     .await
@@ -3024,7 +3051,6 @@ async fn curriculum_management_options_are_published_scoped_and_ordered() {
             credit: "1.00".to_string(),
             hours_per_semester: Some(40),
             subject_type: "BASIC".to_string(),
-            group_id: None,
             description: None,
             effective_from: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
             effective_until: None,
@@ -3049,7 +3075,6 @@ async fn curriculum_management_options_are_published_scoped_and_ordered() {
         CreateCatalogActivityRequest {
             code: "OPTION-ACTIVITY".to_string(),
             activity_type: "guidance".to_string(),
-            owning_organization_unit_id: Some(owner_ids[0]),
         },
     )
     .await
@@ -3084,7 +3109,7 @@ async fn curriculum_management_options_are_published_scoped_and_ordered() {
         &pool,
         CreateCatalogSubjectRequest {
             code: "OPTION-OUTSIDE".to_string(),
-            owning_organization_unit_id: Some(owner_ids[1]),
+            subject_group_id: affiliations[1].0,
         },
     )
     .await
@@ -3098,7 +3123,6 @@ async fn curriculum_management_options_are_published_scoped_and_ordered() {
             credit: "1.00".to_string(),
             hours_per_semester: Some(40),
             subject_type: "BASIC".to_string(),
-            group_id: None,
             description: None,
             effective_from: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
             effective_until: None,
@@ -3120,7 +3144,7 @@ async fn curriculum_management_options_are_published_scoped_and_ordered() {
     .unwrap();
 
     let owner_filter = AcademicResourceListFilter {
-        organization_unit_ids: vec![owner_ids[0]],
+        organization_unit_ids: vec![owner_ids[0], activity_owner_id],
         ..AcademicResourceListFilter::default()
     };
     let create_options = workspaces::curriculum_create_options(&pool, &owner_filter)
@@ -3206,7 +3230,6 @@ async fn curriculum_program_workspace_resolves_requirement_labels() {
         CreateCatalogActivityRequest {
             code: "WORKSPACE-ACTIVITY".to_string(),
             activity_type: "guidance".to_string(),
-            owning_organization_unit_id: None,
         },
     )
     .await

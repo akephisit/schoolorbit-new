@@ -2972,10 +2972,7 @@
               },
               "owningOrganizationUnitId": {
                 "format": "uuid",
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "string"
               },
               "rowVersion": {
                 "format": "int64",
@@ -2990,6 +2987,7 @@
               "id",
               "code",
               "activityType",
+              "owningOrganizationUnitId",
               "rowVersion",
               "createdAt",
               "updatedAt"
@@ -3013,6 +3011,9 @@
         "properties": {
           "data": {
             "properties": {
+              "canCreate": {
+                "type": "boolean"
+              },
               "gradeLevelOptions": {
                 "items": {
                   "$ref": "#/components/schemas/GradeLevelLookupItem"
@@ -3024,18 +3025,12 @@
                   "$ref": "#/components/schemas/CatalogActivityOverviewItem"
                 },
                 "type": "array"
-              },
-              "ownerOptions": {
-                "items": {
-                  "$ref": "#/components/schemas/CatalogOwnerOption"
-                },
-                "type": "array"
               }
             },
             "required": [
               "items",
               "gradeLevelOptions",
-              "ownerOptions"
+              "canCreate"
             ],
             "type": "object"
           },
@@ -3076,14 +3071,15 @@
               },
               "owningOrganizationUnitId": {
                 "format": "uuid",
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "string"
               },
               "rowVersion": {
                 "format": "int64",
                 "type": "integer"
+              },
+              "subjectGroupId": {
+                "format": "uuid",
+                "type": "string"
               },
               "updatedAt": {
                 "format": "date-time",
@@ -3093,6 +3089,8 @@
             "required": [
               "id",
               "code",
+              "subjectGroupId",
+              "owningOrganizationUnitId",
               "rowVersion",
               "createdAt",
               "updatedAt"
@@ -3128,9 +3126,9 @@
                 },
                 "type": "array"
               },
-              "ownerOptions": {
+              "subjectGroupOptions": {
                 "items": {
-                  "$ref": "#/components/schemas/CatalogOwnerOption"
+                  "$ref": "#/components/schemas/CatalogSubjectGroupOption"
                 },
                 "type": "array"
               }
@@ -3138,7 +3136,7 @@
             "required": [
               "items",
               "gradeLevelOptions",
-              "ownerOptions"
+              "subjectGroupOptions"
             ],
             "type": "object"
           },
@@ -4876,12 +4874,6 @@
                 },
                 "type": "array"
               },
-              "organizationUnits": {
-                "items": {
-                  "$ref": "#/components/schemas/OrganizationUnitLookupItem"
-                },
-                "type": "array"
-              },
               "rooms": {
                 "items": {
                   "$ref": "#/components/schemas/Room"
@@ -4907,7 +4899,6 @@
               "catalogVersions",
               "gradeLevels",
               "studyPrograms",
-              "organizationUnits",
               "homerooms",
               "learningGroups",
               "teachers",
@@ -7091,10 +7082,7 @@
               },
               "owningOrganizationUnitId": {
                 "format": "uuid",
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "string"
               },
               "publishedAt": {
                 "format": "date-time",
@@ -7161,6 +7149,7 @@
               "startsOn",
               "endsOn",
               "stopReason",
+              "owningOrganizationUnitId",
               "rowVersion",
               "migrated",
               "createdAt",
@@ -9277,13 +9266,6 @@
                   "type": "string"
                 },
                 "type": "array"
-              },
-              "groupId": {
-                "format": "uuid",
-                "type": [
-                  "string",
-                  "null"
-                ]
               },
               "hoursPerSemester": {
                 "format": "int32",
@@ -12130,10 +12112,7 @@
                 },
                 "owningOrganizationUnitId": {
                   "format": "uuid",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": "string"
                 },
                 "rowVersion": {
                   "format": "int64",
@@ -12148,6 +12127,7 @@
                 "id",
                 "code",
                 "activityType",
+                "owningOrganizationUnitId",
                 "rowVersion",
                 "createdAt",
                 "updatedAt"
@@ -12194,14 +12174,15 @@
                 },
                 "owningOrganizationUnitId": {
                   "format": "uuid",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": "string"
                 },
                 "rowVersion": {
                   "format": "int64",
                   "type": "integer"
+                },
+                "subjectGroupId": {
+                  "format": "uuid",
+                  "type": "string"
                 },
                 "updatedAt": {
                   "format": "date-time",
@@ -12211,6 +12192,8 @@
               "required": [
                 "id",
                 "code",
+                "subjectGroupId",
+                "owningOrganizationUnitId",
                 "rowVersion",
                 "createdAt",
                 "updatedAt"
@@ -14194,10 +14177,7 @@
                 },
                 "owningOrganizationUnitId": {
                   "format": "uuid",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": "string"
                 },
                 "publishedAt": {
                   "format": "date-time",
@@ -14264,6 +14244,7 @@
                 "startsOn",
                 "endsOn",
                 "stopReason",
+                "owningOrganizationUnitId",
                 "rowVersion",
                 "migrated",
                 "createdAt",
@@ -15879,13 +15860,6 @@
                   },
                   "type": "array"
                 },
-                "groupId": {
-                  "format": "uuid",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
                 "hoursPerSemester": {
                   "format": "int32",
                   "type": [
@@ -16479,10 +16453,6 @@
             "format": "uuid",
             "type": "string"
           },
-          "owningOrganizationUnitId": {
-            "format": "uuid",
-            "type": "string"
-          },
           "sourceHash": {
             "type": "string"
           },
@@ -16497,7 +16467,6 @@
         "required": [
           "academicTermId",
           "studyProgramIds",
-          "owningOrganizationUnitId",
           "sourceHash",
           "idempotencyKey",
           "choices"
@@ -17980,10 +17949,7 @@
           },
           "owningOrganizationUnitId": {
             "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "rowVersion": {
             "format": "int64",
@@ -17998,6 +17964,7 @@
           "id",
           "code",
           "activityType",
+          "owningOrganizationUnitId",
           "rowVersion",
           "createdAt",
           "updatedAt"
@@ -18006,6 +17973,9 @@
       },
       "CatalogActivityOverview": {
         "properties": {
+          "canCreate": {
+            "type": "boolean"
+          },
           "gradeLevelOptions": {
             "items": {
               "$ref": "#/components/schemas/GradeLevelLookupItem"
@@ -18017,18 +17987,12 @@
               "$ref": "#/components/schemas/CatalogActivityOverviewItem"
             },
             "type": "array"
-          },
-          "ownerOptions": {
-            "items": {
-              "$ref": "#/components/schemas/CatalogOwnerOption"
-            },
-            "type": "array"
           }
         },
         "required": [
           "items",
           "gradeLevelOptions",
-          "ownerOptions"
+          "canCreate"
         ],
         "type": "object"
       },
@@ -18157,14 +18121,15 @@
           },
           "owningOrganizationUnitId": {
             "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "rowVersion": {
             "format": "int64",
             "type": "integer"
+          },
+          "subjectGroupId": {
+            "format": "uuid",
+            "type": "string"
           },
           "updatedAt": {
             "format": "date-time",
@@ -18174,9 +18139,40 @@
         "required": [
           "id",
           "code",
+          "subjectGroupId",
+          "owningOrganizationUnitId",
           "rowVersion",
           "createdAt",
           "updatedAt"
+        ],
+        "type": "object"
+      },
+      "CatalogSubjectGroupOption": {
+        "properties": {
+          "canManage": {
+            "type": "boolean"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "organizationUnitId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "subjectGroupId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "subjectGroupId",
+          "organizationUnitId",
+          "code",
+          "name",
+          "canManage"
         ],
         "type": "object"
       },
@@ -18194,9 +18190,9 @@
             },
             "type": "array"
           },
-          "ownerOptions": {
+          "subjectGroupOptions": {
             "items": {
-              "$ref": "#/components/schemas/CatalogOwnerOption"
+              "$ref": "#/components/schemas/CatalogSubjectGroupOption"
             },
             "type": "array"
           }
@@ -18204,7 +18200,7 @@
         "required": [
           "items",
           "gradeLevelOptions",
-          "ownerOptions"
+          "subjectGroupOptions"
         ],
         "type": "object"
       },
@@ -20998,10 +20994,6 @@
               "null"
             ]
           },
-          "owningOrganizationUnitId": {
-            "format": "uuid",
-            "type": "string"
-          },
           "passCriteria": {
             "$ref": "#/components/schemas/ActivityPassCriteria"
           },
@@ -21021,7 +21013,6 @@
         "required": [
           "academicTermId",
           "activityVersionId",
-          "owningOrganizationUnitId",
           "targets",
           "registrationType",
           "schedulingMode",
@@ -21122,13 +21113,6 @@
           },
           "code": {
             "type": "string"
-          },
-          "owningOrganizationUnitId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
           }
         },
         "required": [
@@ -21143,16 +21127,14 @@
           "code": {
             "type": "string"
           },
-          "owningOrganizationUnitId": {
+          "subjectGroupId": {
             "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           }
         },
         "required": [
-          "code"
+          "code",
+          "subjectGroupId"
         ],
         "type": "object"
       },
@@ -21221,10 +21203,6 @@
           "gradingPolicy": {
             "$ref": "#/components/schemas/CourseGradingPolicy"
           },
-          "owningOrganizationUnitId": {
-            "format": "uuid",
-            "type": "string"
-          },
           "subjectVersionId": {
             "format": "uuid",
             "type": "string"
@@ -21239,7 +21217,6 @@
         "required": [
           "academicTermId",
           "subjectVersionId",
-          "owningOrganizationUnitId",
           "targets",
           "gradingPolicy"
         ],
@@ -22393,13 +22370,6 @@
               "type": "string"
             },
             "type": "array"
-          },
-          "groupId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
           },
           "hoursPerSemester": {
             "format": "int32",
@@ -24242,12 +24212,6 @@
             },
             "type": "array"
           },
-          "organizationUnits": {
-            "items": {
-              "$ref": "#/components/schemas/OrganizationUnitLookupItem"
-            },
-            "type": "array"
-          },
           "rooms": {
             "items": {
               "$ref": "#/components/schemas/Room"
@@ -24273,7 +24237,6 @@
           "catalogVersions",
           "gradeLevels",
           "studyPrograms",
-          "organizationUnits",
           "homerooms",
           "learningGroups",
           "teachers",
@@ -27861,10 +27824,7 @@
           },
           "owningOrganizationUnitId": {
             "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "publishedAt": {
             "format": "date-time",
@@ -27931,6 +27891,7 @@
           "startsOn",
           "endsOn",
           "stopReason",
+          "owningOrganizationUnitId",
           "rowVersion",
           "migrated",
           "createdAt",
@@ -33158,13 +33119,6 @@
             },
             "type": "array"
           },
-          "groupId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "hoursPerSemester": {
             "format": "int32",
             "type": [
@@ -36801,13 +36755,6 @@
           "code": {
             "type": "string"
           },
-          "owningOrganizationUnitId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "rowVersion": {
             "format": "int64",
             "type": "integer"
@@ -36830,20 +36777,18 @@
           "code": {
             "type": "string"
           },
-          "owningOrganizationUnitId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "rowVersion": {
             "format": "int64",
             "type": "integer"
+          },
+          "subjectGroupId": {
+            "format": "uuid",
+            "type": "string"
           }
         },
         "required": [
           "code",
+          "subjectGroupId",
           "archived",
           "rowVersion"
         ],
@@ -37242,10 +37187,6 @@
       "UpdateLearningOfferingRequest": {
         "additionalProperties": false,
         "properties": {
-          "owningOrganizationUnitId": {
-            "format": "uuid",
-            "type": "string"
-          },
           "rowVersion": {
             "format": "int64",
             "type": "integer"
@@ -37259,7 +37200,6 @@
         },
         "required": [
           "rowVersion",
-          "owningOrganizationUnitId",
           "targets"
         ],
         "type": "object"
@@ -38009,13 +37949,6 @@
               "type": "string"
             },
             "type": "array"
-          },
-          "groupId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
           },
           "hoursPerSemester": {
             "format": "int32",

@@ -18,8 +18,7 @@ use crate::modules::academic::delivery::models::{
 use crate::modules::academic::services::{effective_teacher_service, timetable_version_service};
 
 use super::{
-    append_audit, offerings, require_active_owner, require_writable_term, stable_hash,
-    validate_row_version, TermContext,
+    append_audit, offerings, require_writable_term, stable_hash, validate_row_version, TermContext,
 };
 
 #[derive(Debug, FromRow)]
@@ -2081,7 +2080,6 @@ pub async fn upsert_change_item(
                     "รายการเปิดสอนต้องอยู่ในภาคเรียนเดียวกับชุดการเปลี่ยนแปลง".to_string(),
                 ));
             }
-            require_active_owner(&mut transaction, offering.owning_organization_unit_id).await?;
             offerings::validate_targets(&mut transaction, &term, &offering.targets).await?;
             let subject_version_id = offering.subject_version_id;
             let offering_id = Uuid::new_v4();
@@ -2125,7 +2123,6 @@ pub async fn upsert_change_item(
                     "รายการเปิดสอนต้องอยู่ในภาคเรียนเดียวกับชุดการเปลี่ยนแปลง".to_string(),
                 ));
             }
-            require_active_owner(&mut transaction, offering.owning_organization_unit_id).await?;
             offerings::validate_targets(&mut transaction, &term, &offering.targets).await?;
             let offering_id = Uuid::new_v4();
             offerings::insert_activity(&mut transaction, offering_id, &term, offering).await?;

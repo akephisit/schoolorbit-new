@@ -24,14 +24,14 @@ const MAX_PAGE_SIZE: i64 = 100;
 const MAX_EXPORT_QUESTION_IDS: usize = 200;
 const QUESTION_SUBJECT_VERSION_JOIN: &str = r#"
 LEFT JOIN LATERAL (
-    SELECT version.name_th, version.name_en, version.group_id
+    SELECT version.name_th, version.name_en
     FROM subject_versions version
     WHERE version.subject_id = s.id
       AND version.status = 'published'
     ORDER BY version.effective_from DESC, version.version_no DESC, version.id DESC
     LIMIT 1
 ) subject_version ON true
-LEFT JOIN subject_groups sg ON sg.id = subject_version.group_id
+LEFT JOIN subject_groups sg ON sg.id = s.subject_group_id
 "#;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -104,7 +104,7 @@ SELECT
     s.code AS subject_code,
     subject_version.name_th AS subject_name_th,
     subject_version.name_en AS subject_name_en,
-    subject_version.group_id AS subject_group_id,
+    s.subject_group_id,
     sg.name_th AS subject_group_name,
     COALESCE(choice_stats.choice_count, 0)::BIGINT AS choice_count,
     COALESCE(choice_stats.correct_choice_count, 0)::BIGINT AS correct_choice_count,
@@ -168,7 +168,7 @@ SELECT
     s.code,
     subject_version.name_th,
     subject_version.name_en,
-    subject_version.group_id AS subject_group_id,
+    s.subject_group_id,
     sg.name_th AS subject_group_name,
 "#,
     );
@@ -177,14 +177,14 @@ SELECT
         r#" AS can_create
 FROM subjects s
 JOIN LATERAL (
-    SELECT version.name_th, version.name_en, version.group_id
+    SELECT version.name_th, version.name_en
     FROM subject_versions version
     WHERE version.subject_id = s.id
       AND version.status = 'published'
     ORDER BY version.effective_from DESC, version.version_no DESC, version.id DESC
     LIMIT 1
 ) subject_version ON true
-LEFT JOIN subject_groups sg ON sg.id = subject_version.group_id
+LEFT JOIN subject_groups sg ON sg.id = s.subject_group_id
 WHERE (
 "#,
     );
@@ -244,7 +244,7 @@ SELECT
     s.code AS subject_code,
     subject_version.name_th AS subject_name_th,
     subject_version.name_en AS subject_name_en,
-    subject_version.group_id AS subject_group_id,
+    s.subject_group_id,
     sg.name_th AS subject_group_name,
     COALESCE(choice_stats.choice_count, 0)::BIGINT AS choice_count,
     COALESCE(choice_stats.correct_choice_count, 0)::BIGINT AS correct_choice_count,
@@ -896,7 +896,7 @@ SELECT
     s.code AS subject_code,
     subject_version.name_th AS subject_name_th,
     subject_version.name_en AS subject_name_en,
-    subject_version.group_id AS subject_group_id,
+    s.subject_group_id,
     sg.name_th AS subject_group_name,
     COALESCE(choice_stats.choice_count, 0)::BIGINT AS choice_count,
     COALESCE(choice_stats.correct_choice_count, 0)::BIGINT AS correct_choice_count,

@@ -27,6 +27,9 @@ async fn migrated_pool(name: &str) -> PgPool {
     apply_phase_b_runtime_migrations(&pool)
         .await
         .expect("canonical question-bank fixture migrations should run");
+    apply_migrations_through(&pool, 59)
+        .await
+        .expect("current question-bank fixture migrations should run");
     pool
 }
 

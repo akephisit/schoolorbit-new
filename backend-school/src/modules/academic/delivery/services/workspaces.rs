@@ -11,7 +11,6 @@ use crate::modules::lookup::models::{
     AcademicLookupQuery, GradeLevelLookupItem, HomeroomLookupItem, LookupQuery,
 };
 use crate::modules::lookup::services as lookup_services;
-use crate::policies::learning_offering_access_policy::learning_offering_owner_allowed;
 use crate::policies::resource_access_policy::AcademicResourceListFilter;
 
 use super::super::models::{
@@ -1018,7 +1017,6 @@ pub async fn delivery_overview(
 pub async fn delivery_management_options(
     pool: &PgPool,
     academic_term_id: Uuid,
-    actor_user_id: Uuid,
     filter: &AcademicResourceListFilter,
 ) -> Result<DeliveryManagementOptions, AppError> {
     let (academic_year_id, term_start): (Uuid, chrono::NaiveDate) =
@@ -1120,12 +1118,6 @@ pub async fn delivery_management_options(
         limit: Some(MAX_LOOKUP_OPTIONS as i32),
         member_only: Some(false),
     };
-    let organization_units =
-        lookup_services::lookup_organization_units(pool, actor_user_id, lookup_query())
-            .await?
-            .into_iter()
-            .filter(|unit| learning_offering_owner_allowed(filter, unit.id))
-            .collect();
     let learning_groups = groups::list_for_term(pool, academic_term_id, filter).await?;
     let teachers = lookup_services::lookup_staff(pool, lookup_query()).await?;
     let rooms = lookup_services::lookup_rooms(pool).await?;
@@ -1137,7 +1129,6 @@ pub async fn delivery_management_options(
         catalog_versions,
         grade_levels,
         study_programs,
-        organization_units,
         homerooms,
         learning_groups,
         teachers,

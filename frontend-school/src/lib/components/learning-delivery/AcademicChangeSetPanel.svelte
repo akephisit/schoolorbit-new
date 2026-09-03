@@ -65,7 +65,6 @@
 	let handoffItemId = $state('');
 	let action = $state<ChangeAction>('add_course');
 	let catalogVersionId = $state('');
-	let owningOrganizationUnitId = $state('');
 	let gradeLevelId = $state('');
 	let studyProgramId = $state('');
 	let learningOfferingId = $state('');
@@ -116,7 +115,6 @@
 	function resetItemForm(nextAction: ChangeAction = action) {
 		action = nextAction;
 		catalogVersionId = '';
-		owningOrganizationUnitId = '';
 		gradeLevelId = '';
 		studyProgramId = '';
 		learningOfferingId = '';
@@ -266,8 +264,7 @@
 				weeklyPeriodTarget
 			};
 		}
-		if (!catalogVersionId || !owningOrganizationUnitId || !gradeLevelId || !studyProgramId)
-			return null;
+		if (!catalogVersionId || !gradeLevelId || !studyProgramId) return null;
 		if (action === 'add_course') {
 			return {
 				action,
@@ -276,7 +273,6 @@
 					academicTermId: changeSet.academicTermId,
 					subjectVersionId: catalogVersionId,
 					curriculumCourseRequirementId: null,
-					owningOrganizationUnitId,
 					gradingPolicy: {
 						policyCode: 'school_default',
 						totalScore: '100.00',
@@ -295,7 +291,6 @@
 				academicTermId: changeSet.academicTermId,
 				activityVersionId: catalogVersionId,
 				curriculumActivityRequirementId: null,
-				owningOrganizationUnitId,
 				registrationType: 'assigned',
 				schedulingMode: 'synchronized',
 				capacity: null,
@@ -572,19 +567,12 @@
 									placeholder="เลือกแผนการเรียน"
 								/>
 							</div>
-							<div class="space-y-2 sm:col-span-2">
-								<Label>หน่วยงานเจ้าของรายการ</Label>
-								<DeliveryOptionCombobox
-									bind:value={owningOrganizationUnitId}
-									options={managementOptions.organizationUnits.map((unit) => ({
-										id: unit.id,
-										label: unit.name,
-										description: unit.code
-									}))}
-									placeholder="เลือกหน่วยงานเจ้าของ"
-								/>
-							</div>
 						</div>
+						<p
+							class="rounded-lg bg-muted/45 px-3 py-2 text-xs leading-relaxed text-muted-foreground"
+						>
+							ระบบจะใช้กลุ่มสาระหรือสังกัดกิจกรรมพัฒนาผู้เรียนจากทะเบียนโดยอัตโนมัติ
+						</p>
 						{#if action === 'add_course' && selectedCatalogVersion}
 							<div
 								class="grid gap-2 rounded-xl border bg-background p-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center"

@@ -3990,3 +3990,90 @@ async fn migration_058_reconciles_timetable_blocks() {
     .expect("post-058 supervision references must be queryable");
     assert_eq!(orphan_count, 0);
 }
+
+#[tokio::test]
+async fn migration_059_makes_academic_catalog_affiliation_authoritative() {
+    let pool = phase_a_fixture("academic_core_059_catalog_affiliation").await;
+    record_passing_phase_a_reconciliation_marker(&pool)
+        .await
+        .expect("cleanup marker must exist before the post-cutover migrations");
+    apply_migrations_through(&pool, 58)
+        .await
+        .expect("fixture must reach the pre-059 schema");
+
+    apply_migrations_through(&pool, 59)
+        .await
+        .expect("migration 059 must establish canonical academic affiliations");
+
+    assert!(column_exists(&pool, "subjects", "subject_group_id").await);
+    assert!(!column_exists(&pool, "subject_versions", "group_id").await);
+
+    let subject_affiliations: Vec<(Uuid, Uuid, Uuid)> = sqlx::query_as(
+        r#"SELECT subject.subject_group_id,
+                  owner.subject_group_id,
+                  subject.owning_organization_unit_id
+           FROM subjects subject
+           JOIN organization_units owner
+             ON owner.id = subject.owning_organization_unit_id
+           ORDER BY subject.id"#,
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("subject affiliations must be queryable");
+    assert!(!subject_affiliations.is_empty());
+    assert!(subject_affiliations
+        .iter()
+        .all(|(subject_group_id, owner_group_id, _)| subject_group_id == owner_group_id));
+
+    let activity_affiliations: Vec<(Uuid, String)> = sqlx::query_as(
+        r#"SELECT activity.owning_organization_unit_id, owner.code
+           FROM activities activity
+           JOIN organization_units owner
+             ON owner.id = activity.owning_organization_unit_id
+           ORDER BY activity.id"#,
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("activity affiliations must be queryable");
+    assert!(!activity_affiliations.is_empty());
+    assert!(activity_affiliations
+        .iter()
+        .all(|(_, owner_code)| owner_code == "ACAD-ACT"));
+
+    let mismatched_offerings: i64 = sqlx::query_scalar(
+        r#"SELECT count(*)
+           FROM learning_offerings offering
+           LEFT JOIN course_offering_details course
+             ON course.learning_offering_id = offering.id
+           LEFT JOIN subjects subject ON subject.id = course.subject_id
+           LEFT JOIN activity_offering_details activity_detail
+             ON activity_detail.learning_offering_id = offering.id
+           LEFT JOIN activities activity ON activity.id = activity_detail.activity_id
+           WHERE offering.owning_organization_unit_id IS DISTINCT FROM
+                 CASE offering.kind
+                     WHEN 'course' THEN subject.owning_organization_unit_id
+                     WHEN 'activity' THEN activity.owning_organization_unit_id
+                 END"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("offering affiliations must be reconcilable");
+    assert_eq!(mismatched_offerings, 0);
+
+    let nullable_affiliation_columns: i64 = sqlx::query_scalar(
+        r#"SELECT count(*)
+           FROM information_schema.columns
+           WHERE table_schema = current_schema()
+             AND (table_name, column_name) IN (
+                 ('subjects', 'subject_group_id'),
+                 ('subjects', 'owning_organization_unit_id'),
+                 ('activities', 'owning_organization_unit_id'),
+                 ('learning_offerings', 'owning_organization_unit_id')
+             )
+             AND is_nullable = 'YES'"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("catalog affiliation nullability must be queryable");
+    assert_eq!(nullable_affiliation_columns, 0);
+}

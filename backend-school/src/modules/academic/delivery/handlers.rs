@@ -339,7 +339,6 @@ pub async fn get_delivery_management_options(
     Ok(ok(workspaces::delivery_management_options(
         &context.tenant.pool,
         query.academic_term_id,
-        context.actor.user_id,
         &filter,
     )
     .await?))
@@ -371,12 +370,11 @@ pub async fn create_offering(
         OfferingAction::Manage,
     )
     .await?;
-    if !learning_offering_access_policy::learning_offering_owner_allowed(
-        &filter,
-        request.owning_organization_unit_id(),
-    ) {
+    let owner_id =
+        offerings::catalog_owner_for_create_request(&context.tenant.pool, &request).await?;
+    if !learning_offering_access_policy::learning_offering_owner_allowed(&filter, owner_id) {
         return Err(AppError::Forbidden(
-            "ไม่มีสิทธิ์สร้างรายการเปิดสอนให้หน่วยงานนี้".to_string(),
+            "ไม่มีสิทธิ์เปิดสอนรายการจากทะเบียนนี้".to_string(),
         ));
     }
     let offering = offerings::create(&context.tenant.pool, context.actor.user_id, request).await?;
@@ -451,13 +449,14 @@ pub async fn apply_offerings_from_curriculum(
         OfferingAction::Manage,
     )
     .await?;
-    if !learning_offering_access_policy::learning_offering_owner_allowed(
-        &filter,
-        request.owning_organization_unit_id,
-    ) {
-        return Err(AppError::Forbidden(
-            "ไม่มีสิทธิ์สร้างรายการเปิดสอนให้หน่วยงานนี้".to_string(),
-        ));
+    for owner_id in
+        offerings::catalog_owners_for_curriculum_request(&context.tenant.pool, &request).await?
+    {
+        if !learning_offering_access_policy::learning_offering_owner_allowed(&filter, owner_id) {
+            return Err(AppError::Forbidden(
+                "ไม่มีสิทธิ์เปิดสอนบางรายการจากหลักสูตรนี้".to_string(),
+            ));
+        }
     }
     let result =
         offerings::apply_from_curriculum(&context.tenant.pool, context.actor.user_id, request)
@@ -537,20 +536,6 @@ pub async fn update_offering(
         OfferingAction::Manage,
     )
     .await?;
-    let filter = learning_offering_access_policy::require_learning_offering_list_access(
-        &context.tenant.pool,
-        &context.actor,
-        OfferingAction::Manage,
-    )
-    .await?;
-    if !learning_offering_access_policy::learning_offering_owner_allowed(
-        &filter,
-        request.owning_organization_unit_id,
-    ) {
-        return Err(AppError::Forbidden(
-            "ไม่มีสิทธิ์ย้ายรายการเปิดสอนไปยังหน่วยงานนี้".to_string(),
-        ));
-    }
     let offering =
         offerings::update(&context.tenant.pool, context.actor.user_id, id, request).await?;
     signal_delivery_changed(
@@ -1207,13 +1192,25 @@ pub async fn upsert_term_change_item(
         OfferingAction::Manage,
     )
     .await?;
-    if let Some(owner_id) = request.owning_organization_unit_id() {
+    let pending_offering = match &request {
+        UpsertAcademicTermChangeItemRequest::AddCourse { offering, .. } => {
+            Some(CreateLearningOfferingRequest::Course(offering.clone()))
+        }
+        UpsertAcademicTermChangeItemRequest::AddActivity { offering, .. } => {
+            Some(CreateLearningOfferingRequest::Activity(offering.clone()))
+        }
+        _ => None,
+    };
+    if let Some(pending_offering) = pending_offering {
+        let owner_id =
+            offerings::catalog_owner_for_create_request(&context.tenant.pool, &pending_offering)
+                .await?;
         if !learning_offering_access_policy::learning_offering_owner_allowed(
             &manage_filter,
             owner_id,
         ) {
             return Err(AppError::Forbidden(
-                "ไม่มีสิทธิ์เพิ่มรายการเปิดสอนให้หน่วยงานนี้".to_string(),
+                "ไม่มีสิทธิ์เพิ่มรายการเปิดสอนจากทะเบียนนี้".to_string(),
             ));
         }
     }

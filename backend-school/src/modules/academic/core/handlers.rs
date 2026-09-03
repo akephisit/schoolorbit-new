@@ -806,9 +806,10 @@ pub async fn create_catalog_subject(
         CatalogAction::Manage,
     )
     .await?;
-    if !catalog::owner_allowed(&filter, request.owning_organization_unit_id) {
+    let owner_id = catalog::resolve_subject_group_owner(&pool, request.subject_group_id).await?;
+    if !catalog::owner_allowed(&filter, Some(owner_id)) {
         return Err(AppError::Forbidden(
-            "ไม่มีสิทธิ์สร้างรายวิชาในหน่วยงานนี้".to_string(),
+            "ไม่มีสิทธิ์สร้างรายวิชาในกลุ่มสาระนี้".to_string(),
         ));
     }
     let subject = catalog::create_subject(&pool, request).await?;
@@ -893,10 +894,9 @@ pub async fn update_catalog_subject(
         CatalogAction::Manage,
     )
     .await?;
-    if !catalog::owner_allowed(&filter, request.owning_organization_unit_id) {
-        return Err(AppError::Forbidden(
-            "ไม่มีสิทธิ์ย้ายเจ้าของรายวิชาไปหน่วยงานนี้".to_string(),
-        ));
+    let owner_id = catalog::resolve_subject_group_owner(&pool, request.subject_group_id).await?;
+    if !catalog::owner_allowed(&filter, Some(owner_id)) {
+        return Err(AppError::Forbidden("ไม่มีสิทธิ์ย้ายรายวิชาไปกลุ่มสาระนี้".to_string()));
     }
     let subject = catalog::update_subject(&pool, id, request).await?;
     signal_core_changed(
@@ -1458,10 +1458,9 @@ pub async fn create_catalog_activity(
         CatalogAction::Manage,
     )
     .await?;
-    if !catalog::owner_allowed(&filter, request.owning_organization_unit_id) {
-        return Err(AppError::Forbidden(
-            "ไม่มีสิทธิ์สร้างกิจกรรมในหน่วยงานนี้".to_string(),
-        ));
+    let owner_id = catalog::resolve_activity_owner(&pool).await?;
+    if !catalog::owner_allowed(&filter, Some(owner_id)) {
+        return Err(AppError::Forbidden("ไม่มีสิทธิ์สร้างกิจกรรมพัฒนาผู้เรียน".to_string()));
     }
     let activity = catalog::create_activity(&pool, request).await?;
     signal_core_changed(
@@ -1539,17 +1538,6 @@ pub async fn update_catalog_activity(
         CatalogAction::Manage,
     )
     .await?;
-    let filter = academic_catalog_access_policy::require_academic_catalog_list_access(
-        &pool,
-        &actor,
-        CatalogAction::Manage,
-    )
-    .await?;
-    if !catalog::owner_allowed(&filter, request.owning_organization_unit_id) {
-        return Err(AppError::Forbidden(
-            "ไม่มีสิทธิ์ย้ายเจ้าของกิจกรรมไปหน่วยงานนี้".to_string(),
-        ));
-    }
     let activity = catalog::update_activity(&pool, id, request).await?;
     signal_core_changed(
         &state,

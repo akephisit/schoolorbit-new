@@ -21,7 +21,7 @@ async fn template_source_apply_and_clear_are_version_scoped() {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 58).await.unwrap();
+    apply_migrations_through(&pool, 59).await.unwrap();
 
     let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
     let (source_id, source_row_version, term_id, term_start): (Uuid, i64, Uuid, NaiveDate) =

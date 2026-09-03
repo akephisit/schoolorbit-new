@@ -18,6 +18,7 @@ export type SubjectGroup = Schemas['SubjectGroup'];
 export type CatalogSubject = Schemas['CatalogSubject'];
 export type CatalogSubjectOverview = Schemas['CatalogSubjectOverview'];
 export type CatalogSubjectOverviewItem = Schemas['CatalogSubjectOverviewItem'];
+export type CatalogSubjectGroupOption = Schemas['CatalogSubjectGroupOption'];
 export type SubjectVersion = Schemas['SubjectVersion'];
 export type CatalogActivity = Schemas['CatalogActivity'];
 export type CatalogActivityOverview = Schemas['CatalogActivityOverview'];

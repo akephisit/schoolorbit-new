@@ -829,6 +829,7 @@ use utoipa::OpenApi;
         GradeProgressionSet,
         CatalogDisplayState,
         CatalogOwnerOption,
+        CatalogSubjectGroupOption,
         CatalogSubject,
         CatalogSubjectOverviewItem,
         CatalogSubjectOverview,

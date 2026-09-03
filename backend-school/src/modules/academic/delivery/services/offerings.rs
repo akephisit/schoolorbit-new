@@ -46,6 +46,7 @@ struct CourseVersionSource {
     credit: String,
     hours: Option<String>,
     standard_periods_per_week: Option<i32>,
+    owning_organization_unit_id: Uuid,
     effective_from: chrono::NaiveDate,
     effective_until: Option<chrono::NaiveDate>,
     status: String,
@@ -59,6 +60,7 @@ struct ActivityVersionSource {
     name: String,
     hours: String,
     scheduling_mode: super::super::models::ActivitySchedulingMode,
+    owning_organization_unit_id: Uuid,
     effective_from: chrono::NaiveDate,
     effective_until: Option<chrono::NaiveDate>,
     status: String,
@@ -155,7 +157,6 @@ struct PreviewHashInput<'a> {
 struct ApplyRequestHashInput<'a> {
     academic_term_id: Uuid,
     study_program_ids: &'a [Uuid],
-    owning_organization_unit_id: Uuid,
     source_hash: &'a str,
     choices: &'a [CurriculumPreparationChoice],
 }
@@ -205,6 +206,79 @@ pub async fn get(pool: &PgPool, id: Uuid) -> Result<LearningOffering, AppError> 
     hydrate(pool, row).await
 }
 
+pub async fn catalog_owner_for_create_request(
+    pool: &PgPool,
+    request: &CreateLearningOfferingRequest,
+) -> Result<Uuid, AppError> {
+    let (kind, version_id) = match request {
+        CreateLearningOfferingRequest::Course(request) => {
+            (LearningOfferingKind::Course, request.subject_version_id)
+        }
+        CreateLearningOfferingRequest::Activity(request) => {
+            (LearningOfferingKind::Activity, request.activity_version_id)
+        }
+    };
+    let mut transaction = pool.begin().await?;
+    let owner_id = catalog_version_owner(&mut transaction, kind, version_id).await?;
+    transaction.rollback().await?;
+    Ok(owner_id)
+}
+
+pub async fn catalog_owners_for_curriculum_request(
+    pool: &PgPool,
+    request: &ApplyCurriculumOfferingsRequest,
+) -> Result<Vec<Uuid>, AppError> {
+    let preview = preview_from_curriculum(
+        pool,
+        PreviewCurriculumOfferingsRequest {
+            academic_term_id: request.academic_term_id,
+            study_program_ids: request.study_program_ids.clone(),
+        },
+    )
+    .await?;
+    let included_proposal_ids = request
+        .choices
+        .iter()
+        .filter(|choice| choice.action != PreparationAction::Skip)
+        .map(|choice| choice.proposal_id.as_str())
+        .collect::<HashSet<_>>();
+    let course_version_ids = preview
+        .proposals
+        .iter()
+        .filter(|proposal| included_proposal_ids.contains(proposal.proposal_id.as_str()))
+        .filter(|proposal| proposal.resource_kind == LearningOfferingKind::Course)
+        .map(|proposal| proposal.catalog_version_id)
+        .collect::<Vec<_>>();
+    let activity_version_ids = preview
+        .proposals
+        .iter()
+        .filter(|proposal| included_proposal_ids.contains(proposal.proposal_id.as_str()))
+        .filter(|proposal| proposal.resource_kind == LearningOfferingKind::Activity)
+        .map(|proposal| proposal.catalog_version_id)
+        .collect::<Vec<_>>();
+    Ok(sqlx::query_scalar(
+        r#"
+        SELECT DISTINCT source.owning_organization_unit_id
+        FROM (
+            SELECT subject.owning_organization_unit_id
+            FROM subject_versions version
+            JOIN subjects subject ON subject.id = version.subject_id
+            WHERE version.id = ANY($1)
+            UNION ALL
+            SELECT activity.owning_organization_unit_id
+            FROM activity_versions version
+            JOIN activities activity ON activity.id = version.activity_id
+            WHERE version.id = ANY($2)
+        ) source
+        ORDER BY source.owning_organization_unit_id
+        "#,
+    )
+    .bind(course_version_ids)
+    .bind(activity_version_ids)
+    .fetch_all(pool)
+    .await?)
+}
+
 pub async fn create(
     pool: &PgPool,
     actor_user_id: Uuid,
@@ -213,7 +287,6 @@ pub async fn create(
     let term_id = request.academic_term_id();
     let mut transaction = pool.begin().await?;
     let term = require_writable_term(&mut transaction, term_id, false).await?;
-    require_active_owner(&mut transaction, request.owning_organization_unit_id()).await?;
     validate_targets(&mut transaction, &term, request.targets()).await?;
     let id = Uuid::new_v4();
     match request {
@@ -273,7 +346,6 @@ pub async fn update(
         ));
     }
     let term = require_writable_term(&mut transaction, row.0, false).await?;
-    require_active_owner(&mut transaction, request.owning_organization_unit_id).await?;
     validate_targets(&mut transaction, &term, &request.targets).await?;
     sqlx::query("DELETE FROM learning_offering_targets WHERE learning_offering_id = $1")
         .bind(id)
@@ -281,10 +353,9 @@ pub async fn update(
         .await?;
     insert_targets(&mut transaction, id, &term, &request.targets).await?;
     sqlx::query(
-        "UPDATE learning_offerings SET owning_organization_unit_id = $1, \
-         row_version = row_version + 1, updated_at = now() WHERE id = $2",
+        "UPDATE learning_offerings SET row_version = row_version + 1, \
+         updated_at = now() WHERE id = $1",
     )
-    .bind(request.owning_organization_unit_id)
     .bind(id)
     .execute(&mut *transaction)
     .await?;
@@ -403,7 +474,6 @@ pub async fn apply_from_curriculum(
     let request_hash = stable_hash(&ApplyRequestHashInput {
         academic_term_id: request.academic_term_id,
         study_program_ids: &program_ids,
-        owning_organization_unit_id: request.owning_organization_unit_id,
         source_hash: &request.source_hash,
         choices: &choices,
     })?;
@@ -460,7 +530,6 @@ pub async fn apply_from_curriculum(
     }
 
     let mut transaction = pool.begin().await?;
-    require_active_owner(&mut transaction, request.owning_organization_unit_id).await?;
     let preview =
         build_curriculum_preview(&mut transaction, request.academic_term_id, &program_ids).await?;
     if preview.source_hash != request.source_hash {
@@ -502,13 +571,7 @@ pub async fn apply_from_curriculum(
             existing
         } else {
             created_offering_count += 1;
-            insert_generated_offering(
-                &mut transaction,
-                &term,
-                proposal,
-                request.owning_organization_unit_id,
-            )
-            .await?
+            insert_generated_offering(&mut transaction, &term, proposal).await?
         };
         insert_homeroom_targets(&mut transaction, offering_id, &term, proposal).await?;
         offering_ids.push(offering_id);
@@ -806,6 +869,7 @@ pub(super) async fn insert_course(
         }
     }
     let source = course_version_source(transaction, request.subject_version_id).await?;
+    require_active_owner(transaction, source.owning_organization_unit_id).await?;
     validate_version_for_term(
         &source.status,
         source.effective_from,
@@ -859,7 +923,7 @@ pub(super) async fn insert_course(
             .map(|_| "curriculum_course_requirement"),
     )
     .bind(request.curriculum_course_requirement_id)
-    .bind(request.owning_organization_unit_id)
+    .bind(source.owning_organization_unit_id)
     .execute(&mut **transaction)
     .await?;
     sqlx::query(
@@ -899,6 +963,7 @@ pub(super) async fn insert_activity(
     }
     validate_activity_rules(&request.attendance_requirement, &request.pass_criteria)?;
     let source = activity_version_source(transaction, request.activity_version_id).await?;
+    require_active_owner(transaction, source.owning_organization_unit_id).await?;
     validate_version_for_term(
         &source.status,
         source.effective_from,
@@ -956,7 +1021,7 @@ pub(super) async fn insert_activity(
             .map(|_| "curriculum_activity_requirement"),
     )
     .bind(request.curriculum_activity_requirement_id)
-    .bind(request.owning_organization_unit_id)
+    .bind(source.owning_organization_unit_id)
     .execute(&mut **transaction)
     .await?;
     sqlx::query(
@@ -992,9 +1057,13 @@ async fn course_version_source(
         r#"SELECT version.id AS subject_version_id, version.subject_id,
                   version.code, version.name_th AS name, version.credit::text AS credit,
                   version.hours_per_semester::text AS hours,
-                  version.periods_per_week AS standard_periods_per_week, version.effective_from,
+                  version.periods_per_week AS standard_periods_per_week,
+                  subject.owning_organization_unit_id,
+                  version.effective_from,
                   version.effective_until, version.status
-           FROM subject_versions version WHERE version.id = $1"#,
+           FROM subject_versions version
+           JOIN subjects subject ON subject.id = version.subject_id
+           WHERE version.id = $1"#,
     )
     .bind(version_id)
     .fetch_optional(&mut **transaction)
@@ -1015,7 +1084,8 @@ async fn activity_version_source(
     sqlx::query_as(
         r#"SELECT version.id AS activity_version_id, version.activity_id,
                   stable.code, version.name, version.hours_per_week::text AS hours,
-                  version.scheduling_mode, version.effective_from,
+                  version.scheduling_mode, stable.owning_organization_unit_id,
+                  version.effective_from,
                   version.effective_until, version.status
            FROM activity_versions version
            JOIN activities stable ON stable.id = version.activity_id
@@ -1025,6 +1095,21 @@ async fn activity_version_source(
     .fetch_optional(&mut **transaction)
     .await?
     .ok_or_else(|| AppError::ValidationError("ไม่พบเวอร์ชันกิจกรรม".to_string()))
+}
+
+async fn catalog_version_owner(
+    transaction: &mut Transaction<'_, Postgres>,
+    kind: LearningOfferingKind,
+    version_id: Uuid,
+) -> Result<Uuid, AppError> {
+    match kind {
+        LearningOfferingKind::Course => Ok(course_version_source(transaction, version_id)
+            .await?
+            .owning_organization_unit_id),
+        LearningOfferingKind::Activity => Ok(activity_version_source(transaction, version_id)
+            .await?
+            .owning_organization_unit_id),
+    }
 }
 
 fn validate_version_for_term(
@@ -1753,8 +1838,14 @@ async fn insert_generated_offering(
     transaction: &mut Transaction<'_, Postgres>,
     term: &TermContext,
     proposal: &CurriculumPreparationProposal,
-    owner_id: Uuid,
 ) -> Result<Uuid, AppError> {
+    let owner_id = catalog_version_owner(
+        transaction,
+        proposal.resource_kind,
+        proposal.catalog_version_id,
+    )
+    .await?;
+    require_active_owner(transaction, owner_id).await?;
     let id = Uuid::new_v5(
         &DELIVERY_NAMESPACE,
         format!(

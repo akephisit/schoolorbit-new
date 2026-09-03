@@ -9,18 +9,18 @@ use crate::policies::resource_access_policy::AcademicResourceListFilter;
 
 use super::super::models::{
     ActivityVersion, CatalogActivity, CatalogActivityOverview, CatalogActivityOverviewItem,
-    CatalogDisplayState, CatalogOwnerOption, CatalogSubject, CatalogSubjectOverview,
-    CatalogSubjectOverviewItem, CreateActivityVersionRequest, CreateCatalogActivityRequest,
-    CreateCatalogSubjectRequest, CreateSubjectGroupRequest, CreateSubjectVersionRequest,
-    DefaultTeacher, PublishVersionRequest, ReplaceDefaultTeachersRequest, SubjectGroup,
-    SubjectVersion, UpdateActivityVersionRequest, UpdateCatalogActivityRequest,
-    UpdateCatalogSubjectRequest, UpdateSubjectGroupRequest, UpdateSubjectVersionRequest,
-    VersionStatus,
+    CatalogDisplayState, CatalogOwnerOption, CatalogSubject, CatalogSubjectGroupOption,
+    CatalogSubjectOverview, CatalogSubjectOverviewItem, CreateActivityVersionRequest,
+    CreateCatalogActivityRequest, CreateCatalogSubjectRequest, CreateSubjectGroupRequest,
+    CreateSubjectVersionRequest, DefaultTeacher, PublishVersionRequest,
+    ReplaceDefaultTeachersRequest, SubjectGroup, SubjectVersion, UpdateActivityVersionRequest,
+    UpdateCatalogActivityRequest, UpdateCatalogSubjectRequest, UpdateSubjectGroupRequest,
+    UpdateSubjectVersionRequest, VersionStatus,
 };
 use super::{ensure_draft_version, parse_row_version, validate_canonical_decimal};
 
 const SUBJECT_COLUMNS: &str =
-    "id, code, owning_organization_unit_id, archived_at, row_version, created_at, updated_at";
+    "id, code, subject_group_id, owning_organization_unit_id, archived_at, row_version, created_at, updated_at";
 const ACTIVITY_COLUMNS: &str =
     "id, code, activity_type, owning_organization_unit_id, archived_at, row_version, created_at, updated_at";
 
@@ -69,7 +69,8 @@ pub async fn list_subject_overview(
     };
     let catalog_grade_levels = list_catalog_grade_levels(pool).await?;
     let grade_level_options = active_catalog_grade_levels(&catalog_grade_levels);
-    let owner_options = list_catalog_owner_options(pool, manage_filter).await?;
+    let subject_group_options =
+        list_catalog_subject_group_options(pool, read_filter, manage_filter).await?;
     let mut versions_by_subject = HashMap::<Uuid, Vec<SubjectVersion>>::new();
     for version in versions {
         versions_by_subject
@@ -90,7 +91,8 @@ pub async fn list_subject_overview(
                     resolve_grade_levels(&version.grade_level_ids, &catalog_grade_levels)
                 })
                 .unwrap_or_default();
-            let can_manage = owner_allowed(manage_filter, subject.owning_organization_unit_id);
+            let can_manage =
+                owner_allowed(manage_filter, Some(subject.owning_organization_unit_id));
             CatalogSubjectOverviewItem {
                 subject,
                 display_version,
@@ -105,7 +107,7 @@ pub async fn list_subject_overview(
     Ok(CatalogSubjectOverview {
         items,
         grade_level_options,
-        owner_options,
+        subject_group_options,
     })
 }
 
@@ -123,16 +125,18 @@ pub async fn create_subject(
     request: CreateCatalogSubjectRequest,
 ) -> Result<CatalogSubject, AppError> {
     let code = normalize_code(&request.code)?;
+    let owner_id = resolve_subject_group_owner(pool, request.subject_group_id).await?;
     let id = Uuid::new_v4();
     let sql = format!(
-        "INSERT INTO subjects (id, code, identity_key, owning_organization_unit_id) \
-         VALUES ($1, $2, $3, $4) RETURNING {SUBJECT_COLUMNS}"
+        "INSERT INTO subjects (id, code, identity_key, subject_group_id, owning_organization_unit_id) \
+         VALUES ($1, $2, $3, $4, $5) RETURNING {SUBJECT_COLUMNS}"
     );
     sqlx::query_as(&sql)
         .bind(id)
         .bind(&code)
         .bind(code.to_lowercase())
-        .bind(request.owning_organization_unit_id)
+        .bind(request.subject_group_id)
+        .bind(owner_id)
         .fetch_one(pool)
         .await
         .map_err(map_catalog_write_error)
@@ -145,16 +149,19 @@ pub async fn update_subject(
 ) -> Result<CatalogSubject, AppError> {
     parse_row_version(request.row_version)?;
     let code = normalize_code(&request.code)?;
+    let owner_id = resolve_subject_group_owner(pool, request.subject_group_id).await?;
     let sql = format!(
-        "UPDATE subjects SET code = $1, identity_key = $2, owning_organization_unit_id = $3, \
-         archived_at = CASE WHEN $4 THEN COALESCE(archived_at, now()) ELSE NULL END, \
-         row_version = row_version + 1, updated_at = now() WHERE id = $5 AND row_version = $6 \
+        "UPDATE subjects SET code = $1, identity_key = $2, subject_group_id = $3, \
+         owning_organization_unit_id = $4, \
+         archived_at = CASE WHEN $5 THEN COALESCE(archived_at, now()) ELSE NULL END, \
+         row_version = row_version + 1, updated_at = now() WHERE id = $6 AND row_version = $7 \
          RETURNING {SUBJECT_COLUMNS}"
     );
     sqlx::query_as(&sql)
         .bind(&code)
         .bind(code.to_lowercase())
-        .bind(request.owning_organization_unit_id)
+        .bind(request.subject_group_id)
+        .bind(owner_id)
         .bind(request.archived)
         .bind(id)
         .bind(request.row_version)
@@ -212,12 +219,12 @@ pub async fn create_subject_version(
         r#"
         INSERT INTO subject_versions (
             id, subject_id, version_no, code, name_th, name_en, credit,
-            hours_per_semester, type, group_id, description, effective_from,
+            hours_per_semester, type, description, effective_from,
             effective_until, start_academic_year_id, term, is_active,
             periods_per_week, status
         ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-            $14, $15, true, $16, 'draft'
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+            $13, $14, true, $15, 'draft'
         )
         "#,
     )
@@ -230,7 +237,6 @@ pub async fn create_subject_version(
     .bind(credit)
     .bind(request.hours_per_semester)
     .bind(request.subject_type.trim())
-    .bind(request.group_id)
     .bind(request.description)
     .bind(request.effective_from)
     .bind(request.effective_until)
@@ -257,7 +263,6 @@ pub async fn update_subject_version(
         credit: request.credit,
         hours_per_semester: request.hours_per_semester,
         subject_type: request.subject_type,
-        group_id: request.group_id,
         description: request.description,
         effective_from: request.effective_from,
         effective_until: request.effective_until,
@@ -279,11 +284,11 @@ pub async fn update_subject_version(
     let result = sqlx::query(
         r#"
         UPDATE subject_versions SET name_th = $1, name_en = $2, credit = $3,
-            hours_per_semester = $4, type = $5, group_id = $6, description = $7,
-            effective_from = $8, effective_until = $9, term = $10,
-            periods_per_week = $11,
+            hours_per_semester = $4, type = $5, description = $6,
+            effective_from = $7, effective_until = $8, term = $9,
+            periods_per_week = $10,
             row_version = row_version + 1, updated_at = now()
-        WHERE id = $12 AND row_version = $13 AND status = 'draft'
+        WHERE id = $11 AND row_version = $12 AND status = 'draft'
         "#,
     )
     .bind(values.name_th.trim())
@@ -291,7 +296,6 @@ pub async fn update_subject_version(
     .bind(credit)
     .bind(values.hours_per_semester)
     .bind(values.subject_type.trim())
-    .bind(values.group_id)
     .bind(values.description)
     .bind(values.effective_from)
     .bind(values.effective_until)
@@ -388,7 +392,7 @@ pub async fn list_activity_overview(
     };
     let catalog_grade_levels = list_catalog_grade_levels(pool).await?;
     let grade_level_options = active_catalog_grade_levels(&catalog_grade_levels);
-    let owner_options = list_catalog_owner_options(pool, manage_filter).await?;
+    let can_create = owner_allowed(manage_filter, Some(resolve_activity_owner(pool).await?));
     let mut versions_by_activity = HashMap::<Uuid, Vec<ActivityVersion>>::new();
     for version in versions {
         versions_by_activity
@@ -411,7 +415,8 @@ pub async fn list_activity_overview(
                     resolve_grade_levels(&version.grade_level_ids, &catalog_grade_levels)
                 })
                 .unwrap_or_default();
-            let can_manage = owner_allowed(manage_filter, activity.owning_organization_unit_id);
+            let can_manage =
+                owner_allowed(manage_filter, Some(activity.owning_organization_unit_id));
             CatalogActivityOverviewItem {
                 activity,
                 display_version,
@@ -426,7 +431,7 @@ pub async fn list_activity_overview(
     Ok(CatalogActivityOverview {
         items,
         grade_level_options,
-        owner_options,
+        can_create,
     })
 }
 
@@ -447,6 +452,7 @@ pub async fn create_activity(
     if request.activity_type.trim().is_empty() {
         return Err(AppError::ValidationError("ประเภทกิจกรรมห้ามว่าง".to_string()));
     }
+    let owner_id = resolve_activity_owner(pool).await?;
     let id = Uuid::new_v4();
     let identity_key = format!(
         "{}:{}",
@@ -462,7 +468,7 @@ pub async fn create_activity(
         .bind(code)
         .bind(identity_key)
         .bind(request.activity_type.trim().to_lowercase())
-        .bind(request.owning_organization_unit_id)
+        .bind(owner_id)
         .fetch_one(pool)
         .await
         .map_err(map_catalog_write_error)
@@ -482,16 +488,14 @@ pub async fn update_activity(
     );
     let sql = format!(
         "UPDATE activities SET code = $1, identity_key = $2, activity_type = $3, \
-         owning_organization_unit_id = $4, \
-         archived_at = CASE WHEN $5 THEN COALESCE(archived_at, now()) ELSE NULL END, \
+         archived_at = CASE WHEN $4 THEN COALESCE(archived_at, now()) ELSE NULL END, \
          row_version = row_version + 1, updated_at = now() \
-         WHERE id = $6 AND row_version = $7 RETURNING {ACTIVITY_COLUMNS}"
+         WHERE id = $5 AND row_version = $6 RETURNING {ACTIVITY_COLUMNS}"
     );
     sqlx::query_as(&sql)
         .bind(code)
         .bind(identity_key)
         .bind(request.activity_type.trim().to_lowercase())
-        .bind(request.owning_organization_unit_id)
         .bind(request.archived)
         .bind(id)
         .bind(request.row_version)
@@ -795,7 +799,7 @@ pub async fn update_subject_group(
 
 pub async fn delete_subject_group(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
     let used: bool =
-        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM subject_versions WHERE group_id = $1)")
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM subjects WHERE subject_group_id = $1)")
             .bind(id)
             .fetch_one(pool)
             .await?;
@@ -823,6 +827,14 @@ struct CatalogGradeLevelRow {
 struct CatalogGradeLevel {
     item: GradeLevelLookupItem,
     is_active: bool,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct CatalogSubjectGroupRow {
+    subject_group_id: Uuid,
+    organization_unit_id: Uuid,
+    code: String,
+    name: String,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -854,6 +866,46 @@ async fn list_catalog_grade_levels(pool: &PgPool) -> Result<Vec<CatalogGradeLeve
         .map(|row| CatalogGradeLevel {
             is_active: row.is_active,
             item: grade_level_lookup_item(row),
+        })
+        .collect())
+}
+
+pub(super) async fn list_catalog_subject_group_options(
+    pool: &PgPool,
+    read_filter: &AcademicResourceListFilter,
+    manage_filter: &AcademicResourceListFilter,
+) -> Result<Vec<CatalogSubjectGroupOption>, AppError> {
+    let read_owner_ids = read_filter.allowed_organization_unit_ids();
+    if !read_filter.includes_school_owned && read_owner_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows = sqlx::query_as::<_, CatalogSubjectGroupRow>(
+        r#"
+        SELECT subject_group.id AS subject_group_id,
+               owner.id AS organization_unit_id,
+               subject_group.code,
+               subject_group.name_th AS name
+        FROM subject_groups subject_group
+        JOIN organization_units owner
+          ON owner.subject_group_id = subject_group.id
+         AND owner.is_active = true
+        WHERE subject_group.is_active = true
+          AND ($1 OR owner.id = ANY($2))
+        ORDER BY subject_group.display_order, subject_group.name_th, subject_group.id
+        "#,
+    )
+    .bind(read_filter.includes_school_owned)
+    .bind(read_owner_ids)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| CatalogSubjectGroupOption {
+            subject_group_id: row.subject_group_id,
+            organization_unit_id: row.organization_unit_id,
+            code: row.code,
+            name: row.name,
+            can_manage: owner_allowed(manage_filter, Some(row.organization_unit_id)),
         })
         .collect())
 }
@@ -893,6 +945,41 @@ pub(super) async fn list_catalog_owner_options(
         name: row.name,
     }));
     Ok(options)
+}
+
+pub async fn resolve_subject_group_owner(
+    pool: &PgPool,
+    subject_group_id: Uuid,
+) -> Result<Uuid, AppError> {
+    sqlx::query_scalar(
+        r#"
+        SELECT owner.id
+        FROM subject_groups subject_group
+        JOIN organization_units owner
+          ON owner.subject_group_id = subject_group.id
+         AND owner.is_active = true
+        WHERE subject_group.id = $1
+          AND subject_group.is_active = true
+        "#,
+    )
+    .bind(subject_group_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::ValidationError("กลุ่มสาระนี้ยังไม่มีหน่วยงานผู้รับผิดชอบที่ใช้งานอยู่".to_string()))
+}
+
+pub async fn resolve_activity_owner(pool: &PgPool) -> Result<Uuid, AppError> {
+    sqlx::query_scalar(
+        r#"
+        SELECT id
+        FROM organization_units
+        WHERE code = 'ACAD-ACT'
+          AND is_active = true
+        "#,
+    )
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::ValidationError("ยังไม่ได้ตั้งค่าหน่วยงานกิจกรรมพัฒนาผู้เรียน".to_string()))
 }
 
 fn active_catalog_grade_levels(options: &[CatalogGradeLevel]) -> Vec<GradeLevelLookupItem> {
@@ -1042,7 +1129,7 @@ fn subject_version_select(predicate: &str, order: &str) -> String {
         r#"
         SELECT version.id, version.subject_id, version.version_no, version.name_th,
                version.name_en, version.credit::text AS credit,
-               version.hours_per_semester, version.type AS subject_type, version.group_id,
+               version.hours_per_semester, version.type AS subject_type,
                version.description, version.effective_from, version.effective_until,
                version.term AS term_code, version.periods_per_week,
                ARRAY(SELECT link.grade_level_id FROM subject_version_grade_levels link

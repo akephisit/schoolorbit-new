@@ -36,7 +36,6 @@
 	let draft = $state({
 		kind: 'course' as 'course' | 'activity',
 		catalogVersionId: '',
-		owningOrganizationUnitId: '',
 		gradeLevelId: '',
 		studyProgramId: ''
 	});
@@ -79,14 +78,7 @@
 
 	async function createManual(event: SubmitEvent) {
 		event.preventDefault();
-		if (
-			!options ||
-			!draft.catalogVersionId ||
-			!draft.owningOrganizationUnitId ||
-			!draft.gradeLevelId ||
-			!draft.studyProgramId
-		)
-			return;
+		if (!options || !draft.catalogVersionId || !draft.gradeLevelId || !draft.studyProgramId) return;
 		saving = true;
 		errorMessage = '';
 		try {
@@ -105,7 +97,6 @@
 							academicTermId,
 							subjectVersionId: draft.catalogVersionId,
 							curriculumCourseRequirementId: null,
-							owningOrganizationUnitId: draft.owningOrganizationUnitId,
 							gradingPolicy: {
 								policyCode: 'school_default',
 								totalScore: '100.00',
@@ -118,7 +109,6 @@
 							academicTermId,
 							activityVersionId: draft.catalogVersionId,
 							curriculumActivityRequirementId: null,
-							owningOrganizationUnitId: draft.owningOrganizationUnitId,
 							registrationType: 'assigned',
 							schedulingMode: 'synchronized',
 							capacity: null,
@@ -265,20 +255,10 @@
 								placeholder="เลือกแผนการเรียน"
 							/>
 						</div>
-						<div class="space-y-2 sm:col-span-2">
-							<Label>หน่วยงานเจ้าของรายการ</Label><DeliveryOptionCombobox
-								bind:value={draft.owningOrganizationUnitId}
-								options={options.organizationUnits.map((unit) => ({
-									id: unit.id,
-									label: unit.name,
-									description: unit.code
-								}))}
-								placeholder="เลือกหน่วยงานเจ้าของ"
-							/>
-						</div>
 					</div>
 					<p class="rounded-lg bg-muted/45 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
-						ระบบจะสร้างเป็นฉบับร่าง คุณยังต้องเพิ่มกลุ่มเรียน มอบหมายครู และตรวจรายชื่อก่อนเผยแพร่
+						ระบบจะใช้กลุ่มสาระหรือกิจกรรมพัฒนาผู้เรียนจากทะเบียนโดยอัตโนมัติ และสร้างเป็นฉบับร่าง
+						คุณยังต้องเพิ่มกลุ่มเรียน มอบหมายครู และตรวจรายชื่อก่อนเผยแพร่
 					</p>
 					{#if errorMessage}<p role="alert" class="text-sm text-destructive">{errorMessage}</p>{/if}
 					<Dialog.Footer
@@ -287,10 +267,8 @@
 							type="submit"
 							loading={saving}
 							loadingLabel="กำลังสร้าง"
-							disabled={!draft.catalogVersionId ||
-								!draft.owningOrganizationUnitId ||
-								!draft.gradeLevelId ||
-								!draft.studyProgramId}>สร้างฉบับร่าง</LoadingButton
+							disabled={!draft.catalogVersionId || !draft.gradeLevelId || !draft.studyProgramId}
+							>สร้างฉบับร่าง</LoadingButton
 						></Dialog.Footer
 					>
 				</form>

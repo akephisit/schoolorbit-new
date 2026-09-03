@@ -7,6 +7,7 @@
 		getCatalogSubjectOverview,
 		listSubjectVersions,
 		publishSubjectVersion,
+		updateCatalogSubject,
 		type CatalogDisplayState,
 		type CatalogSubjectOverview,
 		type CatalogSubjectOverviewItem,
@@ -15,8 +16,6 @@
 	import {
 		CATALOG_DISPLAY_STATE_OPTIONS,
 		SUBJECT_TYPE_OPTIONS,
-		catalogOwnerLabel,
-		catalogOwnerValue,
 		displayStateClass,
 		displayStateLabel,
 		formatEffectiveRange,
@@ -34,7 +33,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import * as Sheet from '$lib/components/ui/sheet';
 	import * as Table from '$lib/components/ui/table';
-	import { ArrowUpRight, BookOpen, Plus, Search, SlidersHorizontal } from 'lucide-svelte';
+	import { ArrowUpRight, BookOpen, Plus, Save, Search, SlidersHorizontal } from 'lucide-svelte';
 
 	type VersionDraft = {
 		name: string;
@@ -63,27 +62,44 @@
 	let mutationError = $state('');
 	let creating = $state(false);
 	let code = $state('');
-	let ownerValue = $state('');
+	let subjectGroupValue = $state('');
 	let search = $state('');
 	let typeFilter = $state(allValue);
+	let subjectGroupFilter = $state(allValue);
+	let editingSubjectGroupValue = $state('');
+	let subjectMetadataSaving = $state(false);
+	let subjectMetadataError = $state('');
 	let gradeFilter = $state(allValue);
 	let stateFilter = $state<CatalogDisplayState | typeof allValue>(allValue);
 	let historyRevision = 0;
 
 	let subjectItems = $derived(overview?.items ?? []);
 	let gradeLevelOptions = $derived(overview?.gradeLevelOptions ?? []);
-	let ownerOptions = $derived(overview?.ownerOptions ?? []);
-	let canCreate = $derived(ownerOptions.length > 0);
-	let selectedOwnerOption = $derived(
-		ownerOptions.find((option) => catalogOwnerValue(option) === ownerValue)
+	let subjectGroupOptions = $derived(overview?.subjectGroupOptions ?? []);
+	let manageableSubjectGroupOptions = $derived(
+		subjectGroupOptions.filter((option) => option.canManage)
+	);
+	let canCreate = $derived(manageableSubjectGroupOptions.length > 0);
+	let selectedSubjectGroup = $derived(
+		manageableSubjectGroupOptions.find((option) => option.subjectGroupId === subjectGroupValue)
 	);
 	let filteredSubjects = $derived.by(() =>
 		subjectItems
 			.filter((item) => {
 				const version = item.displayVersion;
+				const subjectGroup = subjectGroupOptions.find(
+					(option) => option.subjectGroupId === item.subject.subjectGroupId
+				);
 				return (
-					matchesCatalogSearch(search, item.subject.code, version?.nameTh, version?.nameEn) &&
+					matchesCatalogSearch(
+						search,
+						item.subject.code,
+						version?.nameTh,
+						version?.nameEn,
+						subjectGroup?.name
+					) &&
 					(typeFilter === allValue || version?.subjectType === typeFilter) &&
+					(subjectGroupFilter === allValue || item.subject.subjectGroupId === subjectGroupFilter) &&
 					(gradeFilter === allValue ||
 						item.gradeLevels.some((level) => level.id === gradeFilter)) &&
 					(stateFilter === allValue || item.displayState === stateFilter)
@@ -105,8 +121,13 @@
 		try {
 			const selectedId = selected?.subject.id;
 			overview = await getCatalogSubjectOverview();
-			if (!overview.ownerOptions.some((option) => catalogOwnerValue(option) === ownerValue)) {
-				ownerValue = overview.ownerOptions[0] ? catalogOwnerValue(overview.ownerOptions[0]) : '';
+			if (
+				!overview.subjectGroupOptions.some(
+					(option) => option.canManage && option.subjectGroupId === subjectGroupValue
+				)
+			) {
+				subjectGroupValue =
+					overview.subjectGroupOptions.find((option) => option.canManage)?.subjectGroupId ?? '';
 			}
 			if (selectedId) {
 				selected = overview.items.find((item) => item.subject.id === selectedId) ?? null;
@@ -121,6 +142,8 @@
 	async function openSubject(item: CatalogSubjectOverviewItem) {
 		const currentHistoryRevision = ++historyRevision;
 		selected = item;
+		editingSubjectGroupValue = item.subject.subjectGroupId;
+		subjectMetadataError = '';
 		sheetOpen = true;
 		historyError = '';
 		const cached = subjectHistoryCache.get(item.subject.id);
@@ -170,9 +193,8 @@
 
 	async function addSubject(event: SubmitEvent) {
 		event.preventDefault();
-		const owner = ownerOptions.find((option) => catalogOwnerValue(option) === ownerValue);
-		if (!owner) {
-			mutationError = 'ไม่มีหน่วยงานเจ้าของที่อนุญาตให้สร้างรายวิชา';
+		if (!selectedSubjectGroup) {
+			mutationError = 'กรุณาเลือกกลุ่มสาระของรายวิชา';
 			return;
 		}
 		creating = true;
@@ -180,7 +202,7 @@
 		try {
 			const created = await createCatalogSubject({
 				code,
-				owningOrganizationUnitId: owner.organizationUnitId
+				subjectGroupId: selectedSubjectGroup.subjectGroupId
 			});
 			code = '';
 			await loadOverview(false);
@@ -203,13 +225,32 @@
 			effectiveFrom: draft.effectiveFrom,
 			effectiveUntil: draft.effectiveUntil || null,
 			gradeLevelIds: draft.gradeLevelIds,
-			groupId: null,
 			hoursPerSemester: Number.parseInt(draft.totalValue, 10),
 			periodsPerWeek: Number.parseInt(draft.standardPeriodsPerWeek, 10),
 			subjectType: draft.classification,
 			termCode: null
 		});
 		await reloadSelectedHistory();
+	}
+
+	async function saveSubjectGroup() {
+		if (!selected || !editingSubjectGroupValue) return;
+		subjectMetadataSaving = true;
+		subjectMetadataError = '';
+		try {
+			await updateCatalogSubject(selected.subject.id, {
+				code: selected.subject.code,
+				subjectGroupId: editingSubjectGroupValue,
+				archived: selected.subject.archivedAt !== null,
+				rowVersion: selected.subject.rowVersion
+			});
+			await loadOverview(false);
+			if (selected) editingSubjectGroupValue = selected.subject.subjectGroupId;
+		} catch (error) {
+			subjectMetadataError = error instanceof Error ? error.message : 'เปลี่ยนกลุ่มสาระไม่สำเร็จ';
+		} finally {
+			subjectMetadataSaving = false;
+		}
 	}
 
 	async function publish(id: string, rowVersion: number) {
@@ -259,7 +300,7 @@
 							/>
 						</div>
 					</div>
-					<div class="grid gap-3 sm:grid-cols-3 lg:w-[640px]">
+					<div class="grid gap-3 sm:grid-cols-2 lg:w-[820px] lg:grid-cols-4">
 						<Select.Root type="single" bind:value={typeFilter}>
 							<Select.Trigger aria-label="กรองประเภทรายวิชา" class="w-full">
 								{typeFilter === allValue
@@ -270,6 +311,21 @@
 								<Select.Item value={allValue}>ทุกประเภท</Select.Item>
 								{#each SUBJECT_TYPE_OPTIONS as option (option.value)}
 									<Select.Item value={option.value}>{option.label}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+						<Select.Root type="single" bind:value={subjectGroupFilter}>
+							<Select.Trigger aria-label="กรองกลุ่มสาระ" class="w-full">
+								{subjectGroupFilter === allValue
+									? 'ทุกกลุ่มสาระ'
+									: (subjectGroupOptions.find(
+											(option) => option.subjectGroupId === subjectGroupFilter
+										)?.name ?? 'ทุกกลุ่มสาระ')}
+							</Select.Trigger>
+							<Select.Content>
+								<Select.Item value={allValue}>ทุกกลุ่มสาระ</Select.Item>
+								{#each manageableSubjectGroupOptions as option (option.subjectGroupId)}
+									<Select.Item value={option.subjectGroupId}>{option.name}</Select.Item>
 								{/each}
 							</Select.Content>
 						</Select.Root>
@@ -303,7 +359,7 @@
 
 				{#if canCreate}
 					<form
-						class="grid gap-3 border-b p-4 sm:grid-cols-[minmax(180px,280px)_minmax(220px,360px)_auto] sm:items-end"
+						class="grid gap-3 border-b p-4 sm:grid-cols-[minmax(180px,280px)_minmax(260px,420px)_auto] sm:items-end"
 						onsubmit={addSubject}
 					>
 						<div class="min-w-0 flex-1 sm:max-w-xs">
@@ -317,17 +373,15 @@
 							/>
 						</div>
 						<div class="min-w-0">
-							<Label for="new-subject-owner">หน่วยงานเจ้าของ</Label>
-							<Select.Root type="single" bind:value={ownerValue}>
-								<Select.Trigger id="new-subject-owner" class="mt-1.5 w-full">
-									{selectedOwnerOption
-										? catalogOwnerLabel(selectedOwnerOption)
-										: 'เลือกหน่วยงานเจ้าของ'}
+							<Label for="new-subject-group">กลุ่มสาระ</Label>
+							<Select.Root type="single" bind:value={subjectGroupValue}>
+								<Select.Trigger id="new-subject-group" class="mt-1.5 w-full">
+									{selectedSubjectGroup?.name ?? 'เลือกกลุ่มสาระ'}
 								</Select.Trigger>
 								<Select.Content>
-									{#each ownerOptions as option (catalogOwnerValue(option))}
-										<Select.Item value={catalogOwnerValue(option)}>
-											{catalogOwnerLabel(option)}
+									{#each subjectGroupOptions as option (option.subjectGroupId)}
+										<Select.Item value={option.subjectGroupId}>
+											{option.name}
 										</Select.Item>
 									{/each}
 								</Select.Content>
@@ -362,6 +416,7 @@
 								<Table.Row>
 									<Table.Head class="w-[150px] ps-5">รหัส</Table.Head>
 									<Table.Head>ชื่อรายวิชา</Table.Head>
+									<Table.Head>กลุ่มสาระ</Table.Head>
 									<Table.Head>ประเภท</Table.Head>
 									<Table.Head>ระดับชั้น</Table.Head>
 									<Table.Head class="text-end">หน่วยกิต</Table.Head>
@@ -391,6 +446,11 @@
 													)}
 												</p>
 											{/if}
+										</Table.Cell>
+										<Table.Cell class="max-w-[240px] whitespace-normal">
+											{subjectGroupOptions.find(
+												(option) => option.subjectGroupId === item.subject.subjectGroupId
+											)?.name ?? 'ไม่พบกลุ่มสาระ'}
 										</Table.Cell>
 										<Table.Cell
 											>{optionLabel(
@@ -464,6 +524,14 @@
 									<div>
 										<p class="text-xs text-muted-foreground">ประเภท</p>
 										<p>{optionLabel(SUBJECT_TYPE_OPTIONS, item.displayVersion?.subjectType)}</p>
+									</div>
+									<div>
+										<p class="text-xs text-muted-foreground">กลุ่มสาระ</p>
+										<p>
+											{subjectGroupOptions.find(
+												(option) => option.subjectGroupId === item.subject.subjectGroupId
+											)?.name ?? 'ไม่พบกลุ่มสาระ'}
+										</p>
 									</div>
 									<div>
 										<p class="text-xs text-muted-foreground">หน่วยกิต</p>
@@ -541,6 +609,51 @@
 		{:else if historyError}
 			<PageState variant="error" title="โหลดประวัติไม่สำเร็จ" description={historyError} />
 		{:else if selected}
+			<section class="mb-4 rounded-xl border bg-muted/20 p-4">
+				<div class="flex flex-col gap-3 sm:flex-row sm:items-end">
+					<div class="min-w-0 flex-1">
+						<Label for="subject-affiliation">กลุ่มสาระของรายวิชา</Label>
+						{#if selected.canManage}
+							<Select.Root type="single" bind:value={editingSubjectGroupValue}>
+								<Select.Trigger id="subject-affiliation" class="mt-1.5 w-full">
+									{subjectGroupOptions.find(
+										(option) => option.subjectGroupId === editingSubjectGroupValue
+									)?.name ?? 'เลือกกลุ่มสาระ'}
+								</Select.Trigger>
+								<Select.Content>
+									{#each manageableSubjectGroupOptions as option (option.subjectGroupId)}
+										<Select.Item value={option.subjectGroupId}>{option.name}</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						{:else}
+							<p id="subject-affiliation" class="mt-1.5 font-medium">
+								{subjectGroupOptions.find(
+									(option) => option.subjectGroupId === selected?.subject.subjectGroupId
+								)?.name ?? 'ไม่พบกลุ่มสาระ'}
+							</p>
+						{/if}
+						<p class="mt-1 text-xs text-muted-foreground">
+							หน่วยงานผู้รับผิดชอบและรายการเปิดสอนจะอ้างอิงจากกลุ่มสาระนี้โดยอัตโนมัติ
+						</p>
+					</div>
+					{#if selected.canManage}
+						<Button
+							type="button"
+							variant="outline"
+							disabled={subjectMetadataSaving ||
+								editingSubjectGroupValue === selected.subject.subjectGroupId}
+							onclick={saveSubjectGroup}
+						>
+							<Save class="size-4" />
+							{subjectMetadataSaving ? 'กำลังบันทึก...' : 'บันทึกกลุ่มสาระ'}
+						</Button>
+					{/if}
+				</div>
+				{#if subjectMetadataError}
+					<p role="alert" class="mt-2 text-sm text-destructive">{subjectMetadataError}</p>
+				{/if}
+			</section>
 			<CatalogVersionHistory
 				kind="subject"
 				code={selected.subject.code}

@@ -626,7 +626,7 @@ async fn fetch_exam_session_view(
                subject_version.name_th AS subject_name_th,
                subject_version.name_en AS subject_name_en,
                offering.name_snapshot AS subject_version_display_label,
-               subject_version.group_id AS subject_group_id,
+               subject.subject_group_id,
                subject_group.name_th AS subject_group_name,
                subject_group.display_order AS subject_group_display_order,
                subject_version.type AS subject_type,
@@ -657,7 +657,7 @@ async fn fetch_exam_session_view(
           ON course_detail.learning_offering_id = item.learning_offering_id
         JOIN subject_versions subject_version ON subject_version.id = course_detail.subject_version_id
         JOIN subjects subject ON subject.id = item.subject_id
-        LEFT JOIN subject_groups subject_group ON subject_group.id = subject_version.group_id
+        LEFT JOIN subject_groups subject_group ON subject_group.id = subject.subject_group_id
         JOIN homerooms classroom ON classroom.id = item.homeroom_id
         JOIN grade_levels grade_level ON grade_level.id = item.grade_level_id
         LEFT JOIN academic_exam_day_room_assignments assignment

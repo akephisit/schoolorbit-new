@@ -318,7 +318,8 @@ pub struct GradeProgressionSet {
 pub struct CatalogSubject {
     pub id: Uuid,
     pub code: String,
-    pub owning_organization_unit_id: Option<Uuid>,
+    pub subject_group_id: Uuid,
+    pub owning_organization_unit_id: Uuid,
     pub archived_at: Option<DateTime<Utc>>,
     pub row_version: i64,
     pub created_at: DateTime<Utc>,
@@ -329,14 +330,14 @@ pub struct CatalogSubject {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateCatalogSubjectRequest {
     pub code: String,
-    pub owning_organization_unit_id: Option<Uuid>,
+    pub subject_group_id: Uuid,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateCatalogSubjectRequest {
     pub code: String,
-    pub owning_organization_unit_id: Option<Uuid>,
+    pub subject_group_id: Uuid,
     pub archived: bool,
     pub row_version: i64,
 }
@@ -352,7 +353,6 @@ pub struct SubjectVersion {
     pub credit: String,
     pub hours_per_semester: Option<i32>,
     pub subject_type: String,
-    pub group_id: Option<Uuid>,
     pub description: Option<String>,
     pub effective_from: NaiveDate,
     pub effective_until: Option<NaiveDate>,
@@ -376,7 +376,6 @@ pub struct CreateSubjectVersionRequest {
     pub credit: String,
     pub hours_per_semester: Option<i32>,
     pub subject_type: String,
-    pub group_id: Option<Uuid>,
     pub description: Option<String>,
     pub effective_from: NaiveDate,
     pub effective_until: Option<NaiveDate>,
@@ -394,7 +393,6 @@ pub struct UpdateSubjectVersionRequest {
     pub credit: String,
     pub hours_per_semester: Option<i32>,
     pub subject_type: String,
-    pub group_id: Option<Uuid>,
     pub description: Option<String>,
     pub effective_from: NaiveDate,
     pub effective_until: Option<NaiveDate>,
@@ -410,7 +408,7 @@ pub struct CatalogActivity {
     pub id: Uuid,
     pub code: String,
     pub activity_type: String,
-    pub owning_organization_unit_id: Option<Uuid>,
+    pub owning_organization_unit_id: Uuid,
     pub archived_at: Option<DateTime<Utc>>,
     pub row_version: i64,
     pub created_at: DateTime<Utc>,
@@ -422,7 +420,6 @@ pub struct CatalogActivity {
 pub struct CreateCatalogActivityRequest {
     pub code: String,
     pub activity_type: String,
-    pub owning_organization_unit_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -430,7 +427,6 @@ pub struct CreateCatalogActivityRequest {
 pub struct UpdateCatalogActivityRequest {
     pub code: String,
     pub activity_type: String,
-    pub owning_organization_unit_id: Option<Uuid>,
     pub archived: bool,
     pub row_version: i64,
 }
@@ -470,6 +466,16 @@ pub struct CatalogOwnerOption {
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
+pub struct CatalogSubjectGroupOption {
+    pub subject_group_id: Uuid,
+    pub organization_unit_id: Uuid,
+    pub code: String,
+    pub name: String,
+    pub can_manage: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct CatalogSubjectOverviewItem {
     pub subject: CatalogSubject,
     pub display_version: Option<SubjectVersion>,
@@ -484,7 +490,7 @@ pub struct CatalogSubjectOverviewItem {
 pub struct CatalogSubjectOverview {
     pub items: Vec<CatalogSubjectOverviewItem>,
     pub grade_level_options: Vec<GradeLevelLookupItem>,
-    pub owner_options: Vec<CatalogOwnerOption>,
+    pub subject_group_options: Vec<CatalogSubjectGroupOption>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -503,7 +509,7 @@ pub struct CatalogActivityOverviewItem {
 pub struct CatalogActivityOverview {
     pub items: Vec<CatalogActivityOverviewItem>,
     pub grade_level_options: Vec<GradeLevelLookupItem>,
-    pub owner_options: Vec<CatalogOwnerOption>,
+    pub can_create: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

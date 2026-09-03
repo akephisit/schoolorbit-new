@@ -32,7 +32,6 @@
 		Trash2,
 		WandSparkles
 	} from 'lucide-svelte';
-	import DeliveryOptionCombobox from './DeliveryOptionCombobox.svelte';
 
 	let {
 		academicTermId,
@@ -50,7 +49,6 @@
 	let programSearch = $state('');
 	let selectedStudyProgramIds = $state<string[]>([]);
 	let studyProgramIds = $derived(preparationTarget?.studyProgramIds ?? selectedStudyProgramIds);
-	let owningOrganizationUnitId = $state('');
 	let preview = $state.raw<CurriculumOfferingPreview | null>(null);
 	let choices = $state.raw<CurriculumPreparationChoice[]>([]);
 	let busy = $state(false);
@@ -77,8 +75,7 @@
 		visibleCurriculumPreparationProposals(preview?.proposals ?? [], preparationTarget)
 	);
 	let applyBlocked = $derived.by(() => {
-		if (!preview || !owningOrganizationUnitId || choices.length !== preview.proposals.length)
-			return true;
+		if (!preview || choices.length !== preview.proposals.length) return true;
 		if (preparationTarget) {
 			if (displayedProposals.length !== 1) return true;
 			const focusedChoice = choices.find(
@@ -242,7 +239,6 @@
 			await applyLearningOfferingsFromCurriculum({
 				academicTermId,
 				studyProgramIds,
-				owningOrganizationUnitId,
 				sourceHash: preview.sourceHash,
 				idempotencyKey: crypto.randomUUID(),
 				choices
@@ -340,20 +336,10 @@
 				</Popover.Root>
 			{/if}
 		</div>
-		<div class="space-y-2">
-			<Label>หน่วยงานเจ้าของรายการเปิดสอน</Label>
-			<DeliveryOptionCombobox
-				bind:value={owningOrganizationUnitId}
-				options={options.organizationUnits.map((unit) => ({
-					id: unit.id,
-					label: unit.name,
-					description: unit.code
-				}))}
-				placeholder="เลือกหน่วยงานเจ้าของ"
-				searchPlaceholder="ค้นหาชื่อหรือรหัสหน่วยงาน..."
-			/>
-		</div>
 	</div>
+	<p class="rounded-lg bg-muted/45 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+		แต่ละรายการจะรับกลุ่มสาระหรือสังกัดกิจกรรมพัฒนาผู้เรียนจากทะเบียนโดยอัตโนมัติ
+	</p>
 	<div class="flex justify-end">
 		<LoadingButton
 			type="button"

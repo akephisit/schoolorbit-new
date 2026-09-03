@@ -53,7 +53,11 @@ test('subject catalog uses the responsive overview information architecture', as
 	assert.match(subjects, /\* as Select/);
 	assert.match(subjects, /subjectHistoryCache/);
 	assert.match(subjects, /historyRevision/);
-	assert.match(subjects, /ownerOptions/);
+	assert.match(subjects, /subjectGroupOptions/);
+	assert.match(subjects, /manageableSubjectGroupOptions/);
+	assert.match(subjects, /updateCatalogSubject/);
+	assert.match(subjects, /กลุ่มสาระของรายวิชา/);
+	assert.doesNotMatch(subjects, /owningOrganizationUnitId/);
 	assert.match(subjects, /canManage=\{selected\.canManage\}/);
 	assert.match(subjects, /formatEffectiveRange/);
 	assert.match(subjects, /subject\.archivedAt/);
@@ -84,7 +88,9 @@ test('activity catalog uses the responsive overview information architecture', a
 	assert.match(activities, /\* as Select/);
 	assert.match(activities, /activityHistoryCache/);
 	assert.match(activities, /historyRevision/);
-	assert.match(activities, /ownerOptions/);
+	assert.match(activities, /overview\?\.canCreate/);
+	assert.match(activities, /สังกัดงานกิจกรรมพัฒนาผู้เรียนอัตโนมัติ/);
+	assert.doesNotMatch(activities, /owningOrganizationUnitId/);
 	assert.match(activities, /canManage=\{selected\.canManage\}/);
 	assert.match(activities, /formatEffectiveRange/);
 	assert.match(activities, /activity\.archivedAt/);

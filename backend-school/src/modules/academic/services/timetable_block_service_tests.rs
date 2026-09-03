@@ -26,7 +26,7 @@ async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 58).await.unwrap();
+    apply_migrations_through(&pool, 59).await.unwrap();
     sqlx::query(
         r#"INSERT INTO bell_schedule_periods (
                id, bell_schedule_id, name,

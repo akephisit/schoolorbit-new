@@ -6,9 +6,7 @@ use uuid::Uuid;
 
 use crate::modules::academic::core::models::{RequirementKind, StudyProgramOption};
 use crate::modules::facility::models::Room;
-use crate::modules::lookup::models::{
-    GradeLevelLookupItem, HomeroomLookupItem, OrganizationUnitLookupItem, StaffLookupItem,
-};
+use crate::modules::lookup::models::{GradeLevelLookupItem, HomeroomLookupItem, StaffLookupItem};
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, sqlx::Type, ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -415,18 +413,6 @@ impl UpsertAcademicTermChangeItemRequest {
         }
     }
 
-    pub fn owning_organization_unit_id(&self) -> Option<Uuid> {
-        match self {
-            Self::AddCourse { offering, .. } => Some(offering.owning_organization_unit_id),
-            Self::AddActivity { offering, .. } => Some(offering.owning_organization_unit_id),
-            Self::StopOffering { .. }
-            | Self::AdjustWeeklyPeriodTarget { .. }
-            | Self::AddGroupTeacher { .. }
-            | Self::AdjustGroupTeacherRole { .. }
-            | Self::StopGroupTeacher { .. } => None,
-        }
-    }
-
     pub fn existing_learning_offering_id(&self) -> Option<Uuid> {
         match self {
             Self::StopOffering {
@@ -733,7 +719,6 @@ pub struct CreateCourseOfferingRequest {
     pub academic_term_id: Uuid,
     pub subject_version_id: Uuid,
     pub curriculum_course_requirement_id: Option<Uuid>,
-    pub owning_organization_unit_id: Uuid,
     pub targets: Vec<OfferingTargetInput>,
     pub grading_policy: CourseGradingPolicy,
 }
@@ -744,7 +729,6 @@ pub struct CreateActivityOfferingRequest {
     pub academic_term_id: Uuid,
     pub activity_version_id: Uuid,
     pub curriculum_activity_requirement_id: Option<Uuid>,
-    pub owning_organization_unit_id: Uuid,
     pub targets: Vec<OfferingTargetInput>,
     pub registration_type: ActivityRegistrationType,
     pub scheduling_mode: ActivitySchedulingMode,
@@ -768,13 +752,6 @@ impl CreateLearningOfferingRequest {
         }
     }
 
-    pub fn owning_organization_unit_id(&self) -> Uuid {
-        match self {
-            Self::Course(request) => request.owning_organization_unit_id,
-            Self::Activity(request) => request.owning_organization_unit_id,
-        }
-    }
-
     pub fn targets(&self) -> &[OfferingTargetInput] {
         match self {
             Self::Course(request) => &request.targets,
@@ -787,7 +764,6 @@ impl CreateLearningOfferingRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateLearningOfferingRequest {
     pub row_version: i64,
-    pub owning_organization_unit_id: Uuid,
     pub targets: Vec<OfferingTargetInput>,
 }
 
@@ -840,7 +816,6 @@ pub struct PreviewCurriculumOfferingsRequest {
 pub struct ApplyCurriculumOfferingsRequest {
     pub academic_term_id: Uuid,
     pub study_program_ids: Vec<Uuid>,
-    pub owning_organization_unit_id: Uuid,
     pub source_hash: String,
     pub idempotency_key: Uuid,
     pub choices: Vec<CurriculumPreparationChoice>,
@@ -945,7 +920,7 @@ pub struct LearningOffering {
     pub ends_on: Option<NaiveDate>,
     #[schema(required = true)]
     pub stop_reason: Option<String>,
-    pub owning_organization_unit_id: Option<Uuid>,
+    pub owning_organization_unit_id: Uuid,
     pub row_version: i64,
     pub migrated: bool,
     pub created_at: DateTime<Utc>,
@@ -1141,7 +1116,6 @@ pub struct DeliveryManagementOptions {
     pub catalog_versions: Vec<DeliveryCatalogVersionOption>,
     pub grade_levels: Vec<GradeLevelLookupItem>,
     pub study_programs: Vec<StudyProgramOption>,
-    pub organization_units: Vec<OrganizationUnitLookupItem>,
     pub homerooms: Vec<HomeroomLookupItem>,
     pub learning_groups: Vec<LearningGroup>,
     pub teachers: Vec<StaffLookupItem>,
@@ -1418,7 +1392,7 @@ pub(super) struct LearningOfferingRow {
     pub starts_on: Option<NaiveDate>,
     pub ends_on: Option<NaiveDate>,
     pub stop_reason: Option<String>,
-    pub owning_organization_unit_id: Option<Uuid>,
+    pub owning_organization_unit_id: Uuid,
     pub row_version: i64,
     pub migrated: bool,
     pub created_at: DateTime<Utc>,

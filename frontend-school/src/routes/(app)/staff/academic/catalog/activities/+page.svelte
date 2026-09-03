@@ -16,8 +16,6 @@
 		ACTIVITY_TYPE_OPTIONS,
 		CATALOG_DISPLAY_STATE_OPTIONS,
 		SCHEDULING_MODE_OPTIONS,
-		catalogOwnerLabel,
-		catalogOwnerValue,
 		displayStateClass,
 		displayStateLabel,
 		formatEffectiveRange,
@@ -66,7 +64,6 @@
 	let mutationError = $state('');
 	let creating = $state(false);
 	let code = $state('');
-	let ownerValue = $state('');
 	let activityType = $state(ACTIVITY_TYPE_OPTIONS[0].value);
 	let search = $state('');
 	let typeFilter = $state(allValue);
@@ -77,12 +74,8 @@
 
 	let activityItems = $derived(overview?.items ?? []);
 	let gradeLevelOptions = $derived(overview?.gradeLevelOptions ?? []);
-	let ownerOptions = $derived(overview?.ownerOptions ?? []);
-	let canCreate = $derived(ownerOptions.length > 0);
+	let canCreate = $derived(overview?.canCreate ?? false);
 	let canOpenDelivery = $derived($can.hasModule(PERMISSION_MODULES.LEARNING_OFFERING));
-	let selectedOwnerOption = $derived(
-		ownerOptions.find((option) => catalogOwnerValue(option) === ownerValue)
-	);
 	let activityTypeOptions = $derived.by(() => {
 		const known = new Set<string>(ACTIVITY_TYPE_OPTIONS.map((option) => option.value));
 		const legacy = activityItems
@@ -117,9 +110,6 @@
 		try {
 			const selectedId = selected?.activity.id;
 			overview = await getCatalogActivityOverview();
-			if (!overview.ownerOptions.some((option) => catalogOwnerValue(option) === ownerValue)) {
-				ownerValue = overview.ownerOptions[0] ? catalogOwnerValue(overview.ownerOptions[0]) : '';
-			}
 			if (selectedId) {
 				selected = overview.items.find((item) => item.activity.id === selectedId) ?? null;
 			}
@@ -182,18 +172,12 @@
 
 	async function addActivity(event: SubmitEvent) {
 		event.preventDefault();
-		const owner = ownerOptions.find((option) => catalogOwnerValue(option) === ownerValue);
-		if (!owner) {
-			mutationError = 'ไม่มีหน่วยงานเจ้าของที่อนุญาตให้สร้างกิจกรรม';
-			return;
-		}
 		creating = true;
 		mutationError = '';
 		try {
 			const created = await createCatalogActivity({
 				code,
-				activityType,
-				owningOrganizationUnitId: owner.organizationUnitId
+				activityType
 			});
 			code = '';
 			await loadOverview(false);
@@ -332,7 +316,7 @@
 
 				{#if canCreate}
 					<form
-						class="grid gap-3 border-b p-4 sm:grid-cols-2 sm:items-end xl:grid-cols-[minmax(160px,240px)_minmax(200px,300px)_minmax(220px,360px)_auto]"
+						class="grid gap-3 border-b p-4 sm:grid-cols-[minmax(160px,260px)_minmax(240px,380px)_auto] sm:items-end"
 						onsubmit={addActivity}
 					>
 						<div>
@@ -344,23 +328,6 @@
 								placeholder="เช่น GUIDE-M1"
 								required
 							/>
-						</div>
-						<div class="min-w-0">
-							<Label for="new-activity-owner">หน่วยงานเจ้าของ</Label>
-							<Select.Root type="single" bind:value={ownerValue}>
-								<Select.Trigger id="new-activity-owner" class="mt-1.5 w-full">
-									{selectedOwnerOption
-										? catalogOwnerLabel(selectedOwnerOption)
-										: 'เลือกหน่วยงานเจ้าของ'}
-								</Select.Trigger>
-								<Select.Content>
-									{#each ownerOptions as option (catalogOwnerValue(option))}
-										<Select.Item value={catalogOwnerValue(option)}>
-											{catalogOwnerLabel(option)}
-										</Select.Item>
-									{/each}
-								</Select.Content>
-							</Select.Root>
 						</div>
 						<div>
 							<Label for="new-activity-type">ประเภทกิจกรรม</Label>
@@ -380,7 +347,7 @@
 							{creating ? 'กำลังเพิ่ม...' : 'เพิ่มกิจกรรม'}
 						</Button>
 						{#if mutationError}
-							<p role="alert" class="text-sm text-destructive sm:col-span-2 xl:col-span-4">
+							<p role="alert" class="text-sm text-destructive sm:col-span-3">
 								{mutationError}
 							</p>
 						{/if}
@@ -541,7 +508,7 @@
 
 			<p class="text-xs text-muted-foreground">
 				แสดง {filteredActivities.length} จาก {activityItems.length} กิจกรรม · ทะเบียนนี้เป็นข้อมูลกลาง
-				ไม่ผูกกับภาคเรียนบนแถบด้านบน
+				ไม่ผูกกับภาคเรียนบนแถบด้านบน · สังกัดงานกิจกรรมพัฒนาผู้เรียนอัตโนมัติ
 			</p>
 			{#if errorMessage}<p role="alert" class="text-sm text-destructive">{errorMessage}</p>{/if}
 		</div>

@@ -5466,7 +5466,7 @@ export interface components {
 				/** Format: uuid */
 				id: string;
 				/** Format: uuid */
-				owningOrganizationUnitId?: string | null;
+				owningOrganizationUnitId: string;
 				/** Format: int64 */
 				rowVersion: number;
 				/** Format: date-time */
@@ -5477,9 +5477,9 @@ export interface components {
 		};
 		ApiResponse_CatalogActivityOverview: {
 			data: {
+				canCreate: boolean;
 				gradeLevelOptions: components['schemas']['GradeLevelLookupItem'][];
 				items: components['schemas']['CatalogActivityOverviewItem'][];
-				ownerOptions: components['schemas']['CatalogOwnerOption'][];
 			};
 			message?: string;
 			success: boolean;
@@ -5494,9 +5494,11 @@ export interface components {
 				/** Format: uuid */
 				id: string;
 				/** Format: uuid */
-				owningOrganizationUnitId?: string | null;
+				owningOrganizationUnitId: string;
 				/** Format: int64 */
 				rowVersion: number;
+				/** Format: uuid */
+				subjectGroupId: string;
 				/** Format: date-time */
 				updatedAt: string;
 			};
@@ -5507,7 +5509,7 @@ export interface components {
 			data: {
 				gradeLevelOptions: components['schemas']['GradeLevelLookupItem'][];
 				items: components['schemas']['CatalogSubjectOverviewItem'][];
-				ownerOptions: components['schemas']['CatalogOwnerOption'][];
+				subjectGroupOptions: components['schemas']['CatalogSubjectGroupOption'][];
 			};
 			message?: string;
 			success: boolean;
@@ -5968,7 +5970,6 @@ export interface components {
 				gradeLevels: components['schemas']['GradeLevelLookupItem'][];
 				homerooms: components['schemas']['HomeroomLookupItem'][];
 				learningGroups: components['schemas']['LearningGroup'][];
-				organizationUnits: components['schemas']['OrganizationUnitLookupItem'][];
 				rooms: components['schemas']['Room'][];
 				studyPrograms: components['schemas']['StudyProgramOption'][];
 				teachers: components['schemas']['StaffLookupItem'][];
@@ -6574,7 +6575,7 @@ export interface components {
 				migrated: boolean;
 				nameSnapshot: string;
 				/** Format: uuid */
-				owningOrganizationUnitId?: string | null;
+				owningOrganizationUnitId: string;
 				/** Format: date-time */
 				publishedAt?: string | null;
 				/** Format: int64 */
@@ -7131,8 +7132,6 @@ export interface components {
 				/** Format: date */
 				effectiveUntil?: string | null;
 				gradeLevelIds: string[];
-				/** Format: uuid */
-				groupId?: string | null;
 				/** Format: int32 */
 				hoursPerSemester?: number | null;
 				/** Format: uuid */
@@ -7907,7 +7906,7 @@ export interface components {
 				/** Format: uuid */
 				id: string;
 				/** Format: uuid */
-				owningOrganizationUnitId?: string | null;
+				owningOrganizationUnitId: string;
 				/** Format: int64 */
 				rowVersion: number;
 				/** Format: date-time */
@@ -7926,9 +7925,11 @@ export interface components {
 				/** Format: uuid */
 				id: string;
 				/** Format: uuid */
-				owningOrganizationUnitId?: string | null;
+				owningOrganizationUnitId: string;
 				/** Format: int64 */
 				rowVersion: number;
+				/** Format: uuid */
+				subjectGroupId: string;
 				/** Format: date-time */
 				updatedAt: string;
 			}[];
@@ -8484,7 +8485,7 @@ export interface components {
 				migrated: boolean;
 				nameSnapshot: string;
 				/** Format: uuid */
-				owningOrganizationUnitId?: string | null;
+				owningOrganizationUnitId: string;
 				/** Format: date-time */
 				publishedAt?: string | null;
 				/** Format: int64 */
@@ -8920,8 +8921,6 @@ export interface components {
 				/** Format: date */
 				effectiveUntil?: string | null;
 				gradeLevelIds: string[];
-				/** Format: uuid */
-				groupId?: string | null;
 				/** Format: int32 */
 				hoursPerSemester?: number | null;
 				/** Format: uuid */
@@ -9079,8 +9078,6 @@ export interface components {
 			choices: components['schemas']['CurriculumPreparationChoice'][];
 			/** Format: uuid */
 			idempotencyKey: string;
-			/** Format: uuid */
-			owningOrganizationUnitId: string;
 			sourceHash: string;
 			studyProgramIds: string[];
 		};
@@ -9507,16 +9504,16 @@ export interface components {
 			/** Format: uuid */
 			id: string;
 			/** Format: uuid */
-			owningOrganizationUnitId?: string | null;
+			owningOrganizationUnitId: string;
 			/** Format: int64 */
 			rowVersion: number;
 			/** Format: date-time */
 			updatedAt: string;
 		};
 		CatalogActivityOverview: {
+			canCreate: boolean;
 			gradeLevelOptions: components['schemas']['GradeLevelLookupItem'][];
 			items: components['schemas']['CatalogActivityOverviewItem'][];
-			ownerOptions: components['schemas']['CatalogOwnerOption'][];
 		};
 		CatalogActivityOverviewItem: {
 			activity: components['schemas']['CatalogActivity'];
@@ -9550,16 +9547,27 @@ export interface components {
 			/** Format: uuid */
 			id: string;
 			/** Format: uuid */
-			owningOrganizationUnitId?: string | null;
+			owningOrganizationUnitId: string;
 			/** Format: int64 */
 			rowVersion: number;
+			/** Format: uuid */
+			subjectGroupId: string;
 			/** Format: date-time */
 			updatedAt: string;
+		};
+		CatalogSubjectGroupOption: {
+			canManage: boolean;
+			code: string;
+			name: string;
+			/** Format: uuid */
+			organizationUnitId: string;
+			/** Format: uuid */
+			subjectGroupId: string;
 		};
 		CatalogSubjectOverview: {
 			gradeLevelOptions: components['schemas']['GradeLevelLookupItem'][];
 			items: components['schemas']['CatalogSubjectOverviewItem'][];
-			ownerOptions: components['schemas']['CatalogOwnerOption'][];
+			subjectGroupOptions: components['schemas']['CatalogSubjectGroupOption'][];
 		};
 		CatalogSubjectOverviewItem: {
 			canManage: boolean;
@@ -10317,8 +10325,6 @@ export interface components {
 			capacity?: number | null;
 			/** Format: uuid */
 			curriculumActivityRequirementId?: string | null;
-			/** Format: uuid */
-			owningOrganizationUnitId: string;
 			passCriteria: components['schemas']['ActivityPassCriteria'];
 			registrationType: components['schemas']['ActivityRegistrationType'];
 			schedulingMode: components['schemas']['ActivitySchedulingMode'];
@@ -10347,13 +10353,11 @@ export interface components {
 		CreateCatalogActivityRequest: {
 			activityType: string;
 			code: string;
-			/** Format: uuid */
-			owningOrganizationUnitId?: string | null;
 		};
 		CreateCatalogSubjectRequest: {
 			code: string;
 			/** Format: uuid */
-			owningOrganizationUnitId?: string | null;
+			subjectGroupId: string;
 		};
 		CreateCertificateCampaignRequest: {
 			/** Format: uuid */
@@ -10374,8 +10378,6 @@ export interface components {
 			/** Format: uuid */
 			curriculumCourseRequirementId?: string | null;
 			gradingPolicy: components['schemas']['CourseGradingPolicy'];
-			/** Format: uuid */
-			owningOrganizationUnitId: string;
 			/** Format: uuid */
 			subjectVersionId: string;
 			targets: components['schemas']['OfferingTargetInput'][];
@@ -10653,8 +10655,6 @@ export interface components {
 			/** Format: date */
 			effectiveUntil?: string | null;
 			gradeLevelIds: string[];
-			/** Format: uuid */
-			groupId?: string | null;
 			/** Format: int32 */
 			hoursPerSemester?: number | null;
 			nameEn?: string | null;
@@ -11151,7 +11151,6 @@ export interface components {
 			gradeLevels: components['schemas']['GradeLevelLookupItem'][];
 			homerooms: components['schemas']['HomeroomLookupItem'][];
 			learningGroups: components['schemas']['LearningGroup'][];
-			organizationUnits: components['schemas']['OrganizationUnitLookupItem'][];
 			rooms: components['schemas']['Room'][];
 			studyPrograms: components['schemas']['StudyProgramOption'][];
 			teachers: components['schemas']['StaffLookupItem'][];
@@ -12200,7 +12199,7 @@ export interface components {
 			migrated: boolean;
 			nameSnapshot: string;
 			/** Format: uuid */
-			owningOrganizationUnitId?: string | null;
+			owningOrganizationUnitId: string;
 			/** Format: date-time */
 			publishedAt?: string | null;
 			/** Format: int64 */
@@ -13600,8 +13599,6 @@ export interface components {
 			/** Format: date */
 			effectiveUntil?: string | null;
 			gradeLevelIds: string[];
-			/** Format: uuid */
-			groupId?: string | null;
 			/** Format: int32 */
 			hoursPerSemester?: number | null;
 			/** Format: uuid */
@@ -14648,18 +14645,16 @@ export interface components {
 			activityType: string;
 			archived: boolean;
 			code: string;
-			/** Format: uuid */
-			owningOrganizationUnitId?: string | null;
 			/** Format: int64 */
 			rowVersion: number;
 		};
 		UpdateCatalogSubjectRequest: {
 			archived: boolean;
 			code: string;
-			/** Format: uuid */
-			owningOrganizationUnitId?: string | null;
 			/** Format: int64 */
 			rowVersion: number;
+			/** Format: uuid */
+			subjectGroupId: string;
 		};
 		UpdateCertificateCampaignRequest: {
 			/** Format: uuid */
@@ -14754,8 +14749,6 @@ export interface components {
 			rowVersion: number;
 		};
 		UpdateLearningOfferingRequest: {
-			/** Format: uuid */
-			owningOrganizationUnitId: string;
 			/** Format: int64 */
 			rowVersion: number;
 			targets: components['schemas']['OfferingTargetInput'][];
@@ -14924,8 +14917,6 @@ export interface components {
 			/** Format: date */
 			effectiveUntil?: string | null;
 			gradeLevelIds: string[];
-			/** Format: uuid */
-			groupId?: string | null;
 			/** Format: int32 */
 			hoursPerSemester?: number | null;
 			nameEn?: string | null;

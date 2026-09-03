@@ -156,15 +156,18 @@ test('catalog overview schemas are generated from the backend contract', async (
 	for (const schemaName of [
 		'CatalogSubjectOverview',
 		'CatalogActivityOverview',
+		'CatalogSubjectGroupOption',
 		'CatalogOwnerOption',
 		'CatalogDisplayState'
 	]) {
 		assert.ok(schemas?.[schemaName], `${schemaName} must exist in OpenAPI`);
 		assert.match(generated, new RegExp(`\\b${schemaName}:\\s*`));
 	}
-	for (const overviewName of ['CatalogSubjectOverview', 'CatalogActivityOverview']) {
-		assert.ok(schemas[overviewName].required.includes('ownerOptions'));
-	}
+	assert.ok(schemas.CatalogSubjectOverview.required.includes('subjectGroupOptions'));
+	assert.ok(schemas.CatalogActivityOverview.required.includes('canCreate'));
+	assert.ok(schemas.CatalogSubjectGroupOption.required.includes('canManage'));
+	assert.ok(!schemas.CatalogSubjectOverview.required.includes('ownerOptions'));
+	assert.ok(!schemas.CatalogActivityOverview.required.includes('ownerOptions'));
 	for (const itemName of ['CatalogSubjectOverviewItem', 'CatalogActivityOverviewItem']) {
 		assert.ok(schemas[itemName].required.includes('canManage'));
 	}

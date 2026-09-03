@@ -1044,16 +1044,35 @@ test('academic catalog and curriculum workspaces gate mutation actions', async (
 		}
 	}
 
-	for (const file of [
-		'frontend-school/src/routes/(app)/staff/academic/catalog/subjects/+page.svelte',
-		'frontend-school/src/routes/(app)/staff/academic/catalog/activities/+page.svelte'
-	]) {
-		const source = stripComments(await readFile(path.join(repoRoot, file), 'utf8'));
-		assert.match(source, /ownerOptions/);
-		assert.match(source, /canCreate/);
-		assert.match(source, /selected\.canManage/);
-		assert.doesNotMatch(source, /PERMISSIONS\.ACADEMIC_CATALOG_MANAGE_/);
-	}
+
+	const subjectSource = stripComments(
+		await readFile(
+			path.join(
+				repoRoot,
+				'frontend-school/src/routes/(app)/staff/academic/catalog/subjects/+page.svelte'
+			),
+			'utf8'
+		)
+	);
+	assert.match(subjectSource, /subjectGroupOptions/);
+	assert.match(subjectSource, /canCreate/);
+	assert.match(subjectSource, /selected\.canManage/);
+	assert.doesNotMatch(subjectSource, /ownerOptions|owningOrganizationUnitId/);
+	assert.doesNotMatch(subjectSource, /PERMISSIONS\.ACADEMIC_CATALOG_MANAGE_/);
+
+	const activitySource = stripComments(
+		await readFile(
+			path.join(
+				repoRoot,
+				'frontend-school/src/routes/(app)/staff/academic/catalog/activities/+page.svelte'
+			),
+			'utf8'
+		)
+	);
+	assert.match(activitySource, /overview\?\.canCreate/);
+	assert.match(activitySource, /selected\.canManage/);
+	assert.doesNotMatch(activitySource, /ownerOptions|owningOrganizationUnitId/);
+	assert.doesNotMatch(activitySource, /PERMISSIONS\.ACADEMIC_CATALOG_MANAGE_/);
 });
 
 test('academic course planning pages gate read and manage actions', async () => {

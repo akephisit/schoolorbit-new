@@ -579,7 +579,7 @@ async fn prepare_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 58).await.unwrap();
+    apply_migrations_through(&pool, 59).await.unwrap();
     pool
 }
 
@@ -1661,23 +1661,29 @@ async fn add_operational_change_catalog_fixture(
     let subject_id = stable_uuid("change-set:catalog:subject");
     let subject_version_id = stable_uuid("change-set:catalog:subject-version");
     sqlx::query(
-        r#"INSERT INTO subjects (id, code, identity_key, owning_organization_unit_id)
-           VALUES ($1, 'ท99999', 'change-set-test-subject', $2)"#,
+        r#"INSERT INTO subjects (
+               id, code, identity_key, subject_group_id, owning_organization_unit_id
+           )
+           SELECT $1, 'ท99999', 'change-set-test-subject',
+                  source.subject_group_id, source.owning_organization_unit_id
+           FROM subject_versions version
+           JOIN subjects source ON source.id = version.subject_id
+           WHERE version.id = $2"#,
     )
     .bind(subject_id)
-    .bind(context.owner_id)
+    .bind(context.subject_version_id)
     .execute(pool)
     .await
     .unwrap();
     sqlx::query(
         r#"INSERT INTO subject_versions (
                id, subject_id, version_no, code, name_th, name_en, credit,
-               hours_per_semester, type, group_id, description, effective_from,
+               hours_per_semester, type, description, effective_from,
                effective_until, start_academic_year_id, term, is_active,
                periods_per_week, status, published_at
            )
            SELECT $1, $2, 1, 'ท99999', 'รายวิชาทดสอบกลางภาค', NULL, credit,
-                  hours_per_semester, type, group_id, 'fixture', effective_from,
+                  hours_per_semester, type, 'fixture', effective_from,
                   effective_until, start_academic_year_id, term, true,
                   periods_per_week, 'published', now()
            FROM subject_versions
@@ -1710,13 +1716,13 @@ async fn add_operational_change_catalog_fixture(
         r#"INSERT INTO activities (
                id, code, identity_key, activity_type, owning_organization_unit_id
            )
-           SELECT $1, 'ACT-CHANGE', 'change-set-test-activity', activity.activity_type, $2
+           SELECT $1, 'ACT-CHANGE', 'change-set-test-activity', activity.activity_type,
+                  activity.owning_organization_unit_id
            FROM activity_versions version
            JOIN activities activity ON activity.id = version.activity_id
            WHERE version.id = $3"#,
     )
     .bind(activity_id)
-    .bind(context.owner_id)
     .bind(source_activity_version_id)
     .execute(pool)
     .await
@@ -2141,7 +2147,6 @@ async fn add_change_items_create_draft_course_and_activity_delivery_then_delete_
                 academic_term_id: context.term_id,
                 activity_version_id,
                 curriculum_activity_requirement_id: None,
-                owning_organization_unit_id: context.owner_id,
                 targets: vec![OfferingTargetInput {
                     target_kind: OfferingTargetKind::Homeroom,
                     homeroom_id: Some(context.homeroom_id),
@@ -4012,7 +4017,6 @@ fn course_request(context: &RuntimeContext) -> CreateLearningOfferingRequest {
         academic_term_id: context.term_id,
         subject_version_id: context.subject_version_id,
         curriculum_course_requirement_id: None,
-        owning_organization_unit_id: context.owner_id,
         targets: vec![OfferingTargetInput {
             target_kind: OfferingTargetKind::Homeroom,
             homeroom_id: Some(context.homeroom_id),
@@ -4063,7 +4067,6 @@ async fn course_offering_snapshot_keeps_the_catalog_standard_immutable() {
         offering.id,
         UpdateLearningOfferingRequest {
             row_version: offering.row_version,
-            owning_organization_unit_id: context.owner_id,
             targets,
         },
     )
@@ -4141,7 +4144,6 @@ fn create_offering_wire_contract_is_strictly_tagged_by_kind() {
         "kind": "course",
         "academicTermId": Uuid::nil(),
         "subjectVersionId": Uuid::nil(),
-        "owningOrganizationUnitId": Uuid::nil(),
         "targets": [],
         "gradingPolicy": { "policyCode": "school_default", "passingScore": "50.00" }
     }))
@@ -4153,7 +4155,6 @@ fn create_offering_wire_contract_is_strictly_tagged_by_kind() {
             "kind": "course",
             "academicTermId": Uuid::nil(),
             "activityVersionId": Uuid::nil(),
-            "owningOrganizationUnitId": Uuid::nil(),
             "targets": [],
             "gradingPolicy": { "policyCode": "school_default" }
         }));
@@ -4183,14 +4184,6 @@ async fn offering_group_and_roster_publish_are_revisioned_and_idempotent() {
     assert!(immutable_after_normalization
         .to_string()
         .contains("ACADEMIC_CORE_PUBLISHED_OFFERING_IMMUTABLE"));
-
-    let mut invalid_owner_request = course_request(&context);
-    let CreateLearningOfferingRequest::Course(course) = &mut invalid_owner_request else {
-        unreachable!();
-    };
-    course.owning_organization_unit_id = Uuid::new_v4();
-    let invalid_owner = offerings::create(&pool, context.teacher_id, invalid_owner_request).await;
-    assert!(matches!(invalid_owner, Err(AppError::ValidationError(_))));
 
     let ineffective_subject_version_id: Uuid = sqlx::query_scalar(
         r#"SELECT version.id
@@ -4225,6 +4218,17 @@ async fn offering_group_and_roster_publish_are_revisioned_and_idempotent() {
     assert_eq!(offering.kind, LearningOfferingKind::Course);
     assert_eq!(offering.status, LearningOfferingStatus::Draft);
     assert_eq!(offering.academic_year_id, context.year_id);
+    let expected_owner_id: Uuid = sqlx::query_scalar(
+        r#"SELECT subject.owning_organization_unit_id
+           FROM subject_versions version
+           JOIN subjects subject ON subject.id = version.subject_id
+           WHERE version.id = $1"#,
+    )
+    .bind(context.subject_version_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(offering.owning_organization_unit_id, expected_owner_id);
 
     let group = groups::create(
         &pool,
@@ -4555,7 +4559,6 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
         ApplyCurriculumOfferingsRequest {
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
-            owning_organization_unit_id: context.owner_id,
             source_hash: "stale-source-hash".to_string(),
             idempotency_key: Uuid::new_v4(),
             choices: choices.clone(),
@@ -4571,7 +4574,6 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
         ApplyCurriculumOfferingsRequest {
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
-            owning_organization_unit_id: context.owner_id,
             source_hash: preview.source_hash.clone(),
             idempotency_key,
             choices: choices.clone(),
@@ -4585,7 +4587,6 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
         ApplyCurriculumOfferingsRequest {
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
-            owning_organization_unit_id: context.owner_id,
             source_hash: preview.source_hash.clone(),
             idempotency_key,
             choices,
@@ -4628,7 +4629,6 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
         ApplyCurriculumOfferingsRequest {
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
-            owning_organization_unit_id: context.owner_id,
             source_hash: retained_preview.source_hash,
             idempotency_key: Uuid::new_v4(),
             choices: retained_choices,
@@ -4711,7 +4711,6 @@ async fn curriculum_preparation_groups_support_reviewed_combined_split_and_manua
         ApplyCurriculumOfferingsRequest {
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
-            owning_organization_unit_id: context.owner_id,
             source_hash: preview.source_hash.clone(),
             idempotency_key: Uuid::new_v4(),
             choices: empty_apply_choices,
@@ -4753,7 +4752,6 @@ async fn curriculum_preparation_groups_support_reviewed_combined_split_and_manua
         ApplyCurriculumOfferingsRequest {
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
-            owning_organization_unit_id: context.owner_id,
             source_hash: preview.source_hash,
             idempotency_key: Uuid::new_v4(),
             choices,
@@ -4858,7 +4856,6 @@ async fn self_registration_activity_uses_common_delivery_and_reads_migrated_pass
             academic_term_id: context.term_id,
             activity_version_id,
             curriculum_activity_requirement_id: None,
-            owning_organization_unit_id: context.owner_id,
             targets: vec![OfferingTargetInput {
                 target_kind: OfferingTargetKind::Homeroom,
                 homeroom_id: Some(context.homeroom_id),
@@ -5031,7 +5028,6 @@ async fn student_activity_registration_is_term_scoped_eligible_and_revisioned() 
             academic_term_id: context.term_id,
             activity_version_id,
             curriculum_activity_requirement_id: None,
-            owning_organization_unit_id: context.owner_id,
             targets: vec![OfferingTargetInput {
                 target_kind: OfferingTargetKind::Homeroom,
                 homeroom_id: Some(context.homeroom_id),
@@ -5449,7 +5445,6 @@ async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverag
         ApplyCurriculumOfferingsRequest {
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
-            owning_organization_unit_id: context.owner_id,
             source_hash: preview.source_hash,
             idempotency_key: Uuid::new_v4(),
             choices: deferred_choices,
@@ -5829,7 +5824,6 @@ async fn delivery_management_options_are_scoped_and_human_readable() {
     let options = workspaces::delivery_management_options(
         &pool,
         context.term_id,
-        context.teacher_id,
         &AcademicResourceListFilter {
             includes_school_owned: true,
             ..Default::default()
@@ -5863,10 +5857,6 @@ async fn delivery_management_options_are_scoped_and_human_readable() {
         .iter()
         .any(|item| item.id == context.study_program_id && !item.name.is_empty()));
     assert!(options
-        .organization_units
-        .iter()
-        .any(|item| item.id == context.owner_id && !item.name.is_empty()));
-    assert!(options
         .homerooms
         .iter()
         .any(|item| item.id == context.homeroom_id && item.grade_level.is_some()));
@@ -5883,7 +5873,6 @@ async fn delivery_management_options_are_scoped_and_human_readable() {
     let scoped = workspaces::delivery_management_options(
         &pool,
         context.term_id,
-        context.teacher_id,
         &AcademicResourceListFilter {
             organization_unit_ids: vec![context.owner_id],
             ..Default::default()
@@ -5892,9 +5881,9 @@ async fn delivery_management_options_are_scoped_and_human_readable() {
     .await
     .expect("organization-scoped options should load");
     assert!(scoped
-        .organization_units
+        .catalog_versions
         .iter()
-        .all(|item| item.id == context.owner_id));
+        .all(|item| item.id == context.subject_version_id));
 }
 
 #[tokio::test]
@@ -5971,13 +5960,6 @@ async fn roster_preview_exposes_minimal_display_data_without_hashing_names() {
 async fn list_groups_for_term_preserves_access_union_and_relations() {
     let pool = prepare_delivery_runtime_fixture("academic_delivery_term_group_list").await;
     let context = planning_runtime_context(&pool).await;
-    let secondary_owner_id: Uuid = sqlx::query_scalar(
-        "SELECT id FROM organization_units WHERE is_active AND id <> $1 ORDER BY id LIMIT 1",
-    )
-    .bind(context.owner_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
     let secondary_teacher_id: Uuid = sqlx::query_scalar(
         "SELECT id FROM users WHERE user_type = 'staff' AND status = 'active' AND id <> $1 \
          ORDER BY id LIMIT 1",
@@ -6025,7 +6007,6 @@ async fn list_groups_for_term_preserves_access_union_and_relations() {
             academic_term_id: context.term_id,
             activity_version_id,
             curriculum_activity_requirement_id: None,
-            owning_organization_unit_id: secondary_owner_id,
             targets: vec![OfferingTargetInput {
                 target_kind: OfferingTargetKind::Homeroom,
                 homeroom_id: Some(context.homeroom_id),
@@ -6048,6 +6029,7 @@ async fn list_groups_for_term_preserves_access_union_and_relations() {
     )
     .await
     .unwrap();
+    let secondary_owner_id = activity_offering.owning_organization_unit_id;
 
     let course_group_a = groups::create(
         &pool,
