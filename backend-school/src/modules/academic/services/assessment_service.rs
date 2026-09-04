@@ -182,6 +182,7 @@ pub async fn list_assessment_plans(
     pool: &PgPool,
     query: &AssessmentPlanListQuery,
     access: &AcademicResourceListFilter,
+    current_actor_id: Uuid,
 ) -> Result<Vec<AssessmentPlanSummary>, AppError> {
     let owner_ids = access.allowed_organization_unit_ids();
     let rows: Vec<AssessmentPlanSummaryRow> = sqlx::query_as(
@@ -244,7 +245,12 @@ pub async fn list_assessment_plans(
               WHERE learning_group.learning_offering_id = offering.id
                 AND teacher.teacher_id = $6
           ))
-        ORDER BY offering.code_snapshot, offering.id
+        ORDER BY CASE
+                     WHEN plan.assessment_coordinator_id = $7 THEN 0
+                     ELSE 1
+                 END,
+                 offering.code_snapshot,
+                 offering.id
         LIMIT 500
         "#,
     )
@@ -254,6 +260,7 @@ pub async fn list_assessment_plans(
     .bind(access.includes_school_owned)
     .bind(owner_ids)
     .bind(access.assigned_actor_id)
+    .bind(current_actor_id)
     .fetch_all(pool)
     .await?;
 

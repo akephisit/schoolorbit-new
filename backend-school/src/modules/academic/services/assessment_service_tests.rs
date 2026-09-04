@@ -81,6 +81,102 @@ async fn learning_offering_permission_does_not_grant_assessment_plan_access() {
     assert!(matches!(result, Err(AppError::Forbidden(_))));
 }
 
+#[tokio::test]
+async fn school_wide_assessment_list_prioritizes_the_current_coordinator() {
+    let pool = migrated_pool("assessment_current_coordinator_first").await;
+    let term_id: Uuid =
+        sqlx::query_scalar("SELECT academic_term_id FROM course_assessment_plans LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let current_actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
+    let other_coordinator_id = Uuid::parse_str("50000000-0000-0000-0000-000000000003").unwrap();
+    sqlx::query("UPDATE course_assessment_plans SET assessment_coordinator_id = $1")
+        .bind(other_coordinator_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let preferred_offering_id = Uuid::new_v4();
+    sqlx::query_scalar::<_, Uuid>(
+        r#"WITH source AS (
+               SELECT term.id AS academic_term_id,
+                      term.academic_year_id,
+                      version.id AS subject_version_id,
+                      version.subject_id,
+                      version.code,
+                      version.name_th,
+                      version.credit,
+                      version.hours_per_semester,
+                      subject.owning_organization_unit_id,
+                      existing_detail.grading_policy
+               FROM academic_terms term
+               JOIN subject_versions version ON version.code = 'SCI-CORE'
+               JOIN subjects subject ON subject.id = version.subject_id
+               JOIN course_offering_details existing_detail
+                 ON existing_detail.academic_term_id = term.id
+               WHERE term.id = $2
+               ORDER BY existing_detail.learning_offering_id
+               LIMIT 1
+           ), inserted_offering AS (
+               INSERT INTO learning_offerings (
+                   id, academic_term_id, academic_year_id, kind, code_snapshot,
+                   name_snapshot, status, owning_organization_unit_id,
+                   migration_provenance
+               )
+               SELECT $1, academic_term_id, academic_year_id, 'course', code,
+                      name_th, 'draft', owning_organization_unit_id, '{}'::jsonb
+               FROM source
+               RETURNING id
+           ), inserted_detail AS (
+               INSERT INTO course_offering_details (
+                   learning_offering_id, academic_term_id, academic_year_id,
+                   subject_version_id, subject_id, credit, hours,
+                   grading_policy, migration_provenance
+               )
+               SELECT inserted_offering.id, source.academic_term_id,
+                      source.academic_year_id, source.subject_version_id,
+                      source.subject_id, source.credit,
+                      source.hours_per_semester::numeric(10,2),
+                      source.grading_policy, '{}'::jsonb
+               FROM source CROSS JOIN inserted_offering
+               RETURNING learning_offering_id
+           )
+           INSERT INTO course_assessment_plans (
+               id, academic_term_id, subject_version_id, learning_offering_id,
+               academic_year_id, assessment_coordinator_id, row_version,
+               migration_provenance, created_at, updated_at
+           )
+           SELECT gen_random_uuid(), source.academic_term_id,
+                  source.subject_version_id, inserted_detail.learning_offering_id,
+                  source.academic_year_id, $3, 1, '{}'::jsonb, now(), now()
+           FROM source CROSS JOIN inserted_detail
+           RETURNING learning_offering_id"#,
+    )
+    .bind(preferred_offering_id)
+    .bind(term_id)
+    .bind(current_actor_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let plans = assessment_service::list_assessment_plans(
+        &pool,
+        &list_query(term_id),
+        &AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..Default::default()
+        },
+        current_actor_id,
+    )
+    .await
+    .unwrap();
+
+    assert!(plans.len() >= 2);
+    assert_eq!(plans[0].offering_id, preferred_offering_id);
+    assert_eq!(plans[0].assessment_coordinator_id, Some(current_actor_id));
+}
+
 fn save_payload(
     detail: &crate::modules::academic::models::assessment::AssessmentPlanDetail,
 ) -> SaveAssessmentPlanRequest {
@@ -150,6 +246,7 @@ async fn one_offering_plan_is_shared_by_every_learning_group() {
             includes_school_owned: true,
             ..Default::default()
         },
+        Uuid::nil(),
     )
     .await
     .unwrap();

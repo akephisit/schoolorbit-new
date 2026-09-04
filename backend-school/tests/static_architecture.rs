@@ -1839,14 +1839,16 @@ fn academic_assessment_save_is_statusless_and_optimistically_versioned() {
 }
 
 #[test]
-fn academic_assessment_list_has_stable_offering_order() {
+fn academic_assessment_list_prioritizes_current_coordinator_then_has_stable_offering_order() {
     let service = strip_comments(&read_source(
         manifest_dir().join("src/modules/academic/services/assessment_service.rs"),
     ));
 
     assert!(
-        service.contains("ORDER BY offering.code_snapshot, offering.id"),
-        "assessment list must have deterministic canonical offering order"
+        service.contains("WHEN plan.assessment_coordinator_id = $7 THEN 0")
+            && service.contains("offering.code_snapshot,")
+            && service.contains("offering.id\n        LIMIT 500"),
+        "assessment list must prioritize the current coordinator before its deterministic canonical offering order"
     );
     assert!(
         !service.contains("sort_actor_id") && !service.contains("classroom_room_number"),

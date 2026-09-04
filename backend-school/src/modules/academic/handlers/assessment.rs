@@ -43,8 +43,13 @@ pub async fn list_assessment_plans(
         AssessmentAction::Read,
     )
     .await?;
-    let plans =
-        assessment_service::list_assessment_plans(&context.tenant.pool, &query, &access).await?;
+    let plans = assessment_service::list_assessment_plans(
+        &context.tenant.pool,
+        &query,
+        &access,
+        context.actor.user_id,
+    )
+    .await?;
     Ok(Json(ApiResponse::ok(plans)).into_response())
 }
 
