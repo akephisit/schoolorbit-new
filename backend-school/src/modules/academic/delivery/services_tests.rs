@@ -1720,7 +1720,7 @@ async fn add_operational_change_catalog_fixture(
                   activity.owning_organization_unit_id
            FROM activity_versions version
            JOIN activities activity ON activity.id = version.activity_id
-           WHERE version.id = $3"#,
+           WHERE version.id = $2"#,
     )
     .bind(activity_id)
     .bind(source_activity_version_id)
