@@ -48,6 +48,8 @@ Current workflows:
 - [deploy-backend-school.yml](../.github/workflows/deploy-backend-school.yml)
 - [deploy-school-tenant.yml](../.github/workflows/deploy-school-tenant.yml)
 - [deploy-all-schools.yml](../.github/workflows/deploy-all-schools.yml)
+- [runtime-diagnostics.yml](../.github/workflows/runtime-diagnostics.yml)
+- [ghcr-retention.yml](../.github/workflows/ghcr-retention.yml)
 - [permission-contract.yml](../.github/workflows/permission-contract.yml)
 - [api-contract.yml](../.github/workflows/api-contract.yml)
 - [smoke-test.yml](../.github/workflows/smoke-test.yml)
@@ -74,6 +76,71 @@ frontend first, then run `npm run sync:menu-routes` as an explicit step with ser
 request fails the deployment workflow instead of being hidden inside the frontend build.
 
 After deployment, verify readiness first, then run the smoke test and the relevant browser workflow with runtime credentials.
+
+### Build, deployment timing, and image retention
+
+Backend image builds keep separate BuildKit cache scopes for admin and school. Rust, cargo-chef, and
+sccache are pinned in each Dockerfile. GitHub's cache runtime reaches only the final Cargo build as
+BuildKit secrets; a missing or unavailable compiler cache falls back to an ordinary Cargo build.
+Every build also publishes a `cargo-timings-backend-*` HTML artifact for seven days. Compare the
+Cargo report, sccache statistics, and GitHub step duration rather than treating one cache marker as
+proof of a faster build.
+
+A source-only edit invalidates the final source/build layer, so the changed application crate and
+final executable must be compiled and linked again. It does not discard the cargo-chef dependency
+layer when `Cargo.toml` and `Cargo.lock` are unchanged. sccache may reuse eligible compiler outputs,
+but it cannot avoid every changed-crate compile or the final link. If two ordinary warm builds show
+no useful hits or increase total duration, remove the sccache integration while retaining the pinned
+toolchain, Cargo timing artifact, and BuildKit cache.
+
+Each backend deploy emits bounded `deployment_timing phase=<name> seconds=<integer>` records.
+Admin reports image pull, backend readiness, and origin verification. School additionally reports
+scanner readiness, tenant migration/status, authenticated smoke, and proxy cutover when those phases
+run. These records contain no environment values or credentials.
+
+After the existing release-acceptance gate succeeds, the deploy removes only old, exact 40-character
+SHA tags from its own SchoolOrbit repository and keeps the newest three. Image IDs used by any
+container or addressed by `latest` or `rollback` are always protected, so a protected older SHA can
+temporarily remain in addition to the newest three. Cleanup never uses Podman system, image,
+container, or volume prune and never removes `schoolorbit-clamav-signatures`.
+
+Run **Runtime Diagnostics** manually before and after the first rollout. It reports the filesystem
+capacity for Podman's graph root, `podman system df` accounting, per-backend SHA-tag counts,
+container state/network aliases, Nginx validation, bounded database activity, and endpoint status.
+It does not print container environments or application logs.
+
+The school deploy pulls the pinned ClamAV image and reuses `schoolorbit-clamd` only when its image,
+3 GiB memory, CPU/PID limits, restart/security settings, lack of published ports, named signature
+volume, two networks, running state, and health all match the canonical Compose definition. It emits
+`clamd_action=reused` when exact; otherwise it recreates only that container, emits a bounded reason,
+preserves the signature volume, and waits through the same health gate.
+
+GHCR retention runs weekly and can be dispatched manually. It preserves `latest`, the 30 newest
+SHA-tagged releases for each backend, and every untagged or unrecognized version such as an
+attestation. Manual dispatch defaults to dry-run. The weekly run also remains dry-run unless the
+repository variable `GHCR_RETENTION_ENABLED` is exactly `true`. Before enabling it, run a manual
+dry-run and review both package candidate lists. The repository must have the package's Actions
+admin access; a `403` is an access/configuration failure and must not be bypassed with another token
+in source. Execution re-reads all selected candidates before mutation and again immediately before
+each delete, processes oldest first, and deletes at most 100 versions per package per run.
+
+For the first post-merge observation, use the next ordinary admin and school deployments rather
+than triggering benchmark-only production changes:
+
+1. Dispatch Runtime Diagnostics and record graph-root capacity, image accounting, and SHA counts.
+2. Observe both build records, Cargo timing artifacts, and sccache hit/miss statistics. Repeat on the
+   following ordinary source-changing deployment to obtain two warm samples.
+3. Confirm each accepted deploy reaches all existing readiness, migration, smoke, and origin gates;
+   check the phase timing records and `clamd_action` result.
+4. Dispatch Runtime Diagnostics again. Confirm the active and rollback images resolve and each
+   backend has the newest three SHA tags, allowing only additional protected image IDs.
+5. Run GHCR Retention manually in dry-run mode. Enable `GHCR_RETENTION_ENABLED=true` only after the
+   candidate order and protected versions are verified.
+
+If cleanup fails after acceptance, keep the accepted service running and diagnose the exact protected
+reference or Podman error; do not substitute a broad prune. If a cache path regresses, revert only
+that cache integration. If ClamAV is recreated unexpectedly, use its bounded drift reason and the
+canonical Compose definition to repair forward; never delete its signature volume.
 
 ## Reverse Proxy and Realtime
 

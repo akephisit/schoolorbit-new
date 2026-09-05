@@ -113,12 +113,15 @@ When the VPS installer, canonical Compose runtime, Nginx templates, deployment w
 
 ```bash
 shellcheck scripts/schoolorbit-installer scripts/render_nginx_config.sh \
+  scripts/prune_runtime_images.sh scripts/clamd_runtime_matches.sh \
   scripts/lib/schoolorbit-installer/*.sh \
   scripts/lib/schoolorbit-installer/remote/*.sh
 shfmt -d -i 4 -ci scripts/schoolorbit-installer scripts/render_nginx_config.sh \
+  scripts/prune_runtime_images.sh scripts/clamd_runtime_matches.sh \
   scripts/lib/schoolorbit-installer/*.sh \
   scripts/lib/schoolorbit-installer/remote/*.sh
 bats scripts/tests/installer
+node --test scripts/tests/prune-ghcr-versions.test.mjs
 node --test frontend-school/tests/static/deployment-installer.test.mjs
 env $(grep -v '^#' scripts/tests/installer/fixtures/runtime.env | xargs) \
   podman-compose -f podman-compose.yml --dry-run up -d >/dev/null
@@ -126,6 +129,30 @@ docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7
 ```
 
 The deployment static guard renders a proxy template into a temporary target, rejects invalid domains without replacing existing output, enforces the single production Compose owner, and confirms backend workflows verify the selected origin rather than the public hostname. Report an unavailable Bats, Podman Compose, or Docker dependency as unrun; do not replace its check with a narrower command.
+
+For focused deployment-runtime work, run:
+
+```bash
+bats scripts/tests/installer/runtime_image_retention.bats \
+  scripts/tests/installer/deployment_timing.bats \
+  scripts/tests/installer/clamd_runtime_matches.bats
+node --test scripts/tests/prune-ghcr-versions.test.mjs
+node --test frontend-school/tests/static/deployment-installer.test.mjs
+node --test frontend-school/tests/static/documentation-policy.test.mjs
+```
+
+The retention tests use only fake Podman and a loopback HTTP server. They must not contact the
+production VPS, delete a live package version, or replace the manual GHCR dry-run review. Dockerfile
+changes also require local runtime-target builds and config inspection:
+
+```bash
+docker build --target runtime -t schoolorbit/backend-admin:verification backend-admin
+docker build --target runtime -t schoolorbit/backend-school:verification backend-school
+docker image inspect schoolorbit/backend-admin:verification \
+  --format '{{.Config.User}} {{json .Config.Cmd}}'
+docker image inspect schoolorbit/backend-school:verification \
+  --format '{{.Config.User}} {{json .Config.Cmd}}'
+```
 
 The guard also owns CI cache policy: backend-admin and backend-school use distinct BuildKit scopes, while API and permission contract jobs share a dependency-oriented backend-school Rust cache. Pull requests are restore-only, and only trusted `main` runs may save it. A cache miss must execute the complete workflow rather than bypassing a gate. API Contract keeps artifact generation/offline export, backend validation, and frontend validation in independent jobs without `needs`; the static guard owns this division and its single-writer Rust cache policy.
 
