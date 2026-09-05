@@ -89,10 +89,10 @@ Before removing any tag, the script resolves and protects:
 
 Every older unprotected SHA reference is removed with `podman image rm <exact-reference>`. A failure
 to enumerate or protect images fails closed and removes nothing. A removal race or an image that
-became active is reported and fails the cleanup instead of forcing deletion. After targeted tag
-removal, `podman image prune -f` may remove newly dangling layers. The script never calls
-`podman system prune`, `podman volume prune`, `podman container prune`, or a broad
-`podman image prune -a`.
+became active is reported and fails the cleanup instead of forcing deletion. Removing an exact final
+reference lets Podman reclaim that image's unshared layers without a broad prune. The script never
+calls `podman system prune`, `podman volume prune`, `podman container prune`, or any
+`podman image prune` form.
 
 Both backend workflows upload the script with the canonical deployment assets and invoke it only
 after the workflow's current release-acceptance boundary. Backend-school cleanup follows readiness,
@@ -185,9 +185,10 @@ metadata, package authorization, or protected-tag validation fails, that package
 deletions.
 
 Manual dispatch defaults to dry-run and prints candidate version IDs, creation times, and safe tag
-names. The weekly schedule performs deletion. The workflow handles the GitHub API's pagination and
-per-run limits explicitly, deleting oldest candidates first and leaving excess candidates for the
-next scheduled run. It never deletes all versions of a package.
+names. The weekly schedule performs deletion only when the repository variable
+`GHCR_RETENTION_ENABLED` is exactly `true`; otherwise it remains a dry run. The workflow handles the
+GitHub API's pagination and per-run limits explicitly, deleting oldest candidates first and leaving
+excess candidates for the next scheduled run. It never deletes all versions of a package.
 
 GitHub package deletion is recoverable for GitHub's documented restoration window, but the design
 does not rely on recovery: protected/current versions are excluded before every delete request.
@@ -254,8 +255,9 @@ solely to benchmark cache performance.
 
 - Runtime diagnostics identify image, container, and volume consumption without exposing sensitive
   runtime data.
-- Each backend retains at most three local SHA release tags after a successful deployment, while
-  active, `latest`, and `rollback` image IDs remain available.
+- Each backend retains the newest three local SHA release tags after a successful deployment, plus
+  any additional SHA whose image ID must remain protected by an active container, `latest`, or
+  `rollback`.
 - The ClamAV signature volume is unchanged by every cleanup and scanner path.
 - A healthy exact ClamAV runtime is reused; any relevant drift recreates only ClamAV and reaches
   healthy before backend-school replacement.
