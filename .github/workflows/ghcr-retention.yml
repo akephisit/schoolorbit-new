@@ -1,0 +1,49 @@
+name: GHCR Retention
+
+on:
+  schedule:
+    - cron: "23 19 * * 6"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "List old backend releases without deleting them"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: schoolorbit-ghcr-retention
+  cancel-in-progress: false
+
+jobs:
+  retain:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - schoolorbit-backend-admin
+          - schoolorbit-backend-school
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Retain bounded backend releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PACKAGE_NAME: ${{ matrix.package }}
+          EXECUTE: ${{ (github.event_name == 'schedule' && vars.GHCR_RETENTION_ENABLED == 'true') || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
+        run: |
+          arguments=(
+            --owner "${{ github.repository_owner }}"
+            --package "$PACKAGE_NAME"
+            --keep 30
+          )
+          if [ "$EXECUTE" = "true" ]; then
+            arguments+=(--execute)
+          fi
+          node scripts/prune_ghcr_versions.mjs "${arguments[@]}"

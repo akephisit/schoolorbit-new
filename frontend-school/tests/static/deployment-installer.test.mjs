@@ -609,6 +609,34 @@ test('backend workflows emit bounded deployment phase timings', async () => {
 	}
 });
 
+test('GHCR retention is bounded, dry-run by default, and isolated from deployment secrets', async () => {
+	const workflow = await readRepo('.github/workflows/ghcr-retention.yml');
+	const retention = await readRepo('scripts/prune_ghcr_versions.mjs');
+
+	assert.match(workflow, /schedule:\s*\n\s*- cron:/);
+	assert.match(workflow, /workflow_dispatch:[\s\S]*dry_run:[\s\S]*default: true/);
+	assert.match(workflow, /permissions:\s*\n\s*contents: read\s*\n\s*packages: write/);
+	assert.match(workflow, /GHCR_RETENTION_ENABLED/);
+	assert.match(workflow, /github\.event_name == 'schedule'/);
+	assert.match(workflow, /inputs\.dry_run == false/);
+	assert.match(workflow, /schoolorbit-backend-admin/);
+	assert.match(workflow, /schoolorbit-backend-school/);
+	assert.match(workflow, /node scripts\/prune_ghcr_versions\.mjs/);
+	assert.match(workflow, /--keep 30/);
+	assert.match(workflow, /--execute/);
+	assert.match(workflow, /GITHUB_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/);
+	assert.doesNotMatch(
+		workflow,
+		/(?:SERVER_|SSH_|DATABASE_|R2_|CLOUDFLARE_|JWT_|INTERNAL_API_SECRET)/
+	);
+
+	assert.match(retention, /\^\[0-9a-f\]\{40\}\$/);
+	assert.match(retention, /tags\.includes\('latest'\)/);
+	assert.match(retention, /MAX_DELETIONS = 100/);
+	assert.match(retention, /method: 'DELETE'/);
+	assert.match(retention, /method = 'GET'/);
+});
+
 test('API contract runs artifact backend and frontend gates in independent jobs', async () => {
 	const workflow = await readRepo('.github/workflows/api-contract.yml');
 	const jobsStart = workflow.indexOf('\njobs:\n');
