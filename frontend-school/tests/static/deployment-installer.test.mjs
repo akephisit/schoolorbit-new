@@ -475,6 +475,86 @@ test('backend image workflows use distinct BuildKit cache scopes', async () => {
 	}
 });
 
+test('backend runtime images use deterministic builders without ownership copy-up', async () => {
+	const images = new Map([
+		['backend-admin', 'backend-admin'],
+		['backend-school', 'backend-school']
+	]);
+
+	for (const [directory, binary] of images) {
+		const dockerfile = await readRepo(`${directory}/Dockerfile`);
+		const runtimeStart = dockerfile.indexOf('FROM debian:bookworm-slim AS runtime');
+		const runtime = dockerfile.slice(runtimeStart);
+		const userCreate = runtime.indexOf('useradd -m -u 1000 appuser');
+		const binaryCopy = runtime.indexOf(
+			`COPY --chown=1000:1000 --from=builder /app/target/release/${binary} /app/${binary}`
+		);
+
+		assert.match(dockerfile, /^# syntax=docker\/dockerfile:1\.10$/m);
+		assert.match(dockerfile, /FROM rust:1\.98\.0-slim-bookworm AS base/);
+		assert.match(dockerfile, /cargo install cargo-chef --version 0\.1\.78 --locked/);
+		assert.match(dockerfile, /sccache-v0\.17\.0-x86_64-unknown-linux-musl\.tar\.gz/);
+		assert.match(
+			dockerfile,
+			/--checksum=sha256:67c4a96dd237c1f518f6b36083f270f9976d516f1e57fce891755ea782e50006/
+		);
+		assert.match(dockerfile, /--mount=type=secret,id=sccache_gha_url,env=ACTIONS_RESULTS_URL/);
+		assert.match(dockerfile, /--mount=type=secret,id=sccache_gha_token,env=ACTIONS_RUNTIME_TOKEN/);
+		assert.match(dockerfile, /SCCACHE_GHA_ENABLED=on/);
+		assert.match(dockerfile, new RegExp(`SCCACHE_GHA_CACHE_TO=schoolorbit-${binary}`));
+		assert.match(dockerfile, /SCCACHE_IGNORE_SERVER_IO_ERROR=1/);
+		assert.match(dockerfile, new RegExp(`cargo build --release --bin ${binary} --timings`));
+		assert.match(dockerfile, /FROM scratch AS build-timings/);
+		assert.match(
+			dockerfile,
+			/COPY --from=builder \/app\/target\/cargo-timings\/cargo-timing\.html \/cargo-timing\.html/
+		);
+		assert.ok(userCreate >= 0, `${directory} must create the runtime user`);
+		assert.ok(binaryCopy > userCreate, `${directory} must create the runtime user before copying`);
+		assert.match(runtime, /COPY --chown=1000:1000 migrations \.\/migrations/);
+		assert.doesNotMatch(runtime, /RUN[^\n]*chown|chown -R/);
+		assert.doesNotMatch(runtime, /sccache|cargo-timing/);
+	}
+});
+
+test('backend workflows export Cargo timing artifacts with secret-mounted sccache credentials', async () => {
+	const workflows = new Map([
+		['.github/workflows/deploy-backend-admin.yml', 'backend-admin'],
+		['.github/workflows/deploy-backend-school.yml', 'backend-school']
+	]);
+
+	for (const [file, backend] of workflows) {
+		const workflow = await readRepo(file);
+
+		assert.match(workflow, /uses: actions\/github-script@v8/);
+		assert.match(
+			workflow,
+			/core\.exportVariable\('ACTIONS_RESULTS_URL', process\.env\.ACTIONS_RESULTS_URL \|\| ''\)/
+		);
+		assert.match(
+			workflow,
+			/core\.exportVariable\('ACTIONS_RUNTIME_TOKEN', process\.env\.ACTIONS_RUNTIME_TOKEN \|\| ''\)/
+		);
+		assert.match(workflow, /secret-envs:\s*\|\s*\n\s*sccache_gha_url=ACTIONS_RESULTS_URL/);
+		assert.match(workflow, /sccache_gha_token=ACTIONS_RUNTIME_TOKEN/);
+		assert.match(workflow, /target: build-timings/);
+		assert.match(workflow, /push: false/);
+		assert.match(
+			workflow,
+			new RegExp(`outputs: type=local,dest=\\$\\{\\{ runner\\.temp \\}\\}/cargo-timings-${backend}`)
+		);
+		assert.match(workflow, /uses: actions\/upload-artifact@v6/);
+		assert.match(workflow, new RegExp(`name: cargo-timings-${backend}`));
+		assert.match(
+			workflow,
+			new RegExp(`path: \\$\\{\\{ runner\\.temp \\}\\}/cargo-timings-${backend}/cargo-timing\\.html`)
+		);
+		assert.match(workflow, /retention-days: 7/);
+		assert.doesNotMatch(workflow, /build-args:[^\n]*(?:ACTIONS_RESULTS_URL|ACTIONS_RUNTIME_TOKEN)/);
+		assert.doesNotMatch(workflow, /^\s+secrets:\s*\|[\s\S]*ACTIONS_RUNTIME_TOKEN/m);
+	}
+});
+
 test('backend workflows clean only bounded SchoolOrbit image history after acceptance', async () => {
 	const workflowBoundaries = new Map([
 		[

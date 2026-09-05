@@ -73,15 +73,46 @@ jobs:
             image=moby/buildkit:latest
             network=host
 
+      - name: Configure sccache cache runtime
+        uses: actions/github-script@v8
+        with:
+          script: |
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '')
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '')
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v7
         with:
           context: ./backend-school
+          target: runtime
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=backend-school
           cache-to: type=gha,scope=backend-school,mode=max
+          secret-envs: |
+            sccache_gha_url=ACTIONS_RESULTS_URL
+            sccache_gha_token=ACTIONS_RUNTIME_TOKEN
+
+      - name: Export Cargo timing report
+        uses: docker/build-push-action@v7
+        with:
+          context: ./backend-school
+          target: build-timings
+          push: false
+          outputs: type=local,dest=${{ runner.temp }}/cargo-timings-backend-school
+          cache-from: type=gha,scope=backend-school
+          secret-envs: |
+            sccache_gha_url=ACTIONS_RESULTS_URL
+            sccache_gha_token=ACTIONS_RUNTIME_TOKEN
+
+      - name: Upload Cargo timing report
+        uses: actions/upload-artifact@v6
+        with:
+          name: cargo-timings-backend-school
+          path: ${{ runner.temp }}/cargo-timings-backend-school/cargo-timing.html
+          retention-days: 7
+          if-no-files-found: error
 
       - name: Summarize Docker cache scope
         if: always()
