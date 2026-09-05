@@ -789,6 +789,9 @@ test('runtime diagnostics expose container state without environment or applicat
 	assert.match(workflow, /podman system df/);
 	assert.match(workflow, /podman system df -v/);
 	assert.match(workflow, /runtime_sha_images repository=/);
+	assert.match(workflow, /length\(\$2\) == 40/);
+	assert.match(workflow, /\$2 !~ \/\[\^0-9a-f\]\//);
+	assert.doesNotMatch(workflow, /\$2 ~ \/\^\[0-9a-f\]\{40\}\$\//);
 	assert.doesNotMatch(workflow, /Config\.Env/);
 	assert.doesNotMatch(workflow, /podman logs/);
 	assert.doesNotMatch(workflow, /curl[^\n]*-[^\n]*k/);

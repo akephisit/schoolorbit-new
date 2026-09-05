@@ -34,7 +34,7 @@ jobs:
               sha_image_count="$(
                 podman images --format '{{.Repository}}|{{.Tag}}' "$repository" |
                   awk -F '|' -v repository="$repository" '
-                    $1 == repository && $2 ~ /^[0-9a-f]{40}$/ { count += 1 }
+                    $1 == repository && length($2) == 40 && $2 !~ /[^0-9a-f]/ { count += 1 }
                     END { print count + 0 }
                   '
               )"

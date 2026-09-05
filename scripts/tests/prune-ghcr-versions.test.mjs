@@ -46,7 +46,11 @@ async function startPackageServer({
 			const pageVersions = versions.slice(start, start + 100);
 			response.statusCode = listStatus;
 			response.setHeader('content-type', 'application/json');
-			if (linkHeader !== undefined) response.setHeader('link', linkHeader);
+			const resolvedLinkHeader =
+				typeof linkHeader === 'function'
+					? linkHeader({ page, request })
+					: linkHeader;
+			if (resolvedLinkHeader !== undefined) response.setHeader('link', resolvedLinkHeader);
 			response.end(listStatus === 200 ? JSON.stringify(pageVersions) : '{"message":"denied"}');
 			return;
 		}
@@ -160,6 +164,33 @@ test('inventory pagination is complete and deletion selection is capped at 100',
 			`GET /users/${OWNER}/packages/container/${PACKAGE}/versions?per_page=100&page=1`,
 			`GET /users/${OWNER}/packages/container/${PACKAGE}/versions?per_page=100&page=2`
 		]
+	);
+});
+
+test('canonicalized GitHub pagination URLs do not block complete inventory', async (t) => {
+	const server = await startPackageServer({
+		versions: releaseInventory(135),
+		linkHeader({ page, request }) {
+			if (page !== 1) return undefined;
+			return `<http://${request.headers.host}/users/123456/packages/container/${PACKAGE}/versions?state=active&per_page=100&page=2>; rel="next", <http://${request.headers.host}/users/123456/packages/container/${PACKAGE}/versions?state=active&per_page=100&page=2>; rel="last"`;
+		}
+	});
+	t.after(server.close);
+
+	const result = await pruneGhcrVersions({
+		owner: OWNER,
+		packageName: PACKAGE,
+		keep: 30,
+		execute: false,
+		token: 'test-token',
+		apiBase: server.apiBase,
+		logger: () => {}
+	});
+
+	assert.deepEqual(result, { candidates: 105, selected: 100, deleted: 0 });
+	assert.equal(
+		server.requests.filter((request) => request.includes('?per_page=')).length,
+		2
 	);
 });
 

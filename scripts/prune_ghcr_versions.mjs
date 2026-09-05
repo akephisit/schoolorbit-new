@@ -126,7 +126,7 @@ function validateTarget({ owner, packageName, keep, token, apiBase }) {
 	return parsedApiBase.href.replace(/\/$/, '');
 }
 
-function validateLinkHeader(link, { apiBase, packagePath, page, itemCount }) {
+function validateLinkHeader(link, { page }) {
 	if (link === null) return;
 	const relations = new Map();
 	for (const part of link.split(',')) {
@@ -138,22 +138,15 @@ function validateLinkHeader(link, { apiBase, packagePath, page, itemCount }) {
 		} catch {
 			throw new Error('GHCR pagination is malformed');
 		}
-		const base = new URL(apiBase);
-		if (
-			target.origin !== base.origin ||
-			target.pathname !== packagePath ||
-			target.searchParams.get('per_page') !== '100' ||
-			!/^[1-9][0-9]*$/.test(target.searchParams.get('page') ?? '')
-		) {
+		// GitHub may canonicalize the path or add endpoint-specific query fields.
+		// We never follow this URL; requests still use the validated package path above.
+		if (!/^[1-9][0-9]*$/.test(target.searchParams.get('page') ?? '')) {
 			throw new Error('GHCR pagination is malformed');
 		}
 		relations.set(match[2], Number(target.searchParams.get('page')));
 	}
 	if (relations.has('next') && relations.get('next') !== page + 1) {
 		throw new Error('GHCR pagination is malformed');
-	}
-	if (itemCount < 100 && relations.has('next')) {
-		throw new Error('GHCR pagination is inconsistent');
 	}
 }
 
@@ -227,12 +220,7 @@ export async function pruneGhcrVersions({
 		if (!Array.isArray(data) || data.length > 100) {
 			throw new Error('GitHub API returned an invalid package inventory');
 		}
-		validateLinkHeader(link, {
-			apiBase: normalizedApiBase,
-			packagePath,
-			page,
-			itemCount: data.length
-		});
+		validateLinkHeader(link, { page });
 		inventory.push(...data);
 		if (data.length < 100) break;
 		if (page === 1000) throw new Error('GHCR pagination exceeded its safety limit');
