@@ -184,7 +184,7 @@ test('local and production clamd allow 3 GiB for concurrent signature reloads', 
 	}
 });
 
-test('backend-school deployment recreates clamd and verifies runtime memory before health', async () => {
+test('backend-school deployment reuses only an exact ClamAV runtime and verifies health', async () => {
 	const workflow = await readRepo('.github/workflows/deploy-backend-school.yml');
 	const scannerStart = workflow.indexOf(
 		'# The scanner gets an isolated container network and no published port.'
@@ -193,8 +193,14 @@ test('backend-school deployment recreates clamd and verifies runtime memory befo
 
 	assert.ok(scannerStart >= 0 && scannerEnd > scannerStart);
 	const scannerDeployment = workflow.slice(scannerStart, scannerEnd);
+	assert.match(workflow, /source: [^\n]*scripts\/clamd_runtime_matches\.sh/);
+	assert.match(workflow, /clamd_matcher="\$deployment_root\/scripts\/clamd_runtime_matches\.sh"/);
 	const orderedMarkers = [
-		'podman pull docker.io/clamav/clamav-debian:1.5.3',
+		'clamd_image=docker.io/clamav/clamav-debian:1.5.3',
+		'podman pull "$clamd_image"',
+		'if clamd_match_output="$("$clamd_matcher" "$clamd_image" schoolorbit-clamd)"; then',
+		`printf '%s\\n' "$clamd_match_output"`,
+		`printf 'clamd_action=recreated reason=%s\\n' "$clamd_reason"`,
 		'if podman container exists schoolorbit-clamd; then',
 		'podman stop schoolorbit-clamd',
 		'podman rm schoolorbit-clamd',
@@ -210,6 +216,7 @@ test('backend-school deployment recreates clamd and verifies runtime memory befo
 		assert.ok(markerIndex > previousIndex, `${marker} must appear in deployment order`);
 		previousIndex = markerIndex;
 	}
+	assert.match(scannerDeployment, /else[\s\S]*podman stop schoolorbit-clamd[\s\S]*fi/);
 	assert.doesNotMatch(scannerDeployment, /podman volume (?:rm|prune)/);
 });
 

@@ -12,6 +12,7 @@ on:
       - "scripts/render_nginx_config.sh"
       - "scripts/smoke_test.sh"
       - "scripts/prune_runtime_images.sh"
+      - "scripts/clamd_runtime_matches.sh"
       - "scripts/lib/schoolorbit-installer/remote/deployment_timing.sh"
       - ".github/workflows/deploy-backend-school.yml"
   workflow_dispatch:
@@ -155,7 +156,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           port: ${{ secrets.SERVER_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: podman-compose.yml,scripts/render_nginx_config.sh,scripts/smoke_test.sh,scripts/prune_runtime_images.sh,scripts/lib/schoolorbit-installer/remote/install_origin_root.sh,scripts/lib/schoolorbit-installer/remote/ensure_container_network.sh,scripts/lib/schoolorbit-installer/remote/deployment_timing.sh,nginx-configs/admin-api.conf.template,nginx-configs/school-api.conf.template,nginx-configs/school-api.maintenance.conf.template
+          source: podman-compose.yml,scripts/render_nginx_config.sh,scripts/smoke_test.sh,scripts/prune_runtime_images.sh,scripts/clamd_runtime_matches.sh,scripts/lib/schoolorbit-installer/remote/install_origin_root.sh,scripts/lib/schoolorbit-installer/remote/ensure_container_network.sh,scripts/lib/schoolorbit-installer/remote/deployment_timing.sh,nginx-configs/admin-api.conf.template,nginx-configs/school-api.conf.template,nginx-configs/school-api.maintenance.conf.template
           target: /opt/stack/deployment
 
       - name: Deploy to Server via SSH
@@ -194,6 +195,7 @@ jobs:
             network_helper_source="$deployment_root/scripts/lib/schoolorbit-installer/remote/ensure_container_network.sh"
             timing_helper_source="$deployment_root/scripts/lib/schoolorbit-installer/remote/deployment_timing.sh"
             image_cleanup="$deployment_root/scripts/prune_runtime_images.sh"
+            clamd_matcher="$deployment_root/scripts/clamd_runtime_matches.sh"
             proxy_template="$deployment_root/nginx-configs/school-api.conf.template"
             maintenance_proxy_template="$deployment_root/nginx-configs/school-api.maintenance.conf.template"
             proxy_source="$deployment_root/school-api.conf"
@@ -208,6 +210,7 @@ jobs:
             test -f "$network_helper_source" || { echo "Container network helper is missing"; exit 1; }
             test -f "$timing_helper_source" || { echo "Deployment timing helper is missing"; exit 1; }
             test -f "$image_cleanup" || { echo "Runtime image cleanup is missing"; exit 1; }
+            test -x "$clamd_matcher" || { echo "ClamAV runtime matcher is missing"; exit 1; }
             test -f "$proxy_template" || { echo "School API proxy template is missing"; exit 1; }
             test -f "$maintenance_proxy_template" || { echo "School API maintenance template is missing"; exit 1; }
 
@@ -436,12 +439,39 @@ jobs:
 
             # The scanner gets an isolated container network and no published port.
             scanner_started="$(schoolorbit_timer_now)"
-            podman pull docker.io/clamav/clamav-debian:1.5.3
-            if podman container exists schoolorbit-clamd; then
-              podman stop schoolorbit-clamd
-              podman rm schoolorbit-clamd
+            clamd_image=docker.io/clamav/clamav-debian:1.5.3
+            podman pull "$clamd_image"
+            if clamd_match_output="$("$clamd_matcher" "$clamd_image" schoolorbit-clamd)"; then
+              if [ "$clamd_match_output" != "clamd_action=reused" ]; then
+                echo "ClamAV runtime matcher returned an invalid result"
+                exit 1
+              fi
+              printf '%s\n' "$clamd_match_output"
+            else
+              case "$clamd_match_output" in
+                'clamd_drift reason=missing_container') clamd_reason=missing_container ;;
+                'clamd_drift reason=container_inspect') clamd_reason=container_inspect ;;
+                'clamd_drift reason=image_inspect') clamd_reason=image_inspect ;;
+                'clamd_drift reason=image') clamd_reason=image ;;
+                'clamd_drift reason=memory') clamd_reason=memory ;;
+                'clamd_drift reason=cpu') clamd_reason=cpu ;;
+                'clamd_drift reason=pids') clamd_reason=pids ;;
+                'clamd_drift reason=restart') clamd_reason=restart ;;
+                'clamd_drift reason=security') clamd_reason=security ;;
+                'clamd_drift reason=published_port') clamd_reason=published_port ;;
+                'clamd_drift reason=signature_volume') clamd_reason=signature_volume ;;
+                'clamd_drift reason=network') clamd_reason=network ;;
+                'clamd_drift reason=running') clamd_reason=running ;;
+                'clamd_drift reason=health') clamd_reason=health ;;
+                *) clamd_reason=matcher_failure ;;
+              esac
+              printf 'clamd_action=recreated reason=%s\n' "$clamd_reason"
+              if podman container exists schoolorbit-clamd; then
+                podman stop schoolorbit-clamd
+                podman rm schoolorbit-clamd
+              fi
+              compose_up_quiet clamd
             fi
-            compose_up_quiet clamd
 
             expected_clamd_memory_bytes=$((3 * 1024 * 1024 * 1024))
             clamd_memory_bytes="$(podman inspect --format '{{.HostConfig.Memory}}' schoolorbit-clamd)"
