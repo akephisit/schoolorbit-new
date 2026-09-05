@@ -59,7 +59,7 @@ done <<<"$inventory"
 collect_protected_ids() {
     declare -gA protected_image_ids=()
 
-    local active_ids raw_image_id image_id alias reference
+    local active_ids raw_image_id image_id alias reference exists_status
     if ! active_ids=$(podman ps -a --no-trunc --format '{{.ImageID}}'); then
         return 1
     fi
@@ -75,6 +75,9 @@ collect_protected_ids() {
             raw_image_id=$(podman image inspect --format '{{.Id}}' "$reference") || return 1
             image_id=$(normalize_image_id "$raw_image_id") || return 1
             protected_image_ids["$image_id"]=1
+        else
+            exists_status=$?
+            ((exists_status == 1)) || return 1
         fi
     done
 }

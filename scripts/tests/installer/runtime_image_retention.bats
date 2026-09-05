@@ -24,6 +24,7 @@ case "${1:-}" in
     image)
         case "${2:-}" in
             exists)
+                [[ ${PODMAN_FAIL_IMAGE_EXISTS:-0} != 1 ]] || exit 70
                 reference=${3:-}
                 awk -F "|" -v reference="$reference" "\$1 == reference { found = 1 } END { exit found ? 0 : 1 }" "$PODMAN_ALIAS_IDS_FILE"
                 ;;
@@ -148,5 +149,17 @@ EOF
         ghcr.io/akephisit/schoolorbit-backend-school 3
 
     [ "$status" -ne 0 ]
+    ! grep -Fq 'image rm ' "$FAKE_COMMAND_LOG"
+}
+
+@test "runtime image retention fails closed when an alias existence check errors" {
+    seed_five_releases
+    export PODMAN_FAIL_IMAGE_EXISTS=1
+
+    run "$BATS_TEST_DIRNAME/../../prune_runtime_images.sh" \
+        ghcr.io/akephisit/schoolorbit-backend-school 3
+
+    [ "$status" -eq 69 ]
+    [[ "$output" == *'Unable to resolve protected runtime images'* ]]
     ! grep -Fq 'image rm ' "$FAKE_COMMAND_LOG"
 }
