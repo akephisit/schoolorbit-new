@@ -9,6 +9,8 @@ on:
       - "podman-compose.yml"
       - "nginx-configs/admin-api.conf.template"
       - "scripts/render_nginx_config.sh"
+      - "scripts/prune_runtime_images.sh"
+      - "scripts/lib/schoolorbit-installer/remote/deployment_timing.sh"
       - ".github/workflows/deploy-backend-admin.yml"
   workflow_dispatch:
     inputs:
@@ -94,7 +96,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           port: ${{ secrets.SERVER_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: podman-compose.yml,scripts/render_nginx_config.sh,scripts/lib/schoolorbit-installer/remote/install_origin_root.sh,scripts/lib/schoolorbit-installer/remote/ensure_container_network.sh,nginx-configs/admin-api.conf.template,nginx-configs/school-api.conf.template,nginx-configs/school-api.maintenance.conf.template
+          source: podman-compose.yml,scripts/render_nginx_config.sh,scripts/prune_runtime_images.sh,scripts/lib/schoolorbit-installer/remote/install_origin_root.sh,scripts/lib/schoolorbit-installer/remote/ensure_container_network.sh,scripts/lib/schoolorbit-installer/remote/deployment_timing.sh,nginx-configs/admin-api.conf.template,nginx-configs/school-api.conf.template,nginx-configs/school-api.maintenance.conf.template
           target: /opt/stack/deployment
 
       - name: Deploy selected commit to the target origin
@@ -118,6 +120,8 @@ jobs:
             origin_root_installer_source="$deployment_root/scripts/lib/schoolorbit-installer/remote/install_origin_root.sh"
             origin_root_installer="$deployment_root/install-origin-root"
             network_helper_source="$deployment_root/scripts/lib/schoolorbit-installer/remote/ensure_container_network.sh"
+            timing_helper_source="$deployment_root/scripts/lib/schoolorbit-installer/remote/deployment_timing.sh"
+            image_cleanup="$deployment_root/scripts/prune_runtime_images.sh"
             proxy_template="$deployment_root/nginx-configs/admin-api.conf.template"
             proxy_target=/opt/stack/nginx/conf.d/admin-api.conf
             legacy_proxy_target=/opt/stack/nginx/conf.d/admin-api.${base_domain}.conf
@@ -150,9 +154,12 @@ jobs:
             test -f "$renderer_source" || { echo "Proxy renderer is missing"; exit 1; }
             test -f "$origin_root_installer_source" || { echo "Origin CA root installer is missing"; exit 1; }
             test -f "$network_helper_source" || { echo "Container network helper is missing"; exit 1; }
+            test -f "$timing_helper_source" || { echo "Deployment timing helper is missing"; exit 1; }
+            test -f "$image_cleanup" || { echo "Runtime image cleanup is missing"; exit 1; }
             test -f "$proxy_template" || { echo "Admin API proxy template is missing"; exit 1; }
 
             . "$network_helper_source"
+            . "$timing_helper_source"
             reconnect_backend_network() {
               container=$1
               service_alias=$2
@@ -195,7 +202,10 @@ jobs:
             fi
 
             backend_image=ghcr.io/akephisit/schoolorbit-backend-admin
+            image_pull_started="$(schoolorbit_timer_now)"
             podman pull "${backend_image}:${{ github.sha }}"
+            schoolorbit_timer_report image_pull "$image_pull_started"
+            backend_readiness_started="$(schoolorbit_timer_now)"
             podman tag "${backend_image}:${{ github.sha }}" "${backend_image}:latest"
             podman stop schoolorbit-backend-admin || true
             podman rm schoolorbit-backend-admin || true
@@ -215,6 +225,7 @@ jobs:
               podman logs --tail 100 schoolorbit-backend-admin
               exit 1
             fi
+            schoolorbit_timer_report backend_readiness "$backend_readiness_started"
 
             proxy_backup=""
             proxy_existed=0
@@ -247,6 +258,7 @@ jobs:
             fi
 
             admin_host="admin-api.${base_domain}"
+            origin_verification_started="$(schoolorbit_timer_now)"
             direct_admin_ok=false
             for attempt in $(seq 1 12); do
               if direct_ready="$(
@@ -276,6 +288,7 @@ jobs:
               echo "Direct admin API verification failed"
               exit 1
             fi
+            schoolorbit_timer_report origin_verification "$origin_verification_started"
 
             [ -z "$proxy_backup" ] || rm -f "$proxy_backup"
-            podman image prune -f
+            "$image_cleanup" ghcr.io/akephisit/schoolorbit-backend-admin 3

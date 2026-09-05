@@ -475,6 +475,53 @@ test('backend image workflows use distinct BuildKit cache scopes', async () => {
 	}
 });
 
+test('backend workflows clean only bounded SchoolOrbit image history after acceptance', async () => {
+	const workflowBoundaries = new Map([
+		[
+			'.github/workflows/deploy-backend-admin.yml',
+			'            [ -z "$proxy_backup" ] || rm -f "$proxy_backup"'
+		],
+		[
+			'.github/workflows/deploy-backend-school.yml',
+			'            podman tag "${backend_image}:${{ github.sha }}" "${backend_image}:rollback"'
+		]
+	]);
+
+	for (const [file, acceptanceMarker] of workflowBoundaries) {
+		const workflow = await readRepo(file);
+		const acceptance = workflow.indexOf(acceptanceMarker);
+		const cleanup = workflow.indexOf('"$image_cleanup"', acceptance + acceptanceMarker.length);
+
+		assert.match(workflow, /source: [^\n]*scripts\/prune_runtime_images\.sh/);
+		assert.match(
+			workflow,
+			/image_cleanup="\$deployment_root\/scripts\/prune_runtime_images\.sh"/
+		);
+		assert.ok(acceptance >= 0, `${file} must retain its acceptance boundary`);
+		assert.ok(cleanup > acceptance, `${file} must clean images only after acceptance`);
+		assert.match(
+			workflow.slice(cleanup),
+			/"\$image_cleanup" ghcr\.io\/akephisit\/schoolorbit-backend-(?:admin|school) 3/
+		);
+		assert.doesNotMatch(workflow, /podman (?:system|volume|container|image) prune/);
+	}
+});
+
+test('backend workflows emit bounded deployment phase timings', async () => {
+	for (const file of [
+		'.github/workflows/deploy-backend-admin.yml',
+		'.github/workflows/deploy-backend-school.yml'
+	]) {
+		const workflow = await readRepo(file);
+		assert.match(workflow, /scripts\/lib\/schoolorbit-installer\/remote\/deployment_timing\.sh/);
+		assert.match(workflow, /\. "\$timing_helper_source"/);
+		assert.match(workflow, /schoolorbit_timer_now/);
+		assert.match(workflow, /schoolorbit_timer_report image_pull/);
+		assert.match(workflow, /schoolorbit_timer_report backend_readiness/);
+		assert.doesNotMatch(workflow, /deployment_timing[^\n]*(?:SECRET|TOKEN|PASSWORD|KEY|Env)/i);
+	}
+});
+
 test('API contract runs artifact backend and frontend gates in independent jobs', async () => {
 	const workflow = await readRepo('.github/workflows/api-contract.yml');
 	const jobsStart = workflow.indexOf('\njobs:\n');
@@ -623,6 +670,11 @@ test('runtime diagnostics expose container state without environment or applicat
 	assert.match(workflow, /if \[ -r \/opt\/stack\/\.env \]; then/);
 	assert.match(workflow, /if \[ -n "\$database_url" \]; then/);
 	assert.match(workflow, /database_activity=status_unavailable reason=database_url_missing/);
+	assert.match(workflow, /podman info --format '\{\{\.Store\.GraphRoot\}\}'/);
+	assert.match(workflow, /df -P "\$graph_root"/);
+	assert.match(workflow, /podman system df/);
+	assert.match(workflow, /podman system df -v/);
+	assert.match(workflow, /runtime_sha_images repository=/);
 	assert.doesNotMatch(workflow, /Config\.Env/);
 	assert.doesNotMatch(workflow, /podman logs/);
 	assert.doesNotMatch(workflow, /curl[^\n]*-[^\n]*k/);

@@ -19,6 +19,28 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             set -eu
+            graph_root="$(podman info --format '{{.Store.GraphRoot}}' 2>/dev/null || true)"
+            if [ -n "$graph_root" ]; then
+              df -P "$graph_root" || true
+            else
+              printf '%s\n' 'runtime_storage=status_unavailable reason=graph_root_missing'
+            fi
+            podman system df || true
+            podman system df -v || true
+            for repository in \
+              ghcr.io/akephisit/schoolorbit-backend-admin \
+              ghcr.io/akephisit/schoolorbit-backend-school
+            do
+              sha_image_count="$(
+                podman images --format '{{.Repository}}|{{.Tag}}' "$repository" |
+                  awk -F '|' -v repository="$repository" '
+                    $1 == repository && $2 ~ /^[0-9a-f]{40}$/ { count += 1 }
+                    END { print count + 0 }
+                  '
+              )"
+              printf 'runtime_sha_images repository=%s count=%s\n' "$repository" "$sha_image_count"
+            done
+            unset graph_root sha_image_count repository
             for container in \
               schoolorbit-backend-admin \
               schoolorbit-backend-school \

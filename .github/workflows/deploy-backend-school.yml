@@ -11,6 +11,8 @@ on:
       - "nginx-configs/school-api.maintenance.conf.template"
       - "scripts/render_nginx_config.sh"
       - "scripts/smoke_test.sh"
+      - "scripts/prune_runtime_images.sh"
+      - "scripts/lib/schoolorbit-installer/remote/deployment_timing.sh"
       - ".github/workflows/deploy-backend-school.yml"
   workflow_dispatch:
     inputs:
@@ -122,7 +124,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           port: ${{ secrets.SERVER_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: podman-compose.yml,scripts/render_nginx_config.sh,scripts/smoke_test.sh,scripts/lib/schoolorbit-installer/remote/install_origin_root.sh,scripts/lib/schoolorbit-installer/remote/ensure_container_network.sh,nginx-configs/admin-api.conf.template,nginx-configs/school-api.conf.template,nginx-configs/school-api.maintenance.conf.template
+          source: podman-compose.yml,scripts/render_nginx_config.sh,scripts/smoke_test.sh,scripts/prune_runtime_images.sh,scripts/lib/schoolorbit-installer/remote/install_origin_root.sh,scripts/lib/schoolorbit-installer/remote/ensure_container_network.sh,scripts/lib/schoolorbit-installer/remote/deployment_timing.sh,nginx-configs/admin-api.conf.template,nginx-configs/school-api.conf.template,nginx-configs/school-api.maintenance.conf.template
           target: /opt/stack/deployment
 
       - name: Deploy to Server via SSH
@@ -159,6 +161,8 @@ jobs:
             origin_root_installer_source="$deployment_root/scripts/lib/schoolorbit-installer/remote/install_origin_root.sh"
             origin_root_installer="$deployment_root/install-origin-root"
             network_helper_source="$deployment_root/scripts/lib/schoolorbit-installer/remote/ensure_container_network.sh"
+            timing_helper_source="$deployment_root/scripts/lib/schoolorbit-installer/remote/deployment_timing.sh"
+            image_cleanup="$deployment_root/scripts/prune_runtime_images.sh"
             proxy_template="$deployment_root/nginx-configs/school-api.conf.template"
             maintenance_proxy_template="$deployment_root/nginx-configs/school-api.maintenance.conf.template"
             proxy_source="$deployment_root/school-api.conf"
@@ -171,8 +175,12 @@ jobs:
             test -f "$renderer_source" || { echo "Proxy renderer is missing"; exit 1; }
             test -f "$origin_root_installer_source" || { echo "Origin CA root installer is missing"; exit 1; }
             test -f "$network_helper_source" || { echo "Container network helper is missing"; exit 1; }
+            test -f "$timing_helper_source" || { echo "Deployment timing helper is missing"; exit 1; }
+            test -f "$image_cleanup" || { echo "Runtime image cleanup is missing"; exit 1; }
             test -f "$proxy_template" || { echo "School API proxy template is missing"; exit 1; }
             test -f "$maintenance_proxy_template" || { echo "School API maintenance template is missing"; exit 1; }
+
+            . "$timing_helper_source"
 
             runtime_env_value() {
               local key=$1 line value decoded char
@@ -396,6 +404,7 @@ jobs:
             podman-compose -f "$runtime_compose" --dry-run up -d clamd backend-school >/dev/null 2>&1
 
             # The scanner gets an isolated container network and no published port.
+            scanner_started="$(schoolorbit_timer_now)"
             podman pull docker.io/clamav/clamav-debian:1.5.3
             if podman container exists schoolorbit-clamd; then
               podman stop schoolorbit-clamd
@@ -424,11 +433,14 @@ jobs:
               podman logs --tail 100 schoolorbit-clamd
               exit 1
             fi
+            schoolorbit_timer_report scanner_readiness "$scanner_started"
 
             jq_image=ghcr.io/jqlang/jq:1.7.1
             podman pull "$jq_image"
             backend_image=ghcr.io/akephisit/schoolorbit-backend-school
+            image_pull_started="$(schoolorbit_timer_now)"
             podman pull "${backend_image}:${{ github.sha }}"
+            schoolorbit_timer_report image_pull "$image_pull_started"
 
             # Keep the shared admin upstream resolvable before Nginx is recreated.
             reconnect_backend_network schoolorbit-backend-admin backend-admin
@@ -463,6 +475,7 @@ jobs:
               exit 1
             fi
 
+            backend_readiness_started="$(schoolorbit_timer_now)"
             podman tag "${backend_image}:${{ github.sha }}" "${backend_image}:latest"
 
             # Recreate backend-school only; do not restart unrelated services.
@@ -496,6 +509,7 @@ jobs:
               echo "Cutover image is not ready; maintenance remains enabled and pre-cutover rollback is disabled"
               exit 1
             fi
+            schoolorbit_timer_report backend_readiness "$backend_readiness_started"
 
             migration_response="$(mktemp /opt/stack/.backend-school-migration.XXXXXX)"
             chmod 600 "$migration_response"
@@ -532,6 +546,7 @@ jobs:
               echo "Backend internal migration credential is unavailable; maintenance remains enabled"
               exit 1
             fi
+            tenant_migration_started="$(schoolorbit_timer_now)"
             if ! curl \
               --fail \
               --silent \
@@ -565,7 +580,9 @@ jobs:
               echo "Tenant migration verification failed; maintenance remains enabled"
               exit 1
             fi
+            schoolorbit_timer_report tenant_migration "$tenant_migration_started"
 
+            migration_status_started="$(schoolorbit_timer_now)"
             if ! curl \
               --fail \
               --silent \
@@ -600,6 +617,7 @@ jobs:
               echo "Tenant migration or Academic Core cleanup audit verification failed; maintenance remains enabled"
               exit 1
             fi
+            schoolorbit_timer_report migration_status "$migration_status_started"
             unset internal_api_secret
             rm -f "$migration_response"
             trap - EXIT
@@ -607,6 +625,7 @@ jobs:
             [ -z "$proxy_backup" ] || rm -f "$proxy_backup"
             echo "School API remains in maintenance until the authenticated smoke completes"
             podman tag "${backend_image}:${{ github.sha }}" "${backend_image}:rollback"
+            "$image_cleanup" ghcr.io/akephisit/schoolorbit-backend-school 3
 
       - name: Run Academic Core authenticated smoke
         if: ${{ inputs.academic_core_cleanup_smoke == true || (vars.SCHOOL_API_KEEP_MAINTENANCE || 'true') == 'false' }}
@@ -642,11 +661,18 @@ jobs:
 
             base_domain="${{ vars.BASE_DOMAIN || 'schoolorbit.app' }}"
             smoke_script=/opt/stack/deployment/scripts/smoke_test.sh
+            timing_helper_source=/opt/stack/deployment/scripts/lib/schoolorbit-installer/remote/deployment_timing.sh
             test -f "$smoke_script" || {
               echo "Academic Core maintenance smoke script is unavailable"
               exit 1
             }
+            test -f "$timing_helper_source" || {
+              echo "Deployment timing helper is unavailable"
+              exit 1
+            }
+            . "$timing_helper_source"
 
+            authenticated_smoke_started="$(schoolorbit_timer_now)"
             SMOKE_SUBDOMAIN="$smoke_subdomain" \
             SMOKE_API_URL=http://localhost:8081 \
             SMOKE_ADMIN_API_URL="https://admin-api.${base_domain}" \
@@ -658,6 +684,7 @@ jobs:
             SMOKE_USERNAME="$SMOKE_USERNAME" \
             SMOKE_PASSWORD="$SMOKE_PASSWORD" \
             bash "$smoke_script"
+            schoolorbit_timer_report authenticated_smoke "$authenticated_smoke_started"
             unset SMOKE_USERNAME SMOKE_PASSWORD
 
       - name: Open School API after authenticated smoke
@@ -676,9 +703,13 @@ jobs:
             maintenance_proxy_source=/opt/stack/deployment/school-api.maintenance.conf
             proxy_target=/opt/stack/nginx/conf.d/school-api.conf
             origin_root=/opt/stack/nginx/ssl/cloudflare-origin-rsa-root.pem
+            timing_helper_source=/opt/stack/deployment/scripts/lib/schoolorbit-installer/remote/deployment_timing.sh
             test -f "$proxy_source"
             test -f "$maintenance_proxy_source"
             test -f "$origin_root"
+            test -f "$timing_helper_source"
+            . "$timing_helper_source"
+            proxy_cutover_started="$(schoolorbit_timer_now)"
 
             restore_maintenance() {
               cp "$maintenance_proxy_source" "$proxy_target"
@@ -721,4 +752,5 @@ jobs:
               echo "Direct school API readiness failed after authenticated smoke; maintenance restored"
               exit 1
             fi
+            schoolorbit_timer_report proxy_cutover "$proxy_cutover_started"
             echo "School API opened after migration verification and authenticated smoke"
