@@ -554,7 +554,9 @@ test('backend workflows export Cargo timing artifacts with secret-mounted sccach
 		assert.match(workflow, new RegExp(`name: cargo-timings-${backend}`));
 		assert.match(
 			workflow,
-			new RegExp(`path: \\$\\{\\{ runner\\.temp \\}\\}/cargo-timings-${backend}/cargo-timing\\.html`)
+			new RegExp(
+				`path: \\$\\{\\{ runner\\.temp \\}\\}/cargo-timings-${backend}/cargo-timing\\.html`
+			)
 		);
 		assert.match(workflow, /retention-days: 7/);
 		assert.doesNotMatch(workflow, /build-args:[^\n]*(?:ACTIONS_RESULTS_URL|ACTIONS_RUNTIME_TOKEN)/);
@@ -580,10 +582,7 @@ test('backend workflows clean only bounded SchoolOrbit image history after accep
 		const cleanup = workflow.indexOf('"$image_cleanup"', acceptance + acceptanceMarker.length);
 
 		assert.match(workflow, /source: [^\n]*scripts\/prune_runtime_images\.sh/);
-		assert.match(
-			workflow,
-			/image_cleanup="\$deployment_root\/scripts\/prune_runtime_images\.sh"/
-		);
+		assert.match(workflow, /image_cleanup="\$deployment_root\/scripts\/prune_runtime_images\.sh"/);
 		assert.ok(acceptance >= 0, `${file} must retain its acceptance boundary`);
 		assert.ok(cleanup > acceptance, `${file} must clean images only after acceptance`);
 		assert.match(

@@ -1044,7 +1044,6 @@ test('academic catalog and curriculum workspaces gate mutation actions', async (
 		}
 	}
 
-
 	const subjectSource = stripComments(
 		await readFile(
 			path.join(
