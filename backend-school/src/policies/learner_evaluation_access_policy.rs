@@ -26,9 +26,13 @@ pub fn can_read_group(
     filter: &AcademicResourceListFilter,
     owner: Option<Uuid>,
     assigned: bool,
+    subject_coordinator: bool,
 ) -> bool {
-    resource_access_policy::academic_resource_access_for(filter, owner, assigned)
-        != AcademicResourceAccess::None
+    resource_access_policy::academic_resource_access_for(
+        filter,
+        owner,
+        assigned || subject_coordinator,
+    ) != AcademicResourceAccess::None
 }
 pub async fn list_access(
     pool: &PgPool,
@@ -77,15 +81,16 @@ pub async fn require_student_summary_access(
     if access.includes_school_owned {
         return Ok(());
     }
-    let scopes:Vec<(Option<Uuid>,bool)>=sqlx::query_as(r#"WITH relevant AS (
+    let scopes:Vec<(Option<Uuid>,bool,bool)>=sqlx::query_as(r#"WITH relevant AS (
         SELECT m.learning_group_id FROM learning_group_students m WHERE m.student_academic_year_id=$1 AND m.academic_term_id=$2 AND m.academic_year_id=$3 AND m.membership_status='active'
         UNION SELECT learning_group_id FROM subject_term_student_evaluations WHERE student_academic_year_id=$1 AND academic_term_id=$2 AND academic_year_id=$3)
-        SELECT o.owning_organization_unit_id,EXISTS(SELECT 1 FROM learning_group_teachers teacher WHERE teacher.learning_group_id=g.id AND teacher.teacher_id=$4 AND teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date) AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)))
+        SELECT o.owning_organization_unit_id,EXISTS(SELECT 1 FROM learning_group_teachers teacher WHERE teacher.learning_group_id=g.id AND teacher.teacher_id=$4 AND teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date) AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date))),
+        EXISTS(SELECT 1 FROM course_assessment_plans p JOIN course_offering_details coordinated ON coordinated.learning_offering_id=p.learning_offering_id WHERE coordinated.subject_id=d.subject_id AND p.academic_term_id=g.academic_term_id AND p.academic_year_id=g.academic_year_id AND p.assessment_coordinator_id=$4)
         FROM relevant r JOIN learning_groups g ON g.id=r.learning_group_id JOIN learning_offerings o ON o.id=g.learning_offering_id JOIN course_offering_details d ON d.learning_offering_id=o.id JOIN academic_terms t ON t.id=g.academic_term_id"#).bind(student).bind(term).bind(year).bind(actor.user_id).fetch_all(pool).await?;
     if scopes.is_empty()
-        || scopes
-            .iter()
-            .any(|(owner, assigned)| !can_read_group(&access, *owner, *assigned))
+        || scopes.iter().any(|(owner, assigned, coordinator)| {
+            !can_read_group(&access, *owner, *assigned, *coordinator)
+        })
     {
         return Err(AppError::Forbidden(
             "Access to all contributing subjects is required for a term summary".into(),
@@ -105,9 +110,15 @@ mod tests {
             organization_unit_ids: vec![unit],
             ..Default::default()
         };
-        assert!(can_read_group(&filter, Some(unit), false));
-        assert!(can_read_group(&filter, None, true));
-        assert!(!can_read_group(&filter, Some(Uuid::new_v4()), false));
+        assert!(can_read_group(&filter, Some(unit), false, false));
+        assert!(can_read_group(&filter, None, true, false));
+        assert!(can_read_group(&filter, None, false, true));
+        assert!(!can_read_group(&filter, Some(Uuid::new_v4()), false, false));
+        let unit_only = AcademicResourceListFilter {
+            assigned_actor_id: None,
+            ..filter
+        };
+        assert!(!can_read_group(&unit_only, None, false, true));
     }
     #[test]
     fn management_does_not_replace_current_primary_or_lock_permission() {

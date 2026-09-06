@@ -40,11 +40,7 @@ pub async fn get_configuration(
     let (mut tx, scope) = begin_subject(pool, actor, subject, domain, ctx).await?;
     let criteria = criteria(&mut tx, &scope, ctx).await?;
     let row_version=sqlx::query_scalar("SELECT row_version FROM subject_term_evaluation_configurations WHERE subject_id=$1 AND academic_term_id=$2 AND domain=$3").bind(subject).bind(ctx.academic_term_id).bind(domain.as_str()).fetch_one(&mut *tx).await?;
-    let can_manage = !scope.locked
-        && policy::can_manage_configuration(
-            actor,
-            scope.groups.iter().any(|g| g.coordinator && g.assigned),
-        );
+    let can_manage = !scope.locked && policy::can_manage_configuration(actor, scope.coordinator);
     tx.commit().await?;
     Ok(EvaluationConfiguration {
         subject_id: subject,
@@ -76,10 +72,7 @@ pub async fn save_criterion(
     let (mut tx, scope) = begin_subject(pool, actor, subject, domain, ctx).await?;
     require_unlocked(
         &scope,
-        policy::can_manage_configuration(
-            actor,
-            scope.groups.iter().any(|g| g.coordinator && g.assigned),
-        ),
+        policy::can_manage_configuration(actor, scope.coordinator),
     )?;
     let rows = criteria(&mut tx, &scope, ctx).await?;
     let current =
@@ -123,10 +116,7 @@ pub async fn remove_criterion(
     let (mut tx, scope) = begin_subject(pool, actor, subject, domain, ctx).await?;
     require_unlocked(
         &scope,
-        policy::can_manage_configuration(
-            actor,
-            scope.groups.iter().any(|g| g.coordinator && g.assigned),
-        ),
+        policy::can_manage_configuration(actor, scope.coordinator),
     )?;
     let rows = criteria(&mut tx, &scope, ctx).await?;
     let current = rows

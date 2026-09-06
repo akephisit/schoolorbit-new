@@ -31,11 +31,12 @@ pub async fn list_subjects(
     validate_context(&mut tx, ctx).await?;
     let rows:Vec<EvaluationSubject>=sqlx::query_as(r#"WITH groups AS (
         SELECT d.subject_id,g.id AS learning_group_id,o.id AS learning_offering_id,o.code_snapshot AS code,o.name_snapshot AS name,g.name AS group_name,o.owning_organization_unit_id,
-        EXISTS(SELECT 1 FROM learning_group_teachers teacher WHERE teacher.learning_group_id=g.id AND teacher.teacher_id=$3 AND teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date) AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date))) AS assigned
+        EXISTS(SELECT 1 FROM learning_group_teachers teacher WHERE teacher.learning_group_id=g.id AND teacher.teacher_id=$3 AND teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date) AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date))) AS assigned,
+        EXISTS(SELECT 1 FROM course_assessment_plans p JOIN course_offering_details coordinated ON coordinated.learning_offering_id=p.learning_offering_id WHERE coordinated.subject_id=d.subject_id AND p.academic_term_id=g.academic_term_id AND p.academic_year_id=g.academic_year_id AND p.assessment_coordinator_id=$3) AS coordinator
         FROM learning_groups g JOIN learning_offerings o ON o.id=g.learning_offering_id JOIN course_offering_details d ON d.learning_offering_id=o.id JOIN academic_terms t ON t.id=g.academic_term_id
         WHERE g.academic_term_id=$1 AND g.academic_year_id=$2 AND g.status<>'closed')
         SELECT subject_id,learning_group_id,learning_offering_id,code,name,group_name,assigned FROM groups
-        WHERE $4 OR owning_organization_unit_id=ANY($5) OR ($6 AND assigned)
+        WHERE $4 OR owning_organization_unit_id=ANY($5) OR ($6 AND (assigned OR coordinator))
         ORDER BY assigned DESC,code,subject_id,learning_group_id LIMIT 1001"#).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(actor.user_id).bind(access.includes_school_owned).bind(&access.organization_unit_ids).bind(access.assigned_actor_id.is_some()).fetch_all(&mut *tx).await?;
     if rows.len() > 1000 {
         return Err(AppError::ValidationError(
@@ -82,12 +83,12 @@ pub(super) struct GroupScope {
     pub owner: Option<Uuid>,
     pub assigned: bool,
     pub primary_teacher_id: Option<Uuid>,
-    pub coordinator: bool,
 }
 pub(super) struct SubjectScope {
     pub subject_id: Uuid,
     pub domain: LearnerEvaluationDomain,
     pub groups: Vec<GroupScope>,
+    pub coordinator: bool,
     pub entry_enabled: bool,
     pub locked: bool,
 }
@@ -116,15 +117,16 @@ pub(super) async fn begin_subject<'a>(
     .bind(&offerings)
     .execute(&mut *tx)
     .await?;
+    // Persisted subject coordination is independent of active group assignments.
+    let coordinator:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM course_assessment_plans WHERE learning_offering_id=ANY($1) AND academic_term_id=$2 AND academic_year_id=$3 AND assessment_coordinator_id=$4)").bind(&offerings).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(actor.user_id).fetch_one(&mut *tx).await?;
     let groups:Vec<GroupScope>=sqlx::query_as(r#"SELECT g.id AS group_id,g.learning_offering_id AS offering_id,o.owning_organization_unit_id AS owner,
         EXISTS(SELECT 1 FROM learning_group_teachers teacher JOIN users u ON u.id=teacher.teacher_id AND u.status='active' WHERE teacher.learning_group_id=g.id AND teacher.academic_term_id=g.academic_term_id AND teacher.academic_year_id=g.academic_year_id AND teacher.teacher_id=$2 AND teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date) AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date))) AS assigned,
-        (SELECT teacher.teacher_id FROM learning_group_teachers teacher JOIN users u ON u.id=teacher.teacher_id AND u.status='active' WHERE teacher.learning_group_id=g.id AND teacher.academic_term_id=g.academic_term_id AND teacher.academic_year_id=g.academic_year_id AND teacher.role='primary' AND teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date) AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)) ORDER BY teacher.id LIMIT 1) AS primary_teacher_id,
-        EXISTS(SELECT 1 FROM course_assessment_plans p WHERE p.learning_offering_id=o.id AND p.academic_term_id=g.academic_term_id AND p.academic_year_id=g.academic_year_id AND p.assessment_coordinator_id=$2) AS coordinator
+        (SELECT teacher.teacher_id FROM learning_group_teachers teacher JOIN users u ON u.id=teacher.teacher_id AND u.status='active' WHERE teacher.learning_group_id=g.id AND teacher.academic_term_id=g.academic_term_id AND teacher.academic_year_id=g.academic_year_id AND teacher.role='primary' AND teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date) AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)) ORDER BY teacher.id LIMIT 1) AS primary_teacher_id
         FROM learning_groups g JOIN learning_offerings o ON o.id=g.learning_offering_id JOIN academic_terms t ON t.id=g.academic_term_id
         WHERE g.learning_offering_id=ANY($1) AND g.status<>'closed' ORDER BY g.id"#).bind(&offerings).bind(actor.user_id).fetch_all(&mut *tx).await?;
     if !groups
         .iter()
-        .any(|g| policy::can_read_group(&access, g.owner, g.assigned))
+        .any(|g| policy::can_read_group(&access, g.owner, g.assigned, coordinator))
     {
         return Err(AppError::Forbidden("Subject access denied".into()));
     }
@@ -139,6 +141,7 @@ pub(super) async fn begin_subject<'a>(
             subject_id: subject,
             domain,
             groups,
+            coordinator,
             entry_enabled,
             locked,
         },

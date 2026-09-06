@@ -187,6 +187,211 @@ async fn learner_coordinator_configuration_remains_editable_while_entry_closed()
     ));
 }
 
+// Catches treating persisted coordinator ownership as an effective teaching assignment.
+#[tokio::test]
+async fn learner_review_coordinator_keeps_configuration_after_assignment_expires() {
+    let (pool, manager, ctx, group, subject) = fixture("learner_review_expired_coordinator").await;
+    let coordinator = ActorContext {
+        user_id: manager.user_id,
+        permissions: vec![codes::ACADEMIC_LEARNER_EVALUATION_MANAGE_ASSIGNED.into()],
+    };
+    sqlx::query("UPDATE learning_groups SET status='draft' WHERE id IN (SELECT learning_group_id FROM learning_group_teachers WHERE teacher_id=$1)").bind(manager.user_id).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE learning_group_teachers teacher SET starts_on=term.start_date-10,ends_on=term.start_date-1 FROM academic_terms term WHERE teacher.academic_term_id=term.id AND teacher.teacher_id=$1").bind(manager.user_id).execute(&pool).await.unwrap();
+    let config = get_configuration(&pool, &coordinator, subject, DC, &ctx)
+        .await
+        .unwrap();
+    assert!(config.can_manage);
+    let criterion = save_criterion(
+        &pool,
+        &coordinator,
+        subject,
+        DC,
+        &ctx,
+        None,
+        criterion("Coordinator-owned", None),
+    )
+    .await
+    .unwrap();
+    let changed = save_criterion(
+        &pool,
+        &coordinator,
+        subject,
+        DC,
+        &ctx,
+        Some(criterion.id),
+        CriterionInput {
+            name: "Renamed".into(),
+            display_order: 1,
+            active: true,
+            row_version: Some(criterion.row_version),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(changed.name, "Renamed");
+    assert!(
+        remove_criterion(
+            &pool,
+            &coordinator,
+            subject,
+            DC,
+            &ctx,
+            changed.id,
+            changed.row_version
+        )
+        .await
+        .unwrap()
+        .deleted
+    );
+    let control = list_controls(&pool, &manager, &ctx)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|c| c.domain == DC)
+        .unwrap();
+    update_control(
+        &pool,
+        &manager,
+        DC,
+        &ctx,
+        ControlInput {
+            entry_enabled: true,
+            row_version: control.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    let workspace = get_workspace(&pool, &coordinator, group, DC, &ctx)
+        .await
+        .unwrap();
+    assert!(!workspace.can_manage);
+    assert!(!workspace.can_confirm);
+    assert!(summary_for_actor(
+        &pool,
+        &coordinator,
+        &ctx,
+        workspace.students[0].student_academic_year_id
+    )
+    .await
+    .is_ok());
+    let input = ResponseInput {
+        subject_term_criterion_id: workspace.criteria[0].id,
+        student_academic_year_id: workspace.students[0].student_academic_year_id,
+        quality_level: Some(1.try_into().unwrap()),
+        row_version: None,
+    };
+    assert!(matches!(
+        save_responses(&pool, &coordinator, group, DC, &ctx, vec![input]).await,
+        Err(AppError::Forbidden(_))
+    ));
+    assert!(matches!(
+        confirm_group(
+            &pool,
+            &coordinator,
+            group,
+            DC,
+            &ctx,
+            confirmation(&workspace)
+        )
+        .await,
+        Err(AppError::Forbidden(_))
+    ));
+    assert!(list_subjects(&pool, &coordinator, &ctx)
+        .await
+        .unwrap()
+        .iter()
+        .any(|s| s.learning_group_id == group && !s.assigned));
+    sqlx::query("UPDATE course_assessment_plans p SET assessment_coordinator_id=NULL FROM course_offering_details d WHERE d.learning_offering_id=p.learning_offering_id AND d.subject_id=$1 AND d.academic_term_id=$2").bind(subject).bind(ctx.academic_term_id).execute(&pool).await.unwrap();
+    assert!(matches!(
+        get_configuration(&pool, &coordinator, subject, DC, &ctx).await,
+        Err(AppError::Forbidden(_))
+    ));
+    assert!(matches!(
+        get_workspace(&pool, &coordinator, group, DC, &ctx).await,
+        Err(AppError::Forbidden(_))
+    ));
+}
+
+// Catches excluding sibling rooms from coordinator discovery/read, or extending entry or unrelated-subject rights.
+#[tokio::test]
+async fn learner_review_coordinator_reads_sibling_rooms_only_within_the_subject() {
+    let (pool, manager, ctx, group, subject) = fixture("learner_review_sibling_rooms").await;
+    let coordinator = ActorContext {
+        user_id: manager.user_id,
+        permissions: vec![codes::ACADEMIC_LEARNER_EVALUATION_MANAGE_ASSIGNED.into()],
+    };
+    let sibling:Uuid=sqlx::query_scalar("INSERT INTO learning_groups (id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status) SELECT uuid_generate_v4(),learning_offering_id,academic_term_id,academic_year_id,'REVIEW_SIBLING','Sibling room','draft','draft' FROM learning_groups WHERE id=$1 RETURNING id").bind(group).fetch_one(&pool).await.unwrap();
+    let unrelated_offering = Uuid::new_v4();
+    let unrelated = Uuid::new_v4();
+    let (unrelated_subject,unrelated_version):(Uuid,Uuid)=sqlx::query_as("SELECT v.subject_id,v.id FROM subject_versions v WHERE v.subject_id<>$1 AND NOT EXISTS(SELECT 1 FROM course_offering_details d WHERE d.subject_version_id=v.id AND d.academic_term_id=$2) ORDER BY v.id LIMIT 1").bind(subject).bind(ctx.academic_term_id).fetch_one(&pool).await.unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::query("INSERT INTO learning_offerings (id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,status,owning_organization_unit_id) SELECT $1,$2,$3,'course','UNRELATED','Unrelated subject','draft',o.owning_organization_unit_id FROM learning_offerings o JOIN learning_groups g ON g.learning_offering_id=o.id WHERE g.id=$4").bind(unrelated_offering).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(group).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO course_offering_details (learning_offering_id,academic_term_id,academic_year_id,subject_version_id,subject_id,credit) VALUES ($1,$2,$3,$4,$5,1)").bind(unrelated_offering).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(unrelated_version).bind(unrelated_subject).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO learning_groups (id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status) VALUES ($1,$2,$3,$4,'UNRELATED_ROOM','Unrelated room','draft','draft')").bind(unrelated).bind(unrelated_offering).bind(ctx.academic_term_id).bind(ctx.academic_year_id).execute(&mut *tx).await.unwrap();
+    tx.commit().await.unwrap();
+    let control = list_controls(&pool, &manager, &ctx)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|c| c.domain == DC)
+        .unwrap();
+    update_control(
+        &pool,
+        &manager,
+        DC,
+        &ctx,
+        ControlInput {
+            entry_enabled: true,
+            row_version: control.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    let discovered = list_subjects(&pool, &coordinator, &ctx).await.unwrap();
+    assert!(discovered
+        .iter()
+        .any(|s| s.learning_group_id == sibling && !s.assigned));
+    assert!(!discovered.iter().any(|s| s.learning_group_id == unrelated));
+    let workspace = get_workspace(&pool, &coordinator, sibling, DC, &ctx)
+        .await
+        .unwrap();
+    assert_eq!(workspace.subject_id, subject);
+    assert_eq!(workspace.criteria.len(), 8);
+    assert!(!workspace.can_manage);
+    assert!(!workspace.can_confirm);
+    let own = get_workspace(&pool, &coordinator, group, DC, &ctx)
+        .await
+        .unwrap();
+    assert!(own.can_manage);
+    assert!(own.can_confirm);
+    let input = ResponseInput {
+        subject_term_criterion_id: workspace.criteria[0].id,
+        student_academic_year_id: own.students[0].student_academic_year_id,
+        quality_level: Some(1.try_into().unwrap()),
+        row_version: None,
+    };
+    assert!(matches!(
+        save_responses(&pool, &coordinator, sibling, DC, &ctx, vec![input]).await,
+        Err(AppError::Forbidden(_))
+    ));
+    assert!(matches!(
+        confirm_group(
+            &pool,
+            &coordinator,
+            sibling,
+            DC,
+            &ctx,
+            confirmation(&workspace)
+        )
+        .await,
+        Err(AppError::Forbidden(_))
+    ));
+    assert!(matches!(
+        get_workspace(&pool, &coordinator, unrelated, DC, &ctx).await,
+        Err(AppError::Forbidden(_))
+    ));
+}
+
 // Catches copying non-applicable catalog criteria and deleting catalog identities used by subjects.
 #[tokio::test]
 async fn learner_catalog_applicability_and_referenced_removal() {
@@ -314,10 +519,11 @@ async fn learner_current_primary_is_revalidated_for_confirmation_and_lock() {
         permissions: vec![codes::ACADEMIC_LEARNER_EVALUATION_MANAGE_ASSIGNED.into()],
     };
     sqlx::query("UPDATE learning_group_teachers SET starts_on=(SELECT start_date-10 FROM academic_terms WHERE id=$3),ends_on=(SELECT start_date-1 FROM academic_terms WHERE id=$3) WHERE learning_group_id=$1 AND teacher_id=$2").bind(group).bind(actor.user_id).bind(ctx.academic_term_id).execute(&pool).await.unwrap();
-    assert!(matches!(
-        get_workspace(&pool, &teacher, group, DC, &ctx).await,
-        Err(AppError::Forbidden(_))
-    ));
+    let expired_coordinator = get_workspace(&pool, &teacher, group, DC, &ctx)
+        .await
+        .unwrap();
+    assert!(!expired_coordinator.can_manage);
+    assert!(!expired_coordinator.can_confirm);
 }
 
 // Catches cell-weighted averaging, label-based catalog merging, rounded threshold comparison,

@@ -17,7 +17,12 @@ pub async fn get_workspace(
         .iter()
         .find(|g| g.group_id == group)
         .ok_or_else(|| AppError::NotFound("Active group not found".into()))?;
-    if !policy::can_read_group(&access, group_scope.owner, group_scope.assigned) {
+    if !policy::can_read_group(
+        &access,
+        group_scope.owner,
+        group_scope.assigned,
+        scope.coordinator,
+    ) {
         return Err(AppError::Forbidden("Group access denied".into()));
     }
     let ws = load_workspace(&mut tx, actor, &scope, group_scope, ctx).await?;
