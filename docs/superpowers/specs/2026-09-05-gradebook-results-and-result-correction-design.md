@@ -174,6 +174,9 @@ exactly. Items may be temporarily incomplete while a teacher is arranging column
   grade calculation, and invalidates that group-phase confirmation.
 - A cancelled item has no restore workflow in Release 2. A teacher creates a new active item when
   a replacement is required.
+- Renaming, reordering, or changing an item's maximum is allowed while the phase is editable and
+  the result scope is not locked. A lower maximum is rejected when any retained student score
+  exceeds it; the teacher must reduce or clear those scores first.
 
 ### Student score semantics
 
@@ -188,6 +191,22 @@ zero. A teacher must explicitly type `0` to record zero.
 Scores use exact decimal storage. The backend validates range and item status and derives phase and
 course totals; it never trusts totals submitted by the browser. A multi-cell paste is normalized,
 validated, and persisted as one bounded batch operation.
+
+### Entry column selection
+
+Every active score-item header has a checkbox that selects whether its student cells are editable
+in the current browser workspace. No item is selected on initial entry. The page also provides
+“select all in this phase” and “clear selection.” Adding a new item selects its new column so the
+teacher can use it immediately.
+
+Unchecked columns remain visible and read-only. Their existing scores still contribute to phase
+and course totals. The selection is browser UI state only: it is not sent to the API, does not
+activate/deactivate an item, does not alter calculation, and does not affect another teacher's
+workspace.
+
+Keyboard Tab/Enter movement and multi-cell paste traverse only selected columns. Clearing a
+selection first resolves any pending autosave in that column, then makes its cells read-only; it
+does not clear their values.
 
 ### Autosave and concurrency
 
@@ -471,10 +490,12 @@ by the current account first. The user chooses subject, learning group, and one 
 The manager-only control surface owns the four “allow student-score entry” switches.
 
 The desktop entry surface is a horizontally scrollable academic ledger with frozen student
-identity columns and readable fixed-width score columns. It supports keyboard entry and bounded
-multi-cell paste. The mobile editor uses a full-screen sheet with a sticky header, explicit back/X
-action, current student/item context, and sticky save status; it never depend on an off-screen close
-button.
+identity columns and readable fixed-width score columns. Each score-item header shows its entry
+checkbox, item name, maximum, and compact item actions. Selected columns use a restrained active
+state in addition to the checkbox; unchecked columns stay readable but cannot receive input. The
+ledger supports keyboard entry and bounded multi-cell paste across selected columns only. The
+mobile editor uses a full-screen sheet with a sticky header, explicit back/X action, current
+student/item context, and sticky save status; it never depends on an off-screen close button.
 
 ### Result preparation
 
@@ -550,8 +571,11 @@ Focused service, policy, contract, schema, and UI tests cover:
 
 - blank versus explicit zero, including clearing a previously stored score;
 - minimum/maximum boundaries and decimal values;
+- rejection of an item-maximum reduction below a retained student score;
 - item totals that underfill or overfill a phase;
 - hard deletion without scores and cancellation with retained scores;
+- local entry-column selection, select-all/clear, read-only unchecked columns, selected-column
+  keyboard traversal/paste, and unchanged calculations;
 - autosave batching, retry, and optimistic conflicts between assigned teachers;
 - teacher-window closure and school-management bypass;
 - confirmation with blanks, targeted invalidation, roster/plan invalidation, and no invalidation
