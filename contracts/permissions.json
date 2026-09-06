@@ -605,6 +605,139 @@
       "description": "จัดการโครงสร้างคะแนนและสถานะการส่งของรายวิชาที่เปิดสอนทั้งโรงเรียน"
     },
     {
+      "module": "academic_gradebook",
+      "action": "read",
+      "scope": "assigned",
+      "name": "ดูสมุดคะแนนที่รับผิดชอบ",
+      "description": "ดูรายการคะแนนและคะแนนผู้เรียนของรายวิชาที่ตนเองได้รับมอบหมาย"
+    },
+    {
+      "module": "academic_gradebook",
+      "action": "read",
+      "scope": "organization_unit",
+      "name": "ดูสมุดคะแนนในกลุ่มสาระ",
+      "description": "ดูรายการคะแนนและคะแนนผู้เรียนของรายวิชาในกลุ่มสาระเดียวกัน"
+    },
+    {
+      "module": "academic_gradebook",
+      "action": "read",
+      "scope": "school",
+      "name": "ดูสมุดคะแนนทั้งโรงเรียน",
+      "description": "ดูรายการคะแนนและคะแนนผู้เรียนของรายวิชาทั้งโรงเรียน"
+    },
+    {
+      "module": "academic_gradebook",
+      "action": "manage",
+      "scope": "assigned",
+      "name": "จัดการสมุดคะแนนที่รับผิดชอบ",
+      "description": "สร้างและแก้ไขรายการคะแนนและคะแนนผู้เรียนของรายวิชาที่ตนเองได้รับมอบหมาย"
+    },
+    {
+      "module": "academic_gradebook",
+      "action": "manage",
+      "scope": "school",
+      "name": "จัดการสมุดคะแนนทั้งโรงเรียน",
+      "description": "จัดการรายการคะแนน คะแนนผู้เรียน และช่วงเวลาเปิดรับคะแนนทั้งโรงเรียน"
+    },
+    {
+      "module": "academic_result",
+      "action": "read",
+      "scope": "assigned",
+      "name": "ดูผลการเรียนที่รับผิดชอบ",
+      "description": "ดูผลการเรียนของรายวิชาหรือกิจกรรมที่ตนเองได้รับมอบหมาย"
+    },
+    {
+      "module": "academic_result",
+      "action": "read",
+      "scope": "organization_unit",
+      "name": "ดูผลการเรียนในกลุ่มสาระ",
+      "description": "ดูผลการเรียนของรายวิชาหรือกิจกรรมในกลุ่มสาระเดียวกัน"
+    },
+    {
+      "module": "academic_result",
+      "action": "read",
+      "scope": "school",
+      "name": "ดูผลการเรียนทั้งโรงเรียน",
+      "description": "ดูผลการเรียนของรายวิชาและกิจกรรมทั้งโรงเรียน"
+    },
+    {
+      "module": "academic_result",
+      "action": "manage",
+      "scope": "assigned",
+      "name": "จัดการผลการเรียนที่รับผิดชอบ",
+      "description": "ยืนยันผลการเรียนของรายวิชาหรือกิจกรรมที่ตนเองได้รับมอบหมาย"
+    },
+    {
+      "module": "academic_result",
+      "action": "manage",
+      "scope": "school",
+      "name": "จัดการผลการเรียนทั้งโรงเรียน",
+      "description": "จัดการนโยบายการตัดผลและการเตรียมผลการเรียนทั้งโรงเรียน"
+    },
+    {
+      "module": "academic_result",
+      "action": "lock",
+      "scope": "school",
+      "name": "ล็อกผลการเรียนทั้งโรงเรียน",
+      "description": "ล็อกผลการเรียนเริ่มต้นของรายวิชาและกิจกรรมเป็นข้อมูลอย่างเป็นทางการที่แก้ไขไม่ได้"
+    },
+    {
+      "module": "academic_result",
+      "action": "correct",
+      "scope": "school",
+      "name": "แก้ไขผลการเรียนทั้งโรงเรียน",
+      "description": "บันทึกการแก้ไขผลการเรียนหลังล็อกโดยเก็บประวัติแบบต่อท้าย"
+    },
+    {
+      "module": "academic_learner_evaluation",
+      "action": "read",
+      "scope": "assigned",
+      "name": "ดูผลประเมินผู้เรียนที่รับผิดชอบ",
+      "description": "ดูผลประเมินคุณลักษณะและการอ่าน คิดวิเคราะห์ และเขียนของรายวิชาที่ตนเองได้รับมอบหมาย"
+    },
+    {
+      "module": "academic_learner_evaluation",
+      "action": "read",
+      "scope": "organization_unit",
+      "name": "ดูผลประเมินผู้เรียนในกลุ่มสาระ",
+      "description": "ดูผลประเมินคุณลักษณะและการอ่าน คิดวิเคราะห์ และเขียนของรายวิชาในกลุ่มสาระเดียวกัน"
+    },
+    {
+      "module": "academic_learner_evaluation",
+      "action": "read",
+      "scope": "school",
+      "name": "ดูผลประเมินผู้เรียนทั้งโรงเรียน",
+      "description": "ดูผลประเมินคุณลักษณะและการอ่าน คิดวิเคราะห์ และเขียนทั้งโรงเรียน"
+    },
+    {
+      "module": "academic_learner_evaluation",
+      "action": "manage",
+      "scope": "assigned",
+      "name": "จัดการผลประเมินผู้เรียนที่รับผิดชอบ",
+      "description": "บันทึกและยืนยันผลประเมินผู้เรียนของรายวิชาที่ตนเองได้รับมอบหมาย"
+    },
+    {
+      "module": "academic_learner_evaluation",
+      "action": "manage",
+      "scope": "school",
+      "name": "จัดการผลประเมินผู้เรียนทั้งโรงเรียน",
+      "description": "จัดการเกณฑ์ นโยบาย และช่วงเวลาเปิดรับผลประเมินผู้เรียนทั้งโรงเรียน"
+    },
+    {
+      "module": "academic_learner_evaluation",
+      "action": "lock",
+      "scope": "school",
+      "name": "ล็อกผลประเมินผู้เรียนทั้งโรงเรียน",
+      "description": "ล็อกผลประเมินผู้เรียนรายวิชาแยกตามด้านเป็นข้อมูลอย่างเป็นทางการที่แก้ไขไม่ได้"
+    },
+    {
+      "module": "academic_learner_evaluation",
+      "action": "correct",
+      "scope": "school",
+      "name": "แก้ไขผลประเมินผู้เรียนทั้งโรงเรียน",
+      "description": "บันทึกการแก้ไขผลประเมินผู้เรียนหลังล็อกโดยเก็บประวัติแบบต่อท้าย"
+    },
+    {
       "module": "academic_question_bank",
       "action": "read",
       "scope": "assigned",

@@ -41,6 +41,30 @@ const validContract = {
 };
 
 const generatorPath = fileURLToPath(new URL('../generate-permissions.mjs', import.meta.url));
+const permissionContractPath = fileURLToPath(
+	new URL('../../contracts/permissions.json', import.meta.url)
+);
+const permissionSchemaPath = fileURLToPath(
+	new URL('../../contracts/permissions.schema.json', import.meta.url)
+);
+
+function validatePermissionAction(action) {
+	const contract = structuredClone(validContract);
+	contract.permissions.push({
+		module: 'academic_result',
+		action,
+		scope: 'school',
+		name: `Academic result ${action}`,
+		description: `Academic result ${action} capability`
+	});
+
+	try {
+		validateAndNormalizeContract(contract);
+		return true;
+	} catch {
+		return false;
+	}
+}
 
 async function temporaryPaths(t, contract = validContract) {
 	const root = await mkdtemp(path.join(tmpdir(), 'schoolorbit-permission-generator-'));
@@ -136,6 +160,57 @@ test('accepts certificate workflow actions as canonical permission actions', () 
 			'certificate.issue.school',
 			'certificate.revoke.school',
 			'certificate.submit.school'
+		]
+	);
+});
+
+test('accepts lock and correct as canonical permission actions', async () => {
+	assert.equal(validatePermissionAction('lock'), true);
+	assert.equal(validatePermissionAction('correct'), true);
+
+	const schema = JSON.parse(await readFile(permissionSchemaPath, 'utf8'));
+	assert.equal(schema.$defs.action.enum.includes('lock'), true);
+	assert.equal(schema.$defs.action.enum.includes('correct'), true);
+});
+
+test('generates the exact approved gradebook and result permission codes', async () => {
+	const permissionContract = JSON.parse(await readFile(permissionContractPath, 'utf8'));
+	const generatedCodes = validateAndNormalizeContract(permissionContract).permissions.map(
+		({ code }) => code
+	);
+
+	assert.deepEqual(
+		generatedCodes.filter((code) => code.startsWith('academic_gradebook.')),
+		[
+			'academic_gradebook.manage.assigned',
+			'academic_gradebook.manage.school',
+			'academic_gradebook.read.assigned',
+			'academic_gradebook.read.organization_unit',
+			'academic_gradebook.read.school'
+		]
+	);
+	assert.deepEqual(
+		generatedCodes.filter((code) => code.startsWith('academic_result.')),
+		[
+			'academic_result.correct.school',
+			'academic_result.lock.school',
+			'academic_result.manage.assigned',
+			'academic_result.manage.school',
+			'academic_result.read.assigned',
+			'academic_result.read.organization_unit',
+			'academic_result.read.school'
+		]
+	);
+	assert.deepEqual(
+		generatedCodes.filter((code) => code.startsWith('academic_learner_evaluation.')),
+		[
+			'academic_learner_evaluation.correct.school',
+			'academic_learner_evaluation.lock.school',
+			'academic_learner_evaluation.manage.assigned',
+			'academic_learner_evaluation.manage.school',
+			'academic_learner_evaluation.read.assigned',
+			'academic_learner_evaluation.read.organization_unit',
+			'academic_learner_evaluation.read.school'
 		]
 	);
 });
