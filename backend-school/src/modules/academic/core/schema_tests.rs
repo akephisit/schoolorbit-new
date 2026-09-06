@@ -19,6 +19,467 @@ fn stable_uuid(name: &str) -> Uuid {
     Uuid::new_v5(&ACADEMIC_CORE_NAMESPACE, name.as_bytes())
 }
 
+async fn release_two_fixture(name: &str) -> sqlx::PgPool {
+    let pool = create_named_test_pool_with_max_connections(name, 1).await;
+    crate::modules::academic::cutover_test_support::seed_release_two_predecessor(&pool)
+        .await
+        .expect("populated fixture must reach migration 059");
+    pool
+}
+
+async fn release_two_migrate(pool: &sqlx::PgPool) {
+    apply_migrations_through(pool, 60)
+        .await
+        .expect("migration 060 must apply");
+}
+
+#[tokio::test]
+async fn migration_060_creates_gradebook_result_boundaries() {
+    let pool = release_two_fixture("academic_060_boundaries").await;
+    release_two_migrate(&pool).await;
+    assert!(
+        column_exists(
+            &pool,
+            "academic_assessment_phase_controls",
+            "plan_editing_enabled"
+        )
+        .await
+    );
+    assert!(
+        !column_exists(
+            &pool,
+            "academic_assessment_phase_controls",
+            "score_entry_enabled"
+        )
+        .await
+    );
+    for table in [
+        "academic_gradebook_phase_controls",
+        "learning_group_student_scores",
+        "learning_group_phase_confirmations",
+        "academic_grading_policy_versions",
+        "academic_grading_policy_bands",
+        "learning_group_result_overrides",
+        "learning_group_result_confirmations",
+        "academic_learner_evaluation_criteria",
+        "subject_term_evaluation_criteria",
+        "academic_learner_evaluation_controls",
+        "learning_group_student_evaluations",
+        "learning_group_evaluation_confirmations",
+        "subject_term_evaluation_locks",
+        "subject_term_student_evaluations",
+        "academic_learner_evaluation_policy_versions",
+        "academic_learner_evaluation_policy_bands",
+        "academic_course_result_locks",
+        "academic_course_results",
+        "academic_activity_evaluations",
+        "academic_activity_result_confirmations",
+        "academic_activity_result_locks",
+        "academic_activity_results",
+        "academic_result_corrections",
+    ] {
+        assert!(table_exists(&pool, table).await, "missing {table}");
+    }
+    let invalid: i64 = sqlx::query_scalar("SELECT count(*) FROM academic_terms t WHERE (SELECT count(*) FROM academic_gradebook_phase_controls c WHERE c.academic_term_id = t.id) <> 4 OR (SELECT count(*) FROM academic_learner_evaluation_controls c WHERE c.academic_term_id = t.id) <> 2").fetch_one(&pool).await.unwrap();
+    assert_eq!(invalid, 0);
+}
+
+#[tokio::test]
+async fn migration_060_seeds_learner_catalog() {
+    let pool = release_two_fixture("academic_060_catalog").await;
+    release_two_migrate(&pool).await;
+    let rows: Vec<(String, String)> = sqlx::query_as("SELECT domain, name FROM academic_learner_evaluation_criteria WHERE lifecycle = 'active' ORDER BY domain, display_order").fetch_all(&pool).await.unwrap();
+    assert_eq!(
+        rows,
+        vec![
+            ("desirable_characteristic".into(), "รักชาติ ศาสน์ กษัตริย์".into()),
+            ("desirable_characteristic".into(), "ซื่อสัตย์สุจริต".into()),
+            ("desirable_characteristic".into(), "มีวินัย".into()),
+            ("desirable_characteristic".into(), "ใฝ่เรียนรู้".into()),
+            ("desirable_characteristic".into(), "อยู่อย่างพอเพียง".into()),
+            ("desirable_characteristic".into(), "มุ่งมั่นในการทำงาน".into()),
+            ("desirable_characteristic".into(), "รักความเป็นไทย".into()),
+            ("desirable_characteristic".into(), "มีจิตสาธารณะ".into()),
+            ("reading_thinking_writing".into(), "การอ่าน".into()),
+            ("reading_thinking_writing".into(), "การคิดวิเคราะห์".into()),
+            ("reading_thinking_writing".into(), "การเขียน".into()),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn migration_060_seeds_exact_policy_bands() {
+    let pool = release_two_fixture("academic_060_policies").await;
+    release_two_migrate(&pool).await;
+    let grades: Vec<(String, String)> = sqlx::query_as("SELECT grade::text, lower_bound::text FROM academic_grading_policy_bands b JOIN academic_grading_policy_versions p ON p.id = b.policy_version_id WHERE p.lifecycle = 'active' ORDER BY grade").fetch_all(&pool).await.unwrap();
+    assert_eq!(
+        grades,
+        [
+            ("0.00", "0.00"),
+            ("1.00", "50.00"),
+            ("1.50", "55.00"),
+            ("2.00", "60.00"),
+            ("2.50", "65.00"),
+            ("3.00", "70.00"),
+            ("3.50", "75.00"),
+            ("4.00", "80.00")
+        ]
+        .map(|(a, b)| (a.to_string(), b.to_string()))
+    );
+    let levels: Vec<(i16, String)> = sqlx::query_as("SELECT quality_level, lower_bound::text FROM academic_learner_evaluation_policy_bands b JOIN academic_learner_evaluation_policy_versions p ON p.id = b.policy_version_id WHERE p.lifecycle = 'active' ORDER BY quality_level").fetch_all(&pool).await.unwrap();
+    assert_eq!(
+        levels,
+        [(0, "0.00"), (1, "1.00"), (2, "1.50"), (3, "2.50")].map(|(a, b)| (a, b.to_string()))
+    );
+}
+
+#[tokio::test]
+async fn migration_060_preserves_score_controls() {
+    let pool = release_two_fixture("academic_060_preservation").await;
+    sqlx::query("UPDATE academic_assessment_phase_controls SET score_entry_enabled = phase_code IN ('midterm','final'), row_version = 7, updated_by = '50000000-0000-0000-0000-000000000002'").execute(&pool).await.unwrap();
+    let controls: Value = sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(c) - 'plan_editing_enabled' ORDER BY id) FROM academic_assessment_phase_controls c").fetch_one(&pool).await.unwrap();
+    release_two_migrate(&pool).await;
+    let copied: Value = sqlx::query_scalar(
+        "SELECT jsonb_agg(to_jsonb(c) ORDER BY id) FROM academic_gradebook_phase_controls c",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(controls, copied);
+}
+
+#[tokio::test]
+async fn migration_060_preserves_score_item_identity_and_lifecycle() {
+    let pool = release_two_fixture("academic_060_item_preservation").await;
+    let items: Value = sqlx::query_scalar(
+        "SELECT jsonb_agg(to_jsonb(i) ORDER BY id) FROM learning_group_score_items i",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    release_two_migrate(&pool).await;
+    let retained: Value = sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(i) - ARRAY['lifecycle','cancelled_at','cancelled_by'] ORDER BY id) FROM learning_group_score_items i WHERE lifecycle = 'active' AND cancelled_at IS NULL AND cancelled_by IS NULL").fetch_one(&pool).await.unwrap();
+    assert_eq!(items, retained);
+    assert!(
+        sqlx::query("UPDATE learning_group_score_items SET lifecycle = 'cancelled'")
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn migration_060_replaces_offering_total_and_exam_view() {
+    let pool = release_two_fixture("academic_060_total").await;
+    sqlx::raw_sql(r#"
+        ALTER TABLE course_offering_details DISABLE TRIGGER USER;
+        UPDATE course_offering_details SET migration_provenance = migration_provenance ||
+            jsonb_build_object('legacyGradingPolicy',jsonb_build_object('policyCode','retired','passingScore',50),
+                               'retainedFixture','keep');
+        ALTER TABLE course_offering_details ENABLE TRIGGER USER;
+    "#).execute(&pool).await.unwrap();
+    let totals: Vec<(Uuid, String)> = sqlx::query_as("SELECT learning_offering_id, (grading_policy->>'totalScore')::numeric(10,2)::text FROM course_offering_details ORDER BY learning_offering_id").fetch_all(&pool).await.unwrap();
+    let sources: Value = sqlx::query_scalar("SELECT coalesce(jsonb_agg(to_jsonb(s) ORDER BY source_id), '[]') FROM academic_exam_eligible_sources s").fetch_one(&pool).await.unwrap();
+    release_two_migrate(&pool).await;
+    assert!(!column_exists(&pool, "course_offering_details", "grading_policy").await);
+    let legacy_payloads: i64 = sqlx::query_scalar("SELECT count(*) FROM course_offering_details WHERE migration_provenance ? 'legacyGradingPolicy' OR migration_provenance->>'retainedFixture' IS DISTINCT FROM 'keep'").fetch_one(&pool).await.unwrap();
+    assert_eq!(
+        legacy_payloads, 0,
+        "obsolete grading JSON must leave live storage without erasing other provenance"
+    );
+    let copied: Vec<(Uuid,String)> = sqlx::query_as("SELECT learning_offering_id, assessment_total_score::text FROM course_offering_details ORDER BY learning_offering_id").fetch_all(&pool).await.unwrap();
+    assert_eq!(totals, copied);
+    let new_sources: Value = sqlx::query_scalar("SELECT coalesce(jsonb_agg(to_jsonb(s) ORDER BY source_id), '[]') FROM academic_exam_eligible_sources s").fetch_one(&pool).await.unwrap();
+    assert_eq!(sources, new_sources);
+}
+
+async fn assert_release_two_atomic_failure(pool: &sqlx::PgPool, code: &str) {
+    let before: Value = sqlx::query_scalar(
+        "SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY id), '[]') FROM learning_results r",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let error = apply_migrations_through(pool, 60)
+        .await
+        .expect_err("unsafe cutover must reject");
+    assert!(error.to_string().contains(code), "{error}");
+    assert!(table_exists(pool, "activity_result_details").await);
+    assert!(!table_exists(pool, "academic_gradebook_phase_controls").await);
+    assert!(column_exists(pool, "course_offering_details", "grading_policy").await);
+    let after: Value = sqlx::query_scalar(
+        "SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY id), '[]') FROM learning_results r",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(before, after);
+    let version: i64 = sqlx::query_scalar("SELECT max(version) FROM _sqlx_migrations")
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    assert_eq!(version, 59);
+}
+
+#[tokio::test]
+async fn migration_060_rejects_unrepresentable_totals_atomically() {
+    let pool = release_two_fixture("academic_060_invalid_total").await;
+    for value in ["1.001", "100000000", "NaN", "-1", "invalid", ""] {
+        // Published-source guards must be bypassed only to build damaged historical input.
+        sqlx::raw_sql("ALTER TABLE course_offering_details DISABLE TRIGGER USER")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE course_offering_details SET grading_policy = jsonb_build_object('totalScore', $1::text)").bind(value).execute(&pool).await.unwrap();
+        sqlx::raw_sql("ALTER TABLE course_offering_details ENABLE TRIGGER USER")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_release_two_atomic_failure(&pool, "ACADEMIC_060_OFFERING_TOTAL_INVALID").await;
+    }
+}
+
+#[tokio::test]
+async fn migration_060_migrates_activity_identity_counts_and_removes_legacy() {
+    let pool = release_two_fixture("academic_060_activity_copy").await;
+    let source: Vec<(Uuid,Uuid,Uuid,Uuid,Uuid,Uuid,String)> = sqlx::query_as("SELECT r.id,r.learning_offering_id,r.learning_group_id,r.academic_term_id,r.academic_year_id,r.student_academic_year_id,d.outcome FROM learning_results r JOIN activity_result_details d ON d.learning_result_id=r.id ORDER BY r.id").fetch_all(&pool).await.unwrap();
+    assert!(!source.is_empty());
+    release_two_migrate(&pool).await;
+    let target: Vec<(Uuid,Uuid,Uuid,Uuid,Uuid,Uuid,String)> = sqlx::query_as("SELECT id,learning_offering_id,learning_group_id,academic_term_id,academic_year_id,student_academic_year_id,outcome FROM academic_activity_evaluations ORDER BY id").fetch_all(&pool).await.unwrap();
+    assert_eq!(source, target);
+    let confirmed: i64 = sqlx::query_scalar("SELECT (SELECT count(*) FROM academic_activity_result_confirmations) + (SELECT count(*) FROM academic_activity_result_locks) + (SELECT count(*) FROM academic_activity_results)").fetch_one(&pool).await.unwrap();
+    assert_eq!(confirmed, 0);
+    assert!(!table_exists(&pool, "learning_results").await);
+    assert!(!table_exists(&pool, "activity_result_details").await);
+}
+
+#[tokio::test]
+async fn migration_060_rejects_unknown_activity_outcome_atomically() {
+    let pool = release_two_fixture("academic_060_unknown_activity").await;
+    sqlx::raw_sql("ALTER TABLE activity_result_details DROP CONSTRAINT activity_result_details_outcome_check; UPDATE activity_result_details SET outcome = 'unknown'").execute(&pool).await.unwrap();
+    assert_release_two_atomic_failure(&pool, "ACADEMIC_060_LEGACY_OUTCOME_INVALID").await;
+}
+
+#[tokio::test]
+async fn migration_060_rejects_legacy_context_mismatch_atomically() {
+    let pool = release_two_fixture("academic_060_bad_context").await;
+    sqlx::query("UPDATE learning_results SET learning_offering_id = (SELECT learning_offering_id FROM course_offering_details LIMIT 1)").execute(&pool).await.unwrap();
+    assert_release_two_atomic_failure(&pool, "ACADEMIC_060_LEGACY_CONTEXT_MISMATCH").await;
+}
+
+#[tokio::test]
+async fn migration_060_rejects_invalid_correction_targets() {
+    let pool = release_two_fixture("academic_060_correction_shape").await;
+    release_two_migrate(&pool).await;
+    for targets in [
+        "NULL,NULL,NULL",
+        "uuid_generate_v4(),uuid_generate_v4(),NULL",
+    ] {
+        let sql = format!("INSERT INTO academic_result_corrections (course_result_id,activity_result_id,subject_student_evaluation_id,expected_effective_version,corrected_by) VALUES ({targets},1,'50000000-0000-0000-0000-000000000002')");
+        let error = sqlx::query(&sql)
+            .execute(&pool)
+            .await
+            .expect_err("correction must identify exactly one result family");
+        assert_eq!(
+            error.as_database_error().unwrap().code().as_deref(),
+            Some("23514")
+        );
+    }
+}
+
+#[tokio::test]
+async fn migration_060_copies_permission_grants_by_lineage() {
+    let pool = release_two_fixture("academic_060_permissions").await;
+    sqlx::raw_sql(r#"
+        INSERT INTO role_permissions(role_id,permission_id)
+        SELECT r.id,p.id FROM roles r CROSS JOIN permissions p
+        WHERE r.id = (SELECT id FROM roles ORDER BY id LIMIT 1)
+          AND p.code IN ('academic_assessment.read.assigned','academic_assessment.read.organization_unit','academic_assessment.read.school','academic_assessment.manage.assigned','academic_assessment.manage.school')
+        ON CONFLICT DO NOTHING;
+        INSERT INTO organization_permission_grants(organization_unit_id,permission_id,position_code,created_by)
+        SELECT u.id,p.id,'member','50000000-0000-0000-0000-000000000002'
+        FROM organization_units u CROSS JOIN permissions p
+        WHERE u.code='ACAD-ACT' AND p.module='academic_assessment'
+        ON CONFLICT DO NOTHING;
+        INSERT INTO organization_permission_delegations(id,from_user_id,to_user_id,permission_id,organization_unit_id,reason,started_at,expires_at)
+        SELECT uuid_generate_v4(),'50000000-0000-0000-0000-000000000002','50000000-0000-0000-0000-000000000003',p.id,u.id,'fixture lineage',now()-interval '1 day',now()+interval '1 day'
+        FROM organization_units u CROSS JOIN permissions p
+        WHERE u.code='ACAD-ACT' AND p.module='academic_assessment';
+    "#).execute(&pool).await.unwrap();
+    release_two_migrate(&pool).await;
+    let codes: Vec<String> = sqlx::query_scalar("SELECT code FROM permissions WHERE module IN ('academic_gradebook','academic_result','academic_learner_evaluation') AND is_active ORDER BY code").fetch_all(&pool).await.unwrap();
+    assert_eq!(codes.len(), 19);
+    assert!(codes.iter().all(|code| !code.contains("organization_tree")));
+    for table in [
+        "role_permissions",
+        "organization_permission_grants",
+        "organization_permission_delegations",
+    ] {
+        let principal = match table {
+            "role_permissions" => "s.role_id=t.role_id AND s.created_at=t.created_at",
+            "organization_permission_grants" => "s.organization_unit_id=t.organization_unit_id AND s.position_code IS NOT DISTINCT FROM t.position_code AND s.created_by IS NOT DISTINCT FROM t.created_by AND s.created_at=t.created_at",
+            _ => "s.from_user_id=t.from_user_id AND s.to_user_id=t.to_user_id AND s.organization_unit_id IS NOT DISTINCT FROM t.organization_unit_id AND s.reason=t.reason AND s.started_at=t.started_at AND s.expires_at=t.expires_at AND s.revoked_at IS NOT DISTINCT FROM t.revoked_at AND s.created_at=t.created_at",
+        };
+        let sql = format!("SELECT count(*) FROM {table} s JOIN permissions sp ON sp.id=s.permission_id CROSS JOIN permissions tp WHERE sp.module='academic_assessment' AND tp.module IN ('academic_gradebook','academic_result','academic_learner_evaluation') AND ((tp.action=sp.action AND tp.scope=sp.scope) OR (sp.action='manage' AND sp.scope='school' AND tp.action IN ('lock','correct'))) AND NOT EXISTS (SELECT 1 FROM {table} t WHERE t.permission_id=tp.id AND {principal})");
+        let missing: i64 = sqlx::query_scalar(&sql).fetch_one(&pool).await.unwrap();
+        assert_eq!(missing, 0, "missing copied {table}");
+        let sql = format!("SELECT count(*) FROM {table} t JOIN permissions tp ON tp.id=t.permission_id WHERE tp.module IN ('academic_gradebook','academic_result','academic_learner_evaluation') AND NOT EXISTS (SELECT 1 FROM {table} s JOIN permissions sp ON sp.id=s.permission_id WHERE sp.module='academic_assessment' AND ((tp.action=sp.action AND tp.scope=sp.scope) OR (sp.action='manage' AND sp.scope='school' AND tp.scope='school' AND tp.action IN ('lock','correct'))) AND {principal})");
+        let extra: i64 = sqlx::query_scalar(&sql).fetch_one(&pool).await.unwrap();
+        assert_eq!(extra, 0, "unearned capability in {table}");
+    }
+}
+
+#[tokio::test]
+async fn migration_060_enforces_score_context_versions_and_retention() {
+    let pool = release_two_fixture("academic_060_score_constraints").await;
+    release_two_migrate(&pool).await;
+    sqlx::query(
+        r#"INSERT INTO learning_group_student_scores (
+        score_item_id,learning_group_id,learning_offering_id,academic_term_id,academic_year_id,
+        student_academic_year_id,score
+    ) SELECT i.id,i.learning_group_id,i.learning_offering_id,i.academic_term_id,i.academic_year_id,
+             s.id,0 FROM learning_group_score_items i
+      JOIN student_academic_years s ON s.academic_year_id=i.academic_year_id LIMIT 1"#,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let zero: String = sqlx::query_scalar("SELECT score::text FROM learning_group_student_scores")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(zero, "0.00");
+    for statement in [
+        "UPDATE learning_group_student_scores SET row_version=0",
+        "UPDATE learning_group_student_scores SET score=-0.01",
+        "UPDATE learning_group_student_scores SET score='NaN'",
+        "UPDATE learning_group_student_scores SET learning_group_id=(SELECT id FROM learning_groups WHERE learning_offering_id IN (SELECT learning_offering_id FROM activity_offering_details) LIMIT 1)",
+        "UPDATE learning_group_student_scores SET student_academic_year_id=(SELECT id FROM student_academic_years WHERE academic_year_id <> learning_group_student_scores.academic_year_id LIMIT 1)",
+        "DELETE FROM learning_group_score_items WHERE id IN (SELECT score_item_id FROM learning_group_student_scores)",
+    ] {
+        assert!(sqlx::query(statement).execute(&pool).await.is_err(),"accepted {statement}");
+    }
+    sqlx::query("UPDATE learning_group_score_items SET lifecycle='cancelled',cancelled_at=now() WHERE id IN (SELECT score_item_id FROM learning_group_student_scores)").execute(&pool).await.unwrap();
+    let retained: i64 = sqlx::query_scalar("SELECT count(*) FROM learning_group_student_scores")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(retained, 1);
+}
+
+#[tokio::test]
+async fn migration_060_enforces_activity_correction_family_and_immutability() {
+    let pool = release_two_fixture("academic_060_official_constraints").await;
+    release_two_migrate(&pool).await;
+    sqlx::raw_sql(r#"
+        INSERT INTO academic_activity_result_locks (
+            learning_group_id,learning_offering_id,academic_term_id,academic_year_id,
+            roster_checksum,source_checksum,source_snapshot,locked_by
+        ) SELECT learning_group_id,learning_offering_id,academic_term_id,academic_year_id,
+            repeat('a',64),repeat('b',64),'{}','50000000-0000-0000-0000-000000000002'
+          FROM academic_activity_evaluations LIMIT 1;
+        INSERT INTO academic_activity_results (
+            learning_group_id,learning_offering_id,academic_term_id,academic_year_id,
+            activity_result_lock_id,student_academic_year_id,outcome
+        ) SELECT e.learning_group_id,e.learning_offering_id,e.academic_term_id,e.academic_year_id,
+            l.id,e.student_academic_year_id,e.outcome
+          FROM academic_activity_evaluations e JOIN academic_activity_result_locks l USING (learning_group_id);
+        INSERT INTO academic_result_corrections (
+            activity_result_id,old_activity_outcome,new_activity_outcome,
+            expected_effective_version,corrected_by
+        ) SELECT id,outcome,'fail',1,'50000000-0000-0000-0000-000000000002'
+          FROM academic_activity_results;
+    "#).execute(&pool).await.unwrap();
+    for statement in [
+        "UPDATE academic_activity_result_locks SET source_snapshot='{}'",
+        "DELETE FROM academic_activity_results",
+        "UPDATE academic_result_corrections SET new_activity_outcome='pass'",
+        "DELETE FROM academic_result_corrections",
+        "INSERT INTO academic_result_corrections (activity_result_id,old_activity_outcome,new_activity_outcome,expected_effective_version,corrected_by) SELECT activity_result_id,old_activity_outcome,new_activity_outcome,1,corrected_by FROM academic_result_corrections",
+        "INSERT INTO academic_result_corrections (activity_result_id,old_activity_outcome,new_activity_outcome,old_quality_level,expected_effective_version,corrected_by) SELECT activity_result_id,'pass','fail',0,2,corrected_by FROM academic_result_corrections",
+        "INSERT INTO academic_result_corrections (activity_result_id,old_activity_outcome,new_activity_outcome,expected_effective_version,corrected_by) SELECT activity_result_id,'pass','numeric',2,corrected_by FROM academic_result_corrections",
+    ] {
+        assert!(sqlx::query(statement).execute(&pool).await.is_err(),"accepted {statement}");
+    }
+    let initial: String = sqlx::query_scalar("SELECT outcome FROM academic_activity_results")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(initial, "pass");
+}
+
+#[tokio::test]
+async fn migration_060_supports_empty_new_tenant() {
+    let pool = create_named_test_pool_with_max_connections("academic_060_empty", 1).await;
+    release_two_migrate(&pool).await;
+    let count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM academic_learner_evaluation_criteria")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(count, 11);
+    assert!(!table_exists(&pool, "learning_results").await);
+}
+
+#[tokio::test]
+async fn migration_060_enforces_learner_evaluation_context() {
+    let pool = release_two_fixture("academic_060_learner_context").await;
+    release_two_migrate(&pool).await;
+    sqlx::raw_sql(
+        r#"
+        INSERT INTO subject_term_evaluation_criteria (
+            subject_id,academic_term_id,academic_year_id,domain,school_criterion_id,name
+        ) SELECT d.subject_id,d.academic_term_id,d.academic_year_id,c.domain,c.id,c.name
+          FROM course_offering_details d CROSS JOIN academic_learner_evaluation_criteria c LIMIT 1;
+        INSERT INTO learning_group_student_evaluations (
+            learning_group_id,learning_offering_id,academic_term_id,academic_year_id,
+            subject_id,domain,subject_term_criterion_id,student_academic_year_id,quality_level
+        ) SELECT g.id,g.learning_offering_id,g.academic_term_id,g.academic_year_id,
+            c.subject_id,c.domain,c.id,s.id,0
+          FROM subject_term_evaluation_criteria c
+          JOIN course_offering_details d USING (subject_id,academic_term_id,academic_year_id)
+          JOIN learning_groups g USING (learning_offering_id,academic_term_id,academic_year_id)
+          JOIN student_academic_years s USING (academic_year_id) LIMIT 1;
+    "#,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let level: i16 =
+        sqlx::query_scalar("SELECT quality_level FROM learning_group_student_evaluations")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(level, 0);
+    for statement in [
+        "UPDATE learning_group_student_evaluations SET quality_level=4",
+        "UPDATE learning_group_student_evaluations SET row_version=0",
+        "UPDATE learning_group_student_evaluations SET domain=CASE WHEN domain='desirable_characteristic' THEN 'reading_thinking_writing' ELSE 'desirable_characteristic' END",
+        "UPDATE learning_group_student_evaluations SET academic_term_id=(SELECT id FROM academic_terms WHERE id <> learning_group_student_evaluations.academic_term_id LIMIT 1)",
+        "UPDATE learning_group_student_evaluations SET student_academic_year_id=(SELECT id FROM student_academic_years WHERE academic_year_id <> learning_group_student_evaluations.academic_year_id LIMIT 1)",
+    ] {
+        assert!(sqlx::query(statement).execute(&pool).await.is_err(),"accepted {statement}");
+    }
+}
+
+#[tokio::test]
+async fn migration_060_normalizes_recognized_fail_without_confirming() {
+    let pool = release_two_fixture("academic_060_normalized_fail").await;
+    sqlx::raw_sql("ALTER TABLE activity_result_details DROP CONSTRAINT activity_result_details_outcome_check; UPDATE activity_result_details SET outcome=' FaIL '").execute(&pool).await.unwrap();
+    release_two_migrate(&pool).await;
+    let outcome: String = sqlx::query_scalar("SELECT outcome FROM academic_activity_evaluations")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(outcome, "fail");
+    let confirmations: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM academic_activity_result_confirmations")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(confirmations, 0);
+}
+
 #[tokio::test]
 async fn migration_chain_supports_an_empty_new_tenant() {
     let pool = create_named_test_pool("academic_core_empty_tenant").await;

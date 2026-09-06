@@ -60,6 +60,15 @@ pub async fn apply_phase_b_runtime_migrations(pool: &PgPool) -> TestSupportResul
     apply_migrations_through(pool, 46).await
 }
 
+/// A real populated predecessor for the Release 2 destructive cutover tests.
+pub async fn seed_release_two_predecessor(pool: &PgPool) -> TestSupportResult<()> {
+    apply_migrations_through(pool, 40).await?;
+    seed_academic_cutover_fixture(pool, CutoverFixture::Passing).await?;
+    apply_migrations_through(pool, 44).await?;
+    record_passing_phase_a_reconciliation_marker(pool).await?;
+    apply_migrations_through(pool, 59).await
+}
+
 pub async fn record_passing_phase_a_reconciliation_marker(pool: &PgPool) -> TestSupportResult<()> {
     let source_target_count: i64 = sqlx::query_scalar(
         r#"SELECT COALESCE(SUM(value::bigint), 0)::bigint
