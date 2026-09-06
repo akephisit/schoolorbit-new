@@ -16,23 +16,23 @@ pub fn routes() -> axum::Router<crate::AppState> {
             .route("/controls", get(handlers::list_controls))
             .route("/controls/{control_id}", put(handlers::update_control))
             .route(
-                "/groups/{group_id}/phases/{phase_id}/scores",
+                "/groups/{group_id}/phases/{phase_code}/scores",
                 put(handlers::save_scores_batch),
             )
             .route(
-                "/groups/{group_id}/phases/{phase_id}/confirm",
+                "/groups/{group_id}/phases/{phase_code}/confirm",
                 post(handlers::confirm_phase),
             )
             .route(
-                "/groups/{group_id}/phases/{phase_id}/items",
+                "/groups/{group_id}/phases/{phase_code}/items",
                 post(handlers::create_item),
             )
             .route(
-                "/groups/{group_id}/phases/{phase_id}/items/{item_id}",
+                "/groups/{group_id}/phases/{phase_code}/items/{item_id}",
                 put(handlers::update_item).delete(handlers::remove_item),
             )
             .route(
-                "/groups/{group_id}/phases/{phase_id}",
+                "/groups/{group_id}/phases/{phase_code}",
                 get(handlers::get_group_phase_workspace),
             ),
     )

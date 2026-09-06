@@ -18,6 +18,48 @@ pub use items::*;
 pub use scores::save_scores_batch;
 pub use workspace::{get_group_phase_workspace, source_checksums};
 
+/// Resolve the HTTP phase code in its complete academic resource context.
+/// Resource authorization remains enforced by the workspace/mutation service.
+pub async fn resolve_phase_id(
+    pool: &PgPool,
+    group_id: Uuid,
+    phase_code: &str,
+    context: &GradebookContext,
+) -> Result<Uuid, AppError> {
+    let phase_code =
+        crate::modules::academic::models::assessment::AssessmentPhaseCode::try_from(phase_code)
+            .map_err(|_| AppError::ValidationError("Unknown Gradebook phase code".into()))?;
+    let mut tx = pool.begin().await?;
+    validate_context(&mut tx, context).await?;
+    let phase_id = sqlx::query_scalar(
+        r#"SELECT phase.id
+           FROM learning_groups learning_group
+           JOIN learning_offerings offering
+             ON offering.id = learning_group.learning_offering_id
+            AND offering.academic_term_id = learning_group.academic_term_id
+            AND offering.academic_year_id = learning_group.academic_year_id
+            AND offering.kind = 'course'
+           JOIN course_assessment_plans plan
+             ON plan.learning_offering_id = offering.id
+            AND plan.academic_term_id = offering.academic_term_id
+            AND plan.academic_year_id = offering.academic_year_id
+           JOIN course_assessment_phases phase ON phase.plan_id = plan.id
+           WHERE learning_group.id = $1
+             AND learning_group.academic_term_id = $2
+             AND learning_group.academic_year_id = $3
+             AND phase.phase_code = $4"#,
+    )
+    .bind(group_id)
+    .bind(context.academic_term_id)
+    .bind(context.academic_year_id)
+    .bind(phase_code.as_str())
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Group phase not found in this academic context".into()))?;
+    tx.commit().await?;
+    Ok(phase_id)
+}
+
 #[derive(sqlx::FromRow)]
 pub(super) struct Scope {
     pub group_id: Uuid,
@@ -157,7 +199,16 @@ pub(super) async fn invalidate(
     tx: &mut Transaction<'_, Postgres>,
     scope: &Scope,
 ) -> Result<(), AppError> {
-    sqlx::query("DELETE FROM learning_group_phase_confirmations WHERE learning_group_id=$1 AND assessment_phase_id=$2").bind(scope.group_id).bind(scope.phase_id).execute(&mut **tx).await?;
+    sqlx::query(
+        r#"UPDATE learning_group_phase_confirmations
+           SET row_version = row_version + 1,
+               source_snapshot = jsonb_set(source_snapshot, '{invalidated}', 'true'::jsonb)
+           WHERE learning_group_id = $1 AND assessment_phase_id = $2"#,
+    )
+    .bind(scope.group_id)
+    .bind(scope.phase_id)
+    .execute(&mut **tx)
+    .await?;
     Ok(())
 }
 

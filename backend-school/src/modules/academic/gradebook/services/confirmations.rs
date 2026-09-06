@@ -54,6 +54,7 @@ pub async fn confirm_phase(
     }
     let blank_score_count = (active.len() * workspace.students.len()) as i64 - entered;
     let snapshot = ConfirmationSnapshot {
+        invalidated: false,
         phase_row_version: scope.phase_row_version,
         phase_max_score: &scope.phase_max_score,
         roster_checksum: &workspace.roster_checksum,
@@ -90,13 +91,14 @@ pub async fn confirm_phase(
             .cloned()
             .collect(),
     };
-    let confirmation=sqlx::query_as("INSERT INTO learning_group_phase_confirmations (learning_group_id,learning_offering_id,academic_term_id,academic_year_id,course_assessment_plan_id,assessment_phase_id,phase_row_version,blank_score_count,roster_checksum,source_checksum,source_snapshot,confirmed_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (learning_group_id,assessment_phase_id) DO UPDATE SET phase_row_version=EXCLUDED.phase_row_version,blank_score_count=EXCLUDED.blank_score_count,roster_checksum=EXCLUDED.roster_checksum,source_checksum=EXCLUDED.source_checksum,source_snapshot=EXCLUDED.source_snapshot,confirmed_by=EXCLUDED.confirmed_by,confirmed_at=now(),row_version=learning_group_phase_confirmations.row_version+1 RETURNING id,blank_score_count,source_checksum,roster_checksum,row_version").bind(group).bind(scope.offering_id).bind(context.academic_term_id).bind(context.academic_year_id).bind(scope.plan_id).bind(phase).bind(scope.phase_row_version).bind(blank_score_count).bind(&workspace.roster_checksum).bind(&workspace.source_checksum).bind(sqlx::types::Json(snapshot)).bind(actor.user_id).fetch_one(&mut *tx).await?;
+    let confirmation=sqlx::query_as("INSERT INTO learning_group_phase_confirmations (learning_group_id,learning_offering_id,academic_term_id,academic_year_id,course_assessment_plan_id,assessment_phase_id,phase_row_version,blank_score_count,roster_checksum,source_checksum,source_snapshot,confirmed_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (learning_group_id,assessment_phase_id) DO UPDATE SET phase_row_version=EXCLUDED.phase_row_version,blank_score_count=EXCLUDED.blank_score_count,roster_checksum=EXCLUDED.roster_checksum,source_checksum=EXCLUDED.source_checksum,source_snapshot=EXCLUDED.source_snapshot,confirmed_by=EXCLUDED.confirmed_by,confirmed_at=now(),row_version=learning_group_phase_confirmations.row_version+1 RETURNING id,blank_score_count,source_checksum,roster_checksum,row_version,COALESCE((source_snapshot->>'invalidated')::boolean,false) AS invalidated").bind(group).bind(scope.offering_id).bind(context.academic_term_id).bind(context.academic_year_id).bind(scope.plan_id).bind(phase).bind(scope.phase_row_version).bind(blank_score_count).bind(&workspace.roster_checksum).bind(&workspace.source_checksum).bind(sqlx::types::Json(snapshot)).bind(actor.user_id).fetch_one(&mut *tx).await?;
     tx.commit().await?;
     Ok(confirmation)
 }
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ConfirmationSnapshot<'a> {
+    invalidated: bool,
     phase_row_version: i64,
     phase_max_score: &'a str,
     roster_checksum: &'a str,

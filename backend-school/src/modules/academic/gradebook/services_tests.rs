@@ -7,6 +7,214 @@ use crate::{error::AppError, middleware::permission::ActorContext, permissions::
 use uuid::Uuid;
 
 #[tokio::test]
+async fn gradebook_review_phase_code_resolution_checks_context() {
+    let (pool, actor, context, group, expected_phase) =
+        fixture("gradebook_phase_code_resolution").await;
+    for code in ["before_midterm", "midterm", "after_midterm", "final"] {
+        let phase = resolve_phase_id(&pool, group, code, &context)
+            .await
+            .unwrap();
+        let workspace = get_group_phase_workspace(&pool, &actor, group, phase, &context)
+            .await
+            .unwrap();
+        assert_eq!(workspace.phase_code, code);
+        assert_eq!(workspace.learning_group_id, group);
+        if code == "before_midterm" {
+            assert_eq!(phase, expected_phase);
+        }
+    }
+    for invalid in ["not_a_phase", "BeforeMidterm", ""] {
+        assert!(matches!(
+            resolve_phase_id(&pool, group, invalid, &context).await,
+            Err(AppError::ValidationError(_))
+        ));
+    }
+    assert!(matches!(
+        resolve_phase_id(&pool, group, &expected_phase.to_string(), &context).await,
+        Err(AppError::ValidationError(_))
+    ));
+    let wrong_year = GradebookContext {
+        academic_year_id: Uuid::new_v4(),
+        academic_term_id: context.academic_term_id,
+    };
+    assert!(matches!(
+        resolve_phase_id(&pool, group, "before_midterm", &wrong_year).await,
+        Err(AppError::ValidationError(_))
+    ));
+    assert!(matches!(
+        resolve_phase_id(&pool, Uuid::new_v4(), "before_midterm", &context).await,
+        Err(AppError::NotFound(_))
+    ));
+}
+
+// Catches the public handler contract drifting back to UUID phase paths.
+#[test]
+fn gradebook_review_group_phase_contract_uses_phase_codes() {
+    use utoipa::OpenApi;
+    #[derive(OpenApi)]
+    #[openapi(paths(
+        crate::modules::academic::gradebook::handlers::get_group_phase_workspace,
+        crate::modules::academic::gradebook::handlers::create_item,
+        crate::modules::academic::gradebook::handlers::update_item,
+        crate::modules::academic::gradebook::handlers::remove_item,
+        crate::modules::academic::gradebook::handlers::save_scores_batch,
+        crate::modules::academic::gradebook::handlers::confirm_phase,
+    ))]
+    struct GradebookPaths;
+    let contract = serde_json::to_value(GradebookPaths::openapi()).unwrap();
+    for (suffix, method) in [
+        ("", "get"),
+        ("/items", "post"),
+        ("/items/{item_id}", "put"),
+        ("/items/{item_id}", "delete"),
+        ("/scores", "put"),
+        ("/confirm", "post"),
+    ] {
+        let path =
+            format!("/api/academic/gradebook/groups/{{group_id}}/phases/{{phase_code}}{suffix}");
+        let operation = contract["paths"]
+            .get(&path)
+            .and_then(|item| item.get(method))
+            .unwrap_or_else(|| panic!("missing phase-code operation: {method} {path}"));
+        let parameter = operation["parameters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["name"] == "phase_code")
+            .unwrap();
+        assert_eq!(parameter["in"], "path");
+        assert_ne!(parameter["schema"]["format"], "uuid");
+    }
+}
+
+// Catches confirmation ABA: changing and restoring inputs must not reuse an old approval token.
+#[tokio::test]
+async fn gradebook_review_confirmation_revision_survives_invalidation() {
+    let (pool, actor, context, group, phase) = fixture("gradebook_confirmation_aba").await;
+    sqlx::query("DELETE FROM learning_group_score_items WHERE learning_group_id=$1 AND assessment_phase_id=$2").bind(group).bind(phase).execute(&pool).await.unwrap();
+    let initial = get_group_phase_workspace(&pool, &actor, group, phase, &context)
+        .await
+        .unwrap();
+    let item = create_item(
+        &pool,
+        &actor,
+        group,
+        phase,
+        &context,
+        ItemInput {
+            name: "Complete phase".into(),
+            max_score: initial.phase_max_score.clone(),
+            display_order: 0,
+            row_version: None,
+        },
+    )
+    .await
+    .unwrap();
+    let source = get_group_phase_workspace(&pool, &actor, group, phase, &context)
+        .await
+        .unwrap();
+    let original = confirm_phase(
+        &pool,
+        &actor,
+        group,
+        phase,
+        &context,
+        ConfirmInput {
+            source_checksum: source.source_checksum.clone(),
+            roster_checksum: source.roster_checksum.clone(),
+            row_version: None,
+        },
+    )
+    .await
+    .unwrap();
+    let resized = update_item(
+        &pool,
+        &actor,
+        group,
+        phase,
+        item.id,
+        &context,
+        ItemInput {
+            name: item.name.clone(),
+            max_score: "0".into(),
+            display_order: 0,
+            row_version: Some(item.row_version),
+        },
+    )
+    .await
+    .unwrap();
+    update_item(
+        &pool,
+        &actor,
+        group,
+        phase,
+        item.id,
+        &context,
+        ItemInput {
+            name: item.name,
+            max_score: initial.phase_max_score,
+            display_order: 0,
+            row_version: Some(resized.row_version),
+        },
+    )
+    .await
+    .unwrap();
+    let restored = get_group_phase_workspace(&pool, &actor, group, phase, &context)
+        .await
+        .unwrap();
+    assert_eq!(restored.source_checksum, source.source_checksum);
+    let stale = restored
+        .confirmation
+        .expect("invalidation must retain the confirmation revision");
+    assert_eq!(stale.id, original.id);
+    assert!(stale.row_version > original.row_version);
+    assert!(
+        !restored.confirmation_is_current,
+        "restoring source values must not silently restore confirmation"
+    );
+    let latest = confirm_phase(
+        &pool,
+        &actor,
+        group,
+        phase,
+        &context,
+        ConfirmInput {
+            source_checksum: source.source_checksum.clone(),
+            roster_checksum: source.roster_checksum.clone(),
+            row_version: Some(stale.row_version),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(latest.id, original.id);
+    assert!(latest.row_version > stale.row_version);
+    assert!(matches!(
+        confirm_phase(
+            &pool,
+            &actor,
+            group,
+            phase,
+            &context,
+            ConfirmInput {
+                source_checksum: source.source_checksum,
+                roster_checksum: source.roster_checksum,
+                row_version: Some(original.row_version)
+            }
+        )
+        .await,
+        Err(AppError::Conflict(_))
+    ));
+    let current = get_group_phase_workspace(&pool, &actor, group, phase, &context)
+        .await
+        .unwrap();
+    assert!(current.confirmation_is_current);
+    assert_eq!(
+        current.confirmation.unwrap().row_version,
+        latest.row_version
+    );
+}
+
+#[tokio::test]
 async fn gradebook_concurrent_scores_have_one_winner() {
     let (pool, actor, context, group, phase) = fixture("gradebook_race").await;
     let item = create_item(
@@ -108,11 +316,10 @@ async fn gradebook_invalidation_is_limited_to_the_changed_phase() {
     .await
     .unwrap();
     assert!(
-        get_group_phase_workspace(&pool, &actor, group, phase, &context)
+        !get_group_phase_workspace(&pool, &actor, group, phase, &context)
             .await
             .unwrap()
-            .confirmation
-            .is_none()
+            .confirmation_is_current
     );
     let untouched = get_group_phase_workspace(&pool, &actor, group, other, &context)
         .await
@@ -845,10 +1052,9 @@ async fn gradebook_confirmation_snapshot_and_cosmetic_changes() {
     .await
     .unwrap();
     assert!(
-        get_group_phase_workspace(&pool, &actor, group, phase, &context)
+        !get_group_phase_workspace(&pool, &actor, group, phase, &context)
             .await
             .unwrap()
-            .confirmation
-            .is_none()
+            .confirmation_is_current
     );
 }

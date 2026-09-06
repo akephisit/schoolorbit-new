@@ -95,6 +95,7 @@ pub struct PhaseConfirmation {
     pub source_checksum: String,
     pub roster_checksum: String,
     pub row_version: i64,
+    pub invalidated: bool,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]

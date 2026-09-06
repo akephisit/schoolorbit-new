@@ -36,9 +36,11 @@ pub(super) async fn load_workspace(
         &students,
         &scores,
     )?;
-    let confirmation:Option<PhaseConfirmation>=sqlx::query_as("SELECT id,blank_score_count,source_checksum,roster_checksum,row_version FROM learning_group_phase_confirmations WHERE learning_group_id=$1 AND assessment_phase_id=$2").bind(scope.group_id).bind(scope.phase_id).fetch_optional(&mut **tx).await?;
+    let confirmation:Option<PhaseConfirmation>=sqlx::query_as("SELECT id,blank_score_count,source_checksum,roster_checksum,row_version,COALESCE((source_snapshot->>'invalidated')::boolean,false) AS invalidated FROM learning_group_phase_confirmations WHERE learning_group_id=$1 AND assessment_phase_id=$2").bind(scope.group_id).bind(scope.phase_id).fetch_optional(&mut **tx).await?;
     let confirmation_is_current = confirmation.as_ref().is_some_and(|c| {
-        c.source_checksum == source_checksum && c.roster_checksum == roster_checksum
+        !c.invalidated
+            && c.source_checksum == source_checksum
+            && c.roster_checksum == roster_checksum
     });
     Ok(GroupPhaseWorkspace {
         learning_group_id: scope.group_id,
