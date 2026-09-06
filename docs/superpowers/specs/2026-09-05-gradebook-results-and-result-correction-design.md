@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-05
 
-**Status:** Approved in chat; awaiting written-spec review
+**Status:** Approved for implementation on 2026-09-06
 
 **Scope:** Gradebook score entry, per-phase controls and confirmations, school-wide criterion
 grading, course-linked desirable-characteristic and reading/thinking/writing evaluation, initial
