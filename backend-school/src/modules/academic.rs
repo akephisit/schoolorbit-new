@@ -6,6 +6,7 @@ mod cutover_test_preflight_database_tests;
 #[cfg(test)]
 pub mod cutover_test_support;
 pub mod delivery;
+pub mod gradebook;
 pub mod handlers;
 pub mod models;
 pub mod reconciliation;
@@ -17,7 +18,10 @@ use axum::routing::{delete, get, patch, post, put};
 use axum::Router;
 
 pub fn academic_routes() -> Router<AppState> {
-    core::routes().merge(delivery::routes()).merge(
+    let base = core::routes()
+        .merge(delivery::routes())
+        .merge(gradebook::routes());
+    base.merge(
         Router::new()
             // Assessment Plans (โครงสร้างคะแนนรายวิชา)
             .route(

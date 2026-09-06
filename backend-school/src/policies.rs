@@ -4,6 +4,7 @@ pub mod achievement_access_policy;
 pub mod assessment_access_policy;
 pub mod certificate_access_policy;
 pub mod file_access_policy;
+pub mod gradebook_access_policy;
 pub mod learning_offering_access_policy;
 pub mod organization_access_policy;
 pub mod question_bank_access_policy;

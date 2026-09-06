@@ -97,9 +97,37 @@ fn people_and_platform_handlers_use_typed_session_identity() {
 #[test]
 fn academic_group_a_handlers_use_typed_session_identity() {
     assert_typed_session_handlers(&[
+        "src/modules/academic/gradebook/handlers.rs",
         "src/modules/academic/core/handlers.rs",
         "src/modules/academic/handlers/assessment.rs",
     ]);
+}
+
+#[test]
+fn gradebook_handlers_keep_database_and_authorization_in_services() {
+    let handlers = read_source(manifest_dir().join("src/modules/academic/gradebook/handlers.rs"));
+    for forbidden in ["sqlx::query", ".fetch_", ".execute(", ".begin(", "PgPool"] {
+        assert!(
+            !handlers.contains(forbidden),
+            "Gradebook handler contains {forbidden}"
+        );
+    }
+    for name in [
+        "list_subjects",
+        "list_controls",
+        "update_control",
+        "get_group_phase_workspace",
+        "create_item",
+        "update_item",
+        "remove_item",
+        "save_scores_batch",
+        "confirm_phase",
+    ] {
+        let body = extract_braced_block(&handlers, &format!("pub async fn {name}("), false);
+        assert!(body.contains("actor_tenant_context_from_session"));
+        assert!(body.contains("services::"));
+        assert!(body.contains("ApiResponse::ok"));
+    }
 }
 
 #[test]
@@ -5941,7 +5969,10 @@ fn academic_core_registers_only_clean_replacement_routes() {
         );
     }
 
-    assert!(aggregate_routes.contains("core::routes().merge("));
+    assert!(aggregate_routes
+        .split_whitespace()
+        .collect::<String>()
+        .contains("core::routes().merge("));
     for removed in [
         "\"/structure\"",
         "\"/levels\"",
