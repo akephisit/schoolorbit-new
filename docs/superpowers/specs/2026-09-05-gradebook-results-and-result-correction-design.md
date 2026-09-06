@@ -4,10 +4,10 @@
 
 **Status:** Approved in chat; awaiting written-spec review
 
-**Scope:** Gradebook score entry, per-phase controls and confirmations, criterion- and
-group-referenced grading, initial course and activity results, academic-affairs locking, result
-correction, clean forward-only migration, generated permissions and API contracts, and responsive
-staff workspaces
+**Scope:** Gradebook score entry, per-phase controls and confirmations, school-wide criterion
+grading, course-linked desirable-characteristic and reading/thinking/writing evaluation, initial
+course and activity results, academic-affairs locking, result correction, clean forward-only
+migration, generated permissions and API contracts, and responsive staff workspaces
 
 ## Context
 
@@ -22,8 +22,10 @@ controls. That makes Assessment appear to own a workflow that belongs to the Gra
 separates those responsibilities: Assessment owns the shared four-phase plan, Gradebook owns
 classroom items and student scores, and Results owns grading, locking, and correction.
 
-This release also completes activity evaluation. Guidance, scouts, clubs, and social/public-benefit
-activities do not use numeric course grades; their result is pass or fail (`ผ/มผ`).
+This release also completes the other result inputs needed by later term closure. Guidance, scouts,
+clubs, and social/public-benefit activities use pass or fail (`ผ/มผ`). Every subject teacher also
+evaluates desirable characteristics and reading, analytical thinking, and writing for the students
+in each taught learning group using four quality levels.
 
 ## Relationship to Existing Designs
 
@@ -53,10 +55,16 @@ This design supersedes two foundation decisions:
 - Control score-item editing and score entry independently for each canonical phase of a term.
 - Confirm scores per learning group and phase and invalidate only affected confirmations when
   source data changes.
-- Let each offered subject use either the school's criterion-referenced policy or one
-  group-referenced boundary set across all rooms of that subject in the term.
+- Use one active, versioned school criterion policy for every unlocked subject, without a
+  per-subject grading-method override.
 - Derive numeric course grades and allow the group primary teacher to select explicit `0`, `ร`, or
   `มส` outcomes per student.
+- Let every subject evaluate every active desirable-characteristic and
+  reading/thinking/writing criterion by default while allowing subject-specific additions and
+  deactivations.
+- Confirm and lock the two learner-evaluation domains independently by group and subject.
+- Derive each student's term-level learner-evaluation summary from effective locked subject
+  evaluations without requiring a second summary lock.
 - Record activity results as `ผ/มผ` and require a complete group before confirmation.
 - Let academic affairs lock initial results and correct locked results from separate workspaces.
 - Preserve the initial locked result and every subsequent correction without overwriting history.
@@ -75,7 +83,8 @@ This design supersedes two foundation decisions:
 - Do not let teachers manually select numeric grades `1` through `4`; they are derived from the
   confirmed score and grading policy.
 - Do not add bonus-score semantics or permit scores beyond an item's maximum.
-- Do not add fixed grade quotas for group-referenced grading.
+- Do not add group-referenced grading, score-distribution grading, percentile cutoffs, standard-
+  deviation cutoffs, or fixed grade quotas.
 - Do not add a result-correction remark field or a full score-edit audit ledger.
 - Do not move or duplicate Assessment plan configuration into the Gradebook.
 - Do not keep dual schemas, fallback legacy endpoints, or compatibility request fields after the
@@ -116,7 +125,7 @@ Gradebook
         |
         v
 Result preparation
-(criterion/group grading, 0/R/MS, activity pass/fail)
+(criterion grading, 0/R/MS, learner evaluation, activity pass/fail)
         |
         v
 Academic-affairs initial lock
@@ -141,7 +150,12 @@ and teacher assignment belongs to the same context.
 The stable course-result scope is `subject_id + academic_term_id`, reached through the selected
 learning offering and subject version. Displayed subject codes are labels and are never used as
 free-form join keys. All active course learning groups for that subject in the term contribute to
-one grading method and one initial lock.
+one initial course-result lock and use the same active school criterion policy.
+
+Desirable-characteristic and reading/thinking/writing input is stored by subject, learning group,
+student, and criterion. Each learner-evaluation domain is confirmed per group and locked per
+`subject_id + academic_term_id + domain`. Term-level summaries are derived per student from the
+effective locked subject evaluations.
 
 Activity results remain scoped to one activity learning group because clubs and other activity
 groups may have different teachers and participants. Academic affairs receives bulk actions but
@@ -244,50 +258,20 @@ entry window does not invalidate it.
 ### School criterion policy
 
 The school owns versioned criterion policies and has exactly one active default version at a time.
-A policy defines the inclusive lower boundary for
-the eight standard numeric outcomes `0`, `1`, `1.5`, `2`, `2.5`, `3`, `3.5`, and `4`, against the
-Assessment plan's total score. Boundaries must be ordered, non-overlapping, and within the total.
+A policy defines the inclusive lower boundary for the eight standard numeric outcomes `0`, `1`,
+`1.5`, `2`, `2.5`, `3`, `3.5`, and `4`, against the Assessment plan's total score. Boundaries must
+be ordered, non-overlapping, and within the total.
 
 An activated version is immutable. Changing the school criterion creates and activates a new
 version while retaining the prior version. Every unlocked subject using criterion grading follows
 the active default version and recalculates its preview after activation. An initial lock embeds a
 complete policy snapshot; later school-policy changes cannot change locked results.
 
-### Subject-term grading setting
-
-One subject-term setting selects either:
-
-- `criterion`: use the school's current active default criterion-policy version; or
-- `group_referenced`: use one confirmed boundary set calculated from all included students in all
-  active rooms of the same `subject_id + academic_term_id`.
-
-The assessment coordinator becomes the initial suggested subject coordinator. An academic manager
-may explicitly choose another currently assigned teacher. The persisted choice is not silently
-replaced when teacher assignments later change.
-
-### Group-referenced grading
-
-The result workspace shows the combined cohort count, mean, median, standard deviation,
-percentiles, score distribution, and the student count under each proposed grade. Its optional
-starting suggestion uses lower boundaries of mean plus `1.5`, `1.0`, `0.5`, and `0.0` standard
-deviations for grades `4`, `3.5`, `3`, and `2.5`, then mean minus `0.5`, `1.0`, and `1.5` standard
-deviations for grades `2`, `1.5`, and `1`; grade `0` starts at zero. Suggested values are clamped to
-the plan total and rounded to two decimals. Clamping or rounding can make a suggestion invalid, so
-strictly increasing editable boundaries are required before confirmation. A suggestion is never
-official until the subject coordinator reviews and confirms it.
-
-The coordinator can adjust every numeric lower boundary. The preview shows affected counts and
-student names before confirmation. The system does not impose grade quotas or force a fixed
-percentage into each grade.
-
-A cohort with fewer than 30 included students remains eligible for group-referenced grading. The UI
-warns that its distribution may be unstable and requires explicit confirmation; it does not
-silently switch to criterion grading.
-
-Group boundaries may be confirmed only after every contributing learning group has confirmed all
-four phases. The boundary snapshot records all source confirmation revisions. Any later score,
-item, phase-plan, or roster change that invalidates a contributing confirmation also makes the
-group-boundary snapshot stale and blocks initial result locking until it is reviewed again.
+Every subject uses the active default school policy. There is no subject-term grading setting,
+method selector, group boundary, percentile calculation, distribution-based recommendation, or
+per-subject criterion override. The assessment coordinator remains responsible for the shared
+four-phase Assessment plan and the subject's learner-evaluation criteria, but does not choose a
+grading method.
 
 ### Student course outcomes
 
@@ -307,11 +291,89 @@ The primary teacher confirms the prepared results for one group. There is no add
 academic affairs” button: when every group under the subject is confirmed and the grading snapshot
 is current, the subject automatically appears as ready in the academic-affairs queue.
 
-The confirmation snapshots the four group-phase confirmation revisions, the criterion-policy or
-group-boundary revision, and the current explicit student selections. A changed phase confirmation,
-new active criterion policy, reconfirmed group boundary, or changed explicit selection makes only
-the affected group-result confirmation stale. The primary teacher reviews and confirms it again;
-the system never silently carries a confirmation onto different calculated outcomes.
+The confirmation snapshots the four group-phase confirmation revisions, active criterion-policy
+revision, and current explicit student selections. A changed phase confirmation, newly activated
+criterion policy, or changed explicit selection makes only the affected group-result confirmation
+stale. The primary teacher reviews and confirms it again; the system never silently carries a
+confirmation onto different calculated outcomes.
+
+## Course-Linked Learner Evaluation
+
+### Domains and quality scale
+
+Every course learning group evaluates two independent domains:
+
+- `desirable_characteristic`: คุณลักษณะอันพึงประสงค์; and
+- `reading_thinking_writing`: การอ่าน คิดวิเคราะห์ และเขียน.
+
+Both domains use the system-owned values `3` (ดีเยี่ยม), `2` (ดี), `1` (ผ่าน), and `0`
+(ไม่ผ่าน). No stored value means “not evaluated” and is never interpreted as zero.
+
+### School criteria and subject-term configuration
+
+The initial school catalog contains the eight standard desirable characteristics: รักชาติ ศาสน์
+กษัตริย์; ซื่อสัตย์สุจริต; มีวินัย; ใฝ่เรียนรู้; อยู่อย่างพอเพียง; มุ่งมั่นในการทำงาน;
+รักความเป็นไทย; and มีจิตสาธารณะ. The initial reading/thinking/writing catalog contains the three
+high-level criteria การอ่าน, การคิดวิเคราะห์, and การเขียน. School managers can add detailed
+indicators, reorder, rename, or deactivate catalog criteria. A criterion already referenced by a
+subject is deactivated rather than deleted.
+
+The first configuration for `subject_id + academic_term_id + domain` copies every currently active,
+applicable school criterion. The assessment coordinator manages that subject-term configuration and
+can add a subject-only criterion, reorder criteria, or deactivate a criterion for the subject. The
+same configuration applies to every course learning group under the subject.
+
+Later school-catalog changes affect only configurations created afterward. They never silently
+change a subject already operating in the term. Within an unlocked subject-domain, a criterion
+without responses can be removed; one with responses can only be deactivated, retaining its values
+but excluding it from current calculation. A locked subject-domain configuration is immutable.
+
+### Independent entry controls
+
+Each term has two learner-evaluation entry controls, one per domain. Assigned teachers can edit
+responses only while that domain is open. School-level managers can change either control and can
+perform an explicitly authorized override while it is closed. Opening or closing a control does not
+invalidate data or confirmation.
+
+### Entry and group confirmation
+
+Every assigned subject teacher can enter `0` through `3` for students in an authorized learning
+group. The group primary teacher confirms `learning_group + domain`. Confirmation requires a value
+for every current student and every active subject criterion; blank responses block confirmation
+and the error identifies each missing student/criterion.
+
+Confirmation snapshots the subject configuration, roster, and response revisions. A response,
+roster, or active-criterion change invalidates only that group-domain confirmation. Renaming or
+reordering a criterion does not affect calculation and does not invalidate it.
+
+### Subject-domain lock
+
+Academic affairs locks `subject_id + academic_term_id + domain` after every active course learning
+group has a current primary-teacher confirmation. Desirable-characteristic and
+reading/thinking/writing locks are independent; one can lock while the other remains editable. The
+lock is all-or-nothing across the subject's rooms and writes immutable initial responses plus the
+configuration and source-confirmation snapshot.
+
+### Derived term summary
+
+For each locked subject-domain, the system first averages the student's active criterion values so
+each subject contributes one equally weighted domain value regardless of how many standard or
+subject-only criteria it contains. The student's term-domain average then equally averages those
+values across every locked course subject in which the student is enrolled.
+
+The summary also shows each school-catalog criterion averaged across locked subjects that include
+it. Subject-only criteria remain visible in the source drill-down and contribute to their subject's
+domain value, but do not create misleading same-name cross-subject summaries.
+
+A versioned school aggregation policy converts the exact average to a quality level. The initial
+policy uses inclusive lower bounds `2.50` for level `3`, `1.50` for level `2`, `1.00` for level `1`,
+and `0.00` for level `0`. School managers change the thresholds by activating a new immutable
+version.
+
+The summary is provisional and names missing subjects until every expected subject-domain is
+locked. Once all expected locks exist, the summary is complete and deterministic. It is not locked
+a second time in Release 2. A post-lock subject response correction recalculates the summary. The
+future term-closure release stores the final summary and aggregation-policy snapshot.
 
 ## Activity Evaluation
 
@@ -335,18 +397,18 @@ source revisions inside the transaction. It requires:
 
 - a ready four-phase Assessment plan;
 - every group-phase confirmation;
-- a current criterion-policy or confirmed group-boundary snapshot;
+- the current active school criterion-policy version;
 - every group-primary result confirmation; and
 - no pending, invalid, or stale source revision.
 
 If any room fails validation, no room is locked. The response names the exact room, phase, and
 reason. A successful lock writes immutable initial course-result rows plus a lock snapshot of the
-grading method, boundaries, source confirmation revisions, calculated totals, explicit outcome
+criterion-policy boundaries, source confirmation revisions, calculated totals, explicit outcome
 selections, actor, and timestamp.
 
-Locked result scopes make Assessment plan fields, relevant Gradebook items and scores, grading
-settings, and teacher-prepared outcomes read-only through their normal APIs. Frontend disabling is
-only explanatory; backend services are authoritative.
+Locked course-result scopes make Assessment plan fields, relevant Gradebook items and scores, and
+teacher-prepared outcomes read-only through their normal APIs. Frontend disabling is only
+explanatory; backend services are authoritative.
 
 ## Result Correction
 
@@ -354,8 +416,10 @@ Locked results are corrected only in a separate academic-affairs workspace. Teac
 or overwrite them through Assessment, Gradebook, or Results.
 
 For a course result, academic affairs may select any valid numeric grade from `0` through `4` in
-half-grade increments, `ร`, or `มส`. For an activity result, it may select `ผ` or `มผ`. A correction
-does not change score rows, calculated totals, or the initial result snapshot.
+half-grade increments, `ร`, or `มส`. For an activity result, it may select `ผ` or `มผ`. For a
+course-linked learner evaluation, it may change one student's one criterion from `0` through `3`
+under a locked subject-domain. A correction does not change score rows, calculated totals, or any
+initial result snapshot.
 
 Every correction appends one row containing the previous effective result, new result, actor,
 timestamp, and optimistic source version. No free-text remark is required. The effective official
@@ -382,14 +446,28 @@ columns and constraints without renaming these ownership boundaries.
 
 - `academic_grading_policy_versions`: named school criterion-policy versions and lifecycle.
 - `academic_grading_policy_bands`: ordered numeric grade lower boundaries per policy version.
-- `subject_term_grading_settings`: one grading method and responsible teacher per
-  subject/term.
-- `subject_term_group_boundaries`: the coordinator-confirmed group-referenced boundary snapshot,
-  statistics, cohort count, and source revisions.
 - `learning_group_result_overrides`: the current explicit `0`, `ร`, or `มส` selection per student;
   absence means `ตามคะแนน`.
 - `learning_group_result_confirmations`: primary-teacher confirmation of prepared course outcomes
   for one group.
+
+### Learner-evaluation-owned storage
+
+- `academic_learner_evaluation_criteria`: the school criterion catalog with domain, applicability,
+  lifecycle, and display metadata.
+- `subject_term_evaluation_criteria`: the fixed current criterion configuration for one
+  subject/term/domain, including school-linked and subject-only criteria.
+- `academic_learner_evaluation_controls`: one term/domain entry-control row.
+- `learning_group_student_evaluations`: one `0` through `3` response per
+  group/student/subject-term criterion, with row version; absence is blank.
+- `learning_group_evaluation_confirmations`: one current group/domain confirmation with source
+  revisions/checksum.
+- `subject_term_evaluation_locks`: immutable subject/term/domain lock and complete source snapshot.
+- `subject_term_student_evaluations`: immutable initial response per locked subject criterion and
+  student.
+- `academic_learner_evaluation_policy_versions`: immutable school term-summary policy versions.
+- `academic_learner_evaluation_policy_bands`: ordered inclusive lower boundaries from exact average
+  to quality level.
 
 ### Official-result storage
 
@@ -401,13 +479,13 @@ columns and constraints without renaming these ownership boundaries.
 - `academic_activity_result_confirmations`: current teacher confirmation per activity group.
 - `academic_activity_result_locks`: immutable initial activity-group lock.
 - `academic_activity_results`: immutable initial `pass/fail` result per participant.
-- `academic_result_corrections`: append-only correction rows pointing to exactly one course or
-  activity result.
+- `academic_result_corrections`: append-only correction rows pointing to exactly one course,
+  activity, or course-linked learner-evaluation result.
 
 Contextual composite foreign keys enforce matching year, term, offering, group, subject, and
 student academic-year identity. Uniqueness prevents more than one initial result for the same
-locked scope and student. Partial/check constraints enforce mutually exclusive course/activity
-correction targets and valid outcome families.
+locked scope, student, and criterion. Partial/check constraints enforce mutually exclusive course,
+activity, and learner-evaluation correction targets and valid outcome families.
 
 The legacy `learning_results` and `activity_result_details` tables are migrated into the new
 activity-result boundary and then removed. Runtime code, destructive-change impact summaries, and
@@ -424,23 +502,34 @@ New permissions follow generated `module.action.scope` contracts and existing re
   explicit closed-window override;
 - `academic_result.read.assigned`, `academic_result.read.organization_unit`, and
   `academic_result.read.school` cover result preparation and official-result reads;
-- `academic_result.manage.assigned` covers primary-teacher confirmation and the persisted subject
-  coordinator's grading work;
+- `academic_result.manage.assigned` covers primary-teacher course-result confirmation and assigned
+  activity evaluation;
 - `academic_result.manage.school` covers school policy versions and school-wide result
   preparation;
 - `academic_result.lock.school` covers immutable initial course/activity locking; and
-- `academic_result.correct.school` covers append-only post-lock corrections.
+- `academic_result.correct.school` covers append-only post-lock course/activity corrections;
+- `academic_learner_evaluation.read.assigned`,
+  `academic_learner_evaluation.read.organization_unit`, and
+  `academic_learner_evaluation.read.school` cover authorized learner-evaluation reads;
+- `academic_learner_evaluation.manage.assigned` covers assigned-teacher entry, primary-teacher
+  confirmation, and assessment-coordinator subject-criteria management;
+- `academic_learner_evaluation.manage.school` covers school catalog/policy/entry-control management
+  and the explicit closed-window override;
+- `academic_learner_evaluation.lock.school` covers immutable subject-domain locking; and
+- `academic_learner_evaluation.correct.school` covers append-only post-lock criterion corrections.
 
 The resource capability boundary is:
 
 - assigned teachers can read and edit Gradebook data only for currently authorized learning
   groups and open phases;
 - a group's active primary teacher can confirm its phase scores and prepared results;
-- the persisted subject coordinator can read every contributing group and manage the subject-term
-  grading setting/boundaries;
+- assigned subject teachers can enter each open learner-evaluation domain for their groups;
+- the group primary teacher confirms each learner-evaluation domain independently;
+- the persisted assessment coordinator manages the shared subject-term criteria and can inspect
+  every contributing group without gaining school-wide access;
 - assigned activity teachers can enter their group results, while its primary teacher confirms;
-- school-level academic-result managers can bypass teacher windows, view all scopes, lock initial
-  results, and append corrections; and
+- school-level academic-result and learner-evaluation managers can bypass their respective teacher
+  windows, view all scopes, lock initial results, and append corrections; and
 - ordinary readers may inspect authorized locked results but cannot load mutation-only data.
 
 List policies union independent assigned, organization-unit/tree, and school scopes. School scope
@@ -458,8 +547,11 @@ Backend feature code is split into focused services:
 - Assessment exposes plan editing and `plan_editing_enabled` only.
 - Gradebook exposes entry controls, group workspace reads, score-item mutations, validated batch
   score mutations, and group-phase confirmation.
-- Grading exposes school policy versions, subject-term method selection, statistics/boundary
-  preview, boundary confirmation, calculated results, and group-result confirmation.
+- Grading exposes school criterion-policy versions, calculated course results, explicit outcome
+  selections, and group-result confirmation.
+- Learner Evaluation exposes the school criterion catalog, subject-term configurations, independent
+  entry controls, validated batch responses, group confirmation, subject-domain locking, derived
+  term summaries, and criterion correction.
 - Official Results exposes academic-affairs readiness queues, initial locks, activity locks, and
   corrections.
 
@@ -486,8 +578,10 @@ switches. It shows the Gradebook entry state read-only with a link, but does not
 ### Gradebook
 
 `/staff/academic/gradebook` is a deep-linkable workspace with year/term context and subjects owned
-by the current account first. The user chooses subject, learning group, and one of four phase tabs.
-The manager-only control surface owns the four “allow student-score entry” switches.
+by the current account first. The user chooses subject and learning group once, then switches among
+`คะแนน`, `คุณลักษณะอันพึงประสงค์`, and `อ่าน คิดวิเคราะห์ และเขียน`. The score tab contains the
+four canonical phase tabs. Manager-only controls own the four score-entry switches plus independent
+desirable-characteristic and reading/thinking/writing entry switches.
 
 The desktop entry surface is a horizontally scrollable academic ledger with frozen student
 identity columns and readable fixed-width score columns. Each score-item header shows its entry
@@ -497,18 +591,32 @@ ledger supports keyboard entry and bounded multi-cell paste across selected colu
 mobile editor uses a full-screen sheet with a sticky header, explicit back/X action, current
 student/item context, and sticky save status; it never depends on an off-screen close button.
 
+Each learner-evaluation tab is a separate horizontally scrollable matrix with students as rows and
+active subject criteria as columns. Every criterion header has the same local entry-column checkbox
+semantics as a score item. Selected cells accept keyboard `0` through `3`, display the corresponding
+Thai quality label, support Tab/Enter and bounded paste, and autosave after 750 milliseconds.
+Unchecked columns remain visible and read-only. Blank cells remain visually distinct from level
+zero.
+
+The assessment coordinator receives a compact “ตั้งค่าหัวข้อ” action for adding, ordering, or
+deactivating subject criteria; ordinary assigned teachers do not. Mobile evaluation uses the same
+full-screen, sticky-close/save-status pattern as mobile score entry.
+
 ### Result preparation
 
-`/staff/academic/results` shows subject readiness, criterion/group selection, combined-room
-statistics, grading-boundary preview, per-room result confirmation, and activity evaluation. It
-does not expose academic-affairs correction actions.
+`/staff/academic/results` shows criterion-policy state, subject readiness, calculated course
+results, per-room result confirmation, activity evaluation, learner-evaluation subject readiness,
+and the automatically derived term summary with missing-subject explanations. It has no grading-
+method selector or score-distribution grading UI and does not expose academic-affairs correction
+actions.
 
 ### Academic-affairs workspaces
 
 Initial locking and result correction are separate deep-linkable routes and separate menu services.
-The lock queue groups course results by subject and activity results by group, with readiness
-reasons visible before mutation. The correction page searches locked results and shows the immutable
-initial result next to the current effective result and correction history.
+The lock queue groups course results by subject, learner-evaluation results by subject and domain,
+and activity results by group, with readiness reasons visible before mutation. The correction page
+searches locked results and shows the immutable initial result next to the current effective result
+and correction history.
 
 Standard controls use local shadcn-svelte primitives and shared `PageShell`, loading, empty, error,
 and permission-aware states. Read-only users never trigger action-only requests.
@@ -520,7 +628,8 @@ Business errors identify the object and remediation, for example:
 - “งานย่อยรวม 18 จาก 20 คะแนน”;
 - “ม.1/2 ยังไม่ยืนยันช่วงปลายภาค”;
 - “มีคะแนน 14 ช่องที่ยังว่างและจะคิดเป็นศูนย์”;
-- “เกณฑ์อิงกลุ่มหมดอายุเพราะคะแนน ม.2/3 เปลี่ยนแปลง”; or
+- “ค21101 · ม.1/2 ยังขาดผลคุณลักษณะ 6 ช่อง”;
+- “ค21101 ยังไม่สามารถล็อกการอ่านฯ เพราะ ม.1/3 ยังไม่ยืนยัน”; or
 - “ผลกิจกรรมยังขาดนักเรียน 3 คน.”
 
 Expected validation, conflict, and permission failures return the standard JSON error envelope
@@ -534,7 +643,10 @@ The cutover uses new sequential tenant migrations; no applied migration is edite
 
 1. Preflight validates context integrity, canonical phase controls, score-item references, and all
    legacy activity-result outcome values.
-2. Create the new Gradebook, grading, lock, and correction tables and constraints.
+2. Create the new Gradebook, criterion-grading, learner-evaluation, lock, and correction tables and
+   constraints. Seed the eight named standard desirable characteristics, the three initial
+   reading/thinking/writing criteria, and the initial `0` through `3` aggregation policy defined in
+   this design.
 3. Copy each term/phase `score_entry_enabled` value into
    `academic_gradebook_phase_controls`, then remove that column from the Assessment control.
 4. Add the score-item cancellation lifecycle without changing existing active item identity.
@@ -558,8 +670,9 @@ Release 2 remains one coherent cutover but is implemented in reviewable commits:
 
 1. forward schema, data preflight, permissions, and generated contracts;
 2. Gradebook services, autosave, item lifecycle, and phase confirmation;
-3. criterion/group grading, course outcomes, and activity evaluation;
-4. academic-affairs initial locks and append-only corrections;
+3. criterion grading, course outcomes, activity evaluation, and learner-evaluation entry;
+4. academic-affairs course/activity/subject-domain locks, derived learner summaries, and append-only
+   corrections;
 5. responsive workspaces, route/menu integration, legacy removal, and full verification.
 
 New user-facing menu entries remain undiscoverable until their complete backend authorization and
@@ -581,12 +694,17 @@ Focused service, policy, contract, schema, and UI tests cover:
 - confirmation with blanks, targeted invalidation, roster/plan invalidation, and no invalidation
   from a control toggle alone;
 - criterion-policy version changes before lock and snapshot stability after lock;
-- group grading across multiple rooms, small-cohort warnings, adjusted boundaries, and stale
-  boundary detection;
-- primary-teacher, coordinator, assigned, organization, and school scope allow/deny/union cases;
+- absence of grading-method selection and group-grading runtime/contracts;
+- learner-evaluation school catalogs, per-subject additions/deactivations, independent domain
+  controls, blank-versus-zero behavior, keyboard entry, and group-domain confirmation;
+- learner-evaluation all-room subject-domain locking, independent domain locks, equal subject
+  weighting, versioned average thresholds, missing-subject readiness, and recalculation after a
+  correction;
+- primary-teacher, assessment-coordinator, assigned, organization, and school scope
+  allow/deny/union cases;
 - all-or-nothing subject locking and per-group activity locking;
 - activity completeness and bulk “lock all ready” skip reasons;
-- append-only course/activity corrections and stale-correction rejection;
+- append-only course/activity/learner-evaluation corrections and stale-correction rejection;
 - migration source/target counts, unknown-value failure, and removal of legacy runtime references;
 - generated permission/API contract drift; and
 - responsive Gradebook close/save behavior and read-only request discipline.
@@ -605,13 +723,19 @@ credentials only.
 - Blank and zero remain distinguishable through save, reload, confirmation, calculation, and lock.
 - Each room may use different active score items while every confirmed room matches shared phase
   maxima.
-- Confirmation and group-boundary invalidation are narrow, deterministic, and visible.
-- Criterion grading uses a versioned school policy; group grading uses one confirmed combined-room
-  boundary set without quotas.
+- Confirmation invalidation is narrow, deterministic, and visible.
+- Every course uses one active versioned school criterion policy; no group-referenced grading or
+  per-subject grading-method selector remains.
 - Teachers choose only `ตามคะแนน`, explicit `0`, `ร`, or `มส`; numeric grades above zero are
   derived.
 - Course readiness is automatic after all room confirmations; no redundant submit button exists.
 - Activity groups require complete `ผ/มผ` results and lock independently.
+- Every course starts with all active learner-evaluation criteria, supports subject-specific
+  additions/deactivations, and keeps blank distinct from explicit level zero.
+- Learner-evaluation domains confirm independently per group and lock independently per subject
+  across all rooms.
+- Complete locked subject evaluations produce an automatic term summary with equal subject
+  weighting and no redundant summary lock.
 - Academic affairs locks initial results and performs all post-lock corrections from separate
   routes.
 - Initial locked results are immutable, corrections append, and the effective result is
