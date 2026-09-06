@@ -45,7 +45,7 @@ async fn prepare_core_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 59).await.unwrap();
+    apply_migrations_through(&pool, 60).await.unwrap();
     pool
 }
 
@@ -1102,6 +1102,77 @@ async fn context_options_are_read_only_and_keep_active_state_unchanged() {
 }
 
 #[tokio::test]
+async fn create_term_seeds_phase_controls() {
+    let pool = prepare_core_fixture("academic_term_all_controls").await;
+    let actor = fixture_actor(&pool).await;
+    let bell_schedule_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM bell_schedules WHERE academic_year_id = $1 AND is_default",
+    )
+    .bind(FUTURE_YEAR_ID)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let created = years_terms::create_term(
+        &pool,
+        actor,
+        CreateAcademicTermRequest {
+            academic_year_id: FUTURE_YEAR_ID,
+            term_type: AcademicTermType::Remedial,
+            custom_name: None,
+            start_date: NaiveDate::from_ymd_opt(2027, 4, 1).unwrap(),
+            planned_end_date: Some(NaiveDate::from_ymd_opt(2027, 4, 15).unwrap()),
+            included_in_year_result: true,
+            blocks_year_closure: true,
+            bell_schedule_id,
+        },
+    )
+    .await
+    .unwrap();
+    for (table, code, enabled, expected) in [
+        (
+            "academic_assessment_phase_controls",
+            "phase_code",
+            "plan_editing_enabled",
+            vec!["after_midterm", "before_midterm", "final", "midterm"],
+        ),
+        (
+            "academic_gradebook_phase_controls",
+            "phase_code",
+            "score_entry_enabled",
+            vec!["after_midterm", "before_midterm", "final", "midterm"],
+        ),
+        (
+            "academic_learner_evaluation_controls",
+            "domain",
+            "entry_enabled",
+            vec!["desirable_characteristic", "reading_thinking_writing"],
+        ),
+    ] {
+        let controls: Vec<(String, bool, i64, Uuid, Option<Uuid>)> = sqlx::query_as(&format!(
+            "SELECT {code}, {enabled}, row_version, academic_year_id, updated_by FROM {table} WHERE academic_term_id = $1 ORDER BY {code}"
+        )).bind(created.id).fetch_all(&pool).await.unwrap();
+        assert_eq!(
+            controls
+                .iter()
+                .map(|row| row.0.as_str())
+                .collect::<Vec<_>>(),
+            expected,
+            "{table}"
+        );
+        assert!(
+            controls
+                .iter()
+                .all(|row| !row.1 && row.2 == 1 && row.3 == FUTURE_YEAR_ID && row.4 == Some(actor)),
+            "{table}"
+        );
+    }
+    years_terms::delete_term(&pool, actor, created.id)
+        .await
+        .unwrap();
+    assert!(years_terms::get_term(&pool, created.id).await.is_err());
+}
+
+#[tokio::test]
 async fn planning_year_and_term_updates_reject_stale_versions_and_unused_term_deletes() {
     let pool = prepare_core_fixture("academic_core_year_term_mutations").await;
     let actor = fixture_actor(&pool).await;
@@ -1158,8 +1229,8 @@ async fn planning_year_and_term_updates_reject_stale_versions_and_unused_term_de
     )
     .await
     .unwrap();
-    let phase_controls: Vec<(String, bool, bool)> = sqlx::query_as(
-        r#"SELECT phase_code, plan_editing_enabled, score_entry_enabled
+    let phase_controls: Vec<(String, bool)> = sqlx::query_as(
+        r#"SELECT phase_code, plan_editing_enabled
            FROM academic_assessment_phase_controls
            WHERE academic_term_id = $1
            ORDER BY phase_code"#,
@@ -1171,10 +1242,10 @@ async fn planning_year_and_term_updates_reject_stale_versions_and_unused_term_de
     assert_eq!(
         phase_controls,
         vec![
-            ("after_midterm".to_string(), false, false),
-            ("before_midterm".to_string(), false, false),
-            ("final".to_string(), false, false),
-            ("midterm".to_string(), false, false),
+            ("after_midterm".to_string(), false),
+            ("before_midterm".to_string(), false),
+            ("final".to_string(), false),
+            ("midterm".to_string(), false),
         ]
     );
     let update_term = UpdateAcademicTermRequest {

@@ -387,6 +387,32 @@ pub async fn create_term(
     .bind(actor_user_id)
     .execute(&mut *transaction)
     .await?;
+    sqlx::query(
+        r#"INSERT INTO academic_gradebook_phase_controls (
+               academic_term_id, academic_year_id, phase_code, updated_by
+           )
+           SELECT $1, $2, phase.phase_code, $3
+           FROM (VALUES ('before_midterm'::text), ('midterm'::text),
+                        ('after_midterm'::text), ('final'::text)) AS phase(phase_code)"#,
+    )
+    .bind(id)
+    .bind(request.academic_year_id)
+    .bind(actor_user_id)
+    .execute(&mut *transaction)
+    .await?;
+    sqlx::query(
+        r#"INSERT INTO academic_learner_evaluation_controls (
+               academic_term_id, academic_year_id, domain, updated_by
+           )
+           SELECT $1, $2, evaluation.domain, $3
+           FROM (VALUES ('desirable_characteristic'::text),
+                        ('reading_thinking_writing'::text)) AS evaluation(domain)"#,
+    )
+    .bind(id)
+    .bind(request.academic_year_id)
+    .bind(actor_user_id)
+    .execute(&mut *transaction)
+    .await?;
     append_audit(
         &mut transaction,
         "academic_term.created",
@@ -494,6 +520,14 @@ pub async fn delete_term(pool: &PgPool, actor_user_id: Uuid, id: Uuid) -> Result
     .fetch_one(&mut *transaction)
     .await?;
     super::ensure_planning_delete(status, dependency_count)?;
+    sqlx::query("DELETE FROM academic_gradebook_phase_controls WHERE academic_term_id = $1")
+        .bind(id)
+        .execute(&mut *transaction)
+        .await?;
+    sqlx::query("DELETE FROM academic_learner_evaluation_controls WHERE academic_term_id = $1")
+        .bind(id)
+        .execute(&mut *transaction)
+        .await?;
     sqlx::query("DELETE FROM academic_terms WHERE id = $1")
         .bind(id)
         .execute(&mut *transaction)

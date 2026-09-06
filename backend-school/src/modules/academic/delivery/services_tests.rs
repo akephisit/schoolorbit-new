@@ -26,14 +26,13 @@ use super::{
         AcademicTermChangeSetStatus, ActivityAttendanceRequirement, ActivityPassCriteria,
         ActivityRegistrationType, ActivitySchedulingMode, AddDatedRosterMembershipRequest,
         ApplyCurriculumOfferingsRequest, ApplyRosterRequest, ApplyTeacherHandoffRequest,
-        CancelAcademicTermChangeSetRequest, CourseGradingPolicy,
-        CreateAcademicTermChangeSetRequest, CreateActivityOfferingRequest,
-        CreateCourseOfferingRequest, CreateLearningGroupRequest, CreateLearningOfferingRequest,
-        CurriculumDeliveryAlignmentState, CurriculumOfferingPreview, CurriculumPreparationChoice,
-        DeleteAcademicTermChangeItemRequest, LearningOfferingKind, LearningOfferingQuery,
-        LearningOfferingSnapshot, LearningOfferingStatus, LearningTeacherRole, OfferingTargetInput,
-        OfferingTargetKind, PreparationAction, PreparationGroupingState,
-        PreviewCurriculumOfferingsRequest, PreviewTeacherHandoffRequest,
+        CancelAcademicTermChangeSetRequest, CreateAcademicTermChangeSetRequest,
+        CreateActivityOfferingRequest, CreateCourseOfferingRequest, CreateLearningGroupRequest,
+        CreateLearningOfferingRequest, CurriculumDeliveryAlignmentState, CurriculumOfferingPreview,
+        CurriculumPreparationChoice, DeleteAcademicTermChangeItemRequest, LearningOfferingKind,
+        LearningOfferingQuery, LearningOfferingSnapshot, LearningOfferingStatus,
+        LearningTeacherRole, OfferingTargetInput, OfferingTargetKind, PreparationAction,
+        PreparationGroupingState, PreviewCurriculumOfferingsRequest, PreviewTeacherHandoffRequest,
         PublishAcademicTermChangeSetRequest, PublishLearningOfferingRequest, PublishRosterRequest,
         RemoveDatedRosterMembershipRequest, ReplaceLearningGroupHomeroomsRequest,
         ReplaceLearningGroupTeachersRequest, RosterOverrideAction, RosterOverrideInput,
@@ -579,7 +578,7 @@ async fn prepare_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 59).await.unwrap();
+    apply_migrations_through(&pool, 60).await.unwrap();
     pool
 }
 
@@ -4023,12 +4022,52 @@ fn course_request(context: &RuntimeContext) -> CreateLearningOfferingRequest {
             grade_level_id: context.grade_level_id,
             study_program_id: context.study_program_id,
         }],
-        grading_policy: CourseGradingPolicy {
-            policy_code: "school_default".to_string(),
-            total_score: "100.00".to_string(),
-            passing_score: Some("50.00".to_string()),
-        },
+        assessment_total_score: "100.00".to_string(),
     })
+}
+
+#[test]
+fn course_offering_wire_contract_owns_only_assessment_total() {
+    let base = serde_json::json!({
+        "academicTermId": Uuid::new_v4(),
+        "subjectVersionId": Uuid::new_v4(),
+        "curriculumCourseRequirementId": null,
+        "targets": [],
+        "assessmentTotalScore": "120.50"
+    });
+    assert!(serde_json::from_value::<CreateCourseOfferingRequest>(base.clone()).is_ok());
+    let mut legacy = base;
+    legacy["gradingPolicy"] = serde_json::json!({"policyCode": "school_default", "totalScore": "100.00", "passingScore": "50.00"});
+    assert!(serde_json::from_value::<CreateCourseOfferingRequest>(legacy).is_err());
+}
+
+#[tokio::test]
+async fn course_offering_persists_exact_assessment_total() {
+    let pool = prepare_delivery_runtime_fixture("academic_delivery_assessment_total").await;
+    let context = planning_runtime_context(&pool).await;
+    let CreateLearningOfferingRequest::Course(mut request) = course_request(&context) else {
+        panic!("course fixture must create a course request");
+    };
+    request.assessment_total_score = "120.50".to_string();
+    let offering = offerings::create(
+        &pool,
+        context.teacher_id,
+        CreateLearningOfferingRequest::Course(request),
+    )
+    .await
+    .unwrap();
+    let saved = serde_json::to_value(&offering.snapshot).unwrap();
+    assert_eq!(saved["assessmentTotalScore"], "120.50");
+    assert!(saved.get("gradingPolicy").is_none());
+    let stored: String = sqlx::query_scalar("SELECT assessment_total_score::text FROM course_offering_details WHERE learning_offering_id = $1")
+        .bind(offering.id).fetch_one(&pool).await.unwrap();
+    assert_eq!(stored, "120.50");
+    let plan =
+        crate::modules::academic::services::assessment_service::get_plan_detail(&pool, offering.id)
+            .await
+            .unwrap();
+    assert_eq!(plan.assessment_total_score, "120.5");
+    assert_eq!(plan.readiness.expected_total_score, "120.5");
 }
 
 #[tokio::test]
@@ -4145,7 +4184,7 @@ fn create_offering_wire_contract_is_strictly_tagged_by_kind() {
         "academicTermId": Uuid::nil(),
         "subjectVersionId": Uuid::nil(),
         "targets": [],
-        "gradingPolicy": { "policyCode": "school_default", "passingScore": "50.00" }
+        "assessmentTotalScore": "100.00"
     }))
     .unwrap();
     assert!(matches!(parsed, CreateLearningOfferingRequest::Course(_)));
@@ -4156,7 +4195,7 @@ fn create_offering_wire_contract_is_strictly_tagged_by_kind() {
             "academicTermId": Uuid::nil(),
             "activityVersionId": Uuid::nil(),
             "targets": [],
-            "gradingPolicy": { "policyCode": "school_default" }
+            "assessmentTotalScore": "100.00"
         }));
     assert!(wrong_subtype.is_err());
 }
@@ -4597,6 +4636,11 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     assert_eq!(retried.offering_ids, applied.offering_ids);
     assert_eq!(retried.group_ids, applied.group_ids);
     assert!(!applied.group_ids.is_empty());
+    let course_totals: Vec<String> = sqlx::query_scalar(
+        "SELECT assessment_total_score::text FROM course_offering_details WHERE learning_offering_id = ANY($1)",
+    ).bind(&applied.offering_ids).fetch_all(&pool).await.unwrap();
+    assert!(!course_totals.is_empty());
+    assert!(course_totals.iter().all(|total| total == "100.00"));
     let mut descriptor_ids = applied.offering_ids.clone();
     descriptor_ids.reverse();
     let descriptors = offerings::signal_descriptors(&pool, &descriptor_ids)

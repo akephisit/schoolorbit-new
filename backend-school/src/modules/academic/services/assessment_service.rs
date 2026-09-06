@@ -1,13 +1,12 @@
 use std::collections::{HashMap, HashSet};
 
 use bigdecimal::BigDecimal;
-use sqlx::{types::Json, FromRow, PgPool, Postgres, Transaction};
+use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::middleware::permission::ActorContext;
 use crate::modules::academic::core::services::validate_canonical_decimal;
-use crate::modules::academic::delivery::models::CourseGradingPolicy;
 use crate::modules::academic::models::assessment::{
     AssessmentCoordinatorOption, AssessmentExamArrangement, AssessmentOfferingScopeRow,
     AssessmentPhase, AssessmentPhaseCode, AssessmentPhaseControl, AssessmentPhaseControlRow,
@@ -33,7 +32,7 @@ struct AssessmentPlanSummaryRow {
     assessment_coordinator_name: Option<String>,
     learning_group_ids: Vec<Uuid>,
     learning_group_count: i64,
-    grading_policy: Json<CourseGradingPolicy>,
+    assessment_total_score: BigDecimal,
 }
 
 #[derive(Debug, FromRow)]
@@ -220,7 +219,7 @@ pub async fn list_assessment_plans(
                    WHERE learning_group.learning_offering_id = offering.id
                      AND learning_group.status <> 'closed'
                )::bigint AS learning_group_count,
-               detail.grading_policy
+               detail.assessment_total_score
         FROM learning_offerings offering
         JOIN course_offering_details detail ON detail.learning_offering_id = offering.id
         JOIN subject_versions version ON version.id = detail.subject_version_id
@@ -290,12 +289,11 @@ pub async fn list_assessment_plans(
                     .iter()
                     .any(|candidate| candidate.option.teacher_id == coordinator_id)
             });
-        let (_, expected_total) = grading_policy_value(&row.grading_policy.0)?;
         let readiness = response_readiness(
             row.assessment_coordinator_id,
             coordinator_is_candidate,
             &phases,
-            &expected_total,
+            &row.assessment_total_score,
         )?;
         if query.ready.is_some_and(|ready| readiness.ready != ready) {
             continue;
@@ -456,7 +454,7 @@ pub async fn list_phase_controls(
 ) -> Result<Vec<AssessmentPhaseControl>, AppError> {
     let rows: Vec<AssessmentPhaseControlRow> = sqlx::query_as(
         r#"SELECT id, academic_term_id, academic_year_id, phase_code,
-                  plan_editing_enabled, score_entry_enabled, row_version
+                  plan_editing_enabled, row_version
            FROM academic_assessment_phase_controls
            WHERE academic_term_id = $1
            ORDER BY CASE phase_code
@@ -482,17 +480,15 @@ pub async fn update_phase_control(
     let row: AssessmentPhaseControlRow = sqlx::query_as(
         r#"UPDATE academic_assessment_phase_controls
            SET plan_editing_enabled = $2,
-               score_entry_enabled = $3,
                row_version = row_version + 1,
-               updated_by = $4,
+               updated_by = $3,
                updated_at = now()
-           WHERE id = $1 AND row_version = $5
+           WHERE id = $1 AND row_version = $4
            RETURNING id, academic_term_id, academic_year_id, phase_code,
-                     plan_editing_enabled, score_entry_enabled, row_version"#,
+                     plan_editing_enabled, row_version"#,
     )
     .bind(control_id)
     .bind(payload.plan_editing_enabled)
-    .bind(payload.score_entry_enabled)
     .bind(actor_user_id)
     .bind(payload.row_version)
     .fetch_optional(pool)
@@ -562,7 +558,7 @@ fn offering_scope_sql(for_update: bool) -> String {
                   ) AS subject_version_display_label,
                   offering.code_snapshot AS offering_code,
                   offering.name_snapshot AS offering_name,
-                  detail.grading_policy
+                  detail.assessment_total_score
            FROM learning_offerings offering
            JOIN academic_terms term ON term.id = offering.academic_term_id
            JOIN course_offering_details detail ON detail.learning_offering_id = offering.id
@@ -574,16 +570,6 @@ fn offering_scope_sql(for_update: bool) -> String {
             ""
         }
     )
-}
-
-fn grading_policy_value(
-    policy: &CourseGradingPolicy,
-) -> Result<(CourseGradingPolicy, BigDecimal), AppError> {
-    let expected_total = validate_canonical_decimal(&policy.total_score, 2).map_err(|error| {
-        tracing::error!(reason = "invalid_course_total_score_snapshot", ?error);
-        AppError::InternalServerError("คะแนนรวมตามนโยบายไม่ถูกต้อง".to_string())
-    })?;
-    Ok((policy.clone(), expected_total))
 }
 
 async fn load_plan_in_tx(
@@ -733,7 +719,12 @@ async fn replace_plan_phases(
                    exam_duration_minutes = EXCLUDED.exam_duration_minutes,
                    row_version = course_assessment_phases.row_version + 1,
                    updated_by = EXCLUDED.updated_by,
-                   updated_at = now()"#,
+                   updated_at = now()
+               WHERE (course_assessment_phases.max_score,
+                      course_assessment_phases.exam_arrangement,
+                      course_assessment_phases.exam_duration_minutes)
+                   IS DISTINCT FROM (EXCLUDED.max_score, EXCLUDED.exam_arrangement,
+                                     EXCLUDED.exam_duration_minutes)"#,
         )
         .bind(phase_id)
         .bind(plan_id)
@@ -753,7 +744,6 @@ async fn fetch_plan_detail(
     offering_id: Uuid,
 ) -> Result<AssessmentPlanDetail, AppError> {
     let scope = resolve_offering_scope(pool, offering_id).await?;
-    let (policy, expected_total) = grading_policy_value(&scope.grading_policy.0)?;
     let plan: Option<AssessmentPlanRow> = sqlx::query_as(
         r#"SELECT plan.id, plan.assessment_coordinator_id,
                   CASE WHEN coordinator.id IS NULL THEN NULL ELSE coalesce(
@@ -811,7 +801,7 @@ async fn fetch_plan_detail(
         coordinator_id,
         coordinator_is_candidate,
         &phases,
-        &expected_total,
+        &scope.assessment_total_score,
     )?;
 
     Ok(AssessmentPlanDetail {
@@ -823,7 +813,7 @@ async fn fetch_plan_detail(
         subject_version_display_label: scope.subject_version_display_label,
         offering_code: scope.offering_code,
         offering_name: scope.offering_name,
-        grading_policy: policy,
+        assessment_total_score: decimal_string(&scope.assessment_total_score),
         row_version,
         learning_group_ids,
         assessment_coordinator_id: coordinator_id,
@@ -1079,10 +1069,7 @@ fn phase_control_from_row(
         academic_term_id: row.academic_term_id,
         academic_year_id: row.academic_year_id,
         phase_code,
-        label: phase_code.label_th().to_string(),
-        order: phase_code.order(),
         plan_editing_enabled: row.plan_editing_enabled,
-        score_entry_enabled: row.score_entry_enabled,
         row_version: row.row_version,
     })
 }

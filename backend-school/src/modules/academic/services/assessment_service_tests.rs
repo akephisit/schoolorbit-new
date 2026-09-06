@@ -29,7 +29,7 @@ async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
     record_passing_phase_a_reconciliation_marker(&pool)
         .await
         .unwrap();
-    apply_migrations_through(&pool, 59).await.unwrap();
+    apply_migrations_through(&pool, 60).await.unwrap();
     pool
 }
 
@@ -109,7 +109,7 @@ async fn school_wide_assessment_list_prioritizes_the_current_coordinator() {
                       version.credit,
                       version.hours_per_semester,
                       subject.owning_organization_unit_id,
-                      existing_detail.grading_policy
+                      existing_detail.assessment_total_score
                FROM academic_terms term
                JOIN subject_versions version ON version.code = 'SCI-CORE'
                JOIN subjects subject ON subject.id = version.subject_id
@@ -132,13 +132,13 @@ async fn school_wide_assessment_list_prioritizes_the_current_coordinator() {
                INSERT INTO course_offering_details (
                    learning_offering_id, academic_term_id, academic_year_id,
                    subject_version_id, subject_id, credit, hours,
-                   grading_policy, migration_provenance
+                   assessment_total_score, migration_provenance
                )
                SELECT inserted_offering.id, source.academic_term_id,
                       source.academic_year_id, source.subject_version_id,
                       source.subject_id, source.credit,
                       source.hours_per_semester::numeric(10,2),
-                      source.grading_policy, '{}'::jsonb
+                      source.assessment_total_score, '{}'::jsonb
                FROM source CROSS JOIN inserted_offering
                RETURNING learning_offering_id
            )
@@ -306,6 +306,14 @@ async fn auto_save_derives_readiness_and_rejects_stale_versions() {
             .await
             .unwrap();
     assert!(!incomplete.readiness.ready);
+    for (original, current) in saved.phases.iter().zip(&incomplete.phases) {
+        assert_eq!(
+            current.row_version,
+            original.row_version.map(|version| {
+                version + i64::from(current.phase_code == saved.phases[0].phase_code)
+            })
+        );
+    }
 }
 
 #[tokio::test]
@@ -379,7 +387,6 @@ async fn assigned_coordinator_changes_only_an_enabled_plan_phase() {
         UpdateAssessmentPhaseControlRequest {
             row_version: before_midterm_control.row_version,
             plan_editing_enabled: true,
-            score_entry_enabled: false,
         },
     )
     .await
@@ -421,7 +428,7 @@ async fn assigned_coordinator_changes_only_an_enabled_plan_phase() {
 }
 
 #[tokio::test]
-async fn plan_and_score_controls_update_independently_with_optimistic_versioning() {
+async fn plan_controls_leave_gradebook_controls_unchanged_with_optimistic_versioning() {
     let pool = migrated_pool("assessment_phase_controls").await;
     let term_id: Uuid =
         sqlx::query_scalar("SELECT academic_term_id FROM course_assessment_plans LIMIT 1")
@@ -433,9 +440,10 @@ async fn plan_and_score_controls_update_independently_with_optimistic_versioning
         .await
         .unwrap();
     assert_eq!(controls.len(), 4);
-    assert!(controls
-        .iter()
-        .all(|control| !control.plan_editing_enabled && !control.score_entry_enabled));
+    assert!(controls.iter().all(|control| !control.plan_editing_enabled));
+    let score_controls_before: Vec<(Uuid, bool, i64)> = sqlx::query_as(
+        "SELECT id, score_entry_enabled, row_version FROM academic_gradebook_phase_controls WHERE academic_term_id = $1 ORDER BY id",
+    ).bind(term_id).fetch_all(&pool).await.unwrap();
 
     let control = &controls[1];
     let updated = assessment_service::update_phase_control(
@@ -445,13 +453,18 @@ async fn plan_and_score_controls_update_independently_with_optimistic_versioning
         UpdateAssessmentPhaseControlRequest {
             row_version: control.row_version,
             plan_editing_enabled: true,
-            score_entry_enabled: false,
         },
     )
     .await
     .unwrap();
     assert!(updated.plan_editing_enabled);
-    assert!(!updated.score_entry_enabled);
+    assert_eq!(updated.row_version, control.row_version + 1);
+    let wire = serde_json::to_value(&updated).unwrap();
+    assert!(wire.get("scoreEntryEnabled").is_none());
+    let score_controls_after: Vec<(Uuid, bool, i64)> = sqlx::query_as(
+        "SELECT id, score_entry_enabled, row_version FROM academic_gradebook_phase_controls WHERE academic_term_id = $1 ORDER BY id",
+    ).bind(term_id).fetch_all(&pool).await.unwrap();
+    assert_eq!(score_controls_after, score_controls_before);
 
     let stale = assessment_service::update_phase_control(
         &pool,
@@ -460,7 +473,6 @@ async fn plan_and_score_controls_update_independently_with_optimistic_versioning
         UpdateAssessmentPhaseControlRequest {
             row_version: control.row_version,
             plan_editing_enabled: true,
-            score_entry_enabled: true,
         },
     )
     .await;
@@ -483,4 +495,54 @@ fn save_wire_contract_rejects_legacy_category_and_workflow_fields() {
         "phases": []
     });
     assert!(serde_json::from_value::<SaveAssessmentPlanRequest>(group_payload).is_err());
+}
+
+#[test]
+fn assessment_control_wire_contract_rejects_score_entry_ownership() {
+    let payload = serde_json::json!({
+        "rowVersion": 1,
+        "planEditingEnabled": true,
+        "scoreEntryEnabled": false
+    });
+    assert!(serde_json::from_value::<UpdateAssessmentPhaseControlRequest>(payload).is_err());
+    let plan_only = serde_json::json!({"rowVersion": 1, "planEditingEnabled": true});
+    assert!(serde_json::from_value::<UpdateAssessmentPhaseControlRequest>(plan_only).is_ok());
+}
+
+#[tokio::test]
+async fn unchanged_phase_autosave_preserves_phase_versions_and_metadata() {
+    let pool = migrated_pool("assessment_noop_phase_versions").await;
+    let offering_id: Uuid = sqlx::query_scalar(
+        "SELECT learning_offering_id FROM course_assessment_plans ORDER BY id LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
+    let detail = assessment_service::get_plan_detail(&pool, offering_id)
+        .await
+        .unwrap();
+    let before: Vec<(Uuid, i64, Option<Uuid>, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+        "SELECT id, row_version, updated_by, updated_at FROM course_assessment_phases WHERE plan_id = $1 ORDER BY id",
+    ).bind(detail.id).fetch_all(&pool).await.unwrap();
+    let saved =
+        assessment_service::save_plan(&pool, offering_id, actor_id, true, save_payload(&detail))
+            .await
+            .unwrap();
+    let after: Vec<(Uuid, i64, Option<Uuid>, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+        "SELECT id, row_version, updated_by, updated_at FROM course_assessment_phases WHERE plan_id = $1 ORDER BY id",
+    ).bind(detail.id).fetch_all(&pool).await.unwrap();
+    assert_eq!(after, before);
+    assert_eq!(
+        saved
+            .phases
+            .iter()
+            .map(|phase| phase.row_version)
+            .collect::<Vec<_>>(),
+        detail
+            .phases
+            .iter()
+            .map(|phase| phase.row_version)
+            .collect::<Vec<_>>()
+    );
 }

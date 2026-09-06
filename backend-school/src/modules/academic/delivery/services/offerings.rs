@@ -11,15 +11,14 @@ use crate::policies::resource_access_policy::AcademicResourceListFilter;
 
 use super::super::models::{
     ActivityAttendanceRequirement, ActivityOfferingSnapshot, ActivityPassCriteria,
-    ApplyCurriculumOfferingsRequest, ApplyCurriculumOfferingsResult, CourseGradingPolicy,
-    CourseOfferingSnapshot, CreateActivityOfferingRequest, CreateCourseOfferingRequest,
-    CreateLearningOfferingRequest, CurriculumGroupProposal, CurriculumOfferingPreview,
-    CurriculumPreparationChoice, CurriculumPreparationProposal, CurriculumPreviewAction,
-    LearningOffering, LearningOfferingKind, LearningOfferingQuery, LearningOfferingRow,
-    LearningOfferingSnapshot, LearningOfferingStatus, LearningOfferingTarget, OfferingTargetInput,
-    OfferingTargetKind, PreparationAction, PreparationConflict, PreparationGroupingState,
-    PreviewCurriculumOfferingsRequest, PublishLearningOfferingRequest,
-    UpdateLearningOfferingRequest,
+    ApplyCurriculumOfferingsRequest, ApplyCurriculumOfferingsResult, CourseOfferingSnapshot,
+    CreateActivityOfferingRequest, CreateCourseOfferingRequest, CreateLearningOfferingRequest,
+    CurriculumGroupProposal, CurriculumOfferingPreview, CurriculumPreparationChoice,
+    CurriculumPreparationProposal, CurriculumPreviewAction, LearningOffering, LearningOfferingKind,
+    LearningOfferingQuery, LearningOfferingRow, LearningOfferingSnapshot, LearningOfferingStatus,
+    LearningOfferingTarget, OfferingTargetInput, OfferingTargetKind, PreparationAction,
+    PreparationConflict, PreparationGroupingState, PreviewCurriculumOfferingsRequest,
+    PublishLearningOfferingRequest, UpdateLearningOfferingRequest,
 };
 use super::{
     append_audit, require_active_owner, require_writable_term, stable_hash, validate_row_version,
@@ -75,7 +74,7 @@ struct CourseDetailRow {
     credit: String,
     hours: Option<String>,
     standard_periods_per_week: i32,
-    grading_policy: sqlx::types::Json<CourseGradingPolicy>,
+    assessment_total_score: String,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -733,7 +732,7 @@ async fn hydrate_many(
          detail.curriculum_course_requirement_id, detail.credit::text AS credit, \
          detail.hours::text AS hours, \
          version.periods_per_week AS standard_periods_per_week, \
-         detail.grading_policy \
+         detail.assessment_total_score::text AS assessment_total_score \
          FROM course_offering_details detail \
          JOIN subject_versions version ON version.id = detail.subject_version_id \
          WHERE detail.learning_offering_id = ANY($1)",
@@ -774,7 +773,7 @@ async fn hydrate_many(
                         credit: detail.credit,
                         hours: detail.hours,
                         standard_periods_per_week: detail.standard_periods_per_week,
-                        grading_policy: detail.grading_policy.0,
+                        assessment_total_score: detail.assessment_total_score,
                     })
                 }
                 LearningOfferingKind::Activity => {
@@ -849,24 +848,9 @@ pub(super) async fn insert_course(
     term: &TermContext,
     request: CreateCourseOfferingRequest,
 ) -> Result<(), AppError> {
-    if request.grading_policy.policy_code.trim().is_empty() {
-        return Err(AppError::ValidationError(
-            "ต้องระบุนโยบายโครงสร้างคะแนน".to_string(),
-        ));
-    }
-    let total_score = validate_canonical_decimal(&request.grading_policy.total_score, 2)?;
+    let total_score = validate_canonical_decimal(&request.assessment_total_score, 2)?;
     if total_score <= bigdecimal::BigDecimal::from(0) {
-        return Err(AppError::ValidationError(
-            "คะแนนรวมตามนโยบายต้องมากกว่า 0".to_string(),
-        ));
-    }
-    if let Some(score) = &request.grading_policy.passing_score {
-        let passing_score = validate_canonical_decimal(score, 2)?;
-        if passing_score < bigdecimal::BigDecimal::from(0) || passing_score > total_score {
-            return Err(AppError::ValidationError(
-                "คะแนนผ่านต้องอยู่ระหว่าง 0 ถึงคะแนนรวม".to_string(),
-            ));
-        }
+        return Err(AppError::ValidationError("คะแนนรวมต้องมากกว่า 0".to_string()));
     }
     let source = course_version_source(transaction, request.subject_version_id).await?;
     require_active_owner(transaction, source.owning_organization_unit_id).await?;
@@ -930,7 +914,7 @@ pub(super) async fn insert_course(
         r#"INSERT INTO course_offering_details (
                learning_offering_id, academic_term_id, academic_year_id,
                subject_version_id, subject_id, curriculum_course_requirement_id,
-               credit, hours, grading_policy
+               credit, hours, assessment_total_score
            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#,
     )
     .bind(id)
@@ -946,7 +930,7 @@ pub(super) async fn insert_course(
             .map(|value| validate_canonical_decimal(value, 2))
             .transpose()?,
     )
-    .bind(sqlx::types::Json(request.grading_policy))
+    .bind(total_score)
     .execute(&mut **transaction)
     .await?;
     insert_targets(transaction, id, term, &request.targets).await
@@ -1889,9 +1873,8 @@ async fn insert_generated_offering(
                 r#"INSERT INTO course_offering_details (
                        learning_offering_id, academic_term_id, academic_year_id,
                        subject_version_id, subject_id, curriculum_course_requirement_id,
-                       credit, hours, grading_policy
-                   ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
-                             '{"policyCode":"school_default","passingScore":null}'::jsonb)"#,
+                       credit, hours
+                   ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#,
             )
             .bind(id)
             .bind(term.id)

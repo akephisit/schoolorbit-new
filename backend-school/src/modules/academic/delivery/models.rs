@@ -675,21 +675,6 @@ pub struct ApplyTeacherHandoffResponse {
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct CourseGradingPolicy {
-    pub policy_code: String,
-    #[serde(default = "default_course_total_score")]
-    #[schema(value_type = String, pattern = r"^(0|[1-9]\d*)(\.\d{1,2})?$")]
-    pub total_score: String,
-    #[schema(value_type = Option<String>, pattern = r"^-?(0|[1-9]\d*)(\.\d{1,2})?$")]
-    pub passing_score: Option<String>,
-}
-
-fn default_course_total_score() -> String {
-    "100.00".to_string()
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ActivityAttendanceRequirement {
     #[schema(value_type = Option<String>, pattern = r"^(0|[1-9]\d*)(\.\d{1,2})?$")]
     pub minimum_percent: Option<String>,
@@ -720,7 +705,8 @@ pub struct CreateCourseOfferingRequest {
     pub subject_version_id: Uuid,
     pub curriculum_course_requirement_id: Option<Uuid>,
     pub targets: Vec<OfferingTargetInput>,
-    pub grading_policy: CourseGradingPolicy,
+    #[schema(value_type = String, pattern = r"^(0|[1-9]\d*)(\.\d{1,2})?$")]
+    pub assessment_total_score: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
@@ -840,7 +826,8 @@ pub struct CourseOfferingSnapshot {
     pub credit: String,
     pub hours: Option<String>,
     pub standard_periods_per_week: i32,
-    pub grading_policy: CourseGradingPolicy,
+    #[schema(value_type = String, pattern = r"^(0|[1-9]\d*)(\.\d{1,2})?$")]
+    pub assessment_total_score: String,
 }
 
 #[derive(Clone, Debug, Serialize, ToSchema)]

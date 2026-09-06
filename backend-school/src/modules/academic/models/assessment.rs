@@ -1,10 +1,8 @@
 use bigdecimal::BigDecimal;
 use serde::{Deserialize, Serialize};
-use sqlx::{types::Json, FromRow};
+use sqlx::FromRow;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
-
-use crate::modules::academic::delivery::models::CourseGradingPolicy;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -154,7 +152,6 @@ pub struct SaveAssessmentPhaseRequest {
 pub struct UpdateAssessmentPhaseControlRequest {
     pub row_version: i64,
     pub plan_editing_enabled: bool,
-    pub score_entry_enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
@@ -223,7 +220,8 @@ pub struct AssessmentPlanDetail {
     pub subject_version_display_label: String,
     pub offering_code: String,
     pub offering_name: String,
-    pub grading_policy: CourseGradingPolicy,
+    #[schema(value_type = String, pattern = r"^(0|[1-9]\d*)(\.\d{1,2})?$")]
+    pub assessment_total_score: String,
     pub row_version: Option<i64>,
     pub learning_group_ids: Vec<Uuid>,
     pub assessment_coordinator_id: Option<Uuid>,
@@ -242,10 +240,7 @@ pub struct AssessmentPhaseControl {
     pub academic_term_id: Uuid,
     pub academic_year_id: Uuid,
     pub phase_code: AssessmentPhaseCode,
-    pub label: String,
-    pub order: i32,
     pub plan_editing_enabled: bool,
-    pub score_entry_enabled: bool,
     pub row_version: i64,
 }
 
@@ -260,7 +255,7 @@ pub(crate) struct AssessmentOfferingScopeRow {
     pub subject_version_display_label: String,
     pub offering_code: String,
     pub offering_name: String,
-    pub grading_policy: Json<CourseGradingPolicy>,
+    pub assessment_total_score: BigDecimal,
 }
 
 #[derive(Debug, Clone, FromRow)]
@@ -289,6 +284,5 @@ pub(crate) struct AssessmentPhaseControlRow {
     pub academic_year_id: Uuid,
     pub phase_code: String,
     pub plan_editing_enabled: bool,
-    pub score_entry_enabled: bool,
     pub row_version: i64,
 }

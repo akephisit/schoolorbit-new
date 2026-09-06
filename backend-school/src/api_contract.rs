@@ -971,7 +971,6 @@ use utoipa::OpenApi;
         MembershipStatus,
         RosterOverrideAction,
         CurriculumPreviewAction,
-        CourseGradingPolicy,
         ActivityAttendanceRequirement,
         ActivityPassCriteria,
         OfferingTargetInput,
@@ -2164,7 +2163,7 @@ mod tests {
             "#/components/schemas/ApiResponse_Vec_LearningOffering"
         );
         assert_eq!(
-            schemas["CourseGradingPolicy"]["properties"]["totalScore"]["type"],
+            schemas["CourseOfferingSnapshot"]["properties"]["assessmentTotalScore"]["type"],
             "string"
         );
         assert_eq!(
