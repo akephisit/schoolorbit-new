@@ -1,5 +1,6 @@
 pub mod academic_catalog_access_policy;
 pub mod academic_curriculum_access_policy;
+pub mod academic_result_access_policy;
 pub mod achievement_access_policy;
 pub mod assessment_access_policy;
 pub mod certificate_access_policy;

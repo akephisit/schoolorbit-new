@@ -11,12 +11,14 @@ mod configuration;
 mod confirmation;
 mod entry;
 mod locking;
+mod policies;
 mod summary;
 pub use catalog::*;
 pub use configuration::{get_configuration, remove_criterion, save_criterion};
 pub use confirmation::confirm_group;
 pub use entry::{get_workspace, save_responses};
 pub use locking::lock_subject;
+pub use policies::{activate_policy, create_policy, list_policies};
 #[cfg(test)]
 pub use summary::summarize_domains;
 pub use summary::{summarize_student_term, summary_for_actor};

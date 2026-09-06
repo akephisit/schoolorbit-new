@@ -23,6 +23,52 @@ fn signal(state: &AppState, session: &AuthenticatedSession, ctx: &EvaluationCont
     );
 }
 
+#[utoipa::path(get,path="/api/academic/learner-evaluations/policies",operation_id="listLearnerEvaluationPolicies",tag="academic",params(EvaluationContext),responses((status=200,body=ApiResponse<Vec<AggregationPolicyVersion>>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+pub async fn list_policies(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<EvaluationContext>,
+) -> Result<Json<ApiResponse<Vec<AggregationPolicyVersion>>>, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let result = services::list_policies(&context.tenant.pool, &context.actor, &query).await?;
+    Ok(Json(ApiResponse::ok(result)))
+}
+
+#[utoipa::path(post,path="/api/academic/learner-evaluations/policies",operation_id="createLearnerEvaluationPolicy",tag="academic",params(EvaluationContext),request_body=AggregationPolicyInput,responses((status=200,body=ApiResponse<AggregationPolicyVersion>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+pub async fn create_policy(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<EvaluationContext>,
+    Json(input): Json<AggregationPolicyInput>,
+) -> Result<Json<ApiResponse<AggregationPolicyVersion>>, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let result =
+        services::create_policy(&context.tenant.pool, &context.actor, &query, input).await?;
+    signal(&state, &session, &query, result.id);
+    Ok(Json(ApiResponse::ok(result)))
+}
+
+#[utoipa::path(post,path="/api/academic/learner-evaluations/policies/{policy_id}/activate",operation_id="activateLearnerEvaluationPolicy",tag="academic",params(EvaluationContext,("policy_id"=Uuid,Path)),request_body=VersionInput,responses((status=200,body=ApiResponse<AggregationPolicyVersion>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+pub async fn activate_policy(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(policy_id): Path<Uuid>,
+    Query(query): Query<EvaluationContext>,
+    Json(input): Json<VersionInput>,
+) -> Result<Json<ApiResponse<AggregationPolicyVersion>>, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let result = services::activate_policy(
+        &context.tenant.pool,
+        &context.actor,
+        &query,
+        policy_id,
+        input.row_version,
+    )
+    .await?;
+    signal(&state, &session, &query, policy_id);
+    Ok(Json(ApiResponse::ok(result)))
+}
+
 #[utoipa::path(get,path="/api/academic/learner-evaluations/subjects",operation_id="listLearnerEvaluationSubjects",tag="academic",params(EvaluationContext),responses((status=200,body=ApiResponse<Vec<EvaluationSubject>>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
 pub async fn list_subjects(
     State(state): State<AppState>,

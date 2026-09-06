@@ -1032,12 +1032,113 @@ async fn learner_response_and_initial_lock_serialize() {
     }
 }
 
+// Catches mutable/reactivatable policy versions and summaries retaining a superseded policy.
+#[tokio::test]
+async fn learner_aggregation_policy_activation_is_immutable_and_immediately_effective() {
+    let (pool, actor, ctx, group, _) = fixture("learner_aggregation_policy").await;
+    let student: Uuid = sqlx::query_scalar(
+        "SELECT student_academic_year_id FROM learning_group_students WHERE learning_group_id=$1 AND membership_status='active' ORDER BY student_academic_year_id LIMIT 1",
+    )
+    .bind(group)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let original = list_policies(&pool, &actor, &ctx)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|policy| policy.lifecycle == "active")
+        .unwrap();
+    let bands = vec![
+        AggregationPolicyBand {
+            quality_level: 0,
+            lower_bound: "0".into(),
+        },
+        AggregationPolicyBand {
+            quality_level: 1,
+            lower_bound: "0.5".into(),
+        },
+        AggregationPolicyBand {
+            quality_level: 2,
+            lower_bound: "1.5".into(),
+        },
+        AggregationPolicyBand {
+            quality_level: 3,
+            lower_bound: "2.5".into(),
+        },
+    ];
+    let created = create_policy(
+        &pool,
+        &actor,
+        &ctx,
+        AggregationPolicyInput {
+            name: "Summary policy 2".into(),
+            bands: bands.clone(),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(created.lifecycle, "draft");
+    assert!(create_policy(
+        &pool,
+        &actor,
+        &ctx,
+        AggregationPolicyInput {
+            name: "Invalid".into(),
+            bands: bands[..3].to_vec(),
+        },
+    )
+    .await
+    .is_err());
+    let activated = activate_policy(&pool, &actor, &ctx, created.id, created.row_version)
+        .await
+        .unwrap();
+    assert_eq!(activated.lifecycle, "active");
+    let versions = list_policies(&pool, &actor, &ctx).await.unwrap();
+    let retired = versions
+        .iter()
+        .find(|policy| policy.id == original.id)
+        .unwrap();
+    assert_eq!(retired.lifecycle, "retired");
+    assert!(
+        activate_policy(&pool, &actor, &ctx, retired.id, retired.row_version)
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        summarize_student_term(&pool, &ctx, student)
+            .await
+            .unwrap()
+            .policy_version_id,
+        activated.id
+    );
+    let reader = ActorContext {
+        user_id: actor.user_id,
+        permissions: vec![codes::ACADEMIC_LEARNER_EVALUATION_READ_SCHOOL.into()],
+    };
+    assert!(list_policies(&pool, &reader, &ctx).await.is_ok());
+    assert!(create_policy(
+        &pool,
+        &reader,
+        &ctx,
+        AggregationPolicyInput {
+            name: "Denied".into(),
+            bands,
+        },
+    )
+    .await
+    .is_err());
+}
+
 // Exercises the actual emitted OpenAPI operations, including required year/term context.
 #[test]
 fn learner_endpoint_contract_requires_full_context_and_typed_domains() {
     use utoipa::OpenApi;
     #[derive(OpenApi)]
     #[openapi(paths(
+        super::handlers::list_policies,
+        super::handlers::create_policy,
+        super::handlers::activate_policy,
         super::handlers::list_subjects,
         super::handlers::list_catalog,
         super::handlers::create_catalog,

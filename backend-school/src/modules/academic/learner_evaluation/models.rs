@@ -219,6 +219,31 @@ pub struct CriterionRemoval {
 pub struct VersionInput {
     pub row_version: i64,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AggregationPolicyBand {
+    pub quality_level: i16,
+    pub lower_bound: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AggregationPolicyInput {
+    pub name: String,
+    pub bands: Vec<AggregationPolicyBand>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AggregationPolicyVersion {
+    pub id: Uuid,
+    pub version_no: i32,
+    pub name: String,
+    pub lifecycle: String,
+    pub row_version: i64,
+    pub bands: Vec<AggregationPolicyBand>,
+}
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ExactAverage {

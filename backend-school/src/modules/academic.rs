@@ -11,6 +11,7 @@ pub mod handlers;
 pub mod learner_evaluation;
 pub mod models;
 pub mod reconciliation;
+pub mod results;
 pub mod services;
 pub mod websockets;
 
@@ -22,7 +23,8 @@ pub fn academic_routes() -> Router<AppState> {
     let base = core::routes()
         .merge(delivery::routes())
         .merge(gradebook::routes())
-        .merge(learner_evaluation::routes());
+        .merge(learner_evaluation::routes())
+        .merge(results::routes());
     base.merge(
         Router::new()
             // Assessment Plans (โครงสร้างคะแนนรายวิชา)

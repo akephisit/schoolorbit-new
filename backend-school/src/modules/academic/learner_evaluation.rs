@@ -12,6 +12,14 @@ pub fn routes() -> axum::Router<crate::AppState> {
     Router::new().nest(
         "/learner-evaluations",
         Router::new()
+            .route(
+                "/policies",
+                get(handlers::list_policies).post(handlers::create_policy),
+            )
+            .route(
+                "/policies/{policy_id}/activate",
+                post(handlers::activate_policy),
+            )
             .route("/subjects", get(handlers::list_subjects))
             .route(
                 "/catalog",

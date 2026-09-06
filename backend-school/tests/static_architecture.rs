@@ -98,6 +98,7 @@ fn people_and_platform_handlers_use_typed_session_identity() {
 fn academic_group_a_handlers_use_typed_session_identity() {
     assert_typed_session_handlers(&[
         "src/modules/academic/gradebook/handlers.rs",
+        "src/modules/academic/results/handlers.rs",
         "src/modules/academic/core/handlers.rs",
         "src/modules/academic/handlers/assessment.rs",
     ]);
@@ -122,6 +123,34 @@ fn gradebook_handlers_keep_database_and_authorization_in_services() {
         "remove_item",
         "save_scores_batch",
         "confirm_phase",
+    ] {
+        let body = extract_braced_block(&handlers, &format!("pub async fn {name}("), false);
+        assert!(body.contains("actor_tenant_context_from_session"));
+        assert!(body.contains("services::"));
+        assert!(body.contains("ApiResponse::ok"));
+    }
+}
+
+#[test]
+fn academic_result_handlers_keep_database_and_authorization_in_services() {
+    let handlers = read_source(manifest_dir().join("src/modules/academic/results/handlers.rs"));
+    for forbidden in ["sqlx::query", ".fetch_", ".execute(", ".begin(", "PgPool"] {
+        assert!(
+            !handlers.contains(forbidden),
+            "Academic result handler contains {forbidden}"
+        );
+    }
+    for name in [
+        "list_policies",
+        "create_policy",
+        "activate_policy",
+        "get_course_workspace",
+        "save_selection",
+        "confirm_group_results",
+        "get_activity_workspace",
+        "save_activity_outcomes",
+        "confirm_activity",
+        "readiness",
     ] {
         let body = extract_braced_block(&handlers, &format!("pub async fn {name}("), false);
         assert!(body.contains("actor_tenant_context_from_session"));
