@@ -2,6 +2,10 @@ use super::{models::*, services::*};
 use crate::modules::academic::cutover_test_support::{
     apply_migrations_through, seed_release_two_predecessor,
 };
+use crate::modules::academic::results::{
+    models::{EffectiveResultValue, ResultContext, ResultCorrectionInput},
+    services::correct_result,
+};
 use crate::test_helpers::create_named_test_pool_with_max_connections;
 use crate::{error::AppError, middleware::permission::ActorContext, permissions::registry::codes};
 use uuid::Uuid;
@@ -978,6 +982,101 @@ async fn learner_all_room_lock_is_atomic_and_domains_are_independent() {
         .missing_subjects
         .iter()
         .any(|s| s.subject_id == subject && s.reason == "subject_domain_not_locked"));
+}
+
+// Catches learner-evaluation corrections requiring the course-result permission, mutating the
+// immutable initial response, or leaving the student summary on the superseded quality level.
+#[tokio::test]
+async fn learner_correction_is_append_only_and_updates_effective_summary() {
+    let (pool, actor, ctx, _, subject) = fixture("learner_correction").await;
+    let rooms: Vec<(Uuid, Uuid)> = sqlx::query_as(
+        "SELECT g.id,t.teacher_id FROM learning_groups g JOIN course_offering_details d ON d.learning_offering_id=g.learning_offering_id JOIN learning_group_teachers t ON t.learning_group_id=g.id AND t.role='primary' WHERE d.subject_id=$1 AND g.academic_term_id=$2 AND g.status<>'closed' ORDER BY g.id",
+    )
+    .bind(subject)
+    .bind(ctx.academic_term_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    for (room, teacher) in rooms {
+        let room_actor = ActorContext {
+            user_id: teacher,
+            permissions: actor.permissions.clone(),
+        };
+        let mut workspace = get_workspace(&pool, &room_actor, room, DC, &ctx)
+            .await
+            .unwrap();
+        if !workspace.students.is_empty() {
+            workspace = fill(&pool, &room_actor, &ctx, room, DC, 3).await;
+        }
+        confirm_group(&pool, &room_actor, room, DC, &ctx, confirmation(&workspace))
+            .await
+            .unwrap();
+    }
+    lock_subject(&pool, &actor, subject, DC, &ctx)
+        .await
+        .unwrap()
+        .lock
+        .expect("complete subject domain must lock");
+    let (evaluation_id, student, initial_level, initial_version): (Uuid, Uuid, i16, i64) =
+        sqlx::query_as(
+            "SELECT id,student_academic_year_id,quality_level,row_version FROM subject_term_student_evaluations WHERE subject_id=$1 AND academic_term_id=$2 AND domain='desirable_characteristic' ORDER BY id LIMIT 1",
+        )
+        .bind(subject)
+        .bind(ctx.academic_term_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let correction_actor = ActorContext {
+        user_id: actor.user_id,
+        permissions: vec![codes::ACADEMIC_LEARNER_EVALUATION_CORRECT_SCHOOL.into()],
+    };
+    let result = correct_result(
+        &pool,
+        &correction_actor,
+        &ResultContext {
+            academic_year_id: ctx.academic_year_id,
+            academic_term_id: ctx.academic_term_id,
+        },
+        ResultCorrectionInput::LearnerEvaluation {
+            subject_student_evaluation_id: evaluation_id,
+            quality_level: 0.try_into().unwrap(),
+            expected_effective_version: 1,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.effective_version, 2);
+    assert_eq!(
+        result.effective,
+        EffectiveResultValue::LearnerEvaluation { quality_level: 0 }
+    );
+    assert_eq!(result.corrections.len(), 1);
+    assert_eq!(
+        sqlx::query_as::<_, (i16, i64)>(
+            "SELECT quality_level,row_version FROM subject_term_student_evaluations WHERE id=$1",
+        )
+        .bind(evaluation_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        (initial_level, initial_version)
+    );
+    let summary = summarize_student_term(&pool, &ctx, student).await.unwrap();
+    let effective = summary
+        .domains
+        .iter()
+        .find(|domain| domain.domain == DC)
+        .unwrap()
+        .subjects
+        .iter()
+        .find(|item| item.subject_id == subject)
+        .unwrap()
+        .criteria
+        .iter()
+        .find(|criterion| criterion.id == evaluation_id)
+        .unwrap();
+    assert_eq!(effective.quality_level, 0);
+    assert_eq!(effective.row_version, 2);
 }
 
 // Catches a missing shared scope lock allowing both a response update and a stale official lock.

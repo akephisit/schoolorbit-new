@@ -546,3 +546,69 @@ async fn unchanged_phase_autosave_preserves_phase_versions_and_metadata() {
             .collect::<Vec<_>>()
     );
 }
+
+// Catches Assessment accepting a normal plan mutation after academic affairs has locked the
+// subject's immutable initial course results.
+#[tokio::test]
+async fn locked_course_result_makes_assessment_plan_read_only() {
+    let pool = migrated_pool("assessment_course_result_lock_guard").await;
+    let (offering_id, subject_id, term_id, year_id): (Uuid, Uuid, Uuid, Uuid) = sqlx::query_as(
+        r#"SELECT plan.learning_offering_id,detail.subject_id,
+                  plan.academic_term_id,plan.academic_year_id
+           FROM course_assessment_plans plan
+           JOIN course_offering_details detail
+             ON detail.learning_offering_id=plan.learning_offering_id
+           ORDER BY plan.id
+           LIMIT 1"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let detail = assessment_service::get_plan_detail(&pool, offering_id)
+        .await
+        .unwrap();
+    let original_version = detail.row_version.unwrap();
+    let coordinator = detail
+        .assessment_coordinator_id
+        .or(detail.suggested_coordinator_id)
+        .or_else(|| {
+            detail
+                .coordinator_candidates
+                .first()
+                .map(|candidate| candidate.teacher_id)
+        })
+        .unwrap();
+    let policy_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM academic_grading_policy_versions WHERE lifecycle='active'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"INSERT INTO academic_course_result_locks (
+               subject_id,academic_term_id,academic_year_id,policy_version_id,policy_snapshot,
+               roster_checksum,source_checksum,source_snapshot,locked_by
+           ) VALUES ($1,$2,$3,$4,'{}'::jsonb,repeat('a',64),repeat('b',64),'{}'::jsonb,$5)"#,
+    )
+    .bind(subject_id)
+    .bind(term_id)
+    .bind(year_id)
+    .bind(policy_id)
+    .bind(coordinator)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let mut payload = save_payload(&detail);
+    payload.phases[0].max_score = "21.00".into();
+    let result =
+        assessment_service::save_plan(&pool, offering_id, coordinator, true, payload).await;
+    assert!(matches!(result, Err(AppError::Conflict(_))));
+    assert_eq!(
+        assessment_service::get_plan_detail(&pool, offering_id)
+            .await
+            .unwrap()
+            .row_version,
+        Some(original_version)
+    );
+}

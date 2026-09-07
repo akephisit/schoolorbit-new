@@ -21,6 +21,16 @@ pub fn routes() -> axum::Router<crate::AppState> {
                 post(handlers::activate_policy),
             )
             .route("/readiness", get(handlers::readiness))
+            .route("/effective", get(handlers::search_effective_results))
+            .route("/corrections", post(handlers::correct_result))
+            .route(
+                "/subjects/{subject_id}/lock",
+                post(handlers::lock_course_subject),
+            )
+            .route(
+                "/activities/lock-ready",
+                post(handlers::lock_all_ready_activities),
+            )
             .route(
                 "/groups/{group_id}/course/selection",
                 put(handlers::save_selection),
@@ -40,6 +50,10 @@ pub fn routes() -> axum::Router<crate::AppState> {
             .route(
                 "/groups/{group_id}/activity/confirm",
                 post(handlers::confirm_activity),
+            )
+            .route(
+                "/groups/{group_id}/activity/lock",
+                post(handlers::lock_activity_group),
             )
             .route(
                 "/groups/{group_id}/activity",

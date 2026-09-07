@@ -206,6 +206,25 @@ pub async fn activate_policy(
     }
     let mut tx = pool.begin().await?;
     validate_context(&mut tx, context).await?;
+    // The grading policy is global, so activation must serialize with every writer that can
+    // change a course result source. Those writers all lock their offering before group/source
+    // rows; taking every course offering in the same order prevents a stale confirmation from
+    // being locked while the policy changes concurrently.
+    let course_offerings: Vec<Uuid> = sqlx::query_scalar(
+        r#"SELECT offering.id
+           FROM learning_offerings offering
+           JOIN course_offering_details detail ON detail.learning_offering_id=offering.id
+           ORDER BY offering.id
+           LIMIT 10001
+           FOR UPDATE OF offering"#,
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    if course_offerings.len() > 10000 {
+        return Err(AppError::ValidationError(
+            "Grading policy activation exceeds 10000 course offerings".into(),
+        ));
+    }
     sqlx::query("SELECT id FROM academic_grading_policy_versions ORDER BY version_no FOR UPDATE")
         .execute(&mut *tx)
         .await?;

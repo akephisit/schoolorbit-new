@@ -9,6 +9,14 @@ pub fn can_manage_school(actor: &ActorContext) -> bool {
     actor.has_permission(codes::ACADEMIC_RESULT_MANAGE_SCHOOL)
 }
 
+pub fn can_lock(actor: &ActorContext) -> bool {
+    actor.has_permission(codes::ACADEMIC_RESULT_LOCK_SCHOOL)
+}
+
+pub fn can_correct(actor: &ActorContext) -> bool {
+    actor.has_permission(codes::ACADEMIC_RESULT_CORRECT_SCHOOL)
+}
+
 pub fn can_manage_group(actor: &ActorContext, assigned: bool) -> bool {
     can_manage_school(actor)
         || (assigned && actor.has_permission(codes::ACADEMIC_RESULT_MANAGE_ASSIGNED))

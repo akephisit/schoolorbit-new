@@ -22,6 +22,9 @@ pub fn can_confirm(actor: &ActorContext, primary: bool) -> bool {
 pub fn can_lock(actor: &ActorContext) -> bool {
     actor.has_permission(codes::ACADEMIC_LEARNER_EVALUATION_LOCK_SCHOOL)
 }
+pub fn can_correct(actor: &ActorContext) -> bool {
+    actor.has_permission(codes::ACADEMIC_LEARNER_EVALUATION_CORRECT_SCHOOL)
+}
 pub fn can_read_group(
     filter: &AcademicResourceListFilter,
     owner: Option<Uuid>,

@@ -181,11 +181,13 @@ pub(super) async fn begin_scope<'a>(
                 "Current group assignment and primary role are required for this action".into(),
             ));
         }
-        if scope.locked {
-            return Err(AppError::Conflict(
-                "Course result is locked and Gradebook is read-only".into(),
-            ));
-        }
+        crate::modules::academic::results::services::require_course_offering_unlocked(
+            &mut tx,
+            scope.offering_id,
+            context.academic_term_id,
+            context.academic_year_id,
+        )
+        .await?;
         if !scope.score_entry_enabled && !policy::can_manage_school(actor) {
             return Err(AppError::Forbidden(
                 "Gradebook entry window is closed".into(),

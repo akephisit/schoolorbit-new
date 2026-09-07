@@ -193,3 +193,78 @@ pub async fn readiness(
         services::readiness(&context.tenant.pool, &context.actor, &query).await?,
     )))
 }
+
+#[utoipa::path(post,path="/api/academic/results/subjects/{subject_id}/lock",operation_id="lockCourseSubjectResults",tag="academic",params(ResultContext,("subject_id"=Uuid,Path)),responses((status=200,body=ApiResponse<CourseResultLockOutcome>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+pub async fn lock_course_subject(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(subject_id): Path<Uuid>,
+    Query(query): Query<ResultContext>,
+) -> Result<Json<ApiResponse<CourseResultLockOutcome>>, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let result =
+        services::lock_course_subject(&context.tenant.pool, &context.actor, &query, subject_id)
+            .await?;
+    if result.lock.is_some() {
+        signal(&state, &session, &query, subject_id);
+    }
+    Ok(Json(ApiResponse::ok(result)))
+}
+
+#[utoipa::path(post,path="/api/academic/results/groups/{group_id}/activity/lock",operation_id="lockActivityGroupResults",tag="academic",params(ResultContext,("group_id"=Uuid,Path)),responses((status=200,body=ApiResponse<ActivityResultLockOutcome>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+pub async fn lock_activity_group(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(group_id): Path<Uuid>,
+    Query(query): Query<ResultContext>,
+) -> Result<Json<ApiResponse<ActivityResultLockOutcome>>, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let result =
+        services::lock_activity_group(&context.tenant.pool, &context.actor, &query, group_id)
+            .await?;
+    if result.lock.is_some() {
+        signal(&state, &session, &query, group_id);
+    }
+    Ok(Json(ApiResponse::ok(result)))
+}
+
+#[utoipa::path(post,path="/api/academic/results/activities/lock-ready",operation_id="lockAllReadyActivityResults",tag="academic",params(ResultContext),responses((status=200,body=ApiResponse<BulkActivityResultLockOutcome>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+pub async fn lock_all_ready_activities(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<ResultContext>,
+) -> Result<Json<ApiResponse<BulkActivityResultLockOutcome>>, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let result =
+        services::lock_all_ready_activities(&context.tenant.pool, &context.actor, &query).await?;
+    if !result.locked.is_empty() {
+        signal(&state, &session, &query, query.academic_term_id);
+    }
+    Ok(Json(ApiResponse::ok(result)))
+}
+
+#[utoipa::path(get,path="/api/academic/results/effective",operation_id="searchEffectiveAcademicResults",tag="academic",params(EffectiveResultSearch),responses((status=200,body=ApiResponse<Vec<EffectiveResultSearchItem>>),(status=403,body=ApiErrorResponse)))]
+pub async fn search_effective_results(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<EffectiveResultSearch>,
+) -> Result<Json<ApiResponse<Vec<EffectiveResultSearchItem>>>, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    Ok(Json(ApiResponse::ok(
+        services::search_effective_results(&context.tenant.pool, &context.actor, &query).await?,
+    )))
+}
+
+#[utoipa::path(post,path="/api/academic/results/corrections",operation_id="correctEffectiveAcademicResult",tag="academic",params(ResultContext),request_body=ResultCorrectionInput,responses((status=200,body=ApiResponse<EffectiveResult>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+pub async fn correct_result(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<ResultContext>,
+    Json(input): Json<ResultCorrectionInput>,
+) -> Result<Json<ApiResponse<EffectiveResult>>, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let result =
+        services::correct_result(&context.tenant.pool, &context.actor, &query, input).await?;
+    signal(&state, &session, &query, result.result_id);
+    Ok(Json(ApiResponse::ok(result)))
+}

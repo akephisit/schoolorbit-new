@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -247,4 +248,192 @@ pub struct SubjectResultReadiness {
 pub struct ResultReadiness {
     pub courses: Vec<SubjectResultReadiness>,
     pub activities: Vec<GroupResultReadiness>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CourseResultLock {
+    pub id: Uuid,
+    pub subject_id: Uuid,
+    pub academic_year_id: Uuid,
+    pub academic_term_id: Uuid,
+    pub policy_version_id: Uuid,
+    pub roster_checksum: String,
+    pub source_checksum: String,
+    pub row_version: i64,
+    pub locked_by: Uuid,
+    pub locked_at: DateTime<Utc>,
+    pub result_count: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CourseResultLockOutcome {
+    pub lock: Option<CourseResultLock>,
+    pub groups: Vec<GroupResultReadiness>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityResultLock {
+    pub id: Uuid,
+    pub learning_group_id: Uuid,
+    pub learning_offering_id: Uuid,
+    pub academic_year_id: Uuid,
+    pub academic_term_id: Uuid,
+    pub roster_checksum: String,
+    pub source_checksum: String,
+    pub row_version: i64,
+    pub locked_by: Uuid,
+    pub locked_at: DateTime<Utc>,
+    pub result_count: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityResultLockOutcome {
+    pub lock: Option<ActivityResultLock>,
+    pub blockers: Vec<ResultBlocker>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkActivityResultLockOutcome {
+    pub locked: Vec<ActivityResultLock>,
+    pub skipped: Vec<GroupResultReadiness>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CourseOfficialOutcome {
+    Numeric,
+    Incomplete,
+    InsufficientAttendance,
+}
+
+impl CourseOfficialOutcome {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Numeric => "numeric",
+            Self::Incomplete => "incomplete",
+            Self::InsufficientAttendance => "insufficient_attendance",
+        }
+    }
+}
+
+impl TryFrom<&str> for CourseOfficialOutcome {
+    type Error = &'static str;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "numeric" => Ok(Self::Numeric),
+            "incomplete" => Ok(Self::Incomplete),
+            "insufficient_attendance" => Ok(Self::InsufficientAttendance),
+            _ => Err("Unknown official course outcome"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(
+    tag = "kind",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub enum ResultCorrectionInput {
+    Course {
+        course_result_id: Uuid,
+        outcome: CourseOfficialOutcome,
+        numeric_grade: Option<String>,
+        expected_effective_version: i64,
+    },
+    Activity {
+        activity_result_id: Uuid,
+        outcome: ActivityOutcome,
+        expected_effective_version: i64,
+    },
+    LearnerEvaluation {
+        subject_student_evaluation_id: Uuid,
+        quality_level: crate::modules::academic::learner_evaluation::models::LearnerEvaluationLevel,
+        expected_effective_version: i64,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[serde(
+    tag = "kind",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
+pub enum EffectiveResultValue {
+    Course {
+        outcome: CourseOfficialOutcome,
+        numeric_grade: Option<String>,
+    },
+    Activity {
+        outcome: ActivityOutcome,
+    },
+    LearnerEvaluation {
+        quality_level: i16,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ResultCorrectionRecord {
+    pub id: Uuid,
+    pub expected_effective_version: i64,
+    pub previous: EffectiveResultValue,
+    pub corrected: EffectiveResultValue,
+    pub corrected_by: Uuid,
+    pub corrected_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct EffectiveResult {
+    pub result_id: Uuid,
+    pub student_academic_year_id: Uuid,
+    pub initial: EffectiveResultValue,
+    pub effective: EffectiveResultValue,
+    pub effective_version: i64,
+    pub corrections: Vec<ResultCorrectionRecord>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum EffectiveResultKind {
+    Course,
+    Activity,
+    LearnerEvaluation,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, IntoParams)]
+#[serde(rename_all = "camelCase")]
+#[into_params(parameter_in = Query)]
+pub struct EffectiveResultSearch {
+    pub academic_year_id: Uuid,
+    pub academic_term_id: Uuid,
+    pub kind: Option<EffectiveResultKind>,
+    pub search: Option<String>,
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct EffectiveResultSearchItem {
+    pub kind: EffectiveResultKind,
+    pub student_code: Option<String>,
+    pub display_name: String,
+    pub learning_group_id: Uuid,
+    pub learning_offering_id: Uuid,
+    pub offering_code: String,
+    pub offering_name: String,
+    pub group_name: String,
+    pub subject_id: Option<Uuid>,
+    pub domain: Option<String>,
+    pub subject_term_criterion_id: Option<Uuid>,
+    pub criterion_name: Option<String>,
+    pub result: EffectiveResult,
 }

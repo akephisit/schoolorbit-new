@@ -12,7 +12,7 @@ use crate::modules::academic::{
     gradebook::{models as gm, services as gb},
 };
 use crate::{
-    middleware::permission::ActorContext, permissions::registry::codes,
+    error::AppError, middleware::permission::ActorContext, permissions::registry::codes,
     test_helpers::create_named_test_pool_with_max_connections,
 };
 use chrono::NaiveDate;
@@ -87,6 +87,37 @@ fn results_exact_inclusive_policy_and_teacher_contract() {
         assert!(serde_json::from_value::<ActivityOutcome>(serde_json::json!(outcome)).is_ok());
     }
     assert!(serde_json::from_value::<ActivityOutcome>(serde_json::json!("incomplete")).is_err());
+    let result_id = Uuid::new_v4();
+    assert!(
+        serde_json::from_value::<ResultCorrectionInput>(serde_json::json!({
+            "kind": "course",
+            "courseResultId": result_id,
+            "outcome": "incomplete",
+            "numericGrade": null,
+            "expectedEffectiveVersion": 1
+        }))
+        .is_ok()
+    );
+    assert!(
+        serde_json::from_value::<ResultCorrectionInput>(serde_json::json!({
+            "kind": "course",
+            "courseResultId": result_id,
+            "outcome": "incomplete",
+            "numericGrade": null,
+            "expectedEffectiveVersion": 1,
+            "remark": "must not enter the correction contract"
+        }))
+        .is_err()
+    );
+    assert!(
+        serde_json::from_value::<ResultCorrectionInput>(serde_json::json!({
+            "kind": "learner_evaluation",
+            "subjectStudentEvaluationId": result_id,
+            "qualityLevel": 4,
+            "expectedEffectiveVersion": 1
+        }))
+        .is_err()
+    );
 }
 async fn fixture(name: &str) -> (sqlx::PgPool, ActorContext, ResultContext, Uuid) {
     let pool = create_named_test_pool_with_max_connections(name, 4).await;
@@ -288,6 +319,657 @@ async fn wait_for_result_confirmation_read_lock(pool: &sqlx::PgPool) {
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
     panic!("workspace GET did not reach the confirmation read while the table was locked");
+}
+
+fn academic_affairs_actor(actor: &ActorContext) -> ActorContext {
+    ActorContext {
+        user_id: actor.user_id,
+        permissions: vec![
+            codes::ACADEMIC_RESULT_READ_SCHOOL.into(),
+            codes::ACADEMIC_RESULT_LOCK_SCHOOL.into(),
+            codes::ACADEMIC_RESULT_CORRECT_SCHOOL.into(),
+        ],
+    }
+}
+
+async fn course_subject_rooms(
+    pool: &sqlx::PgPool,
+    ctx: &ResultContext,
+    subject: Uuid,
+) -> Vec<(Uuid, Uuid)> {
+    sqlx::query_as(
+        r#"SELECT learning_group.id, teacher.teacher_id
+           FROM learning_groups learning_group
+           JOIN course_offering_details detail
+             ON detail.learning_offering_id = learning_group.learning_offering_id
+           JOIN learning_group_teachers teacher
+             ON teacher.learning_group_id = learning_group.id
+            AND teacher.role = 'primary'
+           WHERE detail.subject_id = $1
+             AND learning_group.academic_term_id = $2
+             AND learning_group.academic_year_id = $3
+             AND learning_group.status <> 'closed'
+           ORDER BY learning_group.id, teacher.id"#,
+    )
+    .bind(subject)
+    .bind(ctx.academic_term_id)
+    .bind(ctx.academic_year_id)
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+async fn prepare_course_subject(
+    pool: &sqlx::PgPool,
+    base_actor: &ActorContext,
+    ctx: &ResultContext,
+    subject: Uuid,
+) -> Vec<CoursePreparationWorkspace> {
+    let mut workspaces = Vec::new();
+    for (group, teacher) in course_subject_rooms(pool, ctx, subject).await {
+        let teacher_actor = ActorContext {
+            user_id: teacher,
+            permissions: base_actor.permissions.clone(),
+        };
+        prepare_phases(pool, &teacher_actor, ctx, group).await;
+        let workspace = get_course_workspace(pool, &teacher_actor, ctx, group)
+            .await
+            .unwrap();
+        let confirmed =
+            confirm_group_results(pool, &teacher_actor, ctx, group, confirm_input(&workspace))
+                .await
+                .unwrap();
+        assert!(confirmed.confirmation_is_current);
+        workspaces.push(confirmed);
+    }
+    workspaces
+}
+
+async fn prepare_activity_group(
+    pool: &sqlx::PgPool,
+    actor: &ActorContext,
+    ctx: &ResultContext,
+    group: Uuid,
+) -> ActivityPreparationWorkspace {
+    let workspace = get_activity_workspace(pool, actor, ctx, group)
+        .await
+        .unwrap();
+    let cells = workspace
+        .students
+        .iter()
+        .map(|student| ActivityCellInput {
+            student_academic_year_id: student.student_academic_year_id,
+            outcome: Some(ActivityOutcome::Pass),
+            row_version: student.row_version,
+        })
+        .collect();
+    let workspace = save_activity_outcomes(pool, actor, ctx, group, ActivityBatchInput { cells })
+        .await
+        .unwrap();
+    let confirmed = confirm_activity(
+        pool,
+        actor,
+        ctx,
+        group,
+        ResultConfirmationInput {
+            source_checksum: workspace.source_checksum.clone(),
+            roster_checksum: workspace.roster_checksum.clone(),
+            row_version: workspace
+                .confirmation
+                .as_ref()
+                .map(|confirmation| confirmation.row_version),
+        },
+    )
+    .await
+    .unwrap();
+    assert!(confirmed.confirmation_is_current);
+    confirmed
+}
+
+// Catches an activity lock widening from its one group to another group in the same offering.
+#[tokio::test]
+async fn results_activity_groups_lock_independently() {
+    let (pool, mut teacher, ctx, _) = fixture("results_activity_lock_independent").await;
+    let (group, primary): (Uuid, Uuid) = sqlx::query_as(
+        "SELECT learning_group.id,teacher.teacher_id FROM learning_groups learning_group JOIN activity_offering_details detail ON detail.learning_offering_id=learning_group.learning_offering_id JOIN learning_group_teachers teacher ON teacher.learning_group_id=learning_group.id AND teacher.role='primary' WHERE EXISTS(SELECT 1 FROM learning_group_students member WHERE member.learning_group_id=learning_group.id AND member.membership_status='active') ORDER BY learning_group.id LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    teacher.user_id = primary;
+    prepare_activity_group(&pool, &teacher, &ctx, group).await;
+    let sibling: Uuid = sqlx::query_scalar(
+        "INSERT INTO learning_groups (id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status) SELECT uuid_generate_v4(),learning_offering_id,academic_term_id,academic_year_id,'ACTIVITY-UNLOCKED','Unlocked sibling','draft','draft' FROM learning_groups WHERE id=$1 RETURNING id",
+    )
+    .bind(group)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let outcome = lock_activity_group(&pool, &academic_affairs_actor(&teacher), &ctx, group)
+        .await
+        .unwrap();
+    let lock = outcome.lock.expect("the complete activity group must lock");
+    assert!(outcome.blockers.is_empty());
+    assert!(lock.result_count > 0);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM academic_activity_result_locks WHERE learning_group_id=$1",
+        )
+        .bind(group)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        1
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM academic_activity_result_locks WHERE learning_group_id=$1",
+        )
+        .bind(sibling)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        0
+    );
+}
+
+// Catches activity corrections mutating the locked initial result or sharing course-grade rules.
+#[tokio::test]
+async fn results_activity_corrections_are_append_only_and_group_scoped() {
+    let (pool, mut teacher, ctx, _) = fixture("results_activity_correction").await;
+    let (group, primary): (Uuid, Uuid) = sqlx::query_as(
+        "SELECT learning_group.id,teacher.teacher_id FROM learning_groups learning_group JOIN activity_offering_details detail ON detail.learning_offering_id=learning_group.learning_offering_id JOIN learning_group_teachers teacher ON teacher.learning_group_id=learning_group.id AND teacher.role='primary' WHERE EXISTS(SELECT 1 FROM learning_group_students member WHERE member.learning_group_id=learning_group.id AND member.membership_status='active') ORDER BY learning_group.id LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    teacher.user_id = primary;
+    prepare_activity_group(&pool, &teacher, &ctx, group).await;
+    lock_activity_group(&pool, &academic_affairs_actor(&teacher), &ctx, group)
+        .await
+        .unwrap();
+    let result_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM academic_activity_results WHERE learning_group_id=$1 ORDER BY id LIMIT 1",
+    )
+    .bind(group)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let initial: (String, i64) =
+        sqlx::query_as("SELECT outcome,row_version FROM academic_activity_results WHERE id=$1")
+            .bind(result_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+    let corrected = correct_result(
+        &pool,
+        &academic_affairs_actor(&teacher),
+        &ctx,
+        ResultCorrectionInput::Activity {
+            activity_result_id: result_id,
+            outcome: ActivityOutcome::Fail,
+            expected_effective_version: 1,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(corrected.effective_version, 2);
+    assert_eq!(
+        corrected.initial,
+        EffectiveResultValue::Activity {
+            outcome: ActivityOutcome::Pass
+        }
+    );
+    assert_eq!(
+        corrected.effective,
+        EffectiveResultValue::Activity {
+            outcome: ActivityOutcome::Fail
+        }
+    );
+    assert_eq!(corrected.corrections.len(), 1);
+    assert!(matches!(
+        correct_result(
+            &pool,
+            &academic_affairs_actor(&teacher),
+            &ctx,
+            ResultCorrectionInput::Activity {
+                activity_result_id: result_id,
+                outcome: ActivityOutcome::Pass,
+                expected_effective_version: 1,
+            },
+        )
+        .await,
+        Err(AppError::Conflict(_))
+    ));
+    assert_eq!(
+        sqlx::query_as::<_, (String, i64)>(
+            "SELECT outcome,row_version FROM academic_activity_results WHERE id=$1",
+        )
+        .bind(result_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        initial
+    );
+}
+
+// Catches the bulk activity action silently locking an incomplete group instead of returning its
+// actionable readiness blockers.
+#[tokio::test]
+async fn results_bulk_activity_lock_skips_groups_that_are_not_ready() {
+    let (pool, mut teacher, ctx, _) = fixture("results_activity_lock_bulk").await;
+    let (ready_group, primary): (Uuid, Uuid) = sqlx::query_as(
+        "SELECT learning_group.id,teacher.teacher_id FROM learning_groups learning_group JOIN activity_offering_details detail ON detail.learning_offering_id=learning_group.learning_offering_id JOIN learning_group_teachers teacher ON teacher.learning_group_id=learning_group.id AND teacher.role='primary' WHERE EXISTS(SELECT 1 FROM learning_group_students member WHERE member.learning_group_id=learning_group.id AND member.membership_status='active') ORDER BY learning_group.id LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    teacher.user_id = primary;
+    prepare_activity_group(&pool, &teacher, &ctx, ready_group).await;
+    let incomplete_group: Uuid = sqlx::query_scalar(
+        "INSERT INTO learning_groups (id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status) SELECT uuid_generate_v4(),learning_offering_id,academic_term_id,academic_year_id,'ACTIVITY-INCOMPLETE','Incomplete activity','draft','draft' FROM learning_groups WHERE id=$1 RETURNING id",
+    )
+    .bind(ready_group)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let outcome = lock_all_ready_activities(&pool, &academic_affairs_actor(&teacher), &ctx)
+        .await
+        .unwrap();
+    assert!(outcome
+        .locked
+        .iter()
+        .any(|lock| lock.learning_group_id == ready_group));
+    let skipped = outcome
+        .skipped
+        .iter()
+        .find(|group| group.learning_group_id == incomplete_group)
+        .expect("the incomplete group must remain visible in the bulk result");
+    assert!(skipped
+        .blockers
+        .iter()
+        .any(|blocker| blocker.code == ResultBlockerCode::MissingPrimaryTeacher));
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM academic_activity_result_locks WHERE learning_group_id=$1",
+        )
+        .bind(incomplete_group)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        0
+    );
+}
+
+// Catches a subject lock committing one ready room while another room is missing a current
+// primary-teacher result confirmation.
+#[tokio::test]
+async fn results_course_lock_is_all_room_atomic() {
+    let (pool, actor, ctx, group) = fixture("results_course_lock_atomic").await;
+    let subject: Uuid = sqlx::query_scalar(
+        "SELECT subject_id FROM course_offering_details WHERE learning_offering_id=(SELECT learning_offering_id FROM learning_groups WHERE id=$1)",
+    )
+    .bind(group)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let mut rooms = course_subject_rooms(&pool, &ctx, subject).await;
+    if rooms.len() == 1 {
+        let other: Uuid = sqlx::query_scalar(
+            "INSERT INTO learning_groups (id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status) SELECT uuid_generate_v4(),learning_offering_id,academic_term_id,academic_year_id,'COURSE-LOCK-SECOND','Second room','draft','draft' FROM learning_groups WHERE id=$1 RETURNING id",
+        )
+        .bind(group)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO learning_group_teachers (id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on) SELECT uuid_generate_v4(),$1,academic_term_id,academic_year_id,teacher_id,role,starts_on FROM learning_group_teachers WHERE learning_group_id=$2 AND role='primary' ORDER BY id LIMIT 1",
+        )
+        .bind(other)
+        .bind(group)
+        .execute(&pool)
+        .await
+        .unwrap();
+        rooms = course_subject_rooms(&pool, &ctx, subject).await;
+    }
+    assert!(rooms.len() > 1);
+
+    let (ready_group, ready_teacher) = rooms[0];
+    let ready_actor = ActorContext {
+        user_id: ready_teacher,
+        permissions: actor.permissions.clone(),
+    };
+    prepare_phases(&pool, &ready_actor, &ctx, ready_group).await;
+    let workspace = get_course_workspace(&pool, &ready_actor, &ctx, ready_group)
+        .await
+        .unwrap();
+    confirm_group_results(
+        &pool,
+        &ready_actor,
+        &ctx,
+        ready_group,
+        confirm_input(&workspace),
+    )
+    .await
+    .unwrap();
+
+    let outcome = lock_course_subject(&pool, &academic_affairs_actor(&actor), &ctx, subject)
+        .await
+        .unwrap();
+    assert!(outcome.lock.is_none());
+    assert!(outcome.groups.iter().any(|candidate| {
+        candidate.learning_group_id != ready_group
+            && candidate.blockers.iter().any(|blocker| {
+                matches!(
+                    blocker.code,
+                    ResultBlockerCode::MissingPhaseConfirmation
+                        | ResultBlockerCode::MissingGroupConfirmation
+                )
+            })
+    }));
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM academic_course_result_locks WHERE subject_id=$1 AND academic_term_id=$2",
+        )
+        .bind(subject)
+        .bind(ctx.academic_term_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        0
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM academic_course_results WHERE subject_id=$1 AND academic_term_id=$2",
+        )
+        .bind(subject)
+        .bind(ctx.academic_term_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        0
+    );
+}
+
+// Catches a successful subject lock omitting a room/student or failing to preserve the exact
+// policy and preparation sources used to create immutable initial results.
+#[tokio::test]
+async fn results_course_lock_snapshots_all_initial_results() {
+    let (pool, actor, ctx, group) = fixture("results_course_lock_snapshot").await;
+    let subject: Uuid = sqlx::query_scalar(
+        "SELECT subject_id FROM course_offering_details WHERE learning_offering_id=(SELECT learning_offering_id FROM learning_groups WHERE id=$1)",
+    )
+    .bind(group)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let prepared = prepare_course_subject(&pool, &actor, &ctx, subject).await;
+    assert!(!prepared.is_empty());
+
+    let outcome = lock_course_subject(&pool, &academic_affairs_actor(&actor), &ctx, subject)
+        .await
+        .unwrap();
+    assert!(outcome.groups.iter().all(|room| room.ready));
+    let lock = outcome
+        .lock
+        .expect("every prepared room must lock together");
+    let expected_students: i64 = sqlx::query_scalar(
+        r#"SELECT count(DISTINCT membership.student_academic_year_id)::bigint
+           FROM learning_group_students membership
+           JOIN learning_groups learning_group ON learning_group.id=membership.learning_group_id
+           JOIN course_offering_details detail
+             ON detail.learning_offering_id=learning_group.learning_offering_id
+           WHERE detail.subject_id=$1
+             AND membership.academic_term_id=$2
+             AND membership.academic_year_id=$3
+             AND membership.membership_status='active'
+             AND learning_group.status<>'closed'"#,
+    )
+    .bind(subject)
+    .bind(ctx.academic_term_id)
+    .bind(ctx.academic_year_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(i64::from(lock.result_count), expected_students);
+    let stored_results: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM academic_course_results WHERE course_result_lock_id=$1",
+    )
+    .bind(lock.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(stored_results, expected_students);
+
+    let (policy_snapshot, source_snapshot): (serde_json::Value, serde_json::Value) =
+        sqlx::query_as(
+            "SELECT policy_snapshot,source_snapshot FROM academic_course_result_locks WHERE id=$1",
+        )
+        .bind(lock.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        policy_snapshot
+            .get("id")
+            .and_then(serde_json::Value::as_str),
+        Some(lock.policy_version_id.to_string().as_str())
+    );
+    assert_eq!(
+        source_snapshot
+            .get("groups")
+            .and_then(serde_json::Value::as_array)
+            .map(Vec::len),
+        Some(prepared.len())
+    );
+}
+
+// Catches correction code overwriting immutable initial course results or Gradebook scores,
+// accepting a stale effective version, or widening correction access to a teacher.
+#[tokio::test]
+async fn results_course_corrections_append_and_preserve_initial_sources() {
+    let (pool, actor, ctx, group) = fixture("results_course_correction").await;
+    let subject: Uuid = sqlx::query_scalar(
+        "SELECT subject_id FROM course_offering_details WHERE learning_offering_id=(SELECT learning_offering_id FROM learning_groups WHERE id=$1)",
+    )
+    .bind(group)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    prepare_course_subject(&pool, &actor, &ctx, subject).await;
+    lock_course_subject(&pool, &academic_affairs_actor(&actor), &ctx, subject)
+        .await
+        .unwrap();
+    let course_result_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM academic_course_results WHERE subject_id=$1 AND academic_term_id=$2 ORDER BY id LIMIT 1",
+    )
+    .bind(subject)
+    .bind(ctx.academic_term_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let initial: (String, Option<String>, String, String, i64) = sqlx::query_as(
+        "SELECT outcome,numeric_grade::text,calculated_score::text,calculated_grade::text,row_version FROM academic_course_results WHERE id=$1",
+    )
+    .bind(course_result_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let score_sources: (i64, Option<String>) = sqlx::query_as(
+        "SELECT count(*)::bigint,sum(score)::text FROM learning_group_student_scores WHERE learning_group_id=(SELECT learning_group_id FROM academic_course_results WHERE id=$1)",
+    )
+    .bind(course_result_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let denied = correct_result(
+        &pool,
+        &actor,
+        &ctx,
+        ResultCorrectionInput::Course {
+            course_result_id,
+            outcome: CourseOfficialOutcome::Numeric,
+            numeric_grade: Some("0.50".into()),
+            expected_effective_version: 1,
+        },
+    )
+    .await;
+    assert!(matches!(denied, Err(AppError::Forbidden(_))));
+
+    let correction_actor = academic_affairs_actor(&actor);
+    let corrected = correct_result(
+        &pool,
+        &correction_actor,
+        &ctx,
+        ResultCorrectionInput::Course {
+            course_result_id,
+            outcome: CourseOfficialOutcome::Numeric,
+            numeric_grade: Some("0.50".into()),
+            expected_effective_version: 1,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(corrected.effective_version, 2);
+    assert_eq!(corrected.corrections.len(), 1);
+    assert_eq!(
+        corrected.effective,
+        EffectiveResultValue::Course {
+            outcome: CourseOfficialOutcome::Numeric,
+            numeric_grade: Some("0.50".into())
+        }
+    );
+    assert!(matches!(
+        corrected.initial,
+        EffectiveResultValue::Course { .. }
+    ));
+
+    let stale = correct_result(
+        &pool,
+        &correction_actor,
+        &ctx,
+        ResultCorrectionInput::Course {
+            course_result_id,
+            outcome: CourseOfficialOutcome::Incomplete,
+            numeric_grade: None,
+            expected_effective_version: 1,
+        },
+    )
+    .await;
+    assert!(matches!(stale, Err(AppError::Conflict(_))));
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM academic_result_corrections WHERE course_result_id=$1",
+        )
+        .bind(course_result_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        1
+    );
+    assert_eq!(
+        sqlx::query_as::<_, (String, Option<String>, String, String, i64)>(
+            "SELECT outcome,numeric_grade::text,calculated_score::text,calculated_grade::text,row_version FROM academic_course_results WHERE id=$1",
+        )
+        .bind(course_result_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        initial
+    );
+    assert_eq!(
+        sqlx::query_as::<_, (i64, Option<String>)>(
+            "SELECT count(*)::bigint,sum(score)::text FROM learning_group_student_scores WHERE learning_group_id=(SELECT learning_group_id FROM academic_course_results WHERE id=$1)",
+        )
+        .bind(course_result_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        score_sources
+    );
+
+    let search = search_effective_results(
+        &pool,
+        &correction_actor,
+        &EffectiveResultSearch {
+            academic_year_id: ctx.academic_year_id,
+            academic_term_id: ctx.academic_term_id,
+            kind: Some(EffectiveResultKind::Course),
+            search: None,
+            limit: Some(20),
+        },
+    )
+    .await
+    .unwrap();
+    let item = search
+        .iter()
+        .find(|item| item.result.result_id == course_result_id)
+        .expect("corrected course result must be searchable");
+    assert_eq!(item.result.effective_version, 2);
+    assert_eq!(item.result.corrections.len(), 1);
+    assert_eq!(item.result.effective, corrected.effective);
+    let wire = serde_json::to_string(item).unwrap();
+    assert!(!wire.to_ascii_lowercase().contains("national"));
+
+    let incomplete = correct_result(
+        &pool,
+        &correction_actor,
+        &ctx,
+        ResultCorrectionInput::Course {
+            course_result_id,
+            outcome: CourseOfficialOutcome::Incomplete,
+            numeric_grade: None,
+            expected_effective_version: 2,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(incomplete.effective_version, 3);
+    let refreshed = search_effective_results(
+        &pool,
+        &correction_actor,
+        &EffectiveResultSearch {
+            academic_year_id: ctx.academic_year_id,
+            academic_term_id: ctx.academic_term_id,
+            kind: Some(EffectiveResultKind::Course),
+            search: None,
+            limit: Some(20),
+        },
+    )
+    .await
+    .unwrap();
+    let refreshed = refreshed
+        .iter()
+        .find(|item| item.result.result_id == course_result_id)
+        .unwrap();
+    assert_eq!(refreshed.result.effective_version, 3);
+    assert_eq!(refreshed.result.corrections.len(), 2);
+    assert_eq!(
+        refreshed.result.effective,
+        EffectiveResultValue::Course {
+            outcome: CourseOfficialOutcome::Incomplete,
+            numeric_grade: None
+        }
+    );
+    assert!(matches!(
+        search_effective_results(
+            &pool,
+            &correction_actor,
+            &EffectiveResultSearch {
+                academic_year_id: ctx.academic_year_id,
+                academic_term_id: ctx.academic_term_id,
+                kind: None,
+                search: None,
+                limit: Some(101),
+            },
+        )
+        .await,
+        Err(AppError::ValidationError(_))
+    ));
 }
 
 // Catches accepting missing/stale phase approval, changing blank storage, and reusing confirmation revisions.
@@ -527,6 +1209,61 @@ async fn results_policy_activation_and_selection_versions() {
     assert!(get_course_workspace(&pool, &actor, &wrong, group)
         .await
         .is_err());
+}
+
+// Catches policy activation bypassing the offering/group lock order used by Assessment,
+// Gradebook, result preparation, and the initial result lock.
+#[tokio::test]
+async fn results_policy_activation_serializes_with_course_source_writers() {
+    let (pool, actor, ctx, group) = fixture("results_policy_activation_serializes").await;
+    let policy = create_policy(
+        &pool,
+        &actor,
+        &ctx,
+        GradingPolicyInput {
+            name: "Serialized criterion".into(),
+            bands: bands(),
+        },
+    )
+    .await
+    .unwrap();
+    let offering: Uuid =
+        sqlx::query_scalar("SELECT learning_offering_id FROM learning_groups WHERE id=$1")
+            .bind(group)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let mut source_writer = pool.begin().await.unwrap();
+    sqlx::query("SELECT id FROM learning_offerings WHERE id=$1 FOR UPDATE")
+        .bind(offering)
+        .execute(&mut *source_writer)
+        .await
+        .unwrap();
+
+    let activation_pool = pool.clone();
+    let activation_actor = actor.clone();
+    let activation_context = ctx;
+    let activation = tokio::spawn(async move {
+        activate_policy(
+            &activation_pool,
+            &activation_actor,
+            &activation_context,
+            policy.id,
+            policy.row_version,
+        )
+        .await
+    });
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    assert!(
+        !activation.is_finished(),
+        "policy activation must wait for an in-flight course source writer"
+    );
+    source_writer.commit().await.unwrap();
+    tokio::time::timeout(Duration::from_secs(5), activation)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
 }
 
 // Catches policy activation rewriting a locked subject's preparation snapshot or
@@ -1299,6 +2036,11 @@ fn results_endpoint_contract_requires_exact_context_and_typed_envelopes() {
         super::handlers::save_activity_outcomes,
         super::handlers::confirm_activity,
         super::handlers::readiness,
+        super::handlers::lock_course_subject,
+        super::handlers::lock_activity_group,
+        super::handlers::lock_all_ready_activities,
+        super::handlers::search_effective_results,
+        super::handlers::correct_result,
     ))]
     struct ResultPaths;
 

@@ -105,6 +105,47 @@ struct CourseConfirmationSnapshot<'a> {
     selections: Vec<SelectionRevision>,
 }
 
+async fn load_scope(
+    tx: &mut Transaction<'_, Postgres>,
+    actor: &ActorContext,
+    group: Uuid,
+    context: &ResultContext,
+) -> Result<CourseScope, AppError> {
+    sqlx::query_as(
+        r#"SELECT g.id AS group_id,g.learning_offering_id AS offering_id,d.subject_id,
+                  d.assessment_total_score::text,o.owning_organization_unit_id,
+                  EXISTS(SELECT 1 FROM learning_group_teachers teacher JOIN users u ON u.id=teacher.teacher_id AND u.status='active'
+                         WHERE teacher.learning_group_id=g.id AND teacher.academic_term_id=g.academic_term_id
+                           AND teacher.academic_year_id=g.academic_year_id AND teacher.teacher_id=$4
+                           AND teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)
+                           AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date))) AS assigned,
+                  (SELECT teacher.teacher_id FROM learning_group_teachers teacher
+                     JOIN users u ON u.id=teacher.teacher_id AND u.status='active'
+                    WHERE teacher.learning_group_id=g.id AND teacher.academic_term_id=g.academic_term_id
+                      AND teacher.academic_year_id=g.academic_year_id AND teacher.role='primary'
+                      AND teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)
+                      AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date))
+                    ORDER BY teacher.id LIMIT 1) AS primary_teacher_id,
+                  lock.id IS NOT NULL AS locked,lock.policy_version_id AS locked_policy_id,
+                  lock.policy_snapshot AS locked_policy_snapshot
+           FROM learning_groups g
+           JOIN learning_offerings o ON o.id=g.learning_offering_id AND o.kind='course'
+           JOIN course_offering_details d ON d.learning_offering_id=o.id
+           JOIN academic_terms t ON t.id=g.academic_term_id
+           LEFT JOIN academic_course_result_locks lock ON lock.subject_id=d.subject_id
+             AND lock.academic_term_id=g.academic_term_id
+             AND lock.academic_year_id=g.academic_year_id
+           WHERE g.id=$1 AND g.academic_term_id=$2 AND g.academic_year_id=$3 AND g.status<>'closed'"#,
+    )
+    .bind(group)
+    .bind(context.academic_term_id)
+    .bind(context.academic_year_id)
+    .bind(actor.user_id)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Course group not found in context".into()))
+}
+
 async fn begin_course<'a>(
     pool: &'a PgPool,
     actor: &ActorContext,
@@ -149,40 +190,7 @@ async fn begin_course<'a>(
         .execute(&mut *tx)
         .await?;
     }
-    let scope: Option<CourseScope> = sqlx::query_as(
-        r#"SELECT g.id AS group_id,g.learning_offering_id AS offering_id,d.subject_id,
-                  d.assessment_total_score::text,o.owning_organization_unit_id,
-                  EXISTS(SELECT 1 FROM learning_group_teachers teacher JOIN users u ON u.id=teacher.teacher_id AND u.status='active'
-                         WHERE teacher.learning_group_id=g.id AND teacher.academic_term_id=g.academic_term_id
-                           AND teacher.academic_year_id=g.academic_year_id AND teacher.teacher_id=$4
-                           AND teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)
-                           AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date))) AS assigned,
-                  (SELECT teacher.teacher_id FROM learning_group_teachers teacher
-                     JOIN users u ON u.id=teacher.teacher_id AND u.status='active'
-                    WHERE teacher.learning_group_id=g.id AND teacher.academic_term_id=g.academic_term_id
-                      AND teacher.academic_year_id=g.academic_year_id AND teacher.role='primary'
-                      AND teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)
-                      AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date))
-                    ORDER BY teacher.id LIMIT 1) AS primary_teacher_id,
-                  lock.id IS NOT NULL AS locked,lock.policy_version_id AS locked_policy_id,
-                  lock.policy_snapshot AS locked_policy_snapshot
-           FROM learning_groups g
-           JOIN learning_offerings o ON o.id=g.learning_offering_id AND o.kind='course'
-           JOIN course_offering_details d ON d.learning_offering_id=o.id
-           JOIN academic_terms t ON t.id=g.academic_term_id
-           LEFT JOIN academic_course_result_locks lock ON lock.subject_id=d.subject_id
-             AND lock.academic_term_id=g.academic_term_id
-             AND lock.academic_year_id=g.academic_year_id
-           WHERE g.id=$1 AND g.academic_term_id=$2 AND g.academic_year_id=$3 AND g.status<>'closed'"#,
-    )
-    .bind(group)
-    .bind(context.academic_term_id)
-    .bind(context.academic_year_id)
-    .bind(actor.user_id)
-    .fetch_optional(&mut *tx)
-    .await?;
-    let scope =
-        scope.ok_or_else(|| AppError::NotFound("Course group not found in context".into()))?;
+    let scope = load_scope(&mut tx, actor, group, context).await?;
     if !access_policy::can_read_group(&access, scope.owning_organization_unit_id, scope.assigned) {
         return Err(AppError::Forbidden("Course result access denied".into()));
     }
@@ -195,11 +203,13 @@ async fn begin_course<'a>(
                 "Current group primary teacher is required for course result preparation".into(),
             ));
         }
-        if scope.locked {
-            return Err(AppError::Conflict(
-                "Course results are locked and preparation is read-only".into(),
-            ));
-        }
+        require_course_offering_unlocked(
+            &mut tx,
+            scope.offering_id,
+            context.academic_term_id,
+            context.academic_year_id,
+        )
+        .await?;
         sqlx::query("SELECT id FROM learning_group_result_overrides WHERE learning_group_id=$1 ORDER BY id FOR UPDATE")
             .bind(group)
             .execute(&mut *tx)
@@ -548,6 +558,17 @@ async fn load_workspace(
         },
         phase_revisions,
     ))
+}
+
+pub(super) async fn workspace_for_lock(
+    tx: &mut Transaction<'_, Postgres>,
+    actor: &ActorContext,
+    context: &ResultContext,
+    group: Uuid,
+) -> Result<CoursePreparationWorkspace, AppError> {
+    let scope = load_scope(tx, actor, group, context).await?;
+    let (workspace, _) = load_workspace(tx, actor, &scope).await?;
+    Ok(workspace)
 }
 
 async fn invalidate_confirmation(

@@ -347,6 +347,13 @@ pub async fn save_plan(
     validate_plan_payload(&payload)?;
     let mut transaction = pool.begin().await?;
     let scope = resolve_offering_scope_in_tx(&mut transaction, offering_id, true).await?;
+    crate::modules::academic::results::services::require_course_offering_unlocked(
+        &mut transaction,
+        scope.offering_id,
+        scope.academic_term_id,
+        scope.academic_year_id,
+    )
+    .await?;
     let candidate_ids = load_candidate_ids_in_tx(&mut transaction, offering_id).await?;
     if payload
         .assessment_coordinator_id

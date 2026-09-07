@@ -247,11 +247,21 @@ async fn load_effective_values(
     ctx: &EvaluationContext,
     student: Uuid,
 ) -> Result<Vec<LockedCriterionValue>, AppError> {
-    // Immutable initial responses are the effective source until Task 7 adds corrections.
     // Criterion labels/catalog identities come from the lock snapshot, not today's catalog.
-    Ok(sqlx::query_as(r#"SELECT r.id,r.subject_id,r.domain,r.subject_term_criterion_id,c."schoolCriterionId" AS school_criterion_id,c.name,r.quality_level,r.row_version
+    // The immutable initial row remains the fallback; only the latest append-only correction
+    // participates in the effective term summary.
+    Ok(sqlx::query_as(r#"SELECT r.id,r.subject_id,r.domain,r.subject_term_criterion_id,c."schoolCriterionId" AS school_criterion_id,c.name,
+               COALESCE(correction.new_quality_level,r.quality_level) AS quality_level,
+               COALESCE(correction.expected_effective_version+1,r.row_version) AS row_version
         FROM subject_term_student_evaluations r JOIN subject_term_evaluation_locks l ON l.id=r.evaluation_lock_id
         CROSS JOIN LATERAL jsonb_to_recordset(l.source_snapshot->'criteria') AS c(id uuid,"schoolCriterionId" uuid,name text)
+        LEFT JOIN LATERAL (
+            SELECT item.new_quality_level,item.expected_effective_version
+            FROM academic_result_corrections item
+            WHERE item.subject_student_evaluation_id=r.id
+            ORDER BY item.expected_effective_version DESC,item.id DESC
+            LIMIT 1
+        ) correction ON true
         WHERE c.id=r.subject_term_criterion_id AND r.student_academic_year_id=$1 AND r.academic_term_id=$2 AND r.academic_year_id=$3
         ORDER BY r.domain,r.subject_id,r.subject_term_criterion_id"#).bind(student).bind(ctx.academic_term_id).bind(ctx.academic_year_id).fetch_all(&mut **tx).await?)
 }

@@ -7,12 +7,17 @@ use sqlx::{Postgres, Transaction};
 mod activities;
 mod corrections;
 mod course_preparation;
+mod effective_results;
 mod locking;
 mod policies;
 mod readiness;
 
 pub use activities::{confirm_activity, get_activity_workspace, save_activity_outcomes};
+pub use corrections::correct_result;
 pub use course_preparation::{confirm_group_results, get_course_workspace, save_selection};
+pub use effective_results::search_effective_results;
+pub use locking::{lock_activity_group, lock_all_ready_activities, lock_course_subject};
+pub(crate) use locking::{require_activity_group_unlocked, require_course_offering_unlocked};
 pub use policies::{activate_policy, create_policy, derive_grade, list_policies, validate_policy};
 pub use readiness::readiness;
 
