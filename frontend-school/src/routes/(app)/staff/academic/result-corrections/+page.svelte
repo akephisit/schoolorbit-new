@@ -11,6 +11,7 @@
 		type EffectiveResultSearchItem
 	} from '$lib/api/academicResults';
 	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
+	import AcademicPrerequisiteNotice from '$lib/components/academic-workflow/AcademicPrerequisiteNotice.svelte';
 	import ResultCorrectionDialog from '$lib/components/academic/results/ResultCorrectionDialog.svelte';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
@@ -207,10 +208,15 @@
 					onaction={() => void searchResults()}
 				/>
 			{:else if results.length === 0}
-				<PageState
-					variant="empty"
-					title="ยังไม่พบผลที่ล็อกแล้ว"
-					description="ตรวจภาคเรียน ตัวกรอง หรือกลับไปล็อกผลเริ่มต้นก่อน"
+				<AcademicPrerequisiteNotice
+					prerequisite={{
+						key: 'result-correction-search',
+						status: 'missing',
+						title: 'ยังไม่พบผลที่ล็อกแล้ว',
+						description: 'ตรวจภาคเรียนและตัวกรอง หรือสร้างผลเริ่มต้นด้วยการล็อกผลก่อน',
+						actionLabel: 'ไปล็อกผลการเรียน',
+						href: '/staff/academic/result-locks'
+					}}
 				/>
 			{:else}
 				<div class="overflow-hidden rounded-xl border bg-card">

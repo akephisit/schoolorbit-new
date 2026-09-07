@@ -56,6 +56,7 @@
 		type LearnerEvaluationWorkspace
 	} from '$lib/api/academicLearnerEvaluations';
 	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
+	import AcademicPrerequisiteNotice from '$lib/components/academic-workflow/AcademicPrerequisiteNotice.svelte';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import GradebookEntryControls from '$lib/components/academic/gradebook/GradebookEntryControls.svelte';
@@ -1164,22 +1165,29 @@
 			{/if}
 
 			{#if activeSubjects.length === 0}
-				<PageState
-					variant="empty"
-					title={activeTab === 'scores'
-						? 'ยังไม่มีรายวิชาสำหรับกรอกคะแนน'
-						: 'ยังไม่มีรายวิชาสำหรับประเมินผู้เรียน'}
-					description="ตรวจรายการเปิดสอน กลุ่มเรียน ครู และโครงสร้างคะแนนของภาคเรียนนี้ก่อน"
-					actionLabel="ไปจัดรายการเปิดสอน"
-					href="/staff/academic/delivery"
+				<AcademicPrerequisiteNotice
+					prerequisite={{
+						key: 'gradebook-subjects',
+						status: 'missing',
+						title:
+							activeTab === 'scores'
+								? 'ยังไม่มีรายวิชาสำหรับกรอกคะแนน'
+								: 'ยังไม่มีรายวิชาสำหรับประเมินผู้เรียน',
+						description: 'ตรวจรายการเปิดสอน กลุ่มเรียน ครู และโครงสร้างคะแนนของภาคเรียนนี้ก่อน',
+						actionLabel: 'ไปจัดรายการเปิดสอน',
+						href: '/staff/academic/delivery'
+					}}
 				/>
 			{:else if activeTab === 'scores' && !selectedPhaseAvailable}
-				<PageState
-					variant="empty"
-					title={`ยังไม่มีโครงสร้างคะแนน${phaseLabels[activePhase]}`}
-					description="กำหนดคะแนนเต็มและรูปแบบการประเมินของช่วงนี้ก่อนสร้างรายการคะแนนย่อย"
-					actionLabel="ไปหน้าโครงสร้างคะแนน"
-					href="/staff/academic/assessments"
+				<AcademicPrerequisiteNotice
+					prerequisite={{
+						key: `gradebook-phase-${activePhase}`,
+						status: 'missing',
+						title: `ยังไม่มีโครงสร้างคะแนน${phaseLabels[activePhase]}`,
+						description: 'กำหนดคะแนนเต็มและรูปแบบการประเมินของช่วงนี้ก่อนสร้างรายการคะแนนย่อย',
+						actionLabel: 'ไปหน้าโครงสร้างคะแนน',
+						href: '/staff/academic/assessments'
+					}}
 				/>
 			{:else if workspaceLoading}
 				<PageSkeleton variant="table" rows={10} columns={7} />

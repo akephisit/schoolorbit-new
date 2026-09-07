@@ -473,7 +473,12 @@ mod tests {
                  'academic_delivery', 20),
                 ('integration-custom-link', 'ระบบภายนอก', '/integration', NULL, $1,
                  NULL, 'staff', 79, true, 'integration', 'academic',
-                 'academic_delivery', 30)
+                 'academic_delivery', 30),
+                ('staff-academic-results', 'ชื่อสรุปผลของโรงเรียน',
+                 '/staff/academic/results', 'school-results-icon', $1,
+                 'academic_result.read.assigned|academic_result.read.organization_unit|academic_result.read.school|academic_result.manage.assigned|academic_result.manage.school|academic_learner_evaluation.read.assigned|academic_learner_evaluation.read.organization_unit|academic_learner_evaluation.read.school|academic_learner_evaluation.manage.assigned|academic_learner_evaluation.manage.school',
+                 'staff', 76, false, 'frontend', 'academic',
+                 'academic_assessment', 30)
              RETURNING id",
         )
         .bind(custom_group_id)
@@ -494,16 +499,27 @@ mod tests {
             .await
             .expect("preview should load");
         assert!(preview.recommendations_ready);
-        assert_eq!(preview.moves.len(), 1);
-        assert_eq!(preview.moves[0].menu_item_name, "ชื่อเมนูของโรงเรียน");
-        assert_eq!(preview.moves[0].target_group_code, "academic_delivery");
-        assert_eq!(preview.moves[0].target_order, 10);
+        assert_eq!(preview.moves.len(), 2);
+        let core_move = preview
+            .moves
+            .iter()
+            .find(|menu_move| menu_move.menu_item_name == "ชื่อเมนูของโรงเรียน")
+            .expect("academic core move should be recommended");
+        assert_eq!(core_move.target_group_code, "academic_delivery");
+        assert_eq!(core_move.target_order, 10);
+        let results_move = preview
+            .moves
+            .iter()
+            .find(|menu_move| menu_move.menu_item_name == "ชื่อสรุปผลของโรงเรียน")
+            .expect("academic results move should be recommended");
+        assert_eq!(results_move.target_group_code, "academic_assessment");
+        assert_eq!(results_move.target_order, 30);
         assert_eq!(preview.untouched_custom_item_count, 2);
 
         let applied = apply_academic_template(&pool, &preview.revision)
             .await
             .expect("template should apply");
-        assert_eq!(applied.moved_count, 1);
+        assert_eq!(applied.moved_count, 2);
 
         let route: (
             Uuid,
@@ -531,6 +547,39 @@ mod tests {
         assert_eq!(route.5, "/staff/academic/core");
         assert_eq!(route.6.as_deref(), Some("academic_term.read.school"));
         assert_eq!(route.7, "staff");
+
+        let results_route: (
+            String,
+            i32,
+            String,
+            Option<String>,
+            bool,
+            String,
+            Option<String>,
+            String,
+        ) = sqlx::query_as(
+            "SELECT menu_group.code, item.display_order, item.name, item.icon,
+                    item.is_active, item.path, item.required_permission, item.user_type
+             FROM menu_items AS item
+             INNER JOIN menu_groups AS menu_group ON menu_group.id = item.group_id
+             WHERE item.code = 'staff-academic-results'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("result route should load");
+        assert_eq!(results_route.0, "academic_assessment");
+        assert_eq!(results_route.1, 30);
+        assert_eq!(results_route.2, "ชื่อสรุปผลของโรงเรียน");
+        assert_eq!(results_route.3.as_deref(), Some("school-results-icon"));
+        assert!(!results_route.4);
+        assert_eq!(results_route.5, "/staff/academic/results");
+        assert_eq!(
+            results_route.6.as_deref(),
+            Some(
+                "academic_result.read.assigned|academic_result.read.organization_unit|academic_result.read.school|academic_result.manage.assigned|academic_result.manage.school|academic_learner_evaluation.read.assigned|academic_learner_evaluation.read.organization_unit|academic_learner_evaluation.read.school|academic_learner_evaluation.manage.assigned|academic_learner_evaluation.manage.school"
+            )
+        );
+        assert_eq!(results_route.7, "staff");
 
         for item_id in [school_item_id, integration_item_id] {
             let group_id: Uuid =
@@ -585,7 +634,7 @@ mod tests {
         let first = apply_academic_template(&pool, &preview.revision)
             .await
             .expect("first apply should succeed");
-        assert_eq!(first.moved_count, 1);
+        assert_eq!(first.moved_count, 2);
 
         let second_preview = preview_academic_template(&pool)
             .await

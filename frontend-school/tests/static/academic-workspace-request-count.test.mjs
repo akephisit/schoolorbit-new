@@ -77,3 +77,42 @@ test('academic route consumers contain no retired study-program traversal helper
 		assert.doesNotMatch(await readPage(route), /listStudyProgramOptionsForYear/, route);
 	}
 });
+
+test('gradebook loads subject collections and only the selected group workspace', async () => {
+	const page = await readPage('gradebook');
+	assertCancellable(page, 'gradebook');
+	assert.match(page, /listGradebookSubjects/);
+	assert.match(page, /listLearnerEvaluationSubjects/);
+	assert.match(page, /getGradebookGroupPhaseWorkspace\(\s*selectedGroupId/);
+	assert.match(page, /getLearnerEvaluationWorkspace\(selectedGroupId/);
+	assert.doesNotMatch(
+		page,
+		/Promise\.all\(\s*\w+\.map\([\s\S]{0,800}(?:getGradebookGroupPhaseWorkspace|getLearnerEvaluationWorkspace)/
+	);
+});
+
+test('result preparation loads bounded readiness and only the selected detail or learner', async () => {
+	const page = await readPage('results');
+	assertCancellable(page, 'results');
+	assert.match(page, /getAcademicResultReadiness/);
+	assert.match(page, /listLearnerEvaluationSubjects/);
+	assert.match(page, /getCourseResultPreparation\(selectedGroupId/);
+	assert.match(page, /getActivityResultPreparation\(selectedGroupId/);
+	assert.match(page, /getStudentLearnerEvaluationSummary\(studentId/);
+	assert.doesNotMatch(
+		page,
+		/Promise\.all\(\s*(?:courseGroups|activityGroups|learnerStudents)\.map\([\s\S]{0,800}(?:getCourseResultPreparation|getActivityResultPreparation|getStudentLearnerEvaluationSummary)/
+	);
+});
+
+test('result lock and correction pages use one queue or search request', async () => {
+	const locks = await readPage('result-locks');
+	const corrections = await readPage('result-corrections');
+	assertCancellable(locks, 'result locks');
+	assertCancellable(corrections, 'result corrections');
+	assert.match(locks, /getAcademicResultReadiness/);
+	assert.match(locks, /listLearnerEvaluationSubjects/);
+	assert.match(corrections, /searchEffectiveAcademicResults/);
+	assert.doesNotMatch(locks, /Promise\.all\(\s*\w+\.map\(/);
+	assert.doesNotMatch(corrections, /Promise\.all\(\s*\w+\.map\(/);
+});

@@ -1953,6 +1953,16 @@ test('frontend API contract avoids unknown endpoint generics and blind envelope 
 	assert.deepEqual(violations, []);
 });
 
+test('gradebook and result pages consume typed feature wrappers instead of the raw api client', async () => {
+	for (const route of ['gradebook', 'results', 'result-locks', 'result-corrections']) {
+		const source = await readFile(
+			path.join(repoRoot, `frontend-school/src/routes/(app)/staff/academic/${route}/+page.svelte`),
+			'utf8'
+		);
+		assert.doesNotMatch(source, /\$lib\/api\/client|\bapiClient\./, route);
+	}
+});
+
 test('frontend apiClient validates the backend envelope before returning typed responses', async () => {
 	const source = await readFile(
 		path.join(repoRoot, 'frontend-school/src/lib/api/client.ts'),

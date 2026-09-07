@@ -211,6 +211,13 @@ test('application route metadata uses only supported academic context requiremen
 	assert.doesNotThrow(() => createAcademicContextRouteResolver(routeModules));
 });
 
+test('gradebook and result workflows require an exact academic term context', async () => {
+	for (const route of ['gradebook', 'results', 'result-locks', 'result-corrections']) {
+		const source = await readProjectFile(`src/routes/(app)/staff/academic/${route}/+page.ts`);
+		assert.match(source, /academicContext:\s*'term_required'/, route);
+	}
+});
+
 test('Vite discovers the staff route metadata consumed by the topbar', async (t) => {
 	const server = await createViteServer({
 		root: projectRoot,

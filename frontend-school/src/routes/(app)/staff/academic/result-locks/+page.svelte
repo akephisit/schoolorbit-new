@@ -17,6 +17,7 @@
 		type LearnerEvaluationSubject
 	} from '$lib/api/academicLearnerEvaluations';
 	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
+	import AcademicPrerequisiteNotice from '$lib/components/academic-workflow/AcademicPrerequisiteNotice.svelte';
 	import ResultLockQueue, {
 		type LearnerEvaluationLockRow
 	} from '$lib/components/academic/results/ResultLockQueue.svelte';
@@ -234,6 +235,17 @@
 			description={errorMessage}
 			actionLabel="ลองอีกครั้ง"
 			onaction={() => void loadQueue()}
+		/>
+	{:else if readiness.courses.length === 0 && readiness.activities.length === 0 && learnerRows.length === 0}
+		<AcademicPrerequisiteNotice
+			prerequisite={{
+				key: 'result-lock-queue',
+				status: 'missing',
+				title: 'ยังไม่มีผลที่พร้อมเข้าคิวล็อก',
+				description: 'เตรียมและยืนยันผลรายวิชา กิจกรรม หรือผลประเมินผู้เรียนให้ครบก่อน',
+				actionLabel: 'ไปเตรียมผลการเรียน',
+				href: '/staff/academic/results'
+			}}
 		/>
 	{:else}
 		<ResultLockQueue

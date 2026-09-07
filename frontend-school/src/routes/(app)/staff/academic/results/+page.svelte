@@ -34,6 +34,7 @@
 		type StudentLearnerEvaluationSummary
 	} from '$lib/api/academicLearnerEvaluations';
 	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
+	import AcademicPrerequisiteNotice from '$lib/components/academic-workflow/AcademicPrerequisiteNotice.svelte';
 	import ActivityEvaluationTable from '$lib/components/academic/results/ActivityEvaluationTable.svelte';
 	import LearnerEvaluationSummary from '$lib/components/academic/results/LearnerEvaluationSummary.svelte';
 	import ResultPreparationTable from '$lib/components/academic/results/ResultPreparationTable.svelte';
@@ -559,10 +560,16 @@
 					onaction={() => void loadSelectedWorkspace()}
 				/>
 			{:else if !selectedGroupId}
-				<PageState
-					variant="empty"
-					title="ยังไม่มีกลุ่มสำหรับเตรียมผล"
-					description="ตรวจรายการเปิดสอน ครูผู้รับผิดชอบ และรายชื่อนักเรียนก่อน"
+				<AcademicPrerequisiteNotice
+					prerequisite={{
+						key: 'result-preparation-groups',
+						status: 'missing',
+						title: 'ยังไม่มีกลุ่มสำหรับเตรียมผล',
+						description:
+							'ตรวจการกรอกและยืนยันคะแนนหรือผลประเมินรายห้องในสมุดบันทึกก่อนเตรียมผลการเรียน',
+						actionLabel: 'ไปกรอกและยืนยันข้อมูล',
+						href: '/staff/academic/gradebook'
+					}}
 				/>
 			{:else if activeSection === 'course' && courseWorkspace}
 				<ResultPreparationTable

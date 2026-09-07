@@ -221,6 +221,73 @@ test('certificate issue queue menu requires the school issue permission only', a
 	);
 });
 
+test('academic result workflows register beneath measurement and evaluation with exact gates', async (t) => {
+	const routePaths = [
+		'src/routes/(app)/staff/academic/gradebook/+page.ts',
+		'src/routes/(app)/staff/academic/results/+page.ts',
+		'src/routes/(app)/staff/academic/result-locks/+page.ts',
+		'src/routes/(app)/staff/academic/result-corrections/+page.ts'
+	];
+	const files = Object.fromEntries(
+		await Promise.all(
+			routePaths.map(async (routePath) => [
+				routePath,
+				await readFile(path.join(projectRoot, routePath), 'utf8')
+			])
+		)
+	);
+	const result = await runSyncWithServer(t, files);
+
+	assert.equal(result.code, 0, result.stderr || result.stdout);
+	const registeredRoutes = [...result.receivedRequest.body.routes].sort(
+		(left, right) => left.order - right.order
+	);
+	assert.deepEqual(registeredRoutes, [
+		{
+			path: '/staff/academic/gradebook',
+			title: 'กรอกคะแนนและประเมินผู้เรียน',
+			icon: 'BookOpenCheck',
+			group: 'academic_assessment',
+			workspace: 'academic',
+			order: 20,
+			permission:
+				'academic_gradebook.read.assigned|academic_gradebook.read.organization_unit|academic_gradebook.read.school|academic_gradebook.manage.assigned|academic_gradebook.manage.school|academic_learner_evaluation.read.assigned|academic_learner_evaluation.read.organization_unit|academic_learner_evaluation.read.school|academic_learner_evaluation.manage.assigned|academic_learner_evaluation.manage.school',
+			user_type: 'staff'
+		},
+		{
+			path: '/staff/academic/results',
+			title: 'สรุปผลการเรียน',
+			icon: 'ListChecks',
+			group: 'academic_assessment',
+			workspace: 'academic',
+			order: 30,
+			permission:
+				'academic_result.read.assigned|academic_result.read.organization_unit|academic_result.read.school|academic_result.manage.assigned|academic_result.manage.school|academic_learner_evaluation.read.assigned|academic_learner_evaluation.read.organization_unit|academic_learner_evaluation.read.school|academic_learner_evaluation.manage.assigned|academic_learner_evaluation.manage.school',
+			user_type: 'staff'
+		},
+		{
+			path: '/staff/academic/result-locks',
+			title: 'ล็อกผลการเรียน',
+			icon: 'LockKeyhole',
+			group: 'academic_assessment',
+			workspace: 'academic',
+			order: 40,
+			permission: 'academic_result.lock.school|academic_learner_evaluation.lock.school',
+			user_type: 'staff'
+		},
+		{
+			path: '/staff/academic/result-corrections',
+			title: 'แก้ผลการเรียน',
+			icon: 'History',
+			group: 'academic_assessment',
+			workspace: 'academic',
+			order: 50,
+			permission: 'academic_result.correct.school|academic_learner_evaluation.correct.school',
+			user_type: 'staff'
+		}
+	]);
+});
+
 test('menu synchronization fails when route metadata cannot be parsed', async (t) => {
 	const result = await runSyncWithServer(t, {
 		'src/routes/(app)/staff/invalid/+page.ts': validRoute.replace(

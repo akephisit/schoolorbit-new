@@ -67,13 +67,27 @@ test('dependent academic pages provide local next actions without a global readi
 	const supervisionPage = await readProjectFile(
 		'src/routes/(app)/staff/academic/supervision/+page.svelte'
 	);
+	const gradebookPage = await readProjectFile(
+		'src/routes/(app)/staff/academic/gradebook/+page.svelte'
+	);
+	const resultsPage = await readProjectFile('src/routes/(app)/staff/academic/results/+page.svelte');
+	const resultLocksPage = await readProjectFile(
+		'src/routes/(app)/staff/academic/result-locks/+page.svelte'
+	);
+	const resultCorrectionsPage = await readProjectFile(
+		'src/routes/(app)/staff/academic/result-corrections/+page.svelte'
+	);
 	const allPages = [
 		activityPage,
 		assessmentPage,
 		timetablePage,
 		examListPage,
 		examDetailPage,
-		supervisionPage
+		supervisionPage,
+		gradebookPage,
+		resultsPage,
+		resultLocksPage,
+		resultCorrectionsPage
 	].join('\n');
 
 	assert.match(activityPage, /\/staff\/academic\/delivery\?kind=activity/);
@@ -86,6 +100,15 @@ test('dependent academic pages provide local next actions without a global readi
 	assert.match(examDetailPage, /\/staff\/academic\/assessments/);
 	assert.doesNotMatch(examDetailPage, /deliveryTargets|แก้ข้อมูลต้นทาง:/);
 	assert.match(supervisionPage, /AcademicPrerequisiteNotice/);
+	assert.match(gradebookPage, /AcademicPrerequisiteNotice/);
+	assert.match(gradebookPage, /\/staff\/academic\/delivery/);
+	assert.match(gradebookPage, /\/staff\/academic\/assessments/);
+	assert.match(resultsPage, /AcademicPrerequisiteNotice/);
+	assert.match(resultsPage, /\/staff\/academic\/gradebook/);
+	assert.match(resultLocksPage, /AcademicPrerequisiteNotice/);
+	assert.match(resultLocksPage, /\/staff\/academic\/results/);
+	assert.match(resultCorrectionsPage, /AcademicPrerequisiteNotice/);
+	assert.match(resultCorrectionsPage, /\/staff\/academic\/result-locks/);
 	assert.doesNotMatch(allPages, /readinessScore|completionPercent|ศูนย์เตรียมงานวิชาการ/);
 	assert.doesNotMatch(
 		allPages,
