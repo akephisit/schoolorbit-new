@@ -866,6 +866,24 @@ async fn learner_all_room_lock_is_atomic_and_domains_are_independent() {
         .unwrap();
     assert!(denied.lock.is_none());
     assert!(denied.blockers.iter().any(|b| b.learning_group_id == other));
+    let pending = read_lock_readiness(&pool, &actor, &ctx).await.unwrap();
+    let pending_domain = pending
+        .iter()
+        .find(|row| row.subject_id == subject && row.domain == DC)
+        .unwrap();
+    assert!(!pending_domain.ready);
+    let pending_group = pending_domain
+        .groups
+        .iter()
+        .find(|readiness| readiness.learning_group_id == other)
+        .unwrap();
+    let mutation_blockers = denied
+        .blockers
+        .iter()
+        .filter(|blocker| blocker.learning_group_id == other)
+        .map(|blocker| blocker.reason.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(pending_group.blockers, mutation_blockers);
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM subject_term_evaluation_locks")
             .fetch_one(&pool)
@@ -894,6 +912,13 @@ async fn learner_all_room_lock_is_atomic_and_domains_are_independent() {
             .await
             .unwrap();
     }
+    let ready = read_lock_readiness(&pool, &actor, &ctx).await.unwrap();
+    let ready_domain = ready
+        .iter()
+        .find(|row| row.subject_id == subject && row.domain == DC)
+        .unwrap();
+    assert!(ready_domain.ready);
+    assert!(!ready_domain.locked);
     let outcome = lock_subject(&pool, &actor, subject, DC, &ctx)
         .await
         .unwrap();
@@ -903,6 +928,13 @@ async fn learner_all_room_lock_is_atomic_and_domains_are_independent() {
         outcome.blockers
     );
     let locked = outcome.lock.unwrap();
+    let locked_readiness = read_lock_readiness(&pool, &actor, &ctx).await.unwrap();
+    let locked_domain = locked_readiness
+        .iter()
+        .find(|row| row.subject_id == subject && row.domain == DC)
+        .unwrap();
+    assert!(locked_domain.ready);
+    assert!(locked_domain.locked);
     let locked_ws = get_workspace(&pool, &actor, group, DC, &ctx).await.unwrap();
     let cell = &locked_ws.responses[0];
     assert!(matches!(

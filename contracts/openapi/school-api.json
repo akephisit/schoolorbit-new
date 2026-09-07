@@ -15898,6 +15898,63 @@
         ],
         "type": "object"
       },
+      "ApiResponse_Vec_LearnerEvaluationSubjectLockReadiness": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "domain": {
+                  "$ref": "#/components/schemas/LearnerEvaluationDomain"
+                },
+                "groups": {
+                  "items": {
+                    "$ref": "#/components/schemas/LearnerEvaluationGroupLockReadiness"
+                  },
+                  "type": "array"
+                },
+                "locked": {
+                  "type": "boolean"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "ready": {
+                  "type": "boolean"
+                },
+                "subjectId": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "subjectId",
+                "code",
+                "name",
+                "domain",
+                "locked",
+                "ready",
+                "groups"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Vec_LearningGroup": {
         "properties": {
           "data": {
@@ -30907,9 +30964,75 @@
         ],
         "type": "string"
       },
+      "LearnerEvaluationGroupLockReadiness": {
+        "properties": {
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "groupName": {
+            "type": "string"
+          },
+          "learningGroupId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "ready": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "learningGroupId",
+          "groupName",
+          "ready",
+          "blockers"
+        ],
+        "type": "object"
+      },
       "LearnerEvaluationLevel": {
         "format": "int32",
         "type": "integer"
+      },
+      "LearnerEvaluationSubjectLockReadiness": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "domain": {
+            "$ref": "#/components/schemas/LearnerEvaluationDomain"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/LearnerEvaluationGroupLockReadiness"
+            },
+            "type": "array"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "subjectId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "subjectId",
+          "code",
+          "name",
+          "domain",
+          "locked",
+          "ready",
+          "groups"
+        ],
+        "type": "object"
       },
       "LearningDeliveryOverview": {
         "properties": {
@@ -50715,6 +50838,66 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponse_EvaluationWorkspace"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/learner-evaluations/lock-readiness": {
+      "get": {
+        "operationId": "getLearnerEvaluationLockReadiness",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_LearnerEvaluationSubjectLockReadiness"
                 }
               }
             },

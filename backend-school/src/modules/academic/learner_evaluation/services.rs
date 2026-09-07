@@ -17,7 +17,7 @@ pub use catalog::*;
 pub use configuration::{get_configuration, remove_criterion, save_criterion};
 pub use confirmation::confirm_group;
 pub use entry::{get_workspace, save_responses};
-pub use locking::lock_subject;
+pub use locking::{lock_subject, read_lock_readiness};
 pub use policies::{activate_policy, create_policy, list_policies};
 #[cfg(test)]
 pub use summary::summarize_domains;

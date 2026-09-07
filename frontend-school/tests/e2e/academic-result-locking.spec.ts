@@ -102,16 +102,39 @@ async function mockLockQueue(page: Page) {
 				});
 				return;
 			}
-			if (url.pathname === '/api/academic/learner-evaluations/subjects') {
+			if (url.pathname === '/api/academic/learner-evaluations/lock-readiness') {
 				await fulfill(route, [
 					{
 						subjectId: ids.subject,
-						learningGroupId: ids.group,
-						learningOfferingId: ids.offering,
 						code: 'ค21101',
 						name: 'คณิตศาสตร์พื้นฐาน',
-						groupName: 'ม.1/1',
-						assigned: false
+						domain: 'desirable_characteristic',
+						locked: false,
+						ready: true,
+						groups: [
+							{
+								learningGroupId: ids.group,
+								groupName: 'ม.1/1',
+								ready: true,
+								blockers: []
+							}
+						]
+					},
+					{
+						subjectId: ids.subject,
+						code: 'ค21101',
+						name: 'คณิตศาสตร์พื้นฐาน',
+						domain: 'reading_thinking_writing',
+						locked: false,
+						ready: true,
+						groups: [
+							{
+								learningGroupId: ids.group,
+								groupName: 'ม.1/1',
+								ready: true,
+								blockers: []
+							}
+						]
 					}
 				]);
 				return;

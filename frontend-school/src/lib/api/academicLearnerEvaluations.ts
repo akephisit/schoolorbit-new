@@ -10,6 +10,9 @@ type Schemas = components['schemas'];
 type EvaluationQuery = NonNullable<
 	operations['listLearnerEvaluationSubjects']['parameters']['query']
 >;
+type LockReadinessQuery = NonNullable<
+	operations['getLearnerEvaluationLockReadiness']['parameters']['query']
+>;
 type PolicyPath = NonNullable<operations['activateLearnerEvaluationPolicy']['parameters']['path']>;
 type CatalogPath = NonNullable<operations['updateLearnerEvaluationCatalog']['parameters']['path']>;
 type DomainPath = NonNullable<
@@ -44,6 +47,8 @@ export type LearnerEvaluationResponseBatchInput = Schemas['ResponseBatchInput'];
 export type LearnerEvaluationConfirmationInput = Schemas['ConfirmationInput'];
 export type LearnerEvaluationConfirmationOutcome = Schemas['ConfirmationOutcome'];
 export type LearnerEvaluationLockOutcome = Schemas['LockOutcome'];
+export type LearnerEvaluationSubjectLockReadiness =
+	Schemas['LearnerEvaluationSubjectLockReadiness'];
 export type StudentLearnerEvaluationSummary = Schemas['StudentEvaluationSummary'];
 
 function evaluationData<T>(request: Promise<ApiResponse<T>>, fallback: string): Promise<T> {
@@ -110,6 +115,20 @@ export function activateLearnerEvaluationPolicy(
 			{ query: query(context) }
 		),
 		'ไม่สามารถเปิดใช้เกณฑ์สรุปผลการประเมินได้'
+	);
+}
+
+export function getLearnerEvaluationLockReadiness(
+	context: LearnerEvaluationContext,
+	options: ApiRequestOptions = {}
+): Promise<LearnerEvaluationSubjectLockReadiness[]> {
+	const contextQuery = query(context) satisfies LockReadinessQuery;
+	return evaluationData(
+		apiClient.get<LearnerEvaluationSubjectLockReadiness[]>(
+			'/api/academic/learner-evaluations/lock-readiness',
+			{ ...options, query: contextQuery }
+		),
+		'ไม่สามารถโหลดความพร้อมสำหรับล็อกผลประเมินผู้เรียนได้'
 	);
 }
 

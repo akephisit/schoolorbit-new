@@ -4,21 +4,13 @@
 	import type { AcademicResultReadiness } from '$lib/api/academicResults';
 	import type {
 		LearnerEvaluationDomain,
-		LearnerEvaluationLockOutcome
+		LearnerEvaluationSubjectLockReadiness
 	} from '$lib/api/academicLearnerEvaluations';
 	import { LoadingButton } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Card from '$lib/components/ui/card';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { CheckCircle2, CircleAlert, LockKeyhole, ShieldCheck } from 'lucide-svelte';
-
-	export interface LearnerEvaluationLockRow {
-		subjectId: string;
-		code: string;
-		name: string;
-		domain: LearnerEvaluationDomain;
-		outcome?: LearnerEvaluationLockOutcome;
-	}
 
 	let {
 		readiness,
@@ -32,7 +24,7 @@
 		onlockevaluation
 	}: {
 		readiness: AcademicResultReadiness;
-		learnerRows: LearnerEvaluationLockRow[];
+		learnerRows: LearnerEvaluationSubjectLockReadiness[];
 		busyKey?: string;
 		canLockCourseResults: boolean;
 		canLockLearnerEvaluations: boolean;
@@ -128,24 +120,34 @@
 					<div class="min-w-0 flex-1">
 						<p class="font-semibold">{row.code} · {row.name}</p>
 						<p class="text-sm text-muted-foreground">{domainLabel(row.domain)}</p>
-						{#if row.outcome?.blockers.length}
-							<ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-800">
-								{#each row.outcome.blockers as blocker (blocker.learningGroupId)}
-									<li>{learnerEvaluationLockBlockerLabel(blocker.reason)}</li>
+						{#if row.groups.some((group) => !group.ready)}
+							<ul class="mt-3 space-y-2 text-sm">
+								{#each row.groups.filter((group) => !group.ready) as group (group.learningGroupId)}
+									<li class="rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-amber-950">
+										<p class="flex items-center gap-1.5 font-medium">
+											<CircleAlert class="size-3.5" />
+											{group.groupName}
+										</p>
+										<ul class="mt-1 list-disc space-y-0.5 pl-5 text-xs text-amber-800">
+											{#each group.blockers as blocker (blocker)}
+												<li>{learnerEvaluationLockBlockerLabel(blocker)}</li>
+											{/each}
+										</ul>
+									</li>
 								{/each}
 							</ul>
-						{:else if !row.outcome?.lock}
-							<p class="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
-								<CircleAlert class="size-3" /> ตรวจความครบถ้วนเมื่อกดล็อก
+						{:else if !row.locked}
+							<p class="mt-2 flex items-center gap-1 text-xs text-emerald-700">
+								<CheckCircle2 class="size-3" /> ทุกกลุ่มยืนยันครบแล้ว
 							</p>
 						{/if}
 					</div>
-					{#if row.outcome?.lock}
+					{#if row.locked}
 						<Badge variant="secondary"><CheckCircle2 class="size-3" /> ล็อกแล้ว</Badge>
 					{:else}
 						<LoadingButton
 							loading={busyKey === `learner:${row.subjectId}:${row.domain}`}
-							disabled={!canLockLearnerEvaluations}
+							disabled={!canLockLearnerEvaluations || !row.ready}
 							onclick={() => onlockevaluation(row.subjectId, row.domain)}
 						>
 							<LockKeyhole class="size-4" /> ล็อกด้านนี้

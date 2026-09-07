@@ -80,6 +80,18 @@ pub async fn list_subjects(
     Ok(Json(ApiResponse::ok(result)))
 }
 
+#[utoipa::path(get,path="/api/academic/learner-evaluations/lock-readiness",operation_id="getLearnerEvaluationLockReadiness",tag="academic",params(EvaluationContext),responses((status=200,body=ApiResponse<Vec<LearnerEvaluationSubjectLockReadiness>>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+pub async fn lock_readiness(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<EvaluationContext>,
+) -> Result<Json<ApiResponse<Vec<LearnerEvaluationSubjectLockReadiness>>>, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let result =
+        services::read_lock_readiness(&context.tenant.pool, &context.actor, &query).await?;
+    Ok(Json(ApiResponse::ok(result)))
+}
+
 #[utoipa::path(get,path="/api/academic/learner-evaluations/catalog",operation_id="listLearnerEvaluationCatalog",tag="academic",params(EvaluationContext),responses((status=200,body=ApiResponse<Vec<CatalogCriterion>>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
 pub async fn list_catalog(
     State(state): State<AppState>,

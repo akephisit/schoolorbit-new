@@ -96,6 +96,11 @@ test('gradebook, learner-evaluation, and result operations own canonical context
 			'post',
 			'lockLearnerEvaluationSubject'
 		],
+		[
+			'/api/academic/learner-evaluations/lock-readiness',
+			'get',
+			'getLearnerEvaluationLockReadiness'
+		],
 		['/api/academic/results/groups/{group_id}/course', 'get', 'getCourseResultPreparation'],
 		[
 			'/api/academic/results/groups/{group_id}/course/selection',
@@ -199,6 +204,13 @@ test('academic result wrappers forward canonical context through reads and mutat
 	});
 
 	const evaluations = await importWrapper('src/lib/api/academicLearnerEvaluations.ts');
+	await evaluations.getLearnerEvaluationLockReadiness(context);
+	assert.deepEqual(globalThis.__academicContractCalls.pop(), {
+		method: 'get',
+		endpoint: '/api/academic/learner-evaluations/lock-readiness',
+		bodyOrOptions: { query: context },
+		options: undefined
+	});
 	await evaluations.removeSubjectEvaluationCriterion(
 		'subject/1',
 		'desirable_characteristic',

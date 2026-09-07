@@ -10,17 +10,14 @@
 		type AcademicResultReadiness
 	} from '$lib/api/academicResults';
 	import {
-		listLearnerEvaluationSubjects,
+		getLearnerEvaluationLockReadiness,
 		lockLearnerEvaluationSubject,
 		type LearnerEvaluationDomain,
-		type LearnerEvaluationLockOutcome,
-		type LearnerEvaluationSubject
+		type LearnerEvaluationSubjectLockReadiness
 	} from '$lib/api/academicLearnerEvaluations';
 	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
 	import AcademicPrerequisiteNotice from '$lib/components/academic-workflow/AcademicPrerequisiteNotice.svelte';
-	import ResultLockQueue, {
-		type LearnerEvaluationLockRow
-	} from '$lib/components/academic/results/ResultLockQueue.svelte';
+	import ResultLockQueue from '$lib/components/academic/results/ResultLockQueue.svelte';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { PERMISSIONS } from '$lib/permissions/registry';
@@ -29,14 +26,9 @@
 	const academicContext = getAcademicContextStore();
 	const request = new LatestRequest();
 	const emptyReadiness: AcademicResultReadiness = { courses: [], activities: [] };
-	const domains: LearnerEvaluationDomain[] = [
-		'desirable_characteristic',
-		'reading_thinking_writing'
-	];
 
 	let readiness = $state.raw<AcademicResultReadiness>(emptyReadiness);
-	let learnerSubjects = $state.raw<LearnerEvaluationSubject[]>([]);
-	let learnerOutcomes = $state.raw<Record<string, LearnerEvaluationLockOutcome>>({});
+	let learnerRows = $state.raw<LearnerEvaluationSubjectLockReadiness[]>([]);
 	let loading = $state(false);
 	let errorMessage = $state('');
 	let busyKey = $state('');
@@ -47,26 +39,6 @@
 	const canLockLearnerEvaluations = $derived(
 		$can.has(PERMISSIONS.ACADEMIC_LEARNER_EVALUATION_LOCK_SCHOOL)
 	);
-	const learnerRows = $derived.by(() => {
-		const subjects: LearnerEvaluationSubject[] = [];
-		for (const subject of learnerSubjects) {
-			if (!subjects.some((candidate) => candidate.subjectId === subject.subjectId)) {
-				subjects.push(subject);
-			}
-		}
-		return subjects.flatMap((subject) =>
-			domains.map(
-				(domain): LearnerEvaluationLockRow => ({
-					subjectId: subject.subjectId,
-					code: subject.code,
-					name: subject.name,
-					domain,
-					outcome: learnerOutcomes[`${subject.subjectId}:${domain}`]
-				})
-			)
-		);
-	});
-
 	function contextValue() {
 		return academicYearId && academicTermId ? { academicYearId, academicTermId } : null;
 	}
@@ -78,17 +50,17 @@
 		loading = true;
 		errorMessage = '';
 		try {
-			const [nextReadiness, nextSubjects] = await Promise.all([
+			const [nextReadiness, nextLearnerRows] = await Promise.all([
 				canLockCourseResults
 					? getAcademicResultReadiness(context, { signal })
 					: Promise.resolve(emptyReadiness),
 				canLockLearnerEvaluations
-					? listLearnerEvaluationSubjects(context, { signal })
+					? getLearnerEvaluationLockReadiness(context, { signal })
 					: Promise.resolve([])
 			]);
 			if (!request.isCurrent(revision)) return;
 			readiness = nextReadiness;
-			learnerSubjects = nextSubjects;
+			learnerRows = nextLearnerRows;
 		} catch (error) {
 			if (isAbortError(error)) return;
 			if (request.isCurrent(revision)) {
@@ -173,9 +145,21 @@
 		busyKey = `learner:${key}`;
 		try {
 			const outcome = await lockLearnerEvaluationSubject(subjectId, domain, context);
-			learnerOutcomes = { ...learnerOutcomes, [key]: outcome };
-			if (outcome.lock) toast.success('ล็อกผลประเมินด้านนี้แล้ว');
-			else toast.error('ยังล็อกไม่ได้ กรุณาตรวจเหตุผลที่แสดงในรายการ');
+			if (outcome.lock) {
+				learnerRows = learnerRows.map((row) => {
+					if (row.subjectId !== subjectId || row.domain !== domain) return row;
+					return {
+						...row,
+						locked: true,
+						ready: true,
+						groups: row.groups.map((group) => ({ ...group, ready: true, blockers: [] }))
+					};
+				});
+				toast.success('ล็อกผลประเมินด้านนี้แล้ว');
+			} else {
+				await loadQueue();
+				toast.error('ข้อมูลบางห้องเปลี่ยนแล้ว กรุณาตรวจเหตุผลในคิว');
+			}
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'ล็อกผลประเมินไม่สำเร็จ');
 		} finally {
@@ -192,13 +176,12 @@
 					: '';
 			if (contextKey && contextKey !== loadedContextKey) {
 				loadedContextKey = contextKey;
-				learnerOutcomes = {};
 				void loadQueue();
 			} else if (!contextKey) {
 				loadedContextKey = '';
 				request.abort();
 				readiness = emptyReadiness;
-				learnerSubjects = [];
+				learnerRows = [];
 			}
 		});
 		return () => {

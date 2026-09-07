@@ -111,7 +111,8 @@ test('result lock and correction pages use one queue or search request', async (
 	assertCancellable(locks, 'result locks');
 	assertCancellable(corrections, 'result corrections');
 	assert.match(locks, /getAcademicResultReadiness/);
-	assert.match(locks, /listLearnerEvaluationSubjects/);
+	assert.match(locks, /getLearnerEvaluationLockReadiness/);
+	assert.doesNotMatch(locks, /listLearnerEvaluationSubjects/);
 	assert.match(corrections, /searchEffectiveAcademicResults/);
 	assert.doesNotMatch(locks, /Promise\.all\(\s*\w+\.map\(/);
 	assert.doesNotMatch(corrections, /Promise\.all\(\s*\w+\.map\(/);

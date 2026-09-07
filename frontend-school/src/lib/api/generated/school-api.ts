@@ -1210,6 +1210,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/learner-evaluations/lock-readiness': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getLearnerEvaluationLockReadiness'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/learner-evaluations/policies': {
 		parameters: {
 			query?: never;
@@ -9527,6 +9543,20 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Vec_LearnerEvaluationSubjectLockReadiness: {
+			data: {
+				code: string;
+				domain: components['schemas']['LearnerEvaluationDomain'];
+				groups: components['schemas']['LearnerEvaluationGroupLockReadiness'][];
+				locked: boolean;
+				name: string;
+				ready: boolean;
+				/** Format: uuid */
+				subjectId: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Vec_LearningGroup: {
 			data: {
 				/** Format: uuid */
@@ -13613,8 +13643,25 @@ export interface components {
 		};
 		/** @enum {string} */
 		LearnerEvaluationDomain: 'desirable_characteristic' | 'reading_thinking_writing';
+		LearnerEvaluationGroupLockReadiness: {
+			blockers: string[];
+			groupName: string;
+			/** Format: uuid */
+			learningGroupId: string;
+			ready: boolean;
+		};
 		/** Format: int32 */
 		LearnerEvaluationLevel: number;
+		LearnerEvaluationSubjectLockReadiness: {
+			code: string;
+			domain: components['schemas']['LearnerEvaluationDomain'];
+			groups: components['schemas']['LearnerEvaluationGroupLockReadiness'][];
+			locked: boolean;
+			name: string;
+			ready: boolean;
+			/** Format: uuid */
+			subjectId: string;
+		};
 		LearningDeliveryOverview: {
 			/** Format: uuid */
 			academicTermId: string;
@@ -22726,6 +22773,44 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['ApiResponse_EvaluationWorkspace'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getLearnerEvaluationLockReadiness: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_LearnerEvaluationSubjectLockReadiness'];
 				};
 			};
 			403: {

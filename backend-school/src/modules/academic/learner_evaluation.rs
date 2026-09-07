@@ -21,6 +21,7 @@ pub fn routes() -> axum::Router<crate::AppState> {
                 post(handlers::activate_policy),
             )
             .route("/subjects", get(handlers::list_subjects))
+            .route("/lock-readiness", get(handlers::lock_readiness))
             .route(
                 "/catalog",
                 get(handlers::list_catalog).post(handlers::create_catalog),

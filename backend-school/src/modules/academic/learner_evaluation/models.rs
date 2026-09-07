@@ -209,6 +209,25 @@ pub struct LockOutcome {
 }
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
+pub struct LearnerEvaluationGroupLockReadiness {
+    pub learning_group_id: Uuid,
+    pub group_name: String,
+    pub ready: bool,
+    pub blockers: Vec<String>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LearnerEvaluationSubjectLockReadiness {
+    pub subject_id: Uuid,
+    pub code: String,
+    pub name: String,
+    pub domain: LearnerEvaluationDomain,
+    pub locked: bool,
+    pub ready: bool,
+    pub groups: Vec<LearnerEvaluationGroupLockReadiness>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct CriterionRemoval {
     pub id: Uuid,
     pub deleted: bool,

@@ -74,9 +74,15 @@ test('lock queue exposes typed blockers and independent learner-evaluation domai
 		read('src/routes/(app)/staff/academic/result-locks/+page.svelte'),
 		read('src/lib/components/academic/results/ResultLockQueue.svelte')
 	]);
-	assert.match(page, /desirable_characteristic/);
-	assert.match(page, /reading_thinking_writing/);
+	assert.match(component, /desirable_characteristic/);
+	assert.match(component, /คุณลักษณะอันพึงประสงค์/);
+	assert.match(component, /การอ่าน คิดวิเคราะห์ และเขียน/);
+	assert.match(page, /getLearnerEvaluationLockReadiness/);
+	assert.doesNotMatch(page, /listLearnerEvaluationSubjects/);
 	assert.match(component, /resultBlockerLabel/);
+	assert.match(component, /group\.groupName/);
+	assert.match(component, /!row\.ready/);
+	assert.doesNotMatch(component, /ตรวจความครบถ้วนเมื่อกดล็อก/);
 	assert.match(component, /ล็อกผลกิจกรรมที่พร้อมทั้งหมด/);
 });
 
