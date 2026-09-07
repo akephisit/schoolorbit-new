@@ -167,13 +167,15 @@ pub async fn upsert_day_room_assignment(
         r#"
         INSERT INTO academic_exam_day_room_assignments (
             exam_day_id,
+            academic_term_id,
+            academic_year_id,
             homeroom_id,
             room_id,
             capacity_override,
             created_by,
             updated_by
         )
-        VALUES ($1, $2, $3, $4, $5, $5)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
         ON CONFLICT (exam_day_id, homeroom_id)
         DO UPDATE SET
             room_id = EXCLUDED.room_id,
@@ -184,6 +186,8 @@ pub async fn upsert_day_room_assignment(
         "#,
     )
     .bind(exam_day_id)
+    .bind(day_context.academic_term_id)
+    .bind(day_context.academic_year_id)
     .bind(request.homeroom_id)
     .bind(request.room_id)
     .bind(capacity_override)

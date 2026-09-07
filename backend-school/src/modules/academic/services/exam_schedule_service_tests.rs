@@ -8,7 +8,7 @@ use crate::modules::academic::cutover_test_support::{
 };
 use crate::modules::academic::models::exam_schedule::{
     CreateExamRoundRequest, ExamSourceChangeKind, ExamSourceSyncItemStatus, SyncExamSourcesRequest,
-    UpsertExamDayRequest,
+    UpsertDayRoomAssignmentRequest, UpsertExamDayRequest,
 };
 use crate::test_helpers::create_named_test_pool;
 
@@ -24,6 +24,54 @@ async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
         .unwrap();
     apply_migrations_through(&pool, 59).await.unwrap();
     pool
+}
+
+#[tokio::test]
+async fn room_assignment_upsert_persists_exam_day_academic_context() {
+    let pool = migrated_pool("exam_room_assignment_context").await;
+    let exam_day_id = Uuid::parse_str("85000000-0000-0000-0000-000000000001").unwrap();
+    let homeroom_id = Uuid::parse_str("40000000-0000-0000-0000-000000000025").unwrap();
+    let room_id = Uuid::parse_str("92000000-0000-0000-0000-000000000001").unwrap();
+    let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
+
+    let assignment = exam_schedule_service::upsert_day_room_assignment(
+        &pool,
+        exam_day_id,
+        UpsertDayRoomAssignmentRequest {
+            homeroom_id,
+            room_id,
+            capacity_override: None,
+            invigilator_staff_ids: None,
+        },
+        actor_id,
+    )
+    .await
+    .unwrap();
+
+    let persisted_context: (Uuid, Uuid) = sqlx::query_as(
+        r#"
+        SELECT academic_term_id, academic_year_id
+        FROM academic_exam_day_room_assignments
+        WHERE id = $1
+        "#,
+    )
+    .bind(assignment.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let day_context: (Uuid, Uuid) = sqlx::query_as(
+        r#"
+        SELECT academic_term_id, academic_year_id
+        FROM academic_exam_days
+        WHERE id = $1
+        "#,
+    )
+    .bind(exam_day_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(persisted_context, day_context);
 }
 
 #[tokio::test]

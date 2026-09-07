@@ -45,6 +45,8 @@ struct ExamDayRoomAssignmentRow {
 #[derive(Debug, sqlx::FromRow)]
 pub(super) struct ExamDayContext {
     pub(super) exam_round_id: Uuid,
+    pub(super) academic_term_id: Uuid,
+    pub(super) academic_year_id: Uuid,
 }
 
 pub(super) struct NormalizedUpdateRoundRequest {
@@ -512,7 +514,9 @@ pub(super) async fn fetch_exam_day_context_for_update(
 ) -> Result<ExamDayContext, AppError> {
     sqlx::query_as::<_, ExamDayContext>(
         r#"
-        SELECT exam_round_id
+        SELECT exam_round_id,
+               academic_term_id,
+               academic_year_id
         FROM academic_exam_days
         WHERE id = $1
         FOR UPDATE
