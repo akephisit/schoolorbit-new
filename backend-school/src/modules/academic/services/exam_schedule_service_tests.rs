@@ -7,8 +7,9 @@ use crate::modules::academic::cutover_test_support::{
     seed_academic_cutover_fixture, CutoverFixture,
 };
 use crate::modules::academic::models::exam_schedule::{
-    CreateExamRoundRequest, ExamSourceChangeKind, ExamSourceSyncItemStatus, SyncExamSourcesRequest,
-    UpsertDayRoomAssignmentRequest, UpsertExamDayRequest,
+    CreateExamRoundRequest, ExamSourceChangeKind, ExamSourceSyncItemStatus,
+    PlaceExamSessionRequest, SyncExamSourcesRequest, UpsertDayRoomAssignmentRequest,
+    UpsertExamDayRequest,
 };
 use crate::test_helpers::create_named_test_pool;
 
@@ -72,6 +73,97 @@ async fn room_assignment_upsert_persists_exam_day_academic_context() {
     .unwrap();
 
     assert_eq!(persisted_context, day_context);
+}
+
+#[tokio::test]
+async fn placing_exam_session_returns_canonical_academic_context() {
+    let pool = migrated_pool("exam_session_response_context").await;
+    let exam_schedule_item_id = Uuid::parse_str("86000000-0000-0000-0000-000000000001").unwrap();
+    let exam_day_id = Uuid::parse_str("85000000-0000-0000-0000-000000000001").unwrap();
+    let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
+    let expected_context: (Uuid, Uuid, Uuid) = sqlx::query_as(
+        r#"SELECT academic_term_id, academic_year_id, learning_offering_id
+           FROM academic_exam_schedule_items
+           WHERE id = $1"#,
+    )
+    .bind(exam_schedule_item_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let session = exam_schedule_service::place_exam_session(
+        &pool,
+        PlaceExamSessionRequest {
+            exam_schedule_item_id,
+            exam_day_id,
+            starts_at: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+        },
+        actor_id,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        (
+            session.academic_term_id,
+            session.academic_year_id,
+            session.learning_offering_id,
+        ),
+        expected_context
+    );
+}
+
+#[tokio::test]
+async fn invigilator_assignment_mutations_return_the_updated_workspace() {
+    let pool = migrated_pool("exam_invigilator_mutation_response").await;
+    let assignment_id = Uuid::parse_str("92100000-0000-0000-0000-000000000001").unwrap();
+    let staff_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
+
+    let assigned = exam_schedule_service::assign_invigilator_to_assignment(
+        &pool,
+        assignment_id,
+        staff_id,
+        staff_id,
+    )
+    .await
+    .unwrap();
+
+    let assigned_room = assigned
+        .assignments
+        .iter()
+        .find(|assignment| assignment.assignment_id == assignment_id)
+        .unwrap();
+    assert!(assigned_room
+        .invigilators
+        .iter()
+        .any(|invigilator| invigilator.staff_id == staff_id));
+    assert!(assigned
+        .staff_workloads
+        .iter()
+        .any(|workload| workload.staff_id == staff_id && workload.total_minutes == 60));
+
+    let removed = exam_schedule_service::remove_invigilator_from_assignment(
+        &pool,
+        assignment_id,
+        staff_id,
+        staff_id,
+    )
+    .await
+    .unwrap();
+
+    let removed_room = removed
+        .assignments
+        .iter()
+        .find(|assignment| assignment.assignment_id == assignment_id)
+        .unwrap();
+    assert!(removed_room
+        .invigilators
+        .iter()
+        .all(|invigilator| invigilator.staff_id != staff_id));
+    assert!(removed
+        .staff_workloads
+        .iter()
+        .all(|workload| workload.staff_id != staff_id));
 }
 
 #[tokio::test]
