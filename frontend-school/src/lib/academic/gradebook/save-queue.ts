@@ -9,6 +9,7 @@ export interface GradebookSaveQueueSnapshot {
 export interface GradebookSaveQueueOptions<TMutation> {
 	delayMs?: number;
 	keyOf: (mutation: TMutation) => string;
+	partitionKey?: (mutation: TMutation) => string;
 	saveBatch: (mutations: TMutation[]) => Promise<void>;
 }
 
@@ -74,7 +75,12 @@ export function createGradebookSaveQueue<TMutation>(
 			state = 'saving';
 			error = null;
 			const revision = discardRevision;
-			const entries = [...pending.entries()];
+			const pendingEntries = [...pending.entries()];
+			const first = pendingEntries[0];
+			const partition = first && options.partitionKey?.(first[1]);
+			const entries = options.partitionKey
+				? pendingEntries.filter(([, mutation]) => options.partitionKey?.(mutation) === partition)
+				: pendingEntries;
 			for (const [key, mutation] of entries) {
 				if (pending.get(key) === mutation) pending.delete(key);
 			}

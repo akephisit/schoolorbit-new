@@ -13,6 +13,30 @@ const keyOf = (cell: CellMutation) => `${cell.itemId}:${cell.studentId}`;
 const wait = (milliseconds: number) =>
 	new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 
+test('phase batches never mix and retry does not resend a phase already saved', async () => {
+	const batches: string[][] = [];
+	let fail = true;
+	const queue = createGradebookSaveQueue<{ id: string; phase: string }>({
+		delayMs: 10000,
+		keyOf: (cell) => cell.id,
+		partitionKey: (cell) => cell.phase,
+		saveBatch: async (cells) => {
+			batches.push(cells.map((cell) => cell.id));
+			if (cells[0]?.phase === 'final' && fail) throw new Error('offline');
+		}
+	});
+	queue.enqueue({ id: 'before-1', phase: 'before_midterm' });
+	queue.enqueue({ id: 'final-1', phase: 'final' });
+	queue.enqueue({ id: 'before-2', phase: 'before_midterm' });
+	await assert.rejects(queue.flush(), /offline/);
+	assert.deepEqual(batches, [['before-1', 'before-2'], ['final-1']]);
+	assert.equal(queue.status().pendingCount, 1);
+	fail = false;
+	await queue.retry();
+	assert.deepEqual(batches, [['before-1', 'before-2'], ['final-1'], ['final-1']]);
+	assert.equal(queue.status().state, 'saved');
+});
+
 test('save queue debounces and coalesces the latest value for each cell', async () => {
 	const batches: CellMutation[][] = [];
 	const queue = createGradebookSaveQueue<CellMutation>({

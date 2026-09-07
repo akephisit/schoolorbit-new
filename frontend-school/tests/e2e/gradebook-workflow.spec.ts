@@ -77,13 +77,14 @@ function subject() {
 	};
 }
 
-function workspace(canManage: boolean) {
+function workspace(canManage: boolean, phaseCode: (typeof phaseCodes)[number]) {
+	const index = phaseCodes.indexOf(phaseCode);
 	return {
 		learningGroupId: ids.group,
 		learningOfferingId: ids.offering,
-		assessmentPhaseId: ids.phase,
-		phaseCode: 'before_midterm',
-		phaseMaxScore: '20',
+		assessmentPhaseId: subject().phases[index]!.id,
+		phaseCode,
+		phaseMaxScore: subject().phases[index]!.maxScore,
 		phaseRowVersion: 1,
 		scoreEntryEnabled: true,
 		locked: false,
@@ -91,9 +92,9 @@ function workspace(canManage: boolean) {
 		canConfirm: canManage,
 		items: [
 			{
-				id: ids.item,
+				id: index === 0 ? ids.item : `80000000-0000-4000-8000-00000000000${index + 1}`,
 				name: 'ชีท 1',
-				maxScore: '20',
+				maxScore: subject().phases[index]!.maxScore,
 				displayOrder: 1,
 				lifecycle: 'active',
 				rowVersion: 1
@@ -115,9 +116,15 @@ function workspace(canManage: boolean) {
 	};
 }
 
-async function mockGradebook(page: Page, canManage: boolean) {
+async function mockGradebook(page: Page, canManage: boolean, closedPhase?: string) {
 	const controlRequests: string[] = [];
 	const scoreBodies: unknown[] = [];
+	const scorePaths: string[] = [];
+	const workspacePaths: string[] = [];
+	const itemPaths: string[] = [];
+	const workspaces = phaseCodes.map((phase) =>
+		workspace(canManage && phase !== closedPhase, phase)
+	);
 	await page.route(
 		(url) => url.pathname.startsWith('/api/'),
 		async (route) => {
@@ -175,6 +182,25 @@ async function mockGradebook(page: Page, canManage: boolean) {
 				return;
 			}
 			if (url.pathname.includes(`/api/academic/gradebook/groups/${ids.group}/phases/`)) {
+				const phaseCode = phaseCodes.find((phase) => url.pathname.includes(`/phases/${phase}`))!;
+				const current = workspaces.find((row) => row.phaseCode === phaseCode)!;
+				if (request.method() === 'POST' && url.pathname.endsWith('/items')) {
+					itemPaths.push(url.pathname);
+					const input = request.postDataJSON() as {
+						name: string;
+						maxScore: string;
+						displayOrder: number;
+					};
+					const item = {
+						...input,
+						id: '80000000-0000-4000-8000-000000000099',
+						lifecycle: 'active',
+						rowVersion: 1
+					};
+					current.items.push(item);
+					await fulfill(route, item);
+					return;
+				}
 				if (request.method() === 'PUT' && url.pathname.endsWith('/scores')) {
 					const body = request.postDataJSON() as {
 						cells: Array<{
@@ -185,6 +211,7 @@ async function mockGradebook(page: Page, canManage: boolean) {
 						}>;
 					};
 					scoreBodies.push(body);
+					scorePaths.push(url.pathname);
 					await fulfill(route, {
 						cells: body.cells.map((cell) => ({
 							scoreItemId: cell.scoreItemId,
@@ -196,7 +223,8 @@ async function mockGradebook(page: Page, canManage: boolean) {
 					});
 					return;
 				}
-				await fulfill(route, workspace(canManage));
+				workspacePaths.push(url.pathname);
+				await fulfill(route, current);
 				return;
 			}
 			if (url.pathname === '/api/notifications/stream') {
@@ -229,7 +257,7 @@ async function mockGradebook(page: Page, canManage: boolean) {
 			await fulfill(route, {});
 		}
 	);
-	return { controlRequests, scoreBodies };
+	return { controlRequests, scoreBodies, scorePaths, workspacePaths, itemPaths };
 }
 
 function gradebookUrl() {
@@ -240,10 +268,14 @@ test('teacher selects a score column and autosaves an explicit zero', async ({ p
 	const observed = await mockGradebook(page, true);
 	await page.goto(gradebookUrl());
 
-	await expect(page.getByRole('heading', { name: 'รายการคะแนนในช่วงนี้' })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'คะแนนทั้งภาคเรียน' })).toBeVisible();
 	await page.getByRole('checkbox').first().click();
-	await page.getByLabel('ชีท 1 เด็กชายทดสอบ ระบบ').fill('0');
-	await page.getByLabel('ชีท 1 เด็กชายทดสอบ ระบบ').blur();
+	await page
+		.getByRole('textbox', { name: 'ก่อนกลางภาค ชีท 1 เด็กชายทดสอบ ระบบ', exact: true })
+		.fill('0');
+	await page
+		.getByRole('textbox', { name: 'ก่อนกลางภาค ชีท 1 เด็กชายทดสอบ ระบบ', exact: true })
+		.blur();
 	await expect.poll(() => observed.scoreBodies.length).toBe(1);
 	expect(observed.scoreBodies[0]).toMatchObject({
 		cells: [
@@ -263,7 +295,9 @@ test('mobile editor has an explicit close action', async ({ page }) => {
 	await page.goto(gradebookUrl());
 
 	await page.getByRole('button', { name: 'เลือกทุกช่อง' }).click();
-	await page.getByRole('button', { name: 'กรอก' }).click();
+	await page
+		.getByRole('button', { name: 'เปิดกรอก ก่อนกลางภาค ชีท 1 เด็กชายทดสอบ ระบบ', exact: true })
+		.click();
 	await expect(page.getByRole('button', { name: 'ปิดหน้ากรอกคะแนน' })).toBeVisible();
 	await page.getByRole('button', { name: 'ปิดหน้ากรอกคะแนน' }).click();
 	await expect(page.getByRole('button', { name: 'ปิดหน้ากรอกคะแนน' })).toBeHidden();
@@ -273,6 +307,89 @@ test('read-only teacher never requests manager controls', async ({ page }) => {
 	const observed = await mockGradebook(page, false);
 	await page.goto(gradebookUrl());
 
-	await expect(page.getByRole('heading', { name: 'รายการคะแนนในช่วงนี้' })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'คะแนนทั้งภาคเรียน' })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'ตั้งค่าการกรอก', exact: true })).toHaveCount(0);
 	expect(observed.controlRequests).toEqual([]);
+});
+
+test('one table saves different phases to their own endpoint and clearing stays blank', async ({
+	page
+}) => {
+	const observed = await mockGradebook(page, true);
+	await page.goto(gradebookUrl());
+	await page.getByRole('button', { name: 'เลือกทุกช่อง' }).click();
+	await expect(page.locator('table')).toHaveCount(1);
+	await expect(page.locator('th[scope="colgroup"]')).toHaveCount(4);
+	const before = page.getByRole('textbox', {
+		name: 'ก่อนกลางภาค ชีท 1 เด็กชายทดสอบ ระบบ',
+		exact: true
+	});
+	const final = page.getByRole('textbox', { name: 'ปลายภาค ชีท 1 เด็กชายทดสอบ ระบบ', exact: true });
+	await before.fill('12');
+	await final.fill('23');
+	await final.blur();
+	await expect.poll(() => observed.scorePaths.length).toBe(2);
+	expect(observed.scorePaths).toEqual([
+		`/api/academic/gradebook/groups/${ids.group}/phases/before_midterm/scores`,
+		`/api/academic/gradebook/groups/${ids.group}/phases/final/scores`
+	]);
+	await expect(page.locator('tbody tr').first().locator('td').last()).toHaveText('35');
+	await final.fill('');
+	await final.blur();
+	await expect.poll(() => observed.scoreBodies.length).toBe(3);
+	expect(observed.scoreBodies[2]).toMatchObject({
+		cells: [{ operation: 'clear', scoreItemId: '80000000-0000-4000-8000-000000000004' }]
+	});
+	await expect(final).toHaveValue('');
+	expect(observed.workspacePaths).toHaveLength(4);
+});
+
+test('select all and keyboard movement skip a closed phase', async ({ page }) => {
+	const observed = await mockGradebook(page, true, 'midterm');
+	await page.goto(gradebookUrl());
+	await page.getByRole('button', { name: 'เลือกทุกช่อง' }).click();
+	await expect(
+		page.getByRole('textbox', { name: 'กลางภาค ชีท 1 เด็กชายทดสอบ ระบบ', exact: true })
+	).toBeDisabled();
+	const before = page.getByRole('textbox', {
+		name: 'ก่อนกลางภาค ชีท 1 เด็กชายทดสอบ ระบบ',
+		exact: true
+	});
+	await before.fill('5');
+	await before.press('Tab');
+	await expect(
+		page.getByRole('textbox', { name: 'หลังกลางภาค ชีท 1 เด็กชายทดสอบ ระบบ', exact: true })
+	).toBeFocused();
+	await expect.poll(() => observed.scoreBodies.length).toBe(1);
+});
+
+test('adding an item uses the chosen phase and refreshes only that phase', async ({ page }) => {
+	const observed = await mockGradebook(page, true);
+	await page.goto(gradebookUrl());
+	await page.getByRole('button', { name: 'เพิ่มรายการคะแนนปลายภาค', exact: true }).click();
+	const dialog = page.getByRole('dialog');
+	await dialog.getByLabel('ชื่อรายการ').fill('งานเพิ่มเติม');
+	await dialog.getByLabel('คะแนนเต็ม', { exact: true }).fill('0');
+	await dialog.getByRole('button', { name: 'เพิ่มรายการ', exact: true }).click();
+	await expect(
+		page.getByRole('checkbox', { name: 'เลือก ปลายภาค งานเพิ่มเติม', exact: true })
+	).toBeChecked();
+	expect(observed.itemPaths).toEqual([
+		`/api/academic/gradebook/groups/${ids.group}/phases/final/items`
+	]);
+	expect(observed.workspacePaths).toHaveLength(5);
+	expect(observed.workspacePaths[4]).toContain('/phases/final');
+});
+
+test('entry settings open and close in a dialog instead of taking ledger space', async ({
+	page
+}) => {
+	await mockGradebook(page, true);
+	await page.goto(gradebookUrl());
+	await expect(page.getByRole('switch')).toHaveCount(0);
+	await page.getByRole('button', { name: 'ตั้งค่าการกรอก', exact: true }).click();
+	const dialog = page.getByRole('dialog');
+	await expect(dialog.getByRole('switch')).toHaveCount(4);
+	await dialog.getByRole('button', { name: 'ปิด', exact: true }).click();
+	await expect(dialog).toHaveCount(0);
 });

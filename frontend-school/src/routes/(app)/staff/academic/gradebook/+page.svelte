@@ -87,7 +87,9 @@
 	} from 'lucide-svelte';
 
 	type WorkspaceTab = 'scores' | LearnerEvaluationDomain;
-	type ScoreMutation = GradebookScoreBatchInput['cells'][number];
+	type ScoreMutation = GradebookScoreBatchInput['cells'][number] & {
+		phaseCode: GradebookPhaseCode;
+	};
 	type EvaluationMutation = LearnerEvaluationResponseBatchInput['cells'][number];
 	type MobileCell =
 		| { mode: 'score'; itemId: string; studentId: string }
@@ -126,7 +128,10 @@
 	let evaluationSubjects = $state.raw<LearnerEvaluationSubject[]>([]);
 	let gradebookControls = $state.raw<GradebookControl[]>([]);
 	let evaluationControls = $state.raw<LearnerEvaluationControl[]>([]);
-	let scoreWorkspace = $state.raw<GroupPhaseWorkspace | null>(null);
+	let scoreWorkspaces = $state.raw<GroupPhaseWorkspace[]>([]);
+	let scoreWorkspace = $derived(
+		scoreWorkspaces.find((row) => row.phaseCode === activePhase) ?? null
+	);
 	let evaluationWorkspace = $state.raw<LearnerEvaluationWorkspace | null>(null);
 	let evaluationConfiguration = $state.raw<LearnerEvaluationConfiguration | null>(null);
 	let scoreValues = $state.raw<Record<string, string | null>>({});
@@ -184,9 +189,7 @@
 	const selectedScoreSubject = $derived(
 		scoreSubjects.find((subject) => subject.learningGroupId === selectedGroupId) ?? null
 	);
-	const selectedPhaseAvailable = $derived(
-		selectedScoreSubject?.phases.some((phase) => phase.phaseCode === activePhase) ?? false
-	);
+	const selectedPhaseAvailable = $derived((selectedScoreSubject?.phases.length ?? 0) > 0);
 	const activeSaveStatus = $derived(
 		activeTab === 'scores' ? scoreSaveStatus : evaluationSaveStatus
 	);
@@ -206,11 +209,14 @@
 	);
 	const mobileContext = $derived.by(() => {
 		if (!mobileCell) return null;
-		if (mobileCell.mode === 'score' && scoreWorkspace) {
-			const student = scoreWorkspace.students.find(
+		if (mobileCell.mode === 'score') {
+			const mobileWorkspace = scoreWorkspaces.find((row) =>
+				row.items.some((item) => mobileCell?.mode === 'score' && item.id === mobileCell.itemId)
+			);
+			const student = mobileWorkspace?.students.find(
 				(row) => row.studentAcademicYearId === mobileCell?.studentId
 			);
-			const item = scoreWorkspace.items.find(
+			const item = mobileWorkspace?.items.find(
 				(row) => mobileCell?.mode === 'score' && row.id === mobileCell.itemId
 			);
 			if (!student || !item) return null;
@@ -310,10 +316,10 @@
 		});
 	}
 
-	function hydrateScoreWorkspace(workspace: GroupPhaseWorkspace): void {
+	function hydrateScoreWorkspaces(workspaces: GroupPhaseWorkspace[]): void {
 		const values: Record<string, string | null> = {};
 		const versions: Record<string, number | null> = {};
-		for (const score of workspace.scores) {
+		for (const score of workspaces.flatMap((workspace) => workspace.scores)) {
 			const key = cellKey(score.studentAcademicYearId, score.scoreItemId);
 			values[key] = score.value ?? null;
 			versions[key] = score.rowVersion ?? null;
@@ -321,7 +327,9 @@
 		scoreValues = values;
 		scoreVersions = versions;
 		selectedItemIds = selectedItemIds.filter((id) =>
-			workspace.items.some((item) => item.id === id && item.lifecycle === 'active')
+			workspaces.some((workspace) =>
+				workspace.items.some((item) => item.id === id && item.lifecycle === 'active')
+			)
 		);
 	}
 
@@ -346,33 +354,65 @@
 		return mutation.operation === 'set' ? mutation.value : null;
 	}
 
-	function patchScoreCells(cells: GroupPhaseWorkspace['scores']): void {
-		if (!scoreWorkspace) return;
+	function patchScoreWorkspace(workspace: GroupPhaseWorkspace): void {
+		scoreWorkspaces = scoreWorkspaces.map((row) =>
+			row.phaseCode === workspace.phaseCode ? workspace : row
+		);
+	}
+
+	async function refreshScorePhase(phaseCode: GradebookPhaseCode): Promise<void> {
+		const context = contextValue();
+		const groupId = selectedGroupId;
+		if (!context || !groupId) return;
+		const workspace = await getGradebookGroupPhaseWorkspace(groupId, phaseCode, context);
+		if (
+			groupId !== selectedGroupId ||
+			context.academicTermId !== academicTermId ||
+			activeTab !== 'scores'
+		)
+			return;
+		patchScoreWorkspace(workspace);
+		hydrateScoreWorkspaces(scoreWorkspaces);
+	}
+
+	function patchScoreCells(
+		phaseCode: GradebookPhaseCode,
+		cells: GroupPhaseWorkspace['scores'],
+		sourceChecksum: string
+	): void {
+		const workspace = scoreWorkspaces.find((row) => row.phaseCode === phaseCode);
+		if (!workspace) return;
 		const changedKeys = cells.map((cell) => cellKey(cell.studentAcademicYearId, cell.scoreItemId));
-		const next = scoreWorkspace.scores.filter(
+		const next = workspace.scores.filter(
 			(cell) => !changedKeys.includes(cellKey(cell.studentAcademicYearId, cell.scoreItemId))
 		);
 		for (const cell of cells) {
 			if (cell.value != null) next.push(cell);
 		}
-		scoreWorkspace = {
-			...scoreWorkspace,
+		patchScoreWorkspace({
+			...workspace,
+			sourceChecksum,
 			scores: next,
 			confirmationIsCurrent: false
-		};
+		});
 	}
 
 	scoreQueue = createGradebookSaveQueue<ScoreMutation>({
 		keyOf: (mutation) => cellKey(mutation.studentAcademicYearId, mutation.scoreItemId),
+		partitionKey: (mutation) => mutation.phaseCode,
 		saveBatch: async (mutations) => {
 			const context = contextValue();
 			const groupId = selectedGroupId;
-			const phaseCode = activePhase;
-			if (!context || !groupId) throw new Error('กรุณาเลือกรายวิชาและกลุ่มเรียนก่อน');
+			const phaseCode = mutations[0]?.phaseCode;
+			if (!context || !groupId || !phaseCode) throw new Error('กรุณาเลือกรายวิชาและกลุ่มเรียนก่อน');
 			const result = await saveGradebookScoresBatch(groupId, phaseCode, context, {
-				cells: mutations
+				cells: mutations.map(({ phaseCode: _phaseCode, ...cell }) => cell)
 			});
-			if (groupId !== selectedGroupId || phaseCode !== activePhase || activeTab !== 'scores')
+			if (
+				groupId !== selectedGroupId ||
+				context.academicTermId !== academicTermId ||
+				activeTab !== 'scores'
+			)
 				return;
 			const nextVersions = { ...scoreVersions };
 			for (const cell of result.cells) {
@@ -389,12 +429,14 @@
 						currentValue === null
 							? {
 									operation: 'clear',
+									phaseCode,
 									scoreItemId: cell.scoreItemId,
 									studentAcademicYearId: cell.studentAcademicYearId,
 									rowVersion: cell.rowVersion ?? null
 								}
 							: {
 									operation: 'set',
+									phaseCode,
 									scoreItemId: cell.scoreItemId,
 									studentAcademicYearId: cell.studentAcademicYearId,
 									value: currentValue,
@@ -404,10 +446,7 @@
 				}
 			}
 			scoreVersions = nextVersions;
-			patchScoreCells(result.cells);
-			if (scoreWorkspace) {
-				scoreWorkspace = { ...scoreWorkspace, sourceChecksum: result.workspaceRevision };
-			}
+			patchScoreCells(phaseCode, result.cells, result.workspaceRevision);
 		}
 	});
 
@@ -510,7 +549,7 @@
 	async function loadSelectedWorkspace(): Promise<void> {
 		workspaceRequest.abort();
 		workspaceError = '';
-		scoreWorkspace = null;
+		scoreWorkspaces = [];
 		evaluationWorkspace = null;
 		evaluationConfiguration = null;
 		if (!selectedGroupId) return;
@@ -521,15 +560,18 @@
 		workspaceLoading = true;
 		try {
 			if (activeTab === 'scores') {
-				const result = await getGradebookGroupPhaseWorkspace(
-					selectedGroupId,
-					activePhase,
-					context,
-					{ signal }
+				const result = await Promise.all(
+					phaseCodes
+						.filter((code) =>
+							selectedScoreSubject?.phases.some((phase) => phase.phaseCode === code)
+						)
+						.map((code) =>
+							getGradebookGroupPhaseWorkspace(selectedGroupId, code, context, { signal })
+						)
 				);
 				if (!workspaceRequest.isCurrent(revision)) return;
-				scoreWorkspace = result;
-				hydrateScoreWorkspace(result);
+				scoreWorkspaces = result;
+				hydrateScoreWorkspaces(result);
 			} else {
 				const result = await getLearnerEvaluationWorkspace(selectedGroupId, activeTab, context, {
 					signal
@@ -599,20 +641,13 @@
 		await ensureSelection();
 	}
 
-	async function changePhase(phase: GradebookPhaseCode): Promise<void> {
-		if (phase === activePhase) return;
-		if (!(await flushPendingWork())) return;
-		mobileCell = null;
-		activePhase = phase;
-		selectedItemIds = [];
-		syncUrl();
-		await loadSelectedWorkspace();
-	}
-
 	function applyScoreMutations(mutations: ScorePasteMutation[]): boolean {
-		if (!scoreWorkspace?.canManage) return false;
 		for (const mutation of mutations) {
-			const item = scoreWorkspace.items.find((candidate) => candidate.id === mutation.itemId);
+			const workspace = scoreWorkspaces.find((row) =>
+				row.items.some((item) => item.id === mutation.itemId)
+			);
+			if (!workspace?.canManage || workspace.locked) return false;
+			const item = workspace.items.find((candidate) => candidate.id === mutation.itemId);
 			if (!item || item.lifecycle !== 'active') {
 				toast.error('รายการคะแนนนี้ไม่ได้ใช้งานแล้ว');
 				return false;
@@ -628,18 +663,26 @@
 		}
 		const nextValues = { ...scoreValues };
 		for (const mutation of mutations) {
+			const workspacePhase = scoreWorkspaces.find((row) =>
+				row.items.some((item) => item.id === mutation.itemId)
+			)?.phaseCode;
+			const phaseCode = phaseCodes.find((code) => code === workspacePhase);
+			if (!phaseCode) return false;
 			const key = cellKey(mutation.studentId, mutation.itemId);
+			if ((scoreValues[key] ?? null) === mutation.value) continue;
 			nextValues[key] = mutation.value;
 			scoreQueue.enqueue(
 				mutation.value === null
 					? {
 							operation: 'clear',
+							phaseCode,
 							scoreItemId: mutation.itemId,
 							studentAcademicYearId: mutation.studentId,
 							rowVersion: scoreVersions[key] ?? null
 						}
 					: {
 							operation: 'set',
+							phaseCode,
 							scoreItemId: mutation.itemId,
 							studentAcademicYearId: mutation.studentId,
 							value: mutation.value,
@@ -664,7 +707,9 @@
 		});
 	}
 
-	function openItemDialog(item: GradebookScoreItem | null): void {
+	function openItemDialog(phase: GradebookPhaseCode, item: GradebookScoreItem | null): void {
+		activePhase = phase;
+		syncUrl();
 		editingItem = item;
 		itemDialogRevision += 1;
 		itemDialogOpen = true;
@@ -679,16 +724,16 @@
 			const saved = editingItem
 				? await updateGradebookItem(selectedGroupId, activePhase, editingItem.id, context, input)
 				: await createGradebookItem(selectedGroupId, activePhase, context, input);
-			scoreWorkspace = {
+			patchScoreWorkspace({
 				...scoreWorkspace,
 				items: editingItem
 					? scoreWorkspace.items.map((item) => (item.id === saved.id ? saved : item))
 					: [...scoreWorkspace.items, saved],
 				confirmationIsCurrent: false
-			};
+			});
 			itemDialogOpen = false;
 			selectedItemIds = selectNewGradebookItem(selectedItemIds, saved.id);
-			await loadSelectedWorkspace();
+			await refreshScorePhase(activePhase);
 			toast.success(editingItem ? 'บันทึกรายการคะแนนแล้ว' : 'เพิ่มรายการคะแนนแล้ว');
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'บันทึกรายการคะแนนไม่สำเร็จ');
@@ -706,7 +751,7 @@
 			const outcome = await removeGradebookItem(selectedGroupId, activePhase, item.id, context, {
 				rowVersion: item.rowVersion
 			});
-			scoreWorkspace = {
+			patchScoreWorkspace({
 				...scoreWorkspace,
 				items:
 					outcome.disposition === 'deleted'
@@ -717,10 +762,10 @@
 									: candidate
 							),
 				confirmationIsCurrent: false
-			};
+			});
 			selectedItemIds = selectedItemIds.filter((id) => id !== item.id);
 			itemDialogOpen = false;
-			await loadSelectedWorkspace();
+			await refreshScorePhase(activePhase);
 			toast.success(
 				outcome.disposition === 'deleted'
 					? 'ลบรายการคะแนนแล้ว'
@@ -840,8 +885,9 @@
 				rowVersion: control.rowVersion
 			});
 			gradebookControls = gradebookControls.map((row) => (row.id === saved.id ? saved : row));
-			if (activeTab === 'scores' && saved.phaseCode === activePhase) {
-				await loadSelectedWorkspace();
+			if (activeTab === 'scores') {
+				const phase = phaseCodes.find((code) => code === saved.phaseCode);
+				if (phase) await refreshScorePhase(phase);
 			}
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'บันทึกช่วงกรอกคะแนนไม่สำเร็จ');
@@ -881,11 +927,11 @@
 					rosterChecksum: scoreWorkspace.rosterChecksum,
 					rowVersion: scoreWorkspace.confirmation?.rowVersion ?? null
 				});
-				scoreWorkspace = {
+				patchScoreWorkspace({
 					...scoreWorkspace,
 					confirmation,
 					confirmationIsCurrent: true
-				};
+				});
 				toast.success('ยืนยันคะแนนช่วงนี้แล้ว');
 			} else if (activeTab !== 'scores' && evaluationWorkspace) {
 				const result = await confirmLearnerEvaluationGroup(selectedGroupId, activeTab, context, {
@@ -958,7 +1004,7 @@
 				evaluationQueue.discard();
 				workspaceRequest.abort();
 				criteriaRequest.abort();
-				scoreWorkspace = null;
+				scoreWorkspaces = [];
 				evaluationWorkspace = null;
 				evaluationConfiguration = null;
 				gradebookControls = [];
@@ -973,7 +1019,7 @@
 				criteriaRequest.abort();
 				scoreSubjects = [];
 				evaluationSubjects = [];
-				scoreWorkspace = null;
+				scoreWorkspaces = [];
 				evaluationWorkspace = null;
 				loading = false;
 			}
@@ -1033,8 +1079,8 @@
 					disabled={activeSaveStatus.state === 'saving'}
 					onselect={(subjectId, groupId) => void changeSelection(subjectId, groupId)}
 				/>
-				<Card.Root class="gap-0 py-0 xl:w-72">
-					<Card.Content class="flex h-full items-center gap-3 px-4 py-3">
+				<Card.Root class="gap-0 py-0">
+					<Card.Content class="flex h-full flex-wrap items-center gap-3 px-4 py-3">
 						<div
 							class={[
 								'flex size-9 shrink-0 items-center justify-center rounded-lg',
@@ -1081,6 +1127,18 @@
 								<RotateCcw class="size-4" />
 							</Button>
 						{/if}
+
+						{#if canManageGradebookSchool || canManageEvaluationSchool}
+							<GradebookEntryControls
+								{gradebookControls}
+								{evaluationControls}
+								canManageGradebook={canManageGradebookSchool}
+								canManageEvaluation={canManageEvaluationSchool}
+								busyKey={controlBusyKey}
+								ontoggleGradebook={(control) => void toggleGradebookControl(control)}
+								ontoggleEvaluation={(control) => void toggleEvaluationControl(control)}
+							/>
+						{/if}
 					</Card.Content>
 				</Card.Root>
 			</div>
@@ -1107,18 +1165,6 @@
 				</Tabs.List>
 			</Tabs.Root>
 
-			{#if canManageGradebookSchool || canManageEvaluationSchool}
-				<GradebookEntryControls
-					{gradebookControls}
-					{evaluationControls}
-					canManageGradebook={canManageGradebookSchool}
-					canManageEvaluation={canManageEvaluationSchool}
-					busyKey={controlBusyKey}
-					ontoggleGradebook={(control) => void toggleGradebookControl(control)}
-					ontoggleEvaluation={(control) => void toggleEvaluationControl(control)}
-				/>
-			{/if}
-
 			{#if activeSaveStatus.state === 'failed'}
 				<div
 					class="flex flex-col gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4 sm:flex-row sm:items-center"
@@ -1140,30 +1186,6 @@
 				</div>
 			{/if}
 
-			{#if activeTab === 'scores'}
-				<nav
-					class="grid grid-cols-2 gap-2 rounded-xl border bg-card p-2 sm:grid-cols-4"
-					aria-label="ช่วงคะแนน"
-				>
-					{#each phaseCodes as phase (phase)}
-						<Button
-							variant={activePhase === phase ? 'default' : 'ghost'}
-							class="justify-between"
-							disabled={activeSaveStatus.state === 'saving'}
-							onclick={() => void changePhase(phase)}
-						>
-							{phaseLabels[phase]}
-							{#if selectedScoreSubject?.phases.some((row) => row.phaseCode === phase)}
-								<span class="text-xs opacity-75"
-									>{selectedScoreSubject.phases.find((row) => row.phaseCode === phase)
-										?.maxScore}</span
-								>
-							{/if}
-						</Button>
-					{/each}
-				</nav>
-			{/if}
-
 			{#if activeSubjects.length === 0}
 				<AcademicPrerequisiteNotice
 					prerequisite={{
@@ -1181,9 +1203,9 @@
 			{:else if activeTab === 'scores' && !selectedPhaseAvailable}
 				<AcademicPrerequisiteNotice
 					prerequisite={{
-						key: `gradebook-phase-${activePhase}`,
+						key: 'gradebook-phases',
 						status: 'missing',
-						title: `ยังไม่มีโครงสร้างคะแนน${phaseLabels[activePhase]}`,
+						title: 'ยังไม่มีโครงสร้างคะแนนรายวิชา',
 						description: 'กำหนดคะแนนเต็มและรูปแบบการประเมินของช่วงนี้ก่อนสร้างรายการคะแนนย่อย',
 						actionLabel: 'ไปหน้าโครงสร้างคะแนน',
 						href: '/staff/academic/assessments'
@@ -1199,13 +1221,15 @@
 					actionLabel="ลองอีกครั้ง"
 					onaction={() => void loadSelectedWorkspace()}
 				/>
-			{:else if activeTab === 'scores' && scoreWorkspace}
+			{:else if activeTab === 'scores' && scoreWorkspaces.length > 0}
 				<ScoreLedger
-					workspace={scoreWorkspace}
+					workspaces={scoreWorkspaces}
 					values={scoreValues}
 					{selectedItemIds}
-					canManage={scoreWorkspace.canManage}
-					disabled={activeSaveStatus.state === 'failed' || scoreWorkspace.locked}
+					disabled={activeSaveStatus.state === 'failed' ||
+						itemBusy ||
+						confirming ||
+						Boolean(controlBusyKey)}
 					onselectionchange={(ids) => (selectedItemIds = ids)}
 					onmutations={applyScoreMutations}
 					onflush={async () => {
@@ -1214,7 +1238,11 @@
 					onopenitem={openItemDialog}
 					onopenmobile={(position: GradebookCellPosition) =>
 						(mobileCell = { mode: 'score', ...position })}
-					onconfirm={() => (confirmationDialogOpen = true)}
+					onconfirm={(phase) => {
+						activePhase = phase;
+						syncUrl();
+						confirmationDialogOpen = true;
+					}}
 					onerror={errorToast}
 				/>
 			{:else if activeTab !== 'scores' && evaluationWorkspace}

@@ -10,10 +10,8 @@
 </script>
 
 <script lang="ts">
-	import { Badge } from '$lib/components/ui/badge';
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
-	import { BookOpenCheck, UsersRound } from 'lucide-svelte';
 
 	let {
 		subjects,
@@ -58,26 +56,6 @@
 </script>
 
 <section class="rounded-xl border bg-card" aria-label="เลือกรายวิชาและกลุ่มเรียน">
-	<div class="flex items-start gap-3 border-b px-4 py-3">
-		<div
-			class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
-		>
-			<BookOpenCheck class="size-5" />
-		</div>
-		<div class="min-w-0 flex-1">
-			<div class="flex flex-wrap items-center gap-2">
-				<p class="truncate font-semibold">
-					{selectedSubject ? `${selectedSubject.code} · ${selectedSubject.name}` : 'เลือกรายวิชา'}
-				</p>
-				{#if selectedGroup?.assigned}<Badge variant="secondary">วิชาของฉัน</Badge>{/if}
-			</div>
-			<p class="mt-0.5 flex items-center gap-1 text-sm text-muted-foreground">
-				<UsersRound class="size-3.5" />
-				{selectedGroup?.groupName ?? 'เลือกกลุ่มเรียนเพื่อเริ่มกรอก'}
-			</p>
-		</div>
-	</div>
-
 	<div class="grid gap-3 p-3 sm:grid-cols-2 sm:p-4">
 		<div class="space-y-1.5">
 			<Label for="gradebook-subject">รายวิชา</Label>
