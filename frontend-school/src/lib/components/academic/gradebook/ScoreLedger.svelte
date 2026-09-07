@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { scoreItemBudget } from '$lib/academic/gradebook/item-budget';
 	import {
 		nextEditableCell,
 		normalizeScorePaste,
@@ -60,7 +61,8 @@
 				workspace,
 				items,
 				maximum: Number(workspace?.phaseMaxScore ?? 0),
-				itemMaximum: items.reduce((sum, item) => sum + Number(item.maxScore), 0),
+				itemMaximum: scoreItemBudget(workspace?.phaseMaxScore ?? '0', items).allocated,
+				budget: scoreItemBudget(workspace?.phaseMaxScore ?? '0', items),
 				editable: Boolean(workspace?.canManage && !workspace.locked)
 			};
 		})
@@ -183,7 +185,7 @@
 								{#if phase.editable}<Button
 										variant="ghost"
 										size="icon-sm"
-										{disabled}
+										disabled={disabled || !phase.budget.canAdd}
 										aria-label={'เพิ่มรายการคะแนน' + phaseLabels[phase.code]}
 										onclick={() => onopenitem(phase.code, null)}><Plus class="size-4" /></Button
 									>{/if}
@@ -192,6 +194,13 @@
 								<Badge variant={phase.itemMaximum === phase.maximum ? 'secondary' : 'destructive'}
 									>{phase.itemMaximum} / {phase.maximum} คะแนน</Badge
 								>
+								<p class="mt-1 text-xs font-normal text-muted-foreground">
+									{phase.budget.remaining === 0
+										? 'จัดสรรคะแนนครบแล้ว'
+										: phase.budget.remaining > 0
+											? `เหลือจัดสรร ${phase.budget.remaining} คะแนน`
+											: `เกิน ${-phase.budget.remaining} คะแนน กรุณาลดคะแนนเต็มของรายการ`}
+								</p>
 								{#if !phase.editable}<span class="ml-2 text-xs font-normal text-muted-foreground"
 										>อ่านอย่างเดียว</span
 									>{/if}

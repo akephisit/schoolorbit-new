@@ -6,6 +6,112 @@ use crate::test_helpers::create_named_test_pool_with_max_connections;
 use crate::{error::AppError, middleware::permission::ActorContext, permissions::registry::codes};
 use uuid::Uuid;
 
+// Catches overflow through either mutation path, including concurrent writers.
+#[tokio::test]
+async fn gradebook_item_budget_prevents_overallocation() {
+    let (pool, actor, context, group, phase) = fixture("gradebook_item_budget").await;
+    sqlx::query("DELETE FROM learning_group_score_items WHERE learning_group_id=$1 AND assessment_phase_id=$2").bind(group).bind(phase).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE course_assessment_phases SET max_score=20 WHERE id=$1")
+        .bind(phase)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let input = |maximum: &str, version| ItemInput {
+        name: "Work".into(),
+        max_score: maximum.into(),
+        display_order: 1,
+        row_version: version,
+    };
+    let first = create_item(&pool, &actor, group, phase, &context, input("10", None))
+        .await
+        .unwrap();
+    assert!(matches!(
+        create_item(&pool, &actor, group, phase, &context, input("10.01", None)).await,
+        Err(AppError::ValidationError(_))
+    ));
+    let (left, right) = tokio::join!(
+        create_item(&pool, &actor, group, phase, &context, input("10", None)),
+        create_item(&pool, &actor, group, phase, &context, input("10", None))
+    );
+    assert_ne!(
+        left.is_ok(),
+        right.is_ok(),
+        "only one concurrent writer may consume the remaining budget"
+    );
+    assert!(matches!(
+        create_item(&pool, &actor, group, phase, &context, input("0", None)).await,
+        Err(AppError::ValidationError(_))
+    ));
+    assert!(matches!(
+        update_item(
+            &pool,
+            &actor,
+            group,
+            phase,
+            first.id,
+            &context,
+            input("10.01", Some(first.row_version))
+        )
+        .await,
+        Err(AppError::ValidationError(_))
+    ));
+    let lowered = update_item(
+        &pool,
+        &actor,
+        group,
+        phase,
+        first.id,
+        &context,
+        input("8", Some(first.row_version)),
+    )
+    .await
+    .unwrap();
+    create_item(&pool, &actor, group, phase, &context, input("2", None))
+        .await
+        .unwrap();
+    // A later structure reduction must still allow cosmetic edits and gradual repair.
+    sqlx::query("UPDATE course_assessment_phases SET max_score=5 WHERE id=$1")
+        .bind(phase)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let renamed = update_item(
+        &pool,
+        &actor,
+        group,
+        phase,
+        first.id,
+        &context,
+        input("8", Some(lowered.row_version)),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(
+        update_item(
+            &pool,
+            &actor,
+            group,
+            phase,
+            first.id,
+            &context,
+            input("8.01", Some(renamed.row_version))
+        )
+        .await,
+        Err(AppError::ValidationError(_))
+    ));
+    update_item(
+        &pool,
+        &actor,
+        group,
+        phase,
+        first.id,
+        &context,
+        input("7", Some(renamed.row_version)),
+    )
+    .await
+    .unwrap();
+}
+
 #[tokio::test]
 async fn gradebook_review_phase_code_resolution_checks_context() {
     let (pool, actor, context, group, expected_phase) =

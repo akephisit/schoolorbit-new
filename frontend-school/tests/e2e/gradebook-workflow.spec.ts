@@ -116,7 +116,12 @@ function workspace(canManage: boolean, phaseCode: (typeof phaseCodes)[number]) {
 	};
 }
 
-async function mockGradebook(page: Page, canManage: boolean, closedPhase?: string) {
+async function mockGradebook(
+	page: Page,
+	canManage: boolean,
+	closedPhase?: string,
+	itemMaximum?: string
+) {
 	const controlRequests: string[] = [];
 	const scoreBodies: unknown[] = [];
 	const scorePaths: string[] = [];
@@ -125,6 +130,7 @@ async function mockGradebook(page: Page, canManage: boolean, closedPhase?: strin
 	const workspaces = phaseCodes.map((phase) =>
 		workspace(canManage && phase !== closedPhase, phase)
 	);
+	if (itemMaximum) for (const row of workspaces) row.items[0]!.maxScore = itemMaximum;
 	await page.route(
 		(url) => url.pathname.startsWith('/api/'),
 		async (route) => {
@@ -364,12 +370,18 @@ test('select all and keyboard movement skip a closed phase', async ({ page }) =>
 });
 
 test('adding an item uses the chosen phase and refreshes only that phase', async ({ page }) => {
-	const observed = await mockGradebook(page, true);
+	const observed = await mockGradebook(page, true, undefined, '20');
 	await page.goto(gradebookUrl());
 	await page.getByRole('button', { name: 'เพิ่มรายการคะแนนปลายภาค', exact: true }).click();
 	const dialog = page.getByRole('dialog');
 	await dialog.getByLabel('ชื่อรายการ').fill('งานเพิ่มเติม');
-	await dialog.getByLabel('คะแนนเต็ม', { exact: true }).fill('0');
+	await dialog.getByLabel('คะแนนเต็ม', { exact: true }).fill('10.01');
+	await dialog.getByRole('button', { name: 'เพิ่มรายการ', exact: true }).click();
+	await expect(
+		dialog.getByText('คะแนนเต็มของรายการนี้ต้องไม่เกิน 10 คะแนน', { exact: true })
+	).toBeVisible();
+	expect(observed.itemPaths).toHaveLength(0);
+	await dialog.getByLabel('คะแนนเต็ม', { exact: true }).fill('10');
 	await dialog.getByRole('button', { name: 'เพิ่มรายการ', exact: true }).click();
 	await expect(
 		page.getByRole('checkbox', { name: 'เลือก ปลายภาค งานเพิ่มเติม', exact: true })
@@ -379,6 +391,26 @@ test('adding an item uses the chosen phase and refreshes only that phase', async
 	]);
 	expect(observed.workspacePaths).toHaveLength(5);
 	expect(observed.workspacePaths[4]).toContain('/phases/final');
+	await expect(
+		page.getByRole('button', { name: 'เพิ่มรายการคะแนนปลายภาค', exact: true })
+	).toBeDisabled();
+});
+
+test('a full phase disables additions but still allows editing without increasing its allocation', async ({
+	page
+}) => {
+	await mockGradebook(page, true);
+	await page.goto(gradebookUrl());
+	await expect(
+		page.getByRole('button', { name: 'เพิ่มรายการคะแนนก่อนกลางภาค', exact: true })
+	).toBeDisabled();
+	await page.getByRole('button', { name: 'แก้ ก่อนกลางภาค ชีท 1', exact: true }).click();
+	const dialog = page.getByRole('dialog');
+	await dialog.getByLabel('คะแนนเต็ม', { exact: true }).fill('20.01');
+	await dialog.getByRole('button', { name: 'บันทึกการแก้ไข', exact: true }).click();
+	await expect(
+		dialog.getByText('คะแนนเต็มของรายการนี้ต้องไม่เกิน 20 คะแนน', { exact: true })
+	).toBeVisible();
 });
 
 test('entry settings open and close in a dialog instead of taking ledger space', async ({

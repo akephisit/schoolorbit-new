@@ -1263,11 +1263,12 @@
 	{/if}
 </PageShell>
 
-{#if itemDialogOpen}
+{#if itemDialogOpen && scoreWorkspace}
 	{#key itemDialogRevision}
 		<ScoreItemDialog
 			open={itemDialogOpen}
 			item={editingItem}
+			workspace={scoreWorkspace}
 			nextDisplayOrder={nextItemDisplayOrder}
 			busy={itemBusy}
 			onopenchange={(open) => (itemDialogOpen = open)}
