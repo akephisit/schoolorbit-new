@@ -30,7 +30,7 @@ export type ScorePasteResult =
 	| { ok: true; mutations: ScorePasteMutation[] }
 	| { ok: false; error: ScorePasteError };
 
-const MAX_PASTE_CELLS = 1_000;
+const MAX_PASTE_CELLS = 500;
 const SCORE_DECIMAL = /^(0|[1-9]\d*)(\.\d{1,2})?$/;
 
 function uniqueIds(ids: readonly string[]): string[] {

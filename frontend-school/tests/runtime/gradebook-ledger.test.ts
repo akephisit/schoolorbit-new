@@ -167,3 +167,37 @@ test('score paste rejects a read-only origin, no selected columns, and an oversi
 	assert.equal(oversized.ok, false);
 	if (!oversized.ok) assert.equal(oversized.error.code, 'too_many_cells');
 });
+
+test('score paste accepts exactly one backend batch and rejects the 501st cell', () => {
+	const selected = Array.from({ length: 5 }, (_, index) => `item-${index}`);
+	const students = Array.from({ length: 101 }, (_, index) => `student-${index}`);
+	const fiveHundred = Array.from({ length: 100 }, () => '1\t1\t1\t1\t1').join('\n');
+	const fiveHundredAndOne = `${fiveHundred}\n1`;
+
+	assert.equal(
+		normalizeScorePaste(
+			fiveHundred,
+			{ itemId: 'item-0', studentId: 'student-0' },
+			selected,
+			students
+		).ok,
+		true
+	);
+	const oversized = normalizeScorePaste(
+		fiveHundredAndOne,
+		{ itemId: 'item-0', studentId: 'student-0' },
+		selected,
+		students
+	);
+	assert.equal(oversized.ok, false);
+	if (!oversized.ok) assert.equal(oversized.error.code, 'non_rectangular');
+
+	const oneColumnOversized = normalizeScorePaste(
+		Array.from({ length: 501 }, () => '1').join('\n'),
+		{ itemId: 'item-0', studentId: 'student-0' },
+		['item-0'],
+		Array.from({ length: 501 }, (_, index) => `student-${index}`)
+	);
+	assert.equal(oneColumnOversized.ok, false);
+	if (!oneColumnOversized.ok) assert.equal(oneColumnOversized.error.code, 'too_many_cells');
+});

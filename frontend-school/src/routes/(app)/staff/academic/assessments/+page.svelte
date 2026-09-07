@@ -62,6 +62,7 @@
 
 	const phaseCodes: AssessmentPhaseCode[] = ['before_midterm', 'midterm', 'after_midterm', 'final'];
 	const academicContext = getAcademicContextStore();
+	const academicYearId = $derived($academicContext.selected.academicYearId);
 	const academicTermId = $derived($academicContext.selected.academicTermId);
 	const currentUserId = $derived($authStore.user?.id ?? '');
 
@@ -98,6 +99,21 @@
 	);
 	const canManageSchool = $derived($can.has(PERMISSIONS.ACADEMIC_ASSESSMENT_MANAGE_SCHOOL));
 	const canManageAssigned = $derived($can.has(PERMISSIONS.ACADEMIC_ASSESSMENT_MANAGE_ASSIGNED));
+	const canReadGradebook = $derived(
+		$can.hasAny(
+			PERMISSIONS.ACADEMIC_GRADEBOOK_READ_ASSIGNED,
+			PERMISSIONS.ACADEMIC_GRADEBOOK_READ_ORGANIZATION_UNIT,
+			PERMISSIONS.ACADEMIC_GRADEBOOK_READ_SCHOOL,
+			PERMISSIONS.ACADEMIC_GRADEBOOK_MANAGE_ASSIGNED,
+			PERMISSIONS.ACADEMIC_GRADEBOOK_MANAGE_SCHOOL
+		)
+	);
+	const gradebookHref = $derived.by(() => {
+		const query: string[] = [];
+		if (academicYearId) query.push(`academicYearId=${encodeURIComponent(academicYearId)}`);
+		if (academicTermId) query.push(`academicTermId=${encodeURIComponent(academicTermId)}`);
+		return `/staff/academic/gradebook${query.length > 0 ? `?${query.join('&')}` : ''}`;
+	});
 	const canEditDetail = $derived.by(() => {
 		if (!detail) return false;
 		if (canManageSchool) return true;
@@ -458,6 +474,14 @@
 	title="โครงสร้างคะแนนรายวิชา"
 	description="ตรวจคะแนนเต็ม ผู้รับผิดชอบ และรูปแบบการสอบของ 4 ช่วงมาตรฐานในภาคเรียนเดียวกัน"
 >
+	{#snippet actions()}
+		{#if canReadGradebook}
+			<Button variant="outline" href={gradebookHref}>
+				<BookOpenCheck class="size-4" /> ไปหน้ากรอกคะแนน
+			</Button>
+		{/if}
+	{/snippet}
+
 	{#if !canRead}
 		<PageState
 			variant="permission"

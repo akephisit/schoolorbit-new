@@ -55,7 +55,7 @@ function assessmentPlan(
 				primaryLearningGroupCount: 1
 			}
 		],
-		gradingPolicy: { policyCode: 'score', totalScore: '100', passingScore: '50' },
+		assessmentTotalScore: '100',
 		phases: phases(scores),
 		readiness: {
 			ready: true,
@@ -146,10 +146,7 @@ async function mockAssessmentApis(page: Page) {
 						academicYearId,
 						academicTermId,
 						phaseCode,
-						label: ['ก่อนกลางภาค', 'กลางภาค', 'หลังกลางภาค', 'ปลายภาค'][index],
-						order: index + 1,
 						planEditingEnabled: true,
-						scoreEntryEnabled: true,
 						rowVersion: 1
 					}))
 				);
