@@ -343,19 +343,27 @@ impl TryFrom<&str> for CourseOfficialOutcome {
 )]
 pub enum ResultCorrectionInput {
     Course {
+        #[schema(rename = "courseResultId")]
         course_result_id: Uuid,
         outcome: CourseOfficialOutcome,
+        #[schema(rename = "numericGrade")]
         numeric_grade: Option<String>,
+        #[schema(rename = "expectedEffectiveVersion")]
         expected_effective_version: i64,
     },
     Activity {
+        #[schema(rename = "activityResultId")]
         activity_result_id: Uuid,
         outcome: ActivityOutcome,
+        #[schema(rename = "expectedEffectiveVersion")]
         expected_effective_version: i64,
     },
     LearnerEvaluation {
+        #[schema(rename = "subjectStudentEvaluationId")]
         subject_student_evaluation_id: Uuid,
+        #[schema(rename = "qualityLevel")]
         quality_level: crate::modules::academic::learner_evaluation::models::LearnerEvaluationLevel,
+        #[schema(rename = "expectedEffectiveVersion")]
         expected_effective_version: i64,
     },
 }
@@ -369,12 +377,14 @@ pub enum ResultCorrectionInput {
 pub enum EffectiveResultValue {
     Course {
         outcome: CourseOfficialOutcome,
+        #[schema(rename = "numericGrade")]
         numeric_grade: Option<String>,
     },
     Activity {
         outcome: ActivityOutcome,
     },
     LearnerEvaluation {
+        #[schema(rename = "qualityLevel")]
         quality_level: i16,
     },
 }

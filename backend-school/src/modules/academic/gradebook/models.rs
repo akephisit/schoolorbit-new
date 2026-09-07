@@ -27,14 +27,20 @@ pub struct ItemInput {
 )]
 pub enum ScoreCellMutation {
     Set {
+        #[schema(rename = "scoreItemId")]
         score_item_id: Uuid,
+        #[schema(rename = "studentAcademicYearId")]
         student_academic_year_id: Uuid,
         value: String,
+        #[schema(rename = "rowVersion")]
         row_version: Option<i64>,
     },
     Clear {
+        #[schema(rename = "scoreItemId")]
         score_item_id: Uuid,
+        #[schema(rename = "studentAcademicYearId")]
         student_academic_year_id: Uuid,
+        #[schema(rename = "rowVersion")]
         row_version: Option<i64>,
     },
 }

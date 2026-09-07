@@ -26833,7 +26833,7 @@
                 ],
                 "type": "string"
               },
-              "numeric_grade": {
+              "numericGrade": {
                 "type": [
                   "string",
                   "null"
@@ -26875,13 +26875,13 @@
                 ],
                 "type": "string"
               },
-              "quality_level": {
+              "qualityLevel": {
                 "format": "int32",
                 "type": "integer"
               }
             },
             "required": [
-              "quality_level",
+              "qualityLevel",
               "kind"
             ],
             "type": "object"
@@ -34608,11 +34608,11 @@
         "oneOf": [
           {
             "properties": {
-              "course_result_id": {
+              "courseResultId": {
                 "format": "uuid",
                 "type": "string"
               },
-              "expected_effective_version": {
+              "expectedEffectiveVersion": {
                 "format": "int64",
                 "type": "integer"
               },
@@ -34622,7 +34622,7 @@
                 ],
                 "type": "string"
               },
-              "numeric_grade": {
+              "numericGrade": {
                 "type": [
                   "string",
                   "null"
@@ -34633,20 +34633,20 @@
               }
             },
             "required": [
-              "course_result_id",
+              "courseResultId",
               "outcome",
-              "expected_effective_version",
+              "expectedEffectiveVersion",
               "kind"
             ],
             "type": "object"
           },
           {
             "properties": {
-              "activity_result_id": {
+              "activityResultId": {
                 "format": "uuid",
                 "type": "string"
               },
-              "expected_effective_version": {
+              "expectedEffectiveVersion": {
                 "format": "int64",
                 "type": "integer"
               },
@@ -34661,16 +34661,16 @@
               }
             },
             "required": [
-              "activity_result_id",
+              "activityResultId",
               "outcome",
-              "expected_effective_version",
+              "expectedEffectiveVersion",
               "kind"
             ],
             "type": "object"
           },
           {
             "properties": {
-              "expected_effective_version": {
+              "expectedEffectiveVersion": {
                 "format": "int64",
                 "type": "integer"
               },
@@ -34680,18 +34680,18 @@
                 ],
                 "type": "string"
               },
-              "quality_level": {
+              "qualityLevel": {
                 "$ref": "#/components/schemas/LearnerEvaluationLevel"
               },
-              "subject_student_evaluation_id": {
+              "subjectStudentEvaluationId": {
                 "format": "uuid",
                 "type": "string"
               }
             },
             "required": [
-              "subject_student_evaluation_id",
-              "quality_level",
-              "expected_effective_version",
+              "subjectStudentEvaluationId",
+              "qualityLevel",
+              "expectedEffectiveVersion",
               "kind"
             ],
             "type": "object"
@@ -35696,18 +35696,18 @@
                 ],
                 "type": "string"
               },
-              "row_version": {
+              "rowVersion": {
                 "format": "int64",
                 "type": [
                   "integer",
                   "null"
                 ]
               },
-              "score_item_id": {
+              "scoreItemId": {
                 "format": "uuid",
                 "type": "string"
               },
-              "student_academic_year_id": {
+              "studentAcademicYearId": {
                 "format": "uuid",
                 "type": "string"
               },
@@ -35716,8 +35716,8 @@
               }
             },
             "required": [
-              "score_item_id",
-              "student_academic_year_id",
+              "scoreItemId",
+              "studentAcademicYearId",
               "value",
               "operation"
             ],
@@ -35731,25 +35731,25 @@
                 ],
                 "type": "string"
               },
-              "row_version": {
+              "rowVersion": {
                 "format": "int64",
                 "type": [
                   "integer",
                   "null"
                 ]
               },
-              "score_item_id": {
+              "scoreItemId": {
                 "format": "uuid",
                 "type": "string"
               },
-              "student_academic_year_id": {
+              "studentAcademicYearId": {
                 "format": "uuid",
                 "type": "string"
               }
             },
             "required": [
-              "score_item_id",
-              "student_academic_year_id",
+              "scoreItemId",
+              "studentAcademicYearId",
               "operation"
             ],
             "type": "object"

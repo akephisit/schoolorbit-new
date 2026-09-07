@@ -12433,7 +12433,7 @@ export interface components {
 			| {
 					/** @enum {string} */
 					kind: 'course';
-					numeric_grade?: string | null;
+					numericGrade?: string | null;
 					outcome: components['schemas']['CourseOfficialOutcome'];
 			  }
 			| {
@@ -12445,7 +12445,7 @@ export interface components {
 					/** @enum {string} */
 					kind: 'learner_evaluation';
 					/** Format: int32 */
-					quality_level: number;
+					qualityLevel: number;
 			  };
 		ElementFrame: {
 			/** Format: double */
@@ -14620,31 +14620,31 @@ export interface components {
 		ResultCorrectionInput:
 			| {
 					/** Format: uuid */
-					course_result_id: string;
+					courseResultId: string;
 					/** Format: int64 */
-					expected_effective_version: number;
+					expectedEffectiveVersion: number;
 					/** @enum {string} */
 					kind: 'course';
-					numeric_grade?: string | null;
+					numericGrade?: string | null;
 					outcome: components['schemas']['CourseOfficialOutcome'];
 			  }
 			| {
 					/** Format: uuid */
-					activity_result_id: string;
+					activityResultId: string;
 					/** Format: int64 */
-					expected_effective_version: number;
+					expectedEffectiveVersion: number;
 					/** @enum {string} */
 					kind: 'activity';
 					outcome: components['schemas']['ActivityOutcome'];
 			  }
 			| {
 					/** Format: int64 */
-					expected_effective_version: number;
+					expectedEffectiveVersion: number;
 					/** @enum {string} */
 					kind: 'learner_evaluation';
-					quality_level: components['schemas']['LearnerEvaluationLevel'];
+					qualityLevel: components['schemas']['LearnerEvaluationLevel'];
 					/** Format: uuid */
-					subject_student_evaluation_id: string;
+					subjectStudentEvaluationId: string;
 			  };
 		ResultCorrectionRecord: {
 			corrected: components['schemas']['EffectiveResultValue'];
@@ -14917,22 +14917,22 @@ export interface components {
 					/** @enum {string} */
 					operation: 'set';
 					/** Format: int64 */
-					row_version?: number | null;
+					rowVersion?: number | null;
 					/** Format: uuid */
-					score_item_id: string;
+					scoreItemId: string;
 					/** Format: uuid */
-					student_academic_year_id: string;
+					studentAcademicYearId: string;
 					value: string;
 			  }
 			| {
 					/** @enum {string} */
 					operation: 'clear';
 					/** Format: int64 */
-					row_version?: number | null;
+					rowVersion?: number | null;
 					/** Format: uuid */
-					score_item_id: string;
+					scoreItemId: string;
 					/** Format: uuid */
-					student_academic_year_id: string;
+					studentAcademicYearId: string;
 			  };
 		ScoreItem: {
 			/** Format: int32 */

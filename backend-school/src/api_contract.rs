@@ -4901,5 +4901,34 @@ mod tests {
             .get(&retired_score_entry_field)
             .is_none());
         assert!(schemas.get(&retired_grading_policy).is_none());
+
+        let score_mutation_schema = schemas["ScoreCellMutation"].to_string();
+        for field in ["scoreItemId", "studentAcademicYearId", "rowVersion"] {
+            assert!(
+                score_mutation_schema.contains(field),
+                "score mutation schema must publish camelCase field {field}"
+            );
+        }
+        for field in ["score_item_id", "student_academic_year_id", "row_version"] {
+            assert!(
+                !score_mutation_schema.contains(field),
+                "score mutation schema retained snake_case field {field}"
+            );
+        }
+
+        let correction_schema = schemas["ResultCorrectionInput"].to_string();
+        for field in [
+            "courseResultId",
+            "activityResultId",
+            "subjectStudentEvaluationId",
+            "numericGrade",
+            "qualityLevel",
+            "expectedEffectiveVersion",
+        ] {
+            assert!(
+                correction_schema.contains(field),
+                "result correction schema must publish camelCase field {field}"
+            );
+        }
     }
 }

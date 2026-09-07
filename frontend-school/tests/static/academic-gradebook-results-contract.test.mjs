@@ -139,6 +139,25 @@ test('gradebook, learner-evaluation, and result operations own canonical context
 	assert.equal(schemas.AssessmentPhaseControl.properties.scoreEntryEnabled, undefined);
 	assert.equal(schemas.CourseGradingPolicy, undefined);
 	assert.equal(schemas.ActivityResult, undefined);
+
+	const schemaText = (schemaName) => JSON.stringify(schemas[schemaName]);
+	for (const field of ['scoreItemId', 'studentAcademicYearId', 'rowVersion']) {
+		assert.match(schemaText('ScoreCellMutation'), new RegExp(`"${field}"`));
+	}
+	for (const field of [
+		'courseResultId',
+		'activityResultId',
+		'subjectStudentEvaluationId',
+		'numericGrade',
+		'qualityLevel',
+		'expectedEffectiveVersion'
+	]) {
+		assert.match(schemaText('ResultCorrectionInput'), new RegExp(`"${field}"`));
+	}
+	assert.doesNotMatch(
+		`${schemaText('ScoreCellMutation')}${schemaText('ResultCorrectionInput')}`,
+		/"(?:score_item_id|student_academic_year_id|row_version|course_result_id|activity_result_id|subject_student_evaluation_id|numeric_grade|quality_level|expected_effective_version)"/
+	);
 });
 
 test('academic result wrappers are generated-contract consumers only', async () => {
