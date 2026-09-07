@@ -80,16 +80,6 @@ pub async fn list_access(
     Ok(filter)
 }
 
-pub async fn require_school_readiness(pool: &PgPool, actor: &ActorContext) -> Result<(), AppError> {
-    let filter = list_access(pool, actor).await?;
-    if !filter.includes_school_owned {
-        return Err(AppError::Forbidden(
-            "School-wide result access is required for readiness".into(),
-        ));
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

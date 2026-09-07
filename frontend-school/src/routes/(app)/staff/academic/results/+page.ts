@@ -1,0 +1,27 @@
+import { PERMISSIONS } from '$lib/permissions/registry';
+
+export const _meta = {
+	academicContext: 'term_required' as const,
+	menu: {
+		title: 'สรุปผลการเรียน',
+		icon: 'ListChecks',
+		group: 'academic_assessment',
+		workspace: 'academic',
+		order: 30,
+		user_type: 'staff',
+		permission: [
+			PERMISSIONS.ACADEMIC_RESULT_READ_ASSIGNED,
+			PERMISSIONS.ACADEMIC_RESULT_READ_ORGANIZATION_UNIT,
+			PERMISSIONS.ACADEMIC_RESULT_READ_SCHOOL,
+			PERMISSIONS.ACADEMIC_RESULT_MANAGE_ASSIGNED,
+			PERMISSIONS.ACADEMIC_RESULT_MANAGE_SCHOOL,
+			PERMISSIONS.ACADEMIC_LEARNER_EVALUATION_READ_ASSIGNED,
+			PERMISSIONS.ACADEMIC_LEARNER_EVALUATION_READ_ORGANIZATION_UNIT,
+			PERMISSIONS.ACADEMIC_LEARNER_EVALUATION_READ_SCHOOL,
+			PERMISSIONS.ACADEMIC_LEARNER_EVALUATION_MANAGE_ASSIGNED,
+			PERMISSIONS.ACADEMIC_LEARNER_EVALUATION_MANAGE_SCHOOL
+		]
+	}
+};
+
+export const load = async () => ({ title: _meta.menu.title });

@@ -50,7 +50,8 @@ pub async fn readiness(
     actor: &ActorContext,
     context: &ResultContext,
 ) -> Result<ResultReadiness, AppError> {
-    access_policy::require_school_readiness(pool, actor).await?;
+    let access = access_policy::list_access(pool, actor).await?;
+    let allowed_organization_units = access.allowed_organization_unit_ids();
     let mut tx = pool.begin().await?;
     sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
         .execute(&mut *tx)
@@ -64,7 +65,7 @@ pub async fn readiness(
            SELECT d.subject_id,g.id AS learning_group_id,o.id AS learning_offering_id,
                   g.name AS group_name,o.name_snapshot AS offering_name,
                   EXISTS(SELECT 1 FROM learning_group_teachers teacher JOIN users u ON u.id=teacher.teacher_id AND u.status='active'
-                         WHERE teacher.learning_group_id=g.id AND teacher.teacher_id=$3
+                         WHERE teacher.learning_group_id=g.id AND teacher.teacher_id=$6
                            AND teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)
                            AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date))) AS assigned,
                   lock.id IS NOT NULL AS locked,
@@ -152,10 +153,22 @@ pub async fn readiness(
              AND lock.academic_term_id=g.academic_term_id
              AND lock.academic_year_id=g.academic_year_id
            WHERE g.academic_term_id=$1 AND g.academic_year_id=$2 AND g.status<>'closed'
+             AND ($3 OR o.owning_organization_unit_id=ANY($4)
+                  OR ($5::uuid IS NOT NULL AND EXISTS(
+                      SELECT 1 FROM learning_group_teachers visible_teacher
+                      JOIN users visible_account ON visible_account.id=visible_teacher.teacher_id
+                       AND visible_account.status='active'
+                      WHERE visible_teacher.learning_group_id=g.id
+                        AND visible_teacher.teacher_id=$5
+                        AND visible_teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)
+                        AND (visible_teacher.ends_on IS NULL OR visible_teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)))))
            ORDER BY d.subject_id,g.id LIMIT 5001"#,
     )
     .bind(context.academic_term_id)
     .bind(context.academic_year_id)
+    .bind(access.includes_school_owned)
+    .bind(&allowed_organization_units)
+    .bind(access.assigned_actor_id)
     .bind(actor.user_id)
     .fetch_all(&mut *tx)
     .await?;
@@ -168,7 +181,7 @@ pub async fn readiness(
         r#"SELECT g.id AS learning_group_id,o.id AS learning_offering_id,g.name AS group_name,
                   o.name_snapshot AS offering_name,
                   EXISTS(SELECT 1 FROM learning_group_teachers teacher JOIN users u ON u.id=teacher.teacher_id AND u.status='active'
-                         WHERE teacher.learning_group_id=g.id AND teacher.teacher_id=$3
+                         WHERE teacher.learning_group_id=g.id AND teacher.teacher_id=$6
                            AND teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)
                            AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date))) AS assigned,
                   lock.id IS NOT NULL AS locked,
@@ -205,10 +218,22 @@ pub async fn readiness(
            LEFT JOIN academic_activity_result_confirmations confirmation ON confirmation.learning_group_id=g.id
            LEFT JOIN academic_activity_result_locks lock ON lock.learning_group_id=g.id
            WHERE g.academic_term_id=$1 AND g.academic_year_id=$2 AND g.status<>'closed'
+             AND ($3 OR o.owning_organization_unit_id=ANY($4)
+                  OR ($5::uuid IS NOT NULL AND EXISTS(
+                      SELECT 1 FROM learning_group_teachers visible_teacher
+                      JOIN users visible_account ON visible_account.id=visible_teacher.teacher_id
+                       AND visible_account.status='active'
+                      WHERE visible_teacher.learning_group_id=g.id
+                        AND visible_teacher.teacher_id=$5
+                        AND visible_teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)
+                        AND (visible_teacher.ends_on IS NULL OR visible_teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)))))
            ORDER BY o.code_snapshot,g.id LIMIT 5001"#,
     )
     .bind(context.academic_term_id)
     .bind(context.academic_year_id)
+    .bind(access.includes_school_owned)
+    .bind(&allowed_organization_units)
+    .bind(access.assigned_actor_id)
     .bind(actor.user_id)
     .fetch_all(&mut *tx)
     .await?;

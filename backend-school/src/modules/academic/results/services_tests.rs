@@ -142,6 +142,24 @@ async fn fixture(name: &str) -> (sqlx::PgPool, ActorContext, ResultContext, Uuid
         group,
     )
 }
+
+// Result preparation uses the same bounded readiness workspace as academic affairs, but an
+// assigned teacher must only receive groups that the resource policy authorizes.
+#[tokio::test]
+async fn results_readiness_is_scoped_for_assigned_teachers() {
+    let (pool, mut actor, ctx, _) = fixture("results_readiness_assigned_scope").await;
+    actor.permissions = vec![codes::ACADEMIC_RESULT_READ_ASSIGNED.into()];
+
+    let queue = readiness(&pool, &actor, &ctx).await.unwrap();
+
+    assert!(!queue.courses.is_empty());
+    assert!(queue
+        .courses
+        .iter()
+        .flat_map(|subject| subject.groups.iter())
+        .all(|group| group.assigned));
+    assert!(queue.activities.iter().all(|group| group.assigned));
+}
 async fn prepare_phases(
     pool: &sqlx::PgPool,
     actor: &ActorContext,
