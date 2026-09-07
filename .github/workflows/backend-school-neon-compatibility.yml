@@ -103,6 +103,8 @@ jobs:
           echo "::add-mask::$TEST_DATABASE_URL"
           cargo test modules::auth::session_schema_tests --bin backend-school -- --nocapture
           cargo test modules::files::schema_tests --bin backend-school -- --nocapture
+          cargo test modules::academic::core::schema_tests::migration_060 --bin backend-school -- --nocapture --test-threads=1
+          cargo test modules::system::handlers::migration::tests::gradebook_results_status --bin backend-school -- --nocapture --test-threads=1
 
       - name: Delete disposable Neon branch
         if: ${{ always() && steps.create_branch.outputs.created == 'true' && steps.create_branch.outputs.branch_id != '' }}

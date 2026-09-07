@@ -309,6 +309,46 @@ test('backend-school migration failure reports only bounded deployment diagnosti
 	assert.equal(hostileGroupCodes.includes('\n'), false);
 });
 
+test('Release 2 deployment remains in maintenance until the Gradebook/results cutover passes', async () => {
+	const deployment = await readRepo('.github/workflows/deploy-backend-school.yml');
+	const compatibility = await readRepo('.github/workflows/backend-school-neon-compatibility.yml');
+	const migrationHandler = await readRepo(
+		'backend-school/src/modules/system/handlers/migration.rs'
+	);
+	const cutoverAudit = await readRepo(
+		'backend-school/src/modules/academic/results/services/cutover.rs'
+	);
+	const smoke = await readRepo('scripts/smoke_test.sh');
+
+	assert.match(compatibility, /cargo test modules::academic::core::schema_tests::migration_060/);
+	assert.match(
+		compatibility,
+		/TEST_DATABASE_URL: \$\{\{ steps\.create_branch\.outputs\.db_url \}\}/
+	);
+	assert.match(migrationHandler, /gradebook_results_cutover/);
+	assert.match(migrationHandler, /gradebookResultsCutover/);
+	assert.match(cutoverAudit, /GRADEBOOK_RESULTS_REQUIRED_TABLES_PRESENT/);
+	assert.match(cutoverAudit, /GRADEBOOK_RESULTS_PERMISSION_DEFINITIONS_PRESENT/);
+
+	const verification = deployment.slice(
+		deployment.indexOf('migration_status_started='),
+		deployment.indexOf('unset internal_api_secret')
+	);
+	assert.match(verification, /\.gradebookResultsCutover\.migrationVersion == 60/);
+	assert.match(verification, /\.gradebookResultsCutover\.status == "cutoverCompleted"/);
+	assert.match(verification, /\.gradebookResultsCutover\.passed == true/);
+	assert.match(verification, /all\(\.gradebookResultsCutover\.checks\[\]; \.passed == true\)/);
+	assert.match(verification, /maintenance remains enabled/);
+
+	for (const endpoint of [
+		'/api/academic/gradebook/subjects?academicYearId=',
+		'/api/academic/learner-evaluations/subjects?academicYearId=',
+		'/api/academic/results/readiness?academicYearId='
+	]) {
+		assert.ok(smoke.includes(endpoint), `authenticated smoke must probe ${endpoint}`);
+	}
+});
+
 test('backend-school deployment repairs the admin network alias before maintenance activation', async () => {
 	const workflow = await readRepo('.github/workflows/deploy-backend-school.yml');
 	const adminNetworkRepair = workflow.indexOf(

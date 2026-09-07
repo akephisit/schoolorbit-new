@@ -672,10 +672,14 @@ jobs:
                   and .academicCoreCutover.status == "cleanupCompleted"
                   and .academicCoreCutover.passed == true
                   and all(.academicCoreCutover.checks[]; .passed == true)
+                  and .gradebookResultsCutover.migrationVersion == 60
+                  and .gradebookResultsCutover.status == "cutoverCompleted"
+                  and .gradebookResultsCutover.passed == true
+                  and all(.gradebookResultsCutover.checks[]; .passed == true)
                 )
               ' < "$migration_response" >/dev/null
             then
-              echo "Tenant migration or Academic Core cleanup audit verification failed; maintenance remains enabled"
+              echo "Tenant migration or cutover audit verification failed; maintenance remains enabled"
               exit 1
             fi
             schoolorbit_timer_report migration_status "$migration_status_started"

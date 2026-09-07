@@ -383,6 +383,37 @@ release together. After the first write, do not deploy the old app against the n
 traffic closed and repair forward with a reviewed migration/application artifact. Never edit
 `_sqlx_migrations`, an applied migration, cleanup audit, or tenant data to force a green result.
 
+### Gradebook and results cutover
+
+Migration `060_gradebook_results_and_learner_evaluations.sql` is the Release 2 boundary for Gradebook,
+learner evaluations, locked results, and result corrections. The deployment gate audits durable
+schema, seed, and generated-permission invariants only. Its bounded report may contain check codes,
+counts, migration versions, and pass/fail state; it must not expose student identity, scores,
+outcomes, credentials, or source rows. Editable school grading configuration is not a cutover
+invariant.
+
+For the Release 2 deployment:
+
+1. Create and retain a protected snapshot, then keep `SCHOOL_API_KEEP_MAINTENANCE=true`.
+2. Use one reviewed commit for the migration, backend, contracts, frontend, and deployment gate.
+   Dispatch the manual Neon compatibility workflow first; it must use a fresh disposable child
+   branch and its direct non-pooled endpoint to run the migration-060 schema and status-audit tests.
+3. Deploy through the centralized runner and apply every pending migration through the repository's
+   latest version. Do not apply migration 060 or later files manually.
+4. Require `/internal/migration-status` to report repository-version equality for every tenant and
+   `gradebookResultsCutover` at migration version 60 with `cutoverCompleted`, `passed: true`, and only
+   passing checks. Any missing, failed, pending, or unavailable audit keeps maintenance active.
+5. Require generated API and permission contracts, route/menu synchronization, `/ready`, and the
+   authenticated read-only smoke to pass. The smoke samples at most two canonical term contexts and
+   includes Gradebook subjects, learner-evaluation subjects, and result readiness.
+6. Open traffic only after an explicit go/no-go review. Record the first accepted write as the
+   protected-snapshot rollback boundary.
+
+Before the first accepted write, rollback restores the protected snapshot together with the matching
+pre-cutover application. After that boundary, keep traffic closed and repair forward with a reviewed
+migration/application artifact. Never alter tenant rows, an applied migration, cutover checks, or
+`_sqlx_migrations` to force deployment success.
+
 ### School font library cutover
 
 Migration `040_school_font_library.sql` is an intentional empty-state cutover. Before entering the all-tenant migration gate, verify every active tenant has zero legacy certificate font assets, zero `certificate_template_font` staging rows, and zero text elements whose `fontSource.type` is `asset`. The migration enforces the same prerequisite and stops with `legacy certificate template fonts must be empty before migration 040` if any old row remains. Do not silently convert, copy, or delete a non-empty tenant during deployment; stop and use a separately reviewed data-removal or migration procedure.

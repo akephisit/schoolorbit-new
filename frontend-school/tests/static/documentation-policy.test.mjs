@@ -211,7 +211,7 @@ test('canonical docs own the school-font rollout and lifecycle contract', async 
 	assert.match(testing, /survives campaign purge/i);
 });
 
-test('canonical docs own the Academic Core cleanup boundary and unfinished lifecycle work', async () => {
+test('canonical docs own the academic cutover boundaries and unfinished lifecycle work', async () => {
 	const [testing, operations, todo] = await Promise.all([
 		readFile(path.join(repoRoot, 'docs/TESTING.md'), 'utf8'),
 		readFile(path.join(repoRoot, 'docs/OPERATIONS.md'), 'utf8'),
@@ -225,6 +225,9 @@ test('canonical docs own the Academic Core cleanup boundary and unfinished lifec
 	assert.match(testing, /modules::system::handlers::migration::tests/);
 	assert.match(testing, /discovery does not equal execution/i);
 	assert.match(testing, /manual Neon/i);
+	assert.match(testing, /Gradebook and results cutover rehearsal/);
+	assert.match(testing, /migration_060/);
+	assert.match(testing, /gradebook_results_status/);
 
 	assert.match(operations, /Academic Core Phase B cleanup and rollback boundary/);
 	assert.match(operations, /academicCoreCutover[\s\S]*cleanupCompleted/);
@@ -232,10 +235,15 @@ test('canonical docs own the Academic Core cleanup boundary and unfinished lifec
 	assert.match(operations, /one-time preflight command[\s\S]*retired/i);
 	assert.match(operations, /first accepted\s+write[\s\S]*snapshot rollback boundary/i);
 	assert.match(operations, /after the first\s+write[\s\S]*do not deploy the old app/i);
+	assert.match(operations, /Gradebook and results cutover/);
+	assert.match(operations, /gradebookResultsCutover[\s\S]*cutoverCompleted/);
 
 	const sch002 = todo.match(/SCH-002[\s\S]*?(?=\n- \[[ x]\] \*\*|\n##|$)/)?.[0] ?? '';
-	assert.match(sch002, /Gradebook\/results/);
-	assert.match(sch002, /term lifecycle/);
-	assert.match(sch002, /annual closure\/promotion/);
+	assert.match(sch002, /completed Gradebook/);
+	assert.match(sch002, /term close\/reopen/);
+	assert.match(sch002, /GPA\/GPAX/);
+	assert.match(sch002, /annual closure/);
+	assert.match(sch002, /promotion exceptions/);
 	assert.match(sch002, /Thai academic documents/);
+	assert.doesNotMatch(sch002, /still owns Gradebook\/results/);
 });

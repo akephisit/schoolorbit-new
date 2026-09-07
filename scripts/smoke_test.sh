@@ -493,6 +493,9 @@ PY
         term_index=$((term_index + 1))
         academic_context_get "offerings-$term_index" "academic offerings context $term_index" "/api/academic/offerings?academicTermId=$term_id"
         academic_context_get "assessments-$term_index" "assessment plans context $term_index" "/api/academic/assessments/plans?academicTermId=$term_id"
+        academic_context_get "gradebook-$term_index" "gradebook subjects context $term_index" "/api/academic/gradebook/subjects?academicYearId=$year_id&academicTermId=$term_id"
+        academic_context_get "learner-evaluations-$term_index" "learner evaluation subjects context $term_index" "/api/academic/learner-evaluations/subjects?academicYearId=$year_id&academicTermId=$term_id"
+        academic_context_get "results-$term_index" "academic result readiness context $term_index" "/api/academic/results/readiness?academicYearId=$year_id&academicTermId=$term_id"
         academic_context_get "timetable-versions-$term_index" "academic timetable versions context $term_index" "/api/academic/timetable-versions?academicTermId=$term_id"
         if ! timetable_version_id="$(
             python3 - "$tmp_dir/academic-timetable-versions-$term_index.body" "$term_id" <<'PY'

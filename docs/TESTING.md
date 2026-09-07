@@ -300,6 +300,31 @@ by those specs. Report Playwright execution, protected-clone rehearsal, manual N
 and deployment smoke as `unrun` with the exact missing account, credential, target, or authorization;
 do not report discovery as a passing browser workflow and do not silently omit an external gate.
 
+### Gradebook and results cutover rehearsal
+
+Run the Release 2 schema and migration-status audit against disposable local PostgreSQL from the
+repository root:
+
+```bash
+./scripts/test_backend_school.sh \
+  modules::academic::core::schema_tests::migration_060 -- --nocapture --test-threads=1
+./scripts/test_backend_school.sh \
+  modules::system::handlers::migration::tests::gradebook_results_status \
+  -- --nocapture --test-threads=1
+```
+
+The audit verifies only durable schema, seed, and permission invariants. Its response contains
+bounded check codes, counts, versions, and pass/fail state; it must never contain student identity,
+scores, outcomes, credentials, or source rows. A legitimate school edit to grading or evaluation
+configuration is not a deployment invariant and must not keep the tenant in maintenance.
+
+The manual Neon migration compatibility workflow runs the same focused checks on a fresh disposable
+child branch through its direct non-pooled endpoint, then deletes the branch. Repository secrets and
+variables remain the only credential source, and workflow output must not expose the connection URI.
+An authenticated academic smoke samples at most two canonical terms and reads the Gradebook subject
+workspace, learner-evaluation subject workspace, and result-readiness summary for each selected term.
+Response bodies remain in the smoke script's private temporary directory and are removed on exit.
+
 ### Manual Neon migration compatibility
 
 [Backend School Neon Compatibility](../.github/workflows/backend-school-neon-compatibility.yml) is an explicit `workflow_dispatch` gate. Configure names only in repository settings; never put their values in source:
@@ -346,12 +371,13 @@ If credentials are absent, authenticated checks are skipped. Report that limitat
 Set `SMOKE_ACADEMIC_CONTEXT=true` only for an explicitly selected cutover tenant. After login, the
 script reads the context options, selects at most two canonical year contexts and two canonical term
 contexts, and verifies the Academic Core, offerings, assessment, timetable, exams, supervision,
-admission, and staff-dashboard read paths. It stores response bodies only in its private temporary
-directory and removes them at exit. During the two-artifact Academic Core maintenance window, run
-this mode through the backend deployment workflow's VPS-loopback smoke input; never add a public
-maintenance bypass or open traffic temporarily for the test. The workflow alone sets
-`SMOKE_DIRECT_BACKEND=true`; that mode skips only Nginx-owned CORS/preflight assertions while login,
-session, CSRF, readiness, and every selected Academic Core read remain required.
+admission, staff-dashboard, Gradebook subject, learner-evaluation subject, and result-readiness read
+paths. It stores response bodies only in its private temporary directory and removes them at exit.
+During a reviewed maintenance cutover, run this mode through the backend deployment workflow's
+VPS-loopback smoke input; never add a public maintenance bypass or open traffic temporarily for the
+test. The workflow alone sets `SMOKE_DIRECT_BACKEND=true`; that mode skips only Nginx-owned
+CORS/preflight assertions while login, session, CSRF, readiness, and every selected academic read
+remain required.
 
 The API-domain cookie is `__Host-schoolorbit_session`; it is opaque and unavailable to frontend JavaScript. Login and authenticated `/api/auth/me` responses expose `X-CSRF-Token`. The smoke script captures that value only in a shell variable, updates it after rotation-capable responses, and sends it on every authenticated `POST`, `PUT`, `PATCH`, or `DELETE`. Never print, export, persist, or enable trace output for the CSRF value. A manual flow should use private temporary files:
 

@@ -166,10 +166,9 @@ Complete discovery with representative government, private, and international sc
 - [ ] **SCH-001: Attendance, leave, lateness, and guardian acknowledgement.**
   - Cover daily and period attendance, corrections, reason evidence, teacher assignment, notifications, audit, reports, and a safe offline/mobile workflow.
 
-- [ ] **SCH-002: Gradebook, results, promotion, and Thai academic documents.**
-  - The Academic Core foundation does not complete this item. It still owns Gradebook/results, term lifecycle and transition, annual closure/promotion, and Thai academic documents.
-  - Cover weighted assessment results, grading rules, GPA, incomplete/fail states, graduation, transcripts, report cards, and ปพ. workflows.
-  - Define safe close/reopen rules, prerequisites for creating the next term/year, promotion exceptions, retained history, approvals, audit, and recovery before enabling an operational transition.
+- [ ] **SCH-002: Term closure, promotion, and Thai academic documents.**
+  - Add term close/reopen, GPA/GPAX, annual closure, promotion exceptions, graduation, transcripts, report cards, and ปพ. workflows on top of the completed Gradebook and locked-result foundation.
+  - Define prerequisites for creating the next term/year, retained history, approvals, audit, and recovery before enabling an operational transition.
 
 - [ ] **SCH-003: A useful student and guardian portal.**
   - Present authoritative timetable, attendance, results, behavior, announcements, documents, acknowledgement, and communication using scoped access.

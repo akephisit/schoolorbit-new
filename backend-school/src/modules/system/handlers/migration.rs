@@ -2,6 +2,9 @@ use crate::error::AppError;
 use crate::modules::academic::reconciliation::{
     read_academic_core_cleanup_audit, ReconciliationCheck, PHASE_B_MIGRATION_VERSION,
 };
+use crate::modules::academic::results::services::{
+    read_gradebook_results_cutover_audit, GRADEBOOK_RESULTS_MIGRATION_VERSION,
+};
 use crate::AppState;
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use serde::Serialize;
@@ -47,6 +50,8 @@ struct SchoolMigrationStatus {
     migration_error: Option<String>,
     #[serde(rename = "academicCoreCutover")]
     academic_core_cutover: AcademicCoreCutoverStatus,
+    #[serde(rename = "gradebookResultsCutover")]
+    gradebook_results_cutover: GradebookResultsCutoverStatus,
 }
 
 #[derive(Serialize)]
@@ -56,6 +61,70 @@ struct AcademicCoreCutoverStatus {
     migration_version: i64,
     passed: Option<bool>,
     checks: Vec<ReconciliationCheck>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GradebookResultsCutoverStatus {
+    status: String,
+    migration_version: i64,
+    passed: Option<bool>,
+    checks: Vec<ReconciliationCheck>,
+}
+
+fn gradebook_results_cutover_unavailable(current_version: i32) -> GradebookResultsCutoverStatus {
+    GradebookResultsCutoverStatus {
+        status: "failed".to_string(),
+        migration_version: GRADEBOOK_RESULTS_MIGRATION_VERSION,
+        passed: Some(false),
+        checks: vec![ReconciliationCheck {
+            code: "GRADEBOOK_RESULTS_CUTOVER_AUDIT_UNAVAILABLE".to_string(),
+            passed: false,
+            source_count: GRADEBOOK_RESULTS_MIGRATION_VERSION,
+            target_count: i64::from(current_version),
+        }],
+    }
+}
+
+async fn gradebook_results_cutover_status(
+    pool: Option<&PgPool>,
+    current_version: i32,
+) -> GradebookResultsCutoverStatus {
+    if current_version < GRADEBOOK_RESULTS_MIGRATION_VERSION as i32 {
+        return GradebookResultsCutoverStatus {
+            status: "cutoverPending".to_string(),
+            migration_version: GRADEBOOK_RESULTS_MIGRATION_VERSION,
+            passed: None,
+            checks: Vec::new(),
+        };
+    }
+
+    let Some(pool) = pool else {
+        return gradebook_results_cutover_unavailable(current_version);
+    };
+
+    match read_gradebook_results_cutover_audit(pool).await {
+        Ok(audit) => GradebookResultsCutoverStatus {
+            status: if audit.completed {
+                "cutoverCompleted".to_string()
+            } else {
+                "failed".to_string()
+            },
+            migration_version: GRADEBOOK_RESULTS_MIGRATION_VERSION,
+            passed: Some(audit.completed),
+            checks: audit.checks,
+        },
+        Err(error) => {
+            tracing::warn!(
+                reason = "gradebook_results_cutover_audit_query_failed",
+                database_code = ?match &error {
+                    AppError::DbError(sqlx::Error::Database(database_error)) => database_error.code(),
+                    _ => None,
+                }
+            );
+            gradebook_results_cutover_unavailable(current_version)
+        }
+    }
 }
 
 fn academic_core_cutover_unavailable(current_version: i32) -> AcademicCoreCutoverStatus {
@@ -267,30 +336,38 @@ pub async fn migration_status(
             .migration_status
             .unwrap_or_else(|| "pending".to_string());
 
-        let (version, academic_core_cutover) = if let Some(database_url) = school
-            .db_connection_string
-            .as_deref()
-            .filter(|value| !value.is_empty())
-        {
-            match state
-                .pool_manager
-                .get_pool_for_read_only_status(database_url, &school.subdomain)
-                .await
+        let (version, academic_core_cutover, gradebook_results_cutover) =
+            if let Some(database_url) = school
+                .db_connection_string
+                .as_deref()
+                .filter(|value| !value.is_empty())
             {
-                Ok(pool) => {
-                    academic_core_cutover_status_from_database(&pool, reported_version).await
+                match state
+                    .pool_manager
+                    .get_pool_for_read_only_status(database_url, &school.subdomain)
+                    .await
+                {
+                    Ok(pool) => {
+                        let (version, academic_core_cutover) =
+                            academic_core_cutover_status_from_database(&pool, reported_version)
+                                .await;
+                        let gradebook_results_cutover =
+                            gradebook_results_cutover_status(Some(&pool), version).await;
+                        (version, academic_core_cutover, gradebook_results_cutover)
+                    }
+                    Err(_) => (
+                        reported_version,
+                        academic_core_cutover_unavailable(reported_version),
+                        gradebook_results_cutover_unavailable(reported_version),
+                    ),
                 }
-                Err(_) => (
+            } else {
+                (
                     reported_version,
-                    academic_core_cutover_unavailable(reported_version),
-                ),
-            }
-        } else {
-            (
-                reported_version,
-                academic_core_cutover_status(None, reported_version).await,
-            )
-        };
+                    academic_core_cutover_status(None, reported_version).await,
+                    gradebook_results_cutover_status(None, reported_version).await,
+                )
+            };
 
         match status.as_str() {
             "migrated" => {
@@ -315,6 +392,7 @@ pub async fn migration_status(
             last_migrated_at: school.last_migrated_at,
             migration_error: school.migration_error,
             academic_core_cutover,
+            gradebook_results_cutover,
         });
     }
 
@@ -465,7 +543,7 @@ mod tests {
     use crate::{
         modules::academic::cutover_test_support::{
             apply_migrations_through, record_passing_phase_a_reconciliation_marker,
-            seed_academic_cutover_fixture, CutoverFixture,
+            seed_academic_cutover_fixture, seed_release_two_predecessor, CutoverFixture,
         },
         test_helpers::create_named_test_pool,
     };
@@ -545,6 +623,55 @@ mod tests {
         assert!(!encoded.contains("targetId"));
     }
 
+    #[tokio::test]
+    async fn gradebook_results_status_is_pending_before_migration_060() {
+        let status = gradebook_results_cutover_status(None, 59).await;
+        let value = serde_json::to_value(status).unwrap();
+
+        assert_eq!(value["status"], "cutoverPending");
+        assert_eq!(value["migrationVersion"], 60);
+        assert!(value["passed"].is_null());
+        assert_eq!(value["checks"], serde_json::json!([]));
+    }
+
+    #[tokio::test]
+    async fn gradebook_results_status_reads_bounded_completed_audit() {
+        let pool = create_named_test_pool("migration_status_gradebook_results").await;
+        seed_release_two_predecessor(&pool).await.unwrap();
+        apply_migrations_through(&pool, 60).await.unwrap();
+        sqlx::query(
+            "INSERT INTO permissions (code,name,module,action,scope,description,is_active)
+             VALUES ('academic_result.future.school','Future result capability','academic_result',
+                     'future','school','Future permission must not invalidate the cutover',true)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let status = gradebook_results_cutover_status(Some(&pool), 60).await;
+        let value = serde_json::to_value(status).unwrap();
+        let encoded = serde_json::to_string(&value).unwrap();
+
+        assert_eq!(value["status"], "cutoverCompleted");
+        assert_eq!(value["migrationVersion"], 60);
+        assert_eq!(value["passed"], true);
+        assert!(value["checks"].as_array().unwrap().len() >= 6);
+        assert!(value["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|check| check["passed"] == true));
+        for forbidden in [
+            "studentId",
+            "studentAcademicYearId",
+            "displayName",
+            "score",
+            "outcome",
+        ] {
+            assert!(!encoded.contains(forbidden));
+        }
+    }
+
     #[test]
     fn school_status_serializes_academic_core_cutover_in_camel_case() {
         let value = serde_json::to_value(SchoolMigrationStatus {
@@ -559,11 +686,19 @@ mod tests {
                 passed: Some(true),
                 checks: Vec::new(),
             },
+            gradebook_results_cutover: GradebookResultsCutoverStatus {
+                status: "cutoverCompleted".to_string(),
+                migration_version: 60,
+                passed: Some(true),
+                checks: Vec::new(),
+            },
         })
         .unwrap();
 
         assert!(value.get("academicCoreCutover").is_some());
         assert!(value.get("academic_core_cutover").is_none());
+        assert!(value.get("gradebookResultsCutover").is_some());
+        assert!(value.get("gradebook_results_cutover").is_none());
     }
 
     #[test]
