@@ -15,7 +15,10 @@ use super::super::models::{
     ReplaceLearningGroupTeachersRequest, RosterOverrideAction, RosterPreview, RosterPreviewStudent,
     RosterStatus, TeacherAssignmentInput, UpdateLearningGroupRequest,
 };
-use super::{append_audit, require_writable_term, stable_hash, validate_row_version};
+use super::{
+    append_audit, invalidate_group_academic_confirmations, require_writable_term, stable_hash,
+    validate_row_version,
+};
 
 const GROUP_COLUMNS: &str = r#"
     id, learning_offering_id, academic_term_id, academic_year_id, code, name,
@@ -369,10 +372,11 @@ pub async fn replace_teachers(
     validate_row_version(request.row_version)?;
     let teacher_ids = unique_teacher_ids(&request.teachers)?;
     let mut transaction = pool.begin().await?;
-    let group = lock_group(&mut transaction, id).await?;
+    let academic_term_id = find_group_term(&mut transaction, id).await?;
+    require_writable_term(&mut transaction, academic_term_id, false).await?;
+    let group = lock_offering_then_group(&mut transaction, id, academic_term_id).await?;
     require_mutable_group(&group, request.row_version, false)?;
     require_draft_group_teachers(&group)?;
-    require_writable_term(&mut transaction, group.academic_term_id, false).await?;
     if !teacher_ids.is_empty() {
         let count: i64 = sqlx::query_scalar(
             "SELECT count(*) FROM users WHERE id = ANY($1) \
@@ -415,6 +419,7 @@ pub async fn replace_teachers(
         .await?;
     }
     increment_group_revision(&mut transaction, id).await?;
+    invalidate_group_academic_confirmations(&mut transaction, &[id]).await?;
     crate::modules::academic::services::timetable_block_sync::retry_sync_for_group_in_tx(
         &mut transaction,
         id,
@@ -525,9 +530,10 @@ pub async fn apply_roster(
 ) -> Result<LearningGroup, AppError> {
     validate_row_version(request.row_version)?;
     let mut transaction = pool.begin().await?;
-    let group = lock_group(&mut transaction, group_id).await?;
+    let academic_term_id = find_group_term(&mut transaction, group_id).await?;
+    let term = require_writable_term(&mut transaction, academic_term_id, false).await?;
+    let group = lock_offering_then_group(&mut transaction, group_id, academic_term_id).await?;
     require_mutable_group(&group, request.row_version, true)?;
-    let term = require_writable_term(&mut transaction, group.academic_term_id, false).await?;
     let source = roster_source(&mut transaction, &group).await?;
     if source.hash != request.source_hash {
         return Err(AppError::Conflict(
@@ -628,6 +634,7 @@ pub async fn apply_roster(
     .bind(group_id)
     .execute(&mut *transaction)
     .await?;
+    invalidate_group_academic_confirmations(&mut transaction, &[group_id]).await?;
     transaction.commit().await?;
     append_group_audit(pool, actor_user_id, &group, "learning_group.roster_applied").await?;
     get(pool, group_id).await
@@ -862,6 +869,43 @@ async fn lock_group(
     .fetch_optional(&mut **transaction)
     .await?
     .ok_or_else(|| AppError::NotFound("ไม่พบกลุ่มเรียน".to_string()))
+}
+
+async fn lock_offering_then_group(
+    transaction: &mut Transaction<'_, Postgres>,
+    id: Uuid,
+    academic_term_id: Uuid,
+) -> Result<GroupLockRow, AppError> {
+    let offering_id: Uuid = sqlx::query_scalar(
+        "SELECT learning_offering_id FROM learning_groups WHERE id = $1 AND academic_term_id = $2",
+    )
+    .bind(id)
+    .bind(academic_term_id)
+    .fetch_optional(&mut **transaction)
+    .await?
+    .ok_or_else(|| AppError::NotFound("ไม่พบกลุ่มเรียน".to_string()))?;
+    sqlx::query("SELECT id FROM learning_offerings WHERE id = $1 FOR UPDATE")
+        .bind(offering_id)
+        .execute(&mut **transaction)
+        .await?;
+    let group = lock_group(transaction, id).await?;
+    if group.learning_offering_id != offering_id || group.academic_term_id != academic_term_id {
+        return Err(AppError::Conflict(
+            "กลุ่มเรียนเปลี่ยนรายการเปิดสอนระหว่างทำรายการ".to_string(),
+        ));
+    }
+    Ok(group)
+}
+
+async fn find_group_term(
+    transaction: &mut Transaction<'_, Postgres>,
+    id: Uuid,
+) -> Result<Uuid, AppError> {
+    sqlx::query_scalar("SELECT academic_term_id FROM learning_groups WHERE id = $1")
+        .bind(id)
+        .fetch_optional(&mut **transaction)
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบกลุ่มเรียน".to_string()))
 }
 
 fn require_mutable_group(

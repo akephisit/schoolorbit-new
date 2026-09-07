@@ -103,12 +103,12 @@ pub async fn readiness(
                   (result_confirmation.id IS NOT NULL
                    AND NOT COALESCE((result_confirmation.source_snapshot->>'invalidated')::boolean,false)
                    AND result_confirmation.policy_version_id=(SELECT id FROM active_policy)
-                   AND result_confirmation.confirmed_by=(SELECT teacher.teacher_id FROM learning_group_teachers teacher
+                   AND COALESCE(result_confirmation.confirmed_by=(SELECT teacher.teacher_id FROM learning_group_teachers teacher
                          JOIN users u ON u.id=teacher.teacher_id AND u.status='active'
                         WHERE teacher.learning_group_id=g.id AND teacher.role='primary'
                           AND teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)
                           AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date))
-                        ORDER BY teacher.id LIMIT 1)
+                        ORDER BY teacher.id LIMIT 1), false)
                    AND result_confirmation.source_snapshot->'roster'=COALESCE((SELECT jsonb_agg(jsonb_build_object(
                          'membershipId',member.id,'studentAcademicYearId',member.student_academic_year_id,'rowVersion',member.row_version)
                          ORDER BY member.student_academic_year_id) FROM learning_group_students member
@@ -179,12 +179,12 @@ pub async fn readiness(
                   confirmation.id IS NOT NULL AS confirmation_exists,
                   (confirmation.id IS NOT NULL
                    AND NOT COALESCE((confirmation.source_snapshot->>'invalidated')::boolean,false)
-                   AND confirmation.confirmed_by=(SELECT teacher.teacher_id FROM learning_group_teachers teacher
+                   AND COALESCE(confirmation.confirmed_by=(SELECT teacher.teacher_id FROM learning_group_teachers teacher
                          JOIN users u ON u.id=teacher.teacher_id AND u.status='active'
                         WHERE teacher.learning_group_id=g.id AND teacher.role='primary'
                           AND teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)
                           AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date))
-                        ORDER BY teacher.id LIMIT 1)
+                        ORDER BY teacher.id LIMIT 1), false)
                    AND confirmation.source_snapshot->'roster'=COALESCE((SELECT jsonb_agg(jsonb_build_object(
                          'membershipId',member.id,'studentAcademicYearId',member.student_academic_year_id,'rowVersion',member.row_version)
                          ORDER BY member.student_academic_year_id) FROM learning_group_students member

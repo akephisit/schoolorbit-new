@@ -69,6 +69,11 @@ async fn begin_activity<'a>(
 ) -> Result<(Transaction<'a, Postgres>, ActivityScope), AppError> {
     let access = access_policy::list_access(pool, actor).await?;
     let mut tx = pool.begin().await?;
+    if !write {
+        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+            .execute(&mut *tx)
+            .await?;
+    }
     validate_context(&mut tx, context).await?;
     if write {
         let offering: Uuid = sqlx::query_scalar(
@@ -252,24 +257,12 @@ async fn load_workspace(
     if scope.locked {
         blockers.push(blocker(ResultBlockerCode::AlreadyLocked, None));
     }
-    let mut confirmation: Option<ResultConfirmation> = sqlx::query_as(
+    let confirmation: Option<ResultConfirmation> = sqlx::query_as(
         "SELECT id,row_version,source_checksum,roster_checksum,confirmed_by,COALESCE((source_snapshot->>'invalidated')::boolean,false) AS invalidated FROM academic_activity_result_confirmations WHERE learning_group_id=$1",
     )
     .bind(scope.group_id)
     .fetch_optional(&mut **tx)
     .await?;
-    if let Some(saved) = confirmation.as_mut() {
-        if !scope.locked
-            && !saved.invalidated
-            && (saved.source_checksum != source_checksum
-                || saved.roster_checksum != roster_checksum
-                || Some(saved.confirmed_by) != scope.primary_teacher_id)
-        {
-            invalidate_confirmation(tx, scope.group_id).await?;
-            saved.invalidated = true;
-            saved.row_version += 1;
-        }
-    }
     let confirmation_is_current = confirmation.as_ref().is_some_and(|saved| {
         !saved.invalidated
             && saved.source_checksum == source_checksum

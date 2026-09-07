@@ -11,7 +11,9 @@ use super::super::models::{
     StudentActivityGroupOption, StudentActivityOfferingOption, StudentActivityRegistrationQuery,
     StudentActivityRegistrationResult,
 };
-use super::{append_audit, require_writable_term, TermContext};
+use super::{
+    append_audit, invalidate_group_academic_confirmations, require_writable_term, TermContext,
+};
 
 pub async fn list_registration_options(
     pool: &PgPool,
@@ -197,8 +199,8 @@ pub async fn enroll(
     query: StudentActivityRegistrationQuery,
 ) -> Result<StudentActivityRegistrationResult, AppError> {
     let mut transaction = pool.begin().await?;
-    let context = lock_registration_context(&mut transaction, group_id).await?;
-    let term = require_registration_window(&mut transaction, &context, &query).await?;
+    let (context, term) = lock_registration_context(&mut transaction, group_id).await?;
+    require_registration_window(&context, &query)?;
     let learner = require_eligible_student(&mut transaction, student_id, &context, &term).await?;
 
     let existing: Option<(Uuid, Uuid)> = sqlx::query_as(
@@ -264,6 +266,7 @@ pub async fn enroll(
     .execute(&mut *transaction)
     .await?;
     let revision = increment_group_revision(&mut transaction, group_id).await?;
+    invalidate_group_academic_confirmations(&mut transaction, &[group_id]).await?;
     transaction.commit().await?;
     append_audit(
         pool,
@@ -296,8 +299,8 @@ pub async fn unenroll(
     query: StudentActivityRegistrationQuery,
 ) -> Result<StudentActivityRegistrationResult, AppError> {
     let mut transaction = pool.begin().await?;
-    let context = lock_registration_context(&mut transaction, group_id).await?;
-    let term = require_registration_window(&mut transaction, &context, &query).await?;
+    let (context, term) = lock_registration_context(&mut transaction, group_id).await?;
+    require_registration_window(&context, &query)?;
     let membership: (Uuid, Uuid) = sqlx::query_as(
         r#"SELECT id, student_academic_year_id
            FROM learning_group_students
@@ -325,6 +328,7 @@ pub async fn unenroll(
     .execute(&mut *transaction)
     .await?;
     let revision = increment_group_revision(&mut transaction, group_id).await?;
+    invalidate_group_academic_confirmations(&mut transaction, &[group_id]).await?;
     transaction.commit().await?;
     append_audit(
         pool,
@@ -455,8 +459,20 @@ struct EligibleStudentRow {
 async fn lock_registration_context(
     transaction: &mut Transaction<'_, Postgres>,
     group_id: Uuid,
-) -> Result<RegistrationLockRow, AppError> {
-    sqlx::query_as(
+) -> Result<(RegistrationLockRow, TermContext), AppError> {
+    let (offering_id, academic_term_id): (Uuid, Uuid) = sqlx::query_as(
+        "SELECT learning_offering_id, academic_term_id FROM learning_groups WHERE id = $1",
+    )
+    .bind(group_id)
+    .fetch_optional(&mut **transaction)
+    .await?
+    .ok_or_else(|| AppError::NotFound("ไม่พบกลุ่มกิจกรรม".to_string()))?;
+    let term = require_writable_term(transaction, academic_term_id, false).await?;
+    sqlx::query("SELECT id FROM learning_offerings WHERE id = $1 FOR UPDATE")
+        .bind(offering_id)
+        .execute(&mut **transaction)
+        .await?;
+    let context = sqlx::query_as(
         r#"SELECT learning_group.id AS learning_group_id,
                   offering.id AS learning_offering_id,
                   offering.academic_term_id,
@@ -475,19 +491,23 @@ async fn lock_registration_context(
            JOIN activity_offering_details detail
              ON detail.learning_offering_id = offering.id
            WHERE learning_group.id = $1
-           FOR UPDATE OF offering, learning_group"#,
+             AND learning_group.academic_term_id = $2
+             AND offering.id = $3
+           FOR UPDATE OF learning_group"#,
     )
     .bind(group_id)
+    .bind(academic_term_id)
+    .bind(offering_id)
     .fetch_optional(&mut **transaction)
     .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบกลุ่มกิจกรรม".to_string()))
+    .ok_or_else(|| AppError::NotFound("ไม่พบกลุ่มกิจกรรม".to_string()))?;
+    Ok((context, term))
 }
 
-async fn require_registration_window(
-    transaction: &mut Transaction<'_, Postgres>,
+fn require_registration_window(
     context: &RegistrationLockRow,
     query: &StudentActivityRegistrationQuery,
-) -> Result<TermContext, AppError> {
+) -> Result<(), AppError> {
     if context.academic_term_id != query.academic_term_id {
         return Err(AppError::ValidationError(
             "กลุ่มกิจกรรมไม่อยู่ในภาคเรียนที่เลือก".to_string(),
@@ -506,7 +526,7 @@ async fn require_registration_window(
             "กิจกรรมนี้ไม่ได้อยู่ในช่วงเปิดลงทะเบียน".to_string(),
         ));
     }
-    require_writable_term(transaction, context.academic_term_id, false).await
+    Ok(())
 }
 
 async fn require_eligible_student(

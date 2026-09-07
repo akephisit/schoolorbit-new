@@ -82,6 +82,42 @@ pub(super) async fn require_active_owner(
     }
 }
 
+/// Mark every academic confirmation derived from a learning group's roster or
+/// teacher assignments as stale. Callers must already hold the offering and
+/// group write locks, in that order, so cross-domain mutations retain the
+/// shared academic lock order before these source rows are touched.
+pub(super) async fn invalidate_group_academic_confirmations(
+    transaction: &mut Transaction<'_, Postgres>,
+    group_ids: &[Uuid],
+) -> Result<(), AppError> {
+    if group_ids.is_empty() {
+        return Ok(());
+    }
+
+    let mut group_ids = group_ids.to_vec();
+    group_ids.sort_unstable();
+    group_ids.dedup();
+    for table in [
+        "learning_group_phase_confirmations",
+        "learning_group_result_confirmations",
+        "learning_group_evaluation_confirmations",
+        "academic_activity_result_confirmations",
+    ] {
+        let query = format!(
+            "UPDATE {table} \
+             SET row_version = row_version + 1, \
+                 source_snapshot = jsonb_set(source_snapshot, '{{invalidated}}', 'true'::jsonb) \
+             WHERE learning_group_id = ANY($1) \
+               AND NOT COALESCE((source_snapshot->>'invalidated')::boolean, false)"
+        );
+        sqlx::query(&query)
+            .bind(&group_ids)
+            .execute(&mut **transaction)
+            .await?;
+    }
+    Ok(())
+}
+
 pub(super) async fn append_audit<T: Serialize>(
     pool: &PgPool,
     event_code: &str,

@@ -8,7 +8,10 @@ use crate::modules::academic::delivery::models::{
     MembershipStatus, RemoveDatedRosterMembershipRequest, RosterStatus,
 };
 
-use super::{append_audit, require_writable_term, validate_row_version};
+use super::{
+    append_audit, invalidate_group_academic_confirmations, require_writable_term,
+    validate_row_version,
+};
 
 #[derive(Debug, FromRow)]
 struct MembershipRow {
@@ -108,7 +111,7 @@ pub async fn add_membership(
     let mut transaction = pool.begin().await?;
     let academic_term_id = find_group_term(&mut transaction, group_id).await?;
     require_writable_term(&mut transaction, academic_term_id, true).await?;
-    let group = lock_group_context(&mut transaction, group_id).await?;
+    let group = lock_group_context(&mut transaction, group_id, academic_term_id).await?;
     require_published_roster(&group, request.group_row_version)?;
 
     let (student_id, student_year_status): (Uuid, String) = sqlx::query_as(
@@ -170,6 +173,7 @@ pub async fn add_membership(
     .await
     .map_err(map_membership_overlap)?;
     increment_group_revision(&mut transaction, group.id).await?;
+    invalidate_group_academic_confirmations(&mut transaction, &[group.id]).await?;
     transaction.commit().await?;
 
     append_audit(
@@ -203,7 +207,7 @@ pub async fn remove_membership(
     let mut transaction = pool.begin().await?;
     let academic_term_id = find_group_term(&mut transaction, group_id).await?;
     require_writable_term(&mut transaction, academic_term_id, true).await?;
-    let group = lock_group_context(&mut transaction, group_id).await?;
+    let group = lock_group_context(&mut transaction, group_id, academic_term_id).await?;
     require_published_roster(&group, request.group_row_version)?;
     validate_membership_date(&group, request.left_at)?;
 
@@ -245,6 +249,7 @@ pub async fn remove_membership(
     .execute(&mut *transaction)
     .await?;
     increment_group_revision(&mut transaction, group.id).await?;
+    invalidate_group_academic_confirmations(&mut transaction, &[group.id]).await?;
     transaction.commit().await?;
 
     append_audit(
@@ -281,7 +286,18 @@ async fn find_group_term(
 async fn lock_group_context(
     transaction: &mut Transaction<'_, Postgres>,
     group_id: Uuid,
+    academic_term_id: Uuid,
 ) -> Result<GroupContext, AppError> {
+    let offering_id: Uuid =
+        sqlx::query_scalar("SELECT learning_offering_id FROM learning_groups WHERE id = $1")
+            .bind(group_id)
+            .fetch_optional(&mut **transaction)
+            .await?
+            .ok_or_else(|| AppError::NotFound("ไม่พบกลุ่มเรียน".to_string()))?;
+    sqlx::query("SELECT id FROM learning_offerings WHERE id = $1 FOR UPDATE")
+        .bind(offering_id)
+        .execute(&mut **transaction)
+        .await?;
     sqlx::query_as(
         r#"SELECT learning_group.id, learning_group.learning_offering_id,
                   learning_group.academic_term_id, learning_group.academic_year_id,
@@ -293,10 +309,13 @@ async fn lock_group_context(
            FROM learning_groups learning_group
            JOIN learning_offerings offering ON offering.id = learning_group.learning_offering_id
            JOIN academic_years year ON year.id = learning_group.academic_year_id
-           WHERE learning_group.id = $1
-           FOR UPDATE OF learning_group, offering"#,
+           WHERE learning_group.id = $1 AND learning_group.academic_term_id = $2
+             AND offering.id = $3
+           FOR UPDATE OF learning_group"#,
     )
     .bind(group_id)
+    .bind(academic_term_id)
+    .bind(offering_id)
     .fetch_optional(&mut **transaction)
     .await?
     .ok_or_else(|| AppError::NotFound("ไม่พบกลุ่มเรียน".to_string()))

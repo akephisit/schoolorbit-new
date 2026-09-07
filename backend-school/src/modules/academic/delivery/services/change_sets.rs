@@ -370,6 +370,11 @@ pub async fn publish_change_set(
     let teacher_episode_changes =
         apply_teacher_episode_changes(&mut transaction, &change_set, &item_rows, actor_user_id)
             .await?;
+    let teacher_group_ids = teacher_episode_changes
+        .iter()
+        .map(|change| change.learning_group_id)
+        .collect::<Vec<_>>();
+    super::invalidate_group_academic_confirmations(&mut transaction, &teacher_group_ids).await?;
 
     let published_version = sqlx::query(
         r#"UPDATE academic_timetable_versions

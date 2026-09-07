@@ -1,12 +1,22 @@
 use super::{models::*, services::*};
 use crate::modules::academic::{
     cutover_test_support::{apply_migrations_through, seed_release_two_predecessor},
+    delivery::{
+        models::{
+            AddDatedRosterMembershipRequest, LearningTeacherRole,
+            RemoveDatedRosterMembershipRequest, ReplaceLearningGroupTeachersRequest,
+            TeacherAssignmentInput,
+        },
+        services::{groups as delivery_groups, roster_memberships},
+    },
     gradebook::{models as gm, services as gb},
 };
 use crate::{
     middleware::permission::ActorContext, permissions::registry::codes,
     test_helpers::create_named_test_pool_with_max_connections,
 };
+use chrono::NaiveDate;
+use std::time::Duration;
 use uuid::Uuid;
 
 fn bands() -> Vec<GradingPolicyBand> {
@@ -159,6 +169,127 @@ fn confirm_input(ws: &CoursePreparationWorkspace) -> ResultConfirmationInput {
     }
 }
 
+async fn prepare_published_roster_mutation(pool: &sqlx::PgPool, group: Uuid) -> (Uuid, NaiveDate) {
+    sqlx::query(
+        "UPDATE learning_offerings SET status='published' WHERE id=(SELECT learning_offering_id FROM learning_groups WHERE id=$1)",
+    )
+    .bind(group)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE learning_groups SET status='published',roster_status='published' WHERE id=$1",
+    )
+    .bind(group)
+    .execute(pool)
+    .await
+    .unwrap();
+    let (academic_year_id, grade_level_id, study_program_id): (Uuid, Uuid, Uuid) = sqlx::query_as(
+        r#"SELECT group_row.academic_year_id,student_year.grade_level_id,student_year.study_program_id
+           FROM learning_groups group_row
+           JOIN learning_group_students membership
+             ON membership.learning_group_id=group_row.id
+            AND membership.membership_status='active'
+           JOIN student_academic_years student_year
+             ON student_year.id=membership.student_academic_year_id
+           WHERE group_row.id=$1
+           ORDER BY student_year.id LIMIT 1"#,
+    )
+    .bind(group)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let student_id = Uuid::new_v4();
+    sqlx::query(
+        r#"INSERT INTO users (
+               id,email,username,password_hash,first_name,last_name,user_type,status
+           ) VALUES ($1,$2,$2,'fixture-not-a-login','Roster','ABA','student','active')"#,
+    )
+    .bind(student_id)
+    .bind(format!("results-roster-aba-{student_id}@example.invalid"))
+    .execute(pool)
+    .await
+    .unwrap();
+    let student = Uuid::new_v4();
+    sqlx::query(
+        r#"INSERT INTO student_academic_years (
+               id,student_id,academic_year_id,grade_level_id,study_program_id,status
+           ) VALUES ($1,$2,$3,$4,$5,'active')"#,
+    )
+    .bind(student)
+    .bind(student_id)
+    .bind(academic_year_id)
+    .bind(grade_level_id)
+    .bind(study_program_id)
+    .execute(pool)
+    .await
+    .unwrap();
+    let joined_at: NaiveDate = sqlx::query_scalar(
+        r#"SELECT GREATEST(offering.starts_on,academic_year.start_date)
+           FROM learning_groups group_row
+           JOIN learning_offerings offering ON offering.id=group_row.learning_offering_id
+           JOIN academic_years academic_year ON academic_year.id=group_row.academic_year_id
+           WHERE group_row.id=$1"#,
+    )
+    .bind(group)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    (student, joined_at)
+}
+
+async fn add_then_remove_membership_without_result_read(
+    pool: &sqlx::PgPool,
+    actor: Uuid,
+    group: Uuid,
+) {
+    let (student_academic_year_id, joined_at) =
+        prepare_published_roster_mutation(pool, group).await;
+    let group_before = delivery_groups::get(pool, group).await.unwrap();
+    let added = roster_memberships::add_membership(
+        pool,
+        actor,
+        group,
+        AddDatedRosterMembershipRequest {
+            group_row_version: group_before.row_version,
+            student_academic_year_id,
+            joined_at,
+        },
+    )
+    .await
+    .unwrap();
+    let group_after_add = delivery_groups::get(pool, group).await.unwrap();
+    roster_memberships::remove_membership(
+        pool,
+        actor,
+        group,
+        added.id,
+        RemoveDatedRosterMembershipRequest {
+            group_row_version: group_after_add.row_version,
+            membership_row_version: added.row_version,
+            left_at: joined_at,
+        },
+    )
+    .await
+    .unwrap();
+}
+
+async fn wait_for_result_confirmation_read_lock(pool: &sqlx::PgPool) {
+    for _ in 0..100 {
+        let waiting: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%learning_group_result_confirmations%')",
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        if waiting {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("workspace GET did not reach the confirmation read while the table was locked");
+}
+
 // Catches accepting missing/stale phase approval, changing blank storage, and reusing confirmation revisions.
 #[tokio::test]
 async fn results_course_confirmation_blank_and_monotonic_phase_sources() {
@@ -198,7 +329,7 @@ async fn results_course_confirmation_blank_and_monotonic_phase_sources() {
         .await
         .unwrap();
     assert!(!stale.confirmation_is_current);
-    assert!(stale.confirmation.as_ref().unwrap().row_version > original);
+    assert_eq!(stale.confirmation.as_ref().unwrap().row_version, original);
     assert!(stale
         .blockers
         .iter()
@@ -578,12 +709,19 @@ async fn results_activity_completeness_assignment_and_roster_staleness() {
             .await
             .unwrap();
     assert!(sibling_workspace.confirmation_is_current);
-    sqlx::query(
-        "UPDATE learning_group_teachers SET role='secondary' WHERE learning_group_id=$1 AND teacher_id=$2",
+    let sibling_group = delivery_groups::get(&pool, sibling).await.unwrap();
+    let secondary = delivery_groups::replace_teachers(
+        &pool,
+        actor.user_id,
+        sibling,
+        ReplaceLearningGroupTeachersRequest {
+            row_version: sibling_group.row_version,
+            teachers: vec![TeacherAssignmentInput {
+                teacher_id: actor.user_id,
+                role: LearningTeacherRole::Secondary,
+            }],
+        },
     )
-    .bind(sibling)
-    .bind(actor.user_id)
-    .execute(&pool)
     .await
     .unwrap();
     let no_primary = get_activity_workspace(&pool, &actor, &ctx, sibling)
@@ -594,12 +732,18 @@ async fn results_activity_completeness_assignment_and_roster_staleness() {
         .blockers
         .iter()
         .any(|item| item.code == ResultBlockerCode::MissingPrimaryTeacher));
-    sqlx::query(
-        "UPDATE learning_group_teachers SET role='primary' WHERE learning_group_id=$1 AND teacher_id=$2",
+    delivery_groups::replace_teachers(
+        &pool,
+        actor.user_id,
+        sibling,
+        ReplaceLearningGroupTeachersRequest {
+            row_version: secondary.row_version,
+            teachers: vec![TeacherAssignmentInput {
+                teacher_id: actor.user_id,
+                role: LearningTeacherRole::Primary,
+            }],
+        },
     )
-    .bind(sibling)
-    .bind(actor.user_id)
-    .execute(&pool)
     .await
     .unwrap();
     let restored_primary = get_activity_workspace(&pool, &actor, &ctx, sibling)
@@ -611,13 +755,7 @@ async fn results_activity_completeness_assignment_and_roster_staleness() {
             .await
             .unwrap();
     assert!(restored_confirmation.confirmation_is_current);
-    sqlx::query(
-        "UPDATE learning_group_students SET row_version=row_version+1 WHERE learning_group_id=$1",
-    )
-    .bind(group)
-    .execute(&pool)
-    .await
-    .unwrap();
+    add_then_remove_membership_without_result_read(&pool, actor.user_id, group).await;
     let stale = get_activity_workspace(&pool, &actor, &ctx, group)
         .await
         .unwrap();
@@ -814,6 +952,334 @@ async fn results_readiness_detects_stale_course_selection_snapshot() {
         .blockers
         .iter()
         .any(|blocker| blocker.code == ResultBlockerCode::StaleGroupConfirmation));
+}
+
+// A transient participant must permanently stale the activity approval even
+// when the active roster and outcome checksum return to their original shape.
+#[tokio::test]
+async fn results_activity_membership_aba_invalidates_at_the_delivery_boundary() {
+    let (pool, mut actor, ctx, _) = fixture("results_activity_membership_aba").await;
+    let (group, teacher): (Uuid, Uuid) = sqlx::query_as(
+        "SELECT g.id,t.teacher_id FROM learning_groups g JOIN activity_offering_details d ON d.learning_offering_id=g.learning_offering_id JOIN learning_group_teachers t ON t.learning_group_id=g.id WHERE t.role='primary' AND EXISTS(SELECT 1 FROM learning_group_students m WHERE m.learning_group_id=g.id AND m.membership_status='active') ORDER BY g.id LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    actor.user_id = teacher;
+    let workspace = get_activity_workspace(&pool, &actor, &ctx, group)
+        .await
+        .unwrap();
+    let prepared = save_activity_outcomes(
+        &pool,
+        &actor,
+        &ctx,
+        group,
+        ActivityBatchInput {
+            cells: workspace
+                .students
+                .iter()
+                .map(|student| ActivityCellInput {
+                    student_academic_year_id: student.student_academic_year_id,
+                    outcome: Some(ActivityOutcome::Pass),
+                    row_version: student.row_version,
+                })
+                .collect(),
+        },
+    )
+    .await
+    .unwrap();
+    let confirmed = confirm_activity(
+        &pool,
+        &actor,
+        &ctx,
+        group,
+        ResultConfirmationInput {
+            source_checksum: prepared.source_checksum,
+            roster_checksum: prepared.roster_checksum,
+            row_version: prepared
+                .confirmation
+                .as_ref()
+                .map(|value| value.row_version),
+        },
+    )
+    .await
+    .unwrap();
+    let original_version = confirmed.confirmation.as_ref().unwrap().row_version;
+
+    add_then_remove_membership_without_result_read(&pool, actor.user_id, group).await;
+
+    let row: (i64, bool) = sqlx::query_as(
+        "SELECT row_version,COALESCE((source_snapshot->>'invalidated')::boolean,false) FROM academic_activity_result_confirmations WHERE learning_group_id=$1",
+    )
+    .bind(group)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(row.1, "the delivery mutation must persist invalidation");
+    assert!(row.0 > original_version);
+    assert!(
+        !get_activity_workspace(&pool, &actor, &ctx, group)
+            .await
+            .unwrap()
+            .confirmation_is_current
+    );
+}
+
+// The same delivery roster source feeds Gradebook phase, course-result, and
+// learner-evaluation confirmations. All retain their identity but must become
+// explicitly stale before an ABA roster can restore its old checksum.
+#[tokio::test]
+async fn results_course_membership_aba_invalidates_phase_result_and_learner_confirmations() {
+    let (pool, actor, ctx, group) = fixture("results_course_membership_aba").await;
+    prepare_phases(&pool, &actor, &ctx, group).await;
+    let workspace = get_course_workspace(&pool, &actor, &ctx, group)
+        .await
+        .unwrap();
+    let confirmed = confirm_group_results(&pool, &actor, &ctx, group, confirm_input(&workspace))
+        .await
+        .unwrap();
+    sqlx::query(
+        r#"INSERT INTO learning_group_evaluation_confirmations
+           (learning_group_id,learning_offering_id,academic_term_id,academic_year_id,subject_id,domain,roster_checksum,source_checksum,source_snapshot,confirmed_by)
+           SELECT g.id,g.learning_offering_id,g.academic_term_id,g.academic_year_id,d.subject_id,
+                  'desirable_characteristic',repeat('0',64),repeat('1',64),'{"invalidated":false}'::jsonb,$2
+           FROM learning_groups g JOIN course_offering_details d ON d.learning_offering_id=g.learning_offering_id
+           WHERE g.id=$1"#,
+    )
+    .bind(group)
+    .bind(actor.user_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let result_version = confirmed.confirmation.as_ref().unwrap().row_version;
+
+    add_then_remove_membership_without_result_read(&pool, actor.user_id, group).await;
+
+    let invalidated_phase_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM learning_group_phase_confirmations WHERE learning_group_id=$1 AND COALESCE((source_snapshot->>'invalidated')::boolean,false)",
+    )
+    .bind(group)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(invalidated_phase_count, 4);
+    let result_row: (i64, bool) = sqlx::query_as(
+        "SELECT row_version,COALESCE((source_snapshot->>'invalidated')::boolean,false) FROM learning_group_result_confirmations WHERE learning_group_id=$1",
+    )
+    .bind(group)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(result_row.1);
+    assert!(result_row.0 > result_version);
+    let learner_invalidated: bool = sqlx::query_scalar(
+        "SELECT COALESCE((source_snapshot->>'invalidated')::boolean,false) FROM learning_group_evaluation_confirmations WHERE learning_group_id=$1 AND domain='desirable_characteristic'",
+    )
+    .bind(group)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(learner_invalidated);
+    assert!(
+        !get_course_workspace(&pool, &actor, &ctx, group)
+            .await
+            .unwrap()
+            .confirmation_is_current
+    );
+}
+
+#[tokio::test]
+async fn results_readiness_returns_course_blockers_after_primary_removal() {
+    let (pool, actor, ctx, group) = fixture("results_readiness_course_primary_removed").await;
+    prepare_phases(&pool, &actor, &ctx, group).await;
+    let workspace = get_course_workspace(&pool, &actor, &ctx, group)
+        .await
+        .unwrap();
+    confirm_group_results(&pool, &actor, &ctx, group, confirm_input(&workspace))
+        .await
+        .unwrap();
+    sqlx::query("UPDATE learning_groups SET status='draft' WHERE id=$1")
+        .bind(group)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE learning_group_teachers SET role='secondary' WHERE learning_group_id=$1 AND teacher_id=$2",
+    )
+    .bind(group)
+    .bind(actor.user_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let readiness = readiness(&pool, &actor, &ctx).await.unwrap();
+    let row = readiness
+        .courses
+        .iter()
+        .flat_map(|subject| &subject.groups)
+        .find(|candidate| candidate.learning_group_id == group)
+        .unwrap();
+    assert!(row
+        .blockers
+        .iter()
+        .any(|blocker| blocker.code == ResultBlockerCode::MissingPrimaryTeacher));
+    assert!(row
+        .blockers
+        .iter()
+        .any(|blocker| blocker.code == ResultBlockerCode::StaleGroupConfirmation));
+}
+
+#[tokio::test]
+async fn results_readiness_returns_activity_blockers_after_primary_removal() {
+    let (pool, mut actor, ctx, _) = fixture("results_readiness_activity_primary_removed").await;
+    let (group, teacher): (Uuid, Uuid) = sqlx::query_as(
+        "SELECT g.id,t.teacher_id FROM learning_groups g JOIN activity_offering_details d ON d.learning_offering_id=g.learning_offering_id JOIN learning_group_teachers t ON t.learning_group_id=g.id WHERE t.role='primary' AND EXISTS(SELECT 1 FROM learning_group_students m WHERE m.learning_group_id=g.id AND m.membership_status='active') ORDER BY g.id LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    actor.user_id = teacher;
+    let workspace = get_activity_workspace(&pool, &actor, &ctx, group)
+        .await
+        .unwrap();
+    let prepared = save_activity_outcomes(
+        &pool,
+        &actor,
+        &ctx,
+        group,
+        ActivityBatchInput {
+            cells: workspace
+                .students
+                .iter()
+                .map(|student| ActivityCellInput {
+                    student_academic_year_id: student.student_academic_year_id,
+                    outcome: Some(ActivityOutcome::Pass),
+                    row_version: student.row_version,
+                })
+                .collect(),
+        },
+    )
+    .await
+    .unwrap();
+    confirm_activity(
+        &pool,
+        &actor,
+        &ctx,
+        group,
+        ResultConfirmationInput {
+            source_checksum: prepared.source_checksum,
+            roster_checksum: prepared.roster_checksum,
+            row_version: prepared
+                .confirmation
+                .as_ref()
+                .map(|value| value.row_version),
+        },
+    )
+    .await
+    .unwrap();
+    sqlx::query("UPDATE learning_groups SET status='draft' WHERE id=$1")
+        .bind(group)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE learning_group_teachers SET role='secondary' WHERE learning_group_id=$1 AND teacher_id=$2",
+    )
+    .bind(group)
+    .bind(actor.user_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let readiness = readiness(&pool, &actor, &ctx).await.unwrap();
+    let row = readiness
+        .activities
+        .iter()
+        .find(|candidate| candidate.learning_group_id == group)
+        .unwrap();
+    assert!(row
+        .blockers
+        .iter()
+        .any(|blocker| blocker.code == ResultBlockerCode::MissingPrimaryTeacher));
+    assert!(row
+        .blockers
+        .iter()
+        .any(|blocker| blocker.code == ResultBlockerCode::StaleGroupConfirmation));
+}
+
+// The GET starts from an older source snapshot while the retained confirmation
+// is protected. Restoring the newer source must not let that stale reader write
+// an invalidation after the lock is released.
+#[tokio::test]
+async fn results_stale_workspace_get_cannot_invalidate_newer_confirmation() {
+    let (pool, actor, ctx, group) = fixture("results_stale_workspace_get_race").await;
+    prepare_phases(&pool, &actor, &ctx, group).await;
+    let workspace = get_course_workspace(&pool, &actor, &ctx, group)
+        .await
+        .unwrap();
+    let student = workspace.students[0].student_academic_year_id;
+    let selected = save_selection(
+        &pool,
+        &actor,
+        &ctx,
+        group,
+        SelectionInput {
+            student_academic_year_id: student,
+            selection: CourseOutcomeSelection::ExplicitZero,
+            row_version: None,
+        },
+    )
+    .await
+    .unwrap();
+    let confirmed = confirm_group_results(&pool, &actor, &ctx, group, confirm_input(&selected))
+        .await
+        .unwrap();
+    let confirmation_version = confirmed.confirmation.as_ref().unwrap().row_version;
+    let selection_version = confirmed.students[0].selection_row_version.unwrap();
+    sqlx::query(
+        "DELETE FROM learning_group_result_overrides WHERE learning_group_id=$1 AND student_academic_year_id=$2",
+    )
+    .bind(group)
+    .bind(student)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let mut lock = pool.begin().await.unwrap();
+    sqlx::query("LOCK TABLE learning_group_result_confirmations IN ACCESS EXCLUSIVE MODE")
+        .execute(&mut *lock)
+        .await
+        .unwrap();
+    let get_pool = pool.clone();
+    let get_actor = actor.clone();
+    let get_ctx = ctx;
+    let stale_get = tokio::spawn(async move {
+        get_course_workspace(&get_pool, &get_actor, &get_ctx, group)
+            .await
+            .unwrap()
+    });
+    wait_for_result_confirmation_read_lock(&pool).await;
+    sqlx::query(
+        "INSERT INTO learning_group_result_overrides (learning_group_id,learning_offering_id,academic_term_id,academic_year_id,subject_id,student_academic_year_id,outcome,row_version,updated_by) SELECT g.id,g.learning_offering_id,g.academic_term_id,g.academic_year_id,d.subject_id,$2,'manual_zero',$3,$4 FROM learning_groups g JOIN course_offering_details d ON d.learning_offering_id=g.learning_offering_id WHERE g.id=$1",
+    )
+    .bind(group)
+    .bind(student)
+    .bind(selection_version)
+    .bind(actor.user_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    lock.commit().await.unwrap();
+    let stale = stale_get.await.unwrap();
+    assert!(!stale.confirmation_is_current);
+    let refreshed = get_course_workspace(&pool, &actor, &ctx, group)
+        .await
+        .unwrap();
+    assert!(refreshed.confirmation_is_current);
+    assert_eq!(
+        refreshed.confirmation.as_ref().unwrap().row_version,
+        confirmation_version
+    );
 }
 
 // Exercises the owning handler declarations. Aggregate OpenAPI registration remains Task 9.
