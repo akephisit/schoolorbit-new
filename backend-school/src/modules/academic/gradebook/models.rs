@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema, IntoParams)]
 #[serde(rename_all = "camelCase")]
+#[into_params(parameter_in = Query)]
 pub struct GradebookContext {
     pub academic_year_id: Uuid,
     pub academic_term_id: Uuid,

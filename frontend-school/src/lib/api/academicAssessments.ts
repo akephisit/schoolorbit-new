@@ -1,5 +1,5 @@
 import { ApiClientError, apiClient, requireApiData, type ApiResponse } from '$lib/api/client';
-import type { components } from '$lib/api/generated/school-api';
+import type { components, operations } from '$lib/api/generated/school-api';
 
 type Schemas = components['schemas'];
 
@@ -16,13 +16,16 @@ export type SaveAssessmentPlanRequest = Schemas['SaveAssessmentPlanRequest'];
 export type SaveAssessmentPhaseRequest = Schemas['SaveAssessmentPhaseRequest'];
 export type UpdateAssessmentPhaseControlRequest = Schemas['UpdateAssessmentPhaseControlRequest'];
 
-export interface AssessmentPlanFilters {
-	academicTermId: string;
-	subjectId?: string;
-	instructorId?: string;
-	ready?: boolean;
-	examArrangement?: AssessmentExamArrangement;
-}
+export type AssessmentPlanFilters = NonNullable<
+	operations['listAssessmentPlans']['parameters']['query']
+>;
+type AssessmentPlanPath = NonNullable<operations['getAssessmentPlan']['parameters']['path']>;
+type AssessmentControlPath = NonNullable<
+	operations['updateAssessmentPhaseControl']['parameters']['path']
+>;
+type AssessmentControlQuery = NonNullable<
+	operations['listAssessmentPhaseControls']['parameters']['query']
+>;
 
 async function assessmentData<T>(request: Promise<ApiResponse<T>>, fallback: string): Promise<T> {
 	const response = await request;
@@ -35,59 +38,60 @@ async function assessmentData<T>(request: Promise<ApiResponse<T>>, fallback: str
 	return requireApiData(response, fallback);
 }
 
-function assessmentPlanQuery(filters: AssessmentPlanFilters): string {
+function assessmentPlanQuery(filters: AssessmentPlanFilters): AssessmentPlanFilters {
 	const academicTermId = filters.academicTermId.trim();
 	if (!academicTermId) throw new Error('กรุณาเลือกภาคเรียนก่อน');
-
-	const params = new URLSearchParams({ academicTermId });
-	if (filters.subjectId) params.set('subjectId', filters.subjectId);
-	if (filters.instructorId) params.set('instructorId', filters.instructorId);
-	if (filters.ready !== undefined) params.set('ready', String(filters.ready));
-	if (filters.examArrangement) params.set('examArrangement', filters.examArrangement);
-	return `?${params.toString()}`;
+	return { ...filters, academicTermId } satisfies AssessmentPlanFilters;
 }
 
 export const listAssessmentPlans = (filters: AssessmentPlanFilters) =>
 	assessmentData(
-		apiClient.get<AssessmentPlanSummary[]>(
-			`/api/academic/assessments/plans${assessmentPlanQuery(filters)}`
-		),
+		apiClient.get<AssessmentPlanSummary[]>('/api/academic/assessments/plans', {
+			query: assessmentPlanQuery(filters)
+		}),
 		'ไม่สามารถโหลดภาพรวมโครงสร้างคะแนนได้'
 	);
 
-export const getAssessmentPlan = (offeringId: string) =>
-	assessmentData(
+export const getAssessmentPlan = (offeringId: string) => {
+	const path = { offering_id: offeringId } satisfies AssessmentPlanPath;
+	return assessmentData(
 		apiClient.get<AssessmentPlanDetail>(
-			`/api/academic/assessments/offerings/${encodeURIComponent(offeringId)}`
+			`/api/academic/assessments/offerings/${encodeURIComponent(path.offering_id)}`
 		),
 		'ไม่สามารถโหลดโครงสร้างคะแนนของรายการเปิดสอนได้'
 	);
+};
 
-export const listAssessmentPhaseControls = (academicTermId: string) =>
-	assessmentData(
-		apiClient.get<AssessmentPhaseControl[]>(
-			`/api/academic/assessments/phase-controls?academicTermId=${encodeURIComponent(academicTermId)}`
-		),
-		'ไม่สามารถโหลดช่วงเวลาเปิดกรอกคะแนนได้'
+export const listAssessmentPhaseControls = (academicTermId: string) => {
+	const query = { academicTermId: academicTermId.trim() } satisfies AssessmentControlQuery;
+	if (!query.academicTermId) throw new Error('กรุณาเลือกภาคเรียนก่อน');
+	return assessmentData(
+		apiClient.get<AssessmentPhaseControl[]>('/api/academic/assessments/phase-controls', { query }),
+		'ไม่สามารถโหลดช่วงเวลาเปิดแก้โครงสร้างคะแนนได้'
 	);
+};
 
 export const updateAssessmentPhaseControl = (
 	controlId: string,
 	payload: UpdateAssessmentPhaseControlRequest
-) =>
-	assessmentData(
+) => {
+	const path = { control_id: controlId } satisfies AssessmentControlPath;
+	return assessmentData(
 		apiClient.put<AssessmentPhaseControl>(
-			`/api/academic/assessments/phase-controls/${encodeURIComponent(controlId)}`,
+			`/api/academic/assessments/phase-controls/${encodeURIComponent(path.control_id)}`,
 			payload
 		),
-		'ไม่สามารถบันทึกช่วงเวลาเปิดกรอกคะแนนได้'
+		'ไม่สามารถบันทึกช่วงเวลาเปิดแก้โครงสร้างคะแนนได้'
 	);
+};
 
-export const saveAssessmentPlan = (offeringId: string, payload: SaveAssessmentPlanRequest) =>
-	assessmentData(
+export const saveAssessmentPlan = (offeringId: string, payload: SaveAssessmentPlanRequest) => {
+	const path = { offering_id: offeringId } satisfies AssessmentPlanPath;
+	return assessmentData(
 		apiClient.put<AssessmentPlanDetail>(
-			`/api/academic/assessments/offerings/${encodeURIComponent(offeringId)}`,
+			`/api/academic/assessments/offerings/${encodeURIComponent(path.offering_id)}`,
 			payload
 		),
 		'ไม่สามารถบันทึกโครงสร้างคะแนนได้'
 	);
+};

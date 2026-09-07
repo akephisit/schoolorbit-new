@@ -33,7 +33,10 @@ test('academic assessment permissions remain generated for teachers and academic
 test('assessment api uses generated DTOs and offering-scoped endpoints', async () => {
 	const api = await readProjectFile('src/lib/api/academicAssessments.ts');
 
-	assert.match(api, /import type \{ components \} from '\$lib\/api\/generated\/school-api'/);
+	assert.match(
+		api,
+		/import type \{ components, operations \} from '\$lib\/api\/generated\/school-api'/
+	);
 	for (const schema of [
 		'AssessmentPlanSummary',
 		'AssessmentPlanDetail',
@@ -44,11 +47,13 @@ test('assessment api uses generated DTOs and offering-scoped endpoints', async (
 	]) {
 		assert.match(api, new RegExp(`Schemas\\['${schema}'\\]`));
 	}
-	assert.match(api, /academicTermId:\s*string/);
-	assert.match(api, /new URLSearchParams\(\{ academicTermId \}\)/);
+	assert.match(api, /operations\['listAssessmentPlans'\]\['parameters'\]\['query'\]/);
+	assert.match(api, /satisfies AssessmentPlanFilters/);
+	assert.match(api, /query:\s*assessmentPlanQuery\(filters\)/);
+	assert.doesNotMatch(api, /new URLSearchParams/);
 	assert.match(
 		api,
-		/\/api\/academic\/assessments\/offerings\/\$\{encodeURIComponent\(offeringId\)\}/
+		/\/api\/academic\/assessments\/offerings\/\$\{encodeURIComponent\(path\.offering_id\)\}/
 	);
 	assert.match(api, /\/api\/academic\/assessments\/plans/);
 	assert.match(api, /\/api\/academic\/assessments\/phase-controls/);
@@ -93,9 +98,12 @@ test('backend assessment model is term and offering scoped with optimistic locki
 	assert.match(model, /pub offering_id: Uuid/);
 	assert.match(model, /pub learning_group_ids: Vec<Uuid>/);
 	assert.match(model, /pub row_version: Option<i64>/);
-	assert.match(model, /pub grading_policy: CourseGradingPolicy/);
+	assert.match(model, /pub assessment_total_score: String/);
 	assert.match(model, /#\[into_params\(parameter_in = Query\)\]/);
-	assert.doesNotMatch(model, /classroom_course_id|academic_semester_id/);
+	assert.doesNotMatch(
+		model,
+		/classroom_course_id|academic_semester_id|CourseGradingPolicy|grading_policy/
+	);
 });
 
 test('backend routes assessment plans through offering IDs and registers OpenAPI paths', async () => {
@@ -208,10 +216,14 @@ test('assessment save sends rowVersion and keeps dirty draft on conflicts', asyn
 	assert.doesNotMatch(catchBlock, /draftPhases\s*=|dirty\s*=\s*false/);
 });
 
-test('assessment phase controls separate plan editing from score entry without legacy item editing', async () => {
+test('assessment phase controls own plan editing while gradebook controls score entry', async () => {
 	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
+	const gradebookApi = await readProjectFile('src/lib/api/academicGradebook.ts');
 	const service = await readRepoFile(
 		'backend-school/src/modules/academic/services/assessment_service.rs'
+	);
+	const gradebookControls = await readRepoFile(
+		'backend-school/src/modules/academic/gradebook/services/controls.rs'
 	);
 	const capabilityBlock = page.slice(
 		page.indexOf('const canRead'),
@@ -221,7 +233,6 @@ test('assessment phase controls separate plan editing from score entry without l
 	assert.match(page, /phaseControls/);
 	assert.match(page, /togglePhaseControl/);
 	assert.match(page, /planEditingEnabled/);
-	assert.match(page, /scoreEntryEnabled/);
 	assert.match(page, /แก้โครงสร้างคะแนนรายวิชา/);
 	assert.match(page, /canEditPlanPhase/);
 	assert.match(page, /canManageSchool/);
@@ -230,8 +241,12 @@ test('assessment phase controls separate plan editing from score entry without l
 	assert.match(service, /require_phase_controls_manage_access/);
 	assert.match(service, /allowed_coordinator/);
 	assert.match(service, /เฉพาะผู้รับผิดชอบโครงสร้างคะแนนหรือผู้ดูแลวิชาการเท่านั้น/);
-	assert.doesNotMatch(page, /itemEditingEnabled/);
-	assert.doesNotMatch(service, /item_editing_enabled/);
+	assert.doesNotMatch(page, /scoreEntryEnabled|itemEditingEnabled/);
+	assert.doesNotMatch(service, /score_entry_enabled|item_editing_enabled/);
+	assert.match(gradebookApi, /Schemas\['GradebookControl'\]/);
+	assert.match(gradebookApi, /Schemas\['UpdateControlInput'\]/);
+	assert.match(gradebookApi, /updateGradebookControl/);
+	assert.match(gradebookControls, /score_entry_enabled/);
 	assert.doesNotMatch(page, /teacherAccessEnabled|toggleTeacherAccess/);
 	assert.doesNotMatch(capabilityBlock, /LEARNING_OFFERING/);
 });

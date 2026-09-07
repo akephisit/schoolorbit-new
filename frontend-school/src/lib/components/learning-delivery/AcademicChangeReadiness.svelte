@@ -83,7 +83,14 @@
 					['แผนโครงสร้างคะแนน', preview.impactCounts.courseAssessmentPlans],
 					['ช่วงคะแนน', preview.impactCounts.courseAssessmentPhases],
 					['รายการคะแนนรายกลุ่ม', preview.impactCounts.learningGroupScoreItems],
-					['ผลการเรียน', preview.impactCounts.learningResults],
+					['คะแนนนักเรียน', preview.impactCounts.studentScores],
+					['การเลือกผลการเรียน', preview.impactCounts.resultSelections],
+					['รายการยืนยันผล', preview.impactCounts.resultConfirmations],
+					['ผลกิจกรรมที่บันทึก', preview.impactCounts.activityEvaluations],
+					['ผลประเมินผู้เรียน', preview.impactCounts.learnerEvaluations],
+					['ชุดล็อกผลทางการ', preview.impactCounts.officialResultLocks],
+					['ผลการเรียนทางการ', preview.impactCounts.officialResults],
+					['ประวัติแก้ผลการเรียน', preview.impactCounts.resultCorrections],
 					['ตารางสอบ', preview.impactCounts.examScheduleItems],
 					['นิเทศการสอน', preview.impactCounts.supervisionObservations]
 				] as const)

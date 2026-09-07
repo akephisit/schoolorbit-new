@@ -4,6 +4,8 @@ use crate::api_response::{
 };
 use crate::modules::academic::core::models::*;
 use crate::modules::academic::delivery::models::*;
+use crate::modules::academic::gradebook::models::*;
+use crate::modules::academic::learner_evaluation::models::*;
 use crate::modules::academic::models::assessment::*;
 use crate::modules::academic::models::exam_schedule::*;
 use crate::modules::academic::models::timetable::{
@@ -16,6 +18,7 @@ use crate::modules::academic::models::timetable_version::{
     CloneTimetableVersionRequest, TimetableVersion, TimetableVersionDisplayState,
     TimetableVersionStatus, TimetableVersionTarget,
 };
+use crate::modules::academic::results::models::*;
 use crate::modules::academic::services::daily_teaching_service::{
     DailyTeachingEntry, DailyTeachingOverview, DailyTeachingPeriod, DailyTeachingPeriodCell,
     DailyTeachingSummary, DailyTeachingTeacher,
@@ -311,6 +314,49 @@ use utoipa::OpenApi;
         crate::modules::academic::handlers::assessment::update_assessment_phase_control,
         crate::modules::academic::handlers::assessment::get_assessment_plan,
         crate::modules::academic::handlers::assessment::save_assessment_plan,
+        crate::modules::academic::gradebook::handlers::list_subjects,
+        crate::modules::academic::gradebook::handlers::list_controls,
+        crate::modules::academic::gradebook::handlers::update_control,
+        crate::modules::academic::gradebook::handlers::get_group_phase_workspace,
+        crate::modules::academic::gradebook::handlers::create_item,
+        crate::modules::academic::gradebook::handlers::update_item,
+        crate::modules::academic::gradebook::handlers::remove_item,
+        crate::modules::academic::gradebook::handlers::save_scores_batch,
+        crate::modules::academic::gradebook::handlers::confirm_phase,
+        crate::modules::academic::learner_evaluation::handlers::list_policies,
+        crate::modules::academic::learner_evaluation::handlers::create_policy,
+        crate::modules::academic::learner_evaluation::handlers::activate_policy,
+        crate::modules::academic::learner_evaluation::handlers::list_subjects,
+        crate::modules::academic::learner_evaluation::handlers::list_catalog,
+        crate::modules::academic::learner_evaluation::handlers::create_catalog,
+        crate::modules::academic::learner_evaluation::handlers::update_catalog,
+        crate::modules::academic::learner_evaluation::handlers::remove_catalog,
+        crate::modules::academic::learner_evaluation::handlers::list_controls,
+        crate::modules::academic::learner_evaluation::handlers::update_control,
+        crate::modules::academic::learner_evaluation::handlers::get_configuration,
+        crate::modules::academic::learner_evaluation::handlers::create_criterion,
+        crate::modules::academic::learner_evaluation::handlers::update_criterion,
+        crate::modules::academic::learner_evaluation::handlers::remove_criterion,
+        crate::modules::academic::learner_evaluation::handlers::get_workspace,
+        crate::modules::academic::learner_evaluation::handlers::save_responses,
+        crate::modules::academic::learner_evaluation::handlers::confirm_group,
+        crate::modules::academic::learner_evaluation::handlers::lock_subject,
+        crate::modules::academic::learner_evaluation::handlers::student_summary,
+        crate::modules::academic::results::handlers::list_policies,
+        crate::modules::academic::results::handlers::create_policy,
+        crate::modules::academic::results::handlers::activate_policy,
+        crate::modules::academic::results::handlers::get_course_workspace,
+        crate::modules::academic::results::handlers::save_selection,
+        crate::modules::academic::results::handlers::confirm_group_results,
+        crate::modules::academic::results::handlers::get_activity_workspace,
+        crate::modules::academic::results::handlers::save_activity_outcomes,
+        crate::modules::academic::results::handlers::confirm_activity,
+        crate::modules::academic::results::handlers::readiness,
+        crate::modules::academic::results::handlers::lock_course_subject,
+        crate::modules::academic::results::handlers::lock_activity_group,
+        crate::modules::academic::results::handlers::lock_all_ready_activities,
+        crate::modules::academic::results::handlers::search_effective_results,
+        crate::modules::academic::results::handlers::correct_result,
         crate::modules::academic::handlers::exam_schedule::list_rounds,
         crate::modules::academic::handlers::exam_schedule::create_round,
         crate::modules::academic::handlers::exam_schedule::update_round,
@@ -961,6 +1007,125 @@ use utoipa::OpenApi;
         ApiResponse<AssessmentPlanDetail>,
         ApiResponse<Vec<AssessmentPhaseControl>>,
         ApiResponse<AssessmentPhaseControl>,
+        GradebookContext,
+        ItemInput,
+        ScoreCellMutation,
+        ConfirmInput,
+        ScoreItem,
+        ScoreItemRemovalDisposition,
+        ScoreItemRemovalOutcome,
+        ScoreCell,
+        GradebookStudent,
+        PhaseConfirmation,
+        GroupPhaseWorkspace,
+        ScoreBatchOutcome,
+        GradebookControl,
+        UpdateControlInput,
+        GradebookSubject,
+        GradebookPhaseSummary,
+        RemoveItemInput,
+        ScoreBatchInput,
+        ApiResponse<Vec<GradebookSubject>>,
+        ApiResponse<Vec<GradebookControl>>,
+        ApiResponse<GradebookControl>,
+        ApiResponse<GroupPhaseWorkspace>,
+        ApiResponse<ScoreItem>,
+        ApiResponse<ScoreItemRemovalOutcome>,
+        ApiResponse<ScoreBatchOutcome>,
+        ApiResponse<PhaseConfirmation>,
+        LearnerEvaluationDomain,
+        LearnerEvaluationLevel,
+        EvaluationContext,
+        EvaluationCriterion,
+        CriterionInput,
+        CatalogCriterion,
+        CatalogInput,
+        EvaluationConfiguration,
+        EvaluationControl,
+        ControlInput,
+        EvaluationStudent,
+        EvaluationResponse,
+        ResponseInput,
+        ResponseBatchInput,
+        EvaluationConfirmation,
+        ConfirmationInput,
+        MissingEvaluation,
+        ConfirmationOutcome,
+        EvaluationWorkspace,
+        EvaluationLock,
+        LockBlocker,
+        LockOutcome,
+        CriterionRemoval,
+        VersionInput,
+        AggregationPolicyBand,
+        AggregationPolicyInput,
+        AggregationPolicyVersion,
+        ExactAverage,
+        LockedCriterionValue,
+        SubjectEvaluationSummary,
+        CatalogEvaluationSummary,
+        MissingSubject,
+        DomainEvaluationSummary,
+        StudentEvaluationSummary,
+        EvaluationSubject,
+        ApiResponse<Vec<AggregationPolicyVersion>>,
+        ApiResponse<AggregationPolicyVersion>,
+        ApiResponse<Vec<EvaluationSubject>>,
+        ApiResponse<Vec<CatalogCriterion>>,
+        ApiResponse<CatalogCriterion>,
+        ApiResponse<Vec<EvaluationControl>>,
+        ApiResponse<EvaluationControl>,
+        ApiResponse<EvaluationConfiguration>,
+        ApiResponse<EvaluationCriterion>,
+        ApiResponse<CriterionRemoval>,
+        ApiResponse<EvaluationWorkspace>,
+        ApiResponse<ConfirmationOutcome>,
+        ApiResponse<LockOutcome>,
+        ApiResponse<StudentEvaluationSummary>,
+        ResultContext,
+        GradingPolicyBand,
+        GradingPolicyInput,
+        GradingPolicyVersion,
+        CourseOutcomeSelection,
+        ActivityOutcome,
+        SelectionInput,
+        ActivityCellInput,
+        ActivityBatchInput,
+        ResultConfirmationInput,
+        PolicyActivationInput,
+        ResultConfirmation,
+        ResultBlockerCode,
+        ResultBlocker,
+        PreparedCourseStudent,
+        PreparedActivityStudent,
+        CoursePreparationWorkspace,
+        ActivityPreparationWorkspace,
+        GroupResultReadiness,
+        SubjectResultReadiness,
+        ResultReadiness,
+        CourseResultLock,
+        CourseResultLockOutcome,
+        ActivityResultLock,
+        ActivityResultLockOutcome,
+        BulkActivityResultLockOutcome,
+        CourseOfficialOutcome,
+        ResultCorrectionInput,
+        EffectiveResultValue,
+        ResultCorrectionRecord,
+        EffectiveResult,
+        EffectiveResultKind,
+        EffectiveResultSearch,
+        EffectiveResultSearchItem,
+        ApiResponse<Vec<GradingPolicyVersion>>,
+        ApiResponse<GradingPolicyVersion>,
+        ApiResponse<CoursePreparationWorkspace>,
+        ApiResponse<ActivityPreparationWorkspace>,
+        ApiResponse<ResultReadiness>,
+        ApiResponse<CourseResultLockOutcome>,
+        ApiResponse<ActivityResultLockOutcome>,
+        ApiResponse<BulkActivityResultLockOutcome>,
+        ApiResponse<Vec<EffectiveResultSearchItem>>,
+        ApiResponse<EffectiveResult>,
         LearningOfferingKind,
         LearningOfferingStatus,
         OfferingTargetKind,
@@ -4628,5 +4793,113 @@ mod tests {
             assert!(!parameter_names.contains(&"national_id"));
             assert!(!parameter_names.contains(&"date_of_birth"));
         }
+    }
+
+    #[test]
+    fn documents_gradebook_learner_evaluation_and_result_workflows() {
+        let document = school_api_value().expect("document should serialize");
+        assert_operations(
+            &document,
+            &[
+                ("/api/academic/gradebook/subjects", "get", "listGradebookSubjects"),
+                ("/api/academic/gradebook/controls", "get", "listGradebookControls"),
+                ("/api/academic/gradebook/controls/{control_id}", "put", "updateGradebookControl"),
+                ("/api/academic/gradebook/groups/{group_id}/phases/{phase_code}", "get", "getGradebookGroupPhaseWorkspace"),
+                ("/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/items", "post", "createGradebookItem"),
+                ("/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/items/{item_id}", "put", "updateGradebookItem"),
+                ("/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/items/{item_id}", "delete", "removeGradebookItem"),
+                ("/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/scores", "put", "saveGradebookScoresBatch"),
+                ("/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/confirm", "post", "confirmGradebookPhase"),
+                ("/api/academic/learner-evaluations/policies", "get", "listLearnerEvaluationPolicies"),
+                ("/api/academic/learner-evaluations/policies", "post", "createLearnerEvaluationPolicy"),
+                ("/api/academic/learner-evaluations/policies/{policy_id}/activate", "post", "activateLearnerEvaluationPolicy"),
+                ("/api/academic/learner-evaluations/subjects", "get", "listLearnerEvaluationSubjects"),
+                ("/api/academic/learner-evaluations/catalog", "get", "listLearnerEvaluationCatalog"),
+                ("/api/academic/learner-evaluations/catalog", "post", "createLearnerEvaluationCatalog"),
+                ("/api/academic/learner-evaluations/catalog/{criterion_id}", "put", "updateLearnerEvaluationCatalog"),
+                ("/api/academic/learner-evaluations/catalog/{criterion_id}", "delete", "removeLearnerEvaluationCatalog"),
+                ("/api/academic/learner-evaluations/controls", "get", "listLearnerEvaluationControls"),
+                ("/api/academic/learner-evaluations/controls/{domain}", "put", "updateLearnerEvaluationControl"),
+                ("/api/academic/learner-evaluations/subjects/{subject_id}/domains/{domain}/configuration", "get", "getLearnerEvaluationConfiguration"),
+                ("/api/academic/learner-evaluations/subjects/{subject_id}/domains/{domain}/criteria", "post", "createSubjectEvaluationCriterion"),
+                ("/api/academic/learner-evaluations/subjects/{subject_id}/domains/{domain}/criteria/{criterion_id}", "put", "updateSubjectEvaluationCriterion"),
+                ("/api/academic/learner-evaluations/subjects/{subject_id}/domains/{domain}/criteria/{criterion_id}", "delete", "removeSubjectEvaluationCriterion"),
+                ("/api/academic/learner-evaluations/groups/{group_id}/domains/{domain}", "get", "getLearnerEvaluationWorkspace"),
+                ("/api/academic/learner-evaluations/groups/{group_id}/domains/{domain}/responses", "put", "saveLearnerEvaluationResponses"),
+                ("/api/academic/learner-evaluations/groups/{group_id}/domains/{domain}/confirm", "post", "confirmLearnerEvaluationGroup"),
+                ("/api/academic/learner-evaluations/subjects/{subject_id}/domains/{domain}/lock", "post", "lockLearnerEvaluationSubject"),
+                ("/api/academic/learner-evaluations/students/{student_academic_year_id}/summary", "get", "getStudentLearnerEvaluationSummary"),
+                ("/api/academic/results/policies", "get", "listAcademicGradingPolicies"),
+                ("/api/academic/results/policies", "post", "createAcademicGradingPolicy"),
+                ("/api/academic/results/policies/{policy_id}/activate", "post", "activateAcademicGradingPolicy"),
+                ("/api/academic/results/groups/{group_id}/course", "get", "getCourseResultPreparation"),
+                ("/api/academic/results/groups/{group_id}/course/selection", "put", "saveCourseResultSelection"),
+                ("/api/academic/results/groups/{group_id}/course/confirm", "post", "confirmCourseGroupResults"),
+                ("/api/academic/results/groups/{group_id}/activity", "get", "getActivityResultPreparation"),
+                ("/api/academic/results/groups/{group_id}/activity/outcomes", "put", "saveActivityResultOutcomes"),
+                ("/api/academic/results/groups/{group_id}/activity/confirm", "post", "confirmActivityGroupResults"),
+                ("/api/academic/results/readiness", "get", "getAcademicResultReadiness"),
+                ("/api/academic/results/subjects/{subject_id}/lock", "post", "lockCourseSubjectResults"),
+                ("/api/academic/results/groups/{group_id}/activity/lock", "post", "lockActivityGroupResults"),
+                ("/api/academic/results/activities/lock-ready", "post", "lockAllReadyActivityResults"),
+                ("/api/academic/results/effective", "get", "searchEffectiveAcademicResults"),
+                ("/api/academic/results/corrections", "post", "correctEffectiveAcademicResult"),
+            ],
+        );
+
+        for ((path, _method), operation) in document["paths"]
+            .as_object()
+            .expect("paths")
+            .iter()
+            .filter(|(path, _)| {
+                path.starts_with("/api/academic/gradebook")
+                    || path.starts_with("/api/academic/learner-evaluations")
+                    || path.starts_with("/api/academic/results")
+            })
+            .flat_map(|(path, methods)| {
+                methods
+                    .as_object()
+                    .expect("path methods")
+                    .iter()
+                    .map(move |(method, operation)| ((path, method), operation))
+            })
+        {
+            let query = operation["parameters"]
+                .as_array()
+                .expect("academic workflow parameters")
+                .iter()
+                .filter(|parameter| parameter["in"] == "query")
+                .map(|parameter| {
+                    (
+                        parameter["name"].as_str().unwrap(),
+                        parameter["required"].as_bool().unwrap_or(false),
+                    )
+                })
+                .collect::<std::collections::HashMap<_, _>>();
+            assert_eq!(query.get("academicYearId"), Some(&true), "{path}");
+            assert_eq!(query.get("academicTermId"), Some(&true), "{path}");
+        }
+
+        let schemas = &document["components"]["schemas"];
+        for schema_name in [
+            "GroupPhaseWorkspace",
+            "EvaluationWorkspace",
+            "StudentEvaluationSummary",
+            "CoursePreparationWorkspace",
+            "ResultReadiness",
+            "EffectiveResult",
+            "ResultCorrectionInput",
+        ] {
+            assert!(
+                !schemas[schema_name].is_null(),
+                "missing schema {schema_name}"
+            );
+        }
+        let retired_score_entry_field = ["score", "Entry", "Enabled"].concat();
+        let retired_grading_policy = ["Course", "Grading", "Policy"].concat();
+        assert!(schemas["AssessmentPhaseControl"]["properties"]
+            .get(&retired_score_entry_field)
+            .is_none());
+        assert!(schemas.get(&retired_grading_policy).is_none());
     }
 }

@@ -1266,6 +1266,31 @@ test('legacy academic batch wrapper is absent after the hard cutover', async () 
 	assert.match(deliveryApi, /TeacherAssignment\s*=\s*Schemas\['TeacherAssignmentInput'\]/);
 });
 
+test('gradebook and result response DTOs stay concrete across generated wrappers', async () => {
+	const generated = await readRepoFile('frontend-school/src/lib/api/generated/school-api.ts');
+	for (const schemaName of [
+		'GroupPhaseWorkspace',
+		'EvaluationWorkspace',
+		'StudentEvaluationSummary',
+		'CoursePreparationWorkspace',
+		'ActivityPreparationWorkspace',
+		'ResultReadiness',
+		'EffectiveResult'
+	]) {
+		assert.doesNotMatch(extractGeneratedSchemaBlock(generated, schemaName), /\b(?:any|unknown)\b/);
+	}
+
+	for (const relativePath of [
+		'frontend-school/src/lib/api/academicGradebook.ts',
+		'frontend-school/src/lib/api/academicLearnerEvaluations.ts',
+		'frontend-school/src/lib/api/academicResults.ts'
+	]) {
+		const source = await readRepoFile(relativePath);
+		assert.match(source, /requireApiData/);
+		assert.doesNotMatch(source, /return response as|ApiResponse<unknown>|response\.data as/);
+	}
+});
+
 test('frontend API contracts use named dynamic JSON types instead of raw Record unknown', async () => {
 	const rules = await readRepoFile('.rules');
 	const checkedApiFiles = await listRepoFiles(

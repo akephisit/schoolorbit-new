@@ -906,6 +906,134 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/gradebook/controls': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listGradebookControls'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/gradebook/controls/{control_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['updateGradebookControl'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/gradebook/groups/{group_id}/phases/{phase_code}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getGradebookGroupPhaseWorkspace'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/confirm': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['confirmGradebookPhase'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/items': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['createGradebookItem'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/items/{item_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['updateGradebookItem'];
+		post?: never;
+		delete: operations['removeGradebookItem'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/scores': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['saveGradebookScoresBatch'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/gradebook/subjects': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listGradebookSubjects'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/homeroom-advisors': {
 		parameters: {
 			query?: never;
@@ -964,6 +1092,246 @@ export interface paths {
 		get: operations['listHomeroomAdvisors'];
 		put: operations['replaceHomeroomAdvisors'];
 		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/learner-evaluations/catalog': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listLearnerEvaluationCatalog'];
+		put?: never;
+		post: operations['createLearnerEvaluationCatalog'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/learner-evaluations/catalog/{criterion_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['updateLearnerEvaluationCatalog'];
+		post?: never;
+		delete: operations['removeLearnerEvaluationCatalog'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/learner-evaluations/controls': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listLearnerEvaluationControls'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/learner-evaluations/controls/{domain}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['updateLearnerEvaluationControl'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/learner-evaluations/groups/{group_id}/domains/{domain}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getLearnerEvaluationWorkspace'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/learner-evaluations/groups/{group_id}/domains/{domain}/confirm': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['confirmLearnerEvaluationGroup'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/learner-evaluations/groups/{group_id}/domains/{domain}/responses': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['saveLearnerEvaluationResponses'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/learner-evaluations/policies': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listLearnerEvaluationPolicies'];
+		put?: never;
+		post: operations['createLearnerEvaluationPolicy'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/learner-evaluations/policies/{policy_id}/activate': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['activateLearnerEvaluationPolicy'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/learner-evaluations/students/{student_academic_year_id}/summary': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getStudentLearnerEvaluationSummary'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/learner-evaluations/subjects': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listLearnerEvaluationSubjects'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/learner-evaluations/subjects/{subject_id}/domains/{domain}/configuration': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getLearnerEvaluationConfiguration'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/learner-evaluations/subjects/{subject_id}/domains/{domain}/criteria': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['createSubjectEvaluationCriterion'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/learner-evaluations/subjects/{subject_id}/domains/{domain}/criteria/{criterion_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['updateSubjectEvaluationCriterion'];
+		post?: never;
+		delete: operations['removeSubjectEvaluationCriterion'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/learner-evaluations/subjects/{subject_id}/domains/{domain}/lock': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['lockLearnerEvaluationSubject'];
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -1300,6 +1668,230 @@ export interface paths {
 		get?: never;
 		put?: never;
 		post: operations['exportQuestionBankData'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/results/activities/lock-ready': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['lockAllReadyActivityResults'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/results/corrections': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['correctEffectiveAcademicResult'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/results/effective': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['searchEffectiveAcademicResults'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/results/groups/{group_id}/activity': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getActivityResultPreparation'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/results/groups/{group_id}/activity/confirm': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['confirmActivityGroupResults'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/results/groups/{group_id}/activity/lock': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['lockActivityGroupResults'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/results/groups/{group_id}/activity/outcomes': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['saveActivityResultOutcomes'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/results/groups/{group_id}/course': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getCourseResultPreparation'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/results/groups/{group_id}/course/confirm': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['confirmCourseGroupResults'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/results/groups/{group_id}/course/selection': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['saveCourseResultSelection'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/results/policies': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listAcademicGradingPolicies'];
+		put?: never;
+		post: operations['createAcademicGradingPolicy'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/results/policies/{policy_id}/activate': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['activateAcademicGradingPolicy'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/results/readiness': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getAcademicResultReadiness'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/results/subjects/{subject_id}/lock': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['lockCourseSubjectResults'];
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -5024,6 +5616,16 @@ export interface components {
 			/** Format: int32 */
 			requiredSessions?: number | null;
 		};
+		ActivityBatchInput: {
+			cells: components['schemas']['ActivityCellInput'][];
+		};
+		ActivityCellInput: {
+			outcome?: null | components['schemas']['ActivityOutcome'];
+			/** Format: int64 */
+			rowVersion?: number | null;
+			/** Format: uuid */
+			studentAcademicYearId: string;
+		};
 		ActivityOfferingSnapshot: {
 			/** Format: uuid */
 			activityId: string;
@@ -5039,13 +5641,54 @@ export interface components {
 			registrationType: components['schemas']['ActivityRegistrationType'];
 			schedulingMode: components['schemas']['ActivitySchedulingMode'];
 		};
+		/** @enum {string} */
+		ActivityOutcome: 'pass' | 'fail';
 		ActivityPassCriteria: {
 			outcomes: string[];
 			requireAttendance: boolean;
 			requireTeacherConfirmation: boolean;
 		};
+		ActivityPreparationWorkspace: {
+			blockers: components['schemas']['ResultBlocker'][];
+			canConfirm: boolean;
+			canManage: boolean;
+			confirmation?: null | components['schemas']['ResultConfirmation'];
+			confirmationIsCurrent: boolean;
+			/** Format: uuid */
+			learningGroupId: string;
+			locked: boolean;
+			rosterChecksum: string;
+			sourceChecksum: string;
+			students: components['schemas']['PreparedActivityStudent'][];
+		};
 		/** @enum {string} */
 		ActivityRegistrationType: 'self' | 'assigned';
+		ActivityResultLock: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			academicYearId: string;
+			/** Format: uuid */
+			id: string;
+			/** Format: uuid */
+			learningGroupId: string;
+			/** Format: uuid */
+			learningOfferingId: string;
+			/** Format: date-time */
+			lockedAt: string;
+			/** Format: uuid */
+			lockedBy: string;
+			/** Format: int32 */
+			resultCount: number;
+			rosterChecksum: string;
+			/** Format: int64 */
+			rowVersion: number;
+			sourceChecksum: string;
+		};
+		ActivityResultLockOutcome: {
+			blockers: components['schemas']['ResultBlocker'][];
+			lock?: null | components['schemas']['ActivityResultLock'];
+		};
 		/** @enum {string} */
 		ActivitySchedulingMode: 'synchronized' | 'independent';
 		ActivityVersion: {
@@ -5105,6 +5748,26 @@ export interface components {
 			homeroomId: string;
 			homeroomName: string;
 			role: string;
+		};
+		AggregationPolicyBand: {
+			lowerBound: string;
+			/** Format: int32 */
+			qualityLevel: number;
+		};
+		AggregationPolicyInput: {
+			bands: components['schemas']['AggregationPolicyBand'][];
+			name: string;
+		};
+		AggregationPolicyVersion: {
+			bands: components['schemas']['AggregationPolicyBand'][];
+			/** Format: uuid */
+			id: string;
+			lifecycle: string;
+			name: string;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: int32 */
+			versionNo: number;
 		};
 		ApiErrorResponse: {
 			error: string;
@@ -5326,6 +5989,31 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_ActivityPreparationWorkspace: {
+			data: {
+				blockers: components['schemas']['ResultBlocker'][];
+				canConfirm: boolean;
+				canManage: boolean;
+				confirmation?: null | components['schemas']['ResultConfirmation'];
+				confirmationIsCurrent: boolean;
+				/** Format: uuid */
+				learningGroupId: string;
+				locked: boolean;
+				rosterChecksum: string;
+				sourceChecksum: string;
+				students: components['schemas']['PreparedActivityStudent'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_ActivityResultLockOutcome: {
+			data: {
+				blockers: components['schemas']['ResultBlocker'][];
+				lock?: null | components['schemas']['ActivityResultLock'];
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_ActivityVersion: {
 			data: {
 				/** Format: uuid */
@@ -5353,6 +6041,21 @@ export interface components {
 				termCode?: string | null;
 				/** Format: date-time */
 				updatedAt: string;
+				/** Format: int32 */
+				versionNo: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_AggregationPolicyVersion: {
+			data: {
+				bands: components['schemas']['AggregationPolicyBand'][];
+				/** Format: uuid */
+				id: string;
+				lifecycle: string;
+				name: string;
+				/** Format: int64 */
+				rowVersion: number;
 				/** Format: int32 */
 				versionNo: number;
 			};
@@ -5454,6 +6157,14 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_BulkActivityResultLockOutcome: {
+			data: {
+				locked: components['schemas']['ActivityResultLock'][];
+				skipped: components['schemas']['GroupResultReadiness'][];
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_CatalogActivity: {
 			data: {
 				activityType: string;
@@ -5479,6 +6190,22 @@ export interface components {
 				canCreate: boolean;
 				gradeLevelOptions: components['schemas']['GradeLevelLookupItem'][];
 				items: components['schemas']['CatalogActivityOverviewItem'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CatalogCriterion: {
+			data: {
+				applicability: string;
+				/** Format: int32 */
+				displayOrder: number;
+				domain: components['schemas']['LearnerEvaluationDomain'];
+				/** Format: uuid */
+				id: string;
+				lifecycle: string;
+				name: string;
+				/** Format: int64 */
+				rowVersion: number;
 			};
 			message?: string;
 			success: boolean;
@@ -5765,11 +6492,57 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_ConfirmationOutcome: {
+			data: {
+				confirmation?: null | components['schemas']['EvaluationConfirmation'];
+				missing: components['schemas']['MissingEvaluation'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CoursePreparationWorkspace: {
+			data: {
+				blockers: components['schemas']['ResultBlocker'][];
+				canConfirm: boolean;
+				canManage: boolean;
+				confirmation?: null | components['schemas']['ResultConfirmation'];
+				confirmationIsCurrent: boolean;
+				/** Format: uuid */
+				learningGroupId: string;
+				locked: boolean;
+				policy: components['schemas']['GradingPolicyVersion'];
+				rosterChecksum: string;
+				sourceChecksum: string;
+				students: components['schemas']['PreparedCourseStudent'][];
+				/** Format: uuid */
+				subjectId: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CourseResultLockOutcome: {
+			data: {
+				groups: components['schemas']['GroupResultReadiness'][];
+				lock?: null | components['schemas']['CourseResultLock'];
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_CreateStudentResponse: {
 			data: {
 				/** Format: uuid */
 				id: string;
 				username: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CriterionRemoval: {
+			data: {
+				criterion?: null | components['schemas']['EvaluationCriterion'];
+				deleted: boolean;
+				/** Format: uuid */
+				id: string;
 			};
 			message?: string;
 			success: boolean;
@@ -5989,8 +6762,87 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_EffectiveResult: {
+			data: {
+				corrections: components['schemas']['ResultCorrectionRecord'][];
+				effective: components['schemas']['EffectiveResultValue'];
+				/** Format: int64 */
+				effectiveVersion: number;
+				initial: components['schemas']['EffectiveResultValue'];
+				/** Format: uuid */
+				resultId: string;
+				/** Format: uuid */
+				studentAcademicYearId: string;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_EmptyData: {
 			data: Record<string, never>;
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_EvaluationConfiguration: {
+			data: {
+				canManage: boolean;
+				criteria: components['schemas']['EvaluationCriterion'][];
+				domain: components['schemas']['LearnerEvaluationDomain'];
+				locked: boolean;
+				/** Format: int64 */
+				rowVersion: number;
+				/** Format: uuid */
+				subjectId: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_EvaluationControl: {
+			data: {
+				domain: components['schemas']['LearnerEvaluationDomain'];
+				entryEnabled: boolean;
+				/** Format: uuid */
+				id: string;
+				/** Format: int64 */
+				rowVersion: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_EvaluationCriterion: {
+			data: {
+				/** Format: int32 */
+				displayOrder: number;
+				/** Format: uuid */
+				id: string;
+				lifecycle: string;
+				name: string;
+				/** Format: int64 */
+				rowVersion: number;
+				/** Format: uuid */
+				schoolCriterionId?: string | null;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_EvaluationWorkspace: {
+			data: {
+				canConfirm: boolean;
+				canManage: boolean;
+				confirmation?: null | components['schemas']['EvaluationConfirmation'];
+				confirmationIsCurrent: boolean;
+				criteria: components['schemas']['EvaluationCriterion'][];
+				domain: components['schemas']['LearnerEvaluationDomain'];
+				entryEnabled: boolean;
+				/** Format: uuid */
+				learningGroupId: string;
+				locked: boolean;
+				responses: components['schemas']['EvaluationResponse'][];
+				rosterChecksum: string;
+				sourceChecksum: string;
+				students: components['schemas']['EvaluationStudent'][];
+				/** Format: uuid */
+				subjectId: string;
+			};
 			message?: string;
 			success: boolean;
 		};
@@ -6171,11 +7023,69 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_GradebookControl: {
+			data: {
+				/** Format: uuid */
+				academicTermId: string;
+				/** Format: uuid */
+				academicYearId: string;
+				/** Format: uuid */
+				id: string;
+				phaseCode: string;
+				/** Format: int64 */
+				rowVersion: number;
+				scoreEntryEnabled: boolean;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_GradeProgressionSet: {
 			data: {
 				progressions: components['schemas']['GradeProgression'][];
 				/** Format: int64 */
 				rowVersion: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_GradingPolicyVersion: {
+			data: {
+				bands: components['schemas']['GradingPolicyBand'][];
+				/** Format: uuid */
+				id: string;
+				lifecycle: string;
+				name: string;
+				/** Format: int64 */
+				rowVersion: number;
+				/** Format: int32 */
+				versionNo: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_GroupPhaseWorkspace: {
+			data: {
+				/** Format: uuid */
+				assessmentPhaseId: string;
+				canConfirm: boolean;
+				canManage: boolean;
+				confirmation?: null | components['schemas']['PhaseConfirmation'];
+				confirmationIsCurrent: boolean;
+				items: components['schemas']['ScoreItem'][];
+				/** Format: uuid */
+				learningGroupId: string;
+				/** Format: uuid */
+				learningOfferingId: string;
+				locked: boolean;
+				phaseCode: string;
+				phaseMaxScore: string;
+				/** Format: int64 */
+				phaseRowVersion: number;
+				rosterChecksum: string;
+				scoreEntryEnabled: boolean;
+				scores: components['schemas']['ScoreCell'][];
+				sourceChecksum: string;
+				students: components['schemas']['GradebookStudent'][];
 			};
 			message?: string;
 			success: boolean;
@@ -6607,6 +7517,14 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_LockOutcome: {
+			data: {
+				blockers: components['schemas']['LockBlocker'][];
+				lock?: null | components['schemas']['EvaluationLock'];
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_LoginData: {
 			data: {
 				user: components['schemas']['CurrentUserResponse'];
@@ -6741,6 +7659,21 @@ export interface components {
 				phone: string | null;
 				title: string | null;
 				username: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_PhaseConfirmation: {
+			data: {
+				/** Format: int64 */
+				blankScoreCount: number;
+				/** Format: uuid */
+				id: string;
+				invalidated: boolean;
+				rosterChecksum: string;
+				/** Format: int64 */
+				rowVersion: number;
+				sourceChecksum: string;
 			};
 			message?: string;
 			success: boolean;
@@ -6884,6 +7817,14 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_ResultReadiness: {
+			data: {
+				activities: components['schemas']['GroupResultReadiness'][];
+				courses: components['schemas']['SubjectResultReadiness'][];
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_RevokeCertificateResult: {
 			data: {
 				certificate: components['schemas']['IssuedCertificateDetail'];
@@ -6946,6 +7887,40 @@ export interface components {
 			data: {
 				/** Format: uuid */
 				logoFileId: string | null;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_ScoreBatchOutcome: {
+			data: {
+				cells: components['schemas']['ScoreCell'][];
+				workspaceRevision: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_ScoreItem: {
+			data: {
+				/** Format: int32 */
+				displayOrder: number;
+				/** Format: uuid */
+				id: string;
+				lifecycle: string;
+				maxScore: string;
+				name: string;
+				/** Format: int64 */
+				rowVersion: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_ScoreItemRemovalOutcome: {
+			data: {
+				disposition: components['schemas']['ScoreItemRemovalDisposition'];
+				/** Format: uuid */
+				itemId: string;
+				/** Format: int64 */
+				rowVersion: number;
 			};
 			message?: string;
 			success: boolean;
@@ -7053,6 +8028,17 @@ export interface components {
 				learningOfferingId: string;
 				/** Format: int64 */
 				revision: number;
+				/** Format: uuid */
+				studentAcademicYearId: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_StudentEvaluationSummary: {
+			data: {
+				domains: components['schemas']['DomainEvaluationSummary'][];
+				/** Format: uuid */
+				policyVersionId: string;
 				/** Format: uuid */
 				studentAcademicYearId: string;
 			};
@@ -7671,6 +8657,21 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Vec_AggregationPolicyVersion: {
+			data: {
+				bands: components['schemas']['AggregationPolicyBand'][];
+				/** Format: uuid */
+				id: string;
+				lifecycle: string;
+				name: string;
+				/** Format: int64 */
+				rowVersion: number;
+				/** Format: int32 */
+				versionNo: number;
+			}[];
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Vec_AssessmentPhaseControl: {
 			data: {
 				/** Format: uuid */
@@ -7906,6 +8907,22 @@ export interface components {
 				rowVersion: number;
 				/** Format: date-time */
 				updatedAt: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_CatalogCriterion: {
+			data: {
+				applicability: string;
+				/** Format: int32 */
+				displayOrder: number;
+				domain: components['schemas']['LearnerEvaluationDomain'];
+				/** Format: uuid */
+				id: string;
+				lifecycle: string;
+				name: string;
+				/** Format: int64 */
+				rowVersion: number;
 			}[];
 			message?: string;
 			success: boolean;
@@ -8228,6 +9245,57 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Vec_EffectiveResultSearchItem: {
+			data: {
+				criterionName?: string | null;
+				displayName: string;
+				domain?: string | null;
+				groupName: string;
+				kind: components['schemas']['EffectiveResultKind'];
+				/** Format: uuid */
+				learningGroupId: string;
+				/** Format: uuid */
+				learningOfferingId: string;
+				offeringCode: string;
+				offeringName: string;
+				result: components['schemas']['EffectiveResult'];
+				studentCode?: string | null;
+				/** Format: uuid */
+				subjectId?: string | null;
+				/** Format: uuid */
+				subjectTermCriterionId?: string | null;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_EvaluationControl: {
+			data: {
+				domain: components['schemas']['LearnerEvaluationDomain'];
+				entryEnabled: boolean;
+				/** Format: uuid */
+				id: string;
+				/** Format: int64 */
+				rowVersion: number;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_EvaluationSubject: {
+			data: {
+				assigned: boolean;
+				code: string;
+				groupName: string;
+				/** Format: uuid */
+				learningGroupId: string;
+				/** Format: uuid */
+				learningOfferingId: string;
+				name: string;
+				/** Format: uuid */
+				subjectId: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Vec_ExamInvigilatorStaffOption: {
 			data: {
 				displayName: string;
@@ -8261,6 +9329,39 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Vec_GradebookControl: {
+			data: {
+				/** Format: uuid */
+				academicTermId: string;
+				/** Format: uuid */
+				academicYearId: string;
+				/** Format: uuid */
+				id: string;
+				phaseCode: string;
+				/** Format: int64 */
+				rowVersion: number;
+				scoreEntryEnabled: boolean;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_GradebookSubject: {
+			data: {
+				assigned: boolean;
+				code: string;
+				groupName: string;
+				/** Format: uuid */
+				learningGroupId: string;
+				/** Format: uuid */
+				learningOfferingId: string;
+				name: string;
+				phases: components['schemas']['GradebookPhaseSummary'][];
+				/** Format: uuid */
+				subjectId: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Vec_GradeLevelLookupItem: {
 			data: {
 				code: string;
@@ -8271,6 +9372,21 @@ export interface components {
 				level_type: string;
 				name: string;
 				short_name: string | null;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_GradingPolicyVersion: {
+			data: {
+				bands: components['schemas']['GradingPolicyBand'][];
+				/** Format: uuid */
+				id: string;
+				lifecycle: string;
+				name: string;
+				/** Format: int64 */
+				rowVersion: number;
+				/** Format: int32 */
+				versionNo: number;
 			}[];
 			message?: string;
 			success: boolean;
@@ -9307,6 +10423,10 @@ export interface components {
 			label: string;
 			startTime: string;
 		};
+		BulkActivityResultLockOutcome: {
+			locked: components['schemas']['ActivityResultLock'][];
+			skipped: components['schemas']['GroupResultReadiness'][];
+		};
 		/** @enum {string} */
 		CalendarAudienceType: 'all' | 'staff' | 'student' | 'parent';
 		CalendarCategory: {
@@ -9515,6 +10635,18 @@ export interface components {
 			draftCount: number;
 			gradeLevels: components['schemas']['GradeLevelLookupItem'][];
 		};
+		CatalogCriterion: {
+			applicability: string;
+			/** Format: int32 */
+			displayOrder: number;
+			domain: components['schemas']['LearnerEvaluationDomain'];
+			/** Format: uuid */
+			id: string;
+			lifecycle: string;
+			name: string;
+			/** Format: int64 */
+			rowVersion: number;
+		};
 		CatalogCurriculumMetrics: {
 			credit?: string | null;
 			totalHours?: string | null;
@@ -9523,6 +10655,15 @@ export interface components {
 		};
 		/** @enum {string} */
 		CatalogDisplayState: 'current' | 'upcoming' | 'expired' | 'unpublished';
+		CatalogEvaluationSummary: {
+			average: components['schemas']['ExactAverage'];
+			/** Format: uuid */
+			schoolCriterionId: string;
+		};
+		CatalogInput: components['schemas']['CriterionInput'] & {
+			applicability: string;
+			domain: components['schemas']['LearnerEvaluationDomain'];
+		};
 		CatalogOwnerOption: {
 			code?: string | null;
 			name: string;
@@ -10234,6 +11375,27 @@ export interface components {
 			/** Format: int64 */
 			sourceRowVersion: number;
 		};
+		ConfirmationInput: {
+			rosterChecksum: string;
+			/** Format: int64 */
+			rowVersion?: number | null;
+			sourceChecksum: string;
+		};
+		ConfirmationOutcome: {
+			confirmation?: null | components['schemas']['EvaluationConfirmation'];
+			missing: components['schemas']['MissingEvaluation'][];
+		};
+		ConfirmInput: {
+			rosterChecksum: string;
+			/** Format: int64 */
+			rowVersion?: number | null;
+			sourceChecksum: string;
+		};
+		ControlInput: {
+			entryEnabled: boolean;
+			/** Format: int64 */
+			rowVersion: number;
+		};
 		CourseOfferingSnapshot: {
 			assessmentTotalScore: string;
 			credit: string;
@@ -10246,6 +11408,52 @@ export interface components {
 			subjectId: string;
 			/** Format: uuid */
 			subjectVersionId: string;
+		};
+		/** @enum {string} */
+		CourseOfficialOutcome: 'numeric' | 'incomplete' | 'insufficient_attendance';
+		/** @enum {string} */
+		CourseOutcomeSelection: 'derived' | 'manual_zero' | 'incomplete' | 'insufficient_attendance';
+		CoursePreparationWorkspace: {
+			blockers: components['schemas']['ResultBlocker'][];
+			canConfirm: boolean;
+			canManage: boolean;
+			confirmation?: null | components['schemas']['ResultConfirmation'];
+			confirmationIsCurrent: boolean;
+			/** Format: uuid */
+			learningGroupId: string;
+			locked: boolean;
+			policy: components['schemas']['GradingPolicyVersion'];
+			rosterChecksum: string;
+			sourceChecksum: string;
+			students: components['schemas']['PreparedCourseStudent'][];
+			/** Format: uuid */
+			subjectId: string;
+		};
+		CourseResultLock: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			academicYearId: string;
+			/** Format: uuid */
+			id: string;
+			/** Format: date-time */
+			lockedAt: string;
+			/** Format: uuid */
+			lockedBy: string;
+			/** Format: uuid */
+			policyVersionId: string;
+			/** Format: int32 */
+			resultCount: number;
+			rosterChecksum: string;
+			/** Format: int64 */
+			rowVersion: number;
+			sourceChecksum: string;
+			/** Format: uuid */
+			subjectId: string;
+		};
+		CourseResultLockOutcome: {
+			groups: components['schemas']['GroupResultReadiness'][];
+			lock?: null | components['schemas']['CourseResultLock'];
 		};
 		CreateAcademicTermChangeSetRequest: {
 			/** Format: uuid */
@@ -10735,6 +11943,20 @@ export interface components {
 			description?: string | null;
 			name: string;
 		};
+		CriterionInput: {
+			active: boolean;
+			/** Format: int32 */
+			displayOrder: number;
+			name: string;
+			/** Format: int64 */
+			rowVersion?: number | null;
+		};
+		CriterionRemoval: {
+			criterion?: null | components['schemas']['EvaluationCriterion'];
+			deleted: boolean;
+			/** Format: uuid */
+			id: string;
+		};
 		CurrentUserResponse: {
 			firstName: string;
 			/** Format: uuid */
@@ -11155,6 +12377,76 @@ export interface components {
 			/** Format: uuid */
 			id: string;
 		};
+		DomainEvaluationSummary: {
+			average?: null | components['schemas']['ExactAverage'];
+			catalogCriteria: components['schemas']['CatalogEvaluationSummary'][];
+			complete: boolean;
+			domain: components['schemas']['LearnerEvaluationDomain'];
+			missingSubjects: components['schemas']['MissingSubject'][];
+			/** Format: int32 */
+			qualityLevel?: number | null;
+			subjects: components['schemas']['SubjectEvaluationSummary'][];
+		};
+		EffectiveResult: {
+			corrections: components['schemas']['ResultCorrectionRecord'][];
+			effective: components['schemas']['EffectiveResultValue'];
+			/** Format: int64 */
+			effectiveVersion: number;
+			initial: components['schemas']['EffectiveResultValue'];
+			/** Format: uuid */
+			resultId: string;
+			/** Format: uuid */
+			studentAcademicYearId: string;
+		};
+		/** @enum {string} */
+		EffectiveResultKind: 'course' | 'activity' | 'learner_evaluation';
+		EffectiveResultSearch: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			academicYearId: string;
+			kind?: null | components['schemas']['EffectiveResultKind'];
+			/** Format: int32 */
+			limit?: number | null;
+			search?: string | null;
+		};
+		EffectiveResultSearchItem: {
+			criterionName?: string | null;
+			displayName: string;
+			domain?: string | null;
+			groupName: string;
+			kind: components['schemas']['EffectiveResultKind'];
+			/** Format: uuid */
+			learningGroupId: string;
+			/** Format: uuid */
+			learningOfferingId: string;
+			offeringCode: string;
+			offeringName: string;
+			result: components['schemas']['EffectiveResult'];
+			studentCode?: string | null;
+			/** Format: uuid */
+			subjectId?: string | null;
+			/** Format: uuid */
+			subjectTermCriterionId?: string | null;
+		};
+		EffectiveResultValue:
+			| {
+					/** @enum {string} */
+					kind: 'course';
+					numeric_grade?: string | null;
+					outcome: components['schemas']['CourseOfficialOutcome'];
+			  }
+			| {
+					/** @enum {string} */
+					kind: 'activity';
+					outcome: components['schemas']['ActivityOutcome'];
+			  }
+			| {
+					/** @enum {string} */
+					kind: 'learner_evaluation';
+					/** Format: int32 */
+					quality_level: number;
+			  };
 		ElementFrame: {
 			/** Format: double */
 			height: number;
@@ -11166,6 +12458,74 @@ export interface components {
 			y: number;
 		};
 		EmptyData: Record<string, never>;
+		EvaluationConfiguration: {
+			canManage: boolean;
+			criteria: components['schemas']['EvaluationCriterion'][];
+			domain: components['schemas']['LearnerEvaluationDomain'];
+			locked: boolean;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: uuid */
+			subjectId: string;
+		};
+		EvaluationConfirmation: {
+			/** Format: uuid */
+			confirmedBy: string;
+			/** Format: uuid */
+			id: string;
+			invalidated: boolean;
+			rosterChecksum: string;
+			/** Format: int64 */
+			rowVersion: number;
+			sourceChecksum: string;
+		};
+		EvaluationContext: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			academicYearId: string;
+		};
+		EvaluationControl: {
+			domain: components['schemas']['LearnerEvaluationDomain'];
+			entryEnabled: boolean;
+			/** Format: uuid */
+			id: string;
+			/** Format: int64 */
+			rowVersion: number;
+		};
+		EvaluationCriterion: {
+			/** Format: int32 */
+			displayOrder: number;
+			/** Format: uuid */
+			id: string;
+			lifecycle: string;
+			name: string;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: uuid */
+			schoolCriterionId?: string | null;
+		};
+		EvaluationLock: {
+			domain: components['schemas']['LearnerEvaluationDomain'];
+			/** Format: uuid */
+			id: string;
+			rosterChecksum: string;
+			/** Format: int64 */
+			rowVersion: number;
+			sourceChecksum: string;
+			/** Format: uuid */
+			subjectId: string;
+		};
+		EvaluationResponse: {
+			/** Format: int32 */
+			qualityLevel: number;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: uuid */
+			studentAcademicYearId: string;
+			/** Format: uuid */
+			subjectTermCriterionId: string;
+		};
 		EvaluationResponseInput: {
 			/** Format: double */
 			ratingScore?: number | null;
@@ -11173,11 +12533,55 @@ export interface components {
 			templateItemId: string;
 			textResponse?: string | null;
 		};
+		EvaluationStudent: {
+			displayName: string;
+			/** Format: uuid */
+			membershipId: string;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: uuid */
+			studentAcademicYearId: string;
+		};
+		EvaluationSubject: {
+			assigned: boolean;
+			code: string;
+			groupName: string;
+			/** Format: uuid */
+			learningGroupId: string;
+			/** Format: uuid */
+			learningOfferingId: string;
+			name: string;
+			/** Format: uuid */
+			subjectId: string;
+		};
+		EvaluationWorkspace: {
+			canConfirm: boolean;
+			canManage: boolean;
+			confirmation?: null | components['schemas']['EvaluationConfirmation'];
+			confirmationIsCurrent: boolean;
+			criteria: components['schemas']['EvaluationCriterion'][];
+			domain: components['schemas']['LearnerEvaluationDomain'];
+			entryEnabled: boolean;
+			/** Format: uuid */
+			learningGroupId: string;
+			locked: boolean;
+			responses: components['schemas']['EvaluationResponse'][];
+			rosterChecksum: string;
+			sourceChecksum: string;
+			students: components['schemas']['EvaluationStudent'][];
+			/** Format: uuid */
+			subjectId: string;
+		};
 		EvaluatorAssignmentInput: {
 			/** Format: uuid */
 			evaluatorUserId: string;
 			isRequired?: boolean | null;
 			roleLabel?: string | null;
+		};
+		ExactAverage: {
+			decimal: string;
+			denominator: string;
+			numerator: string;
 		};
 		ExamDay: {
 			endTime: string;
@@ -11609,6 +13013,54 @@ export interface components {
 		};
 		/** @enum {string} */
 		GeometryAction: 'preserve' | 'scale' | 'reset';
+		GradebookContext: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			academicYearId: string;
+		};
+		GradebookControl: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			academicYearId: string;
+			/** Format: uuid */
+			id: string;
+			phaseCode: string;
+			/** Format: int64 */
+			rowVersion: number;
+			scoreEntryEnabled: boolean;
+		};
+		GradebookPhaseSummary: {
+			/** Format: uuid */
+			id: string;
+			maxScore: string;
+			phaseCode: string;
+			/** Format: int64 */
+			rowVersion: number;
+		};
+		GradebookStudent: {
+			displayName: string;
+			/** Format: uuid */
+			membershipId: string;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: uuid */
+			studentAcademicYearId: string;
+		};
+		GradebookSubject: {
+			assigned: boolean;
+			code: string;
+			groupName: string;
+			/** Format: uuid */
+			learningGroupId: string;
+			/** Format: uuid */
+			learningOfferingId: string;
+			name: string;
+			phases: components['schemas']['GradebookPhaseSummary'][];
+			/** Format: uuid */
+			subjectId: string;
+		};
 		/** @description Grade level lookup item */
 		GradeLevelLookupItem: {
 			code: string;
@@ -11652,6 +13104,62 @@ export interface components {
 			progressions: components['schemas']['GradeProgression'][];
 			/** Format: int64 */
 			rowVersion: number;
+		};
+		GradingPolicyBand: {
+			grade: string;
+			lowerBound: string;
+		};
+		GradingPolicyInput: {
+			bands: components['schemas']['GradingPolicyBand'][];
+			name: string;
+		};
+		GradingPolicyVersion: {
+			bands: components['schemas']['GradingPolicyBand'][];
+			/** Format: uuid */
+			id: string;
+			lifecycle: string;
+			name: string;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: int32 */
+			versionNo: number;
+		};
+		GroupPhaseWorkspace: {
+			/** Format: uuid */
+			assessmentPhaseId: string;
+			canConfirm: boolean;
+			canManage: boolean;
+			confirmation?: null | components['schemas']['PhaseConfirmation'];
+			confirmationIsCurrent: boolean;
+			items: components['schemas']['ScoreItem'][];
+			/** Format: uuid */
+			learningGroupId: string;
+			/** Format: uuid */
+			learningOfferingId: string;
+			locked: boolean;
+			phaseCode: string;
+			phaseMaxScore: string;
+			/** Format: int64 */
+			phaseRowVersion: number;
+			rosterChecksum: string;
+			scoreEntryEnabled: boolean;
+			scores: components['schemas']['ScoreCell'][];
+			sourceChecksum: string;
+			students: components['schemas']['GradebookStudent'][];
+		};
+		GroupResultReadiness: {
+			assigned: boolean;
+			blockers: components['schemas']['ResultBlocker'][];
+			groupName: string;
+			/** Format: uuid */
+			learningGroupId: string;
+			/** Format: uuid */
+			learningOfferingId: string;
+			locked: boolean;
+			offeringName: string;
+			ready: boolean;
+			/** Format: uuid */
+			subjectId?: string | null;
 		};
 		Homeroom: {
 			/** Format: uuid */
@@ -11944,6 +13452,14 @@ export interface components {
 			templateName: string;
 			title: string | null;
 		};
+		ItemInput: {
+			/** Format: int32 */
+			displayOrder: number;
+			maxScore: string;
+			name: string;
+			/** Format: int64 */
+			rowVersion?: number | null;
+		};
 		ItemsData_SupervisionCycle: {
 			items: {
 				/** Format: uuid */
@@ -12095,6 +13611,10 @@ export interface components {
 				startTime: string;
 			}[];
 		};
+		/** @enum {string} */
+		LearnerEvaluationDomain: 'desirable_characteristic' | 'reading_thinking_writing';
+		/** Format: int32 */
+		LearnerEvaluationLevel: number;
 		LearningDeliveryOverview: {
 			/** Format: uuid */
 			academicTermId: string;
@@ -12277,6 +13797,31 @@ export interface components {
 			cycleId?: string | null;
 			status?: null | components['schemas']['SupervisionObservationStatus'];
 		};
+		LockBlocker: {
+			/** Format: uuid */
+			learningGroupId: string;
+			reason: string;
+		};
+		LockedCriterionValue: {
+			domain: components['schemas']['LearnerEvaluationDomain'];
+			/** Format: uuid */
+			id: string;
+			name: string;
+			/** Format: int32 */
+			qualityLevel: number;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: uuid */
+			schoolCriterionId?: string | null;
+			/** Format: uuid */
+			subjectId: string;
+			/** Format: uuid */
+			subjectTermCriterionId: string;
+		};
+		LockOutcome: {
+			blockers: components['schemas']['LockBlocker'][];
+			lock?: null | components['schemas']['EvaluationLock'];
+		};
 		LoginData: {
 			user: components['schemas']['CurrentUserResponse'];
 		};
@@ -12387,6 +13932,17 @@ export interface components {
 			is_active: boolean;
 			name: string;
 			name_en: string | null;
+		};
+		MissingEvaluation: {
+			/** Format: uuid */
+			studentAcademicYearId: string;
+			/** Format: uuid */
+			subjectTermCriterionId: string;
+		};
+		MissingSubject: {
+			reason: string;
+			/** Format: uuid */
+			subjectId: string;
 		};
 		MovedCountData: {
 			/** Format: int64 */
@@ -12573,12 +14129,27 @@ export interface components {
 			startsAt: string;
 			subjectName: string;
 		};
+		PhaseConfirmation: {
+			/** Format: int64 */
+			blankScoreCount: number;
+			/** Format: uuid */
+			id: string;
+			invalidated: boolean;
+			rosterChecksum: string;
+			/** Format: int64 */
+			rowVersion: number;
+			sourceChecksum: string;
+		};
 		PlaceExamSessionRequest: {
 			/** Format: uuid */
 			examDayId: string;
 			/** Format: uuid */
 			examScheduleItemId: string;
 			startsAt: string;
+		};
+		PolicyActivationInput: {
+			/** Format: int64 */
+			rowVersion: number;
 		};
 		/**
 		 * @description Credentials ที่ผู้สมัครส่งมาทุก request (stateless)
@@ -12615,6 +14186,25 @@ export interface components {
 		};
 		/** @enum {string} */
 		PreparationGroupingState: 'proposed' | 'deferred' | 'conflict';
+		PreparedActivityStudent: {
+			displayName: string;
+			outcome?: null | components['schemas']['ActivityOutcome'];
+			/** Format: int64 */
+			rowVersion?: number | null;
+			/** Format: uuid */
+			studentAcademicYearId: string;
+		};
+		PreparedCourseStudent: {
+			calculatedGrade?: string | null;
+			calculatedScore: string;
+			displayName: string;
+			numericGrade?: string | null;
+			selection: components['schemas']['CourseOutcomeSelection'];
+			/** Format: int64 */
+			selectionRowVersion?: number | null;
+			/** Format: uuid */
+			studentAcademicYearId: string;
+		};
 		PreviewCurriculumOfferingsRequest: {
 			/** Format: uuid */
 			academicTermId: string;
@@ -12876,6 +14466,10 @@ export interface components {
 			/** Format: int64 */
 			membershipRowVersion: number;
 		};
+		RemoveItemInput: {
+			/** Format: int64 */
+			rowVersion: number;
+		};
 		RemoveTimetableBlockTargetRequest: {
 			/** Format: int64 */
 			blockRowVersion: number;
@@ -12962,6 +14556,18 @@ export interface components {
 		RequirementKind: 'required' | 'elective' | 'optional';
 		/** @enum {string} */
 		RequirementResourceKind: 'course' | 'activity';
+		ResponseBatchInput: {
+			cells: components['schemas']['ResponseInput'][];
+		};
+		ResponseInput: {
+			qualityLevel?: null | components['schemas']['LearnerEvaluationLevel'];
+			/** Format: int64 */
+			rowVersion?: number | null;
+			/** Format: uuid */
+			studentAcademicYearId: string;
+			/** Format: uuid */
+			subjectTermCriterionId: string;
+		};
 		RestoreTimetableBlockGroupRequest: {
 			/** Format: int64 */
 			blockRowVersion: number;
@@ -12969,6 +14575,92 @@ export interface components {
 			learningGroupId: string;
 			/** Format: uuid */
 			timetableVersionId: string;
+		};
+		ResultBlocker: {
+			/** Format: uuid */
+			assessmentPhaseId?: string | null;
+			code: components['schemas']['ResultBlockerCode'];
+			/** Format: uuid */
+			studentAcademicYearId?: string | null;
+		};
+		/** @enum {string} */
+		ResultBlockerCode:
+			| 'missing_phase_confirmation'
+			| 'stale_phase_confirmation'
+			| 'invalid_assessment_plan'
+			| 'invalid_grading_policy'
+			| 'missing_activity_outcome'
+			| 'missing_primary_teacher'
+			| 'missing_group_confirmation'
+			| 'stale_group_confirmation'
+			| 'already_locked';
+		ResultConfirmation: {
+			/** Format: uuid */
+			confirmedBy: string;
+			/** Format: uuid */
+			id: string;
+			invalidated: boolean;
+			rosterChecksum: string;
+			/** Format: int64 */
+			rowVersion: number;
+			sourceChecksum: string;
+		};
+		ResultConfirmationInput: {
+			rosterChecksum: string;
+			/** Format: int64 */
+			rowVersion?: number | null;
+			sourceChecksum: string;
+		};
+		ResultContext: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			academicYearId: string;
+		};
+		ResultCorrectionInput:
+			| {
+					/** Format: uuid */
+					course_result_id: string;
+					/** Format: int64 */
+					expected_effective_version: number;
+					/** @enum {string} */
+					kind: 'course';
+					numeric_grade?: string | null;
+					outcome: components['schemas']['CourseOfficialOutcome'];
+			  }
+			| {
+					/** Format: uuid */
+					activity_result_id: string;
+					/** Format: int64 */
+					expected_effective_version: number;
+					/** @enum {string} */
+					kind: 'activity';
+					outcome: components['schemas']['ActivityOutcome'];
+			  }
+			| {
+					/** Format: int64 */
+					expected_effective_version: number;
+					/** @enum {string} */
+					kind: 'learner_evaluation';
+					quality_level: components['schemas']['LearnerEvaluationLevel'];
+					/** Format: uuid */
+					subject_student_evaluation_id: string;
+			  };
+		ResultCorrectionRecord: {
+			corrected: components['schemas']['EffectiveResultValue'];
+			/** Format: date-time */
+			correctedAt: string;
+			/** Format: uuid */
+			correctedBy: string;
+			/** Format: int64 */
+			expectedEffectiveVersion: number;
+			/** Format: uuid */
+			id: string;
+			previous: components['schemas']['EffectiveResultValue'];
+		};
+		ResultReadiness: {
+			activities: components['schemas']['GroupResultReadiness'][];
+			courses: components['schemas']['SubjectResultReadiness'][];
 		};
 		RetryTimetableBlockSyncRequest: {
 			/** Format: int64 */
@@ -13204,6 +14896,64 @@ export interface components {
 			/** Format: uuid */
 			logoFileId: string | null;
 		};
+		ScoreBatchInput: {
+			cells: components['schemas']['ScoreCellMutation'][];
+		};
+		ScoreBatchOutcome: {
+			cells: components['schemas']['ScoreCell'][];
+			workspaceRevision: string;
+		};
+		ScoreCell: {
+			/** Format: int64 */
+			rowVersion?: number | null;
+			/** Format: uuid */
+			scoreItemId: string;
+			/** Format: uuid */
+			studentAcademicYearId: string;
+			value?: string | null;
+		};
+		ScoreCellMutation:
+			| {
+					/** @enum {string} */
+					operation: 'set';
+					/** Format: int64 */
+					row_version?: number | null;
+					/** Format: uuid */
+					score_item_id: string;
+					/** Format: uuid */
+					student_academic_year_id: string;
+					value: string;
+			  }
+			| {
+					/** @enum {string} */
+					operation: 'clear';
+					/** Format: int64 */
+					row_version?: number | null;
+					/** Format: uuid */
+					score_item_id: string;
+					/** Format: uuid */
+					student_academic_year_id: string;
+			  };
+		ScoreItem: {
+			/** Format: int32 */
+			displayOrder: number;
+			/** Format: uuid */
+			id: string;
+			lifecycle: string;
+			maxScore: string;
+			name: string;
+			/** Format: int64 */
+			rowVersion: number;
+		};
+		/** @enum {string} */
+		ScoreItemRemovalDisposition: 'deleted' | 'cancelled';
+		ScoreItemRemovalOutcome: {
+			disposition: components['schemas']['ScoreItemRemovalDisposition'];
+			/** Format: uuid */
+			itemId: string;
+			/** Format: int64 */
+			rowVersion: number;
+		};
 		SeatAssignmentView: {
 			/** Format: uuid */
 			dayRoomAssignmentId: string;
@@ -13213,6 +14963,13 @@ export interface components {
 			/** Format: uuid */
 			studentId: string;
 			studentName: string;
+		};
+		SelectionInput: {
+			/** Format: int64 */
+			rowVersion?: number | null;
+			selection: components['schemas']['CourseOutcomeSelection'];
+			/** Format: uuid */
+			studentAcademicYearId: string;
 		};
 		SessionListData: {
 			sessions: components['schemas']['SessionResponse'][];
@@ -13494,6 +15251,13 @@ export interface components {
 			title: string | null;
 			username: string;
 		};
+		StudentEvaluationSummary: {
+			domains: components['schemas']['DomainEvaluationSummary'][];
+			/** Format: uuid */
+			policyVersionId: string;
+			/** Format: uuid */
+			studentAcademicYearId: string;
+		};
 		StudentListItem: {
 			first_name: string;
 			grade_level?: string | null;
@@ -13559,6 +15323,12 @@ export interface components {
 			id: string;
 			name: string;
 		};
+		SubjectEvaluationSummary: {
+			average: components['schemas']['ExactAverage'];
+			criteria: components['schemas']['LockedCriterionValue'][];
+			/** Format: uuid */
+			subjectId: string;
+		};
 		SubjectGroup: {
 			code: string;
 			/** Format: date-time */
@@ -13574,6 +15344,12 @@ export interface components {
 			rowVersion: number;
 			/** Format: date-time */
 			updatedAt: string;
+		};
+		SubjectResultReadiness: {
+			groups: components['schemas']['GroupResultReadiness'][];
+			ready: boolean;
+			/** Format: uuid */
+			subjectId: string;
 		};
 		SubjectVersion: {
 			/** Format: date-time */
@@ -14682,6 +16458,11 @@ export interface components {
 			safeMarginPoints?: number | null;
 			showSafeArea?: boolean | null;
 		};
+		UpdateControlInput: {
+			/** Format: int64 */
+			rowVersion: number;
+			scoreEntryEnabled: boolean;
+		};
 		UpdateCurriculumRequest: {
 			code: string;
 			description?: string | null;
@@ -15124,6 +16905,10 @@ export interface components {
 		UuidIdData: {
 			/** Format: uuid */
 			id: string;
+		};
+		VersionInput: {
+			/** Format: int64 */
+			rowVersion: number;
 		};
 		/** @enum {string} */
 		VersionStatus: 'draft' | 'published' | 'archived';
@@ -19814,6 +21599,370 @@ export interface operations {
 			};
 		};
 	};
+	listGradebookControls: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_GradebookControl'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateGradebookControl: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				control_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateControlInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_GradebookControl'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getGradebookGroupPhaseWorkspace: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				group_id: string;
+				phase_code: components['schemas']['AssessmentPhaseCode'];
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_GroupPhaseWorkspace'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	confirmGradebookPhase: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				group_id: string;
+				phase_code: components['schemas']['AssessmentPhaseCode'];
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ConfirmInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_PhaseConfirmation'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createGradebookItem: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				group_id: string;
+				phase_code: components['schemas']['AssessmentPhaseCode'];
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ItemInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ScoreItem'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateGradebookItem: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				group_id: string;
+				item_id: string;
+				phase_code: components['schemas']['AssessmentPhaseCode'];
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ItemInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ScoreItem'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	removeGradebookItem: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				group_id: string;
+				item_id: string;
+				phase_code: components['schemas']['AssessmentPhaseCode'];
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['RemoveItemInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ScoreItemRemovalOutcome'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	saveGradebookScoresBatch: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				group_id: string;
+				phase_code: components['schemas']['AssessmentPhaseCode'];
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ScoreBatchInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ScoreBatchOutcome'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listGradebookSubjects: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_GradebookSubject'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	listHomeroomAdvisorsForAcademicYear: {
 		parameters: {
 			query: {
@@ -20206,6 +22355,808 @@ export interface operations {
 				};
 			};
 			/** @description Homeroom row version conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listLearnerEvaluationCatalog: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_CatalogCriterion'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createLearnerEvaluationCatalog: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CatalogInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CatalogCriterion'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateLearnerEvaluationCatalog: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				criterion_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CatalogInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CatalogCriterion'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	removeLearnerEvaluationCatalog: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				criterion_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['VersionInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listLearnerEvaluationControls: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_EvaluationControl'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateLearnerEvaluationControl: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				domain: components['schemas']['LearnerEvaluationDomain'];
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ControlInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EvaluationControl'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getLearnerEvaluationWorkspace: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				domain: components['schemas']['LearnerEvaluationDomain'];
+				group_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EvaluationWorkspace'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	confirmLearnerEvaluationGroup: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				domain: components['schemas']['LearnerEvaluationDomain'];
+				group_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ConfirmationInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ConfirmationOutcome'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	saveLearnerEvaluationResponses: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				domain: components['schemas']['LearnerEvaluationDomain'];
+				group_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ResponseBatchInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EvaluationWorkspace'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listLearnerEvaluationPolicies: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_AggregationPolicyVersion'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createLearnerEvaluationPolicy: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['AggregationPolicyInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AggregationPolicyVersion'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	activateLearnerEvaluationPolicy: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				policy_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['VersionInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AggregationPolicyVersion'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getStudentLearnerEvaluationSummary: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				student_academic_year_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_StudentEvaluationSummary'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listLearnerEvaluationSubjects: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_EvaluationSubject'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getLearnerEvaluationConfiguration: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				domain: components['schemas']['LearnerEvaluationDomain'];
+				subject_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EvaluationConfiguration'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createSubjectEvaluationCriterion: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				domain: components['schemas']['LearnerEvaluationDomain'];
+				subject_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CriterionInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EvaluationCriterion'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateSubjectEvaluationCriterion: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				criterion_id: string;
+				domain: components['schemas']['LearnerEvaluationDomain'];
+				subject_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CriterionInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EvaluationCriterion'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	removeSubjectEvaluationCriterion: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				criterion_id: string;
+				domain: components['schemas']['LearnerEvaluationDomain'];
+				subject_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['VersionInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CriterionRemoval'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	lockLearnerEvaluationSubject: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				domain: components['schemas']['LearnerEvaluationDomain'];
+				subject_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LockOutcome'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -22123,6 +25074,609 @@ export interface operations {
 			};
 			/** @description Question selection unavailable */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	lockAllReadyActivityResults: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BulkActivityResultLockOutcome'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	correctEffectiveAcademicResult: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ResultCorrectionInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EffectiveResult'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	searchEffectiveAcademicResults: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+				kind?: components['schemas']['EffectiveResultKind'];
+				limit?: number;
+				search?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_EffectiveResultSearchItem'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getActivityResultPreparation: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				group_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ActivityPreparationWorkspace'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	confirmActivityGroupResults: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				group_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ResultConfirmationInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ActivityPreparationWorkspace'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	lockActivityGroupResults: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				group_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ActivityResultLockOutcome'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	saveActivityResultOutcomes: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				group_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ActivityBatchInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ActivityPreparationWorkspace'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getCourseResultPreparation: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				group_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CoursePreparationWorkspace'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	confirmCourseGroupResults: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				group_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ResultConfirmationInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CoursePreparationWorkspace'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	saveCourseResultSelection: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				group_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SelectionInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CoursePreparationWorkspace'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listAcademicGradingPolicies: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_GradingPolicyVersion'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createAcademicGradingPolicy: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['GradingPolicyInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_GradingPolicyVersion'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	activateAcademicGradingPolicy: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				policy_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['PolicyActivationInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_GradingPolicyVersion'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getAcademicResultReadiness: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ResultReadiness'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	lockCourseSubjectResults: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				subject_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CourseResultLockOutcome'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};

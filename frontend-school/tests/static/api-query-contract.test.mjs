@@ -87,6 +87,27 @@ test('appendApiQuery rejects non-scalar query values', async () => {
 	assert.throws(() => appendApiQuery('/api/students', { filter: { status: 'active' } }));
 });
 
+test('all central HTTP transports preserve typed query and abort options', async () => {
+	const source = await readFile(path.join(projectRoot, 'src/lib/api/client.ts'), 'utf8');
+	for (const method of [
+		'post',
+		'postPublic',
+		'postBlob',
+		'postBlobWithBody',
+		'put',
+		'patch',
+		'delete',
+		'deleteWithBody'
+	]) {
+		const start = source.indexOf(`async ${method}`);
+		assert.notEqual(start, -1, `missing ${method} transport`);
+		const next = source.indexOf('\n\tasync ', start + 1);
+		const block = source.slice(start, next === -1 ? source.length : next);
+		assert.match(block, /appendApiQuery\(endpoint, options\.query\)/, `${method} query`);
+		assert.match(block, /signal:\s*options\.signal/, `${method} signal`);
+	}
+});
+
 test('generated API exposes repaired academic query operations', async () => {
 	const generated = await readFile(
 		path.join(projectRoot, 'src/lib/api/generated/school-api.ts'),

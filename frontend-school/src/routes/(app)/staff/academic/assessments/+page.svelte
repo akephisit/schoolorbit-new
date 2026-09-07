@@ -416,22 +416,16 @@
 		void requestSheetClose();
 	}
 
-	async function togglePhaseControl(
-		control: AssessmentPhaseControl,
-		field: 'planEditingEnabled' | 'scoreEntryEnabled'
-	): Promise<void> {
+	async function togglePhaseControl(control: AssessmentPhaseControl): Promise<void> {
 		if (!canManageSchool || controlBusyId) return;
 		controlBusyId = control.id;
 		try {
 			const saved = await updateAssessmentPhaseControl(control.id, {
 				rowVersion: control.rowVersion,
-				planEditingEnabled:
-					field === 'planEditingEnabled' ? !control.planEditingEnabled : control.planEditingEnabled,
-				scoreEntryEnabled:
-					field === 'scoreEntryEnabled' ? !control.scoreEntryEnabled : control.scoreEntryEnabled
+				planEditingEnabled: !control.planEditingEnabled
 			});
 			phaseControls = phaseControls.map((item) => (item.id === saved.id ? saved : item));
-			toast.success(`บันทึกสิทธิ์ช่วง${saved.label}แล้ว`);
+			toast.success(`บันทึกสิทธิ์ช่วง${phaseLabel(saved.phaseCode)}แล้ว`);
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'บันทึกการเปิดกรอกคะแนนไม่สำเร็จ');
 		} finally {
@@ -497,8 +491,8 @@
 								<h2 class="font-semibold">ช่วงการทำงานของครู</h2>
 							</div>
 							<p class="mt-1 text-sm text-muted-foreground">
-								เปิดการแก้โครงสร้างสำหรับผู้รับผิดชอบรายวิชา
-								และเปิดการจัดรายการย่อยพร้อมกรอกคะแนนนักเรียนแยกตามช่วง
+								เปิดการแก้โครงสร้างสำหรับผู้รับผิดชอบรายวิชาแยกตามช่วง
+								ส่วนการเปิดกรอกคะแนนจัดการจากหน้ากรอกคะแนน
 							</p>
 						</div>
 					</div>
@@ -506,8 +500,10 @@
 						{#each phaseControls as control (control.id)}
 							<div class="space-y-3 px-5 py-4">
 								<div class="flex items-center justify-between gap-3">
-									<p class="font-medium">{control.label}</p>
-									<span class="font-mono text-xs text-muted-foreground">0{control.order}</span>
+									<p class="font-medium">{phaseLabel(control.phaseCode)}</p>
+									<span class="font-mono text-xs text-muted-foreground"
+										>0{phaseCodes.indexOf(control.phaseCode) + 1}</span
+									>
 								</div>
 								<div class="flex items-center justify-between gap-3 text-sm">
 									<Label for={`plan-control-${control.id}`}>แก้โครงสร้างคะแนนรายวิชา</Label>
@@ -515,16 +511,7 @@
 										id={`plan-control-${control.id}`}
 										checked={control.planEditingEnabled}
 										disabled={Boolean(controlBusyId)}
-										onclick={() => togglePhaseControl(control, 'planEditingEnabled')}
-									/>
-								</div>
-								<div class="flex items-center justify-between gap-3 text-sm">
-									<Label for={`score-control-${control.id}`}>กรอกคะแนนนักเรียน</Label>
-									<Switch
-										id={`score-control-${control.id}`}
-										checked={control.scoreEntryEnabled}
-										disabled={Boolean(controlBusyId)}
-										onclick={() => togglePhaseControl(control, 'scoreEntryEnabled')}
+										onclick={() => togglePhaseControl(control)}
 									/>
 								</div>
 							</div>

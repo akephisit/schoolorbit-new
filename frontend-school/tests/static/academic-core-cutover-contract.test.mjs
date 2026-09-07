@@ -211,15 +211,17 @@ test('academic exact values and offering variants keep their wire semantics', as
 		['ActivityVersion', 'hoursPerTerm'],
 		['CatalogCurriculumMetrics', 'credit'],
 		['CatalogCurriculumMetrics', 'totalHours'],
-		['CourseGradingPolicy', 'totalScore'],
-		['CourseGradingPolicy', 'passingScore'],
 		['ActivityAttendanceRequirement', 'minimumPercent'],
+		['CreateCourseOfferingRequest', 'assessmentTotalScore'],
 		['CourseOfferingSnapshot', 'credit'],
 		['CourseOfferingSnapshot', 'hours'],
+		['CourseOfferingSnapshot', 'assessmentTotalScore'],
 		['ActivityOfferingSnapshot', 'hours'],
 		['CurriculumPreparationProposal', 'credit'],
 		['CurriculumPreparationProposal', 'hours'],
-		['ActivityResult', 'attendancePercent']
+		['AssessmentPlanDetail', 'assessmentTotalScore'],
+		['AssessmentReadiness', 'totalScore'],
+		['AssessmentReadiness', 'expectedTotalScore']
 	];
 
 	for (const [schemaName, propertyName] of decimalFields) {
@@ -237,6 +239,14 @@ test('academic exact values and offering variants keep their wire semantics', as
 		return tagSchema.properties.kind.enum?.[0];
 	});
 	assert.deepEqual(variantTags.sort(), ['activity', 'course']);
+	const courseVariant = createOffering.oneOf.find((variant) =>
+		variant.allOf?.some((part) => part.properties?.kind?.enum?.[0] === 'course')
+	);
+	assert.ok(
+		courseVariant?.allOf?.some(
+			(part) => part.$ref === '#/components/schemas/CreateCourseOfferingRequest'
+		)
+	);
 
 	const courseSnapshot = schemas.CourseOfferingSnapshot;
 	assert.ok(courseSnapshot.required.includes('standardPeriodsPerWeek'));
@@ -246,6 +256,9 @@ test('academic exact values and offering variants keep their wire semantics', as
 
 	const updateOffering = schemas.UpdateLearningOfferingRequest;
 	assert.equal(updateOffering.properties.weeklyPeriodTarget, undefined);
+	assert.equal(updateOffering.properties.assessmentTotalScore, undefined);
+	assert.equal(schemas.CourseGradingPolicy, undefined);
+	assert.equal(schemas.ActivityResult, undefined);
 
 	const homeroomItem = schemas.HomeroomDeliveryItem;
 	assert.ok(!homeroomItem.required.includes('standardPeriodsPerWeek'));

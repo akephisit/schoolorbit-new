@@ -312,7 +312,7 @@ class APIClient {
 		body?: unknown,
 		options: ApiRequestOptions = {}
 	): Promise<ApiResponse<T, E>> {
-		return this.request<T, E>(endpoint, {
+		return this.request<T, E>(appendApiQuery(endpoint, options.query), {
 			method: 'POST',
 			body: body === undefined ? undefined : JSON.stringify(body),
 			signal: options.signal
@@ -325,7 +325,7 @@ class APIClient {
 		options: ApiRequestOptions = {}
 	): Promise<ApiResponse<T, E>> {
 		return this.request<T, E>(
-			endpoint,
+			appendApiQuery(endpoint, options.query),
 			{
 				method: 'POST',
 				body: JSON.stringify(body),
@@ -336,7 +336,7 @@ class APIClient {
 	}
 
 	async postBlob(endpoint: string, options: ApiRequestOptions = {}): Promise<ApiResponse<Blob>> {
-		const response = await this.fetchBackend(endpoint, {
+		const response = await this.fetchBackend(appendApiQuery(endpoint, options.query), {
 			method: 'POST',
 			signal: options.signal
 		});
@@ -348,7 +348,7 @@ class APIClient {
 		body: unknown,
 		options: ApiRequestOptions = {}
 	): Promise<ApiResponse<Blob>> {
-		const response = await this.fetchBackend(endpoint, {
+		const response = await this.fetchBackend(appendApiQuery(endpoint, options.query), {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(body),
@@ -357,28 +357,49 @@ class APIClient {
 		return this.blobResponse(response);
 	}
 
-	async put<T, E = never>(endpoint: string, body?: unknown): Promise<ApiResponse<T, E>> {
-		return this.request<T, E>(endpoint, {
+	async put<T, E = never>(
+		endpoint: string,
+		body?: unknown,
+		options: ApiRequestOptions = {}
+	): Promise<ApiResponse<T, E>> {
+		return this.request<T, E>(appendApiQuery(endpoint, options.query), {
 			method: 'PUT',
-			body: body === undefined ? undefined : JSON.stringify(body)
+			body: body === undefined ? undefined : JSON.stringify(body),
+			signal: options.signal
 		});
 	}
 
-	async patch<T, E = never>(endpoint: string, body?: unknown): Promise<ApiResponse<T, E>> {
-		return this.request<T, E>(endpoint, {
+	async patch<T, E = never>(
+		endpoint: string,
+		body?: unknown,
+		options: ApiRequestOptions = {}
+	): Promise<ApiResponse<T, E>> {
+		return this.request<T, E>(appendApiQuery(endpoint, options.query), {
 			method: 'PATCH',
-			body: body === undefined ? undefined : JSON.stringify(body)
+			body: body === undefined ? undefined : JSON.stringify(body),
+			signal: options.signal
 		});
 	}
 
-	async delete<T, E = never>(endpoint: string): Promise<ApiResponse<T, E>> {
-		return this.request<T, E>(endpoint, { method: 'DELETE' });
+	async delete<T, E = never>(
+		endpoint: string,
+		options: ApiRequestOptions = {}
+	): Promise<ApiResponse<T, E>> {
+		return this.request<T, E>(appendApiQuery(endpoint, options.query), {
+			method: 'DELETE',
+			signal: options.signal
+		});
 	}
 
-	async deleteWithBody<T, E = never>(endpoint: string, body: unknown): Promise<ApiResponse<T, E>> {
-		return this.request<T, E>(endpoint, {
+	async deleteWithBody<T, E = never>(
+		endpoint: string,
+		body: unknown,
+		options: ApiRequestOptions = {}
+	): Promise<ApiResponse<T, E>> {
+		return this.request<T, E>(appendApiQuery(endpoint, options.query), {
 			method: 'DELETE',
-			body: JSON.stringify(body)
+			body: JSON.stringify(body),
+			signal: options.signal
 		});
 	}
 

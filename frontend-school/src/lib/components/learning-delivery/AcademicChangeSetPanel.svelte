@@ -273,11 +273,7 @@
 					academicTermId: changeSet.academicTermId,
 					subjectVersionId: catalogVersionId,
 					curriculumCourseRequirementId: null,
-					gradingPolicy: {
-						policyCode: 'school_default',
-						totalScore: '100.00',
-						passingScore: '50.00'
-					},
+					assessmentTotalScore: '100.00',
 					targets: targetInput()
 				}
 			};
