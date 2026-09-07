@@ -522,7 +522,14 @@ pub struct AcademicChangeImpactCounts {
     pub course_assessment_plans: i64,
     pub course_assessment_phases: i64,
     pub learning_group_score_items: i64,
-    pub learning_results: i64,
+    pub student_scores: i64,
+    pub result_selections: i64,
+    pub result_confirmations: i64,
+    pub activity_evaluations: i64,
+    pub learner_evaluations: i64,
+    pub official_result_locks: i64,
+    pub official_results: i64,
+    pub result_corrections: i64,
     pub exam_schedule_items: i64,
     pub supervision_observations: i64,
 }
@@ -1351,17 +1358,6 @@ pub struct RemoveDatedRosterMembershipRequest {
     pub group_row_version: i64,
     pub membership_row_version: i64,
     pub left_at: NaiveDate,
-}
-
-#[derive(Clone, Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ActivityResult {
-    pub learning_result_id: Uuid,
-    pub learning_group_student_id: Uuid,
-    pub outcome: Option<String>,
-    pub attendance_percent: Option<String>,
-    pub teacher_comment: Option<String>,
-    pub finalized_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, FromRow)]

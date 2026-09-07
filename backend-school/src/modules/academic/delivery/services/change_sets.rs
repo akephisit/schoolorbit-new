@@ -885,8 +885,77 @@ async fn load_stop_impact_counts(
                 WHERE plan.learning_offering_id = ANY($1)) AS course_assessment_phases,
              (SELECT count(*) FROM learning_group_score_items item
                 WHERE item.learning_offering_id = ANY($1)) AS learning_group_score_items,
-             (SELECT count(*) FROM learning_results result
-                WHERE result.learning_offering_id = ANY($1)) AS learning_results,
+             (SELECT count(*) FROM learning_group_student_scores score
+                WHERE score.learning_offering_id = ANY($1)) AS student_scores,
+             (SELECT count(*) FROM learning_group_result_overrides selection
+                JOIN learning_groups learning_group
+                  ON learning_group.id = selection.learning_group_id
+                WHERE learning_group.learning_offering_id = ANY($1)) AS result_selections,
+             ((SELECT count(*) FROM learning_group_phase_confirmations confirmation
+                 JOIN learning_groups learning_group
+                   ON learning_group.id = confirmation.learning_group_id
+                 WHERE learning_group.learning_offering_id = ANY($1))
+              + (SELECT count(*) FROM learning_group_result_confirmations confirmation
+                 JOIN learning_groups learning_group
+                   ON learning_group.id = confirmation.learning_group_id
+                 WHERE learning_group.learning_offering_id = ANY($1))
+              + (SELECT count(*) FROM academic_activity_result_confirmations confirmation
+                 JOIN learning_groups learning_group
+                   ON learning_group.id = confirmation.learning_group_id
+                 WHERE learning_group.learning_offering_id = ANY($1))
+              + (SELECT count(*) FROM learning_group_evaluation_confirmations confirmation
+                 JOIN learning_groups learning_group
+                   ON learning_group.id = confirmation.learning_group_id
+                 WHERE learning_group.learning_offering_id = ANY($1))) AS result_confirmations,
+             (SELECT count(*) FROM academic_activity_evaluations evaluation
+                WHERE evaluation.learning_offering_id = ANY($1)) AS activity_evaluations,
+             (SELECT count(*) FROM learning_group_student_evaluations evaluation
+                WHERE evaluation.learning_offering_id = ANY($1)) AS learner_evaluations,
+             (SELECT count(*) FROM (
+                  SELECT course_lock.id
+                  FROM academic_course_result_locks course_lock
+                  WHERE EXISTS (
+                      SELECT 1 FROM course_offering_details detail
+                      WHERE detail.learning_offering_id = ANY($1)
+                        AND detail.subject_id = course_lock.subject_id
+                        AND detail.academic_term_id = course_lock.academic_term_id
+                        AND detail.academic_year_id = course_lock.academic_year_id
+                  )
+                  UNION ALL
+                  SELECT activity_lock.id
+                  FROM academic_activity_result_locks activity_lock
+                  WHERE activity_lock.learning_offering_id = ANY($1)
+                  UNION ALL
+                  SELECT evaluation_lock.id
+                  FROM subject_term_evaluation_locks evaluation_lock
+                  WHERE EXISTS (
+                      SELECT 1 FROM course_offering_details detail
+                      WHERE detail.learning_offering_id = ANY($1)
+                        AND detail.subject_id = evaluation_lock.subject_id
+                        AND detail.academic_term_id = evaluation_lock.academic_term_id
+                        AND detail.academic_year_id = evaluation_lock.academic_year_id
+                  )
+              ) official_lock) AS official_result_locks,
+             ((SELECT count(*) FROM academic_course_results result
+                 WHERE result.learning_offering_id = ANY($1))
+              + (SELECT count(*) FROM academic_activity_results result
+                 WHERE result.learning_offering_id = ANY($1))
+              + (SELECT count(*) FROM subject_term_student_evaluations result
+                 WHERE result.learning_offering_id = ANY($1))) AS official_results,
+             (SELECT count(*) FROM academic_result_corrections correction
+                WHERE EXISTS (
+                    SELECT 1 FROM academic_course_results result
+                    WHERE result.id = correction.course_result_id
+                      AND result.learning_offering_id = ANY($1)
+                ) OR EXISTS (
+                    SELECT 1 FROM academic_activity_results result
+                    WHERE result.id = correction.activity_result_id
+                      AND result.learning_offering_id = ANY($1)
+                ) OR EXISTS (
+                    SELECT 1 FROM subject_term_student_evaluations result
+                    WHERE result.id = correction.subject_student_evaluation_id
+                      AND result.learning_offering_id = ANY($1)
+                )) AS result_corrections,
              (SELECT count(*) FROM academic_exam_schedule_items item
                 WHERE item.learning_offering_id = ANY($1)) AS exam_schedule_items,
              (SELECT count(*) FROM supervision_observations observation
@@ -906,7 +975,14 @@ async fn load_stop_impact_counts(
         course_assessment_plans: row.get("course_assessment_plans"),
         course_assessment_phases: row.get("course_assessment_phases"),
         learning_group_score_items: row.get("learning_group_score_items"),
-        learning_results: row.get("learning_results"),
+        student_scores: row.get("student_scores"),
+        result_selections: row.get("result_selections"),
+        result_confirmations: row.get("result_confirmations"),
+        activity_evaluations: row.get("activity_evaluations"),
+        learner_evaluations: row.get("learner_evaluations"),
+        official_result_locks: row.get("official_result_locks"),
+        official_results: row.get("official_results"),
+        result_corrections: row.get("result_corrections"),
         exam_schedule_items: row.get("exam_schedule_items"),
         supervision_observations: row.get("supervision_observations"),
     })
@@ -3178,8 +3254,66 @@ async fn require_draft_only_delete(
                     WHERE block.learning_offering_id = offering.id)
                 + (SELECT count(*) FROM course_assessment_plans plan
                     WHERE plan.learning_offering_id = offering.id)
-                + (SELECT count(*) FROM learning_results result
+                + (SELECT count(*) FROM learning_group_score_items item
+                    WHERE item.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM learning_group_student_scores score
+                    WHERE score.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM learning_group_result_overrides selection
+                    JOIN learning_groups learning_group
+                      ON learning_group.id = selection.learning_group_id
+                    WHERE learning_group.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM learning_group_phase_confirmations confirmation
+                    JOIN learning_groups learning_group
+                      ON learning_group.id = confirmation.learning_group_id
+                    WHERE learning_group.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM learning_group_result_confirmations confirmation
+                    JOIN learning_groups learning_group
+                      ON learning_group.id = confirmation.learning_group_id
+                    WHERE learning_group.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM academic_activity_evaluations evaluation
+                    WHERE evaluation.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM academic_activity_result_confirmations confirmation
+                    WHERE confirmation.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM learning_group_student_evaluations evaluation
+                    WHERE evaluation.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM learning_group_evaluation_confirmations confirmation
+                    JOIN learning_groups learning_group
+                      ON learning_group.id = confirmation.learning_group_id
+                    WHERE learning_group.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM academic_course_result_locks result_lock
+                    JOIN course_offering_details detail
+                      ON detail.subject_id = result_lock.subject_id
+                     AND detail.academic_term_id = result_lock.academic_term_id
+                     AND detail.academic_year_id = result_lock.academic_year_id
+                    WHERE detail.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM academic_activity_result_locks result_lock
+                    WHERE result_lock.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM subject_term_evaluation_locks result_lock
+                    JOIN course_offering_details detail
+                      ON detail.subject_id = result_lock.subject_id
+                     AND detail.academic_term_id = result_lock.academic_term_id
+                     AND detail.academic_year_id = result_lock.academic_year_id
+                    WHERE detail.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM academic_course_results result
                     WHERE result.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM academic_activity_results result
+                    WHERE result.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM subject_term_student_evaluations result
+                    WHERE result.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM academic_result_corrections correction
+                    WHERE EXISTS (
+                        SELECT 1 FROM academic_course_results result
+                        WHERE result.id = correction.course_result_id
+                          AND result.learning_offering_id = offering.id
+                    ) OR EXISTS (
+                        SELECT 1 FROM academic_activity_results result
+                        WHERE result.id = correction.activity_result_id
+                          AND result.learning_offering_id = offering.id
+                    ) OR EXISTS (
+                        SELECT 1 FROM subject_term_student_evaluations result
+                        WHERE result.id = correction.subject_student_evaluation_id
+                          AND result.learning_offering_id = offering.id
+                    ))
                 + (SELECT count(*) FROM academic_exam_schedule_items item
                     WHERE item.learning_offering_id = offering.id)
                 + (SELECT count(*) FROM supervision_observations observation

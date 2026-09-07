@@ -94,6 +94,10 @@
       },
       "AcademicChangeImpactCounts": {
         "properties": {
+          "activityEvaluations": {
+            "format": "int64",
+            "type": "integer"
+          },
           "courseAssessmentPhases": {
             "format": "int64",
             "type": "integer"
@@ -114,15 +118,39 @@
             "format": "int64",
             "type": "integer"
           },
+          "learnerEvaluations": {
+            "format": "int64",
+            "type": "integer"
+          },
           "learningGroupScoreItems": {
             "format": "int64",
             "type": "integer"
           },
-          "learningResults": {
+          "membershipIntervals": {
             "format": "int64",
             "type": "integer"
           },
-          "membershipIntervals": {
+          "officialResultLocks": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "officialResults": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "resultConfirmations": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "resultCorrections": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "resultSelections": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "studentScores": {
             "format": "int64",
             "type": "integer"
           },
@@ -148,7 +176,14 @@
           "courseAssessmentPlans",
           "courseAssessmentPhases",
           "learningGroupScoreItems",
-          "learningResults",
+          "studentScores",
+          "resultSelections",
+          "resultConfirmations",
+          "activityEvaluations",
+          "learnerEvaluations",
+          "officialResultLocks",
+          "officialResults",
+          "resultCorrections",
           "examScheduleItems",
           "supervisionObservations"
         ],
@@ -1434,48 +1469,6 @@
         ],
         "type": "string"
       },
-      "ActivityResult": {
-        "properties": {
-          "attendancePercent": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "finalizedAt": {
-            "format": "date-time",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "learningGroupStudentId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "learningResultId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "outcome": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "teacherComment": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "learningResultId",
-          "learningGroupStudentId"
-        ],
-        "type": "object"
-      },
       "ActivitySchedulingMode": {
         "enum": [
           "synchronized",
@@ -2704,13 +2697,6 @@
                 "format": "uuid",
                 "type": "string"
               },
-              "label": {
-                "type": "string"
-              },
-              "order": {
-                "format": "int32",
-                "type": "integer"
-              },
               "phaseCode": {
                 "$ref": "#/components/schemas/AssessmentPhaseCode"
               },
@@ -2720,9 +2706,6 @@
               "rowVersion": {
                 "format": "int64",
                 "type": "integer"
-              },
-              "scoreEntryEnabled": {
-                "type": "boolean"
               }
             },
             "required": [
@@ -2730,10 +2713,7 @@
               "academicTermId",
               "academicYearId",
               "phaseCode",
-              "label",
-              "order",
               "planEditingEnabled",
-              "scoreEntryEnabled",
               "rowVersion"
             ],
             "type": "object"
@@ -2776,14 +2756,15 @@
                   "null"
                 ]
               },
+              "assessmentTotalScore": {
+                "pattern": "^(0|[1-9]\\d*)(\\.\\d{1,2})?$",
+                "type": "string"
+              },
               "coordinatorCandidates": {
                 "items": {
                   "$ref": "#/components/schemas/AssessmentCoordinatorOption"
                 },
                 "type": "array"
-              },
-              "gradingPolicy": {
-                "$ref": "#/components/schemas/CourseGradingPolicy"
               },
               "id": {
                 "format": "uuid",
@@ -2854,7 +2835,7 @@
               "subjectVersionDisplayLabel",
               "offeringCode",
               "offeringName",
-              "gradingPolicy",
+              "assessmentTotalScore",
               "learningGroupIds",
               "coordinatorCandidates",
               "phases",
@@ -11250,13 +11231,6 @@
                   "format": "uuid",
                   "type": "string"
                 },
-                "label": {
-                  "type": "string"
-                },
-                "order": {
-                  "format": "int32",
-                  "type": "integer"
-                },
                 "phaseCode": {
                   "$ref": "#/components/schemas/AssessmentPhaseCode"
                 },
@@ -11266,9 +11240,6 @@
                 "rowVersion": {
                   "format": "int64",
                   "type": "integer"
-                },
-                "scoreEntryEnabled": {
-                  "type": "boolean"
                 }
               },
               "required": [
@@ -11276,10 +11247,7 @@
                 "academicTermId",
                 "academicYearId",
                 "phaseCode",
-                "label",
-                "order",
                 "planEditingEnabled",
-                "scoreEntryEnabled",
                 "rowVersion"
               ],
               "type": "object"
@@ -16761,13 +16729,6 @@
             "format": "uuid",
             "type": "string"
           },
-          "label": {
-            "type": "string"
-          },
-          "order": {
-            "format": "int32",
-            "type": "integer"
-          },
           "phaseCode": {
             "$ref": "#/components/schemas/AssessmentPhaseCode"
           },
@@ -16777,9 +16738,6 @@
           "rowVersion": {
             "format": "int64",
             "type": "integer"
-          },
-          "scoreEntryEnabled": {
-            "type": "boolean"
           }
         },
         "required": [
@@ -16787,10 +16745,7 @@
           "academicTermId",
           "academicYearId",
           "phaseCode",
-          "label",
-          "order",
           "planEditingEnabled",
-          "scoreEntryEnabled",
           "rowVersion"
         ],
         "type": "object"
@@ -16818,14 +16773,15 @@
               "null"
             ]
           },
+          "assessmentTotalScore": {
+            "pattern": "^(0|[1-9]\\d*)(\\.\\d{1,2})?$",
+            "type": "string"
+          },
           "coordinatorCandidates": {
             "items": {
               "$ref": "#/components/schemas/AssessmentCoordinatorOption"
             },
             "type": "array"
-          },
-          "gradingPolicy": {
-            "$ref": "#/components/schemas/CourseGradingPolicy"
           },
           "id": {
             "format": "uuid",
@@ -16896,7 +16852,7 @@
           "subjectVersionDisplayLabel",
           "offeringCode",
           "offeringName",
-          "gradingPolicy",
+          "assessmentTotalScore",
           "learningGroupIds",
           "coordinatorCandidates",
           "phases",
@@ -20712,31 +20668,12 @@
         ],
         "type": "object"
       },
-      "CourseGradingPolicy": {
-        "additionalProperties": false,
-        "properties": {
-          "passingScore": {
-            "pattern": "^-?(0|[1-9]\\d*)(\\.\\d{1,2})?$",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "policyCode": {
-            "type": "string"
-          },
-          "totalScore": {
-            "pattern": "^(0|[1-9]\\d*)(\\.\\d{1,2})?$",
-            "type": "string"
-          }
-        },
-        "required": [
-          "policyCode"
-        ],
-        "type": "object"
-      },
       "CourseOfferingSnapshot": {
         "properties": {
+          "assessmentTotalScore": {
+            "pattern": "^(0|[1-9]\\d*)(\\.\\d{1,2})?$",
+            "type": "string"
+          },
           "credit": {
             "type": "string"
           },
@@ -20746,9 +20683,6 @@
               "string",
               "null"
             ]
-          },
-          "gradingPolicy": {
-            "$ref": "#/components/schemas/CourseGradingPolicy"
           },
           "hours": {
             "type": [
@@ -20774,7 +20708,7 @@
           "subjectId",
           "credit",
           "standardPeriodsPerWeek",
-          "gradingPolicy"
+          "assessmentTotalScore"
         ],
         "type": "object"
       },
@@ -21193,15 +21127,16 @@
             "format": "uuid",
             "type": "string"
           },
+          "assessmentTotalScore": {
+            "pattern": "^(0|[1-9]\\d*)(\\.\\d{1,2})?$",
+            "type": "string"
+          },
           "curriculumCourseRequirementId": {
             "format": "uuid",
             "type": [
               "string",
               "null"
             ]
-          },
-          "gradingPolicy": {
-            "$ref": "#/components/schemas/CourseGradingPolicy"
           },
           "subjectVersionId": {
             "format": "uuid",
@@ -21218,7 +21153,7 @@
           "academicTermId",
           "subjectVersionId",
           "targets",
-          "gradingPolicy"
+          "assessmentTotalScore"
         ],
         "type": "object"
       },
@@ -36703,15 +36638,11 @@
           "rowVersion": {
             "format": "int64",
             "type": "integer"
-          },
-          "scoreEntryEnabled": {
-            "type": "boolean"
           }
         },
         "required": [
           "rowVersion",
-          "planEditingEnabled",
-          "scoreEntryEnabled"
+          "planEditingEnabled"
         ],
         "type": "object"
       },

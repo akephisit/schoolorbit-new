@@ -4610,6 +4610,8 @@ export interface components {
 		AcademicChangeFindingSeverity: 'blocking' | 'warning';
 		AcademicChangeImpactCounts: {
 			/** Format: int64 */
+			activityEvaluations: number;
+			/** Format: int64 */
 			courseAssessmentPhases: number;
 			/** Format: int64 */
 			courseAssessmentPlans: number;
@@ -4620,11 +4622,23 @@ export interface components {
 			/** Format: int64 */
 			homerooms: number;
 			/** Format: int64 */
+			learnerEvaluations: number;
+			/** Format: int64 */
 			learningGroupScoreItems: number;
 			/** Format: int64 */
-			learningResults: number;
-			/** Format: int64 */
 			membershipIntervals: number;
+			/** Format: int64 */
+			officialResultLocks: number;
+			/** Format: int64 */
+			officialResults: number;
+			/** Format: int64 */
+			resultConfirmations: number;
+			/** Format: int64 */
+			resultCorrections: number;
+			/** Format: int64 */
+			resultSelections: number;
+			/** Format: int64 */
+			studentScores: number;
 			/** Format: int64 */
 			supervisionObservations: number;
 			/** Format: int64 */
@@ -5032,17 +5046,6 @@ export interface components {
 		};
 		/** @enum {string} */
 		ActivityRegistrationType: 'self' | 'assigned';
-		ActivityResult: {
-			attendancePercent?: string | null;
-			/** Format: date-time */
-			finalizedAt?: string | null;
-			/** Format: uuid */
-			learningGroupStudentId: string;
-			/** Format: uuid */
-			learningResultId: string;
-			outcome?: string | null;
-			teacherComment?: string | null;
-		};
 		/** @enum {string} */
 		ActivitySchedulingMode: 'synchronized' | 'independent';
 		ActivityVersion: {
@@ -5389,14 +5392,10 @@ export interface components {
 				academicYearId: string;
 				/** Format: uuid */
 				id: string;
-				label: string;
-				/** Format: int32 */
-				order: number;
 				phaseCode: components['schemas']['AssessmentPhaseCode'];
 				planEditingEnabled: boolean;
 				/** Format: int64 */
 				rowVersion: number;
-				scoreEntryEnabled: boolean;
 			};
 			message?: string;
 			success: boolean;
@@ -5410,8 +5409,8 @@ export interface components {
 				/** Format: uuid */
 				assessmentCoordinatorId?: string | null;
 				assessmentCoordinatorName?: string | null;
+				assessmentTotalScore: string;
 				coordinatorCandidates: components['schemas']['AssessmentCoordinatorOption'][];
-				gradingPolicy: components['schemas']['CourseGradingPolicy'];
 				/** Format: uuid */
 				id?: string | null;
 				learningGroupIds: string[];
@@ -7680,14 +7679,10 @@ export interface components {
 				academicYearId: string;
 				/** Format: uuid */
 				id: string;
-				label: string;
-				/** Format: int32 */
-				order: number;
 				phaseCode: components['schemas']['AssessmentPhaseCode'];
 				planEditingEnabled: boolean;
 				/** Format: int64 */
 				rowVersion: number;
-				scoreEntryEnabled: boolean;
 			}[];
 			message?: string;
 			success: boolean;
@@ -9161,14 +9156,10 @@ export interface components {
 			academicYearId: string;
 			/** Format: uuid */
 			id: string;
-			label: string;
-			/** Format: int32 */
-			order: number;
 			phaseCode: components['schemas']['AssessmentPhaseCode'];
 			planEditingEnabled: boolean;
 			/** Format: int64 */
 			rowVersion: number;
-			scoreEntryEnabled: boolean;
 		};
 		AssessmentPlanDetail: {
 			/** Format: uuid */
@@ -9178,8 +9169,8 @@ export interface components {
 			/** Format: uuid */
 			assessmentCoordinatorId?: string | null;
 			assessmentCoordinatorName?: string | null;
+			assessmentTotalScore: string;
 			coordinatorCandidates: components['schemas']['AssessmentCoordinatorOption'][];
-			gradingPolicy: components['schemas']['CourseGradingPolicy'];
 			/** Format: uuid */
 			id?: string | null;
 			learningGroupIds: string[];
@@ -10243,16 +10234,11 @@ export interface components {
 			/** Format: int64 */
 			sourceRowVersion: number;
 		};
-		CourseGradingPolicy: {
-			passingScore?: string | null;
-			policyCode: string;
-			totalScore?: string;
-		};
 		CourseOfferingSnapshot: {
+			assessmentTotalScore: string;
 			credit: string;
 			/** Format: uuid */
 			curriculumCourseRequirementId?: string | null;
-			gradingPolicy: components['schemas']['CourseGradingPolicy'];
 			hours?: string | null;
 			/** Format: int32 */
 			standardPeriodsPerWeek: number;
@@ -10375,9 +10361,9 @@ export interface components {
 		CreateCourseOfferingRequest: {
 			/** Format: uuid */
 			academicTermId: string;
+			assessmentTotalScore: string;
 			/** Format: uuid */
 			curriculumCourseRequirementId?: string | null;
-			gradingPolicy: components['schemas']['CourseGradingPolicy'];
 			/** Format: uuid */
 			subjectVersionId: string;
 			targets: components['schemas']['OfferingTargetInput'][];
@@ -14631,7 +14617,6 @@ export interface components {
 			planEditingEnabled: boolean;
 			/** Format: int64 */
 			rowVersion: number;
-			scoreEntryEnabled: boolean;
 		};
 		UpdateBellScheduleRequest: {
 			isDefault: boolean;

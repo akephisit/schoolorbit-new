@@ -3047,15 +3047,53 @@ async fn change_set_preview_counts_stop_impact_without_exposing_roster_identitie
         "change-set:preview-stop-impact:idempotency",
     )
     .await;
-    let offering_id: Uuid = sqlx::query_scalar(
-        r#"SELECT target.learning_offering_id
+    let (offering_id, learning_group_id, subject_id, student_academic_year_id): (
+        Uuid,
+        Uuid,
+        Uuid,
+        Uuid,
+    ) = sqlx::query_as(
+        r#"SELECT target.learning_offering_id,
+                      learning_group.id,
+                      detail.subject_id,
+                      membership.student_academic_year_id
            FROM academic_timetable_version_targets target
+           JOIN course_offering_details detail
+             ON detail.learning_offering_id = target.learning_offering_id
+           JOIN learning_groups learning_group
+             ON learning_group.learning_offering_id = target.learning_offering_id
+            AND learning_group.academic_term_id = detail.academic_term_id
+            AND learning_group.academic_year_id = detail.academic_year_id
+           JOIN learning_group_students membership
+             ON membership.learning_group_id = learning_group.id
            WHERE target.timetable_version_id = $1
-           ORDER BY target.learning_offering_id
+             AND learning_group.status <> 'closed'
+             AND membership.left_at IS NULL
+           ORDER BY target.learning_offering_id, learning_group.id, membership.id
            LIMIT 1"#,
     )
     .bind(change_set.base_timetable_version_id)
     .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"INSERT INTO learning_group_result_overrides
+              (learning_group_id,learning_offering_id,academic_term_id,academic_year_id,
+               subject_id,student_academic_year_id,outcome,updated_by)
+           VALUES ($1,$2,$3,$4,$5,$6,'incomplete',$7)
+           ON CONFLICT (learning_group_id,student_academic_year_id)
+           DO UPDATE SET outcome = EXCLUDED.outcome,
+                         updated_by = EXCLUDED.updated_by,
+                         updated_at = now()"#,
+    )
+    .bind(learning_group_id)
+    .bind(offering_id)
+    .bind(context.term_id)
+    .bind(context.year_id)
+    .bind(subject_id)
+    .bind(student_academic_year_id)
+    .bind(context.teacher_id)
+    .execute(&pool)
     .await
     .unwrap();
     let expected = sqlx::query(
@@ -3080,8 +3118,77 @@ async fn change_set_preview_counts_stop_impact_without_exposing_roster_identitie
                 WHERE plan.learning_offering_id = $1) AS course_assessment_phases,
              (SELECT count(*) FROM learning_group_score_items item
                 WHERE item.learning_offering_id = $1) AS learning_group_score_items,
-             (SELECT count(*) FROM learning_results result
-                WHERE result.learning_offering_id = $1) AS learning_results,
+             (SELECT count(*) FROM learning_group_student_scores score
+                WHERE score.learning_offering_id = $1) AS student_scores,
+             (SELECT count(*) FROM learning_group_result_overrides selection
+                JOIN learning_groups learning_group
+                  ON learning_group.id = selection.learning_group_id
+                WHERE learning_group.learning_offering_id = $1) AS result_selections,
+             ((SELECT count(*) FROM learning_group_phase_confirmations confirmation
+                 JOIN learning_groups learning_group
+                   ON learning_group.id = confirmation.learning_group_id
+                 WHERE learning_group.learning_offering_id = $1)
+              + (SELECT count(*) FROM learning_group_result_confirmations confirmation
+                 JOIN learning_groups learning_group
+                   ON learning_group.id = confirmation.learning_group_id
+                 WHERE learning_group.learning_offering_id = $1)
+              + (SELECT count(*) FROM academic_activity_result_confirmations confirmation
+                 JOIN learning_groups learning_group
+                   ON learning_group.id = confirmation.learning_group_id
+                 WHERE learning_group.learning_offering_id = $1)
+              + (SELECT count(*) FROM learning_group_evaluation_confirmations confirmation
+                 JOIN learning_groups learning_group
+                   ON learning_group.id = confirmation.learning_group_id
+                 WHERE learning_group.learning_offering_id = $1)) AS result_confirmations,
+             (SELECT count(*) FROM academic_activity_evaluations evaluation
+                WHERE evaluation.learning_offering_id = $1) AS activity_evaluations,
+             (SELECT count(*) FROM learning_group_student_evaluations evaluation
+                WHERE evaluation.learning_offering_id = $1) AS learner_evaluations,
+             (SELECT count(*) FROM (
+                  SELECT course_lock.id
+                  FROM academic_course_result_locks course_lock
+                  WHERE EXISTS (
+                      SELECT 1 FROM course_offering_details detail
+                      WHERE detail.learning_offering_id = $1
+                        AND detail.subject_id = course_lock.subject_id
+                        AND detail.academic_term_id = course_lock.academic_term_id
+                        AND detail.academic_year_id = course_lock.academic_year_id
+                  )
+                  UNION ALL
+                  SELECT activity_lock.id
+                  FROM academic_activity_result_locks activity_lock
+                  WHERE activity_lock.learning_offering_id = $1
+                  UNION ALL
+                  SELECT evaluation_lock.id
+                  FROM subject_term_evaluation_locks evaluation_lock
+                  WHERE EXISTS (
+                      SELECT 1 FROM course_offering_details detail
+                      WHERE detail.learning_offering_id = $1
+                        AND detail.subject_id = evaluation_lock.subject_id
+                        AND detail.academic_term_id = evaluation_lock.academic_term_id
+                        AND detail.academic_year_id = evaluation_lock.academic_year_id
+                  )
+              ) official_lock) AS official_result_locks,
+             ((SELECT count(*) FROM academic_course_results result
+                 WHERE result.learning_offering_id = $1)
+              + (SELECT count(*) FROM academic_activity_results result
+                 WHERE result.learning_offering_id = $1)
+              + (SELECT count(*) FROM subject_term_student_evaluations result
+                 WHERE result.learning_offering_id = $1)) AS official_results,
+             (SELECT count(*) FROM academic_result_corrections correction
+                WHERE EXISTS (
+                    SELECT 1 FROM academic_course_results result
+                    WHERE result.id = correction.course_result_id
+                      AND result.learning_offering_id = $1
+                ) OR EXISTS (
+                    SELECT 1 FROM academic_activity_results result
+                    WHERE result.id = correction.activity_result_id
+                      AND result.learning_offering_id = $1
+                ) OR EXISTS (
+                    SELECT 1 FROM subject_term_student_evaluations result
+                    WHERE result.id = correction.subject_student_evaluation_id
+                      AND result.learning_offering_id = $1
+                )) AS result_corrections,
              (SELECT count(*) FROM academic_exam_schedule_items item
                 WHERE item.learning_offering_id = $1) AS exam_schedule_items,
              (SELECT count(*) FROM supervision_observations observation
@@ -3102,10 +3209,18 @@ async fn change_set_preview_counts_stop_impact_without_exposing_roster_identitie
         course_assessment_plans: expected.get("course_assessment_plans"),
         course_assessment_phases: expected.get("course_assessment_phases"),
         learning_group_score_items: expected.get("learning_group_score_items"),
-        learning_results: expected.get("learning_results"),
+        student_scores: expected.get("student_scores"),
+        result_selections: expected.get("result_selections"),
+        result_confirmations: expected.get("result_confirmations"),
+        activity_evaluations: expected.get("activity_evaluations"),
+        learner_evaluations: expected.get("learner_evaluations"),
+        official_result_locks: expected.get("official_result_locks"),
+        official_results: expected.get("official_results"),
+        result_corrections: expected.get("result_corrections"),
         exam_schedule_items: expected.get("exam_schedule_items"),
         supervision_observations: expected.get("supervision_observations"),
     };
+    assert!(expected.result_selections > 0);
 
     let changed = change_sets::upsert_change_item(
         &pool,
@@ -5044,7 +5159,7 @@ async fn curriculum_preparation_groups_support_reviewed_combined_split_and_manua
 }
 
 #[tokio::test]
-async fn self_registration_activity_uses_common_delivery_and_reads_migrated_pass_fail_result() {
+async fn self_registration_activity_uses_common_delivery() {
     let pool = prepare_delivery_runtime_fixture("academic_delivery_runtime_self_activity").await;
     let context = planning_runtime_context(&pool).await;
     let (activity_version_id, scheduling_mode): (Uuid, ActivitySchedulingMode) = sqlx::query_as(
@@ -5187,23 +5302,6 @@ async fn self_registration_activity_uses_common_delivery_and_reads_migrated_pass
     let students = groups::list_students(&pool, group.id).await.unwrap();
     assert_eq!(students.len(), 1);
     assert_eq!(students[0].roster_source, "manual_add");
-
-    let (migrated_group_id, migrated_student_year_id): (Uuid, Uuid) = sqlx::query_as(
-        "SELECT learning_group_id, student_academic_year_id FROM learning_results \
-         WHERE kind = 'activity' ORDER BY id LIMIT 1",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    let migrated_result =
-        activities::get_result(&pool, migrated_group_id, migrated_student_year_id)
-            .await
-            .unwrap()
-            .unwrap();
-    assert!(matches!(
-        migrated_result.outcome.as_deref(),
-        Some("pass" | "fail")
-    ));
 }
 
 #[tokio::test]

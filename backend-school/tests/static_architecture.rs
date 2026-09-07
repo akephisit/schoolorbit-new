@@ -6343,6 +6343,41 @@ fn converted_academic_consumers_cannot_reintroduce_legacy_runtime_identity() {
 }
 
 #[test]
+fn academic_result_runtime_has_no_legacy_storage_or_wire_boundary() {
+    let runtime_files = list_files(manifest_dir().join("src"), |path| {
+        path.extension().and_then(|extension| extension.to_str()) == Some("rs")
+            && !path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.contains("test"))
+    });
+
+    for path in runtime_files {
+        let source = strip_comments(&read_source(&path));
+        let path = relative(&path);
+        for legacy in [
+            "learning_results",
+            "activity_result_details",
+            "CourseGradingPolicy",
+            "policyCode",
+            "passingScore",
+            "scoreEntryEnabled",
+        ] {
+            assert!(
+                !source.contains(legacy),
+                "academic result runtime {path} retained legacy boundary `{legacy}`"
+            );
+        }
+    }
+
+    let api_contract = read_source(manifest_dir().join("src/api_contract.rs"));
+    assert!(
+        !api_contract.contains("        ActivityResult,"),
+        "the legacy activity result DTO must not remain registered"
+    );
+}
+
+#[test]
 fn cross_module_academic_consumers_use_only_canonical_runtime_identity() {
     let mut runtime_files = vec![
         manifest_dir().join("src/bin/seed_sandbox.rs"),

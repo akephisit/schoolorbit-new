@@ -1055,7 +1055,6 @@ use utoipa::OpenApi;
         DatedRosterMembership,
         AddDatedRosterMembershipRequest,
         RemoveDatedRosterMembershipRequest,
-        ActivityResult,
         StudentActivityRegistrationQuery,
         StudentActivityGroupOption,
         StudentActivityOfferingOption,
