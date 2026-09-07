@@ -263,33 +263,31 @@ pub async fn upsert_exam_day(
     let grade_level_ids = unique_uuids(request.grade_level_ids);
 
     let mut tx = pool.begin().await?;
-    let round_exists: bool = sqlx::query_scalar(
+    let round_context: Option<(Uuid, Uuid)> = sqlx::query_as(
         r#"
-        SELECT EXISTS (
-            SELECT 1
-            FROM academic_exam_rounds
-            WHERE id = $1
-        )
+        SELECT academic_term_id, academic_year_id
+        FROM academic_exam_rounds
+        WHERE id = $1
         "#,
     )
     .bind(round_id)
-    .fetch_one(&mut *tx)
+    .fetch_optional(&mut *tx)
     .await?;
-
-    if !round_exists {
-        return Err(AppError::NotFound("Exam round not found".to_string()));
-    }
+    let (academic_term_id, academic_year_id) =
+        round_context.ok_or_else(|| AppError::NotFound("Exam round not found".to_string()))?;
 
     let day = sqlx::query_as::<_, ExamDay>(
         r#"
         INSERT INTO academic_exam_days (
             exam_round_id,
+            academic_term_id,
+            academic_year_id,
             exam_date,
             label,
             start_time,
             end_time
         )
-        VALUES ($1, $2, $3, $4, $5)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         ON CONFLICT (exam_round_id, exam_date)
         DO UPDATE SET
             label = EXCLUDED.label,
@@ -305,6 +303,8 @@ pub async fn upsert_exam_day(
         "#,
     )
     .bind(round_id)
+    .bind(academic_term_id)
+    .bind(academic_year_id)
     .bind(request.exam_date)
     .bind(request.label)
     .bind(request.start_time)

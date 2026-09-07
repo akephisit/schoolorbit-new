@@ -1,3 +1,4 @@
+use chrono::{NaiveDate, NaiveTime};
 use uuid::Uuid;
 
 use super::exam_schedule_service;
@@ -7,6 +8,7 @@ use crate::modules::academic::cutover_test_support::{
 };
 use crate::modules::academic::models::exam_schedule::{
     CreateExamRoundRequest, ExamSourceChangeKind, ExamSourceSyncItemStatus, SyncExamSourcesRequest,
+    UpsertExamDayRequest,
 };
 use crate::test_helpers::create_named_test_pool;
 
@@ -405,6 +407,44 @@ async fn creating_exam_round_in_closed_term_returns_conflict() {
     .unwrap_err();
 
     assert!(matches!(error, crate::error::AppError::Conflict(_)));
+}
+
+#[tokio::test]
+async fn creating_exam_day_copies_the_round_academic_context() {
+    let pool = migrated_pool("exam_day_create_context").await;
+    let round_id = Uuid::parse_str("84000000-0000-0000-0000-000000000001").unwrap();
+    let expected_context: (Uuid, Uuid) = sqlx::query_as(
+        "SELECT academic_term_id, academic_year_id FROM academic_exam_rounds WHERE id = $1",
+    )
+    .bind(round_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let day = exam_schedule_service::upsert_exam_day(
+        &pool,
+        round_id,
+        UpsertExamDayRequest {
+            exam_date: NaiveDate::from_ymd_opt(2027, 1, 15).unwrap(),
+            label: Some("วันสอบเพิ่มเติม".to_string()),
+            start_time: NaiveTime::from_hms_opt(8, 30, 0).unwrap(),
+            end_time: NaiveTime::from_hms_opt(16, 0, 0).unwrap(),
+            grade_level_ids: Vec::new(),
+            blocked_windows: Vec::new(),
+        },
+    )
+    .await
+    .unwrap();
+
+    let stored_context: (Uuid, Uuid) = sqlx::query_as(
+        "SELECT academic_term_id, academic_year_id FROM academic_exam_days WHERE id = $1",
+    )
+    .bind(day.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(stored_context, expected_context);
 }
 
 #[tokio::test]
