@@ -662,16 +662,17 @@ pub async fn publish_roster(
         ));
     }
     let mut transaction = pool.begin().await?;
-    let group = lock_group(&mut transaction, group_id).await?;
+    let academic_term_id = find_group_term(&mut transaction, group_id).await?;
+    require_writable_term(&mut transaction, academic_term_id, false).await?;
+    let group = lock_offering_then_group(&mut transaction, group_id, academic_term_id).await?;
     require_mutable_group(&group, request.row_version, false)?;
     if group.roster_status != RosterStatus::Draft {
         return Err(AppError::Conflict(
             "roster นี้เผยแพร่แล้ว หากต้องการเปลี่ยนรายชื่อต้องสร้างฉบับ draft ใหม่".to_string(),
         ));
     }
-    require_writable_term(&mut transaction, group.academic_term_id, false).await?;
     let offering_status: LearningOfferingStatus =
-        sqlx::query_scalar("SELECT status FROM learning_offerings WHERE id = $1 FOR SHARE")
+        sqlx::query_scalar("SELECT status FROM learning_offerings WHERE id = $1")
             .bind(group.learning_offering_id)
             .fetch_one(&mut *transaction)
             .await?;

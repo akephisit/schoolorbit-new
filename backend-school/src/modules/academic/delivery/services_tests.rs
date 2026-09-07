@@ -14,7 +14,7 @@ use crate::{
         },
         services::{timetable_block_service, timetable_version_service},
     },
-    test_helpers::create_named_test_pool,
+    test_helpers::{create_named_test_pool, create_named_test_pool_with_max_connections},
 };
 use chrono::{Duration, NaiveDate, Utc};
 use sqlx::{PgPool, Row};
@@ -580,6 +580,38 @@ async fn prepare_delivery_runtime_fixture(name: &str) -> PgPool {
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
     apply_migrations_through(&pool, 60).await.unwrap();
     pool
+}
+
+async fn prepare_concurrent_delivery_runtime_fixture(name: &str) -> PgPool {
+    let pool = create_named_test_pool_with_max_connections(name, 5).await;
+    apply_migrations_through(&pool, 40).await.unwrap();
+    seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
+        .await
+        .unwrap();
+    apply_phase_b_runtime_migrations(&pool).await.unwrap();
+    apply_migrations_through(&pool, 60).await.unwrap();
+    pool
+}
+
+async fn wait_for_offering_lock_waiters(pool: &PgPool, expected: i64) {
+    for _ in 0..200 {
+        let waiting: i64 = sqlx::query_scalar(
+            r#"SELECT count(*)::bigint
+               FROM pg_stat_activity
+               WHERE datname = current_database()
+                 AND wait_event_type = 'Lock'
+                 AND query LIKE '%learning_offerings%'
+                 AND query LIKE '%FOR %'"#,
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        if waiting >= expected {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    panic!("expected {expected} delivery transactions to wait on an offering lock");
 }
 
 #[tokio::test]
@@ -4544,6 +4576,142 @@ async fn offering_group_and_roster_publish_are_revisioned_and_idempotent() {
         republished_with_new_key,
         Err(AppError::Conflict(_))
     ));
+}
+
+// Catches publish_roster acquiring the group before the offering while roster mutations acquire
+// the offering before the group, which lets the two transactions form a PostgreSQL deadlock.
+#[tokio::test]
+async fn roster_publication_and_apply_serialize_in_canonical_lock_order() {
+    let pool =
+        prepare_concurrent_delivery_runtime_fixture("academic_roster_publish_apply_lock_order")
+            .await;
+    let context = planning_runtime_context(&pool).await;
+    let offering = offerings::create(&pool, context.teacher_id, course_request(&context))
+        .await
+        .unwrap();
+    let group = groups::create(
+        &pool,
+        context.teacher_id,
+        offering.id,
+        CreateLearningGroupRequest {
+            code: "LOCK-ORDER".to_string(),
+            name: "ทดสอบลำดับล็อก roster".to_string(),
+            description: None,
+            capacity: Some(40),
+            preferred_room_ids: Vec::new(),
+        },
+    )
+    .await
+    .unwrap();
+    let group = groups::replace_teachers(
+        &pool,
+        context.teacher_id,
+        group.id,
+        ReplaceLearningGroupTeachersRequest {
+            row_version: group.row_version,
+            teachers: vec![TeacherAssignmentInput {
+                teacher_id: context.teacher_id,
+                role: LearningTeacherRole::Primary,
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    groups::replace_homerooms(
+        &pool,
+        context.teacher_id,
+        group.id,
+        ReplaceLearningGroupHomeroomsRequest {
+            row_version: group.row_version,
+            homeroom_ids: vec![context.homeroom_id],
+        },
+    )
+    .await
+    .unwrap();
+    offerings::publish(
+        &pool,
+        context.teacher_id,
+        offering.id,
+        PublishLearningOfferingRequest {
+            row_version: offering.row_version,
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap();
+    let group = groups::get(&pool, group.id).await.unwrap();
+    let preview = groups::preview_roster(&pool, group.id).await.unwrap();
+    let group = groups::apply_roster(
+        &pool,
+        context.teacher_id,
+        group.id,
+        ApplyRosterRequest {
+            row_version: group.row_version,
+            source_hash: preview.source_hash.clone(),
+            overrides: Vec::new(),
+        },
+    )
+    .await
+    .unwrap();
+
+    let mut offering_blocker = pool.begin().await.unwrap();
+    sqlx::query("SELECT id FROM learning_offerings WHERE id = $1 FOR UPDATE")
+        .bind(offering.id)
+        .execute(&mut *offering_blocker)
+        .await
+        .unwrap();
+
+    let apply_pool = pool.clone();
+    let source_hash = preview.source_hash;
+    let group_id = group.id;
+    let actor_id = context.teacher_id;
+    let row_version = group.row_version;
+    let apply = tokio::spawn(async move {
+        groups::apply_roster(
+            &apply_pool,
+            actor_id,
+            group_id,
+            ApplyRosterRequest {
+                row_version,
+                source_hash,
+                overrides: Vec::new(),
+            },
+        )
+        .await
+    });
+    wait_for_offering_lock_waiters(&pool, 1).await;
+
+    let publish_pool = pool.clone();
+    let publish = tokio::spawn(async move {
+        groups::publish_roster(
+            &publish_pool,
+            actor_id,
+            group_id,
+            PublishRosterRequest {
+                row_version,
+                idempotency_key: Uuid::new_v4(),
+            },
+        )
+        .await
+    });
+    wait_for_offering_lock_waiters(&pool, 2).await;
+    offering_blocker.commit().await.unwrap();
+
+    let (apply_result, publish_result) =
+        tokio::time::timeout(std::time::Duration::from_secs(15), async {
+            tokio::join!(apply, publish)
+        })
+        .await
+        .expect("competing roster mutations must finish without a database deadlock");
+    let applied = apply_result
+        .unwrap()
+        .expect("the first offering-lock waiter must apply the roster");
+    assert_eq!(applied.row_version, row_version + 1);
+    let publish_result = publish_result.unwrap();
+    assert!(
+        matches!(publish_result, Err(AppError::Conflict(_))),
+        "the serialized stale publication must return an optimistic conflict, got {publish_result:?}"
+    );
 }
 
 #[tokio::test]
