@@ -77,7 +77,11 @@ function subject() {
 	};
 }
 
-function workspace(canManage: boolean, phaseCode: (typeof phaseCodes)[number]) {
+function workspace(
+	canManage: boolean,
+	phaseCode: (typeof phaseCodes)[number],
+	scoreValue: string | null = null
+) {
 	const index = phaseCodes.indexOf(phaseCode);
 	return {
 		learningGroupId: ids.group,
@@ -108,7 +112,18 @@ function workspace(canManage: boolean, phaseCode: (typeof phaseCodes)[number]) {
 				rowVersion: 1
 			}
 		],
-		scores: [],
+		scores:
+			scoreValue === null
+				? []
+				: [
+						{
+							scoreItemId:
+								index === 0 ? ids.item : `80000000-0000-4000-8000-00000000000${index + 1}`,
+							studentAcademicYearId: ids.student,
+							value: scoreValue,
+							rowVersion: 1
+						}
+					],
 		sourceChecksum: 'source-1',
 		rosterChecksum: 'roster-1',
 		confirmation: null,
@@ -120,15 +135,16 @@ async function mockGradebook(
 	page: Page,
 	canManage: boolean,
 	closedPhase?: string,
-	itemMaximum?: string
+	itemMaximum?: string,
+	initialScores?: Array<string | null>
 ) {
 	const controlRequests: string[] = [];
 	const scoreBodies: unknown[] = [];
 	const scorePaths: string[] = [];
 	const workspacePaths: string[] = [];
 	const itemPaths: string[] = [];
-	const workspaces = phaseCodes.map((phase) =>
-		workspace(canManage && phase !== closedPhase, phase)
+	const workspaces = phaseCodes.map((phase, index) =>
+		workspace(canManage && phase !== closedPhase, phase, initialScores?.[index])
 	);
 	if (itemMaximum) for (const row of workspaces) row.items[0]!.maxScore = itemMaximum;
 	await page.route(
@@ -269,6 +285,39 @@ async function mockGradebook(
 function gradebookUrl() {
 	return `/staff/academic/gradebook?academicYearId=${ids.year}&academicTermId=${ids.term}`;
 }
+
+test('loaded scores trim fractional zeros without changing decimals, zero or blanks', async ({
+	page
+}) => {
+	const observed = await mockGradebook(page, true, undefined, undefined, [
+		'5.00',
+		'5.50',
+		'5.25',
+		null
+	]);
+	await page.goto(gradebookUrl());
+	const cell = (phase: string) =>
+		page.getByRole('textbox', { name: `${phase} ชีท 1 เด็กชายทดสอบ ระบบ`, exact: true });
+	await expect(cell('ก่อนกลางภาค')).toHaveValue('5');
+	await expect(cell('กลางภาค')).toHaveValue('5.5');
+	await expect(cell('หลังกลางภาค')).toHaveValue('5.25');
+	await expect(cell('ปลายภาค')).toHaveValue('');
+	await page.reload();
+	await expect(cell('ก่อนกลางภาค')).toHaveValue('5');
+	await page.getByRole('button', { name: 'เลือกทุกช่อง' }).click();
+	await cell('ก่อนกลางภาค').press('Tab');
+	await cell('ปลายภาค').fill('0');
+	await cell('ปลายภาค').press('Tab');
+	await expect.poll(() => observed.scoreBodies.length).toBe(1);
+	expect(observed.scoreBodies[0]).toMatchObject({
+		cells: [{ scoreItemId: '80000000-0000-4000-8000-000000000004', value: '0' }]
+	});
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page
+		.getByRole('button', { name: 'เปิดกรอก ก่อนกลางภาค ชีท 1 เด็กชายทดสอบ ระบบ', exact: true })
+		.click();
+	await expect(page.getByRole('dialog').getByRole('textbox')).toHaveValue('5');
+});
 
 for (const key of ['Tab', 'Enter']) {
 	test(`${key} moves focus while saving is pending without losing subsequent scores`, async ({

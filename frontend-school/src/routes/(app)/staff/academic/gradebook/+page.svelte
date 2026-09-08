@@ -9,6 +9,7 @@
 		registerAcademicContextDirtySource
 	} from '$lib/academic-context/store';
 	import {
+		formatGradebookScore,
 		selectNewGradebookItem,
 		type GradebookCellPosition,
 		type ScorePasteMutation
@@ -321,7 +322,7 @@
 		const versions: Record<string, number | null> = {};
 		for (const score of workspaces.flatMap((workspace) => workspace.scores)) {
 			const key = cellKey(score.studentAcademicYearId, score.scoreItemId);
-			values[key] = score.value ?? null;
+			values[key] = formatGradebookScore(score.value);
 			versions[key] = score.rowVersion ?? null;
 		}
 		scoreValues = values;
@@ -669,10 +670,11 @@
 			const phaseCode = phaseCodes.find((code) => code === workspacePhase);
 			if (!phaseCode) return false;
 			const key = cellKey(mutation.studentId, mutation.itemId);
-			if ((scoreValues[key] ?? null) === mutation.value) continue;
-			nextValues[key] = mutation.value;
+			const value = formatGradebookScore(mutation.value);
+			if ((scoreValues[key] ?? null) === value) continue;
+			nextValues[key] = value;
 			scoreQueue.enqueue(
-				mutation.value === null
+				value === null
 					? {
 							operation: 'clear',
 							phaseCode,
@@ -685,7 +687,7 @@
 							phaseCode,
 							scoreItemId: mutation.itemId,
 							studentAcademicYearId: mutation.studentId,
-							value: mutation.value,
+							value,
 							rowVersion: scoreVersions[key] ?? null
 						}
 			);

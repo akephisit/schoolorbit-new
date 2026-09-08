@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
 	clearGradebookItemSelection,
+	formatGradebookScore,
 	nextEditableCell,
 	normalizeScorePaste,
 	selectAllGradebookItems,
@@ -12,6 +13,24 @@ import {
 
 const itemIds = ['item-a', 'item-b', 'item-c'];
 const studentIds = ['student-1', 'student-2', 'student-3'];
+
+test('score display removes only fractional trailing zeros and preserves missing values', () => {
+	for (const [raw, expected] of [
+		['5.00', '5'],
+		['5.50', '5.5'],
+		['5.25', '5.25'],
+		['0.00', '0'],
+		['0', '0'],
+		['50', '50'],
+		['50.00', '50'],
+		['0.01', '0.01'],
+		['', ''],
+		[null, null],
+		[undefined, null]
+	] as const) {
+		assert.equal(formatGradebookScore(raw), expected);
+	}
+});
 
 test('gradebook item selection starts empty, selects all, clears, and selects a new item', () => {
 	assert.deepEqual(clearGradebookItemSelection(), []);

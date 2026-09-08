@@ -33,6 +33,12 @@ export type ScorePasteResult =
 const MAX_PASTE_CELLS = 500;
 const SCORE_DECIMAL = /^(0|[1-9]\d*)(\.\d{1,2})?$/;
 
+export function formatGradebookScore(value: string | null | undefined): string | null {
+	if (value == null) return null;
+	if (!value.includes('.')) return value;
+	return value.replace(/0+$/, '').replace(/\.$/, '');
+}
+
 function uniqueIds(ids: readonly string[]): string[] {
 	return [...new Set(ids.filter((id) => id.length > 0))];
 }
