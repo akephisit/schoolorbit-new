@@ -80,7 +80,7 @@ After deployment, verify readiness first, then run the smoke test and the releva
 ### Build, deployment timing, and image retention
 
 Backend image builds keep separate BuildKit cache scopes for admin and school. Rust, cargo-chef, and
-sccache are pinned in each Dockerfile. GitHub's cache runtime reaches only the final Cargo build as
+sccache (admin only) are pinned in their Dockerfiles. GitHub's cache runtime reaches only the admin final Cargo build as
 BuildKit secrets; a missing or unavailable compiler cache falls back to an ordinary Cargo build.
 Every build also publishes a `cargo-timings-backend-*` HTML artifact for seven days. Compare the
 Cargo report, sccache statistics, and GitHub step duration rather than treating one cache marker as
@@ -92,6 +92,11 @@ layer when `Cargo.toml` and `Cargo.lock` are unchanged. sccache may reuse eligib
 but it cannot avoid every changed-crate compile or the final link. If two ordinary warm builds show
 no useful hits or increase total duration, remove the sccache integration while retaining the pinned
 toolchain, Cargo timing artifact, and BuildKit cache.
+
+School uses plain Cargo for the final binary build: two source-changing CI runs reported zero
+compiler-cache hits and non-cacheable `crate-type` calls. Dependency layers and timing artifacts
+remain enabled. This removes unused compiler-cache machinery; it does not eliminate application
+compilation or promise a faster final link.
 
 Each backend deploy emits bounded `deployment_timing phase=<name> seconds=<integer>` records.
 Admin reports image pull, backend readiness, and origin verification. School additionally reports
@@ -114,6 +119,9 @@ The school deploy pulls the pinned ClamAV image and reuses `schoolorbit-clamd` o
 volume, two networks, running state, and health all match the canonical Compose definition. It emits
 `clamd_action=reused` when exact; otherwise it recreates only that container, emits a bounded reason,
 preserves the signature volume, and waits through the same health gate.
+Scanner creation also passes `--pids-limit=256` directly to Podman because podman-compose before
+1.4 ignores `pids_limit`. This compatibility flag applies only to clamd, with `--no-deps`;
+deployment verifies the resulting PID limit before proceeding. Keep this value aligned with Compose.
 
 GHCR retention runs weekly and can be dispatched manually. It preserves `latest`, the 30 newest
 SHA-tagged releases for each backend, and every untagged or unrecognized version such as an

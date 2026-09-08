@@ -7,14 +7,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 RUN cargo install cargo-chef --version 0.1.78 --locked
-ADD --checksum=sha256:67c4a96dd237c1f518f6b36083f270f9976d516f1e57fce891755ea782e50006 \
-    https://github.com/mozilla/sccache/releases/download/v0.17.0/sccache-v0.17.0-x86_64-unknown-linux-musl.tar.gz \
-    /tmp/sccache.tar.gz
-RUN tar -xzf /tmp/sccache.tar.gz -C /tmp \
-    && install -m 0755 \
-        /tmp/sccache-v0.17.0-x86_64-unknown-linux-musl/sccache \
-        /usr/local/bin/sccache \
-    && rm -rf /tmp/sccache.tar.gz /tmp/sccache-v0.17.0-x86_64-unknown-linux-musl
 WORKDIR /app
 
 FROM base AS planner
@@ -25,19 +17,9 @@ FROM base AS builder
 COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 COPY . .
-RUN --mount=type=secret,id=sccache_gha_url,env=ACTIONS_RESULTS_URL \
-    --mount=type=secret,id=sccache_gha_token,env=ACTIONS_RUNTIME_TOKEN \
-    if [ -n "${ACTIONS_RESULTS_URL:-}" ] && [ -n "${ACTIONS_RUNTIME_TOKEN:-}" ]; then \
-        SCCACHE_GHA_ENABLED=on \
-        SCCACHE_GHA_CACHE_TO=schoolorbit-backend-school \
-        SCCACHE_GHA_CACHE_FROM=schoolorbit-backend-school \
-        SCCACHE_IGNORE_SERVER_IO_ERROR=1 \
-        RUSTC_WRAPPER=/usr/local/bin/sccache \
-        cargo build --release --bin backend-school --timings; \
-        /usr/local/bin/sccache --show-stats || true; \
-    else \
-        cargo build --release --bin backend-school --timings; \
-    fi
+# This binary-only build cannot reuse sccache outputs (crate-type); dependency
+# reuse remains owned by the cargo-chef layer above.
+RUN cargo build --release --bin backend-school --timings
 
 FROM scratch AS build-timings
 COPY --from=builder /app/target/cargo-timings/cargo-timing.html /cargo-timing.html

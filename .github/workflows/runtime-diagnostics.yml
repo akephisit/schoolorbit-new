@@ -19,6 +19,15 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             set -eu
+            podman --version
+            podman-compose version
+            if podman container exists schoolorbit-clamd; then
+              podman inspect --format 'clamd_pids_limit={{.HostConfig.PidsLimit}}' schoolorbit-clamd
+              if [ -x /opt/stack/deployment/scripts/clamd_runtime_matches.sh ]; then
+                /opt/stack/deployment/scripts/clamd_runtime_matches.sh \
+                  docker.io/clamav/clamav-debian:1.5.3 schoolorbit-clamd || true
+              fi
+            fi
             graph_root="$(podman info --format '{{.Store.GraphRoot}}' 2>/dev/null || true)"
             if [ -n "$graph_root" ]; then
               df -P "$graph_root" || true

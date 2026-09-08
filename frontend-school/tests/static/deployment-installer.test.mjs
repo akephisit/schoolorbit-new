@@ -220,6 +220,40 @@ test('backend-school deployment reuses only an exact ClamAV runtime and verifies
 	assert.doesNotMatch(scannerDeployment, /podman volume (?:rm|prune)/);
 });
 
+test('scanner creation passes PID limit to older Compose without affecting other services', async () => {
+	const workflow = await readRepo('.github/workflows/deploy-backend-school.yml');
+	const helper = workflow.slice(
+		workflow.indexOf('            compose_up_quiet() {'),
+		workflow.indexOf('            reconnect_backend_network() {')
+	);
+	const compose = await readRepo('podman-compose.yml');
+	const limit = compose.slice(compose.indexOf('  clamd:')).match(/pids_limit: (\d+)/)[1];
+	const { stdout } = await execFileAsync(
+		'bash',
+		[
+			'-c',
+			`
+set -eu
+exec 3>&1
+runtime_compose=/fixture/compose.yml
+podman-compose() { printf '%s\\n' "$*" >&3; }
+${helper}
+compose_up_quiet clamd
+compose_up_quiet --no-deps backend-school
+compose_up_quiet nginx
+`,
+			'benchmark'
+		],
+		{ shell: false }
+	);
+	assert.deepEqual(stdout.trim().split('\n'), [
+		`--podman-run-args=--pids-limit=${limit} -f /fixture/compose.yml up -d --no-deps clamd`,
+		'-f /fixture/compose.yml up -d --no-deps backend-school',
+		'-f /fixture/compose.yml up -d nginx'
+	]);
+	assert.match(workflow, /if \[ "\$clamd_pids_limit" != 256 \]; then\s+echo [^\n]+\s+exit 1/);
+});
+
 test('backend-school replacement force-removes the stale container without touching dependencies', async () => {
 	const workflow = await readRepo('.github/workflows/deploy-backend-school.yml');
 	const replacementStart = workflow.indexOf(
@@ -540,16 +574,24 @@ test('backend runtime images use deterministic builders without ownership copy-u
 		assert.match(dockerfile, /^# syntax=docker\/dockerfile:1\.10$/m);
 		assert.match(dockerfile, /FROM rust:1\.98\.0-slim-bookworm AS base/);
 		assert.match(dockerfile, /cargo install cargo-chef --version 0\.1\.78 --locked/);
-		assert.match(dockerfile, /sccache-v0\.17\.0-x86_64-unknown-linux-musl\.tar\.gz/);
-		assert.match(
-			dockerfile,
-			/--checksum=sha256:67c4a96dd237c1f518f6b36083f270f9976d516f1e57fce891755ea782e50006/
-		);
-		assert.match(dockerfile, /--mount=type=secret,id=sccache_gha_url,env=ACTIONS_RESULTS_URL/);
-		assert.match(dockerfile, /--mount=type=secret,id=sccache_gha_token,env=ACTIONS_RUNTIME_TOKEN/);
-		assert.match(dockerfile, /SCCACHE_GHA_ENABLED=on/);
-		assert.match(dockerfile, new RegExp(`SCCACHE_GHA_CACHE_TO=schoolorbit-${binary}`));
-		assert.match(dockerfile, /SCCACHE_IGNORE_SERVER_IO_ERROR=1/);
+		if (binary === 'backend-admin') {
+			assert.match(dockerfile, /sccache-v0\.17\.0-x86_64-unknown-linux-musl\.tar\.gz/);
+			assert.match(
+				dockerfile,
+				/--checksum=sha256:67c4a96dd237c1f518f6b36083f270f9976d516f1e57fce891755ea782e50006/
+			);
+			assert.match(dockerfile, /--mount=type=secret,id=sccache_gha_url,env=ACTIONS_RESULTS_URL/);
+			assert.match(
+				dockerfile,
+				/--mount=type=secret,id=sccache_gha_token,env=ACTIONS_RUNTIME_TOKEN/
+			);
+			assert.match(dockerfile, /SCCACHE_GHA_ENABLED=on/);
+			assert.match(dockerfile, new RegExp(`SCCACHE_GHA_CACHE_TO=schoolorbit-${binary}`));
+			assert.match(dockerfile, /SCCACHE_IGNORE_SERVER_IO_ERROR=1/);
+		} else {
+			assert.doesNotMatch(dockerfile, /RUSTC_WRAPPER|SCCACHE_GHA|type=secret/);
+			assert.match(dockerfile, /RUN cargo chef cook --release --recipe-path recipe.json/);
+		}
 		assert.match(dockerfile, new RegExp(`cargo build --release --bin ${binary} --timings`));
 		assert.match(dockerfile, /FROM scratch AS build-timings/);
 		assert.match(
@@ -564,7 +606,7 @@ test('backend runtime images use deterministic builders without ownership copy-u
 	}
 });
 
-test('backend workflows export Cargo timing artifacts with secret-mounted sccache credentials', async () => {
+test('backend workflows export Cargo timings and only admin uses compiler cache credentials', async () => {
 	const workflows = new Map([
 		['.github/workflows/deploy-backend-admin.yml', 'backend-admin'],
 		['.github/workflows/deploy-backend-school.yml', 'backend-school']
@@ -573,17 +615,22 @@ test('backend workflows export Cargo timing artifacts with secret-mounted sccach
 	for (const [file, backend] of workflows) {
 		const workflow = await readRepo(file);
 
-		assert.match(workflow, /uses: actions\/github-script@v8/);
-		assert.match(
-			workflow,
-			/core\.exportVariable\('ACTIONS_RESULTS_URL', process\.env\.ACTIONS_RESULTS_URL \|\| ''\)/
-		);
-		assert.match(
-			workflow,
-			/core\.exportVariable\('ACTIONS_RUNTIME_TOKEN', process\.env\.ACTIONS_RUNTIME_TOKEN \|\| ''\)/
-		);
-		assert.match(workflow, /secret-envs:\s*\|\s*\n\s*sccache_gha_url=ACTIONS_RESULTS_URL/);
-		assert.match(workflow, /sccache_gha_token=ACTIONS_RUNTIME_TOKEN/);
+		if (backend === 'backend-admin') {
+			assert.match(workflow, /uses: actions\/github-script@v8/);
+			assert.match(
+				workflow,
+				/core\.exportVariable\('ACTIONS_RESULTS_URL', process\.env\.ACTIONS_RESULTS_URL \|\| ''\)/
+			);
+			assert.match(
+				workflow,
+				/core\.exportVariable\('ACTIONS_RUNTIME_TOKEN', process\.env\.ACTIONS_RUNTIME_TOKEN \|\| ''\)/
+			);
+			assert.match(workflow, /secret-envs:\s*\|\s*\n\s*sccache_gha_url=ACTIONS_RESULTS_URL/);
+			assert.match(workflow, /sccache_gha_token=ACTIONS_RUNTIME_TOKEN/);
+		} else {
+			assert.doesNotMatch(workflow, /sccache_|ACTIONS_RUNTIME_TOKEN/);
+			assert.match(workflow, /cache-from: type=gha,scope=backend-school/);
+		}
 		assert.match(workflow, /target: build-timings/);
 		assert.match(workflow, /push: false/);
 		assert.match(

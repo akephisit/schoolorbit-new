@@ -74,13 +74,6 @@ jobs:
             image=moby/buildkit:latest
             network=host
 
-      - name: Configure sccache cache runtime
-        uses: actions/github-script@v8
-        with:
-          script: |
-            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '')
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '')
-
       - name: Build and push Docker image
         uses: docker/build-push-action@v7
         with:
@@ -91,9 +84,6 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=backend-school
           cache-to: type=gha,scope=backend-school,mode=max
-          secret-envs: |
-            sccache_gha_url=ACTIONS_RESULTS_URL
-            sccache_gha_token=ACTIONS_RUNTIME_TOKEN
 
       - name: Export Cargo timing report
         uses: docker/build-push-action@v7
@@ -103,9 +93,6 @@ jobs:
           push: false
           outputs: type=local,dest=${{ runner.temp }}/cargo-timings-backend-school
           cache-from: type=gha,scope=backend-school
-          secret-envs: |
-            sccache_gha_url=ACTIONS_RESULTS_URL
-            sccache_gha_token=ACTIONS_RUNTIME_TOKEN
 
       - name: Upload Cargo timing report
         uses: actions/upload-artifact@v6
@@ -408,7 +395,14 @@ jobs:
 
             . "$network_helper_source"
             compose_up_quiet() {
-              podman-compose -f "$runtime_compose" up -d "$@" >/dev/null 2>&1
+              if [ "$#" -eq 1 ] && [ "$1" = clamd ]; then
+                # podman-compose <1.4 ignores the service's pids_limit.
+                # Restrict this compatibility flag to the scanner only.
+                podman-compose --podman-run-args='--pids-limit=256' \
+                  -f "$runtime_compose" up -d --no-deps clamd >/dev/null 2>&1
+              else
+                podman-compose -f "$runtime_compose" up -d "$@" >/dev/null 2>&1
+              fi
             }
             reconnect_backend_network() {
               container=$1
@@ -474,6 +468,11 @@ jobs:
             fi
 
             expected_clamd_memory_bytes=$((3 * 1024 * 1024 * 1024))
+            clamd_pids_limit="$(podman inspect --format '{{.HostConfig.PidsLimit}}' schoolorbit-clamd)"
+            if [ "$clamd_pids_limit" != 256 ]; then
+              echo "Clamd PID limit mismatch after creation; refusing to continue"
+              exit 1
+            fi
             clamd_memory_bytes="$(podman inspect --format '{{.HostConfig.Memory}}' schoolorbit-clamd)"
             if [ "$clamd_memory_bytes" != "$expected_clamd_memory_bytes" ]; then
               echo "Clamd memory limit mismatch: expected ${expected_clamd_memory_bytes} bytes, got ${clamd_memory_bytes} bytes"
