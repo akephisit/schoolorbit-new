@@ -1,5 +1,6 @@
 use crate::error::AppError;
 use crate::modules::menu::models::{RouteItem, RouteRegistration};
+use crate::modules::menu::services::academic_template_service::recommended_section;
 use sqlx::{PgPool, Postgres, Transaction};
 use std::collections::HashSet;
 
@@ -170,14 +171,23 @@ async fn ensure_route_navigation_defaults(
         AppError::InternalServerError("Failed to synchronize menu routes".to_string())
     })?;
 
+    let defaults = recommended_section(group_code);
     sqlx::query(
         "INSERT INTO menu_groups
             (code, name, name_en, icon, display_order, workspace_code)
-         VALUES ($1, $1, $1, 'folder', 900, $2)
+         VALUES ($1, $3, $4, $5, $6, $2)
          ON CONFLICT (code) DO NOTHING",
     )
     .bind(group_code)
     .bind(workspace_code)
+    .bind(defaults.map(|section| section.name).unwrap_or(group_code))
+    .bind(
+        defaults
+            .map(|section| section.name_en)
+            .unwrap_or(group_code),
+    )
+    .bind(defaults.map(|section| section.icon).unwrap_or("folder"))
+    .bind(defaults.map(|section| section.display_order).unwrap_or(900))
     .execute(&mut **transaction)
     .await
     .map_err(|error| {
@@ -292,6 +302,84 @@ mod tests {
         assert_eq!(route_workspace_code(None, "academic"), "academic");
         assert_eq!(route_workspace_code(None, "budget"), "budget");
         assert_eq!(route_workspace_code(None, "general_admin"), "operations");
+    }
+
+    #[tokio::test]
+    async fn assessment_label_migration_repairs_only_placeholder_preserving_layout() {
+        let pool = route_sync_test_pool("assessment_label_repair").await;
+        let original_id: Uuid = sqlx::query_scalar("UPDATE menu_groups SET name=code,name_en=code,icon='folder',display_order=99,is_active=false,workspace_code='home' WHERE code='academic_assessment' RETURNING id")
+            .fetch_one(&pool).await.unwrap();
+        let migration = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/migrations/063_academic_assessment_menu_label.sql"
+        ));
+        sqlx::raw_sql(migration).execute(&pool).await.unwrap();
+        let row: (Uuid, String, String, String, i32, bool, String) = sqlx::query_as(
+            "SELECT id,name,name_en,icon,display_order,is_active,workspace_code FROM menu_groups WHERE code='academic_assessment'"
+        ).fetch_one(&pool).await.unwrap();
+        assert_eq!(
+            row,
+            (
+                original_id,
+                "งานวัดผลและประเมินผล".into(),
+                "Measurement and Evaluation".into(),
+                "badge-check".into(),
+                99,
+                false,
+                "home".into()
+            )
+        );
+        sqlx::query("UPDATE menu_groups SET name='ฝ่ายคะแนน',name_en='School scoring',icon='star' WHERE code='academic_assessment'")
+            .execute(&pool).await.unwrap();
+        sqlx::raw_sql(migration).execute(&pool).await.unwrap();
+        let row: (String, String, String) = sqlx::query_as(
+            "SELECT name,name_en,icon FROM menu_groups WHERE code='academic_assessment'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            row,
+            ("ฝ่ายคะแนน".into(), "School scoring".into(), "star".into())
+        );
+    }
+
+    #[tokio::test]
+    async fn academic_section_defaults_are_named_and_school_customization_survives() {
+        let pool = route_sync_test_pool("route_sync_academic_names").await;
+        sqlx::query("DELETE FROM menu_groups WHERE code='academic_assessment'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        ensure_route_navigation_defaults(&mut tx, "academic_assessment", "academic")
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        let row: (String, Option<String>, i32) = sqlx::query_as(
+            "SELECT name,icon,display_order FROM menu_groups WHERE code='academic_assessment'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            row,
+            ("งานวัดผลและประเมินผล".into(), Some("badge-check".into()), 40)
+        );
+        sqlx::query("UPDATE menu_groups SET name='งานคะแนนของโรงเรียน',icon='star',display_order=78,is_active=false WHERE code='academic_assessment'")
+            .execute(&pool).await.unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        ensure_route_navigation_defaults(&mut tx, "academic_assessment", "academic")
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        let row: (String, Option<String>, i32, bool) = sqlx::query_as(
+            "SELECT name,icon,display_order,is_active FROM menu_groups WHERE code='academic_assessment'"
+        ).fetch_one(&pool).await.unwrap();
+        assert_eq!(
+            row,
+            ("งานคะแนนของโรงเรียน".into(), Some("star".into()), 78, false)
+        );
     }
 
     #[tokio::test]

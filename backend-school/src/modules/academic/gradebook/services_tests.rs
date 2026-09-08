@@ -814,6 +814,26 @@ async fn gradebook_lists_union_exact_unit_and_assignments() {
     let assigned_rows = list_subjects(&pool, &assigned, &context).await.unwrap();
     let organization_rows = list_subjects(&pool, &organization, &context).await.unwrap();
     assert!(!assigned_rows.is_empty());
+    assert!(assigned_rows.iter().all(|row| row.assigned));
+    let unassigned_teacher = ActorContext {
+        user_id: Uuid::new_v4(),
+        permissions: vec![codes::ACADEMIC_GRADEBOOK_READ_ASSIGNED.into()],
+    };
+    assert!(list_subjects(&pool, &unassigned_teacher, &context)
+        .await
+        .unwrap()
+        .is_empty());
+    let school_reader = ActorContext {
+        user_id: unassigned_teacher.user_id,
+        permissions: vec![codes::ACADEMIC_GRADEBOOK_READ_SCHOOL.into()],
+    };
+    assert_eq!(
+        list_subjects(&pool, &school_reader, &context)
+            .await
+            .unwrap()
+            .len(),
+        school.len()
+    );
     assert!(!organization_rows.is_empty());
     let union = list_subjects(&pool, &both, &context).await.unwrap();
     for row in assigned_rows.iter().chain(organization_rows.iter()) {

@@ -11,12 +11,19 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 #[derive(Clone, Copy)]
-struct RecommendedSectionDefinition {
+pub(crate) struct RecommendedSectionDefinition {
     code: &'static str,
-    name: &'static str,
-    name_en: &'static str,
-    icon: &'static str,
-    display_order: i32,
+    pub(crate) name: &'static str,
+    pub(crate) name_en: &'static str,
+    pub(crate) icon: &'static str,
+    pub(crate) display_order: i32,
+}
+
+pub(crate) fn recommended_section(code: &str) -> Option<RecommendedSectionDefinition> {
+    RECOMMENDED_SECTIONS
+        .iter()
+        .find(|section| section.code == code)
+        .copied()
 }
 
 const ACADEMIC_WORKSPACE_CODE: &str = "academic";
