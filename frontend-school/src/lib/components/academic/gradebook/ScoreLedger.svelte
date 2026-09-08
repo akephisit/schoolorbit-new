@@ -24,7 +24,6 @@
 		disabled = false,
 		onselectionchange,
 		onmutations,
-		onflush,
 		onopenitem,
 		onopenmobile,
 		onconfirm,
@@ -36,7 +35,6 @@
 		disabled?: boolean;
 		onselectionchange: (ids: string[]) => void;
 		onmutations: (mutations: ScorePasteMutation[]) => boolean;
-		onflush: () => Promise<void>;
 		onopenitem: (phase: GradebookPhaseCode, item: GradebookScoreItem | null) => void;
 		onopenmobile: (position: GradebookCellPosition) => void;
 		onconfirm: (phase: GradebookPhaseCode) => void;
@@ -101,7 +99,7 @@
 		}
 		return onmutations(result.mutations);
 	}
-	async function handleKeydown(event: KeyboardEvent, position: GradebookCellPosition) {
+	function handleKeydown(event: KeyboardEvent, position: GradebookCellPosition) {
 		if (event.key !== 'Tab' && event.key !== 'Enter') return;
 		event.preventDefault();
 		if (!commitCell(position, (event.currentTarget as HTMLInputElement).value)) return;
@@ -114,12 +112,8 @@
 					? 'enter_up'
 					: 'enter_down';
 		const next = nextEditableCell(position, editableIds, studentIds, direction);
-		try {
-			await onflush();
-			if (next) document.getElementById(cellId(next))?.focus();
-		} catch (error) {
-			onerror(error instanceof Error ? error.message : 'บันทึกคะแนนไม่สำเร็จ');
-		}
+		// Committed values are already queued; keyboard navigation must not wait for the network.
+		if (next) document.getElementById(cellId(next))?.focus();
 	}
 	function handlePaste(event: ClipboardEvent, position: GradebookCellPosition) {
 		const text = event.clipboardData?.getData('text/plain');
@@ -287,7 +281,7 @@
 											' ' +
 											student.displayName}
 										onchange={(event) => commitCell(position, event.currentTarget.value)}
-										onkeydown={(event) => void handleKeydown(event, position)}
+										onkeydown={(event) => handleKeydown(event, position)}
 										onpaste={(event) => handlePaste(event, position)}
 									/>
 									{#if phase.editable}<Button

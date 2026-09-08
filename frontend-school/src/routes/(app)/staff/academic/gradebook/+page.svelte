@@ -1232,9 +1232,6 @@
 						Boolean(controlBusyKey)}
 					onselectionchange={(ids) => (selectedItemIds = ids)}
 					onmutations={applyScoreMutations}
-					onflush={async () => {
-						await scoreQueue.flush();
-					}}
 					onopenitem={openItemDialog}
 					onopenmobile={(position: GradebookCellPosition) =>
 						(mobileCell = { mode: 'score', ...position })}

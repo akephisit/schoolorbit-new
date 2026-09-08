@@ -270,6 +270,57 @@ function gradebookUrl() {
 	return `/staff/academic/gradebook?academicYearId=${ids.year}&academicTermId=${ids.term}`;
 }
 
+for (const key of ['Tab', 'Enter']) {
+	test(`${key} moves focus while saving is pending without losing subsequent scores`, async ({
+		page
+	}) => {
+		const observed = await mockGradebook(page, true);
+		let releaseSave!: () => void;
+		const saveGate = new Promise<void>((resolve) => {
+			releaseSave = resolve;
+		});
+		let savingStarted = false;
+		await page.route(
+			(url) => url.pathname.endsWith('/scores'),
+			async (route) => {
+				savingStarted = true;
+				await saveGate;
+				await route.fallback();
+			}
+		);
+		await page.goto(gradebookUrl());
+		await page.getByRole('button', { name: 'เลือกทุกช่อง' }).click();
+		const cell = (phase: string) =>
+			page.getByRole('textbox', {
+				name: `${phase} ชีท 1 เด็กชายทดสอบ ระบบ`,
+				exact: true
+			});
+		try {
+			await cell('ก่อนกลางภาค').fill('5');
+			await cell('ก่อนกลางภาค').press(key);
+			await expect.poll(() => savingStarted).toBe(true);
+			await expect(cell('กลางภาค')).toBeFocused();
+			await cell('กลางภาค').fill('7');
+			await cell('กลางภาค').press(key);
+			await expect(cell('หลังกลางภาค')).toBeFocused();
+			await cell('หลังกลางภาค').press(`Shift+${key}`);
+			await expect(cell('กลางภาค')).toBeFocused();
+		} finally {
+			releaseSave();
+		}
+		await expect.poll(() => observed.scoreBodies.length).toBe(2);
+		expect(observed.scoreBodies[0]).toMatchObject({
+			cells: [{ scoreItemId: ids.item, value: '5' }]
+		});
+		expect(observed.scoreBodies[1]).toMatchObject({
+			cells: [{ scoreItemId: '80000000-0000-4000-8000-000000000002', value: '7' }]
+		});
+		await expect(cell('ก่อนกลางภาค')).toHaveValue('5');
+		await expect(cell('กลางภาค')).toHaveValue('7');
+		await expect(cell('กลางภาค')).toBeFocused();
+	});
+}
+
 test('teacher selects a score column and autosaves an explicit zero', async ({ page }) => {
 	const observed = await mockGradebook(page, true);
 	await page.goto(gradebookUrl());
