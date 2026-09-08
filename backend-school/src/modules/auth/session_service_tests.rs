@@ -42,6 +42,193 @@ struct AuthServiceFixture {
     next_token_byte: AtomicU8,
 }
 
+#[tokio::test]
+async fn authentication_cache_serves_bursts_without_database_and_expires_closed() {
+    let fixture = AuthServiceFixture::new("service_cache_burst").await;
+    fixture
+        .insert_user("teacher.cache", "password-one", "active")
+        .await;
+    let token = [201; 32];
+    fixture
+        .login_with_token("teacher.cache", "password-one", false, fixture.now, token)
+        .await
+        .unwrap();
+    let hash = RawSessionToken::from_bytes(token).token_hash();
+    let first = authenticate(
+        &fixture.context,
+        hash,
+        fixture.now,
+        SessionMaintenanceMode::RotateAndTouch,
+        || panic!("rotation is not due"),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    fixture.pool.close().await;
+    let cached = authenticate(
+        &fixture.context,
+        hash,
+        fixture.now + Duration::seconds(1),
+        SessionMaintenanceMode::RotateAndTouch,
+        || panic!("cache hits cannot rotate"),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        first.authenticated.session_id,
+        cached.authenticated.session_id
+    );
+    assert!(cached.replacement.is_none());
+    let expired = authenticate(
+        &fixture.context,
+        hash,
+        fixture.now + Duration::seconds(60),
+        SessionMaintenanceMode::RotateAndTouch,
+        || panic!("closed database"),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(expired.status_code(), StatusCode::SERVICE_UNAVAILABLE);
+}
+
+#[tokio::test]
+async fn session_mutations_invalidate_warm_authentication_and_realtime() {
+    let fixture = AuthServiceFixture::new("service_cache_revocation").await;
+    fixture
+        .insert_user("teacher.cache", "password-one", "active")
+        .await;
+    for mutation in ["logout", "selected", "all", "password"] {
+        let current = fixture
+            .login("teacher.cache", "password-one")
+            .await
+            .unwrap();
+        let hash = current.credential.token_hash();
+        authenticate(
+            &fixture.context,
+            hash,
+            fixture.now,
+            SessionMaintenanceMode::RotateAndTouch,
+            || panic!("rotation not due"),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(revalidate(&current.authenticated, fixture.now)
+            .await
+            .unwrap());
+        match mutation {
+            "logout" => {
+                logout(&fixture.context, &current.authenticated, fixture.now)
+                    .await
+                    .unwrap();
+            }
+            "selected" => {
+                revoke_selected(
+                    &fixture.context,
+                    &current.authenticated,
+                    current.authenticated.session_id,
+                    fixture.now,
+                )
+                .await
+                .unwrap();
+            }
+            "all" => {
+                logout_all(&fixture.context, &current.authenticated, fixture.now)
+                    .await
+                    .unwrap();
+            }
+            _ => {
+                change_password(
+                    &fixture.context,
+                    &current.authenticated,
+                    "password-one",
+                    "password-two",
+                    fixture.now,
+                    AuthServiceFixture::credentials([202; 32]),
+                )
+                .await
+                .unwrap();
+                // The old credential intentionally has a 60-second grace period,
+                // but that acceptance must be re-read from the database, not cache.
+                fixture.pool.close().await;
+                assert!(authenticate(
+                    &fixture.context,
+                    hash,
+                    fixture.now,
+                    SessionMaintenanceMode::RotateAndTouch,
+                    || panic!("closed database")
+                )
+                .await
+                .is_err());
+                assert!(revalidate(&current.authenticated, fixture.now)
+                    .await
+                    .is_err());
+                continue;
+            }
+        }
+        assert!(
+            authenticate(
+                &fixture.context,
+                hash,
+                fixture.now,
+                SessionMaintenanceMode::RotateAndTouch,
+                || panic!("revoked credentials cannot rotate")
+            )
+            .await
+            .unwrap()
+            .is_none(),
+            "mutation: {mutation}"
+        );
+        assert!(!revalidate(&current.authenticated, fixture.now)
+            .await
+            .unwrap());
+    }
+}
+
+#[tokio::test]
+async fn deactivated_account_is_rejected_after_identity_invalidation() {
+    let fixture = AuthServiceFixture::new("service_cache_deactivation").await;
+    let user_id = fixture
+        .insert_user("teacher.cache", "password-one", "active")
+        .await;
+    let current = fixture
+        .login("teacher.cache", "password-one")
+        .await
+        .unwrap();
+    let hash = current.credential.token_hash();
+    authenticate(
+        &fixture.context,
+        hash,
+        fixture.now,
+        SessionMaintenanceMode::RotateAndTouch,
+        || panic!("rotation not due"),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    crate::modules::staff::services::staff_service::soft_delete_staff(&fixture.pool, user_id)
+        .await
+        .unwrap();
+    current
+        .authenticated
+        .identity_cache
+        .invalidate_identity_user(&fixture.context.tenant().subdomain, user_id);
+    assert!(authenticate(
+        &fixture.context,
+        hash,
+        fixture.now,
+        SessionMaintenanceMode::RotateAndTouch,
+        || panic!("inactive user must not rotate")
+    )
+    .await
+    .unwrap()
+    .is_none());
+    assert!(!revalidate(&current.authenticated, fixture.now)
+        .await
+        .unwrap());
+}
+
 impl AuthServiceFixture {
     async fn new(test_name: &str) -> Self {
         let pool = create_named_test_pool(test_name).await;

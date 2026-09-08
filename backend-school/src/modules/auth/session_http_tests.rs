@@ -133,6 +133,7 @@ impl HandlerFixture {
         username: &str,
     ) -> AuthenticatedSession {
         AuthenticatedSession {
+            identity_cache: Arc::clone(&self.runtime.permission_cache.session_cache),
             tenant: self.tenant.clone(),
             session_id,
             user_id,

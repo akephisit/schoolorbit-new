@@ -29,9 +29,9 @@ use super::{
     },
     session_repository::{
         apply_password_change, authenticate_and_maintain, cleanup_auth_state, list_user_sessions,
-        load_password_change_snapshot, lock_password_change, revalidate_session, revoke_sessions,
-        NewSession, SessionMaintenanceMode, SessionRevocationReason, SessionRevocationTarget,
-        SessionRow,
+        load_password_change_snapshot, load_session_validity, lock_password_change,
+        revoke_sessions, NewSession, SessionMaintenanceMode, SessionRevocationReason,
+        SessionRevocationTarget, SessionRow,
     },
     throttle_repository::{check_login_throttles, record_login_failure, ThrottleState},
 };
@@ -76,6 +76,7 @@ impl SessionServiceContext {
 
 #[derive(Clone)]
 pub struct AuthenticatedSession {
+    pub(crate) identity_cache: Arc<super::session_cache::SessionCache>,
     pub tenant: TenantContext,
     pub session_id: Uuid,
     pub user_id: Uuid,
@@ -340,14 +341,37 @@ pub async fn authenticate<G>(
 where
     G: FnOnce() -> Result<RawSessionToken, AppError>,
 {
-    let maintained = match authenticate_and_maintain(
-        &context.tenant.pool,
-        presented_hash,
-        now,
-        maintenance,
-        generate,
-    )
-    .await
+    let mut generate = Some(generate);
+    let maintained = match context
+        .permission_cache
+        .session_cache
+        .authenticate(
+            &context.tenant.subdomain,
+            presented_hash,
+            now,
+            maintenance,
+            |recovery_hash| {
+                let generate = generate.take();
+                async move {
+                    authenticate_and_maintain(
+                        &context.tenant.pool,
+                        recovery_hash.unwrap_or(presented_hash),
+                        now,
+                        if recovery_hash.is_some() {
+                            SessionMaintenanceMode::TouchOnly
+                        } else {
+                            maintenance
+                        },
+                        || match generate {
+                            Some(generate) => generate(),
+                            None => Err(session_store_unavailable()),
+                        },
+                    )
+                    .await
+                }
+            },
+        )
+        .await
     {
         Ok(maintained) => maintained,
         Err(error) => {
@@ -366,6 +390,7 @@ where
     };
 
     let authenticated = AuthenticatedSession {
+        identity_cache: Arc::clone(&context.permission_cache.session_cache),
         tenant: context.tenant.clone(),
         session_id: maintained.session_id,
         user_id: maintained.user_id,
@@ -532,6 +557,11 @@ where
         .await
         .map_err(|_| session_store_unavailable())?;
 
+    context
+        .permission_cache
+        .session_cache
+        .invalidate_identity_user(&context.tenant.subdomain, session.user_id);
+
     if !revoked_session_ids.is_empty() {
         publish(
             &context.session_events,
@@ -577,13 +607,23 @@ pub async fn revalidate(
     session: &AuthenticatedSession,
     now: DateTime<Utc>,
 ) -> Result<bool, AppError> {
-    revalidate_session(
-        &session.tenant.pool,
-        session.session_id,
-        session.user_id,
-        now,
-    )
-    .await
+    session
+        .identity_cache
+        .revalidate(
+            &session.tenant.subdomain,
+            session.session_id,
+            session.user_id,
+            now,
+            || {
+                load_session_validity(
+                    &session.tenant.pool,
+                    session.session_id,
+                    session.user_id,
+                    now,
+                )
+            },
+        )
+        .await
 }
 
 async fn revoke(
@@ -595,6 +635,10 @@ async fn revoke(
 ) -> Result<SessionRevocationResult, AppError> {
     let mut revoked_session_ids =
         revoke_sessions(&session.tenant.pool, session.user_id, target, reason, now).await?;
+    context
+        .permission_cache
+        .session_cache
+        .invalidate_identity_user(&context.tenant.subdomain, session.user_id);
     revoked_session_ids.sort_unstable();
     let current_revoked = revoked_session_ids.contains(&session.session_id);
 
@@ -692,6 +736,7 @@ fn authenticated(
     user: &SessionLoginUser,
 ) -> AuthenticatedSession {
     AuthenticatedSession {
+        identity_cache: Arc::clone(&context.permission_cache.session_cache),
         tenant: context.tenant.clone(),
         session_id,
         user_id: user.id,

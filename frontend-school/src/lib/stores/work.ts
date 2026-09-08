@@ -27,60 +27,88 @@ const initialState: WorkStoreState = {
 };
 
 function createWorkStore() {
+	let generation = 0;
+	let countsRequest = 0;
+	let itemsRequest = 0;
 	const { subscribe, set, update } = writable<WorkStoreState>(initialState);
 
 	return {
 		subscribe,
 
-		async fetchCounts(options: { silent?: boolean } = {}) {
+		async fetchCounts(options: { silent?: boolean; isCurrent?: () => boolean } = {}) {
+			const requestGeneration = generation;
+			const request = ++countsRequest;
+			const isCurrent = () =>
+				requestGeneration === generation &&
+				request === countsRequest &&
+				(options.isCurrent?.() ?? true);
 			if (!options.silent) {
 				update((state) => ({ ...state, loadingCounts: true, error: null }));
 			}
 
 			try {
 				const counts = await getMyWorkCounts();
+				if (!isCurrent()) return false;
 				update((state) => ({
 					...state,
 					counts,
 					loadingCounts: false,
 					error: null
 				}));
+				return true;
 			} catch (error) {
+				if (!isCurrent()) return false;
 				update((state) => ({
 					...state,
 					loadingCounts: false,
 					error: error instanceof Error ? error.message : 'ไม่สามารถโหลดจำนวนงานได้'
 				}));
+				return false;
 			}
 		},
 
-		async fetchItems(options: { silent?: boolean } = {}) {
+		async fetchItems(options: { silent?: boolean; isCurrent?: () => boolean } = {}) {
+			const requestGeneration = generation;
+			const request = ++itemsRequest;
+			const isCurrent = () =>
+				requestGeneration === generation &&
+				request === itemsRequest &&
+				(options.isCurrent?.() ?? true);
 			if (!options.silent) {
 				update((state) => ({ ...state, loadingItems: true, error: null }));
 			}
 
 			try {
 				const items = await getMyWorkItems();
+				if (!isCurrent()) return false;
 				update((state) => ({
 					...state,
 					items,
 					loadingItems: false,
 					error: null
 				}));
+				return true;
 			} catch (error) {
+				if (!isCurrent()) return false;
 				update((state) => ({
 					...state,
 					loadingItems: false,
 					error: error instanceof Error ? error.message : 'ไม่สามารถโหลดรายการงานได้'
 				}));
+				return false;
 			}
 		},
 
-		async refreshSilently() {
-			await Promise.all([this.fetchCounts({ silent: true }), this.fetchItems({ silent: true })]);
+		async refreshSilently(options: { isCurrent?: () => boolean } = {}) {
+			const results = await Promise.all([
+				this.fetchCounts({ silent: true, ...options }),
+				this.fetchItems({ silent: true, ...options })
+			]);
+			return results.every(Boolean);
 		},
 
 		reset() {
+			generation++;
 			set(initialState);
 		}
 	};

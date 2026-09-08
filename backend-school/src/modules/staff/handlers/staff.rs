@@ -187,6 +187,9 @@ pub async fn update_staff(
     actor.require_permission(codes::STAFF_UPDATE_ALL)?;
 
     let replaced_file_id = staff_service::update_staff(&pool, staff_id, payload).await?;
+    // Status/roles are already committed; invalidate identity before fallible cleanup.
+    state.permission_cache.invalidate_user(&tenant, staff_id);
+    state.notify_permission_changed(&tenant, staff_id);
     if let Some(file_id) = replaced_file_id {
         crate::modules::files::consumer_service::request_deletions(
             state.file_platform.as_ref(),
@@ -195,10 +198,6 @@ pub async fn update_staff(
         )
         .await?;
     }
-
-    // Roles/organization memberships may have changed — invalidate this user's permission cache
-    state.permission_cache.invalidate_user(&tenant, staff_id);
-    state.notify_permission_changed(&tenant, staff_id);
 
     Ok((
         StatusCode::OK,

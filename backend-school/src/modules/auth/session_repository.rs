@@ -84,8 +84,22 @@ pub struct MaintainedSession {
     pub presented_as: PresentedTokenKind,
     pub remember_me: bool,
     pub rotated_at: DateTime<Utc>,
+    pub last_seen_at: DateTime<Utc>,
+    pub idle_expires_at: DateTime<Utc>,
     pub absolute_expires_at: DateTime<Utc>,
     pub replacement: Option<RawSessionToken>,
+}
+
+#[derive(Clone, FromRow)]
+pub struct SessionValidity {
+    pub idle_expires_at: DateTime<Utc>,
+    pub absolute_expires_at: DateTime<Utc>,
+}
+
+impl SessionValidity {
+    pub fn is_valid_at(&self, now: DateTime<Utc>) -> bool {
+        now < self.idle_expires_at && now < self.absolute_expires_at
+    }
 }
 
 pub struct PasswordChangeSnapshot {
@@ -314,16 +328,27 @@ where
     Ok(Some(maintained(locked, locked_kind, replacement)))
 }
 
+#[cfg(test)]
 pub async fn revalidate_session(
     pool: &PgPool,
     session_id: Uuid,
     user_id: Uuid,
     now: DateTime<Utc>,
 ) -> Result<bool, AppError> {
-    sqlx::query_scalar(
+    Ok(load_session_validity(pool, session_id, user_id, now)
+        .await?
+        .is_some())
+}
+
+pub async fn load_session_validity(
+    pool: &PgPool,
+    session_id: Uuid,
+    user_id: Uuid,
+    now: DateTime<Utc>,
+) -> Result<Option<SessionValidity>, AppError> {
+    sqlx::query_as(
         r#"
-        SELECT EXISTS (
-            SELECT 1
+            SELECT s.idle_expires_at, s.absolute_expires_at
             FROM auth_sessions s
             JOIN users u ON u.id = s.user_id
             WHERE s.id = $1
@@ -332,13 +357,12 @@ pub async fn revalidate_session(
               AND s.idle_expires_at > $3
               AND s.absolute_expires_at > $3
               AND u.status = 'active'
-        )
         "#,
     )
     .bind(session_id)
     .bind(user_id)
     .bind(now)
-    .fetch_one(pool)
+    .fetch_optional(pool)
     .await
     .map_err(session_store_error)
 }
@@ -738,6 +762,8 @@ fn maintained(
         presented_as,
         remember_me: row.remember_me,
         rotated_at: row.rotated_at,
+        last_seen_at: row.last_seen_at,
+        idle_expires_at: row.idle_expires_at,
         absolute_expires_at: row.absolute_expires_at,
         replacement,
     }

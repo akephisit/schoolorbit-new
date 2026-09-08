@@ -1,6 +1,6 @@
 use dashmap::DashMap;
 use std::collections::HashMap;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 
@@ -15,7 +15,7 @@ struct CacheEntry {
 
 /// In-memory permission cache — stores only Vec<String> per tenant and user_id.
 ///
-/// Cache hit (within TTL): 0 DB trips — JWT verify + cache lookup only
+/// Cache hit (within TTL): 0 permission DB trips after session authentication
 /// Cache miss / expired:   1 DB trip — permissions-only query, then cached
 ///
 /// Invalidation is explicit from mutation handlers, with TTL as safety net.
@@ -58,6 +58,7 @@ impl RevisionState {
 }
 
 pub struct PermissionCache {
+    pub session_cache: Arc<crate::modules::auth::session_cache::SessionCache>,
     inner: DashMap<TenantUserKey, CacheEntry>,
     revisions: Mutex<RevisionState>,
 }
@@ -65,6 +66,7 @@ pub struct PermissionCache {
 impl PermissionCache {
     pub fn new() -> Self {
         Self {
+            session_cache: Arc::new(crate::modules::auth::session_cache::SessionCache::new()),
             inner: DashMap::new(),
             revisions: Mutex::new(RevisionState::default()),
         }
@@ -146,6 +148,7 @@ impl PermissionCache {
 
     /// Remove a single user's cache entry
     pub fn invalidate_user(&self, tenant: &str, user_id: Uuid) {
+        self.session_cache.invalidate_identity_user(tenant, user_id);
         let key = Self::key(tenant, user_id);
         let mut revisions = self.revision_state();
         revisions.advance_user(key.clone());
@@ -154,6 +157,7 @@ impl PermissionCache {
 
     /// Clear one tenant's cache (role/organization permissions changed)
     pub fn invalidate_tenant(&self, tenant: &str) {
+        self.session_cache.invalidate_identity_tenant(tenant);
         let mut revisions = self.revision_state();
         revisions.advance_tenant(tenant);
         self.inner.retain(|key, _| key.tenant != tenant);

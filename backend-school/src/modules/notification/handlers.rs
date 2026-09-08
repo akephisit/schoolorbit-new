@@ -94,7 +94,11 @@ where
                             break;
                         }
                         Ok(_) => {}
-                        Err(broadcast::error::RecvError::Lagged(_)) => {}
+                        Err(broadcast::error::RecvError::Lagged(_)) => {
+                            audit_session_stream_disconnect(&session, SessionFailureReason::RealtimeSessionUnavailable);
+                            yield NotificationStreamEvent::SessionUnavailable;
+                            break;
+                        }
                         Err(broadcast::error::RecvError::Closed) => {
                             audit_session_stream_disconnect(
                                 &session,
@@ -126,22 +130,36 @@ where
                         }
                     }
                 }
+                permission_result = permission_rx.recv() => {
+                    match permission_result {
+                        Ok(event) if event.applies_to(&tenant, user_id) => {
+                            match revalidate().await {
+                                Ok(true) => yield NotificationStreamEvent::PermissionChanged,
+                                Ok(false) => {
+                                    audit_session_stream_disconnect(&session, SessionFailureReason::RealtimeSessionInvalid);
+                                    yield NotificationStreamEvent::SessionInvalid;
+                                    break;
+                                }
+                                Err(_) => {
+                                    audit_session_stream_disconnect(&session, SessionFailureReason::RealtimeSessionUnavailable);
+                                    yield NotificationStreamEvent::SessionUnavailable;
+                                    break;
+                                }
+                            }
+                        }
+                        Ok(_) => {}
+                        Err(_) => {
+                            yield NotificationStreamEvent::SessionUnavailable;
+                            break;
+                        }
+                    }
+                }
                 notification_result = notification_rx.recv() => {
                     match notification_result {
                         Ok(event) if event.applies_to(&tenant, user_id) => {
                             if let Ok(data) = serde_json::to_string(&event.notification) {
                                 yield NotificationStreamEvent::Notification(data);
                             }
-                        }
-                        Ok(_) => {}
-                        Err(broadcast::error::RecvError::Lagged(_)) => {}
-                        Err(broadcast::error::RecvError::Closed) => break,
-                    }
-                }
-                permission_result = permission_rx.recv() => {
-                    match permission_result {
-                        Ok(event) if event.applies_to(&tenant, user_id) => {
-                            yield NotificationStreamEvent::PermissionChanged;
                         }
                         Ok(_) => {}
                         Err(broadcast::error::RecvError::Lagged(_)) => {}
@@ -307,6 +325,9 @@ mod tests {
 
     fn authenticated_session(tenant: &str) -> AuthenticatedSession {
         AuthenticatedSession {
+            identity_cache: std::sync::Arc::new(
+                crate::modules::auth::session_cache::SessionCache::new(),
+            ),
             tenant: TenantContext {
                 tenant_id: Uuid::new_v4(),
                 subdomain: tenant.to_string(),
@@ -345,6 +366,90 @@ mod tests {
             session_tx,
             session_rx,
         )
+    }
+
+    #[tokio::test]
+    async fn missed_identity_signals_close_instead_of_using_cached_identity() {
+        for permission_lag in [false, true] {
+            let session = authenticated_session("demo");
+            let (
+                notification_tx,
+                notification_rx,
+                permission_tx,
+                permission_rx,
+                work_tx,
+                work_rx,
+                session_tx,
+                session_rx,
+            ) = event_receivers();
+            let stream = session_bound_notification_stream(
+                session.clone(),
+                notification_rx,
+                permission_rx,
+                work_rx,
+                session_rx,
+                interval_at(
+                    Instant::now() + Duration::from_secs(3600),
+                    Duration::from_secs(3600),
+                ),
+                || future::ready(Ok(true)),
+            );
+            futures::pin_mut!(stream);
+            for _ in 0..9 {
+                if permission_lag {
+                    permission_tx
+                        .send(PermissionChangeEvent::for_all_users("demo"))
+                        .unwrap();
+                } else {
+                    session_tx
+                        .send(SessionRevocationEvent::user("other", Uuid::new_v4(), None))
+                        .unwrap();
+                }
+            }
+            assert_eq!(
+                stream.next().await,
+                Some(NotificationStreamEvent::SessionUnavailable)
+            );
+            assert_eq!(stream.next().await, None);
+            drop((notification_tx, permission_tx, work_tx, session_tx));
+        }
+    }
+
+    #[tokio::test]
+    async fn permission_signal_revalidates_user_status_before_delivering_more_data() {
+        let session = authenticated_session("demo");
+        let (
+            notification_tx,
+            notification_rx,
+            permission_tx,
+            permission_rx,
+            work_tx,
+            work_rx,
+            session_tx,
+            session_rx,
+        ) = event_receivers();
+        let stream = session_bound_notification_stream(
+            session.clone(),
+            notification_rx,
+            permission_rx,
+            work_rx,
+            session_rx,
+            interval_at(
+                Instant::now() + Duration::from_secs(3600),
+                Duration::from_secs(3600),
+            ),
+            || future::ready(Ok(false)),
+        );
+        futures::pin_mut!(stream);
+        permission_tx
+            .send(PermissionChangeEvent::for_all_users("demo"))
+            .unwrap();
+        assert_eq!(
+            stream.next().await,
+            Some(NotificationStreamEvent::SessionInvalid)
+        );
+        assert_eq!(stream.next().await, None);
+        drop((notification_tx, work_tx, session_tx));
     }
 
     #[tokio::test]

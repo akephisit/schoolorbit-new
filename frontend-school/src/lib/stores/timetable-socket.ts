@@ -1,3 +1,4 @@
+import { browserVisibilityDependencies } from '$lib/realtime/visibility-idle';
 import { writable, type Writable } from 'svelte/store';
 import { BACKEND_WS_URL, getSchoolSubdomainHint } from '$lib/api/client';
 import { realtimeAuthRecovery } from '$lib/realtime/auth-recovery';
@@ -85,6 +86,7 @@ export const isConnected: Writable<boolean> = writable(false);
 let currentUserId: string | null = null;
 let currentAcademicTermId: string | null = null;
 let lastSeq = 0;
+let needsResumeReconcile = false;
 
 export function getLastSeq(): number {
 	return lastSeq;
@@ -141,7 +143,8 @@ function handleMutation(event: MutationEvent & { seq?: number }) {
 function handleStateSync(event: StateSyncEvent) {
 	activeUsers.set(event.payload.users.filter((user) => user.user_id !== currentUserId));
 	const currentSeq = event.payload.current_seq;
-	if (currentSeq !== lastSeq) triggerReconcile(currentSeq);
+	if (needsResumeReconcile || currentSeq !== lastSeq) triggerReconcile(currentSeq);
+	needsResumeReconcile = false;
 }
 
 function handleMessage(event: SequencedTimetableEvent) {
@@ -215,6 +218,20 @@ const timetableSocketRuntime = createTimetableSocketRuntime({
 	isOnline: () => navigator.onLine,
 	addOnlineListener: (listener) => window.addEventListener('online', listener),
 	removeOnlineListener: (listener) => window.removeEventListener('online', listener),
+	visibility: browserVisibilityDependencies(),
+	onPause: () => {
+		needsResumeReconcile = true;
+		clearRealtimeState();
+	},
+	onResume: async (isCurrent) => {
+		const { authAPI } = await import('$lib/api/auth');
+		if (!isCurrent()) return false;
+		const result = await authAPI.refreshCurrentUser({ silent: true });
+		if (!isCurrent()) return false;
+		if (result === 'unauthenticated') disconnectTimetableSocket();
+		if (result !== 'authenticated') return false;
+		return true;
+	},
 	onOpen: () => isConnected.set(true),
 	onMessage: (data) => {
 		try {
@@ -240,6 +257,7 @@ export function connectTimetableSocket(params: TimetableSocketParams) {
 }
 
 export function disconnectTimetableSocket() {
+	needsResumeReconcile = false;
 	currentUserId = null;
 	currentAcademicTermId = null;
 	lastSeq = 0;

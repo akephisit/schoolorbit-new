@@ -1,3 +1,4 @@
+import { createVisibilityIdle, browserVisibilityDependencies } from '$lib/realtime/visibility-idle';
 import { PUBLIC_VAPID_KEY } from '$env/static/public';
 import { apiClient, BACKEND_URL, getSchoolSubdomainHint } from '$lib/api/client';
 import type { components } from '$lib/api/generated/school-api';
@@ -108,6 +109,24 @@ function createNotificationStore() {
 		loading: false
 	});
 
+	let needsReconcile = false;
+	let dataGeneration = 0;
+	let signalVersion = 0;
+	let reconcileInFlight: EventSource | null = null;
+	const idle = createVisibilityIdle({
+		...browserVisibilityDependencies(),
+		onPause: () => {
+			dataGeneration++;
+			sseGeneration++;
+			needsReconcile = true;
+			clearReconnectTimer();
+			closeEventSource();
+		},
+		onResume: () => {
+			void recoverAfterSessionSignal(sseGeneration);
+		}
+	});
+
 	function clearReconnectTimer() {
 		if (!reconnectTimeout) return;
 		clearTimeout(reconnectTimeout);
@@ -121,7 +140,9 @@ function createNotificationStore() {
 	}
 
 	function ownsEventSource(source: EventSource, generation: number): boolean {
-		return shouldMaintainSSE && eventSource === source && sseGeneration === generation;
+		return (
+			shouldMaintainSSE && !idle.paused && eventSource === source && sseGeneration === generation
+		);
 	}
 
 	function notificationStreamUrl(): string {
@@ -132,14 +153,19 @@ function createNotificationStore() {
 	}
 
 	function scheduleSseTask(generation: number, callback: () => void) {
-		if (!shouldMaintainSSE || generation !== sseGeneration || reconnectTimeout !== null) {
+		if (
+			!shouldMaintainSSE ||
+			idle.paused ||
+			generation !== sseGeneration ||
+			reconnectTimeout !== null
+		) {
 			return;
 		}
 
 		const delay = reconnectDelay;
 		reconnectTimeout = setTimeout(() => {
 			reconnectTimeout = null;
-			if (!shouldMaintainSSE || generation !== sseGeneration) return;
+			if (!shouldMaintainSSE || idle.paused || generation !== sseGeneration) return;
 			reconnectDelay = Math.min(reconnectDelay * 2, MAX_SSE_RECONNECT_DELAY_MS);
 			callback();
 		}, delay);
@@ -156,7 +182,7 @@ function createNotificationStore() {
 	}
 
 	async function recoverAfterSessionSignal(generation = sseGeneration): Promise<void> {
-		if (!shouldMaintainSSE || generation !== sseGeneration) return;
+		if (!shouldMaintainSSE || idle.paused || generation !== sseGeneration) return;
 		if (recoveryInFlight?.generation === generation) return recoveryInFlight.promise;
 
 		clearReconnectTimer();
@@ -165,10 +191,11 @@ function createNotificationStore() {
 		const promise = (async () => {
 			try {
 				const { authAPI } = await import('$lib/api/auth');
+				if (!shouldMaintainSSE || idle.paused || generation !== sseGeneration) return;
 				const recoveryAction = await realtimeAuthRecovery(() =>
 					authAPI.refreshCurrentUser({ silent: true })
 				);
-				if (!shouldMaintainSSE || generation !== sseGeneration) return;
+				if (!shouldMaintainSSE || idle.paused || generation !== sseGeneration) return;
 
 				if (recoveryAction === 'reconnect') {
 					scheduleSseReconnect(generation);
@@ -176,7 +203,7 @@ function createNotificationStore() {
 					scheduleAuthRecovery(generation);
 				} else if (recoveryAction === 'stop') {
 					clearReconnectTimer();
-					shouldMaintainSSE = false;
+					closeSSE();
 				}
 			} catch (error) {
 				console.error('Failed to recover notification stream authentication', error);
@@ -194,8 +221,49 @@ function createNotificationStore() {
 		}
 	}
 
+	async function reconcileAfterOpen(source: EventSource, generation: number) {
+		if (!ownsEventSource(source, generation) || !needsReconcile || reconcileInFlight === source)
+			return;
+		reconcileInFlight = source;
+		const version = signalVersion;
+		const ownsSnapshot = () => ownsEventSource(source, generation) && version === signalVersion;
+		try {
+			const { authAPI } = await import('$lib/api/auth');
+			if (!ownsEventSource(source, generation)) return;
+			const action = await realtimeAuthRecovery(() =>
+				authAPI.refreshCurrentUser({ silent: true, invalidate: true })
+			);
+			if (!ownsEventSource(source, generation)) return;
+			if (action === 'stop') {
+				closeSSE();
+				return;
+			}
+			if (action === 'reconnect') {
+				const results = await Promise.all([
+					notificationStore.fetchNotifications(10, ownsSnapshot),
+					workStore.refreshSilently({ isCurrent: ownsSnapshot })
+				]);
+				if (ownsSnapshot() && results.every(Boolean)) needsReconcile = false;
+			}
+		} catch (error) {
+			console.error('Failed to reconcile notification stream', error);
+		} finally {
+			if (reconcileInFlight === source) reconcileInFlight = null;
+			if (ownsEventSource(source, generation) && needsReconcile) {
+				scheduleSseTask(generation, () => {
+					void reconcileAfterOpen(source, generation);
+				});
+			}
+		}
+	}
+
 	function openSSE(generation: number) {
-		if (typeof EventSource === 'undefined' || !shouldMaintainSSE || generation !== sseGeneration) {
+		if (
+			typeof EventSource === 'undefined' ||
+			!shouldMaintainSSE ||
+			idle.paused ||
+			generation !== sseGeneration
+		) {
 			return;
 		}
 		if (eventSource && (eventSource.readyState === 1 || eventSource.readyState === 0)) return;
@@ -209,12 +277,14 @@ function createNotificationStore() {
 			if (!ownsEventSource(source, generation)) return;
 			console.log('✅ SSE Connected');
 			reconnectDelay = INITIAL_SSE_RECONNECT_DELAY_MS;
+			void reconcileAfterOpen(source, generation);
 		};
 
 		source.onmessage = (event) => {
 			if (!ownsEventSource(source, generation)) return;
 			try {
 				const newNotif: Notification = JSON.parse(event.data);
+				signalVersion++;
 
 				update((state) => {
 					if (state.notifications.some((notification) => notification.id === newNotif.id)) {
@@ -245,20 +315,26 @@ function createNotificationStore() {
 
 		source.addEventListener('permission_changed', async () => {
 			if (!ownsEventSource(source, generation)) return;
+			signalVersion++;
 			try {
 				const { authAPI } = await import('$lib/api/auth');
-				await authAPI.refreshCurrentUser({ silent: true });
+				if (!ownsEventSource(source, generation)) return;
+				await authAPI.refreshCurrentUser({ silent: true, invalidate: true });
 			} catch (error) {
 				console.error('Failed to refresh auth context after permission change', error);
 			}
 		});
 
 		source.addEventListener('work_items_changed', () => {
-			if (ownsEventSource(source, generation)) void workStore.refreshSilently();
+			if (!ownsEventSource(source, generation)) return;
+			signalVersion++;
+			void workStore.refreshSilently();
 		});
 
 		source.addEventListener('workflow_window_changed', () => {
-			if (ownsEventSource(source, generation)) void workStore.refreshSilently();
+			if (!ownsEventSource(source, generation)) return;
+			signalVersion++;
+			void workStore.refreshSilently();
 		});
 
 		const recover = () => {
@@ -281,6 +357,8 @@ function createNotificationStore() {
 	function initSSE() {
 		if (typeof EventSource === 'undefined') return;
 		shouldMaintainSSE = true;
+		idle.start();
+		if (idle.paused || recoveryInFlight?.generation === sseGeneration) return;
 		if (eventSource && (eventSource.readyState === 1 || eventSource.readyState === 0)) return;
 
 		clearReconnectTimer();
@@ -289,6 +367,9 @@ function createNotificationStore() {
 	}
 
 	function closeSSE() {
+		dataGeneration++;
+		idle.stop();
+		needsReconcile = false;
 		shouldMaintainSSE = false;
 		sseGeneration += 1;
 		clearReconnectTimer();
@@ -299,23 +380,31 @@ function createNotificationStore() {
 	return {
 		subscribe,
 
-		async fetchNotifications(limit = 10) {
+		async fetchNotifications(limit = 10, isCurrent: () => boolean = () => true) {
+			const generation = dataGeneration;
+			const ownsRequest = () => generation === dataGeneration && isCurrent();
 			update((s) => ({ ...s, loading: true }));
 			try {
 				const response = await apiClient.get<ListNotificationsResponse>(
 					`/api/notifications?limit=${limit}`
 				);
 
+				if (!ownsRequest()) return false;
 				if (response.success && response.data) {
 					set({
 						notifications: response.data.items,
 						unreadCount: response.data.unread_count,
 						loading: false
 					});
+					return true;
 				}
+				update((s) => ({ ...s, loading: false }));
+				return false;
 			} catch (err) {
+				if (!ownsRequest()) return false;
 				console.error('Failed to fetch notifications', err);
 				update((s) => ({ ...s, loading: false }));
+				return false;
 			}
 		},
 

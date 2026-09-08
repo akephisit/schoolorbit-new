@@ -458,6 +458,21 @@ cargo test modules::files::reconciler --bin backend-school -- --nocapture
 
 ## Browser E2E
 
+Session-cache and hidden-tab regressions can be exercised without a live tenant:
+
+```bash
+./scripts/test_backend_school.sh modules::auth -- --nocapture --test-threads=1
+./scripts/test_backend_school.sh modules::notification::handlers::tests -- --nocapture --test-threads=1
+./scripts/test_backend_school.sh modules::academic::websockets::security_tests -- --nocapture --test-threads=1
+cd frontend-school
+node --test tests/static/realtime-idle.test.mjs tests/static/notification-idle-runtime.test.mjs tests/static/auth-refresh-races.test.mjs tests/static/timetable-socket-runtime.test.mjs
+```
+
+Cache tests cover shared query work, tenant isolation, expiry/maintenance deadlines, uncached
+previous tokens, invalidation during reads, and cache hits with an unavailable database. A passing
+query-count test is not a Neon cost measurement. Browser execution and deployed-proxy smoke remain
+separate required rollout checks.
+
 From `frontend-school`:
 
 ```bash

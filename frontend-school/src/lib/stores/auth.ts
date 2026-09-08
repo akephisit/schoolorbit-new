@@ -21,6 +21,7 @@ export interface AuthState {
 }
 
 function createAuthStore() {
+	let generation = 0;
 	const { subscribe, set, update } = writable<AuthState>({
 		user: null,
 		isAuthenticated: false,
@@ -30,7 +31,11 @@ function createAuthStore() {
 
 	return {
 		subscribe,
+		get generation() {
+			return generation;
+		},
 		setUser: (user: User, permissions: string[]) => {
+			generation++;
 			set({
 				user,
 				isAuthenticated: true,
@@ -41,6 +46,7 @@ function createAuthStore() {
 			setPermissions(permissions);
 		},
 		clearUser: () => {
+			generation++;
 			set({
 				user: null,
 				isAuthenticated: false,

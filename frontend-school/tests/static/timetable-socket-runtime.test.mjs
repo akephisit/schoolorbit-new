@@ -49,6 +49,8 @@ class FakeEnvironment {
 	sockets = [];
 	onlineListeners = new Set();
 	online = true;
+	hidden = false;
+	visibilityListeners = new Set();
 
 	setTimer = (callback, delay) => {
 		const timerId = this.nextTimerId;
@@ -106,7 +108,7 @@ class FakeEnvironment {
 	}
 }
 
-function createHarness() {
+function createHarness(resume = async () => true) {
 	const environment = new FakeEnvironment();
 	const notifications = {
 		opens: 0,
@@ -122,6 +124,13 @@ function createHarness() {
 		isOnline: environment.isOnline,
 		addOnlineListener: environment.addOnlineListener,
 		removeOnlineListener: environment.removeOnlineListener,
+		visibility: {
+			isHidden: () => environment.hidden,
+			addListener: (listener) => environment.visibilityListeners.add(listener),
+			removeListener: (listener) => environment.visibilityListeners.delete(listener)
+		},
+		onResume: resume,
+		onPause: () => {},
 		random: () => 0.5,
 		onOpen: () => {
 			notifications.opens += 1;
@@ -351,4 +360,55 @@ test('same-params refresh intent survives a later policy close exactly once', ()
 
 	environment.advanceBy(60_000);
 	assert.equal(environment.sockets.length, 2);
+});
+
+function setHidden(environment, hidden) {
+	environment.hidden = hidden;
+	for (const listener of environment.visibilityListeners) listener();
+}
+test('hidden timetable pauses after grace and reconciles before reconnecting', async () => {
+	let resumes = 0;
+	const { environment, runtime } = createHarness(async () => {
+		resumes++;
+		return true;
+	});
+	runtime.connect(termA);
+	environment.advanceBy(50);
+	environment.sockets[0].open();
+	setHidden(environment, true);
+	environment.advanceBy(59_999);
+	assert.equal(environment.sockets[0].closed, false);
+	environment.advanceBy(1);
+	assert.equal(environment.sockets[0].closed, true);
+	environment.advanceBy(300_000);
+	assert.equal(environment.sockets.length, 1);
+	assert.equal(resumes, 0);
+	runtime.connect(termB);
+	environment.advanceBy(1000);
+	assert.equal(environment.sockets.length, 1);
+	setHidden(environment, false);
+	await Promise.resolve();
+	await Promise.resolve();
+	environment.advanceBy(50);
+	assert.equal(resumes, 1);
+	assert.deepEqual(environment.sockets[1].params, termB);
+	runtime.disconnect();
+	assert.equal(environment.visibilityListeners.size, 0);
+	assert.equal(environment.timers.size, 0);
+});
+test('logout during timetable resume cannot reconnect', async () => {
+	let resolve;
+	const { environment, runtime } = createHarness(() => new Promise((done) => (resolve = done)));
+	runtime.connect(termA);
+	environment.advanceBy(50);
+	setHidden(environment, true);
+	environment.advanceBy(60_000);
+	setHidden(environment, false);
+	runtime.disconnect();
+	resolve(true);
+	await Promise.resolve();
+	await Promise.resolve();
+	environment.advanceBy(60_000);
+	assert.equal(environment.sockets.length, 1);
+	assert.equal(environment.visibilityListeners.size, 0);
 });

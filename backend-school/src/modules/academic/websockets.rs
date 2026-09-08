@@ -1118,6 +1118,9 @@ mod security_tests {
 
     fn authenticated_session(tenant: &str) -> AuthenticatedSession {
         AuthenticatedSession {
+            identity_cache: std::sync::Arc::new(
+                crate::modules::auth::session_cache::SessionCache::new(),
+            ),
             tenant: TenantContext {
                 tenant_id: Uuid::new_v4(),
                 subdomain: tenant.to_string(),

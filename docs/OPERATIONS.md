@@ -163,7 +163,7 @@ Validate WebSocket heartbeat, reconnect, and authenticated server-owned identity
 
 ## School Session Runtime and Cutover
 
-`SESSION_HMAC_KEY` is the stable backend-school owner for opaque browser-session hashes and domain-separated CSRF HMACs. Generate a unique random value of at least 32 characters in the deployment secret store, never print it, and keep it unchanged across replicas and ordinary deployments. Replacing it invalidates every current school session. It must never equal the admin JWT or rollback key.
+`SESSION_HMAC_KEY` is the stable backend-school owner for opaque browser-session hashes and domain-separated CSRF HMACs. Generate a unique random value of at least 32 characters in the deployment secret store, never print it, and keep it unchanged across ordinary deployments. Replacing it invalidates every current school session. It must never equal the admin JWT or rollback key.
 
 `BASE_DOMAIN` owns the production tenant-domain boundary. `TRUSTED_PROXY_CIDRS` must contain only the networks of proxies that are allowed to supply forwarded client addresses; broad or unverified networks let clients spoof rate-limit identity. `SCHOOL_ALLOWED_DEV_ORIGINS` is only for explicit local origins such as `http://localhost:5173` and `http://127.0.0.1:5173`; leave it empty in production. Nginx must allow credentials and expose `X-CSRF-Token` while preserving exact tenant-origin validation.
 
@@ -176,6 +176,27 @@ Session policy is fixed in backend-school:
 - revoked or expired session retention: 30 days.
 
 Replacement cookies never outlive the remaining absolute lifetime. SSE and WebSocket authentication use touch-only maintenance; the next ordinary request performs any due credential rotation. Login, creation, revocation, rotation failure, CSRF/origin rejection, and realtime disconnect logs use structured event/reason fields. Never log passwords, raw session credentials, cookies, CSRF values, request bodies, or database URLs.
+
+Run exactly one backend-school process: [the session cache](../backend-school/src/modules/auth/session_cache.rs)
+and revocation/permission events are process-local. API authentication reuses a successful database
+check for up to 60 seconds, bounded by session expiry and due maintenance. Realtime connections
+share database validation for up to five minutes per tenant/session/user; their 30-second heartbeat
+continues checking cached expiry without extending idle lifetime. Normal authenticated API reads
+also seed realtime validation. Logout, password change, and application-driven identity/permission
+changes invalidate the relevant cache synchronously; no Redis or additional database is needed.
+
+Direct SQL changes bypass those events and can remain unseen for up to the applicable cache window
+(plus the realtime heartbeat interval). Use application operations for immediate revocation. If an
+emergency operation changes identity/session state directly, restart the single backend process to
+clear caches and terminate old realtime connections. Restarts preserve database-backed sessions and
+reload them on demand. Do not scale to multiple workers/replicas or overlap old and new processes
+without first implementing shared invalidation. A fresh cache can serve during a database outage;
+once its validation window ends, authentication fails closed instead of extending stale entries.
+
+Browser tabs hidden for 60 seconds pause notifications SSE and timetable WebSocket. On returning,
+the client refreshes authentication and reconciles authoritative state across the disconnected gap.
+Web Push subscriptions remain independent of the SSE connection. The application change reduces
+session queries; actual Neon compute savings also depend on other traffic and background jobs.
 
 For the one-time JWT-to-session cutover:
 

@@ -53,6 +53,9 @@ mod tests {
             .connect_lazy("postgres://invalid:invalid@127.0.0.1:1/invalid")
             .unwrap();
         AuthenticatedSession {
+            identity_cache: std::sync::Arc::new(
+                crate::modules::auth::session_cache::SessionCache::new(),
+            ),
             tenant: TenantContext {
                 tenant_id: Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap(),
                 subdomain: tenant.to_string(),

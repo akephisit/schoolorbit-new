@@ -37,6 +37,9 @@ function normalizeCurrentUser(userData: CurrentUserDto): {
 }
 
 class AuthAPI {
+	private refreshVersion = 0;
+	private refreshInFlight: { generation: number; promise: Promise<AuthRefreshResult> } | null =
+		null;
 	/**
 	 * Login - Direct to backend through the shared client-side API wrapper.
 	 */
@@ -103,34 +106,56 @@ class AuthAPI {
 		authStore.clearUser();
 	}
 
-	async refreshCurrentUser(options: { silent?: boolean } = {}): Promise<AuthRefreshResult> {
+	async refreshCurrentUser(
+		options: { silent?: boolean; invalidate?: boolean } = {}
+	): Promise<AuthRefreshResult> {
+		if (options.invalidate) this.refreshVersion++;
+		const generation = authStore.generation;
 		const silent = options.silent ?? true;
 		if (!silent) authStore.setLoading(true);
+		if (this.refreshInFlight?.generation === generation) return this.refreshInFlight.promise;
+		const promise = this.performRefresh(generation);
+		const flight = { generation, promise };
+		this.refreshInFlight = flight;
 		try {
-			const response = await apiClient.get<CurrentUserDto>('/api/auth/me');
-			const decision = authRefreshDecision(response.status);
-
-			if (decision.result === 'authenticated') {
-				if (!response.success || response.data === undefined) {
-					authStore.setUnavailable();
-					return 'unavailable';
-				}
-				const currentUser = normalizeCurrentUser(response.data);
-				authStore.setUser(currentUser.user, currentUser.permissions);
-				return 'authenticated';
-			}
-
-			if (decision.clear) {
-				authStore.clearUser();
-			} else {
-				authStore.setUnavailable();
-			}
-			return decision.result;
-		} catch {
-			authStore.setUnavailable();
-			return 'unavailable';
+			return await promise;
 		} finally {
-			if (!silent) authStore.setLoading(false);
+			if (this.refreshInFlight === flight) this.refreshInFlight = null;
+			if (generation === authStore.generation) authStore.setLoading(false);
+		}
+	}
+
+	private async performRefresh(generation: number): Promise<AuthRefreshResult> {
+		while (true) {
+			const version = this.refreshVersion;
+			try {
+				const response = await apiClient.get<CurrentUserDto>('/api/auth/me');
+				if (generation !== authStore.generation) return 'unauthenticated';
+				if (version !== this.refreshVersion) continue;
+				const decision = authRefreshDecision(response.status);
+
+				if (decision.result === 'authenticated') {
+					if (!response.success || response.data === undefined) {
+						authStore.setUnavailable();
+						return 'unavailable';
+					}
+					const currentUser = normalizeCurrentUser(response.data);
+					authStore.setUser(currentUser.user, currentUser.permissions);
+					return 'authenticated';
+				}
+
+				if (decision.clear) {
+					authStore.clearUser();
+				} else {
+					authStore.setUnavailable();
+				}
+				return decision.result;
+			} catch {
+				if (generation !== authStore.generation) return 'unauthenticated';
+				if (version !== this.refreshVersion) continue;
+				authStore.setUnavailable();
+				return 'unavailable';
+			}
 		}
 	}
 

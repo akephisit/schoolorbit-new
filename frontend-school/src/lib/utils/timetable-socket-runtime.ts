@@ -1,3 +1,4 @@
+import { createVisibilityIdle } from '../realtime/visibility-idle.ts';
 import { reconnectDelayMs } from './timetable-reconnect.ts';
 
 const CONNECTION_DEBOUNCE_MS = 50;
@@ -26,6 +27,13 @@ type TimetableSocketRuntimeDependencies<Timer> = {
 	isOnline(): boolean;
 	addOnlineListener(listener: () => void): void;
 	removeOnlineListener(listener: () => void): void;
+	visibility?: {
+		isHidden(): boolean;
+		addListener(listener: () => void): void;
+		removeListener(listener: () => void): void;
+	};
+	onPause?(): void;
+	onResume?(isCurrent: () => boolean): Promise<boolean>;
 	random?: () => number;
 	onOpen(): void;
 	onMessage(data: unknown): void;
@@ -61,6 +69,58 @@ export function createTimetableSocketRuntime<Timer>(
 	let socketGeneration = 0;
 	let connectionIntentGeneration = 0;
 	let desiredIntentGeneration = 0;
+	let resumeGeneration = 0;
+	let resuming = false;
+	const idle = createVisibilityIdle({
+		isHidden: () => dependencies.visibility?.isHidden() ?? false,
+		addListener: (listener) => dependencies.visibility?.addListener(listener),
+		removeListener: (listener) => dependencies.visibility?.removeListener(listener),
+		setTimer: dependencies.setTimer,
+		clearTimer: dependencies.clearTimer,
+		onPause: () => {
+			resumeGeneration++;
+			resuming = false;
+			clearReconnectTimer();
+			clearConnectionDebounceTimer();
+			clearOnlineListener();
+			if (socket) retireSocket(socket, true);
+			dependencies.onPause?.();
+		},
+		onResume: () => {
+			void resume();
+		}
+	});
+
+	async function resume() {
+		const generation = ++resumeGeneration;
+		resuming = true;
+		const isCurrent = () => shouldReconnect && !idle.paused && generation === resumeGeneration;
+		try {
+			const ready = await (dependencies.onResume?.(isCurrent) ?? Promise.resolve(true));
+			if (!isCurrent()) return;
+			resuming = false;
+			if (ready && desiredParams) connect(desiredParams);
+			else
+				reconnectTimer = dependencies.setTimer(
+					() => {
+						reconnectTimer = null;
+						if (isCurrent()) void resume();
+					},
+					reconnectDelayMs(reconnectAttempt++, dependencies.random)
+				);
+		} catch (error) {
+			if (!isCurrent()) return;
+			dependencies.onError(error);
+			resuming = false;
+			reconnectTimer = dependencies.setTimer(
+				() => {
+					reconnectTimer = null;
+					if (isCurrent()) void resume();
+				},
+				reconnectDelayMs(reconnectAttempt++, dependencies.random)
+			);
+		}
+	}
 
 	function clearReconnectTimer() {
 		if (reconnectTimer === null) return;
@@ -99,7 +159,7 @@ export function createTimetableSocketRuntime<Timer>(
 	}
 
 	function ownsSocket(target: TimetableSocketLike, generation: number): boolean {
-		return shouldReconnect && socket === target && socketGeneration === generation;
+		return shouldReconnect && !idle.paused && socket === target && socketGeneration === generation;
 	}
 
 	function handleOnline() {
@@ -109,7 +169,14 @@ export function createTimetableSocketRuntime<Timer>(
 	}
 
 	function scheduleReconnect() {
-		if (!shouldReconnect || !desiredParams || connectionDebounceTimer !== null) return;
+		if (
+			!shouldReconnect ||
+			idle.paused ||
+			resuming ||
+			!desiredParams ||
+			connectionDebounceTimer !== null
+		)
+			return;
 		if (!dependencies.isOnline()) {
 			if (!waitingForOnline) {
 				waitingForOnline = true;
@@ -133,6 +200,8 @@ export function createTimetableSocketRuntime<Timer>(
 			connectionDebounceTimer = null;
 			if (
 				!shouldReconnect ||
+				idle.paused ||
+				resuming ||
 				desiredIntentGeneration !== intentGeneration ||
 				!sameParams(desiredParams, params)
 			) {
@@ -183,6 +252,7 @@ export function createTimetableSocketRuntime<Timer>(
 					scheduleConnection(desiredParams, desiredIntentGeneration);
 					return;
 				}
+				idle.stop();
 				shouldReconnect = false;
 				desiredParams = null;
 				clearReconnectTimer();
@@ -204,10 +274,12 @@ export function createTimetableSocketRuntime<Timer>(
 		const nextParams = { ...params };
 		connectionIntentGeneration += 1;
 		shouldReconnect = true;
+		idle.start();
 		desiredParams = nextParams;
 		desiredIntentGeneration = connectionIntentGeneration;
 		clearReconnectTimer();
 		clearOnlineListener();
+		if (idle.paused || resuming) return;
 
 		if (
 			socket &&
@@ -222,6 +294,9 @@ export function createTimetableSocketRuntime<Timer>(
 	}
 
 	function disconnect() {
+		idle.stop();
+		resumeGeneration++;
+		resuming = false;
 		shouldReconnect = false;
 		desiredParams = null;
 		clearReconnectTimer();
