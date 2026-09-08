@@ -168,3 +168,27 @@ EOF
     [ "$output" = 'Unsupported ClamAV runtime target' ]
     [ ! -s "$FAKE_COMMAND_LOG" ]
 }
+
+@test "clamd matcher distinguishes exposed image ports from published host bindings with real jq" {
+    export CLAMD_REAL_JQ
+    CLAMD_REAL_JQ=$(PATH="$ORIGINAL_PATH" command -v jq)
+    make_fake_command jq 'exec "$CLAMD_REAL_JQ" "$@"'
+
+    local bindings
+    for bindings in 'null' '{}' '{"3310/tcp":null,"7357/tcp":null}' '{"3310/tcp":[]}'; do
+        CLAMD_PORT_BINDINGS=$bindings
+        run_matcher
+        [ "$status" -eq 0 ]
+        [ "$output" = 'clamd_action=reused' ]
+    done
+
+    for bindings in '{"3310/tcp":[{"HostIp":"127.0.0.1","HostPort":"3310"}]}' \
+        '{"3310/tcp":null,"7357/tcp":[{"HostIp":"0.0.0.0","HostPort":"7357"}]}' \
+        '{"3310/tcp":{}}' '[]' 'false' 'invalid-json'; do
+        CLAMD_PORT_BINDINGS=$bindings
+        run_matcher
+        [ "$status" -eq 1 ]
+        [ "$output" = 'clamd_drift reason=published_port' ]
+    done
+    ! grep -Eq '(^| )(stop|rm|run|create)( |$)' "$FAKE_COMMAND_LOG"
+}

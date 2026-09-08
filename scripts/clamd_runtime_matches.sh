@@ -78,7 +78,14 @@ fi
 if ! port_bindings=$(podman inspect --format '{{json .HostConfig.PortBindings}}' "$container" 2>/dev/null); then
     drift container_inspect
 fi
-if ! jq -e '(. == null) or (type == "object" and length == 0)' \
+# Podman includes image EXPOSE ports with null (or empty) bindings. Only
+# non-empty host bindings publish a port; malformed values still fail closed.
+if ! jq -e '
+    (. == null) or
+    (type == "object" and all(.[];
+        (. == null) or (type == "array" and length == 0)
+    ))
+' \
     >/dev/null 2>&1 <<<"$port_bindings"; then
     drift published_port
 fi

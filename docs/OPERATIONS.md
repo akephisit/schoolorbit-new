@@ -122,6 +122,8 @@ preserves the signature volume, and waits through the same health gate.
 Scanner creation also passes `--pids-limit=256` directly to Podman because podman-compose before
 1.4 ignores `pids_limit`. This compatibility flag applies only to clamd, with `--no-deps`;
 deployment verifies the resulting PID limit before proceeding. Keep this value aligned with Compose.
+Image-exposed ports with null or empty binding lists do not publish host ports; the matcher accepts
+those Podman inspect entries but rejects every actual host binding, including loopback bindings.
 
 GHCR retention runs weekly and can be dispatched manually. It preserves `latest`, the 30 newest
 SHA-tagged releases for each backend, and every untagged or unrecognized version such as an
