@@ -6,6 +6,51 @@ use crate::test_helpers::create_named_test_pool_with_max_connections;
 use crate::{error::AppError, middleware::permission::ActorContext, permissions::registry::codes};
 use uuid::Uuid;
 
+#[tokio::test]
+async fn gradebook_defaults_limit_generated_subject_group_reads_to_heads() {
+    let (pool, actor, _, _, _) = fixture("gradebook_default_scopes").await;
+    let unit: Uuid = sqlx::query_scalar("SELECT id FROM organization_units WHERE code='SUBJ-SC'")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let other: Uuid = sqlx::query_scalar("SELECT id FROM organization_units WHERE unit_type='subject_group' AND id<>$1 ORDER BY id LIMIT 1")
+        .bind(unit).fetch_one(&pool).await.unwrap();
+    let customized_source: Uuid = sqlx::query_scalar("SELECT id FROM organization_units WHERE unit_type='subject_group' AND id<>$1 AND id<>$2 ORDER BY id LIMIT 1")
+        .bind(unit).bind(other).fetch_one(&pool).await.unwrap();
+    // A school can intentionally grant all three reads together with matching
+    // timestamps; they must not be mistaken for the original migration seed.
+    sqlx::query("UPDATE organization_permission_grants g SET created_at=now() FROM permissions p WHERE g.permission_id=p.id AND g.organization_unit_id=$1 AND p.code=ANY($2)")
+        .bind(customized_source).bind(vec![codes::ACADEMIC_ASSESSMENT_READ_ORGANIZATION_UNIT, codes::ACADEMIC_GRADEBOOK_READ_ORGANIZATION_UNIT, codes::ACADEMIC_LEARNER_EVALUATION_READ_ORGANIZATION_UNIT]).execute(&pool).await.unwrap();
+    // A later school edit must survive even if the broad position was retained.
+    sqlx::query("UPDATE organization_permission_grants g SET created_by=$1 FROM permissions p WHERE g.permission_id=p.id AND g.organization_unit_id=$2 AND p.code=$3")
+        .bind(actor.user_id).bind(other).bind(codes::ACADEMIC_GRADEBOOK_READ_ORGANIZATION_UNIT).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE organization_permission_grants g SET created_at=g.created_at+interval '1 day' FROM permissions p WHERE g.permission_id=p.id AND g.organization_unit_id=$1 AND p.code=$2")
+        .bind(other).bind(codes::ACADEMIC_LEARNER_EVALUATION_READ_ORGANIZATION_UNIT).execute(&pool).await.unwrap();
+    // Existing head grants must not cause unique-key failure or be duplicated.
+    sqlx::query("INSERT INTO organization_permission_grants (organization_unit_id,permission_id,position_code) SELECT $1,id,'head' FROM permissions WHERE code=$2 ON CONFLICT DO NOTHING")
+        .bind(unit).bind(codes::ACADEMIC_GRADEBOOK_READ_ORGANIZATION_UNIT).execute(&pool).await.unwrap();
+    crate::db::migration::run_tenant_migrations(&pool)
+        .await
+        .unwrap();
+    for code in [
+        codes::ACADEMIC_GRADEBOOK_READ_ORGANIZATION_UNIT,
+        codes::ACADEMIC_LEARNER_EVALUATION_READ_ORGANIZATION_UNIT,
+    ] {
+        let positions: Vec<Option<String>> = sqlx::query_scalar("SELECT g.position_code FROM organization_permission_grants g JOIN permissions p ON p.id=g.permission_id WHERE g.organization_unit_id=$1 AND p.code=$2 ORDER BY g.position_code NULLS FIRST")
+            .bind(unit).bind(code).fetch_all(&pool).await.unwrap();
+        assert_eq!(positions, vec![Some("head".into())]);
+        let custom_positions: Vec<Option<String>> = sqlx::query_scalar("SELECT g.position_code FROM organization_permission_grants g JOIN permissions p ON p.id=g.permission_id WHERE g.organization_unit_id=$1 AND p.code=$2")
+            .bind(other).bind(code).fetch_all(&pool).await.unwrap();
+        assert_eq!(custom_positions, vec![None]);
+        let custom_source_positions: Vec<Option<String>> = sqlx::query_scalar("SELECT g.position_code FROM organization_permission_grants g JOIN permissions p ON p.id=g.permission_id WHERE g.organization_unit_id=$1 AND p.code=$2")
+            .bind(customized_source).bind(code).fetch_all(&pool).await.unwrap();
+        assert_eq!(custom_source_positions, vec![None]);
+    }
+    let assessment_positions: Vec<Option<String>> = sqlx::query_scalar("SELECT g.position_code FROM organization_permission_grants g JOIN permissions p ON p.id=g.permission_id WHERE g.organization_unit_id=$1 AND p.code=$2")
+        .bind(unit).bind(codes::ACADEMIC_ASSESSMENT_READ_ORGANIZATION_UNIT).fetch_all(&pool).await.unwrap();
+    assert_eq!(assessment_positions, vec![None]);
+}
+
 // Catches overflow through either mutation path, including concurrent writers.
 #[tokio::test]
 async fn gradebook_item_budget_prevents_overallocation() {
