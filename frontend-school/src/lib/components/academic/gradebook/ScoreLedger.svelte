@@ -113,7 +113,11 @@
 					: 'enter_down';
 		const next = nextEditableCell(position, editableIds, studentIds, direction);
 		// Committed values are already queued; keyboard navigation must not wait for the network.
-		if (next) document.getElementById(cellId(next))?.focus();
+		if (next) {
+			const input = document.getElementById(cellId(next));
+			input?.focus();
+			if (event.key === 'Enter' && input instanceof HTMLInputElement) input.select();
+		}
 	}
 	function handlePaste(event: ClipboardEvent, position: GradebookCellPosition) {
 		const text = event.clipboardData?.getData('text/plain');

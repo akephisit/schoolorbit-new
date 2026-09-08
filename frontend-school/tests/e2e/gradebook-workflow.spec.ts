@@ -319,6 +319,29 @@ test('loaded scores trim fractional zeros without changing decimals, zero or bla
 	await expect(page.getByRole('dialog').getByRole('textbox')).toHaveValue('5');
 });
 
+for (const [key, targetPhase] of [
+	['Enter', 'กลางภาค'],
+	['Shift+Enter', 'ปลายภาค']
+]) {
+	test(`${key} selects the destination score so typing replaces it`, async ({ page }) => {
+		await mockGradebook(page, true, undefined, undefined, ['5.00', '12.00', '15.00', '18.00']);
+		await page.goto(gradebookUrl());
+		await page.getByRole('button', { name: 'เลือกทุกช่อง' }).click();
+		const before = page.getByRole('textbox', {
+			name: 'ก่อนกลางภาค ชีท 1 เด็กชายทดสอบ ระบบ',
+			exact: true
+		});
+		const target = page.getByRole('textbox', {
+			name: `${targetPhase} ชีท 1 เด็กชายทดสอบ ระบบ`,
+			exact: true
+		});
+		await before.press(key);
+		await expect(target).toBeFocused();
+		await page.keyboard.type('7');
+		await expect(target).toHaveValue('7');
+	});
+}
+
 for (const key of ['Tab', 'Enter']) {
 	test(`${key} moves focus while saving is pending without losing subsequent scores`, async ({
 		page
