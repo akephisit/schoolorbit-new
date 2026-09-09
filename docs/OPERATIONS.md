@@ -98,6 +98,14 @@ compiler-cache hits and non-cacheable `crate-type` calls. Dependency layers and 
 remain enabled. This removes unused compiler-cache machinery; it does not eliminate application
 compilation or promise a faster final link.
 
+The school Dockerfile uses `cargo rustc` with `-C lto=off` only for the final application
+crate to reduce source-changing release build work. Dependencies retain their existing
+release settings and cargo-chef cache; release optimization level is unchanged. This is
+not a project-wide LTO override. Keep the existing runtime acceptance gates: faster local
+compilation does not establish production latency or GitHub build/push duration. To roll
+back this setting, restore the final `cargo build --release --bin backend-school --timings`
+command; no runtime configuration or database change is needed.
+
 Each backend deploy emits bounded `deployment_timing phase=<name> seconds=<integer>` records.
 Admin reports image pull, backend readiness, and origin verification. School additionally reports
 scanner readiness, tenant migration/status, authenticated smoke, and proxy cutover when those phases

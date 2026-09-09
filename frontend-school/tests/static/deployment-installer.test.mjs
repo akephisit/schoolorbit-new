@@ -588,11 +588,15 @@ test('backend runtime images use deterministic builders without ownership copy-u
 			assert.match(dockerfile, /SCCACHE_GHA_ENABLED=on/);
 			assert.match(dockerfile, new RegExp(`SCCACHE_GHA_CACHE_TO=schoolorbit-${binary}`));
 			assert.match(dockerfile, /SCCACHE_IGNORE_SERVER_IO_ERROR=1/);
+			assert.match(dockerfile, new RegExp(`cargo build --release --bin ${binary} --timings`));
 		} else {
 			assert.doesNotMatch(dockerfile, /RUSTC_WRAPPER|SCCACHE_GHA|type=secret/);
 			assert.match(dockerfile, /RUN cargo chef cook --release --recipe-path recipe.json/);
+			assert.match(
+				dockerfile,
+				/^RUN cargo rustc --release --locked --bin backend-school --timings -- -C lto=off$/m
+			);
 		}
-		assert.match(dockerfile, new RegExp(`cargo build --release --bin ${binary} --timings`));
 		assert.match(dockerfile, /FROM scratch AS build-timings/);
 		assert.match(
 			dockerfile,

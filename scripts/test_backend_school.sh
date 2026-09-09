@@ -16,7 +16,6 @@ readonly POSTGRES_IMAGE='docker.io/library/postgres:18.4-alpine@sha256:9a8afca54
 readonly POSTGRES_USER='schoolorbit_test'
 readonly POSTGRES_PASSWORD='schoolorbit_test'
 readonly POSTGRES_DATABASE='schoolorbit_test'
-readonly POSTGRES_TMPFS_SIZE='5g'
 readonly POSTGRES_SHM_SIZE='1g'
 readonly TEST_EXTENSION_SQL='CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA public; CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;'
 readonly CONTAINER_NAME="schoolorbit-backend-school-test-$$-${RANDOM}"
@@ -39,7 +38,7 @@ cleanup() {
                 "$CONTAINER_NAME" >&2
             cleanup_status=1
         elif [[ $existing_container == "$CONTAINER_NAME" ]] &&
-            ! docker rm --force "$CONTAINER_NAME" >/dev/null; then
+            ! docker rm --force --volumes "$CONTAINER_NAME" >/dev/null; then
             printf 'ERROR: failed to remove disposable PostgreSQL container %s\n' \
                 "$CONTAINER_NAME" >&2
             cleanup_status=1
@@ -89,7 +88,7 @@ cleanup_armed=true
 if ! docker run --detach \
     --name "$CONTAINER_NAME" \
     --publish '127.0.0.1::5432' \
-    --tmpfs "/var/lib/postgresql:rw,size=${POSTGRES_TMPFS_SIZE}" \
+    --mount type=volume,destination=/var/lib/postgresql \
     --shm-size "$POSTGRES_SHM_SIZE" \
     --env "POSTGRES_USER=$POSTGRES_USER" \
     --env "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" \

@@ -279,20 +279,35 @@ test('cleanup failure makes success fail but does not hide cargo failure', async
     assert.match(both.stderr, /failed to remove disposable PostgreSQL container/);
 });
 
-test('container is loopback-only, volume-free, and sized for the complete migration suite', async (t) => {
+test('container uses loopback and disposable disk storage instead of a capped data tmpfs', async (t) => {
     const f = await fixture(t);
     const result = runRunner(f);
 
     assert.equal(result.status, 0, result.error?.message ?? result.stderr);
     const docker = await read(f.dockerLog);
     assert.match(docker, /arg=127\.0\.0\.1::5432/);
-    assert.match(docker, /arg=\/var\/lib\/postgresql:rw,size=5g/);
+    assert.match(docker, /arg=--mount\narg=type=volume,destination=\/var\/lib\/postgresql\n/);
+    assert.doesNotMatch(docker, /arg=--tmpfs/);
     assert.match(docker, /arg=--shm-size\narg=1g/);
     assert.match(docker, /arg=fsync=off/);
     assert.match(docker, /arg=synchronous_commit=off/);
     assert.match(docker, /arg=full_page_writes=off/);
-    assert.doesNotMatch(docker, /arg=--volume|arg=-v/);
+    assert.doesNotMatch(docker, /arg=--volume\n|arg=-v\n|source=|src=/);
 });
+
+for (const cargoStatus of ['0', '23']) {
+    test(`runner removes only its container and anonymous volumes after cargo status ${cargoStatus}`, async (t) => {
+        const f = await fixture(t);
+        const result = runRunner(f, [], { FAKE_CARGO_STATUS: cargoStatus });
+        assert.equal(result.status, Number(cargoStatus));
+        const docker = await read(f.dockerLog);
+        const name = docker.match(/arg=--name\narg=([^\n]+)/)?.[1];
+        assert.ok(name);
+        assert.ok(docker.endsWith(`command=rm\narg=--force\narg=--volumes\narg=${name}\n`));
+        assert.doesNotMatch(docker, /command=volume|command=system|arg=prune/);
+        await assert.rejects(read(f.containerState));
+    });
+}
 
 test('unexpected published address fails closed and cleans up', async (t) => {
     const f = await fixture(t);

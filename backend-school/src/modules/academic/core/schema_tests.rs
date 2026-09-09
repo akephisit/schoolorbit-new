@@ -4282,7 +4282,19 @@ async fn migration_057_renames_assessment_plan_editing_control_without_compatibi
         .await
         .expect("fixture must reach the pre-057 schema");
 
-    let missing_control_term_id = Uuid::new_v4();
+    let existing_control_term_id: Uuid = sqlx::query_scalar(
+        r#"SELECT academic_term_id
+           FROM academic_assessment_phase_controls
+           WHERE phase_code = 'midterm'
+           ORDER BY academic_term_id
+           LIMIT 1"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("pre-057 fixture must contain an existing midterm control");
+
+    // Sort the backfilled term before existing terms to expose accidental first-row checks.
+    let missing_control_term_id = Uuid::nil();
     sqlx::query(
         r#"INSERT INTO academic_terms (
                id, academic_year_id, sequence_no, code, name, term_type,
@@ -4315,8 +4327,9 @@ async fn migration_057_renames_assessment_plan_editing_control_without_compatibi
     sqlx::query(
         r#"UPDATE academic_assessment_phase_controls
            SET item_editing_enabled = true
-           WHERE phase_code = 'midterm'"#,
+           WHERE academic_term_id = $1 AND phase_code = 'midterm'"#,
     )
+    .bind(existing_control_term_id)
     .execute(&pool)
     .await
     .expect("legacy plan-editing value must be writable before migration 057");
@@ -4345,14 +4358,24 @@ async fn migration_057_renames_assessment_plan_editing_control_without_compatibi
     let preserved_midterm_value: bool = sqlx::query_scalar(
         r#"SELECT plan_editing_enabled
            FROM academic_assessment_phase_controls
-           WHERE phase_code = 'midterm'
-           ORDER BY academic_term_id
-           LIMIT 1"#,
+           WHERE academic_term_id = $1 AND phase_code = 'midterm'"#,
     )
+    .bind(existing_control_term_id)
     .fetch_one(&pool)
     .await
     .expect("renamed plan-editing value must remain queryable");
     assert!(preserved_midterm_value);
+
+    let backfilled_midterm_value: bool = sqlx::query_scalar(
+        r#"SELECT plan_editing_enabled
+           FROM academic_assessment_phase_controls
+           WHERE academic_term_id = $1 AND phase_code = 'midterm'"#,
+    )
+    .bind(missing_control_term_id)
+    .fetch_one(&pool)
+    .await
+    .expect("backfilled midterm control must be queryable");
+    assert!(!backfilled_midterm_value);
 
     let backfilled_control_count: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM academic_assessment_phase_controls WHERE academic_term_id = $1",

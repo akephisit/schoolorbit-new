@@ -212,9 +212,9 @@ Routine backend-school database tests run on the developer's computer. From the 
   modules::auth::session_repository_tests -- --nocapture
 ```
 
-Docker Desktop WSL integration must be active when the repository runs in WSL. The runner accepts only a local Docker endpoint, runs Cargo and its compilation cache on the computer, allocates up to 5 GiB of disposable PostgreSQL tmpfs for the complete migration-backed suite, creates no persistent database volume, and removes its exact PostgreSQL container after success, failure, `INT`, `TERM`, or `HUP`. It replaces any inherited `TEST_DATABASE_URL` only for the Cargo child and never uses `DATABASE_URL`. Direct Cargo against a persistent Neon URL is not the routine test recipe.
+Docker Desktop WSL integration must be active when the repository runs in WSL. The runner accepts only a local Docker endpoint, runs Cargo and its compilation cache on the computer, and uses a fresh anonymous disk-backed PostgreSQL volume so the complete migration-backed suite is not capped by a 5 GiB data tmpfs. Ensure the local Docker engine has sufficient free disk space. The runner removes its exact PostgreSQL container and associated anonymous volume after success, failure, `INT`, `TERM`, or `HUP`; it never reuses a named volume or prunes unrelated resources. An uncatchable termination such as `SIGKILL` or a host crash can leave these test resources behind and requires exact-target cleanup. It replaces any inherited `TEST_DATABASE_URL` only for the Cargo child and never uses `DATABASE_URL`. Direct Cargo against a persistent Neon URL is not the routine test recipe.
 
-Tests continue to isolate their schema/data within the disposable database. The local runner removes the whole database container after the command, including on test failure.
+Tests continue to isolate their schema/data within the disposable database. The local runner removes the whole database container and its anonymous data volume after the command, including on test failure.
 
 ### Academic Core migration rehearsal
 

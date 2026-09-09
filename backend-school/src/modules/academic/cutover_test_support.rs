@@ -60,6 +60,40 @@ pub async fn apply_phase_b_runtime_migrations(pool: &PgPool) -> TestSupportResul
     apply_migrations_through(pool, 46).await
 }
 
+/// Extend the passing predecessor with an unassigned science offering outside
+/// the activity/math subtree used by the current learning-offering policy test.
+pub async fn seed_learning_offering_policy_science_course(pool: &PgPool) -> TestSupportResult<()> {
+    sqlx::raw_sql(
+        r#"
+        UPDATE subjects
+        SET group_id = (SELECT id FROM subject_groups WHERE code = 'SC')
+        WHERE code = 'SCI-CORE';
+
+        INSERT INTO study_plan_subjects (
+            id, study_plan_version_id, grade_level_id, term, subject_id, display_order
+        ) VALUES (
+            '32000000-0000-0000-0000-000000000026',
+            '31000000-0000-0000-0000-000000000025',
+            'e999190c-d3fc-4124-b787-3445dcb26ee8', '1',
+            '20000000-0000-0000-0000-000000000026', 2
+        );
+
+        INSERT INTO classroom_courses (
+            id, classroom_id, subject_id, academic_semester_id, primary_instructor_id
+        ) VALUES (
+            '60000000-0000-0000-0000-000000000126',
+            '40000000-0000-0000-0000-000000000125',
+            '20000000-0000-0000-0000-000000000026',
+            '11000000-0000-0000-0000-000000000251',
+            '50000000-0000-0000-0000-000000000003'
+        );
+        "#,
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// A real populated predecessor for the Release 2 destructive cutover tests.
 pub async fn seed_release_two_predecessor(pool: &PgPool) -> TestSupportResult<()> {
     apply_migrations_through(pool, 40).await?;

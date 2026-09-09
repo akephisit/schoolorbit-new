@@ -224,16 +224,16 @@ mod tests {
     use super::*;
     use crate::modules::academic::cutover_test_support::{
         apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
-        CutoverFixture,
+        seed_learning_offering_policy_science_course, CutoverFixture,
     };
     use crate::modules::academic::delivery::models::LearningOfferingQuery;
     use crate::modules::academic::delivery::services::offerings;
     use crate::permissions::registry::codes;
-    use crate::test_helpers::create_named_test_pool;
+    use crate::test_helpers::{create_named_test_pool, run_test_migrations};
 
     const ACTOR_ID: &str = "50000000-0000-0000-0000-000000000002";
     const ROOT_UNIT_ID: &str = "c5e06a47-ebf6-40f6-bbf9-59c509e842f2";
-    const CHILD_UNIT_ID: &str = "c2000000-0000-0000-0000-000000000003";
+    const CHILD_UNIT_ID: &str = "2b8c8ef9-c752-4939-9615-9ffd2c7c93f1";
 
     fn actor(permissions: &[&str]) -> ActorContext {
         ActorContext {
@@ -252,16 +252,16 @@ mod tests {
         seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
             .await
             .unwrap();
+        seed_learning_offering_policy_science_course(&pool)
+            .await
+            .unwrap();
         apply_migrations_through(&pool, 41).await.unwrap();
 
         sqlx::raw_sql(
             r#"
-            INSERT INTO organization_units (id, code, name, parent_unit_id, category, unit_type)
-            VALUES (
-                'c2000000-0000-0000-0000-000000000003',
-                'FIXTURE-OFFERING-CHILD', 'หน่วยงานการเปิดสอนลูกทดสอบ',
-                'c5e06a47-ebf6-40f6-bbf9-59c509e842f2', 'academic', 'unit'
-            );
+            UPDATE organization_units
+            SET parent_unit_id = 'c5e06a47-ebf6-40f6-bbf9-59c509e842f2'
+            WHERE code = 'SUBJ-MA';
 
             INSERT INTO organization_members (
                 id, user_id, organization_unit_id, position_code, started_at
@@ -271,17 +271,6 @@ mod tests {
                 'c5e06a47-ebf6-40f6-bbf9-59c509e842f2', 'head', '2020-01-01'
             );
 
-            UPDATE subjects
-            SET owning_organization_unit_id =
-                'c5e06a47-ebf6-40f6-bbf9-59c509e842f2'
-            WHERE code = 'MATH-CORE';
-
-            UPDATE activities
-            SET owning_organization_unit_id =
-				CASE WHEN id = (SELECT selected.id FROM activities selected ORDER BY selected.id LIMIT 1)
-                     THEN 'c2000000-0000-0000-0000-000000000003'::uuid
-                     ELSE NULL
-                END;
             "#,
         )
         .execute(&pool)
@@ -289,19 +278,8 @@ mod tests {
         .unwrap();
 
         apply_phase_b_runtime_migrations(&pool).await.unwrap();
-        sqlx::query(
-            r#"DELETE FROM learning_group_teachers teacher
-			   USING learning_groups learning_group, learning_offerings offering
-			   WHERE teacher.learning_group_id = learning_group.id
-			     AND learning_group.learning_offering_id = offering.id
-			     AND offering.owning_organization_unit_id IS NULL
-			     AND teacher.teacher_id = $1"#,
-        )
-        .bind(Uuid::parse_str(ACTOR_ID).unwrap())
-        .execute(&pool)
-        .await
-        .unwrap();
-        apply_migrations_through(&pool, 53).await.unwrap();
+        // Current runtime queries require the complete schema, not a historical cutoff.
+        run_test_migrations(&pool).await;
 
         sqlx::raw_sql(
             r#"
@@ -345,7 +323,7 @@ mod tests {
             r#"SELECT id
 			   FROM learning_offerings
 			   WHERE owning_organization_unit_id =
-			         'c2000000-0000-0000-0000-000000000003'
+			         '2b8c8ef9-c752-4939-9615-9ffd2c7c93f1'
 			   ORDER BY id
 			   LIMIT 1"#,
         )
@@ -353,7 +331,9 @@ mod tests {
         .await
         .unwrap();
         let school_offering_id: Uuid = sqlx::query_scalar(
-            "SELECT id FROM learning_offerings WHERE owning_organization_unit_id IS NULL ORDER BY id LIMIT 1",
+            r#"SELECT offering.id FROM learning_offerings offering
+               JOIN organization_units owner ON owner.id = offering.owning_organization_unit_id
+               WHERE owner.code = 'SUBJ-SC' ORDER BY offering.id LIMIT 1"#,
         )
         .fetch_one(&pool)
         .await

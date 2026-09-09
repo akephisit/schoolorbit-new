@@ -19,7 +19,9 @@ RUN cargo chef cook --release --recipe-path recipe.json
 COPY . .
 # This binary-only build cannot reuse sccache outputs (crate-type); dependency
 # reuse remains owned by the cargo-chef layer above.
-RUN cargo build --release --bin backend-school --timings
+# Disable local ThinLTO only for the final application crate. Dependencies keep
+# their existing release settings and cargo-chef cache; opt-level is unchanged.
+RUN cargo rustc --release --locked --bin backend-school --timings -- -C lto=off
 
 FROM scratch AS build-timings
 COPY --from=builder /app/target/cargo-timings/cargo-timing.html /cargo-timing.html
