@@ -6,6 +6,8 @@ on:
     paths:
       - "scripts/schoolorbit-installer"
       - "scripts/render_nginx_config.sh"
+      - "scripts/reconcile_r2_cors.sh"
+      - "scripts/tests/r2-cors.test.mjs"
       - "scripts/lib/schoolorbit-installer/**"
       - "scripts/tests/installer/**"
       - "podman-compose.yml"
@@ -21,6 +23,8 @@ on:
     paths:
       - "scripts/schoolorbit-installer"
       - "scripts/render_nginx_config.sh"
+      - "scripts/reconcile_r2_cors.sh"
+      - "scripts/tests/r2-cors.test.mjs"
       - "scripts/lib/schoolorbit-installer/**"
       - "scripts/tests/installer/**"
       - "podman-compose.yml"
@@ -46,19 +50,22 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Install verification dependencies
-        run: sudo apt-get update && sudo apt-get install -y bats shellcheck shfmt podman-compose
+        run: sudo apt-get update && sudo apt-get install -y bats shellcheck shfmt podman-compose jq
 
       - name: Check installer shell
-        run: shellcheck scripts/schoolorbit-installer scripts/render_nginx_config.sh scripts/lib/schoolorbit-installer/*.sh scripts/lib/schoolorbit-installer/remote/*.sh
+        run: shellcheck scripts/schoolorbit-installer scripts/render_nginx_config.sh scripts/reconcile_r2_cors.sh scripts/lib/schoolorbit-installer/*.sh scripts/lib/schoolorbit-installer/remote/*.sh
 
       - name: Check installer formatting
-        run: shfmt -d -i 4 -ci scripts/schoolorbit-installer scripts/render_nginx_config.sh scripts/lib/schoolorbit-installer/*.sh scripts/lib/schoolorbit-installer/remote/*.sh
+        run: shfmt -d -i 4 -ci scripts/schoolorbit-installer scripts/render_nginx_config.sh scripts/reconcile_r2_cors.sh scripts/lib/schoolorbit-installer/*.sh scripts/lib/schoolorbit-installer/remote/*.sh
 
       - name: Test installer behavior
         run: bats scripts/tests/installer
 
       - name: Verify deployment invariants
         run: node --test frontend-school/tests/static/deployment-installer.test.mjs
+
+      - name: Test R2 CORS reconciliation
+        run: node --test --test-concurrency=1 scripts/tests/r2-cors.test.mjs
 
       - name: Resolve canonical production topology
         run: |

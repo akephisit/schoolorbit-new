@@ -140,14 +140,10 @@ impl PoolManager {
             .run_migrations_once(subdomain, &pool)
             .await?;
 
-        // Sync permissions (lazy - only once per school per session)
-        // This ensures existing schools get updated permissions after backend deploy
-        let permissions_synced = self
-            .migration_tracker
-            .sync_permissions_once(subdomain, &pool)
-            .await?;
-
-        Ok((pool, migrated || permissions_synced))
+        // The centralized migration runner also reconciles permissions, including
+        // when no SQL migration is pending. Its success signal still invalidates
+        // permission caches; no second reconciliation is needed here.
+        Ok((pool, migrated))
     }
 
     /// Get or create a tenant pool without running migrations or permission synchronization.
@@ -225,6 +221,69 @@ impl Default for PoolManager {
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn permission_batch_runs_once_for_concurrent_pool_access_and_retries_failure() {
+        let pool = crate::test_helpers::create_named_test_pool("pool_permission_batch").await;
+        crate::test_helpers::run_test_migrations(&pool).await;
+        sqlx::raw_sql(
+            r#"CREATE TABLE sync_insert_count (id integer);
+            CREATE FUNCTION count_pool_sync() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN INSERT INTO sync_insert_count VALUES (1); RETURN NULL; END $$;
+            CREATE TRIGGER count_pool_sync AFTER INSERT ON permissions
+                FOR EACH STATEMENT EXECUTE FUNCTION count_pool_sync();
+            CREATE FUNCTION reject_pool_sync() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN RAISE EXCEPTION 'injected sync failure'; END $$;
+            CREATE TRIGGER reject_pool_sync BEFORE INSERT ON permissions
+                FOR EACH STATEMENT EXECUTE FUNCTION reject_pool_sync();"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let manager = std::sync::Arc::new(super::PoolManager::new());
+        let key = "test-only-cached-pool";
+        manager.insert_test_pool(key, pool.clone()).await;
+        assert!(manager
+            .get_pool_with_permission_change(key, "batch")
+            .await
+            .is_err());
+        assert_eq!(manager.migration_tracker.migration_count().await, 0);
+        sqlx::query("DROP TRIGGER reject_pool_sync ON permissions")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let mut tasks = Vec::new();
+        for _ in 0..4 {
+            let manager = manager.clone();
+            tasks.push(tokio::spawn(async move {
+                manager
+                    .get_pool_with_permission_change(key, "batch")
+                    .await
+                    .unwrap()
+                    .1
+            }));
+        }
+        let mut notifications = 0;
+        for task in tasks {
+            notifications += usize::from(task.await.unwrap());
+        }
+        assert_eq!(notifications, 1);
+        assert!(
+            !manager
+                .get_pool_with_permission_change(key, "batch")
+                .await
+                .unwrap()
+                .1
+        );
+        let statements: i64 = sqlx::query_scalar("SELECT count(*) FROM sync_insert_count")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            statements, 1,
+            "one successful sync, not a second permission pass"
+        );
+    }
+
     use super::{PoolEntry, PoolManager};
     use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
     use std::sync::{

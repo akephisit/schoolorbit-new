@@ -13,6 +13,7 @@ on:
       - "scripts/smoke_test.sh"
       - "scripts/prune_runtime_images.sh"
       - "scripts/clamd_runtime_matches.sh"
+      - "scripts/reconcile_r2_cors.sh"
       - "scripts/lib/schoolorbit-installer/remote/deployment_timing.sh"
       - ".github/workflows/deploy-backend-school.yml"
   workflow_dispatch:
@@ -143,7 +144,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           port: ${{ secrets.SERVER_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: podman-compose.yml,scripts/render_nginx_config.sh,scripts/smoke_test.sh,scripts/prune_runtime_images.sh,scripts/clamd_runtime_matches.sh,scripts/lib/schoolorbit-installer/remote/install_origin_root.sh,scripts/lib/schoolorbit-installer/remote/ensure_container_network.sh,scripts/lib/schoolorbit-installer/remote/deployment_timing.sh,nginx-configs/admin-api.conf.template,nginx-configs/school-api.conf.template,nginx-configs/school-api.maintenance.conf.template
+          source: podman-compose.yml,scripts/render_nginx_config.sh,scripts/smoke_test.sh,scripts/prune_runtime_images.sh,scripts/clamd_runtime_matches.sh,scripts/reconcile_r2_cors.sh,scripts/lib/schoolorbit-installer/remote/install_origin_root.sh,scripts/lib/schoolorbit-installer/remote/ensure_container_network.sh,scripts/lib/schoolorbit-installer/remote/deployment_timing.sh,nginx-configs/admin-api.conf.template,nginx-configs/school-api.conf.template,nginx-configs/school-api.maintenance.conf.template
           target: /opt/stack/deployment
 
       - name: Deploy to Server via SSH
@@ -183,6 +184,7 @@ jobs:
             timing_helper_source="$deployment_root/scripts/lib/schoolorbit-installer/remote/deployment_timing.sh"
             image_cleanup="$deployment_root/scripts/prune_runtime_images.sh"
             clamd_matcher="$deployment_root/scripts/clamd_runtime_matches.sh"
+            r2_cors_helper_source="$deployment_root/scripts/reconcile_r2_cors.sh"
             proxy_template="$deployment_root/nginx-configs/school-api.conf.template"
             maintenance_proxy_template="$deployment_root/nginx-configs/school-api.maintenance.conf.template"
             proxy_source="$deployment_root/school-api.conf"
@@ -334,6 +336,7 @@ jobs:
               exit 1
             fi
 
+            r2_started="$(schoolorbit_timer_now)"
             export AWS_ACCESS_KEY_ID="$(runtime_env_value R2_ACCESS_KEY_ID)"
             export AWS_SECRET_ACCESS_KEY="$(runtime_env_value R2_SECRET_ACCESS_KEY)"
             export AWS_DEFAULT_REGION=auto
@@ -368,30 +371,10 @@ jobs:
               jq -cn --arg origin "$private_cors_origin" \
                 '{CORSRules:[{AllowedOrigins:[$origin],AllowedMethods:["GET","HEAD"],AllowedHeaders:["Range"],ExposeHeaders:["Accept-Ranges","Content-Length","Content-Range","Content-Type","ETag"],MaxAgeSeconds:3600}]}'
             )"
-            r2_cli s3api put-bucket-cors \
-              --bucket "$private_bucket" \
-              --cors-configuration "$private_cors_policy" >/dev/null
-            private_cors_origins="$(
-              r2_cli s3api get-bucket-cors \
-                --bucket "$private_bucket" \
-                --query 'CORSRules[0].AllowedOrigins' \
-                --output text
-            )"
-            private_cors_methods="$(
-              r2_cli s3api get-bucket-cors \
-                --bucket "$private_bucket" \
-                --query 'CORSRules[0].AllowedMethods' \
-                --output text
-            )"
-            printf '%s\n' "$private_cors_origins" |
-              tr '\t' '\n' |
-              grep -Fqx "$private_cors_origin"
-            for required_method in GET HEAD; do
-              printf '%s\n' "$private_cors_methods" |
-                tr '\t' '\n' |
-                grep -Fqx "$required_method"
-            done
+            . "$r2_cors_helper_source"
+            schoolorbit_reconcile_r2_cors "$private_bucket" "$private_cors_policy"
             unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+            schoolorbit_timer_report r2_reconciliation "$r2_started"
 
             . "$network_helper_source"
             compose_up_quiet() {

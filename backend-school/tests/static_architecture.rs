@@ -4942,8 +4942,10 @@ fn recurring_healthchecks_use_liveness_while_deployment_and_smoke_use_readiness(
     assert!(!school_deploy.contains("list-buckets"));
     assert!(school_deploy.contains(r#"r2_cli s3api head-bucket --bucket "$public_bucket""#));
     assert!(school_deploy.contains(r#"r2_cli s3api head-bucket --bucket "$private_bucket""#));
-    assert!(school_deploy.contains("put-bucket-cors"));
-    assert!(school_deploy.contains("get-bucket-cors"));
+    let cors_helper = read_source(repo_root().join("scripts/reconcile_r2_cors.sh"));
+    assert!(cors_helper.contains("put-bucket-cors"));
+    assert!(cors_helper.contains("get-bucket-cors"));
+    assert!(school_deploy.contains("schoolorbit_reconcile_r2_cors"));
     assert!(school_deploy.contains(r#"private_cors_origin="https://*.${base_domain}""#));
     assert!(school_deploy.contains(r#"AllowedMethods:["GET","HEAD"]"#));
     assert!(school_deploy

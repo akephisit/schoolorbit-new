@@ -216,6 +216,17 @@ Docker Desktop WSL integration must be active when the repository runs in WSL. T
 
 Tests continue to isolate their schema/data within the disposable database. The local runner removes the whole database container and its anonymous data volume after the command, including on test failure.
 
+Permission reconciliation regressions can be checked with
+`./scripts/test_backend_school.sh --release --locked batch_ -- --test-threads=1`.
+The focused tests count actual PostgreSQL upsert statements, preserve retired permission
+references, verify rollback/retry, and exercise concurrent pool initialization. The centralized
+migration runner owns the single permission reconciliation, including when no migration is pending.
+
+Run `node --test --test-concurrency=1 scripts/tests/r2-cors.test.mjs` from the repository
+root with Bash, Node and jq available. It executes the workflow CORS fragment against a
+controlled AWS CLI boundary, covering unchanged/reordered policies, full-policy drift,
+missing configuration and read/write/verification failures without contacting R2.
+
 ### Academic Core migration rehearsal
 
 Run the Academic Core chain against disposable local PostgreSQL from the repository root. These

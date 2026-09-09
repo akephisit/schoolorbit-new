@@ -107,6 +107,11 @@ back this setting, restore the final `cargo build --release --bin backend-school
 command; no runtime configuration or database change is needed.
 
 Each backend deploy emits bounded `deployment_timing phase=<name> seconds=<integer>` records.
+School also times `r2_reconciliation`: bucket access is still verified on each deployment,
+but the private-bucket CORS policy is read once and compared in full, ignoring array order.
+Only drift or an explicit missing-CORS response permits a write; a write requires a fresh
+read-back match before deployment continues. Other read errors fail closed. The
+`r2_cors_action` log distinguishes unchanged and updated policies without exposing credentials.
 Admin reports image pull, backend readiness, and origin verification. School additionally reports
 scanner readiness, tenant migration/status, authenticated smoke, and proxy cutover when those phases
 run. These records contain no environment values or credentials.

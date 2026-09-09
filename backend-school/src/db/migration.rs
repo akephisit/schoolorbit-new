@@ -34,18 +34,14 @@ pub async fn run_tenant_migrations(pool: &PgPool) -> Result<(), String> {
 #[derive(Clone)]
 pub struct MigrationTracker {
     migrated: Arc<RwLock<HashSet<String>>>,
-    permissions_synced: Arc<RwLock<HashSet<String>>>,
     migration_locks: Arc<DashMap<String, Arc<Mutex<()>>>>,
-    permission_locks: Arc<DashMap<String, Arc<Mutex<()>>>>,
 }
 
 impl MigrationTracker {
     pub fn new() -> Self {
         Self {
             migrated: Arc::new(RwLock::new(HashSet::new())),
-            permissions_synced: Arc::new(RwLock::new(HashSet::new())),
             migration_locks: Arc::new(DashMap::new()),
-            permission_locks: Arc::new(DashMap::new()),
         }
     }
 
@@ -88,7 +84,7 @@ impl MigrationTracker {
         Ok(true)
     }
 
-    /// Run migrations for a school (once per session)
+    /// Run migrations and permission reconciliation as one tracked operation.
     pub async fn run_migrations_once(
         &self,
         subdomain: &str,
@@ -104,30 +100,6 @@ impl MigrationTracker {
             tracing::info!("✅ Migrations completed for: {}", subdomain);
             Ok(())
         })
-        .await
-    }
-
-    /// Sync permissions for a school (once per session)
-    pub async fn sync_permissions_once(
-        &self,
-        subdomain: &str,
-        pool: &PgPool,
-    ) -> Result<bool, String> {
-        self.run_once(
-            subdomain,
-            &self.permissions_synced,
-            &self.permission_locks,
-            || async {
-                tracing::info!("🔄 Syncing permissions for school: {}", subdomain);
-
-                crate::utils::permission_sync::sync_permissions(pool)
-                    .await
-                    .map_err(|e| format!("Permission sync failed for {}: {}", subdomain, e))?;
-
-                tracing::info!("✅ Permissions synced for: {}", subdomain);
-                Ok(())
-            },
-        )
         .await
     }
 
