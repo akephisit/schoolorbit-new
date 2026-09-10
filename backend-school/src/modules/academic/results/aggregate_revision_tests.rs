@@ -4,6 +4,174 @@ use crate::modules::academic::learner_evaluation::{
 };
 use uuid::Uuid;
 
+#[tokio::test]
+async fn aggregate_batch_providers_preserve_student_boundaries_and_existing_checksums() {
+    let (pool, mut actor, ctx, _) = fixture("aggregate_batch_parity").await;
+    crate::modules::academic::cutover_test_support::apply_migrations_through(&pool, 66)
+        .await
+        .unwrap();
+    actor.permissions.push(
+        crate::permissions::registry::codes::ACADEMIC_LEARNER_EVALUATION_MANAGE_SCHOOL.into(),
+    );
+    let policy = create_aggregate_policy(
+        &pool,
+        &actor,
+        AggregatePolicyInput {
+            name: "Batch policy".into(),
+            passing_grade: "1".into(),
+            minimum_learner_level: 1,
+            allow_reviewed_holds: false,
+        },
+    )
+    .await
+    .unwrap();
+    let original: Uuid = sqlx::query_scalar("SELECT student_academic_year_id FROM learning_group_students WHERE academic_year_id=$1 AND academic_term_id=$2 AND membership_status='active' ORDER BY student_academic_year_id LIMIT 1")
+        .bind(ctx.academic_year_id).bind(ctx.academic_term_id).fetch_one(&pool).await.unwrap();
+    let extra_user = Uuid::new_v4();
+    let extra_student = Uuid::new_v4();
+    sqlx::query("INSERT INTO users (id,username,password_hash,first_name,last_name,user_type,status) VALUES ($1,'batch-fixture-learner','fixture-not-a-login','Batch','Fixture','student','active')")
+        .bind(extra_user).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO student_academic_years (id,student_id,academic_year_id,grade_level_id,study_program_id,status) SELECT $1,$2,academic_year_id,grade_level_id,study_program_id,'active' FROM student_academic_years WHERE id=$3")
+        .bind(extra_student).bind(extra_user).bind(original).execute(&pool).await.unwrap();
+    let students = vec![original, extra_student];
+    let query = TermResultPreviewQuery {
+        academic_year_id: ctx.academic_year_id,
+        academic_term_id: ctx.academic_term_id,
+        passing_grade: "1".into(),
+    };
+    let lc = EvaluationContext {
+        academic_year_id: ctx.academic_year_id,
+        academic_term_id: ctx.academic_term_id,
+    };
+    let mut expected = vec![];
+    for student in &students {
+        expected.push((
+            *student,
+            preview_student_term(&pool, &actor, *student, &query)
+                .await
+                .unwrap(),
+            learner::summarize_student_term(&pool, &lc, *student)
+                .await
+                .unwrap(),
+        ));
+    }
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    let mut reversed = students.clone();
+    reversed.reverse();
+    let results = preview_student_terms_in_transaction(&mut tx, &reversed, &query)
+        .await
+        .unwrap();
+    let evaluations = learner::summarize_student_terms_in_transaction(&mut tx, &lc, &reversed)
+        .await
+        .unwrap();
+    assert_eq!(results.len(), students.len());
+    assert_eq!(evaluations.len(), students.len());
+    assert!(!results[&original].courses.is_empty());
+    assert!(results[&extra_student].courses.is_empty());
+    assert!(!results[&extra_student].totals.coverage_complete);
+    let aggregates = aggregate_students_in_transaction(
+        &mut tx,
+        &reversed,
+        &AggregatePreviewQuery {
+            academic_year_id: ctx.academic_year_id,
+            academic_term_id: ctx.academic_term_id,
+            policy_id: policy.id,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(aggregates.len(), students.len());
+    assert!(!aggregates[&original]
+        .blockers
+        .contains(&AggregateBlocker::NoCourseCoverage));
+    assert!(aggregates[&extra_student]
+        .blockers
+        .contains(&AggregateBlocker::NoCourseCoverage));
+    for (student, result, summary) in expected {
+        assert_eq!(
+            serde_json::to_value(&results[&student]).unwrap(),
+            serde_json::to_value(&result).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(&evaluations[&student]).unwrap(),
+            serde_json::to_value(&summary).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(&aggregates[&student].results).unwrap(),
+            serde_json::to_value(&result).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(&aggregates[&student].learner_evaluations).unwrap(),
+            serde_json::to_value(&summary).unwrap()
+        );
+    }
+    assert!(preview_student_terms_in_transaction(&mut tx, &[], &query)
+        .await
+        .unwrap()
+        .is_empty());
+    assert!(
+        learner::summarize_student_terms_in_transaction(&mut tx, &lc, &[])
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    tx.commit().await.unwrap();
+}
+
+#[tokio::test]
+async fn aggregate_batch_providers_reject_foreign_duplicate_and_oversized_requests() {
+    let (pool, _, ctx, _) = fixture("aggregate_batch_context").await;
+    let student: Uuid = sqlx::query_scalar(
+        "SELECT id FROM student_academic_years WHERE academic_year_id=$1 ORDER BY id LIMIT 1",
+    )
+    .bind(ctx.academic_year_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let foreign: Uuid = sqlx::query_scalar(
+        "SELECT id FROM student_academic_years WHERE academic_year_id<>$1 ORDER BY id LIMIT 1",
+    )
+    .bind(ctx.academic_year_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let query = TermResultPreviewQuery {
+        academic_year_id: ctx.academic_year_id,
+        academic_term_id: ctx.academic_term_id,
+        passing_grade: "1".into(),
+    };
+    let lc = EvaluationContext {
+        academic_year_id: ctx.academic_year_id,
+        academic_term_id: ctx.academic_term_id,
+    };
+    let oversized: Vec<Uuid> = (0..501).map(|_| Uuid::new_v4()).collect();
+    for students in [
+        vec![student, foreign],
+        vec![student, Uuid::new_v4()],
+        vec![student, student],
+        oversized,
+    ] {
+        let mut tx = pool.begin().await.unwrap();
+        assert!(
+            preview_student_terms_in_transaction(&mut tx, &students, &query)
+                .await
+                .is_err()
+        );
+        tx.rollback().await.unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        assert!(
+            learner::summarize_student_terms_in_transaction(&mut tx, &lc, &students)
+                .await
+                .is_err()
+        );
+        tx.rollback().await.unwrap();
+    }
+}
+
 async fn ready_aggregate_fixture(
     name: &str,
 ) -> (

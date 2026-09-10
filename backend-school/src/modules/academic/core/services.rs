@@ -10,6 +10,7 @@ pub mod context;
 pub mod curriculum;
 pub mod curriculum_structure;
 pub mod progressions;
+pub(crate) mod student_year_batch;
 pub mod student_years;
 pub mod workspaces;
 pub mod years_terms;

@@ -22,6 +22,8 @@ mod term_preview;
 #[cfg(test)]
 pub use aggregate_policy::validate_aggregate_policy;
 pub use aggregate_policy::{create_aggregate_policy, list_aggregate_policies};
+#[cfg(test)]
+pub(crate) use aggregate_preview::aggregate_students_in_transaction;
 pub use aggregate_preview::preview_aggregate;
 pub use aggregate_revisions::{list_term_aggregate_revisions, lock_term_aggregate};
 
@@ -41,7 +43,9 @@ pub(crate) use locking::{require_activity_group_unlocked, require_course_offerin
 pub use policies::{activate_policy, create_policy, derive_grade, list_policies, validate_policy};
 pub use readiness::readiness;
 pub use term_preview::preview_student_term;
+#[cfg(test)]
 pub(crate) use term_preview::preview_student_term_in_transaction;
+pub(crate) use term_preview::preview_student_terms_in_transaction;
 
 pub(super) fn decimal(value: &str) -> Result<BigDecimal, AppError> {
     let value = crate::modules::academic::core::services::validate_canonical_decimal(value, 2)?;

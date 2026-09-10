@@ -3,12 +3,12 @@ use crate::{
     middleware::permission::ActorContext,
     modules::academic::learner_evaluation::{
         models::{EvaluationContext, LearnerEvaluationDomain, StudentEvaluationSummary},
-        services::summarize_student_term_in_transaction,
+        services::summarize_student_terms_in_transaction,
     },
     policies::academic_aggregate_access_policy::require_aggregate_read,
 };
 use sqlx::PgPool;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
 fn assess_sources(
@@ -84,10 +84,24 @@ pub(super) async fn aggregate_in_transaction(
     student: Uuid,
     query: &AggregatePreviewQuery,
 ) -> Result<TermAggregatePreview, AppError> {
+    aggregate_students_in_transaction(tx, &[student], query)
+        .await?
+        .remove(&student)
+        .ok_or_else(|| {
+            AppError::InternalServerError("Aggregate batch omitted a validated student".into())
+        })
+}
+
+/// Shared policy preview for a bounded student batch; callers own authorization/isolation.
+pub(crate) async fn aggregate_students_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    students: &[Uuid],
+    query: &AggregatePreviewQuery,
+) -> Result<BTreeMap<Uuid, TermAggregatePreview>, AppError> {
     let policy = load_aggregate_policy(tx, query.policy_id).await?;
-    let results = preview_student_term_in_transaction(
+    let mut results = preview_student_terms_in_transaction(
         tx,
-        student,
+        students,
         &TermResultPreviewQuery {
             academic_year_id: query.academic_year_id,
             academic_term_id: query.academic_term_id,
@@ -95,15 +109,36 @@ pub(super) async fn aggregate_in_transaction(
         },
     )
     .await?;
-    let learner_evaluations = summarize_student_term_in_transaction(
+    let mut learner_evaluations = summarize_student_terms_in_transaction(
         tx,
         &EvaluationContext {
             academic_year_id: query.academic_year_id,
             academic_term_id: query.academic_term_id,
         },
-        student,
+        students,
     )
     .await?;
+    let mut previews = BTreeMap::new();
+    for student in students {
+        let results = results.remove(student).ok_or_else(|| {
+            AppError::InternalServerError("Missing validated result batch entry".into())
+        })?;
+        let learner_evaluations = learner_evaluations.remove(student).ok_or_else(|| {
+            AppError::InternalServerError("Missing validated evaluation batch entry".into())
+        })?;
+        previews.insert(
+            *student,
+            assemble_aggregate(policy.clone(), results, learner_evaluations)?,
+        );
+    }
+    Ok(previews)
+}
+
+fn assemble_aggregate(
+    policy: AggregatePolicyVersion,
+    results: TermResultPreview,
+    learner_evaluations: StudentEvaluationSummary,
+) -> Result<TermAggregatePreview, AppError> {
     let (blockers, hold_findings) = assess_sources(&results, &learner_evaluations, &policy);
     let source_checksum = hash(&(&policy, &results, &learner_evaluations))?;
     Ok(TermAggregatePreview {
