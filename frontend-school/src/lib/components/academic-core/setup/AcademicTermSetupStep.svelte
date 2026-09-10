@@ -11,6 +11,7 @@
 		customNameFromStored,
 		standardTermName
 	} from '$lib/academic-core/foundation-presentation';
+	import { canPlanTermsInYear, termAnnualFlags } from '$lib/academic-core/term-planning';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Checkbox } from '$lib/components/ui/checkbox';
@@ -58,6 +59,7 @@
 	let blocksYearClosure = $state(true);
 	let advancedOpen = $state(false);
 	let errorMessage = $state('');
+	const canPlan = $derived(canPlanTermsInYear(year.status));
 
 	const nextSequence = $derived(
 		terms.length === 0 ? 1 : Math.max(...terms.map((term) => term.sequence)) + 1
@@ -81,6 +83,7 @@
 	}
 
 	function beginEdit(term: AcademicTerm) {
+		if (!canPlan || busy || term.status !== 'planning') return;
 		editing = term;
 		termType = term.termType;
 		customName = customNameFromStored(term.name, standardTermName(term.termType, term.sequence));
@@ -95,6 +98,7 @@
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
+		if (!canPlan || busy) return;
 		errorMessage = '';
 		if (!startDate || !bellScheduleId) {
 			errorMessage = 'กรุณาเลือกวันเริ่มและตารางเวลาให้ครบ';
@@ -109,8 +113,7 @@
 			customName: customName.trim() || null,
 			startDate,
 			plannedEndDate: plannedEndDate || null,
-			includedInYearResult,
-			blocksYearClosure,
+			...termAnnualFlags(includedInYearResult, blocksYearClosure),
 			bellScheduleId
 		};
 		try {
@@ -146,8 +149,14 @@
 						)?.name ?? 'ไม่พบตารางเวลาที่อ้างอิง'}
 					</p>
 				</div>
-				{#if term.status === 'planning'}
-					<Button type="button" size="sm" variant="outline" onclick={() => beginEdit(term)}>
+				{#if term.status === 'planning' && canPlan}
+					<Button
+						type="button"
+						size="sm"
+						variant="outline"
+						disabled={busy}
+						onclick={() => beginEdit(term)}
+					>
 						<Pencil class="size-4" /> แก้ไข
 					</Button>
 				{/if}
@@ -159,127 +168,145 @@
 		{/each}
 	</div>
 
-	<form class="space-y-5 rounded-xl border bg-card p-4" onsubmit={submit}>
-		<div class="flex items-start justify-between gap-3">
-			<div>
-				<p class="font-semibold">{editing ? `แก้ไข ${editing.name}` : 'เพิ่มภาคเรียน'}</p>
-				<p class="mt-1 text-xs text-muted-foreground">
-					ระบบจัดลำดับและสร้างชื่อมาตรฐานให้เอง: <strong>{previewName}</strong>
-				</p>
-			</div>
-			{#if editing}
-				<Button
-					type="button"
-					size="icon-sm"
-					variant="ghost"
-					onclick={resetDraft}
-					aria-label="ยกเลิกการแก้ไขภาคเรียน"
-				>
-					<X class="size-4" />
-				</Button>
-			{/if}
-		</div>
-
-		<div class="space-y-1.5">
-			<Label for="term-type">ประเภทภาคเรียน</Label>
-			<Select.Root type="single" bind:value={termType}>
-				<Select.Trigger id="term-type" class="w-full">
-					{TERM_TYPES.find((option) => option.value === termType)?.label ?? 'เลือกประเภท'}
-				</Select.Trigger>
-				<Select.Content>
-					{#each TERM_TYPES as option (option.value)}
-						<Select.Item value={option.value}>
-							{option.label} — {option.description}
-						</Select.Item>
-					{/each}
-				</Select.Content>
-			</Select.Root>
-		</div>
-
-		<div class="grid gap-4 sm:grid-cols-2">
-			<div class="space-y-1.5">
-				<Label for="term-start">วันเริ่มภาคเรียน</Label>
-				<DatePicker
-					id="term-start"
-					bind:value={startDate}
-					ariaLabel="เลือกวันเริ่มภาคเรียน"
-					required
-				/>
-			</div>
-			<div class="space-y-1.5">
-				<Label for="term-end">วันที่คาดว่าจะปิดภาคเรียน (ไม่บังคับ)</Label>
-				<DatePicker
-					id="term-end"
-					bind:value={plannedEndDate}
-					ariaLabel="เลือกวันที่คาดว่าจะปิดภาคเรียน"
-				/>
-				<p class="text-xs text-muted-foreground">
-					เว้นว่างได้ ระบบจะบันทึกวันที่ปิดจริงเมื่อดำเนินการปิดภาคเรียน
-				</p>
-			</div>
-		</div>
-
-		<div class="space-y-1.5">
-			<Label for="term-bell-schedule">ตารางเวลาที่ใช้</Label>
-			<Select.Root type="single" bind:value={bellScheduleId}>
-				<Select.Trigger id="term-bell-schedule" class="w-full">
-					{selectedSchedule?.name ?? 'เลือกตารางเวลา'}
-				</Select.Trigger>
-				<Select.Content>
-					{#each schedules as schedule (schedule.id)}
-						<Select.Item value={schedule.id}>
-							{schedule.name}{schedule.isDefault ? ' · ตารางหลัก' : ''}
-						</Select.Item>
-					{/each}
-				</Select.Content>
-			</Select.Root>
-		</div>
-
-		<Collapsible.Root bind:open={advancedOpen} class="rounded-xl border bg-muted/20">
-			<Collapsible.Trigger
-				class="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-medium"
-			>
-				<span>ตัวเลือกเพิ่มเติม</span>
-				<ChevronDown class="size-4 text-muted-foreground" aria-hidden="true" />
-			</Collapsible.Trigger>
-			<Collapsible.Content class="space-y-4 border-t px-4 py-4">
-				<div class="space-y-1.5">
-					<Label for="term-custom-name">ชื่อแสดงผลอื่น (ไม่บังคับ)</Label>
-					<Input id="term-custom-name" bind:value={customName} placeholder={previewName} />
-					<p class="text-xs text-muted-foreground">
-						เว้นว่างเพื่อใช้ชื่อที่ระบบสร้างตามประเภทและลำดับจริง
+	{#if canPlan}
+		<form class="space-y-5 rounded-xl border bg-card p-4" onsubmit={submit}>
+			<div class="flex items-start justify-between gap-3">
+				<div>
+					<p class="font-semibold">{editing ? `แก้ไข ${editing.name}` : 'เพิ่มภาคเรียน'}</p>
+					<p class="mt-1 text-xs text-muted-foreground">
+						ระบบจัดลำดับและสร้างชื่อมาตรฐานให้เอง: <strong>{previewName}</strong>
+					</p>
+					<p class="mt-1 text-xs text-muted-foreground">
+						บันทึกเป็นร่าง ไม่เปลี่ยนภาคเรียนปัจจุบันและไม่เปิดกรอกคะแนน
 					</p>
 				</div>
-				<label class="flex cursor-pointer items-start gap-3 text-sm">
-					<Checkbox bind:checked={includedInYearResult} class="mt-0.5" />
-					<span>
-						<strong class="block font-medium">รวมผลภาคเรียนนี้ในผลทั้งปี</strong>
-						<span class="text-xs text-muted-foreground"
-							>ใช้เมื่อระบบผลการเรียนพร้อมใช้งานในอนาคต</span
-						>
-					</span>
-				</label>
-				<label class="flex cursor-pointer items-start gap-3 text-sm">
-					<Checkbox bind:checked={blocksYearClosure} class="mt-0.5" />
-					<span>
-						<strong class="block font-medium">ต้องจัดการภาคเรียนนี้ก่อนปิดปี</strong>
-						<span class="text-xs text-muted-foreground">เป็นกติกาสำหรับขั้นตอนปิดปีในอนาคต</span>
-					</span>
-				</label>
-			</Collapsible.Content>
-		</Collapsible.Root>
+				{#if editing}
+					<Button
+						type="button"
+						size="icon-sm"
+						variant="ghost"
+						onclick={resetDraft}
+						aria-label="ยกเลิกการแก้ไขภาคเรียน"
+					>
+						<X class="size-4" />
+					</Button>
+				{/if}
+			</div>
 
-		{#if errorMessage}
-			<p
-				role="alert"
-				class="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
-			>
-				{errorMessage}
-			</p>
-		{/if}
+			<div class="space-y-1.5">
+				<Label for="term-type">ประเภทภาคเรียน</Label>
+				<Select.Root type="single" bind:value={termType}>
+					<Select.Trigger id="term-type" class="w-full">
+						{TERM_TYPES.find((option) => option.value === termType)?.label ?? 'เลือกประเภท'}
+					</Select.Trigger>
+					<Select.Content>
+						{#each TERM_TYPES as option (option.value)}
+							<Select.Item value={option.value}>
+								{option.label} — {option.description}
+							</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+			</div>
 
-		<Button type="submit" disabled={busy || schedules.length === 0}>
-			{#if editing}<Save class="size-4" /> บันทึกภาคเรียน{:else}<Plus class="size-4" /> เพิ่มภาคเรียน{/if}
-		</Button>
-	</form>
+			<div class="grid gap-4 sm:grid-cols-2">
+				<div class="space-y-1.5">
+					<Label for="term-start">วันเริ่มภาคเรียน</Label>
+					<DatePicker
+						id="term-start"
+						bind:value={startDate}
+						ariaLabel="เลือกวันเริ่มภาคเรียน"
+						required
+					/>
+				</div>
+				<div class="space-y-1.5">
+					<Label for="term-end">วันที่คาดว่าจะปิดภาคเรียน (ไม่บังคับ)</Label>
+					<DatePicker
+						id="term-end"
+						bind:value={plannedEndDate}
+						ariaLabel="เลือกวันที่คาดว่าจะปิดภาคเรียน"
+					/>
+					<p class="text-xs text-muted-foreground">
+						เว้นว่างได้ ระบบจะบันทึกวันที่ปิดจริงเมื่อดำเนินการปิดภาคเรียน
+					</p>
+				</div>
+			</div>
+
+			<div class="space-y-1.5">
+				<Label for="term-bell-schedule">ตารางเวลาที่ใช้</Label>
+				<Select.Root type="single" bind:value={bellScheduleId}>
+					<Select.Trigger id="term-bell-schedule" class="w-full">
+						{selectedSchedule?.name ?? 'เลือกตารางเวลา'}
+					</Select.Trigger>
+					<Select.Content>
+						{#each schedules as schedule (schedule.id)}
+							<Select.Item value={schedule.id}>
+								{schedule.name}{schedule.isDefault ? ' · ตารางหลัก' : ''}
+							</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+			</div>
+
+			<Collapsible.Root bind:open={advancedOpen} class="rounded-xl border bg-muted/20">
+				<Collapsible.Trigger
+					class="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-medium"
+				>
+					<span>ตัวเลือกเพิ่มเติม</span>
+					<ChevronDown class="size-4 text-muted-foreground" aria-hidden="true" />
+				</Collapsible.Trigger>
+				<Collapsible.Content class="space-y-4 border-t px-4 py-4">
+					<div class="space-y-1.5">
+						<Label for="term-custom-name">ชื่อแสดงผลอื่น (ไม่บังคับ)</Label>
+						<Input id="term-custom-name" bind:value={customName} placeholder={previewName} />
+						<p class="text-xs text-muted-foreground">
+							เว้นว่างเพื่อใช้ชื่อที่ระบบสร้างตามประเภทและลำดับจริง
+						</p>
+					</div>
+					<label class="flex cursor-pointer items-start gap-3 text-sm">
+						<Checkbox bind:checked={includedInYearResult} class="mt-0.5" />
+						<span>
+							<strong class="block font-medium">รวมผลภาคเรียนนี้ในผลทั้งปี</strong>
+							<span class="text-xs text-muted-foreground"
+								>ภาคเรียนที่นำมารวมผลต้องปิดให้เรียบร้อยก่อนปิดปีการศึกษา</span
+							>
+						</span>
+					</label>
+					<label class="flex cursor-pointer items-start gap-3 text-sm">
+						<Checkbox
+							checked={includedInYearResult || blocksYearClosure}
+							disabled={includedInYearResult}
+							onCheckedChange={(checked) => (blocksYearClosure = checked)}
+							class="mt-0.5"
+						/>
+						<span>
+							<strong class="block font-medium">ต้องจัดการภาคเรียนนี้ก่อนปิดปี</strong>
+							<span class="text-xs text-muted-foreground">
+								{includedInYearResult
+									? 'บังคับเนื่องจากเลือกนำผลภาคเรียนนี้มารวมทั้งปี'
+									: 'เลือกได้แม้ไม่นำผลภาคเรียนนี้มารวมทั้งปี เช่น รอบซ่อมเสริม'}
+							</span>
+						</span>
+					</label>
+				</Collapsible.Content>
+			</Collapsible.Root>
+
+			{#if errorMessage}
+				<p
+					role="alert"
+					class="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+				>
+					{errorMessage}
+				</p>
+			{/if}
+
+			<Button type="submit" disabled={busy || schedules.length === 0}>
+				{#if editing}<Save class="size-4" /> บันทึกภาคเรียน{:else}<Plus class="size-4" /> เพิ่มภาคเรียน{/if}
+			</Button>
+		</form>
+	{:else}
+		<p class="rounded-xl border bg-muted/20 p-4 text-sm text-muted-foreground">
+			ปีการศึกษานี้ไม่เปิดให้เตรียมหรือแก้ไขภาคเรียนร่าง สามารถดูข้อมูลภาคเรียนเดิมได้
+		</p>
+	{/if}
 </div>

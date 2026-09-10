@@ -322,6 +322,7 @@ pub async fn create_term(
     actor_user_id: Uuid,
     request: CreateAcademicTermRequest,
 ) -> Result<AcademicTerm, AppError> {
+    validate_annual_inclusion(request.included_in_year_result, request.blocks_year_closure)?;
     let mut transaction = pool.begin().await?;
     validate_term_context(
         &mut transaction,
@@ -435,14 +436,16 @@ pub async fn update_term(
     request: UpdateAcademicTermRequest,
 ) -> Result<AcademicTerm, AppError> {
     parse_row_version(request.row_version)?;
+    validate_annual_inclusion(request.included_in_year_result, request.blocks_year_closure)?;
     let mut transaction = pool.begin().await?;
-    let (academic_year_id, sequence): (Uuid, i32) = sqlx::query_as(
-        "SELECT academic_year_id, sequence_no FROM academic_terms WHERE id = $1 FOR UPDATE",
-    )
-    .bind(id)
-    .fetch_optional(&mut *transaction)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียน".to_string()))?;
+    // Resolve identity without taking the child lock. Configuration and lifecycle
+    // writers lock the year before the term to avoid inverse-order deadlocks.
+    let (academic_year_id, sequence): (Uuid, i32) =
+        sqlx::query_as("SELECT academic_year_id, sequence_no FROM academic_terms WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&mut *transaction)
+            .await?
+            .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียน".to_string()))?;
     validate_term_context(
         &mut transaction,
         academic_year_id,
@@ -498,13 +501,21 @@ pub async fn update_term(
 
 pub async fn delete_term(pool: &PgPool, actor_user_id: Uuid, id: Uuid) -> Result<(), AppError> {
     let mut transaction = pool.begin().await?;
-    let (academic_year_id, status): (Uuid, AcademicTermStatus) = sqlx::query_as(
-        "SELECT academic_year_id, status FROM academic_terms WHERE id = $1 FOR UPDATE",
+    let academic_year_id: Uuid =
+        sqlx::query_scalar("SELECT academic_year_id FROM academic_terms WHERE id=$1")
+            .bind(id)
+            .fetch_optional(&mut *transaction)
+            .await?
+            .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียน".to_string()))?;
+    lock_term_planning_year(&mut transaction, academic_year_id).await?;
+    let status: AcademicTermStatus = sqlx::query_scalar(
+        "SELECT status FROM academic_terms WHERE id=$1 AND academic_year_id=$2 FOR UPDATE",
     )
     .bind(id)
+    .bind(academic_year_id)
     .fetch_optional(&mut *transaction)
     .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียน".to_string()))?;
+    .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียนในปีที่เลือก".into()))?;
     let dependency_count: i64 = sqlx::query_scalar(
         r#"
         SELECT
@@ -602,19 +613,7 @@ async fn validate_term_context(
     start_date: NaiveDate,
     planned_end_date: Option<NaiveDate>,
 ) -> Result<(), AppError> {
-    let (year_start, year_end, status): (NaiveDate, NaiveDate, AcademicYearStatus) =
-        sqlx::query_as(
-            "SELECT start_date, end_date, status FROM academic_years WHERE id = $1 FOR UPDATE",
-        )
-        .bind(academic_year_id)
-        .fetch_optional(&mut **transaction)
-        .await?
-        .ok_or_else(|| AppError::NotFound("ไม่พบปีการศึกษา".to_string()))?;
-    if status != AcademicYearStatus::Planning {
-        return Err(AppError::Conflict(
-            "แก้ไขภาคเรียนได้เฉพาะปีการศึกษาสถานะ planning".to_string(),
-        ));
-    }
+    let (year_start, year_end) = lock_term_planning_year(transaction, academic_year_id).await?;
     if let Some(planned_end_date) = planned_end_date {
         validate_date_containment(year_start, year_end, start_date, planned_end_date)?;
     } else if start_date < year_start || start_date > year_end {
@@ -635,6 +634,43 @@ async fn validate_term_context(
         ));
     }
     Ok(())
+}
+
+fn ensure_term_planning_year(status: AcademicYearStatus) -> Result<(), AppError> {
+    if !matches!(
+        status,
+        AcademicYearStatus::Planning | AcademicYearStatus::Active
+    ) {
+        return Err(AppError::Conflict(
+            "จัดการภาคเรียนร่างได้เฉพาะปีที่กำลังวางแผนหรือกำลังใช้งาน".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_annual_inclusion(included: bool, blocks_closure: bool) -> Result<(), AppError> {
+    if included && !blocks_closure {
+        return Err(AppError::ValidationError(
+            "ภาคเรียนที่รวมผลรายปีต้องปิดให้ครบก่อนปิดปีการศึกษา".into(),
+        ));
+    }
+    Ok(())
+}
+
+async fn lock_term_planning_year(
+    transaction: &mut Transaction<'_, Postgres>,
+    academic_year_id: Uuid,
+) -> Result<(NaiveDate, NaiveDate), AppError> {
+    let (year_start, year_end, status): (NaiveDate, NaiveDate, AcademicYearStatus) =
+        sqlx::query_as(
+            "SELECT start_date, end_date, status FROM academic_years WHERE id = $1 FOR UPDATE",
+        )
+        .bind(academic_year_id)
+        .fetch_optional(&mut **transaction)
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบปีการศึกษา".to_string()))?;
+    ensure_term_planning_year(status)?;
+    Ok((year_start, year_end))
 }
 
 async fn unique_term_code(
@@ -740,6 +776,9 @@ fn map_term_write_error(error: sqlx::Error) -> AppError {
             Some("academic_terms_year_code_key") => {
                 AppError::Conflict("รหัสภาคเรียนซ้ำภายในปีการศึกษา".to_string())
             }
+            Some("academic_terms_included_blocks_closure_check") => {
+                AppError::ValidationError("ภาคเรียนที่รวมผลรายปีต้องปิดให้ครบก่อนปิดปีการศึกษา".into())
+            }
             _ => AppError::DbError(error),
         };
     }
@@ -748,8 +787,30 @@ fn map_term_write_error(error: sqlx::Error) -> AppError {
 
 #[cfg(test)]
 mod tests {
-    use super::validate_term_fields;
+    use super::{
+        ensure_term_planning_year, validate_annual_inclusion, validate_term_fields,
+        AcademicYearStatus,
+    };
     use chrono::NaiveDate;
+
+    #[test]
+    fn future_term_configuration_requires_an_open_year_and_consistent_annual_flags() {
+        for status in [AcademicYearStatus::Planning, AcademicYearStatus::Active] {
+            assert!(ensure_term_planning_year(status).is_ok());
+        }
+        for status in [
+            AcademicYearStatus::Ready,
+            AcademicYearStatus::Closing,
+            AcademicYearStatus::Closed,
+            AcademicYearStatus::Archived,
+        ] {
+            assert!(ensure_term_planning_year(status).is_err());
+        }
+        assert!(validate_annual_inclusion(false, false).is_ok());
+        assert!(validate_annual_inclusion(false, true).is_ok());
+        assert!(validate_annual_inclusion(true, true).is_ok());
+        assert!(validate_annual_inclusion(true, false).is_err());
+    }
 
     #[test]
     fn term_validation_accepts_an_absent_planned_end_and_rejects_reverse_dates() {

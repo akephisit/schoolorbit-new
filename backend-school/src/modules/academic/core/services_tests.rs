@@ -1173,6 +1173,271 @@ async fn create_term_seeds_phase_controls() {
 }
 
 #[tokio::test]
+async fn future_term_planning_in_active_year_does_not_activate_or_open_windows() {
+    let pool = prepare_core_fixture("future_term_active_year").await;
+    let actor = fixture_actor(&pool).await;
+    let year = years_terms::get_year(&pool, CURRENT_YEAR_ID).await.unwrap();
+    assert_eq!(year.status, AcademicYearStatus::Active);
+    let active_before: Uuid =
+        sqlx::query_scalar("SELECT id FROM academic_terms WHERE status='active'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let schedule: Uuid = sqlx::query_scalar(
+        "SELECT id FROM bell_schedules WHERE academic_year_id=$1 AND is_default",
+    )
+    .bind(year.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let created = years_terms::create_term(
+        &pool,
+        actor,
+        CreateAcademicTermRequest {
+            academic_year_id: year.id,
+            term_type: AcademicTermType::Summer,
+            custom_name: None,
+            start_date: year.end_date,
+            planned_end_date: None,
+            included_in_year_result: true,
+            blocks_year_closure: true,
+            bell_schedule_id: schedule,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(created.status, AcademicTermStatus::Planning);
+    assert!(created.planned_end_date.is_none());
+    assert!(created.closed_on.is_none());
+    let updated = years_terms::update_term(
+        &pool,
+        actor,
+        created.id,
+        UpdateAcademicTermRequest {
+            term_type: created.term_type,
+            custom_name: Some("ภาคฤดูร้อนสำหรับเตรียมงาน".into()),
+            start_date: created.start_date,
+            planned_end_date: None,
+            included_in_year_result: true,
+            blocks_year_closure: true,
+            bell_schedule_id: schedule,
+            row_version: created.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(updated.row_version, created.row_version + 1);
+    assert_eq!(updated.status, AcademicTermStatus::Planning);
+    let active = years_terms::get_term(&pool, active_before).await.unwrap();
+    let denied = years_terms::update_term(
+        &pool,
+        actor,
+        active.id,
+        UpdateAcademicTermRequest {
+            term_type: active.term_type,
+            custom_name: Some("ห้ามแก้ภาคที่ใช้อยู่".into()),
+            start_date: active.start_date,
+            planned_end_date: active.planned_end_date,
+            included_in_year_result: active.included_in_year_result,
+            blocks_year_closure: active.blocks_year_closure,
+            bell_schedule_id: active.bell_schedule_id,
+            row_version: active.row_version,
+        },
+    )
+    .await;
+    assert!(matches!(denied, Err(crate::error::AppError::Conflict(_))));
+    assert_eq!(
+        years_terms::get_term(&pool, active.id)
+            .await
+            .unwrap()
+            .row_version,
+        active.row_version
+    );
+    let active_after: Uuid =
+        sqlx::query_scalar("SELECT id FROM academic_terms WHERE status='active'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(active_before, active_after);
+    for (table, enabled, count) in [
+        (
+            "academic_assessment_phase_controls",
+            "plan_editing_enabled",
+            4_i64,
+        ),
+        (
+            "academic_gradebook_phase_controls",
+            "score_entry_enabled",
+            4,
+        ),
+        ("academic_learner_evaluation_controls", "entry_enabled", 2),
+    ] {
+        let totals: (i64, i64) = sqlx::query_as(&format!("SELECT count(*),count(*) FILTER (WHERE {enabled}) FROM {table} WHERE academic_term_id=$1"))
+            .bind(created.id).fetch_one(&pool).await.unwrap();
+        assert_eq!(totals, (count, 0));
+    }
+    assert_eq!(
+        years_terms::get_year(&pool, year.id).await.unwrap().status,
+        AcademicYearStatus::Active
+    );
+    years_terms::delete_term(&pool, actor, created.id)
+        .await
+        .unwrap();
+    assert!(years_terms::get_term(&pool, created.id).await.is_err());
+}
+
+#[tokio::test]
+async fn future_term_annual_inclusion_requires_closure_and_repairs_existing_flags() {
+    let pool = prepare_core_fixture("future_term_annual_inclusion").await;
+    let actor = fixture_actor(&pool).await;
+    let year = years_terms::get_year(&pool, FUTURE_YEAR_ID).await.unwrap();
+    let schedule: Uuid = sqlx::query_scalar(
+        "SELECT id FROM bell_schedules WHERE academic_year_id=$1 AND is_default",
+    )
+    .bind(year.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let request = CreateAcademicTermRequest {
+        academic_year_id: year.id,
+        term_type: AcademicTermType::Summer,
+        custom_name: None,
+        start_date: year.end_date,
+        planned_end_date: None,
+        included_in_year_result: true,
+        blocks_year_closure: false,
+        bell_schedule_id: schedule,
+    };
+    assert!(matches!(
+        years_terms::create_term(&pool, actor, request.clone()).await,
+        Err(crate::error::AppError::ValidationError(_))
+    ));
+    let created = years_terms::create_term(
+        &pool,
+        actor,
+        CreateAcademicTermRequest {
+            included_in_year_result: false,
+            ..request
+        },
+    )
+    .await
+    .unwrap();
+    let invalid_update = UpdateAcademicTermRequest {
+        term_type: created.term_type,
+        custom_name: None,
+        start_date: created.start_date,
+        planned_end_date: None,
+        included_in_year_result: true,
+        blocks_year_closure: false,
+        bell_schedule_id: schedule,
+        row_version: created.row_version,
+    };
+    assert!(matches!(
+        years_terms::update_term(&pool, actor, created.id, invalid_update).await,
+        Err(crate::error::AppError::ValidationError(_))
+    ));
+    // Reproduce an inconsistent pre-067 configuration, then exercise the forward repair.
+    sqlx::query("UPDATE academic_terms SET included_in_year_result=true WHERE id=$1")
+        .bind(created.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    apply_migrations_through(&pool, 67).await.unwrap();
+    let repaired = years_terms::get_term(&pool, created.id).await.unwrap();
+    assert!(repaired.included_in_year_result && repaired.blocks_year_closure);
+    assert_eq!(repaired.row_version, created.row_version + 1);
+    let rejected = sqlx::query("UPDATE academic_terms SET blocks_year_closure=false WHERE id=$1")
+        .bind(created.id)
+        .execute(&pool)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        rejected
+            .as_database_error()
+            .and_then(|error| error.constraint()),
+        Some("academic_terms_included_blocks_closure_check")
+    );
+}
+
+#[tokio::test]
+async fn future_term_configuration_rejects_ready_closing_closed_and_archived_years() {
+    let pool = prepare_core_fixture("future_term_year_guards").await;
+    let actor = fixture_actor(&pool).await;
+    let year = years_terms::get_year(&pool, FUTURE_YEAR_ID).await.unwrap();
+    let schedule: Uuid = sqlx::query_scalar(
+        "SELECT id FROM bell_schedules WHERE academic_year_id=$1 AND is_default",
+    )
+    .bind(year.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let request = CreateAcademicTermRequest {
+        academic_year_id: year.id,
+        term_type: AcademicTermType::Custom,
+        custom_name: None,
+        start_date: year.end_date,
+        planned_end_date: None,
+        included_in_year_result: false,
+        blocks_year_closure: false,
+        bell_schedule_id: schedule,
+    };
+    let created = years_terms::create_term(&pool, actor, request.clone())
+        .await
+        .unwrap();
+    for status in ["ready", "closing", "closed", "archived"] {
+        sqlx::query("UPDATE academic_years SET status=$1 WHERE id=$2")
+            .bind(status)
+            .bind(year.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(
+            matches!(
+                years_terms::create_term(&pool, actor, request.clone()).await,
+                Err(crate::error::AppError::Conflict(_))
+            ),
+            "{status}"
+        );
+        assert!(
+            matches!(
+                years_terms::update_term(
+                    &pool,
+                    actor,
+                    created.id,
+                    UpdateAcademicTermRequest {
+                        term_type: created.term_type,
+                        custom_name: None,
+                        start_date: created.start_date,
+                        planned_end_date: None,
+                        included_in_year_result: false,
+                        blocks_year_closure: false,
+                        bell_schedule_id: schedule,
+                        row_version: created.row_version,
+                    }
+                )
+                .await,
+                Err(crate::error::AppError::Conflict(_))
+            ),
+            "{status}"
+        );
+        assert!(
+            matches!(
+                years_terms::delete_term(&pool, actor, created.id).await,
+                Err(crate::error::AppError::Conflict(_))
+            ),
+            "{status}"
+        );
+    }
+    assert_eq!(
+        years_terms::get_term(&pool, created.id)
+            .await
+            .unwrap()
+            .row_version,
+        created.row_version
+    );
+}
+
+#[tokio::test]
 async fn planning_year_and_term_updates_reject_stale_versions_and_unused_term_deletes() {
     let pool = prepare_core_fixture("academic_core_year_term_mutations").await;
     let actor = fixture_actor(&pool).await;

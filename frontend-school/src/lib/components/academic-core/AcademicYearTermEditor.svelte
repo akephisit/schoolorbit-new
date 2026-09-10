@@ -373,15 +373,17 @@
 				<p class="p-5 text-sm text-muted-foreground">เตรียมตารางเวลาและคาบเรียนก่อนเพิ่มภาคเรียน</p>
 			{:else if selectedYear && canManage && activeStep === 'term'}
 				<div class="p-4 sm:p-6">
-					<AcademicTermSetupStep
-						year={selectedYear}
-						schedules={selectedSchedules}
-						terms={selectedTerms}
-						{busy}
-						onCreate={onCreateTerm}
-						onUpdate={onUpdateTerm}
-						onSaved={handleTermSaved}
-					/>
+					{#key selectedYear.id}
+						<AcademicTermSetupStep
+							year={selectedYear}
+							schedules={selectedSchedules}
+							terms={selectedTerms}
+							{busy}
+							onCreate={onCreateTerm}
+							onUpdate={onUpdateTerm}
+							onSaved={handleTermSaved}
+						/>
+					{/key}
 				</div>
 			{:else if selectedTerms.length > 0}
 				<div class="divide-y">

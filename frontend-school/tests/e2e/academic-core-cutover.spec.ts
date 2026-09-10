@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import type { UpdateAcademicTermRequest } from '../../src/lib/api/academic-core';
 
 test.use({ serviceWorkers: 'block' });
 test.describe.configure({ mode: 'serial' });
@@ -141,6 +142,85 @@ const term = {
 	createdAt: '2026-08-24T00:00:00Z',
 	updatedAt: '2026-08-24T00:00:00Z'
 };
+
+test('future term form keeps annual flags consistent and resets editing when switching years', async ({
+	page
+}) => {
+	let updateBody: UpdateAcademicTermRequest | null = null;
+	const draft = {
+		...term,
+		plannedEndDate: null,
+		closedOn: null,
+		includedInYearResult: false,
+		blocksYearClosure: false
+	};
+	await mockShell(page, async (route, url) => {
+		if (url.pathname === '/api/academic/setup/workspace') {
+			await fulfill(route, {
+				years: [
+					{ ...year, status: 'active' },
+					{ ...year, id: ids.futureYear, year: 2569, name: 'ปีการศึกษา 2569', status: 'closed' }
+				],
+				terms: [
+					draft,
+					{ ...draft, id: `${ids.term.slice(0, -1)}2`, academicYearId: ids.futureYear }
+				],
+				bellSchedules: [ids.year, ids.futureYear].map((academicYearId, index) => ({
+					id: index === 0 ? ids.bell : `${ids.bell.slice(0, -1)}2`,
+					academicYearId,
+					code: 'DEFAULT',
+					name: 'ตารางเวลาปกติ',
+					isDefault: true,
+					owningOrganizationUnitId: null,
+					status: 'draft',
+					rowVersion: 1,
+					createdAt: '',
+					updatedAt: ''
+				}))
+			});
+			return true;
+		}
+		if (
+			url.pathname === `/api/academic/terms/${ids.term}` &&
+			route.request().method() === 'PATCH'
+		) {
+			updateBody = route.request().postDataJSON();
+			await fulfill(route, { ...draft, ...updateBody, rowVersion: 2 });
+			return true;
+		}
+		return false;
+	});
+	await page.goto('/staff/academic/core');
+	await expect(
+		page.getByText('บันทึกเป็นร่าง ไม่เปลี่ยนภาคเรียนปัจจุบันและไม่เปิดกรอกคะแนน')
+	).toBeVisible();
+	const termSection = page
+		.getByRole('article')
+		.filter({ has: page.getByRole('heading', { name: 'ภาคเรียน', exact: true }) });
+	await termSection.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+	await page.getByRole('button', { name: 'ตัวเลือกเพิ่มเติม', exact: true }).click();
+	const include = page.getByRole('checkbox', { name: /รวมผลภาคเรียนนี้ในผลทั้งปี/ });
+	const block = page.getByRole('checkbox', { name: /ต้องจัดการภาคเรียนนี้ก่อนปิดปี/ });
+	await expect(block).not.toBeChecked();
+	await expect(block).toBeEnabled();
+	await include.check();
+	await expect(block).toBeChecked();
+	await expect(block).toBeDisabled();
+	await page.getByRole('button', { name: 'บันทึกภาคเรียน', exact: true }).click();
+	await expect
+		.poll(() => updateBody)
+		.toMatchObject({ includedInYearResult: true, blocksYearClosure: true, rowVersion: 1 });
+	await termSection.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'ยกเลิกการแก้ไขภาคเรียน' })).toBeVisible();
+	await page.getByRole('button', { name: /ปีการศึกษา 2569/ }).click();
+	await expect(
+		page.getByText('ปีการศึกษานี้ไม่เปิดให้เตรียมหรือแก้ไขภาคเรียนร่าง', { exact: false })
+	).toBeVisible();
+	await expect(termSection.getByRole('button', { name: 'แก้ไข', exact: true })).toHaveCount(0);
+	await page.getByRole('button', { name: /ปีการศึกษา 2570.*กำลังใช้งาน/ }).click();
+	await expect(page.getByRole('button', { name: 'เพิ่มภาคเรียน', exact: true })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'ยกเลิกการแก้ไขภาคเรียน' })).toHaveCount(0);
+});
 
 test('creates a future planning year and configurable regular, summer, and custom terms', async ({
 	page
