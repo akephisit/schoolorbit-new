@@ -16,6 +16,8 @@ type ResultPolicyPath = NonNullable<
 type EffectiveResultQuery = NonNullable<
 	operations['searchEffectiveAcademicResults']['parameters']['query']
 >;
+type TermPreviewQuery = NonNullable<operations['previewStudentTermResults']['parameters']['query']>;
+type TermPreviewPath = NonNullable<operations['previewStudentTermResults']['parameters']['path']>;
 
 export type AcademicResultContext = ResultQuery;
 export type AcademicGradingPolicyInput = Schemas['GradingPolicyInput'];
@@ -35,6 +37,7 @@ export type EffectiveResultSearchItem = Schemas['EffectiveResultSearchItem'];
 export type EffectiveResult = Schemas['EffectiveResult'];
 export type AcademicResultCorrectionInput = Schemas['ResultCorrectionInput'];
 export type AcademicResultSearch = EffectiveResultQuery;
+export type AcademicTermResultPreview = Schemas['TermResultPreview'];
 
 function resultData<T>(request: Promise<ApiResponse<T>>, fallback: string): Promise<T> {
 	return request.then((response) => requireApiData(response, fallback));
@@ -52,6 +55,27 @@ function query(context: AcademicResultContext): ResultQuery {
 
 function groupPath(groupId: string): ResultGroupPath {
 	return { group_id: groupId } satisfies ResultGroupPath;
+}
+
+/** Read-only calculation preview; this never changes or locks official results. */
+export function previewStudentTermResults(
+	studentYearId: string,
+	context: AcademicResultContext,
+	passingGrade: string,
+	options: ApiRequestOptions = {}
+): Promise<AcademicTermResultPreview> {
+	const path = { student_year_id: studentYearId } satisfies TermPreviewPath;
+	const params = {
+		...query(context),
+		passingGrade: passingGrade.trim()
+	} satisfies TermPreviewQuery;
+	return resultData(
+		apiClient.get<AcademicTermResultPreview>(
+			`/api/academic/results/students/${encodeURIComponent(path.student_year_id)}/term-preview`,
+			{ ...options, query: params }
+		),
+		'ไม่สามารถโหลดตัวอย่างผลรวมรายภาคได้'
+	);
 }
 
 export function listAcademicGradingPolicies(

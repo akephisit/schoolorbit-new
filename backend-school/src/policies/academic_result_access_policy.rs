@@ -17,6 +17,14 @@ pub fn can_correct(actor: &ActorContext) -> bool {
     actor.has_permission(codes::ACADEMIC_RESULT_CORRECT_SCHOOL)
 }
 
+/// A whole-student credit summary cannot be assembled from partial subject scopes.
+pub fn can_read_student_aggregate(actor: &ActorContext) -> bool {
+    actor.has_permission(codes::ACADEMIC_RESULT_READ_SCHOOL)
+        || can_manage_school(actor)
+        || can_lock(actor)
+        || can_correct(actor)
+}
+
 pub fn can_manage_group(actor: &ActorContext, assigned: bool) -> bool {
     can_manage_school(actor)
         || (assigned && actor.has_permission(codes::ACADEMIC_RESULT_MANAGE_ASSIGNED))

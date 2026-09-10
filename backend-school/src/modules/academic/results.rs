@@ -22,6 +22,10 @@ pub fn routes() -> axum::Router<crate::AppState> {
             )
             .route("/readiness", get(handlers::readiness))
             .route("/effective", get(handlers::search_effective_results))
+            .route(
+                "/students/{student_year_id}/term-preview",
+                get(handlers::preview_student_term),
+            )
             .route("/corrections", post(handlers::correct_result))
             .route(
                 "/subjects/{subject_id}/lock",

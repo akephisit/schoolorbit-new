@@ -1,6 +1,6 @@
 # Academic Term Lifecycle — Release 3
 
-**Status:** Proposed for review; implementation has not started.
+**Status:** Approved on 2026-09-10 for inline implementation.
 
 **Parent:** [Approved academic lifecycle architecture](2026-08-23-academic-core-lifecycle-redesign-design.md).
 

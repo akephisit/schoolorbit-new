@@ -350,6 +350,175 @@ fn academic_affairs_actor(actor: &ActorContext) -> ActorContext {
     }
 }
 
+#[tokio::test]
+async fn results_term_preview_uses_effective_results_and_retains_closed_group_history() {
+    let (pool, actor, ctx, group) = fixture("results_term_preview_history").await;
+    let subject: Uuid = sqlx::query_scalar("SELECT d.subject_id FROM learning_groups g JOIN course_offering_details d ON d.learning_offering_id=g.learning_offering_id WHERE g.id=$1")
+        .bind(group).fetch_one(&pool).await.unwrap();
+    let student: Uuid = sqlx::query_scalar("SELECT student_academic_year_id FROM learning_group_students WHERE learning_group_id=$1 AND membership_status='active' ORDER BY student_academic_year_id LIMIT 1")
+        .bind(group).fetch_one(&pool).await.unwrap();
+    let query = TermResultPreviewQuery {
+        academic_year_id: ctx.academic_year_id,
+        academic_term_id: ctx.academic_term_id,
+        passing_grade: "1".into(),
+    };
+    let affairs = academic_affairs_actor(&actor);
+    let initial = preview_student_term(&pool, &affairs, student, &query)
+        .await
+        .unwrap();
+    assert!(!initial.totals.coverage_complete);
+    assert!(initial
+        .courses
+        .iter()
+        .any(|row| row.subject_id == subject && row.result_id.is_none()));
+    prepare_course_subject(&pool, &actor, &ctx, subject).await;
+    let locked = lock_course_subject(&pool, &affairs, &ctx, subject)
+        .await
+        .unwrap();
+    assert!(locked.lock.is_some());
+    let zero = preview_student_term(&pool, &affairs, student, &query)
+        .await
+        .unwrap();
+    let row = zero
+        .courses
+        .iter()
+        .find(|row| row.subject_id == subject)
+        .unwrap();
+    let result_id = row.result_id.unwrap();
+    assert_eq!(row.credits, "1.50");
+    assert_eq!(row.numeric_grade.as_deref(), Some("0.00"));
+    assert_eq!(zero.totals.graded_credits, "1.50");
+    assert_eq!(zero.totals.provisional_gpa.as_deref(), Some("0.00"));
+    assert_ne!(zero.source_checksum, initial.source_checksum);
+    correct_result(
+        &pool,
+        &affairs,
+        &ctx,
+        ResultCorrectionInput::Course {
+            course_result_id: result_id,
+            outcome: CourseOfficialOutcome::Numeric,
+            numeric_grade: Some("0.50".into()),
+            expected_effective_version: 1,
+        },
+    )
+    .await
+    .unwrap();
+    let corrected = preview_student_term(&pool, &affairs, student, &query)
+        .await
+        .unwrap();
+    assert_eq!(corrected.totals.provisional_gpa.as_deref(), Some("0.50"));
+    assert_eq!(corrected.totals.weighted_grade_points, "0.7500");
+    assert_ne!(corrected.source_checksum, zero.source_checksum);
+    correct_result(
+        &pool,
+        &affairs,
+        &ctx,
+        ResultCorrectionInput::Course {
+            course_result_id: result_id,
+            outcome: CourseOfficialOutcome::Incomplete,
+            numeric_grade: None,
+            expected_effective_version: 2,
+        },
+    )
+    .await
+    .unwrap();
+    let incomplete = preview_student_term(&pool, &affairs, student, &query)
+        .await
+        .unwrap();
+    assert_eq!(incomplete.totals.provisional_gpa, None);
+    assert_eq!(incomplete.totals.exceptional_result_count, 1);
+    assert_eq!(incomplete.totals.graded_credits, "0.00");
+    sqlx::query("UPDATE learning_groups SET status='closed' WHERE id=$1")
+        .bind(group)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let closed = preview_student_term(&pool, &affairs, student, &query)
+        .await
+        .unwrap();
+    assert_eq!(closed.source_checksum, incomplete.source_checksum);
+    assert_eq!(closed.totals, incomplete.totals);
+    let same_policy = TermResultPreviewQuery {
+        passing_grade: "1.00".into(),
+        ..query.clone()
+    };
+    assert_eq!(
+        preview_student_term(&pool, &affairs, student, &same_policy)
+            .await
+            .unwrap()
+            .source_checksum,
+        closed.source_checksum
+    );
+    let different_policy = TermResultPreviewQuery {
+        passing_grade: "2".into(),
+        ..query
+    };
+    assert_ne!(
+        preview_student_term(&pool, &affairs, student, &different_policy)
+            .await
+            .unwrap()
+            .source_checksum,
+        closed.source_checksum
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, String>(
+            "SELECT numeric_grade::text FROM academic_course_results WHERE id=$1"
+        )
+        .bind(result_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        "0.00"
+    );
+}
+
+#[tokio::test]
+async fn results_term_preview_rejects_partial_scope_and_cross_context_reads() {
+    let (pool, actor, ctx, group) = fixture("results_term_preview_access").await;
+    let student: Uuid = sqlx::query_scalar("SELECT student_academic_year_id FROM learning_group_students WHERE learning_group_id=$1 AND membership_status='active' LIMIT 1")
+        .bind(group).fetch_one(&pool).await.unwrap();
+    let query = TermResultPreviewQuery {
+        academic_year_id: ctx.academic_year_id,
+        academic_term_id: ctx.academic_term_id,
+        passing_grade: "1".into(),
+    };
+    for permission in [
+        None,
+        Some(codes::ACADEMIC_RESULT_READ_ASSIGNED),
+        Some(codes::ACADEMIC_RESULT_READ_ORGANIZATION_UNIT),
+        Some(codes::ACADEMIC_GRADEBOOK_MANAGE_SCHOOL),
+    ] {
+        let scoped = ActorContext {
+            user_id: actor.user_id,
+            permissions: permission.into_iter().map(str::to_owned).collect(),
+        };
+        assert!(matches!(
+            preview_student_term(&pool, &scoped, student, &query).await,
+            Err(AppError::Forbidden(_))
+        ));
+    }
+    let wrong_year = TermResultPreviewQuery {
+        academic_year_id: Uuid::new_v4(),
+        ..query.clone()
+    };
+    assert!(matches!(
+        preview_student_term(&pool, &actor, student, &wrong_year).await,
+        Err(AppError::ValidationError(_))
+    ));
+    assert!(matches!(
+        preview_student_term(&pool, &actor, Uuid::new_v4(), &query).await,
+        Err(AppError::NotFound(_))
+    ));
+    let invalid_grade = TermResultPreviewQuery {
+        passing_grade: "0".into(),
+        ..query
+    };
+    assert!(matches!(
+        preview_student_term(&pool, &actor, student, &invalid_grade).await,
+        Err(AppError::ValidationError(_))
+    ));
+}
+
 async fn course_subject_rooms(
     pool: &sqlx::PgPool,
     ctx: &ResultContext,

@@ -5,6 +5,7 @@ use sha2::{Digest, Sha256};
 use sqlx::{Postgres, Transaction};
 
 mod activities;
+mod aggregation;
 mod corrections;
 mod course_preparation;
 mod cutover;
@@ -12,8 +13,13 @@ mod effective_results;
 mod locking;
 mod policies;
 mod readiness;
+mod term_preview;
+
+#[cfg(test)]
+mod aggregation_tests;
 
 pub use activities::{confirm_activity, get_activity_workspace, save_activity_outcomes};
+pub use aggregation::aggregate_course_credits;
 pub use corrections::correct_result;
 pub use course_preparation::{confirm_group_results, get_course_workspace, save_selection};
 pub(crate) use cutover::{
@@ -24,6 +30,7 @@ pub use locking::{lock_activity_group, lock_all_ready_activities, lock_course_su
 pub(crate) use locking::{require_activity_group_unlocked, require_course_offering_unlocked};
 pub use policies::{activate_policy, create_policy, derive_grade, list_policies, validate_policy};
 pub use readiness::readiness;
+pub use term_preview::preview_student_term;
 
 pub(super) fn decimal(value: &str) -> Result<BigDecimal, AppError> {
     let value = crate::modules::academic::core::services::validate_canonical_decimal(value, 2)?;

@@ -11566,6 +11566,62 @@
         ],
         "type": "object"
       },
+      "ApiResponse_TermResultPreview": {
+        "properties": {
+          "data": {
+            "properties": {
+              "academicTermId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "academicYearId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "courses": {
+                "items": {
+                  "$ref": "#/components/schemas/CourseAggregateInput"
+                },
+                "type": "array"
+              },
+              "passingGrade": {
+                "type": "string"
+              },
+              "sourceChecksum": {
+                "type": "string"
+              },
+              "studentAcademicYearId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "totals": {
+                "$ref": "#/components/schemas/CourseCreditTotals"
+              }
+            },
+            "required": [
+              "academicYearId",
+              "academicTermId",
+              "studentAcademicYearId",
+              "passingGrade",
+              "courses",
+              "totals",
+              "sourceChecksum"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_TimetableBlock": {
         "properties": {
           "data": {
@@ -22885,6 +22941,111 @@
         "required": [
           "entryEnabled",
           "rowVersion"
+        ],
+        "type": "object"
+      },
+      "CourseAggregateInput": {
+        "additionalProperties": false,
+        "description": "One expected subject in one student's term, including an absent locked result.",
+        "properties": {
+          "credits": {
+            "type": "string"
+          },
+          "effectiveVersion": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "learningOfferingId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "numericGrade": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "outcome": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CourseOfficialOutcome"
+              }
+            ]
+          },
+          "resultId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subjectId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "subjectId",
+          "learningOfferingId",
+          "credits"
+        ],
+        "type": "object"
+      },
+      "CourseCreditTotals": {
+        "properties": {
+          "allOutcomesNumeric": {
+            "type": "boolean"
+          },
+          "attemptedCredits": {
+            "type": "string"
+          },
+          "coverageComplete": {
+            "type": "boolean"
+          },
+          "earnedCredits": {
+            "type": "string"
+          },
+          "exceptionalResultCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "gradedCredits": {
+            "type": "string"
+          },
+          "missingResultCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "provisionalGpa": {
+            "description": "Display-only average of numeric results; never an official aggregate lock.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unresolvedCredits": {
+            "type": "string"
+          },
+          "weightedGradePoints": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "attemptedCredits",
+          "gradedCredits",
+          "earnedCredits",
+          "unresolvedCredits",
+          "weightedGradePoints",
+          "missingResultCount",
+          "exceptionalResultCount",
+          "coverageComplete",
+          "allOutcomesNumeric"
         ],
         "type": "object"
       },
@@ -39187,6 +39348,70 @@
         ],
         "type": "object"
       },
+      "TermResultPreview": {
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "academicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "courses": {
+            "items": {
+              "$ref": "#/components/schemas/CourseAggregateInput"
+            },
+            "type": "array"
+          },
+          "passingGrade": {
+            "type": "string"
+          },
+          "sourceChecksum": {
+            "type": "string"
+          },
+          "studentAcademicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/CourseCreditTotals"
+          }
+        },
+        "required": [
+          "academicYearId",
+          "academicTermId",
+          "studentAcademicYearId",
+          "passingGrade",
+          "courses",
+          "totals",
+          "sourceChecksum"
+        ],
+        "type": "object"
+      },
+      "TermResultPreviewQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "academicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "passingGrade": {
+            "description": "Explicit preview criterion, not authority to change school grading policy.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "academicYearId",
+          "academicTermId",
+          "passingGrade"
+        ],
+        "type": "object"
+      },
       "TextAlignment": {
         "enum": [
           "left",
@@ -55084,6 +55309,94 @@
             "description": ""
           },
           "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/results/students/{student_year_id}/term-preview": {
+      "get": {
+        "operationId": "previewStudentTermResults",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Explicit preview criterion, not authority to change school grading policy.",
+            "in": "query",
+            "name": "passingGrade",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "student_year_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TermResultPreview"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
             "content": {
               "application/json": {
                 "schema": {

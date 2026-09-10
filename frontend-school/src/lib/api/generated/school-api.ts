@@ -1898,6 +1898,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/results/students/{student_year_id}/term-preview': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['previewStudentTermResults'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/results/subjects/{subject_id}/lock': {
 		parameters: {
 			query?: never;
@@ -8362,6 +8378,22 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_TermResultPreview: {
+			data: {
+				/** Format: uuid */
+				academicTermId: string;
+				/** Format: uuid */
+				academicYearId: string;
+				courses: components['schemas']['CourseAggregateInput'][];
+				passingGrade: string;
+				sourceChecksum: string;
+				/** Format: uuid */
+				studentAcademicYearId: string;
+				totals: components['schemas']['CourseCreditTotals'];
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_TimetableBlock: {
 			data: {
 				/** Format: uuid */
@@ -11425,6 +11457,33 @@ export interface components {
 			entryEnabled: boolean;
 			/** Format: int64 */
 			rowVersion: number;
+		};
+		/** @description One expected subject in one student's term, including an absent locked result. */
+		CourseAggregateInput: {
+			credits: string;
+			/** Format: int64 */
+			effectiveVersion?: number | null;
+			/** Format: uuid */
+			learningOfferingId: string;
+			numericGrade?: string | null;
+			outcome?: null | components['schemas']['CourseOfficialOutcome'];
+			/** Format: uuid */
+			resultId?: string | null;
+			/** Format: uuid */
+			subjectId: string;
+		};
+		CourseCreditTotals: {
+			allOutcomesNumeric: boolean;
+			attemptedCredits: string;
+			coverageComplete: boolean;
+			earnedCredits: string;
+			exceptionalResultCount: number;
+			gradedCredits: string;
+			missingResultCount: number;
+			/** @description Display-only average of numeric results; never an official aggregate lock. */
+			provisionalGpa?: string | null;
+			unresolvedCredits: string;
+			weightedGradePoints: string;
 		};
 		CourseOfferingSnapshot: {
 			assessmentTotalScore: string;
@@ -15913,6 +15972,26 @@ export interface components {
 		TemplateWithEntries: {
 			entries: components['schemas']['TimetableTemplateEntry'][];
 			template: components['schemas']['TimetableTemplate'];
+		};
+		TermResultPreview: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			academicYearId: string;
+			courses: components['schemas']['CourseAggregateInput'][];
+			passingGrade: string;
+			sourceChecksum: string;
+			/** Format: uuid */
+			studentAcademicYearId: string;
+			totals: components['schemas']['CourseCreditTotals'];
+		};
+		TermResultPreviewQuery: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			academicYearId: string;
+			/** @description Explicit preview criterion, not authority to change school grading policy. */
+			passingGrade: string;
 		};
 		/** @enum {string} */
 		TextAlignment: 'left' | 'center' | 'right';
@@ -25722,6 +25801,56 @@ export interface operations {
 				};
 			};
 			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	previewStudentTermResults: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+				/** @description Explicit preview criterion, not authority to change school grading policy. */
+				passingGrade: string;
+			};
+			header?: never;
+			path: {
+				student_year_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TermResultPreview'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
 				headers: {
 					[name: string]: unknown;
 				};

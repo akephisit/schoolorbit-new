@@ -23,6 +23,25 @@ fn signal(state: &AppState, session: &AuthenticatedSession, context: &ResultCont
     );
 }
 
+#[utoipa::path(get,path="/api/academic/results/students/{student_year_id}/term-preview",operation_id="previewStudentTermResults",tag="academic",params(TermResultPreviewQuery,("student_year_id"=Uuid,Path)),responses((status=200,body=ApiResponse<TermResultPreview>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse)))]
+pub async fn preview_student_term(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(student_year_id): Path<Uuid>,
+    Query(query): Query<TermResultPreviewQuery>,
+) -> Result<Json<ApiResponse<TermResultPreview>>, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    Ok(Json(ApiResponse::ok(
+        services::preview_student_term(
+            &context.tenant.pool,
+            &context.actor,
+            student_year_id,
+            &query,
+        )
+        .await?,
+    )))
+}
+
 #[utoipa::path(get,path="/api/academic/results/policies",operation_id="listAcademicGradingPolicies",tag="academic",params(ResultContext),responses((status=200,body=ApiResponse<Vec<GradingPolicyVersion>>),(status=403,body=ApiErrorResponse)))]
 pub async fn list_policies(
     State(state): State<AppState>,
