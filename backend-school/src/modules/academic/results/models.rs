@@ -5,6 +5,8 @@ use uuid::Uuid;
 
 mod aggregation;
 pub use aggregation::*;
+mod aggregate_revision;
+pub use aggregate_revision::*;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema, IntoParams)]
 #[serde(rename_all = "camelCase")]

@@ -209,33 +209,43 @@ pub async fn summarize_student_term(
     sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
         .execute(&mut *tx)
         .await?;
-    validate_context(&mut tx, ctx).await?;
+    let summary = summarize_student_term_in_transaction(&mut tx, ctx, student).await?;
+    tx.commit().await?;
+    Ok(summary)
+}
+
+/// Internal aggregate provider; callers must authorize all contributing domains.
+pub(crate) async fn summarize_student_term_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    ctx: &EvaluationContext,
+    student: Uuid,
+) -> Result<StudentEvaluationSummary, AppError> {
+    validate_context(tx, ctx).await?;
     let exists: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM student_academic_years WHERE id=$1 AND academic_year_id=$2)",
     )
     .bind(student)
     .bind(ctx.academic_year_id)
-    .fetch_one(&mut *tx)
+    .fetch_one(&mut **tx)
     .await?;
     if !exists {
         return Err(AppError::NotFound(
             "Student enrollment not found in this academic year".into(),
         ));
     }
-    let expected:Vec<Uuid>=sqlx::query_scalar("SELECT DISTINCT d.subject_id FROM learning_group_students m JOIN learning_groups g ON g.id=m.learning_group_id JOIN course_offering_details d ON d.learning_offering_id=g.learning_offering_id WHERE m.student_academic_year_id=$1 AND m.academic_term_id=$2 AND m.academic_year_id=$3 AND m.membership_status='active' UNION SELECT subject_id FROM subject_term_student_evaluations WHERE student_academic_year_id=$1 AND academic_term_id=$2 AND academic_year_id=$3 ORDER BY subject_id").bind(student).bind(ctx.academic_term_id).bind(ctx.academic_year_id).fetch_all(&mut *tx).await?;
-    let locked:Vec<(Uuid,LearnerEvaluationDomain)>=sqlx::query_as("SELECT subject_id,domain FROM subject_term_evaluation_locks WHERE academic_term_id=$1 AND academic_year_id=$2 AND subject_id=ANY($3)").bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(&expected).fetch_all(&mut *tx).await?;
-    let rows = load_effective_values(&mut tx, ctx, student).await?;
+    let expected:Vec<Uuid>=sqlx::query_scalar("SELECT DISTINCT d.subject_id FROM learning_group_students m JOIN learning_groups g ON g.id=m.learning_group_id JOIN course_offering_details d ON d.learning_offering_id=g.learning_offering_id WHERE m.student_academic_year_id=$1 AND m.academic_term_id=$2 AND m.academic_year_id=$3 AND m.membership_status='active' UNION SELECT subject_id FROM subject_term_student_evaluations WHERE student_academic_year_id=$1 AND academic_term_id=$2 AND academic_year_id=$3 ORDER BY subject_id").bind(student).bind(ctx.academic_term_id).bind(ctx.academic_year_id).fetch_all(&mut **tx).await?;
+    let locked:Vec<(Uuid,LearnerEvaluationDomain)>=sqlx::query_as("SELECT subject_id,domain FROM subject_term_evaluation_locks WHERE academic_term_id=$1 AND academic_year_id=$2 AND subject_id=ANY($3)").bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(&expected).fetch_all(&mut **tx).await?;
+    let rows = load_effective_values(tx, ctx, student).await?;
     let policy_version_id: Uuid = sqlx::query_scalar(
         "SELECT id FROM academic_learner_evaluation_policy_versions WHERE lifecycle='active'",
     )
-    .fetch_optional(&mut *tx)
+    .fetch_optional(&mut **tx)
     .await?
     .ok_or_else(|| {
         AppError::ValidationError("No active learner evaluation aggregation policy".into())
     })?;
-    let bands:Vec<(i16,String)>=sqlx::query_as("SELECT quality_level,lower_bound::text FROM academic_learner_evaluation_policy_bands WHERE policy_version_id=$1 ORDER BY quality_level").bind(policy_version_id).fetch_all(&mut *tx).await?;
+    let bands:Vec<(i16,String)>=sqlx::query_as("SELECT quality_level,lower_bound::text FROM academic_learner_evaluation_policy_bands WHERE policy_version_id=$1 ORDER BY quality_level").bind(policy_version_id).fetch_all(&mut **tx).await?;
     let domains = summarize_domains(&rows, &expected, &locked, &bands)?;
-    tx.commit().await?;
     Ok(StudentEvaluationSummary {
         student_academic_year_id: student,
         policy_version_id,

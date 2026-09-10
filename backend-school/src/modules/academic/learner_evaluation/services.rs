@@ -21,6 +21,7 @@ pub use locking::{lock_subject, read_lock_readiness};
 pub use policies::{activate_policy, create_policy, list_policies};
 #[cfg(test)]
 pub use summary::summarize_domains;
+pub(crate) use summary::summarize_student_term_in_transaction;
 pub use summary::{summarize_student_term, summary_for_actor};
 
 pub async fn list_subjects(

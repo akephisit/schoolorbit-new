@@ -12,6 +12,45 @@ async function read(relativePath) {
 
 let wrapperRevision = 0;
 
+test('aggregate wrappers preserve context, source revision and idempotent request identity', async () => {
+	const api = await importWrapper('src/lib/api/academicAggregates.ts');
+	const context = { academicYearId: ' year ', academicTermId: ' term ' };
+	await api.previewTermAggregate('student/id', context, 'policy');
+	const input = {
+		policyId: 'policy',
+		sourceChecksum: 'a'.repeat(64),
+		expectedRevision: 2,
+		requestId: 'request',
+		holdReason: 'Reviewed outcome'
+	};
+	await api.lockTermAggregate('student/id', context, input);
+	await api.listTermAggregateRevisions('student/id', context);
+	await api.listAggregatePolicies();
+	assert.deepEqual(
+		globalThis.__academicContractCalls.map((call) => [call.method, call.endpoint]),
+		[
+			['get', '/api/academic/results/students/student%2Fid/aggregate-preview'],
+			['post', '/api/academic/results/students/student%2Fid/aggregate-revisions'],
+			['get', '/api/academic/results/students/student%2Fid/aggregate-revisions'],
+			['get', '/api/academic/results/aggregate-policies']
+		]
+	);
+	assert.deepEqual(globalThis.__academicContractCalls[0].bodyOrOptions.query, {
+		academicYearId: 'year',
+		academicTermId: 'term',
+		policyId: 'policy'
+	});
+	assert.deepEqual(globalThis.__academicContractCalls[1].bodyOrOptions, input);
+	assert.deepEqual(globalThis.__academicContractCalls[1].options.query, {
+		academicYearId: 'year',
+		academicTermId: 'term'
+	});
+	assert.throws(() =>
+		api.previewTermAggregate('student', { ...context, academicTermId: '' }, 'policy')
+	);
+	assert.equal(globalThis.__academicContractCalls.length, 4);
+});
+
 async function importWrapper(relativePath) {
 	globalThis.__academicContractCalls = [];
 	const clientModule = `

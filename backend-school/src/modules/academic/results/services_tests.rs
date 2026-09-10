@@ -119,7 +119,7 @@ fn results_exact_inclusive_policy_and_teacher_contract() {
         .is_err()
     );
 }
-async fn fixture(name: &str) -> (sqlx::PgPool, ActorContext, ResultContext, Uuid) {
+pub(super) async fn fixture(name: &str) -> (sqlx::PgPool, ActorContext, ResultContext, Uuid) {
     let pool = create_named_test_pool_with_max_connections(name, 4).await;
     seed_release_two_predecessor(&pool).await.unwrap();
     apply_migrations_through(&pool, 61).await.unwrap();
@@ -339,7 +339,7 @@ async fn wait_for_result_confirmation_read_lock(pool: &sqlx::PgPool) {
     panic!("workspace GET did not reach the confirmation read while the table was locked");
 }
 
-fn academic_affairs_actor(actor: &ActorContext) -> ActorContext {
+pub(super) fn academic_affairs_actor(actor: &ActorContext) -> ActorContext {
     ActorContext {
         user_id: actor.user_id,
         permissions: vec![
@@ -546,7 +546,7 @@ async fn course_subject_rooms(
     .unwrap()
 }
 
-async fn prepare_course_subject(
+pub(super) async fn prepare_course_subject(
     pool: &sqlx::PgPool,
     base_actor: &ActorContext,
     ctx: &ResultContext,
@@ -572,7 +572,7 @@ async fn prepare_course_subject(
     workspaces
 }
 
-async fn prepare_activity_group(
+pub(super) async fn prepare_activity_group(
     pool: &sqlx::PgPool,
     actor: &ActorContext,
     ctx: &ResultContext,

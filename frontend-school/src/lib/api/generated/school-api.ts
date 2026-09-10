@@ -1706,6 +1706,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/results/aggregate-policies': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listAggregatePolicies'];
+		put?: never;
+		post: operations['createAggregatePolicy'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/results/corrections': {
 		parameters: {
 			query?: never;
@@ -1892,6 +1908,38 @@ export interface paths {
 		get: operations['getAcademicResultReadiness'];
 		put?: never;
 		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/results/students/{student_year_id}/aggregate-preview': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['previewTermAggregate'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/results/students/{student_year_id}/aggregate-revisions': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listTermAggregateRevisions'];
+		put?: never;
+		post: operations['lockTermAggregate'];
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -5800,6 +5848,56 @@ export interface components {
 			homeroomName: string;
 			role: string;
 		};
+		/** @enum {string} */
+		AggregateBlocker:
+			| 'no_course_coverage'
+			| 'missing_course_results'
+			| 'missing_activity_results'
+			| 'missing_learner_evaluations'
+			| 'reviewed_hold_not_allowed';
+		/** @enum {string} */
+		AggregateHoldFinding:
+			| 'exceptional_course_outcomes'
+			| 'failed_activities'
+			| 'failed_learner_evaluations';
+		AggregateLockInput: {
+			/** Format: int64 */
+			expectedRevision?: number | null;
+			holdReason?: string | null;
+			/** Format: uuid */
+			policyId: string;
+			/** Format: uuid */
+			requestId: string;
+			sourceChecksum: string;
+		};
+		AggregatePolicyInput: {
+			allowReviewedHolds: boolean;
+			/** Format: int32 */
+			minimumLearnerLevel: number;
+			name: string;
+			passingGrade: string;
+		};
+		AggregatePolicyVersion: {
+			allowReviewedHolds: boolean;
+			/** Format: date-time */
+			approvedAt: string;
+			/** Format: uuid */
+			approvedBy: string;
+			/** Format: uuid */
+			id: string;
+			/** Format: int32 */
+			minimumLearnerLevel: number;
+			name: string;
+			passingGrade: string;
+		};
+		AggregatePreviewQuery: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			academicYearId: string;
+			/** Format: uuid */
+			policyId: string;
+		};
 		AggregationPolicyBand: {
 			lowerBound: string;
 			/** Format: int32 */
@@ -6094,6 +6192,23 @@ export interface components {
 				updatedAt: string;
 				/** Format: int32 */
 				versionNo: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_AggregatePolicyVersion: {
+			data: {
+				allowReviewedHolds: boolean;
+				/** Format: date-time */
+				approvedAt: string;
+				/** Format: uuid */
+				approvedBy: string;
+				/** Format: uuid */
+				id: string;
+				/** Format: int32 */
+				minimumLearnerLevel: number;
+				name: string;
+				passingGrade: string;
 			};
 			message?: string;
 			success: boolean;
@@ -8397,6 +8512,38 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_TermAggregatePreview: {
+			data: {
+				blockers: components['schemas']['AggregateBlocker'][];
+				canLock: boolean;
+				holdFindings: components['schemas']['AggregateHoldFinding'][];
+				learnerEvaluations: components['schemas']['StudentEvaluationSummary'];
+				policy: components['schemas']['AggregatePolicyVersion'];
+				results: components['schemas']['TermResultPreview'];
+				sourceChecksum: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_TermAggregateRevision: {
+			data: {
+				holdReason?: string | null;
+				/** Format: uuid */
+				id: string;
+				/** @description Recalculated against the policy pinned to this revision, not a newer policy. */
+				isCurrent: boolean;
+				/** Format: date-time */
+				lockedAt: string;
+				/** Format: uuid */
+				lockedBy: string;
+				officialGpa?: string | null;
+				/** Format: int64 */
+				revision: number;
+				snapshot: components['schemas']['TermAggregatePreview'];
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_TermResultPreview: {
 			data: {
 				/** Format: uuid */
@@ -8722,6 +8869,23 @@ export interface components {
 				updatedAt: string;
 				/** Format: int32 */
 				versionNo: number;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_AggregatePolicyVersion: {
+			data: {
+				allowReviewedHolds: boolean;
+				/** Format: date-time */
+				approvedAt: string;
+				/** Format: uuid */
+				approvedBy: string;
+				/** Format: uuid */
+				id: string;
+				/** Format: int32 */
+				minimumLearnerLevel: number;
+				name: string;
+				passingGrade: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -10137,6 +10301,25 @@ export interface components {
 				updatedAt: string;
 				/** Format: int32 */
 				versionNo: number;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_TermAggregateRevision: {
+			data: {
+				holdReason?: string | null;
+				/** Format: uuid */
+				id: string;
+				/** @description Recalculated against the policy pinned to this revision, not a newer policy. */
+				isCurrent: boolean;
+				/** Format: date-time */
+				lockedAt: string;
+				/** Format: uuid */
+				lockedBy: string;
+				officialGpa?: string | null;
+				/** Format: int64 */
+				revision: number;
+				snapshot: components['schemas']['TermAggregatePreview'];
 			}[];
 			message?: string;
 			success: boolean;
@@ -15993,6 +16176,30 @@ export interface components {
 		TemplateWithEntries: {
 			entries: components['schemas']['TimetableTemplateEntry'][];
 			template: components['schemas']['TimetableTemplate'];
+		};
+		TermAggregatePreview: {
+			blockers: components['schemas']['AggregateBlocker'][];
+			canLock: boolean;
+			holdFindings: components['schemas']['AggregateHoldFinding'][];
+			learnerEvaluations: components['schemas']['StudentEvaluationSummary'];
+			policy: components['schemas']['AggregatePolicyVersion'];
+			results: components['schemas']['TermResultPreview'];
+			sourceChecksum: string;
+		};
+		TermAggregateRevision: {
+			holdReason?: string | null;
+			/** Format: uuid */
+			id: string;
+			/** @description Recalculated against the policy pinned to this revision, not a newer policy. */
+			isCurrent: boolean;
+			/** Format: date-time */
+			lockedAt: string;
+			/** Format: uuid */
+			lockedBy: string;
+			officialGpa?: string | null;
+			/** Format: int64 */
+			revision: number;
+			snapshot: components['schemas']['TermAggregatePreview'];
 		};
 		TermResultPreview: {
 			/** Format: uuid */
@@ -25308,6 +25515,72 @@ export interface operations {
 			};
 		};
 	};
+	listAggregatePolicies: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_AggregatePolicyVersion'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createAggregatePolicy: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['AggregatePolicyInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AggregatePolicyVersion'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	correctEffectiveAcademicResult: {
 		parameters: {
 			query: {
@@ -25816,6 +26089,163 @@ export interface operations {
 				};
 			};
 			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	previewTermAggregate: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+				policyId: string;
+			};
+			header?: never;
+			path: {
+				student_year_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TermAggregatePreview'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listTermAggregateRevisions: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				student_year_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_TermAggregateRevision'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	lockTermAggregate: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				student_year_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['AggregateLockInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TermAggregateRevision'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
 				headers: {
 					[name: string]: unknown;
 				};

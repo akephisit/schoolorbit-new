@@ -1950,6 +1950,146 @@
         ],
         "type": "object"
       },
+      "AggregateBlocker": {
+        "enum": [
+          "no_course_coverage",
+          "missing_course_results",
+          "missing_activity_results",
+          "missing_learner_evaluations",
+          "reviewed_hold_not_allowed"
+        ],
+        "type": "string"
+      },
+      "AggregateHoldFinding": {
+        "enum": [
+          "exceptional_course_outcomes",
+          "failed_activities",
+          "failed_learner_evaluations"
+        ],
+        "type": "string"
+      },
+      "AggregateLockInput": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedRevision": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "holdReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "policyId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sourceChecksum": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "policyId",
+          "sourceChecksum",
+          "requestId"
+        ],
+        "type": "object"
+      },
+      "AggregatePolicyInput": {
+        "additionalProperties": false,
+        "properties": {
+          "allowReviewedHolds": {
+            "type": "boolean"
+          },
+          "minimumLearnerLevel": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "passingGrade": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "passingGrade",
+          "minimumLearnerLevel",
+          "allowReviewedHolds"
+        ],
+        "type": "object"
+      },
+      "AggregatePolicyVersion": {
+        "properties": {
+          "allowReviewedHolds": {
+            "type": "boolean"
+          },
+          "approvedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "approvedBy": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "minimumLearnerLevel": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "passingGrade": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "passingGrade",
+          "minimumLearnerLevel",
+          "allowReviewedHolds",
+          "approvedBy",
+          "approvedAt"
+        ],
+        "type": "object"
+      },
+      "AggregatePreviewQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "academicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "policyId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "academicYearId",
+          "academicTermId",
+          "policyId"
+        ],
+        "type": "object"
+      },
       "AggregationPolicyBand": {
         "additionalProperties": false,
         "properties": {
@@ -3017,6 +3157,60 @@
               "migrated",
               "createdAt",
               "updatedAt"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_AggregatePolicyVersion": {
+        "properties": {
+          "data": {
+            "properties": {
+              "allowReviewedHolds": {
+                "type": "boolean"
+              },
+              "approvedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "approvedBy": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "minimumLearnerLevel": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              },
+              "passingGrade": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "passingGrade",
+              "minimumLearnerLevel",
+              "allowReviewedHolds",
+              "approvedBy",
+              "approvedAt"
             ],
             "type": "object"
           },
@@ -11643,6 +11837,125 @@
         ],
         "type": "object"
       },
+      "ApiResponse_TermAggregatePreview": {
+        "properties": {
+          "data": {
+            "properties": {
+              "blockers": {
+                "items": {
+                  "$ref": "#/components/schemas/AggregateBlocker"
+                },
+                "type": "array"
+              },
+              "canLock": {
+                "type": "boolean"
+              },
+              "holdFindings": {
+                "items": {
+                  "$ref": "#/components/schemas/AggregateHoldFinding"
+                },
+                "type": "array"
+              },
+              "learnerEvaluations": {
+                "$ref": "#/components/schemas/StudentEvaluationSummary"
+              },
+              "policy": {
+                "$ref": "#/components/schemas/AggregatePolicyVersion"
+              },
+              "results": {
+                "$ref": "#/components/schemas/TermResultPreview"
+              },
+              "sourceChecksum": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "policy",
+              "results",
+              "learnerEvaluations",
+              "blockers",
+              "holdFindings",
+              "canLock",
+              "sourceChecksum"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_TermAggregateRevision": {
+        "properties": {
+          "data": {
+            "properties": {
+              "holdReason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "isCurrent": {
+                "description": "Recalculated against the policy pinned to this revision, not a newer policy.",
+                "type": "boolean"
+              },
+              "lockedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "lockedBy": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "officialGpa": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "revision": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "snapshot": {
+                "$ref": "#/components/schemas/TermAggregatePreview"
+              }
+            },
+            "required": [
+              "id",
+              "revision",
+              "snapshot",
+              "lockedBy",
+              "lockedAt",
+              "isCurrent"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_TermResultPreview": {
         "properties": {
           "data": {
@@ -12850,6 +13163,63 @@
                 "migrated",
                 "createdAt",
                 "updatedAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_AggregatePolicyVersion": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "allowReviewedHolds": {
+                  "type": "boolean"
+                },
+                "approvedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "approvedBy": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "minimumLearnerLevel": {
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "passingGrade": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "passingGrade",
+                "minimumLearnerLevel",
+                "allowReviewedHolds",
+                "approvedBy",
+                "approvedAt"
               ],
               "type": "object"
             },
@@ -18091,6 +18461,72 @@
                 "migrated",
                 "createdAt",
                 "updatedAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_TermAggregateRevision": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "holdReason": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "isCurrent": {
+                  "description": "Recalculated against the policy pinned to this revision, not a newer policy.",
+                  "type": "boolean"
+                },
+                "lockedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "lockedBy": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "officialGpa": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "revision": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "snapshot": {
+                  "$ref": "#/components/schemas/TermAggregatePreview"
+                }
+              },
+              "required": [
+                "id",
+                "revision",
+                "snapshot",
+                "lockedBy",
+                "lockedAt",
+                "isCurrent"
               ],
               "type": "object"
             },
@@ -39436,6 +39872,95 @@
         ],
         "type": "object"
       },
+      "TermAggregatePreview": {
+        "properties": {
+          "blockers": {
+            "items": {
+              "$ref": "#/components/schemas/AggregateBlocker"
+            },
+            "type": "array"
+          },
+          "canLock": {
+            "type": "boolean"
+          },
+          "holdFindings": {
+            "items": {
+              "$ref": "#/components/schemas/AggregateHoldFinding"
+            },
+            "type": "array"
+          },
+          "learnerEvaluations": {
+            "$ref": "#/components/schemas/StudentEvaluationSummary"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/AggregatePolicyVersion"
+          },
+          "results": {
+            "$ref": "#/components/schemas/TermResultPreview"
+          },
+          "sourceChecksum": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "policy",
+          "results",
+          "learnerEvaluations",
+          "blockers",
+          "holdFindings",
+          "canLock",
+          "sourceChecksum"
+        ],
+        "type": "object"
+      },
+      "TermAggregateRevision": {
+        "properties": {
+          "holdReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "isCurrent": {
+            "description": "Recalculated against the policy pinned to this revision, not a newer policy.",
+            "type": "boolean"
+          },
+          "lockedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "lockedBy": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "officialGpa": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/TermAggregatePreview"
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "snapshot",
+          "lockedBy",
+          "lockedAt",
+          "isCurrent"
+        ],
+        "type": "object"
+      },
       "TermResultPreview": {
         "properties": {
           "academicTermId": {
@@ -54497,6 +55022,84 @@
         ]
       }
     },
+    "/api/academic/results/aggregate-policies": {
+      "get": {
+        "operationId": "listAggregatePolicies",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_AggregatePolicyVersion"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      },
+      "post": {
+        "operationId": "createAggregatePolicy",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AggregatePolicyInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AggregatePolicyVersion"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
     "/api/academic/results/corrections": {
       "post": {
         "operationId": "correctEffectiveAcademicResult",
@@ -55398,6 +56001,270 @@
             "description": ""
           },
           "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/results/students/{student_year_id}/aggregate-preview": {
+      "get": {
+        "operationId": "previewTermAggregate",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "policyId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "student_year_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TermAggregatePreview"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/results/students/{student_year_id}/aggregate-revisions": {
+      "get": {
+        "operationId": "listTermAggregateRevisions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "student_year_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_TermAggregateRevision"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      },
+      "post": {
+        "operationId": "lockTermAggregate",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "student_year_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AggregateLockInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TermAggregateRevision"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
             "content": {
               "application/json": {
                 "schema": {

@@ -7,7 +7,7 @@ use crate::{
     policies::academic_result_access_policy,
 };
 use bigdecimal::BigDecimal;
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 #[derive(sqlx::FromRow)]
@@ -49,23 +49,34 @@ pub async fn preview_student_term(
             "School-level result permission is required for whole-student totals".into(),
         ));
     }
+    let mut tx = pool.begin().await?;
+    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+        .execute(&mut *tx)
+        .await?;
+    let preview = preview_student_term_in_transaction(&mut tx, student_year_id, query).await?;
+    tx.commit().await?;
+    Ok(preview)
+}
+
+/// Internal provider: the caller owns authorization and transaction isolation.
+pub(crate) async fn preview_student_term_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    student_year_id: Uuid,
+    query: &TermResultPreviewQuery,
+) -> Result<TermResultPreview, AppError> {
     aggregate_course_credits(&[], &query.passing_grade)?;
     let passing_grade = decimal_wire(&decimal(&query.passing_grade)?);
     let context = ResultContext {
         academic_year_id: query.academic_year_id,
         academic_term_id: query.academic_term_id,
     };
-    let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-        .execute(&mut *tx)
-        .await?;
-    validate_context(&mut tx, &context).await?;
+    validate_context(tx, &context).await?;
     let exists: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM student_academic_years WHERE id=$1 AND academic_year_id=$2)",
     )
     .bind(student_year_id)
     .bind(context.academic_year_id)
-    .fetch_one(&mut *tx)
+    .fetch_one(&mut **tx)
     .await?;
     if !exists {
         return Err(AppError::NotFound(
@@ -106,7 +117,7 @@ pub async fn preview_student_term(
         ORDER BY expected.subject_id,expected.learning_offering_id
         LIMIT 2001
     "#).bind(student_year_id).bind(context.academic_term_id).bind(context.academic_year_id)
-        .fetch_all(&mut *tx).await?;
+        .fetch_all(&mut **tx).await?;
     if rows.len() > 2000 {
         return Err(AppError::ValidationError(
             "Term result preview exceeds 2000 course offerings".into(),
@@ -117,7 +128,7 @@ pub async fn preview_student_term(
         .map(course_input)
         .collect::<Result<Vec<_>, _>>()?;
     let totals = aggregate_course_credits(&courses, &passing_grade)?;
-    let activities = load_activity_inputs(&mut tx, &context, student_year_id).await?;
+    let activities = load_activity_inputs(tx, &context, student_year_id).await?;
     let activity_totals = aggregate_activity_outcomes(&activities)?;
     let source_checksum = hash(&(
         context.academic_year_id,
@@ -127,7 +138,6 @@ pub async fn preview_student_term(
         &courses,
         &activities,
     ))?;
-    tx.commit().await?;
     Ok(TermResultPreview {
         academic_year_id: context.academic_year_id,
         academic_term_id: context.academic_term_id,

@@ -23,6 +23,96 @@ fn signal(state: &AppState, session: &AuthenticatedSession, context: &ResultCont
     );
 }
 
+#[utoipa::path(get,path="/api/academic/results/aggregate-policies",operation_id="listAggregatePolicies",tag="academic",responses((status=200,body=ApiResponse<Vec<AggregatePolicyVersion>>),(status=403,body=ApiErrorResponse)))]
+pub async fn list_aggregate_policies(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+) -> Result<Json<ApiResponse<Vec<AggregatePolicyVersion>>>, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    Ok(Json(ApiResponse::ok(
+        services::list_aggregate_policies(&context.tenant.pool, &context.actor).await?,
+    )))
+}
+
+#[utoipa::path(post,path="/api/academic/results/aggregate-policies",operation_id="createAggregatePolicy",tag="academic",request_body=AggregatePolicyInput,responses((status=200,body=ApiResponse<AggregatePolicyVersion>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse)))]
+pub async fn create_aggregate_policy(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Json(input): Json<AggregatePolicyInput>,
+) -> Result<Json<ApiResponse<AggregatePolicyVersion>>, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let result =
+        services::create_aggregate_policy(&context.tenant.pool, &context.actor, input).await?;
+    state.websocket_manager.broadcast_academic_core_changed(
+        session.tenant.subdomain.clone(),
+        session.user_id,
+        "academic_result",
+        Some(result.id),
+        None,
+        None,
+    );
+    Ok(Json(ApiResponse::ok(result)))
+}
+
+#[utoipa::path(get,path="/api/academic/results/students/{student_year_id}/aggregate-preview",operation_id="previewTermAggregate",tag="academic",params(AggregatePreviewQuery,("student_year_id"=Uuid,Path)),responses((status=200,body=ApiResponse<TermAggregatePreview>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse)))]
+pub async fn preview_aggregate(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(student_year_id): Path<Uuid>,
+    Query(query): Query<AggregatePreviewQuery>,
+) -> Result<Json<ApiResponse<TermAggregatePreview>>, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    Ok(Json(ApiResponse::ok(
+        services::preview_aggregate(
+            &context.tenant.pool,
+            &context.actor,
+            student_year_id,
+            &query,
+        )
+        .await?,
+    )))
+}
+
+#[utoipa::path(get,path="/api/academic/results/students/{student_year_id}/aggregate-revisions",operation_id="listTermAggregateRevisions",tag="academic",params(ResultContext,("student_year_id"=Uuid,Path)),responses((status=200,body=ApiResponse<Vec<TermAggregateRevision>>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse)))]
+pub async fn list_term_aggregate_revisions(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(student_year_id): Path<Uuid>,
+    Query(query): Query<ResultContext>,
+) -> Result<Json<ApiResponse<Vec<TermAggregateRevision>>>, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    Ok(Json(ApiResponse::ok(
+        services::list_term_aggregate_revisions(
+            &context.tenant.pool,
+            &context.actor,
+            &query,
+            student_year_id,
+        )
+        .await?,
+    )))
+}
+
+#[utoipa::path(post,path="/api/academic/results/students/{student_year_id}/aggregate-revisions",operation_id="lockTermAggregate",tag="academic",params(ResultContext,("student_year_id"=Uuid,Path)),request_body=AggregateLockInput,responses((status=200,body=ApiResponse<TermAggregateRevision>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+pub async fn lock_term_aggregate(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(student_year_id): Path<Uuid>,
+    Query(query): Query<ResultContext>,
+    Json(input): Json<AggregateLockInput>,
+) -> Result<Json<ApiResponse<TermAggregateRevision>>, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let result = services::lock_term_aggregate(
+        &context.tenant.pool,
+        &context.actor,
+        &query,
+        student_year_id,
+        input,
+    )
+    .await?;
+    signal(&state, &session, &query, result.id);
+    Ok(Json(ApiResponse::ok(result)))
+}
+
 #[utoipa::path(get,path="/api/academic/results/students/{student_year_id}/term-preview",operation_id="previewStudentTermResults",tag="academic",params(TermResultPreviewQuery,("student_year_id"=Uuid,Path)),responses((status=200,body=ApiResponse<TermResultPreview>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse)))]
 pub async fn preview_student_term(
     State(state): State<AppState>,
