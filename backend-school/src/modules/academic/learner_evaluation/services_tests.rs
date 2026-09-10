@@ -530,6 +530,18 @@ async fn learner_current_primary_is_revalidated_for_confirmation_and_lock() {
     assert!(!expired_coordinator.can_confirm);
 }
 
+// Catches an empty course roster being treated as complete for term closure.
+#[test]
+fn learner_summary_empty_coverage_is_not_complete() {
+    let summaries = summarize_domains(&[], &[], &[], &bands()).unwrap();
+    assert_eq!(summaries.len(), 2);
+    assert!(summaries.iter().all(|domain| !domain.complete));
+    assert!(summaries.iter().all(|domain| domain.average.is_none()));
+    assert!(summaries
+        .iter()
+        .all(|domain| domain.quality_level.is_none()));
+}
+
 // Catches cell-weighted averaging, label-based catalog merging, rounded threshold comparison,
 // and caching a derived summary instead of recalculating supplied effective values.
 #[test]
@@ -579,6 +591,44 @@ fn learner_summary_equal_subject_weighting_thresholds_and_effective_value_recalc
             summarize_domains(&rows, &[a], &[(a, DC)], &bands()).unwrap()[0].quality_level,
             Some(want)
         );
+    }
+}
+
+// Catches group closure hiding an outstanding subject-domain lock from the summary.
+#[tokio::test]
+async fn learner_summary_closed_group_keeps_missing_domain_results() {
+    let (pool, _, ctx, group, subject) = fixture("learner_summary_closed_group").await;
+    let student: Uuid = sqlx::query_scalar(
+        "SELECT student_academic_year_id FROM learning_group_students
+         WHERE learning_group_id=$1 AND membership_status='active'
+         ORDER BY student_academic_year_id LIMIT 1",
+    )
+    .bind(group)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let before = summarize_student_term(&pool, &ctx, student).await.unwrap();
+    for domain in &before.domains {
+        assert!(!domain.complete);
+        assert!(domain
+            .missing_subjects
+            .iter()
+            .any(|row| row.subject_id == subject));
+    }
+    sqlx::query("UPDATE learning_groups SET status='closed' WHERE id=$1")
+        .bind(group)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let after = summarize_student_term(&pool, &ctx, student).await.unwrap();
+    for domain in &after.domains {
+        assert!(!domain.complete);
+        assert!(domain
+            .missing_subjects
+            .iter()
+            .any(|row| row.subject_id == subject));
+        assert!(domain.average.is_none());
+        assert!(domain.quality_level.is_none());
     }
 }
 

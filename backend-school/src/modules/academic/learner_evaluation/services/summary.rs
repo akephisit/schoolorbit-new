@@ -175,7 +175,7 @@ pub fn summarize_domains(
             domain,
             average: average.map(|a| a.wire()),
             quality_level,
-            complete: missing_subjects.is_empty(),
+            complete: !expected.is_empty() && missing_subjects.is_empty(),
             missing_subjects,
             catalog_criteria,
             subjects: subject_summaries,
@@ -222,7 +222,7 @@ pub async fn summarize_student_term(
             "Student enrollment not found in this academic year".into(),
         ));
     }
-    let expected:Vec<Uuid>=sqlx::query_scalar("SELECT DISTINCT d.subject_id FROM learning_group_students m JOIN learning_groups g ON g.id=m.learning_group_id JOIN course_offering_details d ON d.learning_offering_id=g.learning_offering_id WHERE m.student_academic_year_id=$1 AND m.academic_term_id=$2 AND m.academic_year_id=$3 AND m.membership_status='active' AND g.status<>'closed' UNION SELECT subject_id FROM subject_term_student_evaluations WHERE student_academic_year_id=$1 AND academic_term_id=$2 AND academic_year_id=$3 ORDER BY subject_id").bind(student).bind(ctx.academic_term_id).bind(ctx.academic_year_id).fetch_all(&mut *tx).await?;
+    let expected:Vec<Uuid>=sqlx::query_scalar("SELECT DISTINCT d.subject_id FROM learning_group_students m JOIN learning_groups g ON g.id=m.learning_group_id JOIN course_offering_details d ON d.learning_offering_id=g.learning_offering_id WHERE m.student_academic_year_id=$1 AND m.academic_term_id=$2 AND m.academic_year_id=$3 AND m.membership_status='active' UNION SELECT subject_id FROM subject_term_student_evaluations WHERE student_academic_year_id=$1 AND academic_term_id=$2 AND academic_year_id=$3 ORDER BY subject_id").bind(student).bind(ctx.academic_term_id).bind(ctx.academic_year_id).fetch_all(&mut *tx).await?;
     let locked:Vec<(Uuid,LearnerEvaluationDomain)>=sqlx::query_as("SELECT subject_id,domain FROM subject_term_evaluation_locks WHERE academic_term_id=$1 AND academic_year_id=$2 AND subject_id=ANY($3)").bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(&expected).fetch_all(&mut *tx).await?;
     let rows = load_effective_values(&mut tx, ctx, student).await?;
     let policy_version_id: Uuid = sqlx::query_scalar(
