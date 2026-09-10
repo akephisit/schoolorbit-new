@@ -44296,6 +44296,16 @@
             },
             "description": "Assessment phase control manage permission denied"
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Assessment phase control not found"
+          },
           "409": {
             "content": {
               "application/json": {
@@ -44304,7 +44314,7 @@
                 }
               }
             },
-            "description": "Stale assessment phase control version"
+            "description": "Stale control version or closed academic context"
           }
         },
         "tags": [
@@ -52174,6 +52184,16 @@
               }
             },
             "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Subject or historical configuration does not exist"
           },
           "409": {
             "content": {

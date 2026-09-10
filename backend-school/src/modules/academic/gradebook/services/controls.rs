@@ -25,6 +25,12 @@ pub async fn update_control(
     }
     let mut tx = pool.begin().await?;
     validate_context(&mut tx, context).await?;
+    lifecycle_guard::require_term_write(
+        &mut tx,
+        context.academic_year_id,
+        context.academic_term_id,
+    )
+    .await?;
     let control=sqlx::query_as("UPDATE academic_gradebook_phase_controls SET score_entry_enabled=$4,row_version=row_version+1,updated_by=$6,updated_at=now() WHERE id=$1 AND academic_term_id=$2 AND academic_year_id=$3 AND row_version=$5 RETURNING id,academic_year_id,academic_term_id,phase_code,score_entry_enabled,row_version").bind(id).bind(context.academic_term_id).bind(context.academic_year_id).bind(input.score_entry_enabled).bind(input.row_version).bind(actor.user_id).fetch_optional(&mut *tx).await?.ok_or_else(conflict)?;
     tx.commit().await?;
     Ok(control)

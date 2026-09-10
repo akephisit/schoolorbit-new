@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::middleware::permission::ActorContext;
-use crate::modules::academic::core::services::validate_canonical_decimal;
+use crate::modules::academic::core::services::{lifecycle_guard, validate_canonical_decimal};
 use crate::modules::academic::models::assessment::{
     AssessmentCoordinatorOption, AssessmentExamArrangement, AssessmentOfferingScopeRow,
     AssessmentPhase, AssessmentPhaseCode, AssessmentPhaseControl, AssessmentPhaseControlRow,
@@ -346,7 +346,7 @@ pub async fn save_plan(
 ) -> Result<AssessmentPlanDetail, AppError> {
     validate_plan_payload(&payload)?;
     let mut transaction = pool.begin().await?;
-    let scope = resolve_offering_scope_in_tx(&mut transaction, offering_id, true).await?;
+    let scope = resolve_offering_scope_in_tx(&mut transaction, offering_id).await?;
     crate::modules::academic::results::services::require_course_offering_unlocked(
         &mut transaction,
         scope.offering_id,
@@ -484,6 +484,12 @@ pub async fn update_phase_control(
     actor_user_id: Uuid,
     payload: UpdateAssessmentPhaseControlRequest,
 ) -> Result<AssessmentPhaseControl, AppError> {
+    let mut transaction = pool.begin().await?;
+    let (year, term): (Uuid, Uuid) = sqlx::query_as(
+        "SELECT academic_year_id,academic_term_id FROM academic_assessment_phase_controls WHERE id=$1",
+    ).bind(control_id).fetch_optional(&mut *transaction).await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบการตั้งค่าช่วงคะแนน".into()))?;
+    lifecycle_guard::require_term_write(&mut transaction, year, term).await?;
     let row: AssessmentPhaseControlRow = sqlx::query_as(
         r#"UPDATE academic_assessment_phase_controls
            SET plan_editing_enabled = $2,
@@ -498,10 +504,12 @@ pub async fn update_phase_control(
     .bind(payload.plan_editing_enabled)
     .bind(actor_user_id)
     .bind(payload.row_version)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *transaction)
     .await?
     .ok_or_else(|| AppError::Conflict("การตั้งค่าช่วงคะแนนมีการแก้ไขจากผู้ใช้อื่น กรุณาโหลดใหม่".to_string()))?;
-    phase_control_from_row(row)
+    let result = phase_control_from_row(row)?;
+    transaction.commit().await?;
+    Ok(result)
 }
 
 pub fn require_phase_controls_read_access(actor: &ActorContext) -> Result<(), AppError> {
@@ -536,18 +544,18 @@ async fn resolve_offering_scope(
 async fn resolve_offering_scope_in_tx(
     transaction: &mut Transaction<'_, Postgres>,
     offering_id: Uuid,
-    require_writable: bool,
 ) -> Result<AssessmentOfferingScopeRow, AppError> {
+    // Resolve immutable context without taking an offering lock before the lifecycle lock.
+    let (year, term): (Uuid, Uuid) = sqlx::query_as(
+        "SELECT academic_year_id,academic_term_id FROM learning_offerings WHERE id=$1 AND kind='course'",
+    ).bind(offering_id).fetch_optional(&mut **transaction).await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบรายวิชาที่เปิดสอน".into()))?;
+    lifecycle_guard::require_term_write(transaction, year, term).await?;
     let scope: AssessmentOfferingScopeRow = sqlx::query_as(&offering_scope_sql(true))
         .bind(offering_id)
         .fetch_optional(&mut **transaction)
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบรายวิชาที่เปิดสอน".to_string()))?;
-    if require_writable && matches!(scope.academic_term_status.as_str(), "closed" | "archived") {
-        return Err(AppError::Conflict(
-            "ภาคเรียนนี้ปิดแล้ว ไม่สามารถแก้ไขโครงสร้างคะแนนได้".to_string(),
-        ));
-    }
     Ok(scope)
 }
 
@@ -556,7 +564,6 @@ fn offering_scope_sql(for_update: bool) -> String {
         r#"SELECT offering.id AS offering_id,
                   offering.academic_term_id,
                   offering.academic_year_id,
-                  term.status AS academic_term_status,
                   detail.subject_version_id,
                   detail.subject_id,
                   concat(
@@ -567,7 +574,6 @@ fn offering_scope_sql(for_update: bool) -> String {
                   offering.name_snapshot AS offering_name,
                   detail.assessment_total_score
            FROM learning_offerings offering
-           JOIN academic_terms term ON term.id = offering.academic_term_id
            JOIN course_offering_details detail ON detail.learning_offering_id = offering.id
            JOIN subject_versions version ON version.id = detail.subject_version_id
            WHERE offering.id = $1 AND offering.kind = 'course'{}"#,

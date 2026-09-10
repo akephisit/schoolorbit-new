@@ -19,6 +19,108 @@ use chrono::NaiveDate;
 use std::time::Duration;
 use uuid::Uuid;
 
+#[tokio::test]
+async fn results_lifecycle_guard_keeps_history_and_blocks_ordinary_writes() {
+    let (pool, actor, ctx, course_group) = fixture("results_lifecycle_guard").await;
+    let subject: Uuid = sqlx::query_scalar("SELECT subject_id FROM course_offering_details WHERE learning_offering_id=(SELECT learning_offering_id FROM learning_groups WHERE id=$1)")
+        .bind(course_group).fetch_one(&pool).await.unwrap();
+    prepare_course_subject(&pool, &actor, &ctx, subject).await;
+    let before_course = get_course_workspace(&pool, &actor, &ctx, course_group)
+        .await
+        .unwrap();
+    let (activity_group, teacher): (Uuid, Uuid) = sqlx::query_as("SELECT g.id,t.teacher_id FROM learning_groups g JOIN activity_offering_details d ON d.learning_offering_id=g.learning_offering_id JOIN learning_group_teachers t ON t.learning_group_id=g.id AND t.role='primary' WHERE g.academic_term_id=$1 AND g.academic_year_id=$2 AND EXISTS(SELECT 1 FROM learning_group_students m WHERE m.learning_group_id=g.id AND m.membership_status='active') ORDER BY g.id LIMIT 1")
+        .bind(ctx.academic_term_id).bind(ctx.academic_year_id).fetch_one(&pool).await.unwrap();
+    let activity_actor = ActorContext {
+        user_id: teacher,
+        permissions: actor.permissions.clone(),
+    };
+    let before_activity =
+        prepare_activity_group(&pool, &activity_actor, &ctx, activity_group).await;
+    let affairs = academic_affairs_actor(&actor);
+    for (year_status, term_status) in [("active", "closed"), ("closed", "active")] {
+        sqlx::query("UPDATE academic_years SET status=$2 WHERE id=$1")
+            .bind(ctx.academic_year_id)
+            .bind(year_status)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE academic_terms SET status=$2,closed_on=CASE WHEN $2='closed' THEN start_date ELSE NULL END WHERE id=$1")
+            .bind(ctx.academic_term_id).bind(term_status).execute(&pool).await.unwrap();
+        let course = get_course_workspace(&pool, &actor, &ctx, course_group)
+            .await
+            .unwrap();
+        let activity = get_activity_workspace(&pool, &activity_actor, &ctx, activity_group)
+            .await
+            .unwrap();
+        assert!(!course.can_manage && !course.can_confirm);
+        assert!(!activity.can_manage && !activity.can_confirm);
+        assert_eq!(course.source_checksum, before_course.source_checksum);
+        assert_eq!(activity.source_checksum, before_activity.source_checksum);
+        assert!(matches!(
+            save_selection(
+                &pool,
+                &actor,
+                &ctx,
+                course_group,
+                SelectionInput {
+                    student_academic_year_id: course.students[0].student_academic_year_id,
+                    selection: CourseOutcomeSelection::Incomplete,
+                    row_version: None,
+                }
+            )
+            .await,
+            Err(AppError::Conflict(_))
+        ));
+        assert!(matches!(
+            confirm_group_results(&pool, &actor, &ctx, course_group, confirm_input(&course)).await,
+            Err(AppError::Conflict(_))
+        ));
+        assert!(matches!(
+            save_activity_outcomes(
+                &pool,
+                &activity_actor,
+                &ctx,
+                activity_group,
+                ActivityBatchInput {
+                    cells: vec![ActivityCellInput {
+                        student_academic_year_id: activity.students[0].student_academic_year_id,
+                        outcome: Some(ActivityOutcome::Fail),
+                        row_version: activity.students[0].row_version,
+                    }]
+                }
+            )
+            .await,
+            Err(AppError::Conflict(_))
+        ));
+        assert!(matches!(
+            confirm_activity(
+                &pool,
+                &activity_actor,
+                &ctx,
+                activity_group,
+                ResultConfirmationInput {
+                    source_checksum: activity.source_checksum.clone(),
+                    roster_checksum: activity.roster_checksum.clone(),
+                    row_version: activity
+                        .confirmation
+                        .as_ref()
+                        .map(|value| value.row_version),
+                }
+            )
+            .await,
+            Err(AppError::Conflict(_))
+        ));
+        assert!(matches!(
+            lock_course_subject(&pool, &affairs, &ctx, subject).await,
+            Err(AppError::Conflict(_))
+        ));
+        assert!(matches!(
+            lock_activity_group(&pool, &affairs, &ctx, activity_group).await,
+            Err(AppError::Conflict(_))
+        ));
+    }
+}
+
 fn bands() -> Vec<GradingPolicyBand> {
     [
         ("0", "0"),

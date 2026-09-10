@@ -9,6 +9,8 @@ use uuid::Uuid;
 
 #[derive(sqlx::FromRow)]
 struct ActivityScope {
+    #[sqlx(flatten)]
+    academic_state: AcademicWriteState,
     group_id: Uuid,
     offering_id: Uuid,
     owning_organization_unit_id: Option<Uuid>,
@@ -67,7 +69,7 @@ async fn load_scope(
     context: &ResultContext,
 ) -> Result<ActivityScope, AppError> {
     sqlx::query_as(
-        r#"SELECT g.id AS group_id,g.learning_offering_id AS offering_id,o.owning_organization_unit_id,
+        r#"SELECT y.status AS year_status,t.status AS term_status,g.id AS group_id,g.learning_offering_id AS offering_id,o.owning_organization_unit_id,
                   EXISTS(SELECT 1 FROM learning_group_teachers teacher JOIN users u ON u.id=teacher.teacher_id AND u.status='active'
                          WHERE teacher.learning_group_id=g.id AND teacher.academic_term_id=g.academic_term_id
                            AND teacher.academic_year_id=g.academic_year_id AND teacher.teacher_id=$4
@@ -85,6 +87,7 @@ async fn load_scope(
            JOIN learning_offerings o ON o.id=g.learning_offering_id AND o.kind='activity'
            JOIN activity_offering_details detail ON detail.learning_offering_id=o.id
            JOIN academic_terms t ON t.id=g.academic_term_id
+           JOIN academic_years y ON y.id=g.academic_year_id
            LEFT JOIN academic_activity_result_locks lock ON lock.learning_group_id=g.id
            WHERE g.id=$1 AND g.academic_term_id=$2 AND g.academic_year_id=$3 AND g.status<>'closed'"#,
     )
@@ -113,6 +116,12 @@ async fn begin_activity<'a>(
     }
     validate_context(&mut tx, context).await?;
     if write {
+        lifecycle_guard::require_term_write(
+            &mut tx,
+            context.academic_year_id,
+            context.academic_term_id,
+        )
+        .await?;
         let offering: Uuid = sqlx::query_scalar(
             "SELECT learning_offering_id FROM learning_groups WHERE id=$1 AND academic_term_id=$2 AND academic_year_id=$3",
         )
@@ -286,7 +295,9 @@ async fn load_workspace(
                 )
             })
     });
-    let editable = !scope.locked && access_policy::can_enter_activity(actor, scope.assigned);
+    let editable = scope.academic_state.is_writable()
+        && !scope.locked
+        && access_policy::can_enter_activity(actor, scope.assigned);
     Ok((
         ActivityPreparationWorkspace {
             learning_group_id: scope.group_id,

@@ -56,6 +56,132 @@ async fn fixture_actor(pool: &PgPool) -> Uuid {
         .unwrap()
 }
 
+#[tokio::test]
+async fn lifecycle_guard_rejects_closed_contexts_without_an_admin_override() {
+    use super::services::lifecycle_guard::require_term_write;
+    let pool = prepare_core_fixture("lifecycle_guard_states").await;
+    let term: Uuid = sqlx::query_scalar(
+        "SELECT id FROM academic_terms WHERE academic_year_id=$1 AND status='active'",
+    )
+    .bind(CURRENT_YEAR_ID)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    for year_status in [
+        "planning", "ready", "active", "closing", "closed", "archived",
+    ] {
+        sqlx::query("UPDATE academic_years SET status=$2 WHERE id=$1")
+            .bind(CURRENT_YEAR_ID)
+            .bind(year_status)
+            .execute(&pool)
+            .await
+            .unwrap();
+        for term_status in [
+            "planning",
+            "ready",
+            "active",
+            "closing",
+            "closed",
+            "cancelled",
+        ] {
+            sqlx::query("UPDATE academic_terms SET status=$2,closed_on=CASE WHEN $2='closed' THEN start_date ELSE NULL END WHERE id=$1")
+                .bind(term).bind(term_status).execute(&pool).await.unwrap();
+            let mut tx = pool.begin().await.unwrap();
+            let outcome = require_term_write(&mut tx, CURRENT_YEAR_ID, term).await;
+            let expected = !matches!(year_status, "closed" | "archived")
+                && !matches!(term_status, "closed" | "cancelled");
+            assert_eq!(
+                outcome.is_ok(),
+                expected,
+                "{year_status}/{term_status}: {outcome:?}"
+            );
+            tx.rollback().await.unwrap();
+        }
+    }
+    let mut tx = pool.begin().await.unwrap();
+    assert!(require_term_write(&mut tx, FUTURE_YEAR_ID, term)
+        .await
+        .is_err());
+    tx.rollback().await.unwrap();
+}
+
+#[tokio::test]
+async fn lifecycle_guard_serializes_source_writes_and_transitions_in_both_orders() {
+    use super::services::lifecycle_guard::{
+        lock_transition, require_term_write, TRANSITION_KEY, TRANSITION_NAMESPACE,
+    };
+    let pool = crate::test_helpers::create_named_test_pool_with_max_connections(
+        "lifecycle_guard_locking",
+        2,
+    )
+    .await;
+    crate::modules::academic::cutover_test_support::seed_release_two_predecessor(&pool)
+        .await
+        .unwrap();
+    apply_migrations_through(&pool, 60).await.unwrap();
+    let term: Uuid = sqlx::query_scalar(
+        "SELECT id FROM academic_terms WHERE academic_year_id=$1 AND status='active'",
+    )
+    .bind(CURRENT_YEAR_ID)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let mut source = pool.begin().await.unwrap();
+    require_term_write(&mut source, CURRENT_YEAR_ID, term)
+        .await
+        .unwrap();
+    let mut transition = pool.begin().await.unwrap();
+    let acquired: bool = sqlx::query_scalar("SELECT pg_try_advisory_xact_lock($1,$2)")
+        .bind(TRANSITION_NAMESPACE)
+        .bind(TRANSITION_KEY)
+        .fetch_one(&mut *transition)
+        .await
+        .unwrap();
+    assert!(
+        !acquired,
+        "A transition must wait for the complete source transaction"
+    );
+    transition.rollback().await.unwrap();
+    let mut direct = pool.begin().await.unwrap();
+    let error = sqlx::query("SELECT id FROM academic_terms WHERE id=$1 FOR UPDATE NOWAIT")
+        .bind(term)
+        .execute(&mut *direct)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error
+            .as_database_error()
+            .and_then(|error| error.code())
+            .as_deref(),
+        Some("55P03")
+    );
+    direct.rollback().await.unwrap();
+    source.commit().await.unwrap();
+
+    let mut transition = pool.begin().await.unwrap();
+    lock_transition(&mut transition).await.unwrap();
+    let mut next_source = pool.begin().await.unwrap();
+    let acquired: bool = sqlx::query_scalar("SELECT pg_try_advisory_xact_lock_shared($1,$2)")
+        .bind(TRANSITION_NAMESPACE)
+        .bind(TRANSITION_KEY)
+        .fetch_one(&mut *next_source)
+        .await
+        .unwrap();
+    assert!(
+        !acquired,
+        "New source writes must wait for transition commit"
+    );
+    next_source.rollback().await.unwrap();
+    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=start_date,row_version=row_version+1 WHERE id=$1")
+        .bind(term).execute(&mut *transition).await.unwrap();
+    transition.commit().await.unwrap();
+    let mut source = pool.begin().await.unwrap();
+    assert!(require_term_write(&mut source, CURRENT_YEAR_ID, term)
+        .await
+        .is_err());
+    source.rollback().await.unwrap();
+}
+
 async fn create_published_program_option_fixture(
     pool: &PgPool,
     owner_id: Uuid,

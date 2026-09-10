@@ -12,6 +12,140 @@ use uuid::Uuid;
 const DC: LearnerEvaluationDomain = LearnerEvaluationDomain::DesirableCharacteristic;
 const RTW: LearnerEvaluationDomain = LearnerEvaluationDomain::ReadingThinkingWriting;
 
+#[tokio::test]
+async fn learner_lifecycle_guard_preserves_history_without_lazy_writes() {
+    let (pool, actor, ctx, group, subject) = fixture("learner_lifecycle_guard").await;
+    let before = fill(&pool, &actor, &ctx, group, DC, 2).await;
+    let confirmed = confirm_group(&pool, &actor, group, DC, &ctx, confirmation(&before))
+        .await
+        .unwrap();
+    let confirmation_version = confirmed.confirmation.as_ref().unwrap().row_version;
+    // Simulate a stale source detected only when this historical page is opened.
+    sqlx::query("UPDATE learning_group_evaluation_confirmations SET source_checksum=$2 WHERE learning_group_id=$1 AND domain=$3")
+        .bind(group).bind("0".repeat(64)).bind(DC.as_str()).execute(&pool).await.unwrap();
+    let config = get_configuration(&pool, &actor, subject, DC, &ctx)
+        .await
+        .unwrap();
+    let control = list_controls(&pool, &actor, &ctx).await.unwrap().remove(0);
+    let mut source_actor = actor.clone();
+    source_actor.permissions = vec![codes::ACADEMIC_LEARNER_EVALUATION_MANAGE_ASSIGNED.into()];
+    for (year_status, term_status) in [("active", "closed"), ("closed", "active")] {
+        sqlx::query("UPDATE academic_years SET status=$2 WHERE id=$1")
+            .bind(ctx.academic_year_id)
+            .bind(year_status)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE academic_terms SET status=$2,closed_on=CASE WHEN $2='closed' THEN start_date ELSE NULL END WHERE id=$1")
+            .bind(ctx.academic_term_id).bind(term_status).execute(&pool).await.unwrap();
+        let history = get_workspace(&pool, &actor, group, DC, &ctx).await.unwrap();
+        assert!(!history.can_manage && !history.can_confirm);
+        assert_eq!(before.source_checksum, history.source_checksum);
+        assert!(!history.confirmation_is_current);
+        assert_eq!(
+            history.confirmation.as_ref().unwrap().row_version,
+            confirmation_version
+        );
+        let saved: (i64, bool) = sqlx::query_as("SELECT row_version,COALESCE((source_snapshot->>'invalidated')::boolean,false) FROM learning_group_evaluation_confirmations WHERE learning_group_id=$1 AND domain=$2")
+            .bind(group).bind(DC.as_str()).fetch_one(&pool).await.unwrap();
+        assert_eq!(saved, (confirmation_version, false));
+        let historical_config = get_configuration(&pool, &actor, subject, DC, &ctx)
+            .await
+            .unwrap();
+        assert!(!historical_config.can_manage);
+        assert_eq!(config.row_version, historical_config.row_version);
+        for writer in [&actor, &source_actor] {
+            assert!(matches!(
+                save_criterion(
+                    &pool,
+                    writer,
+                    subject,
+                    DC,
+                    &ctx,
+                    None,
+                    criterion("Late criterion", None)
+                )
+                .await,
+                Err(AppError::Conflict(_))
+            ));
+            assert!(matches!(
+                remove_criterion(
+                    &pool,
+                    writer,
+                    subject,
+                    DC,
+                    &ctx,
+                    config.criteria[0].id,
+                    config.criteria[0].row_version
+                )
+                .await,
+                Err(AppError::Conflict(_))
+            ));
+            assert!(matches!(
+                save_responses(
+                    &pool,
+                    writer,
+                    group,
+                    DC,
+                    &ctx,
+                    vec![ResponseInput {
+                        subject_term_criterion_id: history.criteria[0].id,
+                        student_academic_year_id: history.students[0].student_academic_year_id,
+                        quality_level: None,
+                        row_version: None,
+                    }]
+                )
+                .await,
+                Err(AppError::Conflict(_))
+            ));
+            assert!(matches!(
+                confirm_group(&pool, writer, group, DC, &ctx, confirmation(&history)).await,
+                Err(AppError::Conflict(_))
+            ));
+        }
+        assert!(matches!(
+            update_control(
+                &pool,
+                &actor,
+                control.domain,
+                &ctx,
+                ControlInput {
+                    entry_enabled: !control.entry_enabled,
+                    row_version: control.row_version
+                }
+            )
+            .await,
+            Err(AppError::Conflict(_))
+        ));
+        assert!(matches!(
+            lock_subject(&pool, &actor, subject, DC, &ctx).await,
+            Err(AppError::Conflict(_))
+        ));
+        // A domain never opened before closure must not inherit today's school defaults.
+        assert!(matches!(
+            get_configuration(&pool, &actor, subject, RTW, &ctx).await,
+            Err(AppError::NotFound(_))
+        ));
+        let missing = get_workspace(&pool, &actor, group, RTW, &ctx)
+            .await
+            .unwrap();
+        assert!(missing.criteria.is_empty() && !missing.can_manage && !missing.can_confirm);
+        let created: i64 = sqlx::query_scalar("SELECT count(*) FROM subject_term_evaluation_configurations WHERE subject_id=$1 AND academic_term_id=$2 AND domain=$3")
+            .bind(subject).bind(ctx.academic_term_id).bind(RTW.as_str()).fetch_one(&pool).await.unwrap();
+        assert_eq!(created, 0);
+    }
+    // Historical control reads must not fill missing setup rows either.
+    sqlx::query("DELETE FROM academic_learner_evaluation_controls WHERE academic_term_id=$1")
+        .bind(ctx.academic_term_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(list_controls(&pool, &actor, &ctx).await.unwrap().is_empty());
+    let missing_controls = get_workspace(&pool, &actor, group, DC, &ctx).await.unwrap();
+    assert!(!missing_controls.entry_enabled && !missing_controls.can_manage);
+    assert!(list_controls(&pool, &actor, &ctx).await.unwrap().is_empty());
+}
+
 async fn fixture(name: &str) -> (sqlx::PgPool, ActorContext, EvaluationContext, Uuid, Uuid) {
     let pool = create_named_test_pool_with_max_connections(name, 4).await;
     seed_release_two_predecessor(&pool).await.unwrap();
@@ -1340,6 +1474,11 @@ fn learner_endpoint_contract_requires_full_context_and_typed_domains() {
     struct LearnerPaths;
     let contract = serde_json::to_value(LearnerPaths::openapi()).unwrap();
     let paths = contract["paths"].as_object().unwrap();
+    assert!(paths
+        ["/api/academic/learner-evaluations/subjects/{subject_id}/domains/{domain}/configuration"]
+        ["get"]["responses"]["404"]["content"]["application/json"]["schema"]
+        .to_string()
+        .contains("ApiErrorResponse"));
     for item in paths.values() {
         for operation in item.as_object().unwrap().values() {
             let parameters = operation["parameters"].as_array().unwrap();

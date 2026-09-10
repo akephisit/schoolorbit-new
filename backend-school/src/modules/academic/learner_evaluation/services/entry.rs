@@ -11,7 +11,7 @@ pub async fn get_workspace(
 ) -> Result<EvaluationWorkspace, AppError> {
     let subject = subject_for_group(pool, group, ctx).await?;
     let access = policy::list_access(pool, actor).await?;
-    let (mut tx, scope) = begin_subject(pool, actor, subject, domain, ctx).await?;
+    let (mut tx, scope) = begin_subject(pool, actor, subject, domain, ctx, false).await?;
     let group_scope = scope
         .groups
         .iter()
@@ -56,7 +56,8 @@ pub(super) async fn load_workspace(
     // Roster/teacher mutations belong to Delivery. Detect their retained revisions here,
     // persist explicit staleness once, and never reset the confirmation's row version.
     if let Some(c) = confirmation.as_mut() {
-        if !scope.locked
+        if scope.academic_state.is_writable()
+            && !scope.locked
             && !c.invalidated
             && (c.source_checksum != source_checksum
                 || c.roster_checksum != roster_checksum
@@ -73,7 +74,9 @@ pub(super) async fn load_workspace(
             && c.roster_checksum == roster_checksum
             && Some(c.confirmed_by) == group.primary_teacher_id
     });
-    let editable = !scope.locked && (scope.entry_enabled || policy::can_manage_school(actor));
+    let editable = scope.academic_state.is_writable()
+        && !scope.locked
+        && (scope.entry_enabled || policy::can_manage_school(actor));
     Ok(EvaluationWorkspace {
         learning_group_id: group.group_id,
         subject_id: scope.subject_id,
@@ -170,7 +173,7 @@ pub async fn save_responses(
 ) -> Result<EvaluationWorkspace, AppError> {
     let cells = normalize(cells)?;
     let subject = subject_for_group(pool, group, ctx).await?;
-    let (mut tx, scope) = begin_subject(pool, actor, subject, domain, ctx).await?;
+    let (mut tx, scope) = begin_subject(pool, actor, subject, domain, ctx, true).await?;
     let group_scope = scope
         .groups
         .iter()

@@ -1,6 +1,8 @@
 use super::models::*;
 use crate::{
-    error::AppError, middleware::permission::ActorContext,
+    error::AppError,
+    middleware::permission::ActorContext,
+    modules::academic::core::services::lifecycle_guard::{self, AcademicWriteState},
     policies::learner_evaluation_access_policy as policy,
 };
 use sqlx::{PgPool, Postgres, Transaction};
@@ -90,6 +92,7 @@ pub(super) struct GroupScope {
     pub primary_teacher_id: Option<Uuid>,
 }
 pub(super) struct SubjectScope {
+    pub academic_state: AcademicWriteState,
     pub subject_id: Uuid,
     pub domain: LearnerEvaluationDomain,
     pub groups: Vec<GroupScope>,
@@ -98,7 +101,7 @@ pub(super) struct SubjectScope {
     pub locked: bool,
 }
 
-/// Every overlapping writer acquires offering -> group -> configuration/control/source.
+/// Every overlapping writer acquires lifecycle -> offering -> group -> configuration/control/source.
 /// Locking all subject offerings serializes first access and all-room snapshots.
 pub(super) async fn begin_subject<'a>(
     pool: &'a PgPool,
@@ -106,10 +109,16 @@ pub(super) async fn begin_subject<'a>(
     subject: Uuid,
     domain: LearnerEvaluationDomain,
     ctx: &EvaluationContext,
+    write: bool,
 ) -> Result<(Transaction<'a, Postgres>, SubjectScope), AppError> {
     let access = policy::list_access(pool, actor).await?;
     let mut tx = pool.begin().await?;
     validate_context(&mut tx, ctx).await?;
+    let academic_state =
+        lifecycle_guard::lock_context(&mut tx, ctx.academic_year_id, ctx.academic_term_id).await?;
+    if write {
+        academic_state.require_writable()?;
+    }
     let offerings:Vec<Uuid>=sqlx::query_scalar("SELECT o.id FROM learning_offerings o JOIN course_offering_details d ON d.learning_offering_id=o.id WHERE d.subject_id=$1 AND o.academic_term_id=$2 AND o.academic_year_id=$3 ORDER BY o.id FOR UPDATE OF o").bind(subject).bind(ctx.academic_term_id).bind(ctx.academic_year_id).fetch_all(&mut *tx).await?;
     if offerings.is_empty() {
         return Err(AppError::NotFound(
@@ -135,14 +144,17 @@ pub(super) async fn begin_subject<'a>(
     {
         return Err(AppError::Forbidden("Subject access denied".into()));
     }
-    configuration::initialize(&mut tx, subject, domain, ctx, &offerings).await?;
+    if academic_state.is_writable() {
+        configuration::initialize(&mut tx, subject, domain, ctx, &offerings).await?;
+        ensure_controls(&mut tx, ctx).await?;
+    }
     sqlx::query("SELECT subject_id FROM subject_term_evaluation_configurations WHERE subject_id=$1 AND academic_term_id=$2 AND domain=$3 FOR UPDATE").bind(subject).bind(ctx.academic_term_id).bind(domain.as_str()).execute(&mut *tx).await?;
-    ensure_controls(&mut tx, ctx).await?;
-    let entry_enabled:bool=sqlx::query_scalar("SELECT entry_enabled FROM academic_learner_evaluation_controls WHERE academic_term_id=$1 AND domain=$2 FOR SHARE").bind(ctx.academic_term_id).bind(domain.as_str()).fetch_one(&mut *tx).await?;
+    let entry_enabled:bool=sqlx::query_scalar("SELECT entry_enabled FROM academic_learner_evaluation_controls WHERE academic_term_id=$1 AND domain=$2 FOR SHARE").bind(ctx.academic_term_id).bind(domain.as_str()).fetch_optional(&mut *tx).await?.unwrap_or(false);
     let locked:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM subject_term_evaluation_locks WHERE subject_id=$1 AND academic_term_id=$2 AND domain=$3)").bind(subject).bind(ctx.academic_term_id).bind(domain.as_str()).fetch_one(&mut *tx).await?;
     Ok((
         tx,
         SubjectScope {
+            academic_state,
             subject_id: subject,
             domain,
             groups,

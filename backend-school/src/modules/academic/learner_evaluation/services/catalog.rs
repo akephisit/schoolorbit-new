@@ -95,7 +95,12 @@ pub async fn list_controls(
     policy::list_access(pool, actor).await?;
     let mut tx = pool.begin().await?;
     validate_context(&mut tx, ctx).await?;
-    ensure_controls(&mut tx, ctx).await?;
+    if lifecycle_guard::lock_context(&mut tx, ctx.academic_year_id, ctx.academic_term_id)
+        .await?
+        .is_writable()
+    {
+        ensure_controls(&mut tx, ctx).await?;
+    }
     let rows=sqlx::query_as("SELECT id,domain,entry_enabled,row_version FROM academic_learner_evaluation_controls WHERE academic_term_id=$1 AND academic_year_id=$2 ORDER BY domain").bind(ctx.academic_term_id).bind(ctx.academic_year_id).fetch_all(&mut *tx).await?;
     tx.commit().await?;
     Ok(rows)
@@ -114,6 +119,8 @@ pub async fn update_control(
     }
     let mut tx = pool.begin().await?;
     validate_context(&mut tx, ctx).await?;
+    lifecycle_guard::require_term_write(&mut tx, ctx.academic_year_id, ctx.academic_term_id)
+        .await?;
     let row=sqlx::query_as("UPDATE academic_learner_evaluation_controls SET entry_enabled=$4,row_version=row_version+1,updated_by=$6,updated_at=now() WHERE academic_term_id=$1 AND academic_year_id=$2 AND domain=$3 AND row_version=$5 RETURNING id,domain,entry_enabled,row_version").bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(domain.as_str()).bind(input.entry_enabled).bind(input.row_version).bind(actor.user_id).fetch_optional(&mut *tx).await?.ok_or_else(conflict)?;
     tx.commit().await?;
     Ok(row)

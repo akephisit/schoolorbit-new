@@ -142,6 +142,12 @@ pub async fn lock_course_subject(
     }
     let mut tx = pool.begin().await?;
     validate_context(&mut tx, context).await?;
+    lifecycle_guard::require_term_write(
+        &mut tx,
+        context.academic_year_id,
+        context.academic_term_id,
+    )
+    .await?;
 
     let offering_ids: Vec<Uuid> = sqlx::query_scalar(
         r#"SELECT offering.id
@@ -500,6 +506,12 @@ pub async fn lock_activity_group(
     }
     let mut tx = pool.begin().await?;
     validate_context(&mut tx, context).await?;
+    lifecycle_guard::require_term_write(
+        &mut tx,
+        context.academic_year_id,
+        context.academic_term_id,
+    )
+    .await?;
     let offering_id: Uuid = sqlx::query_scalar(
         r#"SELECT offering.id
            FROM learning_groups learning_group

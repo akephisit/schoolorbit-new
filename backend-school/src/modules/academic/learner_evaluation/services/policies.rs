@@ -172,6 +172,7 @@ pub async fn activate_policy(
         ));
     }
     let mut tx = pool.begin().await?;
+    lifecycle_guard::lock_transition_shared(&mut tx).await?;
     validate_context(&mut tx, context).await?;
     sqlx::query(
         "SELECT id FROM academic_learner_evaluation_policy_versions ORDER BY version_no FOR UPDATE",

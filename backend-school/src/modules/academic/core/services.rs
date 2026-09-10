@@ -9,6 +9,7 @@ pub mod catalog;
 pub mod context;
 pub mod curriculum;
 pub mod curriculum_structure;
+pub(crate) mod lifecycle_guard;
 pub mod progressions;
 pub(crate) mod student_year_batch;
 pub mod student_years;

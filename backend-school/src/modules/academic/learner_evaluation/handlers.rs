@@ -186,7 +186,7 @@ pub async fn update_control(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(get,path="/api/academic/learner-evaluations/subjects/{subject_id}/domains/{domain}/configuration",operation_id="getLearnerEvaluationConfiguration",tag="academic",params(EvaluationContext,("subject_id"=Uuid,Path),("domain"=LearnerEvaluationDomain,Path)),responses((status=200,body=ApiResponse<EvaluationConfiguration>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[utoipa::path(get,path="/api/academic/learner-evaluations/subjects/{subject_id}/domains/{domain}/configuration",operation_id="getLearnerEvaluationConfiguration",tag="academic",params(EvaluationContext,("subject_id"=Uuid,Path),("domain"=LearnerEvaluationDomain,Path)),responses((status=200,body=ApiResponse<EvaluationConfiguration>),(status=403,body=ApiErrorResponse),(status=404,description="Subject or historical configuration does not exist",body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
 pub async fn get_configuration(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,

@@ -37,10 +37,12 @@ pub async fn get_configuration(
     domain: LearnerEvaluationDomain,
     ctx: &EvaluationContext,
 ) -> Result<EvaluationConfiguration, AppError> {
-    let (mut tx, scope) = begin_subject(pool, actor, subject, domain, ctx).await?;
+    let (mut tx, scope) = begin_subject(pool, actor, subject, domain, ctx, false).await?;
     let criteria = criteria(&mut tx, &scope, ctx).await?;
-    let row_version=sqlx::query_scalar("SELECT row_version FROM subject_term_evaluation_configurations WHERE subject_id=$1 AND academic_term_id=$2 AND domain=$3").bind(subject).bind(ctx.academic_term_id).bind(domain.as_str()).fetch_one(&mut *tx).await?;
-    let can_manage = !scope.locked && policy::can_manage_configuration(actor, scope.coordinator);
+    let row_version=sqlx::query_scalar("SELECT row_version FROM subject_term_evaluation_configurations WHERE subject_id=$1 AND academic_term_id=$2 AND domain=$3").bind(subject).bind(ctx.academic_term_id).bind(domain.as_str()).fetch_optional(&mut *tx).await?.ok_or_else(|| AppError::NotFound("ยังไม่ได้ตั้งหัวข้อประเมินของรายวิชานี้ในภาคเรียนที่ปิดแล้ว".into()))?;
+    let can_manage = scope.academic_state.is_writable()
+        && !scope.locked
+        && policy::can_manage_configuration(actor, scope.coordinator);
     tx.commit().await?;
     Ok(EvaluationConfiguration {
         subject_id: subject,
@@ -69,7 +71,7 @@ pub async fn save_criterion(
     input: CriterionInput,
 ) -> Result<EvaluationCriterion, AppError> {
     validate_criterion(&input)?;
-    let (mut tx, scope) = begin_subject(pool, actor, subject, domain, ctx).await?;
+    let (mut tx, scope) = begin_subject(pool, actor, subject, domain, ctx, true).await?;
     require_unlocked(
         &scope,
         policy::can_manage_configuration(actor, scope.coordinator),
@@ -113,7 +115,7 @@ pub async fn remove_criterion(
     id: Uuid,
     version: i64,
 ) -> Result<CriterionRemoval, AppError> {
-    let (mut tx, scope) = begin_subject(pool, actor, subject, domain, ctx).await?;
+    let (mut tx, scope) = begin_subject(pool, actor, subject, domain, ctx, true).await?;
     require_unlocked(
         &scope,
         policy::can_manage_configuration(actor, scope.coordinator),

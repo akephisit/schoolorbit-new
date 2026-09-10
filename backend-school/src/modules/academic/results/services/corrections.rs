@@ -438,6 +438,7 @@ pub async fn correct_result(
         ));
     }
     let mut tx = pool.begin().await?;
+    super::lifecycle_guard::lock_transition_shared(&mut tx).await?;
     validate_context(&mut tx, context).await?;
     let result = match input {
         ResultCorrectionInput::Course {

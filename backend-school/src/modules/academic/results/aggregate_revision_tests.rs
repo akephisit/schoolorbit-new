@@ -345,6 +345,18 @@ async fn aggregate_revisions_retain_history_retry_safely_and_detect_corrections(
             .await
             .is_err()
     );
+    // Closure blocks ordinary editing, not audited corrections or a new immutable
+    // aggregate revision. Reopening must never be required just to correct a result.
+    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=start_date WHERE id=$1")
+        .bind(ctx.academic_term_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE academic_years SET status='closed' WHERE id=$1")
+        .bind(ctx.academic_year_id)
+        .execute(&pool)
+        .await
+        .unwrap();
     let course = &preview.results.courses[0];
     correct_result(
         &pool,

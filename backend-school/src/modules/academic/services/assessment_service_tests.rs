@@ -33,6 +33,58 @@ async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
     pool
 }
 
+#[tokio::test]
+async fn assessment_lifecycle_guard_blocks_structure_and_window_changes() {
+    let pool = migrated_pool("assessment_lifecycle_guard").await;
+    let (offering, year, term): (Uuid, Uuid, Uuid) = sqlx::query_as("SELECT learning_offering_id,academic_year_id,academic_term_id FROM course_assessment_plans ORDER BY id LIMIT 1")
+        .fetch_one(&pool).await.unwrap();
+    let actor = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
+    let before = assessment_service::get_plan_detail(&pool, offering)
+        .await
+        .unwrap();
+    let control = assessment_service::list_phase_controls(&pool, term)
+        .await
+        .unwrap()
+        .remove(0);
+    for (year_status, term_status) in [("closed", "active"), ("active", "closed")] {
+        sqlx::query("UPDATE academic_years SET status=$2 WHERE id=$1")
+            .bind(year)
+            .bind(year_status)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE academic_terms SET status=$2,closed_on=CASE WHEN $2='closed' THEN start_date ELSE NULL END WHERE id=$1")
+            .bind(term).bind(term_status).execute(&pool).await.unwrap();
+        for admin in [true, false] {
+            assert!(matches!(
+                assessment_service::save_plan(&pool, offering, actor, admin, save_payload(&before))
+                    .await,
+                Err(AppError::Conflict(_))
+            ));
+        }
+        assert!(matches!(
+            assessment_service::update_phase_control(
+                &pool,
+                control.id,
+                actor,
+                UpdateAssessmentPhaseControlRequest {
+                    row_version: control.row_version,
+                    plan_editing_enabled: !control.plan_editing_enabled,
+                }
+            )
+            .await,
+            Err(AppError::Conflict(_))
+        ));
+        let history = assessment_service::get_plan_detail(&pool, offering)
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(&before).unwrap(),
+            serde_json::to_value(&history).unwrap()
+        );
+    }
+}
+
 fn list_query(academic_term_id: Uuid) -> AssessmentPlanListQuery {
     AssessmentPlanListQuery {
         academic_term_id,

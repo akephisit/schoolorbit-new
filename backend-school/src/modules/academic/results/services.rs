@@ -1,5 +1,6 @@
 use super::models::*;
 use crate::error::AppError;
+use crate::modules::academic::core::services::lifecycle_guard::{self, AcademicWriteState};
 use bigdecimal::BigDecimal;
 use sha2::{Digest, Sha256};
 use sqlx::{Postgres, Transaction};

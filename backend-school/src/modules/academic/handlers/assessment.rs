@@ -90,7 +90,8 @@ pub async fn list_assessment_phase_controls(
         (status = 400, description = "Invalid assessment phase control", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Assessment phase control manage permission denied", body = ApiErrorResponse),
-        (status = 409, description = "Stale assessment phase control version", body = ApiErrorResponse)
+        (status = 404, description = "Assessment phase control not found", body = ApiErrorResponse),
+        (status = 409, description = "Stale control version or closed academic context", body = ApiErrorResponse)
     )
 )]
 pub async fn update_assessment_phase_control(

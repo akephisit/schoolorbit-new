@@ -249,7 +249,6 @@ pub(crate) struct AssessmentOfferingScopeRow {
     pub offering_id: Uuid,
     pub academic_term_id: Uuid,
     pub academic_year_id: Uuid,
-    pub academic_term_status: String,
     pub subject_version_id: Uuid,
     pub subject_id: Uuid,
     pub subject_version_display_label: String,

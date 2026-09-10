@@ -78,6 +78,7 @@ pub async fn lock_term_aggregate(
     sqlx::query("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
         .execute(&mut *tx)
         .await?;
+    lifecycle_guard::lock_transition_shared(&mut tx).await?;
     // Concurrent revision writers conflict rather than accepting two snapshots of the
     // same expected revision. Source corrections remain append-only and detectable.
     let previous: Option<RevisionRow> = sqlx::query_as("SELECT id,revision,snapshot,official_gpa::text,hold_reason,locked_by,locked_at,request_checksum FROM academic_term_aggregate_revisions WHERE request_id=$1").bind(input.request_id).fetch_optional(&mut *tx).await?;

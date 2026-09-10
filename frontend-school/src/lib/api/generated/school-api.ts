@@ -17491,7 +17491,16 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Stale assessment phase control version */
+			/** @description Assessment phase control not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Stale control version or closed academic context */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -23366,6 +23375,15 @@ export interface operations {
 				};
 			};
 			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Subject or historical configuration does not exist */
+			404: {
 				headers: {
 					[name: string]: unknown;
 				};

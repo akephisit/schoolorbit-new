@@ -136,7 +136,8 @@ async function mockGradebook(
 	canManage: boolean,
 	closedPhase?: string,
 	itemMaximum?: string,
-	initialScores?: Array<string | null>
+	initialScores?: Array<string | null>,
+	closedTerm = false
 ) {
 	const controlRequests: string[] = [];
 	const scoreBodies: unknown[] = [];
@@ -144,7 +145,7 @@ async function mockGradebook(
 	const workspacePaths: string[] = [];
 	const itemPaths: string[] = [];
 	const workspaces = phaseCodes.map((phase, index) =>
-		workspace(canManage && phase !== closedPhase, phase, initialScores?.[index])
+		workspace(canManage && !closedTerm && phase !== closedPhase, phase, initialScores?.[index])
 	);
 	if (itemMaximum) for (const row of workspaces) row.items[0]!.maxScore = itemMaximum;
 	await page.route(
@@ -172,7 +173,17 @@ async function mockGradebook(
 				return;
 			}
 			if (url.pathname === '/api/academic/context/options') {
-				await fulfill(route, contextOptions());
+				const context = contextOptions();
+				await fulfill(
+					route,
+					closedTerm
+						? {
+								...context,
+								activeAcademicTermId: null,
+								terms: context.terms.map((term) => ({ ...term, status: 'closed' }))
+							}
+						: context
+				);
 				return;
 			}
 			if (url.pathname === '/api/academic/gradebook/subjects') {
@@ -439,6 +450,38 @@ test('read-only teacher never requests manager controls', async ({ page }) => {
 	await expect(page.getByRole('heading', { name: 'คะแนนทั้งภาคเรียน' })).toBeVisible();
 	await expect(page.getByRole('button', { name: 'ตั้งค่าการกรอก', exact: true })).toHaveCount(0);
 	expect(observed.controlRequests).toEqual([]);
+});
+
+test('closed term keeps scores readable without a school-manager editing bypass', async ({
+	page
+}) => {
+	const observed = await mockGradebook(
+		page,
+		true,
+		undefined,
+		undefined,
+		['0', '5.5', null, '10'],
+		true
+	);
+	await page.goto(gradebookUrl());
+	await expect(page.getByRole('heading', { name: 'คะแนนทั้งภาคเรียน' })).toBeVisible();
+	await expect.poll(() => observed.workspacePaths.length).toBe(4);
+	for (const [phase, value] of [
+		['ก่อนกลางภาค', '0'],
+		['กลางภาค', '5.5'],
+		['หลังกลางภาค', ''],
+		['ปลายภาค', '10']
+	]) {
+		const cell = page.getByRole('textbox', {
+			name: `${phase} ชีท 1 เด็กชายทดสอบ ระบบ`,
+			exact: true
+		});
+		await expect(cell).toBeDisabled();
+		await expect(cell).toHaveValue(value!);
+	}
+	await expect(page.getByRole('button', { name: /^แก้ .*ชีท 1$/ })).toHaveCount(0);
+	expect(observed.scoreBodies).toEqual([]);
+	expect(observed.itemPaths).toEqual([]);
 });
 
 test('one table saves different phases to their own endpoint and clearing stays blank', async ({

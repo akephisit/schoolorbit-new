@@ -11,6 +11,8 @@ use uuid::Uuid;
 
 #[derive(sqlx::FromRow)]
 struct CourseScope {
+    #[sqlx(flatten)]
+    academic_state: AcademicWriteState,
     group_id: Uuid,
     offering_id: Uuid,
     subject_id: Uuid,
@@ -112,7 +114,7 @@ async fn load_scope(
     context: &ResultContext,
 ) -> Result<CourseScope, AppError> {
     sqlx::query_as(
-        r#"SELECT g.id AS group_id,g.learning_offering_id AS offering_id,d.subject_id,
+        r#"SELECT y.status AS year_status,t.status AS term_status,g.id AS group_id,g.learning_offering_id AS offering_id,d.subject_id,
                   d.assessment_total_score::text,o.owning_organization_unit_id,
                   EXISTS(SELECT 1 FROM learning_group_teachers teacher JOIN users u ON u.id=teacher.teacher_id AND u.status='active'
                          WHERE teacher.learning_group_id=g.id AND teacher.academic_term_id=g.academic_term_id
@@ -132,6 +134,7 @@ async fn load_scope(
            JOIN learning_offerings o ON o.id=g.learning_offering_id AND o.kind='course'
            JOIN course_offering_details d ON d.learning_offering_id=o.id
            JOIN academic_terms t ON t.id=g.academic_term_id
+           JOIN academic_years y ON y.id=g.academic_year_id
            LEFT JOIN academic_course_result_locks lock ON lock.subject_id=d.subject_id
              AND lock.academic_term_id=g.academic_term_id
              AND lock.academic_year_id=g.academic_year_id
@@ -162,6 +165,12 @@ async fn begin_course<'a>(
     }
     validate_context(&mut tx, context).await?;
     if write {
+        lifecycle_guard::require_term_write(
+            &mut tx,
+            context.academic_year_id,
+            context.academic_term_id,
+        )
+        .await?;
         let offering: Uuid = sqlx::query_scalar(
             "SELECT learning_offering_id FROM learning_groups WHERE id=$1 AND academic_term_id=$2 AND academic_year_id=$3",
         )
@@ -536,7 +545,8 @@ async fn load_workspace(
             })
     });
     let sources_are_current = preparation_sources_are_current(&blockers);
-    let can_prepare = !scope.locked
+    let can_prepare = scope.academic_state.is_writable()
+        && !scope.locked
         && access_policy::can_confirm_course(
             actor,
             scope.primary_teacher_id == Some(actor.user_id),

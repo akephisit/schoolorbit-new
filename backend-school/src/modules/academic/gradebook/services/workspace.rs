@@ -51,10 +51,12 @@ pub(super) async fn load_workspace(
         phase_row_version: scope.phase_row_version,
         score_entry_enabled: scope.score_entry_enabled,
         locked: scope.locked,
-        can_manage: !scope.locked
+        can_manage: scope.academic_state.is_writable()
+            && !scope.locked
             && policy::can_manage_group(actor, scope.assigned)
             && (scope.score_entry_enabled || policy::can_manage_school(actor)),
-        can_confirm: !scope.locked
+        can_confirm: scope.academic_state.is_writable()
+            && !scope.locked
             && policy::can_confirm_group_phase(actor, scope.primary_teacher)
             && (scope.score_entry_enabled || policy::can_manage_school(actor)),
         items,

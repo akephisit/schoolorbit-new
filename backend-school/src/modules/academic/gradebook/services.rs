@@ -1,4 +1,5 @@
 use super::models::*;
+use crate::modules::academic::core::services::lifecycle_guard::{self, AcademicWriteState};
 use crate::policies::{
     gradebook_access_policy as policy, resource_access_policy::AcademicResourceListFilter,
 };
@@ -62,6 +63,8 @@ pub async fn resolve_phase_id(
 
 #[derive(sqlx::FromRow)]
 pub(super) struct Scope {
+    #[sqlx(flatten)]
+    pub academic_state: AcademicWriteState,
     pub group_id: Uuid,
     pub offering_id: Uuid,
     pub plan_id: Uuid,
@@ -132,6 +135,12 @@ pub(super) async fn begin_scope<'a>(
     }
     validate_context(&mut tx, context).await?;
     if write {
+        lifecycle_guard::require_term_write(
+            &mut tx,
+            context.academic_year_id,
+            context.academic_term_id,
+        )
+        .await?;
         // Shared with Assessment and official result locking: offering, then group, then phase.
         let offering:Option<Uuid>=sqlx::query_scalar("SELECT o.id FROM learning_offerings o JOIN learning_groups g ON g.learning_offering_id=o.id WHERE g.id=$1 AND g.academic_term_id=$2 AND g.academic_year_id=$3 FOR UPDATE OF o").bind(group).bind(context.academic_term_id).bind(context.academic_year_id).fetch_optional(&mut *tx).await?;
         if offering.is_none() {
@@ -149,7 +158,7 @@ pub(super) async fn begin_scope<'a>(
             .await?;
         sqlx::query("SELECT id FROM academic_gradebook_phase_controls WHERE academic_term_id=$1 ORDER BY id FOR SHARE").bind(context.academic_term_id).execute(&mut *tx).await?;
     }
-    let scope:Option<Scope>=sqlx::query_as(r#"SELECT g.id AS group_id,g.learning_offering_id AS offering_id,p.id AS plan_id,phase.id AS phase_id,
+    let scope:Option<Scope>=sqlx::query_as(r#"SELECT y.status AS year_status,t.status AS term_status,g.id AS group_id,g.learning_offering_id AS offering_id,p.id AS plan_id,phase.id AS phase_id,
         phase.phase_code,phase.max_score::text AS phase_max_score,phase.row_version AS phase_row_version,
         o.owning_organization_unit_id,c.score_entry_enabled,
         EXISTS(SELECT 1 FROM academic_course_result_locks l WHERE l.subject_id=d.subject_id AND l.academic_term_id=g.academic_term_id) AS locked,
@@ -161,6 +170,7 @@ pub(super) async fn begin_scope<'a>(
           AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date))) AS primary_teacher
         FROM learning_groups g JOIN learning_offerings o ON o.id=g.learning_offering_id
         JOIN academic_terms t ON t.id=g.academic_term_id
+        JOIN academic_years y ON y.id=g.academic_year_id
         JOIN course_offering_details d ON d.learning_offering_id=o.id
         JOIN course_assessment_plans p ON p.learning_offering_id=o.id AND p.academic_term_id=g.academic_term_id AND p.academic_year_id=g.academic_year_id
         JOIN course_assessment_phases phase ON phase.plan_id=p.id AND phase.id=$5

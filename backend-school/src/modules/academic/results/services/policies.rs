@@ -206,6 +206,7 @@ pub async fn activate_policy(
     }
     let mut tx = pool.begin().await?;
     validate_context(&mut tx, context).await?;
+    lifecycle_guard::lock_transition_shared(&mut tx).await?;
     // The grading policy is global, so activation must serialize with every writer that can
     // change a course result source. Those writers all lock their offering before group/source
     // rows; taking every course offering in the same order prevents a stale confirmation from

@@ -88,7 +88,7 @@ pub async fn confirm_group(
     input: ConfirmationInput,
 ) -> Result<ConfirmationOutcome, AppError> {
     let subject = subject_for_group(pool, group, ctx).await?;
-    let (mut tx, scope) = begin_subject(pool, actor, subject, domain, ctx).await?;
+    let (mut tx, scope) = begin_subject(pool, actor, subject, domain, ctx, true).await?;
     let group_scope = scope
         .groups
         .iter()

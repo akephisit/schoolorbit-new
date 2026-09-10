@@ -4875,6 +4875,8 @@ mod tests {
                 ("/api/academic/results/activities/lock-ready", "post", "lockAllReadyActivityResults"),
                 ("/api/academic/results/effective", "get", "searchEffectiveAcademicResults"),
                 ("/api/academic/results/corrections", "post", "correctEffectiveAcademicResult"),
+                ("/api/academic/results/aggregate-policies", "get", "listAggregatePolicies"),
+                ("/api/academic/results/aggregate-policies", "post", "createAggregatePolicy"),
             ],
         );
 
@@ -4897,8 +4899,8 @@ mod tests {
         {
             let query = operation["parameters"]
                 .as_array()
-                .expect("academic workflow parameters")
-                .iter()
+                .into_iter()
+                .flatten()
                 .filter(|parameter| parameter["in"] == "query")
                 .map(|parameter| {
                     (
@@ -4907,8 +4909,15 @@ mod tests {
                     )
                 })
                 .collect::<std::collections::HashMap<_, _>>();
-            assert_eq!(query.get("academicYearId"), Some(&true), "{path}");
-            assert_eq!(query.get("academicTermId"), Some(&true), "{path}");
+            if path == "/api/academic/results/aggregate-policies" {
+                assert!(
+                    query.is_empty(),
+                    "School aggregate policies are not term-scoped"
+                );
+            } else {
+                assert_eq!(query.get("academicYearId"), Some(&true), "{path}");
+                assert_eq!(query.get("academicTermId"), Some(&true), "{path}");
+            }
         }
 
         let schemas = &document["components"]["schemas"];

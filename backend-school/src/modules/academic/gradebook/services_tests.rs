@@ -7,6 +7,183 @@ use crate::{error::AppError, middleware::permission::ActorContext, permissions::
 use uuid::Uuid;
 
 #[tokio::test]
+async fn gradebook_lifecycle_guard_preserves_history_and_rejects_all_ordinary_writes() {
+    let (pool, admin, context, group, phase) = fixture("gradebook_lifecycle_guard").await;
+    let created = create_item(
+        &pool,
+        &admin,
+        group,
+        phase,
+        &context,
+        ItemInput {
+            name: "Retained zero".into(),
+            max_score: "1".into(),
+            display_order: 0,
+            row_version: None,
+        },
+    )
+    .await
+    .unwrap();
+    let roster = get_group_phase_workspace(&pool, &admin, group, phase, &context)
+        .await
+        .unwrap();
+    save_scores_batch(
+        &pool,
+        &admin,
+        group,
+        phase,
+        &context,
+        vec![ScoreCellMutation::Set {
+            score_item_id: created.id,
+            student_academic_year_id: roster.students[0].student_academic_year_id,
+            value: "0".into(),
+            row_version: None,
+        }],
+    )
+    .await
+    .unwrap();
+    let before = get_group_phase_workspace(&pool, &admin, group, phase, &context)
+        .await
+        .unwrap();
+    let item = before
+        .items
+        .iter()
+        .find(|item| item.lifecycle == "active")
+        .unwrap();
+    let student = before.students[0].student_academic_year_id;
+    let controls = list_controls(&pool, &admin, &context).await.unwrap();
+    let control = &controls[0];
+    let teacher = ActorContext {
+        user_id: admin.user_id,
+        permissions: vec![codes::ACADEMIC_GRADEBOOK_MANAGE_ASSIGNED.into()],
+    };
+    for (year_status, term_status) in [("active", "closed"), ("closed", "active")] {
+        sqlx::query("UPDATE academic_years SET status=$2 WHERE id=$1")
+            .bind(context.academic_year_id)
+            .bind(year_status)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE academic_terms SET status=$2,closed_on=CASE WHEN $2='closed' THEN start_date ELSE NULL END WHERE id=$1")
+            .bind(context.academic_term_id).bind(term_status).execute(&pool).await.unwrap();
+        let historical = get_group_phase_workspace(&pool, &admin, group, phase, &context)
+            .await
+            .unwrap();
+        assert!(!historical.can_manage && !historical.can_confirm);
+        assert_eq!(historical.source_checksum, before.source_checksum);
+        assert_eq!(
+            serde_json::to_value(&historical.scores).unwrap(),
+            serde_json::to_value(&before.scores).unwrap()
+        );
+        for actor in [&admin, &teacher] {
+            assert!(matches!(
+                save_scores_batch(
+                    &pool,
+                    actor,
+                    group,
+                    phase,
+                    &context,
+                    vec![ScoreCellMutation::Set {
+                        score_item_id: item.id,
+                        student_academic_year_id: student,
+                        value: "0".into(),
+                        row_version: before
+                            .scores
+                            .iter()
+                            .find(|cell| cell.score_item_id == item.id
+                                && cell.student_academic_year_id == student)
+                            .and_then(|cell| cell.row_version),
+                    }]
+                )
+                .await,
+                Err(AppError::Conflict(_))
+            ));
+            assert!(matches!(
+                create_item(
+                    &pool,
+                    actor,
+                    group,
+                    phase,
+                    &context,
+                    ItemInput {
+                        name: "Closed term item".into(),
+                        max_score: "0".into(),
+                        display_order: 0,
+                        row_version: None,
+                    }
+                )
+                .await,
+                Err(AppError::Conflict(_))
+            ));
+            assert!(matches!(
+                update_item(
+                    &pool,
+                    actor,
+                    group,
+                    phase,
+                    item.id,
+                    &context,
+                    ItemInput {
+                        name: "Closed term edit".into(),
+                        max_score: item.max_score.clone(),
+                        display_order: item.display_order,
+                        row_version: Some(item.row_version),
+                    }
+                )
+                .await,
+                Err(AppError::Conflict(_))
+            ));
+            assert!(matches!(
+                remove_item(
+                    &pool,
+                    actor,
+                    group,
+                    phase,
+                    item.id,
+                    &context,
+                    item.row_version
+                )
+                .await,
+                Err(AppError::Conflict(_))
+            ));
+            assert!(matches!(
+                confirm_phase(
+                    &pool,
+                    actor,
+                    group,
+                    phase,
+                    &context,
+                    ConfirmInput {
+                        source_checksum: before.source_checksum.clone(),
+                        roster_checksum: before.roster_checksum.clone(),
+                        row_version: before
+                            .confirmation
+                            .as_ref()
+                            .map(|confirmation| confirmation.row_version),
+                    }
+                )
+                .await,
+                Err(AppError::Conflict(_))
+            ));
+        }
+        assert!(matches!(
+            update_control(
+                &pool,
+                &admin,
+                control.id,
+                &context,
+                UpdateControlInput {
+                    score_entry_enabled: !control.score_entry_enabled,
+                    row_version: control.row_version,
+                }
+            )
+            .await,
+            Err(AppError::Conflict(_))
+        ));
+    }
+}
+
+#[tokio::test]
 async fn gradebook_defaults_limit_generated_subject_group_reads_to_heads() {
     let (pool, actor, _, _, _) = fixture("gradebook_default_scopes").await;
     let unit: Uuid = sqlx::query_scalar("SELECT id FROM organization_units WHERE code='SUBJ-SC'")

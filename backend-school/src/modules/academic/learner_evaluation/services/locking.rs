@@ -208,7 +208,7 @@ pub async fn lock_subject(
             "School learner evaluation lock permission is required".into(),
         ));
     }
-    let (mut tx, scope) = begin_subject(pool, actor, subject, domain, ctx).await?;
+    let (mut tx, scope) = begin_subject(pool, actor, subject, domain, ctx, true).await?;
     if scope.locked {
         return Err(AppError::Conflict(
             "Subject evaluation domain is already locked".into(),
