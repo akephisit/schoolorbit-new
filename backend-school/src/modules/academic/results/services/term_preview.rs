@@ -1,3 +1,6 @@
+use super::{
+    activity_aggregation::aggregate_activity_outcomes, activity_preview::load_activity_inputs,
+};
 use super::{aggregate_course_credits, decimal, decimal_wire, hash, validate_context};
 use crate::{
     error::AppError, middleware::permission::ActorContext, modules::academic::results::models::*,
@@ -114,12 +117,15 @@ pub async fn preview_student_term(
         .map(course_input)
         .collect::<Result<Vec<_>, _>>()?;
     let totals = aggregate_course_credits(&courses, &passing_grade)?;
+    let activities = load_activity_inputs(&mut tx, &context, student_year_id).await?;
+    let activity_totals = aggregate_activity_outcomes(&activities)?;
     let source_checksum = hash(&(
         context.academic_year_id,
         context.academic_term_id,
         student_year_id,
         &passing_grade,
         &courses,
+        &activities,
     ))?;
     tx.commit().await?;
     Ok(TermResultPreview {
@@ -129,6 +135,8 @@ pub async fn preview_student_term(
         passing_grade,
         courses,
         totals,
+        activities,
+        activity_totals,
         source_checksum,
     })
 }

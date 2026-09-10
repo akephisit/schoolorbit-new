@@ -5,6 +5,8 @@ use sha2::{Digest, Sha256};
 use sqlx::{Postgres, Transaction};
 
 mod activities;
+mod activity_aggregation;
+mod activity_preview;
 mod aggregation;
 mod corrections;
 mod course_preparation;

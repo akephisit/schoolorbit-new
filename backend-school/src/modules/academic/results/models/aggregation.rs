@@ -1,4 +1,4 @@
-use super::CourseOfficialOutcome;
+use super::{ActivityOutcome, CourseOfficialOutcome};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -32,6 +32,27 @@ pub struct CourseCreditTotals {
     pub all_outcomes_numeric: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ActivityAggregateInput {
+    pub learning_group_id: Uuid,
+    pub learning_offering_id: Uuid,
+    pub result_id: Option<Uuid>,
+    pub effective_version: Option<i64>,
+    pub outcome: Option<ActivityOutcome>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityOutcomeTotals {
+    pub expected_group_count: usize,
+    pub passed_group_count: usize,
+    pub failed_group_count: usize,
+    pub missing_result_count: usize,
+    pub coverage_complete: bool,
+    pub all_passed: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, IntoParams)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[into_params(parameter_in = Query)]
@@ -51,5 +72,7 @@ pub struct TermResultPreview {
     pub passing_grade: String,
     pub courses: Vec<CourseAggregateInput>,
     pub totals: CourseCreditTotals,
+    pub activities: Vec<ActivityAggregateInput>,
+    pub activity_totals: ActivityOutcomeTotals,
     pub source_checksum: String,
 }

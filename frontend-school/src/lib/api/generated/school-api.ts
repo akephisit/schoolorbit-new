@@ -5643,6 +5643,17 @@ export interface components {
 		AcknowledgeObservationRequest: {
 			comment?: string | null;
 		};
+		ActivityAggregateInput: {
+			/** Format: int64 */
+			effectiveVersion?: number | null;
+			/** Format: uuid */
+			learningGroupId: string;
+			/** Format: uuid */
+			learningOfferingId: string;
+			outcome?: null | components['schemas']['ActivityOutcome'];
+			/** Format: uuid */
+			resultId?: string | null;
+		};
 		ActivityAttendanceRequirement: {
 			minimumPercent?: string | null;
 			/** Format: int32 */
@@ -5675,6 +5686,14 @@ export interface components {
 		};
 		/** @enum {string} */
 		ActivityOutcome: 'pass' | 'fail';
+		ActivityOutcomeTotals: {
+			allPassed: boolean;
+			coverageComplete: boolean;
+			expectedGroupCount: number;
+			failedGroupCount: number;
+			missingResultCount: number;
+			passedGroupCount: number;
+		};
 		ActivityPassCriteria: {
 			outcomes: string[];
 			requireAttendance: boolean;
@@ -8384,6 +8403,8 @@ export interface components {
 				academicTermId: string;
 				/** Format: uuid */
 				academicYearId: string;
+				activities: components['schemas']['ActivityAggregateInput'][];
+				activityTotals: components['schemas']['ActivityOutcomeTotals'];
 				courses: components['schemas']['CourseAggregateInput'][];
 				passingGrade: string;
 				sourceChecksum: string;
@@ -15978,6 +15999,8 @@ export interface components {
 			academicTermId: string;
 			/** Format: uuid */
 			academicYearId: string;
+			activities: components['schemas']['ActivityAggregateInput'][];
+			activityTotals: components['schemas']['ActivityOutcomeTotals'];
 			courses: components['schemas']['CourseAggregateInput'][];
 			passingGrade: string;
 			sourceChecksum: string;

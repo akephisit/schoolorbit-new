@@ -1368,6 +1368,48 @@
         },
         "type": "object"
       },
+      "ActivityAggregateInput": {
+        "additionalProperties": false,
+        "properties": {
+          "effectiveVersion": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "learningGroupId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "learningOfferingId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "outcome": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ActivityOutcome"
+              }
+            ]
+          },
+          "resultId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "learningGroupId",
+          "learningOfferingId"
+        ],
+        "type": "object"
+      },
       "ActivityAttendanceRequirement": {
         "additionalProperties": false,
         "properties": {
@@ -1490,6 +1532,41 @@
           "fail"
         ],
         "type": "string"
+      },
+      "ActivityOutcomeTotals": {
+        "properties": {
+          "allPassed": {
+            "type": "boolean"
+          },
+          "coverageComplete": {
+            "type": "boolean"
+          },
+          "expectedGroupCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "failedGroupCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "missingResultCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "passedGroupCount": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expectedGroupCount",
+          "passedGroupCount",
+          "failedGroupCount",
+          "missingResultCount",
+          "coverageComplete",
+          "allPassed"
+        ],
+        "type": "object"
       },
       "ActivityPassCriteria": {
         "additionalProperties": false,
@@ -11578,6 +11655,15 @@
                 "format": "uuid",
                 "type": "string"
               },
+              "activities": {
+                "items": {
+                  "$ref": "#/components/schemas/ActivityAggregateInput"
+                },
+                "type": "array"
+              },
+              "activityTotals": {
+                "$ref": "#/components/schemas/ActivityOutcomeTotals"
+              },
               "courses": {
                 "items": {
                   "$ref": "#/components/schemas/CourseAggregateInput"
@@ -11605,6 +11691,8 @@
               "passingGrade",
               "courses",
               "totals",
+              "activities",
+              "activityTotals",
               "sourceChecksum"
             ],
             "type": "object"
@@ -39358,6 +39446,15 @@
             "format": "uuid",
             "type": "string"
           },
+          "activities": {
+            "items": {
+              "$ref": "#/components/schemas/ActivityAggregateInput"
+            },
+            "type": "array"
+          },
+          "activityTotals": {
+            "$ref": "#/components/schemas/ActivityOutcomeTotals"
+          },
           "courses": {
             "items": {
               "$ref": "#/components/schemas/CourseAggregateInput"
@@ -39385,6 +39482,8 @@
           "passingGrade",
           "courses",
           "totals",
+          "activities",
+          "activityTotals",
           "sourceChecksum"
         ],
         "type": "object"

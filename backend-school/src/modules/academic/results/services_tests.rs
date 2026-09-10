@@ -613,6 +613,139 @@ async fn prepare_activity_group(
     confirmed
 }
 
+// Catches missing/failed activities disappearing or being included in numeric GPA.
+#[tokio::test]
+async fn results_term_activity_preview_tracks_corrections_without_changing_gpa() {
+    let (pool, mut teacher, ctx, course_group) = fixture("results_term_activity_preview").await;
+    let (group, primary): (Uuid, Uuid) = sqlx::query_as(
+        "SELECT g.id,t.teacher_id FROM learning_groups g
+         JOIN activity_offering_details d ON d.learning_offering_id=g.learning_offering_id
+         JOIN learning_group_teachers t ON t.learning_group_id=g.id AND t.role='primary'
+         WHERE g.academic_term_id=$1 AND g.academic_year_id=$2
+           AND EXISTS(SELECT 1 FROM learning_group_students m WHERE m.learning_group_id=g.id AND m.membership_status='active')
+         ORDER BY g.id LIMIT 1",
+    )
+    .bind(ctx.academic_term_id)
+    .bind(ctx.academic_year_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let student: Uuid = sqlx::query_scalar(
+        "SELECT student_academic_year_id FROM learning_group_students
+         WHERE learning_group_id=$1 AND membership_status='active'
+         ORDER BY student_academic_year_id LIMIT 1",
+    )
+    .bind(group)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let affairs = academic_affairs_actor(&teacher);
+    let subject: Uuid = sqlx::query_scalar("SELECT d.subject_id FROM learning_groups g JOIN course_offering_details d ON d.learning_offering_id=g.learning_offering_id WHERE g.id=$1")
+        .bind(course_group).fetch_one(&pool).await.unwrap();
+    prepare_course_subject(&pool, &teacher, &ctx, subject).await;
+    assert!(lock_course_subject(&pool, &affairs, &ctx, subject)
+        .await
+        .unwrap()
+        .lock
+        .is_some());
+    let course_result_id: Uuid = sqlx::query_scalar("SELECT id FROM academic_course_results WHERE student_academic_year_id=$1 AND academic_term_id=$2 AND subject_id=$3")
+        .bind(student).bind(ctx.academic_term_id).bind(subject).fetch_one(&pool).await.unwrap();
+    correct_result(
+        &pool,
+        &affairs,
+        &ctx,
+        ResultCorrectionInput::Course {
+            course_result_id,
+            outcome: CourseOfficialOutcome::Numeric,
+            numeric_grade: Some("4".into()),
+            expected_effective_version: 1,
+        },
+    )
+    .await
+    .unwrap();
+    teacher.user_id = primary;
+    let query = TermResultPreviewQuery {
+        academic_year_id: ctx.academic_year_id,
+        academic_term_id: ctx.academic_term_id,
+        passing_grade: "1".into(),
+    };
+    let initial = preview_student_term(&pool, &affairs, student, &query)
+        .await
+        .unwrap();
+    assert_eq!(initial.totals.provisional_gpa.as_deref(), Some("4.00"));
+    assert!(initial
+        .activities
+        .iter()
+        .any(|row| row.learning_group_id == group && row.result_id.is_none()));
+    assert!(!initial.activity_totals.coverage_complete);
+    prepare_activity_group(&pool, &teacher, &ctx, group).await;
+    assert!(lock_activity_group(&pool, &affairs, &ctx, group)
+        .await
+        .unwrap()
+        .lock
+        .is_some());
+    let passed = preview_student_term(&pool, &affairs, student, &query)
+        .await
+        .unwrap();
+    let row = passed
+        .activities
+        .iter()
+        .find(|row| row.learning_group_id == group)
+        .unwrap();
+    assert_eq!(row.outcome, Some(ActivityOutcome::Pass));
+    assert_eq!(passed.activity_totals.passed_group_count, 1);
+    assert_eq!(passed.totals, initial.totals);
+    assert_ne!(passed.source_checksum, initial.source_checksum);
+    let result_id = row.result_id.unwrap();
+    correct_result(
+        &pool,
+        &affairs,
+        &ctx,
+        ResultCorrectionInput::Activity {
+            activity_result_id: result_id,
+            outcome: ActivityOutcome::Fail,
+            expected_effective_version: 1,
+        },
+    )
+    .await
+    .unwrap();
+    let failed = preview_student_term(&pool, &affairs, student, &query)
+        .await
+        .unwrap();
+    assert_eq!(failed.activity_totals.passed_group_count, 0);
+    assert_eq!(failed.activity_totals.failed_group_count, 1);
+    assert!(!failed.activity_totals.all_passed);
+    assert_eq!(failed.totals, initial.totals);
+    assert_ne!(failed.source_checksum, passed.source_checksum);
+    let row = failed
+        .activities
+        .iter()
+        .find(|row| row.learning_group_id == group)
+        .unwrap();
+    assert_eq!(row.outcome, Some(ActivityOutcome::Fail));
+    assert_eq!(row.effective_version, Some(2));
+    sqlx::query("UPDATE learning_groups SET status='closed' WHERE id=$1")
+        .bind(group)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let closed = preview_student_term(&pool, &affairs, student, &query)
+        .await
+        .unwrap();
+    assert_eq!(closed.source_checksum, failed.source_checksum);
+    assert_eq!(closed.activity_totals, failed.activity_totals);
+    assert_eq!(
+        sqlx::query_scalar::<_, String>(
+            "SELECT outcome FROM academic_activity_results WHERE id=$1"
+        )
+        .bind(result_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        "pass"
+    );
+}
+
 // Catches an activity lock widening from its one group to another group in the same offering.
 #[tokio::test]
 async fn results_activity_groups_lock_independently() {

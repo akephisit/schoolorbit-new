@@ -1091,6 +1091,8 @@ use utoipa::OpenApi;
         TermResultPreviewQuery,
         CourseAggregateInput,
         CourseCreditTotals,
+        ActivityAggregateInput,
+        ActivityOutcomeTotals,
         TermResultPreview,
         ApiResponse<TermResultPreview>,
         GradingPolicyBand,
