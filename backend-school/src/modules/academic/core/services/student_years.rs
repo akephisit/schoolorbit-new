@@ -5,15 +5,15 @@ use uuid::Uuid;
 use crate::error::AppError;
 
 use super::super::models::{
-    CreateHomeroomPlacementRequest, CreateHomeroomRequest, CreateStudentAcademicYearRequest,
-    Homeroom, HomeroomAdvisor, HomeroomAdvisorAssignment, HomeroomPlacement,
-    HomeroomPlacementStatus, HomeroomPlacementTransfer, ReplaceHomeroomAdvisorsRequest,
-    StudentAcademicYear, StudentAcademicYearFilter, StudentAcademicYearStatus,
-    StudentYearCandidate, StudentYearCandidateQuery, TransferHomeroomPlacementRequest,
-    UpdateHomeroomRequest, UpdateStudentAcademicYearRequest,
+    AcademicYearStatus, CreateHomeroomPlacementRequest, CreateHomeroomRequest,
+    CreateStudentAcademicYearRequest, Homeroom, HomeroomAdvisor, HomeroomAdvisorAssignment,
+    HomeroomPlacement, HomeroomPlacementStatus, HomeroomPlacementTransfer,
+    ReplaceHomeroomAdvisorsRequest, StudentAcademicYear, StudentAcademicYearFilter,
+    StudentAcademicYearStatus, StudentYearCandidate, StudentYearCandidateQuery,
+    TransferHomeroomPlacementRequest, UpdateHomeroomRequest, UpdateStudentAcademicYearRequest,
 };
-use super::parse_row_version;
 use super::years_terms::append_audit;
+use super::{lifecycle_guard, parse_row_version};
 
 const HOMEROOM_COLUMNS: &str = r#"
     id, code, name, academic_year_id, grade_level_id, room_number,
@@ -170,6 +170,7 @@ pub async fn update_homeroom(
     parse_row_version(request.row_version)?;
     validate_homeroom_fields(request.capacity)?;
     let mut transaction = pool.begin().await?;
+    require_owned_year_write(&mut transaction, StudentYearWriteTarget::Homeroom(id)).await?;
     let academic_year_id: Uuid =
         sqlx::query_scalar("SELECT academic_year_id FROM homerooms WHERE id = $1 FOR UPDATE")
             .bind(id)
@@ -278,6 +279,11 @@ pub async fn replace_advisors(
         ));
     }
     let mut transaction = pool.begin().await?;
+    require_owned_year_write(
+        &mut transaction,
+        StudentYearWriteTarget::Homeroom(homeroom_id),
+    )
+    .await?;
     let actual: i64 =
         sqlx::query_scalar("SELECT row_version FROM homerooms WHERE id = $1 FOR UPDATE")
             .bind(homeroom_id)
@@ -463,6 +469,7 @@ pub async fn update_student_year(
 ) -> Result<StudentAcademicYear, AppError> {
     parse_row_version(request.row_version)?;
     let mut transaction = pool.begin().await?;
+    require_owned_year_write(&mut transaction, StudentYearWriteTarget::StudentYear(id)).await?;
     let (academic_year_id, status): (Uuid, StudentAcademicYearStatus) = sqlx::query_as(
         "SELECT academic_year_id, status FROM student_academic_years WHERE id = $1 FOR UPDATE",
     )
@@ -526,6 +533,11 @@ pub async fn create_placement(
         ));
     }
     let mut transaction = pool.begin().await?;
+    require_owned_year_write(
+        &mut transaction,
+        StudentYearWriteTarget::StudentYear(student_year_id),
+    )
+    .await?;
     let (academic_year_id, grade_level_id, study_program_id, actual): (Uuid, Uuid, Uuid, i64) =
         sqlx::query_as(
             "SELECT academic_year_id, grade_level_id, study_program_id, row_version \
@@ -602,6 +614,7 @@ pub async fn transfer_placement(
     }
     let reason = normalize_transfer_reason(&request.reason)?;
     let mut transaction = pool.begin().await?;
+    lifecycle_guard::lock_transition_shared(&mut transaction).await?;
     let digest: String = sqlx::query_scalar("SELECT encode(sha256(convert_to($1, 'UTF8')), 'hex')")
         .bind(request.idempotency_key.to_string())
         .fetch_one(&mut *transaction)
@@ -614,6 +627,11 @@ pub async fn transfer_placement(
         transaction.commit().await?;
         return Ok(replayed);
     }
+    require_owned_year_write(
+        &mut transaction,
+        StudentYearWriteTarget::Placement(placement_id),
+    )
+    .await?;
     let old = get_placement_for_update(&mut transaction, placement_id).await?;
     if old.row_version != request.row_version || old.status != HomeroomPlacementStatus::Current {
         return Err(AppError::Conflict(
@@ -822,18 +840,47 @@ fn validate_homeroom_fields(capacity: i32) -> Result<(), AppError> {
     Ok(())
 }
 
+enum StudentYearWriteTarget {
+    Homeroom(Uuid),
+    StudentYear(Uuid),
+    Placement(Uuid),
+}
+
+async fn require_owned_year_write(
+    tx: &mut Transaction<'_, Postgres>,
+    target: StudentYearWriteTarget,
+) -> Result<(), AppError> {
+    let (id, query) = match target {
+        StudentYearWriteTarget::Homeroom(id) => {
+            (id, "SELECT academic_year_id FROM homerooms WHERE id=$1")
+        }
+        StudentYearWriteTarget::StudentYear(id) => (
+            id,
+            "SELECT academic_year_id FROM student_academic_years WHERE id=$1",
+        ),
+        StudentYearWriteTarget::Placement(id) => (
+            id,
+            "SELECT academic_year_id FROM homeroom_placements WHERE id=$1",
+        ),
+    };
+    let year = sqlx::query_scalar(query)
+        .bind(id)
+        .fetch_optional(&mut **tx)
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบข้อมูลห้องหรือนักเรียนประจำปี".into()))?;
+    lifecycle_guard::require_year_write_exclusive(tx, year).await?;
+    Ok(())
+}
+
 async fn validate_homeroom_context(
     transaction: &mut Transaction<'_, Postgres>,
     academic_year_id: Uuid,
     grade_level_id: Uuid,
     study_program_id: Uuid,
 ) -> Result<(String, i32), AppError> {
-    let year_status: Option<String> =
-        sqlx::query_scalar("SELECT status FROM academic_years WHERE id = $1 FOR SHARE")
-            .bind(academic_year_id)
-            .fetch_optional(&mut **transaction)
-            .await?;
-    if year_status.as_deref() != Some("planning") {
+    let year_status =
+        lifecycle_guard::require_year_write_exclusive(transaction, academic_year_id).await?;
+    if year_status != AcademicYearStatus::Planning {
         return Err(AppError::Conflict(
             "จัดห้องได้เฉพาะปีการศึกษาสถานะ planning".to_string(),
         ));

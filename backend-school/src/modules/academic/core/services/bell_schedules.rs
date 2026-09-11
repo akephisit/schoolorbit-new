@@ -6,11 +6,11 @@ use uuid::Uuid;
 use crate::error::AppError;
 
 use super::super::models::{
-    BellSchedule, BellSchedulePeriod, BellSchedulePeriodInput, CreateBellScheduleRequest,
-    ReplaceBellSchedulePeriodsRequest, UpdateBellScheduleRequest,
+    AcademicYearStatus, BellSchedule, BellSchedulePeriod, BellSchedulePeriodInput,
+    CreateBellScheduleRequest, ReplaceBellSchedulePeriodsRequest, UpdateBellScheduleRequest,
 };
-use super::parse_row_version;
 use super::years_terms::append_audit;
+use super::{lifecycle_guard, parse_row_version};
 
 const SCHEDULE_COLUMNS: &str = r#"
     id, academic_year_id, code, name, is_default, status,
@@ -106,6 +106,7 @@ pub async fn update(
     validate_schedule_fields(&request.name)?;
     parse_row_version(request.row_version)?;
     let mut transaction = pool.begin().await?;
+    require_schedule_planning_year(&mut transaction, id).await?;
     let (academic_year_id, current_is_default): (Uuid, bool) = sqlx::query_as(
         "SELECT academic_year_id, is_default FROM bell_schedules WHERE id = $1 FOR UPDATE",
     )
@@ -113,7 +114,6 @@ pub async fn update(
     .fetch_optional(&mut *transaction)
     .await?
     .ok_or_else(|| AppError::NotFound("ไม่พบตารางคาบ".to_string()))?;
-    require_planning_year(&mut transaction, academic_year_id).await?;
     if request.is_default {
         clear_default_except(&mut transaction, academic_year_id, id).await?;
     } else if current_is_default {
@@ -179,6 +179,7 @@ pub async fn replace_periods(
     parse_row_version(request.row_version)?;
     validate_periods(&request.periods)?;
     let mut transaction = pool.begin().await?;
+    require_schedule_planning_year(&mut transaction, schedule_id).await?;
     let (academic_year_id, actual_version): (Uuid, i64) = sqlx::query_as(
         "SELECT academic_year_id, row_version FROM bell_schedules WHERE id = $1 FOR UPDATE",
     )
@@ -186,7 +187,6 @@ pub async fn replace_periods(
     .fetch_optional(&mut *transaction)
     .await?
     .ok_or_else(|| AppError::NotFound("ไม่พบตารางคาบ".to_string()))?;
-    require_planning_year(&mut transaction, academic_year_id).await?;
     let configured_school_days: String =
         sqlx::query_scalar("SELECT school_days FROM academic_years WHERE id = $1")
             .bind(academic_year_id)
@@ -336,18 +336,26 @@ async fn require_planning_year(
     transaction: &mut Transaction<'_, Postgres>,
     academic_year_id: Uuid,
 ) -> Result<(), AppError> {
-    let status: Option<String> =
-        sqlx::query_scalar("SELECT status FROM academic_years WHERE id = $1 FOR UPDATE")
-            .bind(academic_year_id)
-            .fetch_optional(&mut **transaction)
-            .await?;
-    match status.as_deref() {
-        None => Err(AppError::NotFound("ไม่พบปีการศึกษา".to_string())),
-        Some("planning") => Ok(()),
-        Some(_) => Err(AppError::Conflict(
+    let status =
+        lifecycle_guard::require_year_write_exclusive(transaction, academic_year_id).await?;
+    match status {
+        AcademicYearStatus::Planning => Ok(()),
+        _ => Err(AppError::Conflict(
             "แก้ไขตารางคาบได้เฉพาะปีการศึกษาสถานะ planning".to_string(),
         )),
     }
+}
+
+async fn require_schedule_planning_year(
+    transaction: &mut Transaction<'_, Postgres>,
+    schedule_id: Uuid,
+) -> Result<(), AppError> {
+    let year = sqlx::query_scalar("SELECT academic_year_id FROM bell_schedules WHERE id=$1")
+        .bind(schedule_id)
+        .fetch_optional(&mut **transaction)
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบตารางคาบ".into()))?;
+    require_planning_year(transaction, year).await
 }
 
 async fn clear_default_except(

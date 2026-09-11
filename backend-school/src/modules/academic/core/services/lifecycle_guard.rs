@@ -13,15 +13,20 @@ pub(crate) struct AcademicWriteState {
     pub term_status: AcademicTermStatus,
 }
 
+fn year_is_writable(status: AcademicYearStatus) -> bool {
+    !matches!(
+        status,
+        AcademicYearStatus::Closed | AcademicYearStatus::Archived
+    )
+}
+
 impl AcademicWriteState {
     pub fn is_writable(&self) -> bool {
-        !matches!(
-            self.year_status,
-            AcademicYearStatus::Closed | AcademicYearStatus::Archived
-        ) && !matches!(
-            self.term_status,
-            AcademicTermStatus::Closed | AcademicTermStatus::Cancelled
-        )
+        year_is_writable(self.year_status)
+            && !matches!(
+                self.term_status,
+                AcademicTermStatus::Closed | AcademicTermStatus::Cancelled
+            )
     }
 
     pub fn require_writable(&self) -> Result<(), AppError> {
@@ -104,6 +109,26 @@ pub(crate) async fn require_term_write(
     term: Uuid,
 ) -> Result<(), AppError> {
     lock_context(tx, year, term).await?.require_writable()
+}
+
+/// Year-owned writers take this mode before any child/entity lock. They must
+/// not upgrade a shared year lock acquired earlier by a term-scoped writer.
+pub(crate) async fn require_year_write_exclusive(
+    tx: &mut Transaction<'_, Postgres>,
+    year: Uuid,
+) -> Result<AcademicYearStatus, AppError> {
+    lock_transition_shared(tx).await?;
+    let status = sqlx::query_scalar("SELECT status FROM academic_years WHERE id=$1 FOR UPDATE")
+        .bind(year)
+        .fetch_optional(&mut **tx)
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบปีการศึกษา".into()))?;
+    if !year_is_writable(status) {
+        return Err(AppError::Conflict(
+            "ปีการศึกษานี้ปิดแล้ว ดูข้อมูลเดิมได้ แต่แก้ไขผ่านงานปกติไม่ได้".into(),
+        ));
+    }
+    Ok(status)
 }
 
 /// Acquire the write mode initially: never upgrade a shared term lock after

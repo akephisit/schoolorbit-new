@@ -10,7 +10,7 @@ use super::super::models::{
     CreateAcademicTermRequest, CreateAcademicYearRequest, UpdateAcademicTermRequest,
     UpdateAcademicYearRequest,
 };
-use super::{parse_row_version, validate_date_containment};
+use super::{lifecycle_guard, parse_row_version, validate_date_containment};
 
 const SCHOOL_DAYS: &[&str] = &["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 
@@ -196,6 +196,7 @@ pub async fn create_year(
     )?;
     let id = Uuid::new_v4();
     let mut transaction = pool.begin().await?;
+    lifecycle_guard::lock_transition_shared(&mut transaction).await?;
     let sql = format!(
         "INSERT INTO academic_years (id, year, name, start_date, end_date, school_days, status) \
          VALUES ($1, $2, $3, $4, $5, $6, 'planning') RETURNING {YEAR_COLUMNS}"
@@ -240,6 +241,7 @@ pub async fn update_year(
     )?;
     parse_row_version(request.row_version)?;
     let mut transaction = pool.begin().await?;
+    lifecycle_guard::require_year_write_exclusive(&mut transaction, id).await?;
     ensure_terms_fit_year(&mut transaction, id, request.start_date, request.end_date).await?;
     let sql = format!(
         "UPDATE academic_years SET year = $1, name = $2, start_date = $3, end_date = $4, \
@@ -661,14 +663,14 @@ async fn lock_term_planning_year(
     transaction: &mut Transaction<'_, Postgres>,
     academic_year_id: Uuid,
 ) -> Result<(NaiveDate, NaiveDate), AppError> {
-    let (year_start, year_end, status): (NaiveDate, NaiveDate, AcademicYearStatus) =
-        sqlx::query_as(
-            "SELECT start_date, end_date, status FROM academic_years WHERE id = $1 FOR UPDATE",
-        )
-        .bind(academic_year_id)
-        .fetch_optional(&mut **transaction)
-        .await?
-        .ok_or_else(|| AppError::NotFound("ไม่พบปีการศึกษา".to_string()))?;
+    let status =
+        lifecycle_guard::require_year_write_exclusive(transaction, academic_year_id).await?;
+    let (year_start, year_end): (NaiveDate, NaiveDate) =
+        sqlx::query_as("SELECT start_date, end_date FROM academic_years WHERE id = $1")
+            .bind(academic_year_id)
+            .fetch_optional(&mut **transaction)
+            .await?
+            .ok_or_else(|| AppError::NotFound("ไม่พบปีการศึกษา".to_string()))?;
     ensure_term_planning_year(status)?;
     Ok((year_start, year_end))
 }

@@ -27,7 +27,6 @@ use crate::{
         CutoverFixture,
     },
     permissions::registry::codes,
-    test_helpers::create_named_test_pool,
 };
 use chrono::{NaiveDate, NaiveTime};
 use serde_json::json;
@@ -39,7 +38,7 @@ const FUTURE_YEAR_ID: Uuid = Uuid::from_u128(0x1000_0000_0000_0000_0000_0000_000
 const DEFAULT_SUBJECT_GROUP_ID: Uuid = Uuid::from_u128(0x783a_4a9d_9ff1_4eac_b370_06b5_8daa_1eb7);
 
 async fn prepare_core_fixture(name: &str) -> PgPool {
-    let pool = create_named_test_pool(name).await;
+    let pool = crate::test_helpers::create_named_test_pool_with_max_connections(name, 3).await;
     apply_migrations_through(&pool, 40).await.unwrap();
     seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
         .await
@@ -54,6 +53,113 @@ async fn fixture_actor(pool: &PgPool) -> Uuid {
         .fetch_one(pool)
         .await
         .unwrap()
+}
+
+#[tokio::test]
+async fn lifecycle_year_advisor_replacement_rejects_closed_years_and_retains_history() {
+    use super::models::ReplaceHomeroomAdvisorsRequest;
+    let pool = prepare_core_fixture("lifecycle_year_advisors").await;
+    let homeroom: Uuid = sqlx::query_scalar(
+        "SELECT id FROM homerooms WHERE academic_year_id=$1 ORDER BY id LIMIT 1",
+    )
+    .bind(CURRENT_YEAR_ID)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let room = student_years::get_homeroom(&pool, homeroom).await.unwrap();
+    let before =
+        serde_json::to_value(student_years::list_advisors(&pool, homeroom).await.unwrap()).unwrap();
+    for status in ["closed", "archived"] {
+        sqlx::query("UPDATE academic_years SET status=$2 WHERE id=$1")
+            .bind(CURRENT_YEAR_ID)
+            .bind(status)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let result = student_years::replace_advisors(
+            &pool,
+            homeroom,
+            ReplaceHomeroomAdvisorsRequest {
+                advisors: vec![],
+                row_version: room.row_version,
+            },
+        )
+        .await;
+        assert!(
+            matches!(result, Err(crate::error::AppError::Conflict(_))),
+            "{result:?}"
+        );
+        assert_eq!(
+            student_years::get_homeroom(&pool, homeroom)
+                .await
+                .unwrap()
+                .row_version,
+            room.row_version
+        );
+        assert_eq!(
+            serde_json::to_value(student_years::list_advisors(&pool, homeroom).await.unwrap())
+                .unwrap(),
+            before
+        );
+    }
+    sqlx::query("UPDATE academic_years SET status='active' WHERE id=$1")
+        .bind(CURRENT_YEAR_ID)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut boundary = pool.begin().await.unwrap();
+    let boundary_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *boundary)
+        .await
+        .unwrap();
+    sqlx::query("SELECT id FROM academic_years WHERE id=$1 FOR UPDATE")
+        .bind(CURRENT_YEAR_ID)
+        .execute(&mut *boundary)
+        .await
+        .unwrap();
+    let worker_pool = pool.clone();
+    let worker = tokio::spawn(async move {
+        student_years::replace_advisors(
+            &worker_pool,
+            homeroom,
+            ReplaceHomeroomAdvisorsRequest {
+                advisors: vec![],
+                row_version: room.row_version,
+            },
+        )
+        .await
+    });
+    let mut waiting = false;
+    for _ in 0..200 {
+        waiting = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid)))",
+        )
+        .bind(boundary_pid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        if waiting {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    let mut probe = pool.begin().await.unwrap();
+    let homeroom_free = sqlx::query("SELECT id FROM homerooms WHERE id=$1 FOR UPDATE NOWAIT")
+        .bind(homeroom)
+        .execute(&mut *probe)
+        .await
+        .is_ok();
+    probe.rollback().await.unwrap();
+    boundary.commit().await.unwrap();
+    let outcome = tokio::time::timeout(std::time::Duration::from_secs(10), worker)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        waiting && homeroom_free,
+        "year must lock before the homeroom"
+    );
+    assert!(outcome.is_ok(), "active year remains writable: {outcome:?}");
 }
 
 #[tokio::test]
@@ -1926,7 +2032,7 @@ async fn bell_schedule_period_replacement_is_atomic_and_rejects_stale_revisions(
     assert_eq!(periods[0].applicable_days.as_deref(), Some("MON,TUE"));
     let current = bell_schedules::get(&pool, schedule.id).await.unwrap();
     assert_eq!(current.row_version, schedule.row_version + 1);
-    let stale = bell_schedules::replace_periods(&pool, actor, schedule.id, request)
+    let stale = bell_schedules::replace_periods(&pool, actor, schedule.id, request.clone())
         .await
         .unwrap_err();
     assert!(stale.public_message().contains("ผู้ใช้อื่น"));
@@ -1937,6 +2043,93 @@ async fn bell_schedule_period_replacement_is_atomic_and_rejects_stale_revisions(
             .len(),
         2
     );
+    for status in ["closed", "archived"] {
+        sqlx::query("UPDATE academic_years SET status=$2 WHERE id=$1")
+            .bind(schedule.academic_year_id)
+            .bind(status)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let mut replacement = request.clone();
+        replacement.row_version = current.row_version;
+        assert!(matches!(
+            bell_schedules::replace_periods(&pool, actor, schedule.id, replacement).await,
+            Err(crate::error::AppError::Conflict(_))
+        ));
+        assert_eq!(
+            bell_schedules::get(&pool, schedule.id)
+                .await
+                .unwrap()
+                .row_version,
+            current.row_version
+        );
+    }
+    sqlx::query("UPDATE academic_years SET status='planning' WHERE id=$1")
+        .bind(schedule.academic_year_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    for replace in [false, true] {
+        let current = bell_schedules::get(&pool, schedule.id).await.unwrap();
+        let mut replacement = request.clone();
+        replacement.row_version = current.row_version;
+        let update = super::models::UpdateBellScheduleRequest {
+            name: current.name,
+            is_default: current.is_default,
+            owning_organization_unit_id: current.owning_organization_unit_id,
+            row_version: current.row_version,
+        };
+        let mut boundary = pool.begin().await.unwrap();
+        let boundary_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+            .fetch_one(&mut *boundary)
+            .await
+            .unwrap();
+        sqlx::query("SELECT id FROM academic_years WHERE id=$1 FOR UPDATE")
+            .bind(schedule.academic_year_id)
+            .execute(&mut *boundary)
+            .await
+            .unwrap();
+        let worker_pool = pool.clone();
+        let schedule_id = schedule.id;
+        let worker = tokio::spawn(async move {
+            if replace {
+                bell_schedules::replace_periods(&worker_pool, actor, schedule_id, replacement)
+                    .await
+                    .map(|_| ())
+            } else {
+                bell_schedules::update(&worker_pool, actor, schedule_id, update)
+                    .await
+                    .map(|_| ())
+            }
+        });
+        let mut waiting = false;
+        for _ in 0..200 {
+            waiting = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid)))")
+                .bind(boundary_pid).fetch_one(&pool).await.unwrap();
+            if waiting {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        let mut probe = pool.begin().await.unwrap();
+        let schedule_free =
+            sqlx::query("SELECT id FROM bell_schedules WHERE id=$1 FOR UPDATE NOWAIT")
+                .bind(schedule.id)
+                .execute(&mut *probe)
+                .await
+                .is_ok();
+        probe.rollback().await.unwrap();
+        boundary.commit().await.unwrap();
+        let outcome = tokio::time::timeout(std::time::Duration::from_secs(10), worker)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            waiting && schedule_free,
+            "year must precede schedule, replace={replace}"
+        );
+        assert!(outcome.is_ok(), "{outcome:?}");
+    }
 }
 
 #[tokio::test]
@@ -1974,7 +2167,8 @@ async fn subject_group_updates_use_optimistic_revisions() {
 }
 
 #[tokio::test]
-async fn future_student_year_and_transfer_do_not_mutate_current_year_and_retries_are_idempotent() {
+async fn lifecycle_year_future_student_preparation_preserves_current_year_and_idempotent_transfers()
+{
     let pool = prepare_core_fixture("academic_core_student_year_transfer").await;
     let actor = fixture_actor(&pool).await;
     let existing_context: (Uuid, Uuid, Uuid) = sqlx::query_as(
@@ -2122,6 +2316,34 @@ async fn future_student_year_and_transfer_do_not_mutate_current_year_and_retries
     .unwrap_err();
     assert!(wrong_year.public_message().contains("ปี"));
 
+    sqlx::query("UPDATE academic_years SET status='closed' WHERE id=$1")
+        .bind(FUTURE_YEAR_ID)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let blocked_placement = student_years::create_placement(
+        &pool,
+        actor,
+        future.id,
+        CreateHomeroomPlacementRequest {
+            homeroom_id: homeroom_a.id,
+            start_date: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
+            status: HomeroomPlacementStatus::Current,
+            enrollment_type: "promotion".into(),
+            class_number: Some(1),
+            row_version: future.row_version,
+        },
+    )
+    .await;
+    assert!(
+        matches!(blocked_placement, Err(crate::error::AppError::Conflict(_))),
+        "{blocked_placement:?}"
+    );
+    sqlx::query("UPDATE academic_years SET status='planning' WHERE id=$1")
+        .bind(FUTURE_YEAR_ID)
+        .execute(&pool)
+        .await
+        .unwrap();
     let placement = student_years::create_placement(
         &pool,
         actor,
@@ -2165,10 +2387,32 @@ async fn future_student_year_and_transfer_do_not_mutate_current_year_and_retries
         row_version: placement.row_version,
         idempotency_key,
     };
+    sqlx::query("UPDATE academic_years SET status='closed' WHERE id=$1")
+        .bind(FUTURE_YEAR_ID)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let blocked_transfer =
+        student_years::transfer_placement(&pool, actor, placement.id, transfer_request.clone())
+            .await;
+    assert!(
+        matches!(blocked_transfer, Err(crate::error::AppError::Conflict(_))),
+        "{blocked_transfer:?}"
+    );
+    sqlx::query("UPDATE academic_years SET status='planning' WHERE id=$1")
+        .bind(FUTURE_YEAR_ID)
+        .execute(&pool)
+        .await
+        .unwrap();
     let first =
         student_years::transfer_placement(&pool, actor, placement.id, transfer_request.clone())
             .await
             .unwrap();
+    sqlx::query("UPDATE academic_years SET status='closed' WHERE id=$1")
+        .bind(FUTURE_YEAR_ID)
+        .execute(&pool)
+        .await
+        .unwrap();
     let replay = student_years::transfer_placement(&pool, actor, placement.id, transfer_request)
         .await
         .unwrap();
