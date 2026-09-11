@@ -6952,6 +6952,7 @@ export interface components {
 		ApiResponse_ExamScheduleWorkspace: {
 			data: {
 				days: components['schemas']['ExamDayDetail'][];
+				paperReceiptItems: components['schemas']['ExamPaperReceiptItem'][];
 				readiness: components['schemas']['ExamScheduleReadiness'];
 				round: components['schemas']['ExamRound'];
 				scheduledSessions: components['schemas']['ExamSessionView'][];
@@ -12793,6 +12794,28 @@ export interface components {
 			roundId: string;
 			staffWorkloads: components['schemas']['ExamInvigilatorStaffWorkload'][];
 		};
+		/** @description Current assessment sources for the printed teacher paper receipt register. */
+		ExamPaperReceiptItem: {
+			/** Format: uuid */
+			assessmentPhaseId: string;
+			examArrangement: string;
+			gradeLevelType: string;
+			/** Format: int32 */
+			gradeLevelYear: number;
+			/** Format: uuid */
+			homeroomId: string;
+			homeroomName: string;
+			/** Format: uuid */
+			learningGroupId: string;
+			subjectCode: string;
+			/** Format: int32 */
+			subjectGroupDisplayOrder?: number | null;
+			/** Format: uuid */
+			subjectGroupId?: string | null;
+			subjectGroupName?: string | null;
+			subjectNameEn?: string | null;
+			subjectNameTh?: string | null;
+		};
 		ExamRound: {
 			/** Format: uuid */
 			academicTermId: string;
@@ -12906,6 +12929,7 @@ export interface components {
 		};
 		ExamScheduleWorkspace: {
 			days: components['schemas']['ExamDayDetail'][];
+			paperReceiptItems: components['schemas']['ExamPaperReceiptItem'][];
 			readiness: components['schemas']['ExamScheduleReadiness'];
 			round: components['schemas']['ExamRound'];
 			scheduledSessions: components['schemas']['ExamSessionView'][];

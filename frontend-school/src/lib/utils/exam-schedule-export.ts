@@ -3,7 +3,6 @@ import type {
 	ExamInvigilatorAssignmentSummary,
 	ExamInvigilatorWorkspace,
 	ExamScheduleReadiness,
-	ExamScheduleItem,
 	ExamScheduleWorkspace,
 	ExamSession
 } from '$lib/api/examSchedule';
@@ -615,6 +614,9 @@ function isHorizontallyMergedReportCell(
 export function examScheduleReportColumnWidths(
 	reportSheet: ExamScheduleReportSheet
 ): ExamScheduleExportColumn[] {
+	if (reportSheet.name === 'รับข้อสอบ') {
+		return [6, 11, 22, 9, 10, 12, 20, 12].map((wch) => ({ wch }));
+	}
 	return Array.from({ length: reportSheetColumnCount(reportSheet) }, (_, columnIndex) => {
 		const headerText = reportHeaderText(reportSheet, columnIndex);
 		const { min, max } = reportColumnWidthBounds(reportSheet, headerText);
@@ -1060,45 +1062,79 @@ function printablePaperTransferSheet(
 }
 
 function printablePaperReceiptSheet(workspace: ExamScheduleWorkspace): ExamScheduleReportSheet {
-	const items = new Map<string, ExamScheduleItem | ExamSession>();
-	for (const session of workspace.scheduledSessions) {
-		items.set(session.examScheduleItemId, session);
+	type ReceiptItem = ExamScheduleWorkspace['paperReceiptItems'][number];
+	const items = new Map<string, ReceiptItem>();
+	for (const item of workspace.paperReceiptItems ?? []) {
+		items.set(
+			JSON.stringify([item.assessmentPhaseId, item.learningGroupId, item.homeroomId]),
+			item
+		);
 	}
-	for (const item of workspace.unscheduledItems) {
-		if (!items.has(item.id)) items.set(item.id, item);
-	}
+	const levelOrder: Record<string, number> = { kindergarten: 1, primary: 2, secondary: 3 };
 	const orderedItems = [...items.values()].sort(
 		(a, b) =>
-			compareThaiNatural(safeText(a.homeroomName), safeText(b.homeroomName)) ||
-			compareThaiNatural(safeText(a.subjectCode), safeText(b.subjectCode)) ||
-			compareThaiNatural(safeText(a.subjectNameTh), safeText(b.subjectNameTh))
+			(a.subjectGroupDisplayOrder ?? Number.MAX_SAFE_INTEGER) -
+				(b.subjectGroupDisplayOrder ?? Number.MAX_SAFE_INTEGER) ||
+			compareThaiNatural(
+				safeText(a.subjectGroupName, 'ไม่ระบุกลุ่มสาระ'),
+				safeText(b.subjectGroupName, 'ไม่ระบุกลุ่มสาระ')
+			) ||
+			compareThaiNatural(a.subjectGroupId ?? '', b.subjectGroupId ?? '') ||
+			(levelOrder[a.gradeLevelType] ?? 4) - (levelOrder[b.gradeLevelType] ?? 4) ||
+			a.gradeLevelYear - b.gradeLevelYear ||
+			compareThaiNatural(a.subjectCode, b.subjectCode) ||
+			compareThaiNatural(a.homeroomName, b.homeroomName)
 	);
-	return {
-		name: 'รับข้อสอบ',
-		rows: [
-			['ใบลงชื่อส่งข้อสอบจากครูผู้สอนให้ฝ่ายวิชาการ'],
-			[printableReportTitle(workspace)],
-			[],
-			['ลำดับ', 'รหัสวิชา', 'วิชา', 'ชั้น/ห้อง', 'วันที่ส่ง', 'ลงชื่อครูผู้ส่ง', 'หมายเหตุ'],
-			...orderedItems.map(
-				(item, index): WorksheetRow => [
-					index + 1,
+	const rows: WorksheetRow[] = [
+		['ใบลงชื่อส่งข้อสอบ'],
+		[printableReportTitle(workspace)],
+		[],
+		[
+			'ลำดับ',
+			'รหัสวิชา',
+			'วิชา',
+			'ชั้น/ห้อง',
+			'รูปแบบการสอบ',
+			'วันที่ส่ง',
+			'ลงชื่อครูผู้ส่ง',
+			'หมายเหตุ'
+		]
+	];
+	const merges: ExamScheduleExportMerge[] = [
+		{ s: { r: 0, c: 0 }, e: { r: 0, c: 7 } },
+		{ s: { r: 1, c: 0 }, e: { r: 1, c: 7 } }
+	];
+	const rowBreaks: number[] = [];
+	let sequence = 0;
+	for (const [, groupItems] of groupByText(
+		orderedItems,
+		(item) => item.subjectGroupId ?? safeText(item.subjectGroupName)
+	)) {
+		for (let offset = 0; offset < groupItems.length; offset += 16) {
+			if (rows.length > 4) rowBreaks.push(rows.length - 1);
+			const groupRow = rows.length;
+			rows.push(['กลุ่มสาระ: ' + safeText(groupItems[0].subjectGroupName, 'ไม่ระบุกลุ่มสาระ')]);
+			merges.push({ s: { r: groupRow, c: 0 }, e: { r: groupRow, c: 7 } });
+			for (const item of groupItems.slice(offset, offset + 16)) {
+				rows.push([
+					++sequence,
 					safeText(item.subjectCode, '-'),
-					safeText(item.subjectNameTh) ||
-						safeText(item.subjectNameEn) ||
-						safeText(item.subjectCode, 'ไม่ระบุวิชา'),
+					safeText(item.subjectNameTh) || safeText(item.subjectNameEn) || item.subjectCode,
 					safeText(item.homeroomName, '-'),
+					item.examArrangement === 'outside_timetable' ? 'นอกตาราง' : 'ในตาราง',
 					'',
 					'',
 					''
-				]
-			)
-		],
-		'!merges': [
-			{ s: { r: 0, c: 0 }, e: { r: 0, c: 6 } },
-			{ s: { r: 1, c: 0 }, e: { r: 1, c: 6 } }
-		],
-		'!printTitlesRow': '1:4'
+				]);
+			}
+		}
+	}
+	return {
+		name: 'รับข้อสอบ',
+		rows,
+		'!merges': merges,
+		'!printTitlesRow': '1:4',
+		'!rowBreaks': rowBreaks
 	};
 }
 

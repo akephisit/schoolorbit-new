@@ -657,3 +657,67 @@ fn exam_round_wire_rejects_legacy_semester_identity() {
     });
     assert!(serde_json::from_value::<CreateExamRoundRequest>(payload).is_err());
 }
+
+#[tokio::test]
+async fn paper_receipts_include_outside_exams_without_adding_scheduling_items() {
+    let pool = migrated_pool("exam_paper_receipts").await;
+    let round_id = Uuid::parse_str("84000000-0000-0000-0000-000000000001").unwrap();
+    let before = exam_schedule_service::get_workspace(&pool, round_id)
+        .await
+        .unwrap();
+    assert!(!before.paper_receipt_items.is_empty());
+    assert!(before
+        .paper_receipt_items
+        .iter()
+        .all(|item| item.exam_arrangement == "in_timetable"));
+    let phase_id = before.paper_receipt_items[0].assessment_phase_id;
+    sqlx::query("UPDATE course_assessment_phases SET exam_arrangement = 'outside_timetable', exam_duration_minutes = NULL WHERE id = $1")
+        .bind(phase_id).execute(&pool).await.unwrap();
+    let outside = exam_schedule_service::get_workspace(&pool, round_id)
+        .await
+        .unwrap();
+    assert_eq!(
+        outside.paper_receipt_items.len(),
+        before.paper_receipt_items.len()
+    );
+    assert!(outside
+        .paper_receipt_items
+        .iter()
+        .filter(|item| item.assessment_phase_id == phase_id)
+        .all(|item| item.exam_arrangement == "outside_timetable"));
+    assert_eq!(
+        outside.unscheduled_items.len(),
+        before.unscheduled_items.len()
+    );
+    assert_eq!(
+        outside.scheduled_sessions.len(),
+        before.scheduled_sessions.len()
+    );
+
+    sqlx::query("UPDATE course_assessment_phases SET exam_arrangement = 'none' WHERE id = $1")
+        .bind(phase_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let no_exam = exam_schedule_service::get_workspace(&pool, round_id)
+        .await
+        .unwrap();
+    assert!(no_exam
+        .paper_receipt_items
+        .iter()
+        .all(|item| item.assessment_phase_id != phase_id));
+
+    // The round's phase and term are authoritative even if another phase has an exam.
+    sqlx::query("UPDATE academic_exam_rounds SET exam_kind = 'final' WHERE id = $1")
+        .bind(round_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let final_round = exam_schedule_service::get_workspace(&pool, round_id)
+        .await
+        .unwrap();
+    assert!(final_round
+        .paper_receipt_items
+        .iter()
+        .all(|item| item.assessment_phase_id != phase_id));
+}
