@@ -52,8 +52,8 @@ pub(crate) async fn lock_transition_shared(
     Ok(())
 }
 
-/// Lifecycle takes this before readiness reads, never after accepting a snapshot.
-#[cfg(test)]
+/// Lifecycle takes this before readiness reads. Cross-year Core commands also
+/// take it before discovering their year set, never after locking an entity.
 pub(crate) async fn lock_transition(tx: &mut Transaction<'_, Postgres>) -> Result<(), AppError> {
     sqlx::query("SELECT pg_advisory_xact_lock($1,$2)")
         .bind(TRANSITION_NAMESPACE)

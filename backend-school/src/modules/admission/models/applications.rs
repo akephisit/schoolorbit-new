@@ -520,7 +520,7 @@ pub struct ApplicationFilter {
 // Complete Enrollment (มอบตัว) Request
 // ==========================================
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CompleteEnrollmentRequest {
     /// รหัสนักเรียน (student_id field ใน student_info)

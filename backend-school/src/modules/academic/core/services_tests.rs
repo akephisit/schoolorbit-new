@@ -55,6 +55,205 @@ async fn fixture_actor(pool: &PgPool) -> Uuid {
         .unwrap()
 }
 
+async fn deactivation_lifecycle_fixture(
+    name: &str,
+    historical_status: &str,
+    future: bool,
+) -> (PgPool, Uuid, Uuid, Option<Uuid>) {
+    let pool = prepare_core_fixture(name).await;
+    apply_migrations_through(&pool, 67).await.unwrap();
+    let (student, grade, program): (Uuid, Uuid, Uuid) = sqlx::query_as(
+        "SELECT student_id,grade_level_id,study_program_id FROM student_academic_years WHERE academic_year_id=$1 AND status='active' ORDER BY id LIMIT 1",
+    ).bind(CURRENT_YEAR_ID).fetch_one(&pool).await.unwrap();
+    let historical_year = Uuid::new_v4();
+    let future_year = future.then(Uuid::new_v4);
+    for (year, is_future) in
+        std::iter::once((historical_year, false)).chain(future_year.map(|year| (year, true)))
+    {
+        sqlx::query("INSERT INTO academic_years (id,year,name,start_date,end_date,school_days,status) VALUES ($1,$2,'Deactivation test year',CURRENT_DATE+$3,CURRENT_DATE+$4,'MON,TUE,WED,THU,FRI',$5)")
+            .bind(year).bind(if is_future {2598} else {2597}).bind(if is_future {365i32} else {-730i32}).bind(if is_future {730i32} else {-365i32}).bind(if is_future {"planning"} else {historical_status}).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO academic_year_grade_levels (academic_year_id,grade_level_id) VALUES ($1,$2)").bind(year).bind(grade).execute(&pool).await.unwrap();
+        let homeroom = Uuid::new_v4();
+        sqlx::query("INSERT INTO homerooms (id,code,name,academic_year_id,grade_level_id,room_number,study_program_id,capacity) VALUES ($1,$2,'Deactivation room',$3,$4,'1',$5,40)")
+            .bind(homeroom).bind(format!("DEACT-{}", year.simple())).bind(year).bind(grade).bind(program).execute(&pool).await.unwrap();
+        let student_year = Uuid::new_v4();
+        sqlx::query("INSERT INTO student_academic_years (id,student_id,academic_year_id,grade_level_id,study_program_id,status) VALUES ($1,$2,$3,$4,$5,$6)")
+            .bind(student_year).bind(student).bind(year).bind(grade).bind(program).bind(if is_future {"planned"} else {"active"}).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO homeroom_placements (id,student_academic_year_id,academic_year_id,homeroom_id,start_date,status,enrollment_type) SELECT $1,$2,$3,$4,start_date,$5,'test' FROM academic_years WHERE id=$3")
+            .bind(Uuid::new_v4()).bind(student_year).bind(year).bind(homeroom).bind(if is_future {"planned"} else {"current"}).execute(&pool).await.unwrap();
+    }
+    (pool, student, historical_year, future_year)
+}
+
+async fn student_year_history(pool: &PgPool, student: Uuid, year: Uuid) -> serde_json::Value {
+    sqlx::query_scalar("SELECT jsonb_build_object('studentYear',to_jsonb(student_year),'placements',(SELECT jsonb_agg(to_jsonb(placement) ORDER BY placement.id) FROM homeroom_placements placement WHERE placement.student_academic_year_id=student_year.id)) FROM student_academic_years student_year WHERE student_id=$1 AND academic_year_id=$2")
+        .bind(student).bind(year).fetch_one(pool).await.unwrap()
+}
+
+#[tokio::test]
+async fn lifecycle_student_deactivation_preserves_closed_and_archived_year_history() {
+    for status in ["closed", "archived"] {
+        let (pool, student, history_year, _) = deactivation_lifecycle_fixture(
+            &format!("deactivation_history_{status}"),
+            status,
+            false,
+        )
+        .await;
+        let before = student_year_history(&pool, student, history_year).await;
+        let current_version: i64 = sqlx::query_scalar("SELECT row_version FROM student_academic_years WHERE student_id=$1 AND academic_year_id=$2")
+            .bind(student).bind(CURRENT_YEAR_ID).fetch_one(&pool).await.unwrap();
+        let actor = fixture_actor(&pool).await;
+        crate::modules::students::services::delete_student(&pool, student, actor)
+            .await
+            .unwrap();
+        assert_eq!(
+            student_year_history(&pool, student, history_year).await,
+            before,
+            "deactivating an account must not rewrite {status} academic history"
+        );
+        let state: (String, String, i64) = sqlx::query_as("SELECT users.status,student_year.status,student_year.row_version FROM users JOIN student_academic_years student_year ON student_year.student_id=users.id WHERE users.id=$1 AND student_year.academic_year_id=$2")
+            .bind(student).bind(CURRENT_YEAR_ID).fetch_one(&pool).await.unwrap();
+        assert_eq!(state.0, "inactive");
+        assert_eq!(state.1, "withdrawn");
+        assert_eq!(
+            state.2,
+            current_version + 1,
+            "withdrawal must invalidate optimistic academic versions"
+        );
+    }
+}
+
+#[tokio::test]
+async fn lifecycle_student_deactivation_ends_future_placements_without_invalid_dates() {
+    let (pool, student, history_year, future_year) =
+        deactivation_lifecycle_fixture("deactivation_future", "closed", true).await;
+    let before = student_year_history(&pool, student, history_year).await;
+    let actor = fixture_actor(&pool).await;
+    crate::modules::students::services::delete_student(&pool, student, actor)
+        .await
+        .expect("a future placement must not prevent account deactivation");
+    assert_eq!(
+        student_year_history(&pool, student, history_year).await,
+        before
+    );
+    let state: (String, String, bool, i64, i64) = sqlx::query_as("SELECT student_year.status,placement.status,placement.end_date>=placement.start_date,student_year.row_version,placement.row_version FROM student_academic_years student_year JOIN homeroom_placements placement ON placement.student_academic_year_id=student_year.id WHERE student_year.student_id=$1 AND student_year.academic_year_id=$2")
+        .bind(student).bind(future_year.unwrap()).fetch_one(&pool).await.unwrap();
+    assert_eq!(
+        (state.0.as_str(), state.1.as_str(), state.2),
+        ("withdrawn", "ended", true)
+    );
+    assert!(state.3 > 1 && state.4 > 1);
+}
+
+#[tokio::test]
+async fn lifecycle_student_deactivation_coordinates_before_user_locks() {
+    let (pool, student, _, future) =
+        deactivation_lifecycle_fixture("deactivation_lock_order", "closed", true).await;
+    let actor = fixture_actor(&pool).await;
+    let mut source = pool.begin().await.unwrap();
+    let source_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *source)
+        .await
+        .unwrap();
+    super::services::lifecycle_guard::require_year_write_exclusive(&mut source, future.unwrap())
+        .await
+        .unwrap();
+    let worker_pool = pool.clone();
+    let worker = tokio::spawn(async move {
+        crate::modules::students::services::delete_student(&worker_pool, student, actor).await
+    });
+    let mut waiting = false;
+    for _ in 0..200 {
+        waiting = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE $1=ANY(pg_blocking_pids(pid)))",
+        )
+        .bind(source_pid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        if waiting {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    let mut probe = pool.begin().await.unwrap();
+    let user_free = sqlx::query("SELECT id FROM users WHERE id=$1 FOR UPDATE NOWAIT")
+        .bind(student)
+        .execute(&mut *probe)
+        .await
+        .is_ok();
+    probe.rollback().await.unwrap();
+    source.commit().await.unwrap();
+    let result = tokio::time::timeout(std::time::Duration::from_secs(10), worker)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        waiting && user_free,
+        "cross-year coordination must precede the user lock"
+    );
+    result.unwrap();
+}
+
+#[tokio::test]
+async fn lifecycle_student_deactivation_rolls_back_account_and_academic_records_on_audit_failure() {
+    let (pool, student, historical, future) =
+        deactivation_lifecycle_fixture("deactivation_atomic", "closed", true).await;
+    let actor = fixture_actor(&pool).await;
+    let years = [CURRENT_YEAR_ID, historical, future.unwrap()];
+    let mut before = Vec::new();
+    for year in years {
+        before.push(student_year_history(&pool, student, year).await);
+    }
+    let user_before: (String, String) =
+        sqlx::query_as("SELECT username,status FROM users WHERE id=$1")
+            .bind(student)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    sqlx::raw_sql("CREATE FUNCTION fail_deactivation_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'DEACTIVATION_TEST_AUDIT_FAILURE'; END $$; CREATE TRIGGER fail_deactivation_audit BEFORE INSERT ON academic_audit_events FOR EACH ROW EXECUTE FUNCTION fail_deactivation_audit();").execute(&pool).await.unwrap();
+    assert!(
+        crate::modules::students::services::delete_student(&pool, student, actor)
+            .await
+            .is_err()
+    );
+    let user_after: (String, String) =
+        sqlx::query_as("SELECT username,status FROM users WHERE id=$1")
+            .bind(student)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(user_after, user_before);
+    for (index, year) in years.into_iter().enumerate() {
+        assert_eq!(
+            student_year_history(&pool, student, year).await,
+            before[index]
+        );
+    }
+    sqlx::query("DROP TRIGGER fail_deactivation_audit ON academic_audit_events")
+        .execute(&pool)
+        .await
+        .unwrap();
+    crate::modules::students::services::delete_student(&pool, student, actor)
+        .await
+        .unwrap();
+    let audits: Vec<(Uuid, serde_json::Value)> = sqlx::query_as("SELECT actor_user_id,payload FROM academic_audit_events WHERE event_code='student_academic_year.withdrawn_for_deactivation' AND entity_id=$1")
+        .bind(student).fetch_all(&pool).await.unwrap();
+    assert_eq!(audits.len(), 1);
+    assert_eq!(audits[0].0, actor);
+    let changed_ids: Vec<Uuid> =
+        serde_json::from_value(audits[0].1["studentAcademicYearIds"].clone()).unwrap();
+    let changed_years: Vec<Uuid> =
+        sqlx::query_scalar("SELECT academic_year_id FROM student_academic_years WHERE id=ANY($1)")
+            .bind(changed_ids)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert!(changed_years.contains(&CURRENT_YEAR_ID));
+    assert!(changed_years.contains(&future.unwrap()));
+    assert!(!changed_years.contains(&historical));
+}
+
 #[tokio::test]
 async fn lifecycle_year_advisor_replacement_rejects_closed_years_and_retains_history() {
     use super::models::ReplaceHomeroomAdvisorsRequest;

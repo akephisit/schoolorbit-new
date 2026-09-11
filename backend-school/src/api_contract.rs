@@ -171,6 +171,7 @@ use utoipa::OpenApi;
         crate::modules::school_fonts::handlers::delete_school_font,
         crate::modules::admission::handlers::applications::staff_upload_document,
         crate::modules::admission::handlers::applications::staff_delete_document,
+        crate::modules::admission::handlers::applications::complete_enrollment,
         crate::modules::admission::handlers::portal::portal_upload_document,
         crate::modules::admission::handlers::portal::portal_delete_document,
         crate::modules::admission::handlers::portal::portal_download_document,
@@ -3130,6 +3131,28 @@ mod tests {
                 "status {status}"
             );
         }
+    }
+
+    #[test]
+    fn admission_enrollment_documents_typed_receipts_and_lifecycle_conflicts() {
+        let document = school_api_value().expect("document should serialize");
+        let operation = &document["paths"]["/api/admission/applications/{id}/enroll"]["post"];
+        assert_eq!(operation["operationId"], "completeAdmissionEnrollment");
+        assert_eq!(
+            operation["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/CompleteEnrollmentRequest"
+        );
+        assert_eq!(
+            operation["responses"]["409"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiErrorResponse"
+        );
+        let request = &document["components"]["schemas"]["CompleteEnrollmentRequest"]["properties"];
+        assert!(request.get("studentCode").is_some());
+        assert!(request.get("formData").is_some());
+        let receipt = &document["components"]["schemas"]["CompleteEnrollmentData"]["properties"];
+        assert!(receipt.get("userId").is_some());
+        assert!(receipt.get("username").is_some());
+        assert!(receipt.get("studentCode").is_some());
     }
 
     #[test]

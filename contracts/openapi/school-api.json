@@ -5046,6 +5046,41 @@
         ],
         "type": "object"
       },
+      "ApiResponse_CompleteEnrollmentData": {
+        "properties": {
+          "data": {
+            "properties": {
+              "studentCode": {
+                "type": "string"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "username": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "userId",
+              "username",
+              "studentCode"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_ConfirmationOutcome": {
         "properties": {
           "data": {
@@ -23566,6 +23601,41 @@
           "effectiveFrom",
           "sourceRowVersion"
         ],
+        "type": "object"
+      },
+      "CompleteEnrollmentData": {
+        "properties": {
+          "studentCode": {
+            "type": "string"
+          },
+          "userId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "username",
+          "studentCode"
+        ],
+        "type": "object"
+      },
+      "CompleteEnrollmentRequest": {
+        "properties": {
+          "formData": {
+            "description": "ข้อมูลมอบตัวที่ staff กรอกแทน (เมื่อนักเรียนยังไม่ pre-submit)"
+          },
+          "studentCode": {
+            "description": "รหัสนักเรียน (student_id field ใน student_info)",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       },
       "ConfirmationInput": {
@@ -62471,6 +62541,98 @@
               }
             },
             "description": "Application document not found"
+          }
+        },
+        "tags": [
+          "admission"
+        ]
+      }
+    },
+    "/api/admission/applications/{id}/enroll": {
+      "post": {
+        "operationId": "completeAdmissionEnrollment",
+        "parameters": [
+          {
+            "description": "Admission application ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteEnrollmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CompleteEnrollmentData"
+                }
+              }
+            },
+            "description": "Enrollment completed or existing receipt replayed"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Application or placement is not ready for enrollment"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Enrollment permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Application or academic year not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year is closed or enrollment context changed"
           }
         },
         "tags": [

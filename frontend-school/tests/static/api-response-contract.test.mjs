@@ -730,7 +730,30 @@ test('admission application detail contract returns application and documents in
 	assert.match(backendHandler, /student_code:\s*result\.student_code/);
 	assert.doesNotMatch(backendHandler, /"user_id": result\.user_id/);
 	assert.doesNotMatch(backendHandler, /"student_code": result\.student_code/);
-	assert.match(frontendApi, /interface\s+CompleteEnrollmentResponse/);
+	assert.match(
+		frontendApi,
+		/export type CompleteEnrollmentResponse = Schemas\['CompleteEnrollmentData'\]/
+	);
+	assert.match(
+		frontendApi,
+		/export type CompleteEnrollmentRequest = Schemas\['CompleteEnrollmentRequest'\]/
+	);
+	assert.match(
+		frontendApi,
+		/const payload: CompleteEnrollmentRequest = \{ studentCode, formData \}/
+	);
+	const enrollmentContract = JSON.parse(await readRepoFile('contracts/openapi/school-api.json'));
+	const enrollmentOperation =
+		enrollmentContract.paths['/api/admission/applications/{id}/enroll'].post;
+	assert.equal(enrollmentOperation.operationId, 'completeAdmissionEnrollment');
+	assert.equal(
+		enrollmentOperation.responses['409'].content['application/json'].schema.$ref,
+		'#/components/schemas/ApiErrorResponse'
+	);
+	assert.deepEqual(
+		Object.keys(enrollmentContract.components.schemas.CompleteEnrollmentData.properties).sort(),
+		['studentCode', 'userId', 'username']
+	);
 	assert.match(frontendApi, /apiClient\.post<CompleteEnrollmentResponse>/);
 	assert.match(
 		frontendApi,

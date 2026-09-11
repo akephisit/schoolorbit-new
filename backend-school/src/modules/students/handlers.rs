@@ -236,7 +236,7 @@ pub async fn delete_student(
     let actor = context.actor;
     actor.require_permission(codes::STUDENT_DELETE_ALL)?;
 
-    student_service::delete_student(&pool, student_id).await?;
+    student_service::delete_student(&pool, student_id, actor.user_id).await?;
     state.permission_cache.invalidate_user(&tenant, student_id);
     state.notify_permission_changed(&tenant, student_id);
 

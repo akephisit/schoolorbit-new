@@ -2922,6 +2922,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/admission/applications/{id}/enroll': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['completeAdmissionEnrollment'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/admission/portal/documents/{doc_type}': {
 		parameters: {
 			query?: never;
@@ -6708,6 +6724,16 @@ export interface components {
 		ApiResponse_CertificateTemplateVariableCatalog: {
 			data: {
 				variables: string[];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CompleteEnrollmentData: {
+			data: {
+				studentCode: string;
+				/** Format: uuid */
+				userId: string;
+				username: string;
 			};
 			message?: string;
 			success: boolean;
@@ -11701,6 +11727,18 @@ export interface components {
 			effectiveFrom: string;
 			/** Format: int64 */
 			sourceRowVersion: number;
+		};
+		CompleteEnrollmentData: {
+			studentCode: string;
+			/** Format: uuid */
+			userId: string;
+			username: string;
+		};
+		CompleteEnrollmentRequest: {
+			/** @description ข้อมูลมอบตัวที่ staff กรอกแทน (เมื่อนักเรียนยังไม่ pre-submit) */
+			formData?: unknown;
+			/** @description รหัสนักเรียน (student_id field ใน student_info) */
+			studentCode?: string | null;
 		};
 		ConfirmationInput: {
 			rosterChecksum: string;
@@ -30967,6 +31005,78 @@ export interface operations {
 			};
 			/** @description Application document not found */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	completeAdmissionEnrollment: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Admission application ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CompleteEnrollmentRequest'];
+			};
+		};
+		responses: {
+			/** @description Enrollment completed or existing receipt replayed */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CompleteEnrollmentData'];
+				};
+			};
+			/** @description Application or placement is not ready for enrollment */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Enrollment permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Application or academic year not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic year is closed or enrollment context changed */
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};

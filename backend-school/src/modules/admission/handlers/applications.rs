@@ -38,9 +38,9 @@ struct ApplicationWithDocumentsData {
     documents: Vec<ApplicationDocument>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-struct CompleteEnrollmentData {
+pub struct CompleteEnrollmentData {
     user_id: Uuid,
     username: String,
     student_code: String,
@@ -237,6 +237,22 @@ pub async fn list_enrollment_pending(
     Ok(Json(ApiResponse::ok(list)).into_response())
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admission/applications/{id}/enroll",
+    operation_id = "completeAdmissionEnrollment",
+    tag = "admission",
+    params(("id" = Uuid, Path, description = "Admission application ID")),
+    request_body = CompleteEnrollmentRequest,
+    responses(
+        (status = 200, description = "Enrollment completed or existing receipt replayed", body = ApiResponse<CompleteEnrollmentData>),
+        (status = 400, description = "Application or placement is not ready for enrollment", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Enrollment permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Application or academic year not found", body = ApiErrorResponse),
+        (status = 409, description = "Academic year is closed or enrollment context changed", body = ApiErrorResponse)
+    )
+)]
 pub async fn complete_enrollment(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,

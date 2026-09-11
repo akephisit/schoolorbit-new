@@ -444,11 +444,22 @@ pub async fn update_student(
     Ok(())
 }
 
-pub async fn delete_student(pool: &PgPool, student_id: Uuid) -> Result<(), AppError> {
+pub async fn delete_student(
+    pool: &PgPool,
+    student_id: Uuid,
+    actor_user_id: Uuid,
+) -> Result<(), AppError> {
     let mut tx = pool.begin().await.map_err(|e| {
         tracing::error!("Failed to begin delete student transaction: {}", e);
         AppError::InternalServerError("ไม่สามารถลบนักเรียนได้".to_string())
     })?;
+
+    crate::modules::academic::core::services::student_years::withdraw_for_account_deactivation(
+        &mut tx,
+        actor_user_id,
+        student_id,
+    )
+    .await?;
 
     let user_update = sqlx::query(
         r#"
@@ -469,41 +480,6 @@ pub async fn delete_student(pool: &PgPool, student_id: Uuid) -> Result<(), AppEr
     if user_update.rows_affected() == 0 {
         return Err(AppError::NotFound("ไม่พบนักเรียน".to_string()));
     }
-
-    sqlx::query(
-        r#"
-        UPDATE homeroom_placements placement
-        SET status = 'ended',
-            end_date = COALESCE(end_date, CURRENT_DATE),
-            updated_at = NOW()
-        FROM student_academic_years student_year
-        WHERE placement.student_academic_year_id = student_year.id
-          AND student_year.student_id = $1
-          AND placement.status IN ('planned', 'current')
-        "#,
-    )
-    .bind(student_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to end student homeroom placements: {}", e);
-        AppError::InternalServerError("ไม่สามารถลบนักเรียนได้".to_string())
-    })?;
-
-    sqlx::query(
-        r#"
-        UPDATE student_academic_years
-        SET status = 'withdrawn', updated_at = NOW()
-        WHERE student_id = $1 AND status IN ('planned', 'active')
-        "#,
-    )
-    .bind(student_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to withdraw student academic-year records: {}", e);
-        AppError::InternalServerError("ไม่สามารถลบนักเรียนได้".to_string())
-    })?;
 
     tx.commit().await.map_err(|e| {
         tracing::error!("Failed to commit delete student transaction: {}", e);

@@ -642,13 +642,18 @@ fn exam_schedule_service_uses_a_thin_private_module_facade() {
 #[test]
 fn student_deactivation_invalidates_effective_permissions() {
     let source = read_source(manifest_dir().join("src/modules/students/handlers.rs"));
-    let start = source
-        .find("pub async fn delete_student")
-        .expect("delete_student handler should exist");
-    let body = &source[start..];
+    let body = extract_braced_block(&source, "pub async fn delete_student", false);
 
+    assert!(
+        body.contains("student_service::delete_student(&pool, student_id, actor.user_id).await?")
+    );
     assert!(body.contains("permission_cache.invalidate_user(&tenant, student_id)"));
     assert!(body.contains("notify_permission_changed(&tenant, student_id)"));
+    let service = read_source(manifest_dir().join("src/modules/students/services.rs"));
+    let mutation = extract_braced_block(&service, "pub async fn delete_student", false);
+    assert!(mutation.contains("student_years::withdraw_for_account_deactivation"));
+    assert!(!service.contains("UPDATE student_academic_years"));
+    assert!(!service.contains("UPDATE homeroom_placements"));
 }
 
 fn active_baseline_migration_path() -> PathBuf {

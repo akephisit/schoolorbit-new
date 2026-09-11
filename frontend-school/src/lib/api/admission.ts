@@ -360,11 +360,8 @@ export interface EnrollmentPending {
 	formData?: AdmissionEnrollmentFormData;
 }
 
-export interface CompleteEnrollmentResponse {
-	userId: string;
-	username: string;
-	studentCode: string;
-}
+export type CompleteEnrollmentResponse = Schemas['CompleteEnrollmentData'];
+export type CompleteEnrollmentRequest = Schemas['CompleteEnrollmentRequest'];
 
 // ==========================================
 // Rounds API
@@ -784,12 +781,10 @@ export async function completeEnrollment(
 	studentCode?: string,
 	formData?: AdmissionEnrollmentFormData
 ): Promise<CompleteEnrollmentResponse> {
+	const payload: CompleteEnrollmentRequest = { studentCode, formData };
 	const res = await apiClient.post<CompleteEnrollmentResponse>(
 		`/api/admission/applications/${id}/enroll`,
-		{
-			studentCode,
-			formData
-		}
+		payload
 	);
 	if (!res.success || !res.data) throw new Error(res.error);
 	return res.data;

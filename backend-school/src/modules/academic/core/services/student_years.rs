@@ -461,6 +461,58 @@ pub async fn create_student_year(
     get_student_year(pool, id).await
 }
 
+/// Account deactivation must leave closed-year history untouched. The caller
+/// retains this transaction for its account update and commits both together.
+pub(crate) async fn withdraw_for_account_deactivation(
+    transaction: &mut Transaction<'_, Postgres>,
+    actor_user_id: Uuid,
+    student_id: Uuid,
+) -> Result<(), AppError> {
+    lifecycle_guard::lock_transition(transaction).await?;
+    let years: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT DISTINCT student_year.academic_year_id FROM student_academic_years student_year
+         JOIN academic_years year ON year.id=student_year.academic_year_id
+         WHERE student_year.student_id=$1 AND year.status NOT IN ('closed','archived')
+         ORDER BY student_year.academic_year_id",
+    )
+    .bind(student_id)
+    .fetch_all(&mut **transaction)
+    .await?;
+    for year in &years {
+        lifecycle_guard::require_year_write_exclusive(transaction, *year).await?;
+    }
+    sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM users WHERE id=$1 AND user_type='student' FOR UPDATE",
+    )
+    .bind(student_id)
+    .fetch_optional(&mut **transaction)
+    .await?
+    .ok_or_else(|| AppError::NotFound("ไม่พบนักเรียน".into()))?;
+    let mut placement_ids: Vec<Uuid> = sqlx::query_scalar(
+        "UPDATE homeroom_placements placement
+         SET status='ended',end_date=COALESCE(placement.end_date,GREATEST(placement.start_date,CURRENT_DATE)),
+             row_version=placement.row_version+1,updated_at=now()
+         FROM student_academic_years student_year
+         WHERE placement.student_academic_year_id=student_year.id AND student_year.student_id=$1
+           AND student_year.academic_year_id=ANY($2) AND placement.status IN ('planned','current')
+         RETURNING placement.id",
+    ).bind(student_id).bind(&years).fetch_all(&mut **transaction).await?;
+    let mut student_year_ids: Vec<Uuid> = sqlx::query_scalar(
+        "UPDATE student_academic_years SET status='withdrawn',row_version=row_version+1,updated_at=now()
+         WHERE student_id=$1 AND academic_year_id=ANY($2) AND status IN ('planned','active') RETURNING id",
+    ).bind(student_id).bind(&years).fetch_all(&mut **transaction).await?;
+    if !placement_ids.is_empty() || !student_year_ids.is_empty() {
+        placement_ids.sort_unstable();
+        student_year_ids.sort_unstable();
+        append_audit(
+            transaction, "student_academic_year.withdrawn_for_deactivation", "student", student_id,
+            None, None, actor_user_id,
+            serde_json::json!({"studentAcademicYearIds": student_year_ids, "homeroomPlacementIds": placement_ids}),
+        ).await?;
+    }
+    Ok(())
+}
+
 pub async fn update_student_year(
     pool: &PgPool,
     actor_user_id: Uuid,

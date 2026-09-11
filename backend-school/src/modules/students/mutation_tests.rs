@@ -32,7 +32,7 @@ async fn delete_missing_student_returns_not_found() {
     let pool = create_test_pool().await;
     run_test_migrations(&pool).await;
 
-    let result = services::delete_student(&pool, Uuid::new_v4()).await;
+    let result = services::delete_student(&pool, Uuid::new_v4(), Uuid::new_v4()).await;
 
     assert!(matches!(result, Err(AppError::NotFound(_))));
 }
