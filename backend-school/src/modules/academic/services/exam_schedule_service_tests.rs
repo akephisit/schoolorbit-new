@@ -11,10 +11,10 @@ use crate::modules::academic::models::exam_schedule::{
     PlaceExamSessionRequest, SyncExamSourcesRequest, UpsertDayRoomAssignmentRequest,
     UpsertExamDayRequest,
 };
-use crate::test_helpers::create_named_test_pool;
+use crate::test_helpers::create_named_test_pool_with_max_connections;
 
 async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
-    let pool = create_named_test_pool(test_name).await;
+    let pool = create_named_test_pool_with_max_connections(test_name, 3).await;
     apply_migrations_through(&pool, 40).await.unwrap();
     seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
         .await
@@ -110,6 +110,57 @@ async fn placing_exam_session_returns_canonical_academic_context() {
             session.learning_offering_id,
         ),
         expected_context
+    );
+
+    let other_round = exam_schedule_service::create_round(
+        &pool,
+        CreateExamRoundRequest {
+            academic_term_id: expected_context.0,
+            name: "รอบสอบอื่น".into(),
+            description: None,
+            exam_kind: Some("final".into()),
+        },
+        actor_id,
+    )
+    .await
+    .unwrap();
+    let other_day = exam_schedule_service::upsert_exam_day(
+        &pool,
+        other_round.id,
+        UpsertExamDayRequest {
+            exam_date: NaiveDate::from_ymd_opt(2027, 1, 15).unwrap(),
+            label: None,
+            start_time: NaiveTime::from_hms_opt(8, 30, 0).unwrap(),
+            end_time: NaiveTime::from_hms_opt(16, 0, 0).unwrap(),
+            grade_level_ids: vec![],
+            blocked_windows: vec![],
+        },
+    )
+    .await
+    .unwrap();
+    let mut foreign_item_lock = pool.begin().await.unwrap();
+    sqlx::query("SELECT id FROM academic_exam_schedule_items WHERE id=$1 FOR UPDATE")
+        .bind(exam_schedule_item_id)
+        .execute(&mut *foreign_item_lock)
+        .await
+        .unwrap();
+    let rejected = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        exam_schedule_service::place_exam_session(
+            &pool,
+            PlaceExamSessionRequest {
+                exam_schedule_item_id,
+                exam_day_id: other_day.id,
+                starts_at: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+            },
+            actor_id,
+        ),
+    )
+    .await;
+    foreign_item_lock.rollback().await.unwrap();
+    assert!(
+        matches!(rejected, Ok(Err(crate::error::AppError::BadRequest(_)))),
+        "foreign-round placement must reject before waiting on its item: {rejected:?}"
     );
 }
 
@@ -492,7 +543,7 @@ async fn creating_exam_round_accepts_canonical_writable_term_statuses() {
             .unwrap();
     let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
 
-    for status in ["planning", "ready", "active"] {
+    for status in ["planning", "ready", "active", "closing"] {
         sqlx::query("UPDATE academic_terms SET status = $2 WHERE id = $1")
             .bind(term_id)
             .bind(status)
@@ -515,6 +566,242 @@ async fn creating_exam_round_accepts_canonical_writable_term_statuses() {
 
         assert_eq!(round.academic_term_id, term_id);
     }
+}
+
+#[tokio::test]
+async fn exam_lifecycle_rejects_closed_context_mutations_and_retains_history() {
+    use crate::error::AppError;
+    use crate::modules::academic::models::exam_schedule::{
+        GenerateSeatsRequest, UpdateExamInvigilatorsRequest, UpdateExamRoundRequest,
+    };
+
+    fn blocked<T: std::fmt::Debug>(result: Result<T, AppError>) {
+        assert!(matches!(result, Err(AppError::Conflict(_))), "{result:?}");
+    }
+
+    let pool = migrated_pool("exam_lifecycle_closed_context").await;
+    let round = Uuid::parse_str("84000000-0000-0000-0000-000000000001").unwrap();
+    let day = Uuid::parse_str("85000000-0000-0000-0000-000000000001").unwrap();
+    let item = Uuid::parse_str("86000000-0000-0000-0000-000000000001").unwrap();
+    let assignment = Uuid::parse_str("92100000-0000-0000-0000-000000000001").unwrap();
+    let actor = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
+    let (year, term): (Uuid, Uuid) = sqlx::query_as(
+        "SELECT academic_year_id, academic_term_id FROM academic_exam_rounds WHERE id=$1",
+    )
+    .bind(round)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let placement = || PlaceExamSessionRequest {
+        exam_schedule_item_id: item,
+        exam_day_id: day,
+        starts_at: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+    };
+    let session = exam_schedule_service::place_exam_session(&pool, placement(), actor)
+        .await
+        .unwrap();
+    let day_request = || UpsertExamDayRequest {
+        exam_date: NaiveDate::from_ymd_opt(2027, 1, 15).unwrap(),
+        label: Some("วันสอบเพิ่มเติม".into()),
+        start_time: NaiveTime::from_hms_opt(8, 30, 0).unwrap(),
+        end_time: NaiveTime::from_hms_opt(16, 0, 0).unwrap(),
+        grade_level_ids: vec![],
+        blocked_windows: vec![],
+    };
+
+    for (year_status, term_status) in [
+        ("closed", "active"),
+        ("archived", "active"),
+        ("active", "closed"),
+        ("active", "cancelled"),
+    ] {
+        sqlx::query("UPDATE academic_years SET status=$2 WHERE id=$1")
+            .bind(year)
+            .bind(year_status)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE academic_terms SET status=$2 WHERE id=$1")
+            .bind(term)
+            .bind(term_status)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let before = serde_json::to_value(
+            exam_schedule_service::get_workspace(&pool, round)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        blocked(
+            exam_schedule_service::create_round(
+                &pool,
+                CreateExamRoundRequest {
+                    academic_term_id: term,
+                    name: "ห้ามสร้างหลังปิด".into(),
+                    description: None,
+                    exam_kind: Some("final".into()),
+                },
+                actor,
+            )
+            .await,
+        );
+        blocked(
+            exam_schedule_service::update_round(
+                &pool,
+                round,
+                UpdateExamRoundRequest {
+                    name: Some("ห้ามแก้หลังปิด".into()),
+                    description: None,
+                    exam_kind: None,
+                },
+                actor,
+            )
+            .await,
+        );
+        blocked(exam_schedule_service::upsert_exam_day(&pool, round, day_request()).await);
+        blocked(exam_schedule_service::update_exam_day(&pool, day, day_request()).await);
+        blocked(
+            exam_schedule_service::upsert_day_room_assignment(
+                &pool,
+                day,
+                UpsertDayRoomAssignmentRequest {
+                    homeroom_id: Uuid::parse_str("40000000-0000-0000-0000-000000000025").unwrap(),
+                    room_id: Uuid::parse_str("92000000-0000-0000-0000-000000000001").unwrap(),
+                    capacity_override: None,
+                    invigilator_staff_ids: None,
+                },
+                actor,
+            )
+            .await,
+        );
+        blocked(
+            exam_schedule_service::generate_seats_for_assignment(
+                &pool,
+                assignment,
+                GenerateSeatsRequest { regenerate: true },
+                actor,
+            )
+            .await,
+        );
+        blocked(exam_schedule_service::place_exam_session(&pool, placement(), actor).await);
+        blocked(
+            exam_schedule_service::update_assignment_invigilators(
+                &pool,
+                assignment,
+                UpdateExamInvigilatorsRequest {
+                    invigilator_staff_ids: vec![actor],
+                },
+                actor,
+            )
+            .await,
+        );
+        blocked(
+            exam_schedule_service::assign_invigilator_to_assignment(
+                &pool, assignment, actor, actor,
+            )
+            .await,
+        );
+        blocked(
+            exam_schedule_service::remove_invigilator_from_assignment(
+                &pool, assignment, actor, actor,
+            )
+            .await,
+        );
+        let preview = exam_schedule_service::preview_exam_sources(&pool, round)
+            .await
+            .unwrap();
+        blocked(
+            exam_schedule_service::sync_exam_sources(
+                &pool,
+                round,
+                actor,
+                SyncExamSourcesRequest {
+                    round_row_version: preview.round_row_version,
+                    preview_token: preview.preview_token,
+                    source_ids: vec![],
+                },
+            )
+            .await,
+        );
+        blocked(exam_schedule_service::publish_round(&pool, round, actor).await);
+        blocked(exam_schedule_service::delete_exam_session(&pool, session.id, actor).await);
+        blocked(exam_schedule_service::delete_exam_day(&pool, day).await);
+        blocked(exam_schedule_service::delete_round(&pool, round, true).await);
+        let after = serde_json::to_value(
+            exam_schedule_service::get_workspace(&pool, round)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(before, after);
+    }
+
+    sqlx::query("UPDATE academic_years SET status='active' WHERE id=$1")
+        .bind(year)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE academic_terms SET status='closing' WHERE id=$1")
+        .bind(term)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut boundary = pool.begin().await.unwrap();
+    let boundary_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *boundary)
+        .await
+        .unwrap();
+    sqlx::query("SELECT id FROM academic_terms WHERE id=$1 FOR UPDATE")
+        .bind(term)
+        .execute(&mut *boundary)
+        .await
+        .unwrap();
+    let worker_pool = pool.clone();
+    let update = day_request();
+    let worker = tokio::spawn(async move {
+        exam_schedule_service::update_exam_day(&worker_pool, day, update).await
+    });
+    let mut waiting = false;
+    for _ in 0..200 {
+        waiting = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid)))",
+        )
+        .bind(boundary_pid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        if waiting {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    let mut probe = pool.begin().await.unwrap();
+    let day_free = sqlx::query("SELECT id FROM academic_exam_days WHERE id=$1 FOR UPDATE NOWAIT")
+        .bind(day)
+        .execute(&mut *probe)
+        .await
+        .is_ok();
+    let round_free = if day_free {
+        sqlx::query("SELECT id FROM academic_exam_rounds WHERE id=$1 FOR UPDATE NOWAIT")
+            .bind(round)
+            .execute(&mut *probe)
+            .await
+            .is_ok()
+    } else {
+        false
+    };
+    probe.rollback().await.unwrap();
+    boundary.commit().await.unwrap();
+    let outcome = tokio::time::timeout(std::time::Duration::from_secs(10), worker)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        waiting && day_free && round_free,
+        "term must lock before exam entities"
+    );
+    assert!(outcome.is_ok(), "closing remains writable: {outcome:?}");
 }
 
 #[tokio::test]

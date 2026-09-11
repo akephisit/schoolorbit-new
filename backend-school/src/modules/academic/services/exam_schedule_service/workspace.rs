@@ -17,6 +17,7 @@ use super::rounds_and_days::{
     ensure_exam_round_is_mutable, fetch_exam_day_details_for_round, fetch_round,
 };
 use super::sessions_and_conflicts::{revalidate_session_duration_change_in_tx, ExamSessionRow};
+use super::shared::{require_exam_write, ExamWriteTarget};
 
 #[derive(Debug, FromRow)]
 struct ExamSourceChangeRow {
@@ -155,6 +156,7 @@ pub async fn sync_exam_sources(
     request: SyncExamSourcesRequest,
 ) -> Result<SyncExamSourcesResult, AppError> {
     let mut tx = pool.begin().await?;
+    require_exam_write(&mut tx, ExamWriteTarget::Round(round_id)).await?;
     let (status, row_version): (String, i64) = sqlx::query_as(
         r#"SELECT status, row_version
            FROM academic_exam_rounds

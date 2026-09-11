@@ -1,15 +1,54 @@
 use std::collections::HashSet;
 
 use chrono::{Duration, NaiveTime, Timelike};
+use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::error::AppError;
+use crate::modules::academic::core::services::lifecycle_guard;
 use crate::modules::academic::models::exam_schedule::BlockedWindow;
 
 const EXAM_SESSION_SLOT_MINUTES: u32 = 5;
 const EXAM_SESSION_CLASSROOM_LOCK_NAMESPACE: i64 = 0x4558_5343_4C52_0000;
 const EXAM_SESSION_ROOM_LOCK_NAMESPACE: i64 = 0x4558_5352_4F4D_0000;
 const EXAM_INVIGILATOR_STAFF_LOCK_NAMESPACE: i64 = 0x4558_5349_4E56_0000;
+
+pub(super) enum ExamWriteTarget {
+    Term(Uuid),
+    Round(Uuid),
+    Day(Uuid),
+    Assignment(Uuid),
+    Session(Uuid),
+}
+
+/// Resolve immutable context before locking exam entities. Serializing exam
+/// writers at the term boundary also avoids child/round lock inversions.
+pub(super) async fn require_exam_write(
+    tx: &mut Transaction<'_, Postgres>,
+    target: ExamWriteTarget,
+) -> Result<(Uuid, Uuid), AppError> {
+    let (id, query) = match target {
+        ExamWriteTarget::Term(id) => (id,
+            "SELECT academic_year_id, id FROM academic_terms WHERE id=$1"),
+        ExamWriteTarget::Round(id) => (id,
+            "SELECT academic_year_id, academic_term_id FROM academic_exam_rounds WHERE id=$1"),
+        ExamWriteTarget::Day(id) => (id,
+            "SELECT academic_year_id, academic_term_id FROM academic_exam_days WHERE id=$1"),
+        ExamWriteTarget::Assignment(id) => (id,
+            "SELECT academic_year_id, academic_term_id FROM academic_exam_day_room_assignments WHERE id=$1"),
+        ExamWriteTarget::Session(id) => (id,
+            "SELECT round.academic_year_id, round.academic_term_id \
+             FROM academic_exam_sessions session \
+             JOIN academic_exam_rounds round ON round.id=session.exam_round_id WHERE session.id=$1"),
+    };
+    let (year_id, term_id) = sqlx::query_as(query)
+        .bind(id)
+        .fetch_optional(&mut **tx)
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบข้อมูลจัดสอบหรือภาคเรียน".into()))?;
+    lifecycle_guard::require_term_write_exclusive(tx, year_id, term_id).await?;
+    Ok((year_id, term_id))
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum SessionValidationError {

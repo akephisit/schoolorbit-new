@@ -14,6 +14,7 @@ use super::invigilation::{
 };
 use super::rounds_and_days::{fetch_exam_day_context_for_update, mark_round_draft_after_mutation};
 use super::sessions_and_conflicts::validate_day_allows_grade_level;
+use super::shared::{require_exam_write, ExamWriteTarget};
 
 #[derive(Debug, sqlx::FromRow)]
 struct DayRoomAssignmentViewRow {
@@ -138,6 +139,7 @@ pub async fn upsert_day_room_assignment(
     let capacity_override = validate_capacity_override(request.capacity_override)?;
 
     let mut tx = pool.begin().await?;
+    require_exam_write(&mut tx, ExamWriteTarget::Day(exam_day_id)).await?;
     let day_context = fetch_exam_day_context_for_update(&mut tx, exam_day_id).await?;
     let classroom = fetch_classroom_assignment_context(&mut tx, request.homeroom_id).await?;
     if classroom.is_active != Some(true) {
@@ -229,6 +231,7 @@ pub async fn generate_seats_for_assignment(
     actor_user_id: Uuid,
 ) -> Result<Vec<SeatAssignmentView>, AppError> {
     let mut tx = pool.begin().await?;
+    require_exam_write(&mut tx, ExamWriteTarget::Assignment(assignment_id)).await?;
     let assignment_context = fetch_seat_assignment_context(&mut tx, assignment_id).await?;
 
     let existing_seats = fetch_seat_assignments_for_assignment(&mut tx, assignment_id).await?;

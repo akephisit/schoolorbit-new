@@ -3369,6 +3369,30 @@ mod tests {
     }
 
     #[test]
+    fn exam_mutations_document_lifecycle_conflicts() {
+        let document = school_api_value().expect("document should serialize");
+        let paths = document["paths"].as_object().unwrap();
+        let mut mutations = 0;
+        for (path, item) in paths {
+            if !path.starts_with("/api/academic/exam-schedules") {
+                continue;
+            }
+            for method in ["post", "patch", "put", "delete"] {
+                if let Some(operation) = item.get(method) {
+                    mutations += 1;
+                    assert_eq!(
+                        operation["responses"]["409"]["content"]["application/json"]["schema"]
+                            ["$ref"],
+                        "#/components/schemas/ApiErrorResponse",
+                        "{method} {path} must document the closed-context conflict"
+                    );
+                }
+            }
+        }
+        assert!(mutations > 0);
+    }
+
+    #[test]
     fn documents_exam_round_deletion() {
         let document = school_api_value().expect("document should serialize");
         assert_eq!(

@@ -20,7 +20,7 @@ use super::rounds_and_days::{
 };
 use super::shared::{
     exam_invigilator_staff_lock_keys, has_invigilator_time_conflict, minutes_between_times,
-    unique_uuids, InvigilatorSessionWindow,
+    require_exam_write, unique_uuids, ExamWriteTarget, InvigilatorSessionWindow,
 };
 
 const INVIGILATOR_STAFF_OPTION_DEFAULT_LIMIT: i64 = 40;
@@ -175,6 +175,7 @@ pub async fn update_assignment_invigilators(
     let invigilator_staff_ids =
         validate_unique_invigilator_staff_ids(request.invigilator_staff_ids)?;
     let mut tx = pool.begin().await?;
+    require_exam_write(&mut tx, ExamWriteTarget::Assignment(assignment_id)).await?;
     let context = fetch_seat_assignment_context(&mut tx, assignment_id).await?;
     let exam_day_id: Uuid = sqlx::query_scalar(
         "SELECT exam_day_id FROM academic_exam_day_room_assignments WHERE id = $1",
@@ -212,6 +213,7 @@ pub async fn assign_invigilator_to_assignment(
     actor_user_id: Uuid,
 ) -> Result<ExamInvigilatorWorkspace, AppError> {
     let mut tx = pool.begin().await?;
+    require_exam_write(&mut tx, ExamWriteTarget::Assignment(assignment_id)).await?;
     let context =
         fetch_invigilator_assignment_mutation_context_for_update(&mut tx, assignment_id).await?;
     ensure_exam_round_is_mutable(&context.round_status)?;
@@ -250,6 +252,7 @@ pub async fn remove_invigilator_from_assignment(
     actor_user_id: Uuid,
 ) -> Result<ExamInvigilatorWorkspace, AppError> {
     let mut tx = pool.begin().await?;
+    require_exam_write(&mut tx, ExamWriteTarget::Assignment(assignment_id)).await?;
     let context =
         fetch_invigilator_assignment_mutation_context_for_update(&mut tx, assignment_id).await?;
     ensure_exam_round_is_mutable(&context.round_status)?;

@@ -5,7 +5,6 @@ use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::modules::academic::core::models::AcademicTermStatus;
 use crate::modules::academic::models::exam_schedule::{
     BlockedWindow, BlockedWindowInput, CreateExamRoundRequest, ExamDay, ExamDayDetail,
     ExamDayRoomAssignmentView, ExamInvigilatorView, ExamRound, UpdateExamRoundRequest,
@@ -13,7 +12,7 @@ use crate::modules::academic::models::exam_schedule::{
 };
 
 use super::invigilation::fetch_invigilators_by_assignment_ids;
-use super::shared::unique_uuids;
+use super::shared::{require_exam_write, unique_uuids, ExamWriteTarget};
 
 #[derive(Debug, sqlx::FromRow)]
 struct ExamDayGradeLevelRow {
@@ -114,27 +113,8 @@ pub async fn create_round(
     let exam_kind = normalize_exam_kind(request.exam_kind.as_deref())?;
 
     let mut tx = pool.begin().await?;
-    let (academic_year_id, term_status): (Uuid, AcademicTermStatus) = sqlx::query_as(
-        r#"
-        SELECT academic_year_id, status
-        FROM academic_terms
-        WHERE id = $1
-        FOR UPDATE
-        "#,
-    )
-    .bind(request.academic_term_id)
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียน".to_string()))?;
-
-    if matches!(
-        term_status,
-        AcademicTermStatus::Closing | AcademicTermStatus::Closed | AcademicTermStatus::Cancelled
-    ) {
-        return Err(AppError::Conflict(
-            "ไม่สามารถสร้างรอบสอบในภาคเรียนที่กำลังปิด ปิดแล้ว หรือยกเลิกแล้ว".to_string(),
-        ));
-    }
+    let (academic_year_id, _) =
+        require_exam_write(&mut tx, ExamWriteTarget::Term(request.academic_term_id)).await?;
 
     let row = sqlx::query_as::<_, ExamRound>(
         r#"
@@ -184,6 +164,7 @@ pub async fn update_round(
     let normalized = normalize_update_round_request(request)?;
 
     let mut tx = pool.begin().await?;
+    require_exam_write(&mut tx, ExamWriteTarget::Round(round_id)).await?;
     mark_round_draft_after_mutation(&mut tx, round_id, Some(actor_user_id)).await?;
 
     let row = sqlx::query_as::<_, ExamRound>(
@@ -227,6 +208,7 @@ pub async fn delete_round(
     can_delete_published: bool,
 ) -> Result<(), AppError> {
     let mut tx = pool.begin().await?;
+    require_exam_write(&mut tx, ExamWriteTarget::Round(round_id)).await?;
     let status: String = sqlx::query_scalar(
         r#"
         SELECT status
@@ -265,18 +247,8 @@ pub async fn upsert_exam_day(
     let grade_level_ids = unique_uuids(request.grade_level_ids);
 
     let mut tx = pool.begin().await?;
-    let round_context: Option<(Uuid, Uuid)> = sqlx::query_as(
-        r#"
-        SELECT academic_term_id, academic_year_id
-        FROM academic_exam_rounds
-        WHERE id = $1
-        "#,
-    )
-    .bind(round_id)
-    .fetch_optional(&mut *tx)
-    .await?;
-    let (academic_term_id, academic_year_id) =
-        round_context.ok_or_else(|| AppError::NotFound("Exam round not found".to_string()))?;
+    let (academic_year_id, academic_term_id) =
+        require_exam_write(&mut tx, ExamWriteTarget::Round(round_id)).await?;
 
     let day = sqlx::query_as::<_, ExamDay>(
         r#"
@@ -336,6 +308,7 @@ pub async fn update_exam_day(
     let grade_level_ids = unique_uuids(request.grade_level_ids);
 
     let mut tx = pool.begin().await?;
+    require_exam_write(&mut tx, ExamWriteTarget::Day(exam_day_id)).await?;
     let day = sqlx::query_as::<_, ExamDay>(
         r#"
         UPDATE academic_exam_days
@@ -442,6 +415,7 @@ pub(super) async fn replace_exam_day_configuration(
 
 pub async fn delete_exam_day(pool: &PgPool, exam_day_id: Uuid) -> Result<(), AppError> {
     let mut tx = pool.begin().await?;
+    require_exam_write(&mut tx, ExamWriteTarget::Day(exam_day_id)).await?;
     let round_id: Option<Uuid> = sqlx::query_scalar(
         r#"
         DELETE FROM academic_exam_days

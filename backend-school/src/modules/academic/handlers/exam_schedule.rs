@@ -81,6 +81,7 @@ pub async fn list_rounds(
     tag = "academic",
     request_body = CreateExamRoundRequest,
     responses(
+        (status = 409, description = "Academic year or term is closed, or the resource changed", body = ApiErrorResponse),
         (status = 201, description = "Exam round created", body = ApiResponse<ExamRound>),
         (status = 400, description = "Invalid exam round", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -110,6 +111,7 @@ pub async fn create_round(
     params(("round_id" = Uuid, Path, description = "Exam round ID")),
     request_body = UpdateExamRoundRequest,
     responses(
+        (status = 409, description = "Academic year or term is closed, or the resource changed", body = ApiErrorResponse),
         (status = 200, description = "Exam round updated", body = ApiResponse<ExamRound>),
         (status = 400, description = "Invalid exam round", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -141,6 +143,7 @@ pub async fn update_round(
     tag = "academic",
     params(("round_id" = Uuid, Path, description = "Exam round ID")),
     responses(
+        (status = 409, description = "Academic year or term is closed, or the resource changed", body = ApiErrorResponse),
         (status = 200, description = "Exam round deleted", body = ApiResponse<crate::api_response::EmptyData>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
@@ -258,6 +261,7 @@ pub async fn sync_sources(
     params(("round_id" = Uuid, Path, description = "Exam round ID")),
     request_body = UpsertExamDayRequest,
     responses(
+        (status = 409, description = "Academic year or term is closed, or the resource changed", body = ApiErrorResponse),
         (status = 200, description = "Exam day saved", body = ApiResponse<ExamDayDetail>),
         (status = 400, description = "Invalid exam day", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -288,6 +292,7 @@ pub async fn upsert_day(
     params(("exam_day_id" = Uuid, Path, description = "Exam day ID")),
     request_body = UpsertExamDayRequest,
     responses(
+        (status = 409, description = "Academic year or term is closed, or the resource changed", body = ApiErrorResponse),
         (status = 200, description = "Exam day updated", body = ApiResponse<ExamDayDetail>),
         (status = 400, description = "Invalid exam day", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -318,6 +323,7 @@ pub async fn update_day(
     tag = "academic",
     params(("exam_day_id" = Uuid, Path, description = "Exam day ID")),
     responses(
+        (status = 409, description = "Academic year or term is closed, or the resource changed", body = ApiErrorResponse),
         (status = 200, description = "Exam day deleted", body = ApiResponse<crate::api_response::EmptyData>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
@@ -438,6 +444,7 @@ pub async fn get_invigilator_staff_options(
     params(("exam_day_id" = Uuid, Path, description = "Exam day ID")),
     request_body = UpsertDayRoomAssignmentRequest,
     responses(
+        (status = 409, description = "Academic year or term is closed, or the resource changed", body = ApiErrorResponse),
         (status = 200, description = "Exam room assignment saved", body = ApiResponse<DayRoomAssignmentView>),
         (status = 400, description = "Invalid room assignment", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -474,6 +481,7 @@ pub async fn upsert_day_room_assignment(
     params(("assignment_id" = Uuid, Path, description = "Room assignment ID")),
     request_body = UpdateExamInvigilatorsRequest,
     responses(
+        (status = 409, description = "Academic year or term is closed, or the resource changed", body = ApiErrorResponse),
         (status = 200, description = "Invigilators updated", body = ApiResponse<DayRoomAssignmentView>),
         (status = 400, description = "Invalid invigilator assignment", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -512,6 +520,7 @@ pub async fn update_assignment_invigilators(
         ("staff_id" = Uuid, Path, description = "Staff ID")
     ),
     responses(
+        (status = 409, description = "Academic year or term is closed, or the resource changed", body = ApiErrorResponse),
         (status = 200, description = "Invigilator assigned", body = ApiResponse<ExamInvigilatorWorkspace>),
         (status = 400, description = "Invalid invigilator assignment", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -549,6 +558,7 @@ pub async fn assign_assignment_invigilator(
         ("staff_id" = Uuid, Path, description = "Staff ID")
     ),
     responses(
+        (status = 409, description = "Academic year or term is closed, or the resource changed", body = ApiErrorResponse),
         (status = 200, description = "Invigilator removed", body = ApiResponse<ExamInvigilatorWorkspace>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
@@ -583,6 +593,7 @@ pub async fn remove_assignment_invigilator(
     params(("assignment_id" = Uuid, Path, description = "Room assignment ID")),
     request_body = GenerateSeatsRequest,
     responses(
+        (status = 409, description = "Academic year or term is closed, or the resource changed", body = ApiErrorResponse),
         (status = 200, description = "Exam seats generated", body = ApiResponse<Vec<SeatAssignmentView>>),
         (status = 400, description = "Seat generation rejected", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -618,6 +629,7 @@ pub async fn generate_seats(
     tag = "academic",
     request_body = PlaceExamSessionRequest,
     responses(
+        (status = 409, description = "Academic year or term is closed, or the resource changed", body = ApiErrorResponse),
         (status = 200, description = "Exam session placed", body = ApiResponse<ExamSessionView>),
         (status = 400, description = "Exam session conflicts or is invalid", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -646,6 +658,7 @@ pub async fn place_session(
     tag = "academic",
     params(("session_id" = Uuid, Path, description = "Exam session ID")),
     responses(
+        (status = 409, description = "Academic year or term is closed, or the resource changed", body = ApiErrorResponse),
         (status = 200, description = "Exam session deleted", body = ApiResponse<crate::api_response::EmptyData>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
@@ -674,6 +687,7 @@ pub async fn delete_session(
     tag = "academic",
     params(("round_id" = Uuid, Path, description = "Exam round ID")),
     responses(
+        (status = 409, description = "Academic year or term is closed, or the resource changed", body = ApiErrorResponse),
         (status = 200, description = "Exam round published", body = ApiResponse<ExamRound>),
         (status = 400, description = "Exam round is not ready", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),

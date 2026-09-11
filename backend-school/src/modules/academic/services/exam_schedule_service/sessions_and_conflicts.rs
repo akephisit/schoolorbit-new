@@ -15,7 +15,8 @@ use super::invigilation::{
 use super::rounds_and_days::mark_round_draft_after_mutation;
 use super::shared::{
     exam_session_conflict_lock_keys, has_same_classroom_conflict, has_same_room_conflict,
-    validate_session_window, validation_error_to_app_error, CandidateRoomSession, CandidateSession,
+    require_exam_write, validate_session_window, validation_error_to_app_error,
+    CandidateRoomSession, CandidateSession, ExamWriteTarget,
 };
 
 #[derive(Debug, sqlx::FromRow)]
@@ -155,6 +156,25 @@ pub async fn place_exam_session(
     actor_user_id: Uuid,
 ) -> Result<ExamSessionView, AppError> {
     let mut tx = pool.begin().await?;
+
+    // Parent IDs are immutable. Reject a foreign-round item before locking any
+    // of its rows while holding the selected day's academic boundary.
+    let same_round: bool = sqlx::query_scalar(
+        "SELECT day.exam_round_id = item.exam_round_id \
+         FROM academic_exam_days day CROSS JOIN academic_exam_schedule_items item \
+         WHERE day.id=$1 AND item.id=$2",
+    )
+    .bind(request.exam_day_id)
+    .bind(request.exam_schedule_item_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Exam day or item not found".into()))?;
+    if !same_round {
+        return Err(AppError::BadRequest(
+            "Exam day belongs to a different exam round".into(),
+        ));
+    }
+    require_exam_write(&mut tx, ExamWriteTarget::Day(request.exam_day_id)).await?;
 
     let item =
         fetch_schedule_item_placement_context(&mut tx, request.exam_schedule_item_id).await?;
@@ -387,6 +407,7 @@ pub async fn delete_exam_session(
     actor_user_id: Uuid,
 ) -> Result<(), AppError> {
     let mut tx = pool.begin().await?;
+    require_exam_write(&mut tx, ExamWriteTarget::Session(session_id)).await?;
 
     let round_id: Uuid = sqlx::query_scalar(
         r#"

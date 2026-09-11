@@ -1,6 +1,7 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use super::shared::{require_exam_write, ExamWriteTarget};
 use crate::error::AppError;
 use crate::modules::academic::models::exam_schedule::ExamRound;
 
@@ -14,6 +15,7 @@ pub async fn publish_round(
     actor_user_id: Uuid,
 ) -> Result<ExamRound, AppError> {
     let mut tx = pool.begin().await?;
+    require_exam_write(&mut tx, ExamWriteTarget::Round(round_id)).await?;
 
     let _locked_round_id: Uuid = sqlx::query_scalar(
         r#"

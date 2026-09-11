@@ -48466,6 +48466,16 @@
               }
             },
             "description": "Permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year or term is closed, or the resource changed"
           }
         },
         "summary": "POST /api/academic/exam-schedules",
@@ -48529,6 +48539,16 @@
               }
             },
             "description": "Exam round not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year or term is closed, or the resource changed"
           }
         },
         "summary": "DELETE /api/academic/exam-schedules/{round_id}",
@@ -48671,6 +48691,16 @@
               }
             },
             "description": "Exam round not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year or term is closed, or the resource changed"
           }
         },
         "summary": "PATCH /api/academic/exam-schedules/{round_id}",
@@ -48744,6 +48774,16 @@
               }
             },
             "description": "Permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year or term is closed, or the resource changed"
           }
         },
         "summary": "POST /api/academic/exam-schedules/{round_id}/days",
@@ -48940,6 +48980,16 @@
               }
             },
             "description": "Exam round not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year or term is closed, or the resource changed"
           }
         },
         "summary": "POST /api/academic/exam-schedules/{round_id}/publish",
@@ -49139,6 +49189,16 @@
               }
             },
             "description": "Exam day not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year or term is closed, or the resource changed"
           }
         },
         "summary": "DELETE /api/academic/exam-schedules/days/{exam_day_id}",
@@ -49220,6 +49280,16 @@
               }
             },
             "description": "Exam day not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year or term is closed, or the resource changed"
           }
         },
         "summary": "PATCH /api/academic/exam-schedules/days/{exam_day_id}",
@@ -49344,6 +49414,16 @@
               }
             },
             "description": "Permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year or term is closed, or the resource changed"
           }
         },
         "summary": "POST /api/academic/exam-schedules/days/{exam_day_id}/room-assignments",
@@ -49417,6 +49497,16 @@
               }
             },
             "description": "Permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year or term is closed, or the resource changed"
           }
         },
         "summary": "PUT /api/academic/exam-schedules/room-assignments/{assignment_id}/invigilators",
@@ -49480,6 +49570,16 @@
               }
             },
             "description": "Permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year or term is closed, or the resource changed"
           }
         },
         "summary": "DELETE /api/academic/exam-schedules/room-assignments/{assignment_id}/invigilators/{staff_id}",
@@ -49551,6 +49651,16 @@
               }
             },
             "description": "Permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year or term is closed, or the resource changed"
           }
         },
         "summary": "PUT /api/academic/exam-schedules/room-assignments/{assignment_id}/invigilators/{staff_id}",
@@ -49624,6 +49734,16 @@
               }
             },
             "description": "Permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year or term is closed, or the resource changed"
           }
         },
         "summary": "POST /api/academic/exam-schedules/room-assignments/{assignment_id}/seats",
@@ -49685,6 +49805,16 @@
               }
             },
             "description": "Permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year or term is closed, or the resource changed"
           }
         },
         "summary": "POST /api/academic/exam-schedules/sessions",
@@ -49748,6 +49878,16 @@
               }
             },
             "description": "Exam session not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year or term is closed, or the resource changed"
           }
         },
         "summary": "DELETE /api/academic/exam-schedules/sessions/{session_id}",

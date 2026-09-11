@@ -20887,6 +20887,15 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Academic year or term is closed, or the resource changed */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 		};
 	};
 	getExamScheduleWorkspace: {
@@ -20987,6 +20996,15 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Academic year or term is closed, or the resource changed */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 		};
 	};
 	updateExamRound: {
@@ -21050,6 +21068,15 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Academic year or term is closed, or the resource changed */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 		};
 	};
 	upsertExamDay: {
@@ -21097,6 +21124,15 @@ export interface operations {
 			};
 			/** @description Permission denied */
 			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic year or term is closed, or the resource changed */
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -21241,6 +21277,15 @@ export interface operations {
 			};
 			/** @description Exam round not found */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic year or term is closed, or the resource changed */
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -21402,6 +21447,15 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Academic year or term is closed, or the resource changed */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 		};
 	};
 	updateExamDay: {
@@ -21458,6 +21512,15 @@ export interface operations {
 			};
 			/** @description Exam day not found */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic year or term is closed, or the resource changed */
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -21560,6 +21623,15 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Academic year or term is closed, or the resource changed */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 		};
 	};
 	updateExamAssignmentInvigilators: {
@@ -21607,6 +21679,15 @@ export interface operations {
 			};
 			/** @description Permission denied */
 			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic year or term is closed, or the resource changed */
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -21666,6 +21747,15 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Academic year or term is closed, or the resource changed */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 		};
 	};
 	removeExamAssignmentInvigilator: {
@@ -21702,6 +21792,15 @@ export interface operations {
 			};
 			/** @description Permission denied */
 			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic year or term is closed, or the resource changed */
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -21763,6 +21862,15 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Academic year or term is closed, or the resource changed */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 		};
 	};
 	placeExamSession: {
@@ -21814,6 +21922,15 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Academic year or term is closed, or the resource changed */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 		};
 	};
 	deleteExamSession: {
@@ -21857,6 +21974,15 @@ export interface operations {
 			};
 			/** @description Exam session not found */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic year or term is closed, or the resource changed */
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};
