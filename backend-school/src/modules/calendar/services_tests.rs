@@ -42,6 +42,9 @@ async fn migrated_pool(name: &str) -> PgPool {
     apply_phase_b_runtime_migrations(&pool)
         .await
         .expect("canonical calendar fixture migrations should run");
+    apply_migrations_through(&pool, 67)
+        .await
+        .expect("current calendar fixture migrations should run");
     pool
 }
 
@@ -164,6 +167,17 @@ async fn insert_fixture(pool: &PgPool) -> CalendarFixture {
 
 fn calendar_today() -> NaiveDate {
     (Utc::now() + Duration::hours(7)).date_naive()
+}
+
+async fn insert_calendar_term(pool: &PgPool, year: Uuid, status: &str) -> Uuid {
+    let bell = Uuid::new_v4();
+    let term = Uuid::new_v4();
+    sqlx::query("INSERT INTO bell_schedules (id,academic_year_id,code,name) VALUES ($1,$2,'CALENDAR','Calendar bell')")
+        .bind(bell).bind(year).execute(pool).await.unwrap();
+    sqlx::query("INSERT INTO academic_terms (id,academic_year_id,sequence_no,code,name,term_type,included_in_year_result,blocks_year_closure,start_date,status,bell_schedule_id) VALUES ($1,$2,1,'1','Calendar term','regular',true,true,$3,$4,$5)")
+        .bind(term).bind(year).bind(calendar_today()).bind(status).bind(bell)
+        .execute(pool).await.unwrap();
+    term
 }
 
 fn query_around(today: NaiveDate, academic_year_id: Uuid) -> CalendarEventQuery {
@@ -359,6 +373,311 @@ async fn event_lifecycle_preserves_targets_tags_reminders_and_soft_delete() {
     .await
     .expect("pending reminder count should query");
     assert_eq!(pending_reminders, 0);
+}
+
+#[tokio::test]
+async fn calendar_term_events_use_optional_planned_end_with_year_bounds() {
+    let pool = migrated_pool("calendar_term_date_bounds").await;
+    let fixture = insert_fixture(&pool).await;
+    let term = insert_calendar_term(&pool, fixture.academic_year_id, "planning").await;
+    let today = calendar_today();
+    let mut request = event_request(
+        fixture.academic_year_id,
+        "Term event",
+        today + Duration::days(10),
+        false,
+        vec![],
+        vec![target(CalendarAudienceType::All, None, None)],
+        vec![],
+    );
+    request.academic_term_id = Some(term);
+    let created = services::create_event(&pool, fixture.staff_user_id, request.clone())
+        .await
+        .expect("unknown planned end must allow an event within its owning year");
+    assert_eq!(created.event.academic_term_id, Some(term));
+    sqlx::query("UPDATE academic_terms SET planned_end_date=$2 WHERE id=$1")
+        .bind(term)
+        .bind(today + Duration::days(5))
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(matches!(
+        services::create_event(&pool, fixture.staff_user_id, request.clone()).await,
+        Err(AppError::BadRequest(_))
+    ));
+    sqlx::query("UPDATE academic_terms SET planned_end_date=NULL WHERE id=$1")
+        .bind(term)
+        .execute(&pool)
+        .await
+        .unwrap();
+    request.start_date = today + Duration::days(366);
+    request.end_date = request.start_date;
+    assert!(matches!(
+        services::create_event(&pool, fixture.staff_user_id, request).await,
+        Err(AppError::BadRequest(_))
+    ));
+}
+
+#[tokio::test]
+async fn calendar_lifecycle_preserves_closed_year_events_and_rejects_context_escape() {
+    let pool = migrated_pool("calendar_closed_year").await;
+    let source = insert_fixture(&pool).await;
+    let destination = insert_fixture(&pool).await;
+    let request = event_request(
+        source.academic_year_id,
+        "Retained event",
+        calendar_today(),
+        false,
+        vec![],
+        vec![target(CalendarAudienceType::All, None, None)],
+        vec![1],
+    );
+    let event = services::create_event(&pool, source.staff_user_id, request.clone())
+        .await
+        .unwrap()
+        .event;
+    let before = serde_json::to_value(&event).unwrap();
+    let mut incoming_request = request.clone();
+    incoming_request.academic_year_id = destination.academic_year_id;
+    let incoming = services::create_event(&pool, source.staff_user_id, incoming_request)
+        .await
+        .unwrap()
+        .event;
+    for status in ["closed", "archived"] {
+        sqlx::query("UPDATE academic_years SET status=$2 WHERE id=$1")
+            .bind(source.academic_year_id)
+            .bind(status)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(matches!(
+            services::create_event(&pool, source.staff_user_id, request.clone()).await,
+            Err(AppError::Conflict(_))
+        ));
+        assert!(matches!(
+            services::update_event(&pool, source.staff_user_id, event.id, request.clone()).await,
+            Err(AppError::Conflict(_))
+        ));
+        let mut moved = request.clone();
+        moved.academic_year_id = destination.academic_year_id;
+        assert!(matches!(
+            services::update_event(&pool, source.staff_user_id, event.id, moved).await,
+            Err(AppError::Conflict(_))
+        ));
+        assert!(matches!(
+            services::update_event(&pool, source.staff_user_id, incoming.id, request.clone()).await,
+            Err(AppError::Conflict(_))
+        ));
+        assert!(matches!(
+            services::soft_delete_event(&pool, event.id, source.staff_user_id).await,
+            Err(AppError::Conflict(_))
+        ));
+        let retained = services::list_management_events(
+            &pool,
+            query_around(calendar_today(), source.academic_year_id),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(retained.iter().find(|row| row.id == event.id).unwrap()).unwrap(),
+            before
+        );
+    }
+}
+
+#[tokio::test]
+async fn calendar_lifecycle_term_guards_allow_closing_and_preserve_cross_year_targets() {
+    let pool = migrated_pool("calendar_term_lifecycle").await;
+    let source = insert_fixture(&pool).await;
+    let destination = insert_fixture(&pool).await;
+    let term = insert_calendar_term(&pool, source.academic_year_id, "closing").await;
+    let mut request = event_request(
+        source.academic_year_id,
+        "Term lifecycle",
+        calendar_today(),
+        false,
+        vec![],
+        vec![target(
+            CalendarAudienceType::Student,
+            None,
+            Some(source.homeroom_id),
+        )],
+        vec![1],
+    );
+    request.academic_term_id = Some(term);
+    let event = services::create_event(&pool, source.staff_user_id, request.clone())
+        .await
+        .unwrap()
+        .event;
+    let before = serde_json::to_value(&event).unwrap();
+    let mut destination_request = request.clone();
+    destination_request.academic_year_id = destination.academic_year_id;
+    destination_request.academic_term_id = None;
+    destination_request.targets = vec![target(
+        CalendarAudienceType::Student,
+        None,
+        Some(destination.homeroom_id),
+    )];
+    let destination_event =
+        services::create_event(&pool, source.staff_user_id, destination_request.clone())
+            .await
+            .unwrap()
+            .event;
+    for status in ["closed", "cancelled"] {
+        sqlx::query("UPDATE academic_terms SET status=$2 WHERE id=$1")
+            .bind(term)
+            .bind(status)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(matches!(
+            services::create_event(&pool, source.staff_user_id, request.clone()).await,
+            Err(AppError::Conflict(_))
+        ));
+        assert!(
+            matches!(
+                services::update_event(
+                    &pool,
+                    source.staff_user_id,
+                    event.id,
+                    destination_request.clone()
+                )
+                .await,
+                Err(AppError::Conflict(_))
+            ),
+            "cannot escape a closed source term"
+        );
+        let mut year_wide = request.clone();
+        year_wide.academic_term_id = None;
+        assert!(
+            matches!(
+                services::update_event(&pool, source.staff_user_id, event.id, year_wide).await,
+                Err(AppError::Conflict(_))
+            ),
+            "cannot remove closed term ownership"
+        );
+        assert!(
+            matches!(
+                services::update_event(
+                    &pool,
+                    source.staff_user_id,
+                    destination_event.id,
+                    request.clone()
+                )
+                .await,
+                Err(AppError::Conflict(_))
+            ),
+            "cannot enter a closed target term"
+        );
+        assert!(matches!(
+            services::soft_delete_event(&pool, event.id, source.staff_user_id).await,
+            Err(AppError::Conflict(_))
+        ));
+        let retained = services::list_management_events(
+            &pool,
+            query_around(calendar_today(), source.academic_year_id),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(retained.iter().find(|row| row.id == event.id).unwrap()).unwrap(),
+            before
+        );
+    }
+    sqlx::query("UPDATE academic_terms SET status='closing' WHERE id=$1")
+        .bind(term)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (forward, reverse) = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        tokio::join!(
+            services::update_event(&pool, source.staff_user_id, event.id, destination_request),
+            services::update_event(&pool, source.staff_user_id, destination_event.id, request)
+        )
+    })
+    .await
+    .expect("opposing moves must not deadlock");
+    let updated = forward.unwrap().event;
+    let returned = reverse.unwrap().event;
+    assert_eq!(returned.academic_year_id, source.academic_year_id);
+    assert_eq!(returned.targets[0].homeroom_id, Some(source.homeroom_id));
+    assert_eq!(updated.academic_year_id, destination.academic_year_id);
+    assert_eq!(
+        updated.targets[0].homeroom_id,
+        Some(destination.homeroom_id)
+    );
+    assert_eq!(updated.reminders.len(), 1);
+    services::soft_delete_event(&pool, updated.id, source.staff_user_id)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn calendar_lifecycle_context_lock_precedes_event_lock() {
+    let pool = migrated_pool("calendar_context_lock").await;
+    let fixture = insert_fixture(&pool).await;
+    let request = event_request(
+        fixture.academic_year_id,
+        "Concurrent event",
+        calendar_today(),
+        false,
+        vec![],
+        vec![target(CalendarAudienceType::All, None, None)],
+        vec![],
+    );
+    let event = services::create_event(&pool, fixture.staff_user_id, request.clone())
+        .await
+        .unwrap()
+        .event;
+    for delete in [false, true] {
+        let mut boundary = pool.begin().await.unwrap();
+        let boundary_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+            .fetch_one(&mut *boundary)
+            .await
+            .unwrap();
+        sqlx::query("SELECT id FROM academic_years WHERE id=$1 FOR UPDATE")
+            .bind(fixture.academic_year_id)
+            .execute(&mut *boundary)
+            .await
+            .unwrap();
+        let worker_pool = pool.clone();
+        let request = request.clone();
+        let worker = tokio::spawn(async move {
+            if delete {
+                services::soft_delete_event(&worker_pool, event.id, fixture.staff_user_id).await
+            } else {
+                services::update_event(&worker_pool, fixture.staff_user_id, event.id, request)
+                    .await
+                    .map(|_| ())
+            }
+        });
+        let mut waiting = false;
+        for _ in 0..200 {
+            waiting = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE $1=ANY(pg_blocking_pids(pid)))").bind(boundary_pid).fetch_one(&pool).await.unwrap();
+            if waiting {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        let mut probe = pool.begin().await.unwrap();
+        let event_free =
+            sqlx::query("SELECT id FROM calendar_events WHERE id=$1 FOR UPDATE NOWAIT")
+                .bind(event.id)
+                .execute(&mut *probe)
+                .await
+                .is_ok();
+        probe.rollback().await.unwrap();
+        boundary.commit().await.unwrap();
+        let result = tokio::time::timeout(std::time::Duration::from_secs(10), worker)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            waiting && event_free,
+            "context must lock before event, delete={delete}"
+        );
+        assert!(result.is_ok(), "{result:?}");
+    }
 }
 
 #[tokio::test]

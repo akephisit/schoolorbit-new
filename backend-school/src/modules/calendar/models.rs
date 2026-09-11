@@ -85,7 +85,7 @@ pub struct CalendarEventTarget {
     pub homeroom_id: Option<Uuid>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CalendarEventTargetInput {
     pub audience_type: CalendarAudienceType,
@@ -290,7 +290,7 @@ pub struct CalendarEventQuery {
     pub q: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpsertCalendarEventRequest {
     pub academic_year_id: Uuid,

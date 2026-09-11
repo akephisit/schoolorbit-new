@@ -3669,6 +3669,165 @@
         ],
         "type": "object"
       },
+      "ApiResponse_CalendarEvent": {
+        "properties": {
+          "data": {
+            "properties": {
+              "academicTermId": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "academicYearId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "allDay": {
+                "type": "boolean"
+              },
+              "categoryColor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "categoryId": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "categoryName": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "createdBy": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "endDate": {
+                "format": "date",
+                "type": "string"
+              },
+              "endTime": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "isPublic": {
+                "type": "boolean"
+              },
+              "location": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reminders": {
+                "items": {
+                  "$ref": "#/components/schemas/CalendarEventReminder"
+                },
+                "type": "array"
+              },
+              "startDate": {
+                "format": "date",
+                "type": "string"
+              },
+              "startTime": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "tags": {
+                "items": {
+                  "$ref": "#/components/schemas/CalendarEventTag"
+                },
+                "type": "array"
+              },
+              "targets": {
+                "items": {
+                  "$ref": "#/components/schemas/CalendarEventTarget"
+                },
+                "type": "array"
+              },
+              "title": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "updatedBy": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "academicYearId",
+              "academicTermId",
+              "categoryId",
+              "categoryName",
+              "categoryColor",
+              "title",
+              "description",
+              "location",
+              "startDate",
+              "endDate",
+              "allDay",
+              "startTime",
+              "endTime",
+              "isPublic",
+              "tags",
+              "targets",
+              "reminders",
+              "createdBy",
+              "updatedBy",
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_CatalogActivity": {
         "properties": {
           "data": {
@@ -20184,6 +20343,31 @@
           "audienceType",
           "gradeLevelId",
           "homeroomId"
+        ],
+        "type": "object"
+      },
+      "CalendarEventTargetInput": {
+        "properties": {
+          "audienceType": {
+            "$ref": "#/components/schemas/CalendarAudienceType"
+          },
+          "gradeLevelId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "homeroomId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "audienceType"
         ],
         "type": "object"
       },
@@ -43725,6 +43909,105 @@
           }
         ]
       },
+      "UpsertCalendarEventRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "academicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "allDay": {
+            "type": "boolean"
+          },
+          "categoryId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "endDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "endTime": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "isPublic": {
+            "type": "boolean"
+          },
+          "location": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "notifyAudience": {
+            "type": "boolean"
+          },
+          "reminderOffsetsDays": {
+            "items": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "startDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "startTime": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tagIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/CalendarEventTargetInput"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "academicYearId",
+          "title",
+          "startDate",
+          "endDate",
+          "allDay",
+          "isPublic",
+          "targets",
+          "reminderOffsetsDays",
+          "notifyAudience"
+        ],
+        "type": "object"
+      },
       "UpsertDayRoomAssignmentRequest": {
         "additionalProperties": false,
         "properties": {
@@ -63043,6 +63326,266 @@
               }
             },
             "description": "Calendar read permission required"
+          }
+        },
+        "tags": [
+          "calendar"
+        ]
+      },
+      "post": {
+        "operationId": "createCalendarEvent",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertCalendarEventRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CalendarEvent"
+                }
+              }
+            },
+            "description": "Calendar event created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid event dates, targets or tags"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Calendar manage permission required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year or term is closed"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Term does not belong to the year"
+          }
+        },
+        "tags": [
+          "calendar"
+        ]
+      }
+    },
+    "/api/calendar/events/{id}": {
+      "delete": {
+        "operationId": "deleteCalendarEvent",
+        "parameters": [
+          {
+            "description": "Calendar event ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Calendar event removed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Calendar manage permission required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Event not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic context is closed or the event moved concurrently"
+          }
+        },
+        "tags": [
+          "calendar"
+        ]
+      },
+      "put": {
+        "operationId": "updateCalendarEvent",
+        "parameters": [
+          {
+            "description": "Calendar event ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertCalendarEventRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CalendarEvent"
+                }
+              }
+            },
+            "description": "Calendar event updated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid event dates, targets or tags"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Calendar manage permission required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Event or academic year not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic context is closed or the event moved concurrently"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Term does not belong to the year"
           }
         },
         "tags": [

@@ -18,12 +18,6 @@ function stripComments(source) {
 		.replace(/\/\/.*$/gm, '');
 }
 
-function interfaceBody(source, name) {
-	const match = source.match(new RegExp(`export interface ${name}\\s*{([\\s\\S]*?)\\n}`));
-	assert.ok(match, `Expected exported interface ${name}`);
-	return match[1];
-}
-
 function generatedSchemaBody(source, name) {
 	const marker = new RegExp(`^[\\t ]*${name}:\\s*\\{`, 'm').exec(source);
 	assert.ok(marker, `Expected generated schema ${name}`);
@@ -82,11 +76,11 @@ test('calendar API client uses current typed contracts', async () => {
 	}
 
 	const target = generatedSchemaBody(generated, 'CalendarEventTarget');
-	const targetInput = interfaceBody(api, 'CalendarEventTargetInput');
+	const targetInput = generatedSchemaBody(generated, 'CalendarEventTargetInput');
 	const viewerEvent = generatedSchemaBody(generated, 'CalendarViewerEvent');
 	const publicOperation = generatedSchemaBody(generated, 'listPublicCalendarEvents');
 	const event = generatedSchemaBody(generated, 'CalendarEvent');
-	const createEvent = interfaceBody(api, 'CreateCalendarEventRequest');
+	const createEvent = generatedSchemaBody(generated, 'UpsertCalendarEventRequest');
 
 	assert.match(target, /\bid:\s*string;/);
 	assert.match(target, /\baudienceType:\s*string;/);
@@ -97,15 +91,19 @@ test('calendar API client uses current typed contracts', async () => {
 		api,
 		/export\s+type\s+CalendarEventTarget\s*=\s*Omit<CalendarEventTargetDto, 'audienceType'>/
 	);
-	assert.match(api, /audienceType:\s*CalendarAudienceType;/);
-	assert.match(targetInput, /\baudienceType:\s*CalendarAudienceType;/);
+	assert.match(api, /export type CalendarEventTargetInput = Schemas\['CalendarEventTargetInput'\]/);
+	assert.match(
+		api,
+		/export type CreateCalendarEventRequest = Schemas\['UpsertCalendarEventRequest'\]/
+	);
+	assert.match(targetInput, /\baudienceType:\s*components\['schemas'\]\['CalendarAudienceType'\]/);
 	assert.match(targetInput, /\bhomeroomId\?:\s*string \| null;/);
 	assert.doesNotMatch(targetInput, /\baudience:\s*CalendarAudienceType;/);
 	assert.doesNotMatch(targetInput, /\bclassRoomId\?:\s*string \| null;/);
 	assert.doesNotMatch(targetInput, /\bid[?:]?:\s*string;/);
-	assert.match(api, /targets:\s*CalendarEventTargetInput\[];/);
+	assert.match(createEvent, /targets:\s*components\['schemas'\]\['CalendarEventTargetInput'\]\[];/);
 	assert.match(event, /tags:\s*components\['schemas'\]\['CalendarEventTag'\]\[];/);
-	assert.match(createEvent, /tagIds:\s*string\[];/);
+	assert.match(createEvent, /tagIds\?:\s*string\[];/);
 	assert.match(api, /export\s+type\s+CalendarEvent\s*=\s*Omit<CalendarEventDto, 'targets'>/);
 	assert.match(api, /export\s+type\s+CalendarViewerEvent\s*=\s*Schemas\['CalendarViewerEvent'\]/);
 	assert.match(api, /export\s+type\s+CalendarEventTag\s*=\s*Schemas\['CalendarEventTag'\]/);

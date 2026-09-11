@@ -21,11 +21,7 @@ export type CalendarEvent = Omit<CalendarEventDto, 'targets'> & {
 	targets: CalendarEventTarget[];
 };
 
-export interface CalendarEventTargetInput {
-	audienceType: CalendarAudienceType;
-	gradeLevelId?: string | null;
-	homeroomId?: string | null;
-}
+export type CalendarEventTargetInput = Schemas['CalendarEventTargetInput'];
 
 export type CalendarViewerEvent = Schemas['CalendarViewerEvent'];
 
@@ -61,24 +57,7 @@ export type CalendarPublicEventFilters = Omit<
 	'audience' | 'visibility'
 >;
 
-export interface CreateCalendarEventRequest {
-	academicYearId: string;
-	academicTermId?: string | null;
-	title: string;
-	description?: string | null;
-	location?: string | null;
-	categoryId?: string | null;
-	startDate: string;
-	endDate: string;
-	allDay: boolean;
-	startTime?: string | null;
-	endTime?: string | null;
-	isPublic: boolean;
-	tagIds: string[];
-	targets: CalendarEventTargetInput[];
-	reminderOffsetsDays: number[];
-	notifyAudience: boolean;
-}
+export type CreateCalendarEventRequest = Schemas['UpsertCalendarEventRequest'];
 
 export type UpdateCalendarEventRequest = CreateCalendarEventRequest;
 

@@ -3,6 +3,7 @@ use sqlx::{PgPool, Postgres, QueryBuilder, Transaction};
 use uuid::Uuid;
 
 use crate::error::AppError;
+use crate::modules::academic::core::services::lifecycle_guard;
 use crate::modules::calendar::models::{
     CalendarEvent, CalendarEventTargetInput, UpsertCalendarEventRequest,
 };
@@ -41,6 +42,11 @@ pub async fn create_event(
     let notify_audience = payload.notify_audience;
 
     let mut transaction = pool.begin().await?;
+    require_context_writes(
+        &mut transaction,
+        &[(payload.academic_year_id, payload.academic_term_id)],
+    )
+    .await?;
     validate_event_context(
         &mut transaction,
         payload.academic_year_id,
@@ -114,6 +120,12 @@ pub async fn update_event(
     let notify_audience = payload.notify_audience;
 
     let mut transaction = pool.begin().await?;
+    let existing = require_event_write(
+        &mut transaction,
+        id,
+        Some((payload.academic_year_id, payload.academic_term_id)),
+    )
+    .await?;
     validate_event_context(
         &mut transaction,
         payload.academic_year_id,
@@ -122,6 +134,14 @@ pub async fn update_event(
         payload.end_date,
     )
     .await?;
+    if existing.0 != payload.academic_year_id {
+        // Targets have an immediate composite FK to the event's year. Remove
+        // them only after all guards; the transaction restores them on failure.
+        sqlx::query("DELETE FROM calendar_event_targets WHERE event_id=$1")
+            .bind(id)
+            .execute(&mut *transaction)
+            .await?;
+    }
     let event_id = sqlx::query_scalar::<_, Uuid>(
         r#"
         UPDATE calendar_events
@@ -187,6 +207,7 @@ pub async fn soft_delete_event(
     actor_user_id: Uuid,
 ) -> Result<(), AppError> {
     let mut transaction = pool.begin().await?;
+    require_event_write(&mut transaction, id, None).await?;
     let result = sqlx::query(
         r#"
         UPDATE calendar_events
@@ -216,6 +237,60 @@ pub async fn soft_delete_event(
     transaction.commit().await?;
 
     Ok(())
+}
+
+type EventContext = (Uuid, Option<Uuid>);
+
+async fn require_context_writes(
+    tx: &mut Transaction<'_, Postgres>,
+    contexts: &[EventContext],
+) -> Result<(), AppError> {
+    // All years precede all terms. Opposing cross-year moves use the same order.
+    let years: std::collections::BTreeSet<_> = contexts.iter().map(|context| context.0).collect();
+    for year in years {
+        lifecycle_guard::require_year_write_exclusive(tx, year).await?;
+    }
+    let terms: std::collections::BTreeSet<_> = contexts
+        .iter()
+        .filter_map(|(year, term)| term.map(|term| (*year, term)))
+        .collect();
+    for (year, term) in terms {
+        lifecycle_guard::require_term_write(tx, year, term).await?;
+    }
+    Ok(())
+}
+
+async fn require_event_write(
+    tx: &mut Transaction<'_, Postgres>,
+    id: Uuid,
+    target: Option<EventContext>,
+) -> Result<EventContext, AppError> {
+    lifecycle_guard::lock_transition_shared(tx).await?;
+    let before: EventContext = sqlx::query_as(
+        "SELECT academic_year_id, academic_term_id FROM calendar_events WHERE id=$1 AND deleted_at IS NULL",
+    )
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound(EVENT_NOT_FOUND_MESSAGE.into()))?;
+    let contexts = match target {
+        Some(target) => vec![before, target],
+        None => vec![before],
+    };
+    require_context_writes(tx, &contexts).await?;
+    let current: EventContext = sqlx::query_as(
+        "SELECT academic_year_id, academic_term_id FROM calendar_events WHERE id=$1 AND deleted_at IS NULL FOR UPDATE",
+    )
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound(EVENT_NOT_FOUND_MESSAGE.into()))?;
+    if current != before {
+        return Err(AppError::Conflict(
+            "กิจกรรมถูกย้ายปีหรือภาคเรียนแล้ว กรุณาโหลดข้อมูลใหม่".into(),
+        ));
+    }
+    Ok(current)
 }
 
 async fn replace_event_targets(
@@ -281,7 +356,7 @@ async fn validate_event_context(
                 WHERE id = $1
                   AND academic_year_id = $2
                   AND start_date <= $3
-                  AND end_date >= $4
+                  AND (planned_end_date IS NULL OR planned_end_date >= $4)
             )",
         )
         .bind(academic_term_id)

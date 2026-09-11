@@ -46,6 +46,22 @@ pub async fn list_calendar_events(
     Ok(Json(ApiResponse::ok(events)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/calendar/events",
+    operation_id = "createCalendarEvent",
+    tag = "calendar",
+    request_body = UpsertCalendarEventRequest,
+    responses(
+        (status = 201, description = "Calendar event created", body = ApiResponse<crate::modules::calendar::models::CalendarEvent>),
+        (status = 400, description = "Invalid event dates, targets or tags", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Calendar manage permission required", body = ApiErrorResponse),
+        (status = 404, description = "Academic year not found", body = ApiErrorResponse),
+        (status = 409, description = "Academic year or term is closed", body = ApiErrorResponse),
+        (status = 422, description = "Term does not belong to the year", body = ApiErrorResponse)
+    )
+)]
 pub async fn create_calendar_event(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -81,6 +97,23 @@ pub async fn create_calendar_event(
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(event))))
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/calendar/events/{id}",
+    operation_id = "updateCalendarEvent",
+    tag = "calendar",
+    params(("id" = Uuid, Path, description = "Calendar event ID")),
+    request_body = UpsertCalendarEventRequest,
+    responses(
+        (status = 200, description = "Calendar event updated", body = ApiResponse<crate::modules::calendar::models::CalendarEvent>),
+        (status = 400, description = "Invalid event dates, targets or tags", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Calendar manage permission required", body = ApiErrorResponse),
+        (status = 404, description = "Event or academic year not found", body = ApiErrorResponse),
+        (status = 409, description = "Academic context is closed or the event moved concurrently", body = ApiErrorResponse),
+        (status = 422, description = "Term does not belong to the year", body = ApiErrorResponse)
+    )
+)]
 pub async fn update_calendar_event(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -117,6 +150,20 @@ pub async fn update_calendar_event(
     Ok(Json(ApiResponse::ok(event)))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/calendar/events/{id}",
+    operation_id = "deleteCalendarEvent",
+    tag = "calendar",
+    params(("id" = Uuid, Path, description = "Calendar event ID")),
+    responses(
+        (status = 200, description = "Calendar event removed", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Calendar manage permission required", body = ApiErrorResponse),
+        (status = 404, description = "Event not found", body = ApiErrorResponse),
+        (status = 409, description = "Academic context is closed or the event moved concurrently", body = ApiErrorResponse)
+    )
+)]
 pub async fn delete_calendar_event(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,

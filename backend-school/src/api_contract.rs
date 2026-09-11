@@ -549,6 +549,9 @@ use utoipa::OpenApi;
         crate::modules::calendar::handlers::list_my_calendar_events,
         crate::modules::calendar::handlers::list_public_calendar_events,
         crate::modules::calendar::handlers::list_calendar_events,
+        crate::modules::calendar::handlers::create_calendar_event,
+        crate::modules::calendar::handlers::update_calendar_event,
+        crate::modules::calendar::handlers::delete_calendar_event,
         crate::modules::calendar::handlers::list_calendar_categories,
         crate::modules::calendar::handlers::list_calendar_tags,
         crate::modules::school::handlers::get_public_info,
@@ -3770,6 +3773,30 @@ mod tests {
         for nullable_required in ["learningGroupId", "learningOfferingId", "roomId"] {
             assert!(required(candidate).contains(&nullable_required));
             assert!(contains_null(&candidate["properties"][nullable_required]));
+        }
+    }
+
+    #[test]
+    fn calendar_mutations_document_closed_context_conflicts() {
+        let document = school_api_value().unwrap();
+        for (path, method, success) in [
+            ("/api/calendar/events", "post", "201"),
+            ("/api/calendar/events/{id}", "put", "200"),
+            ("/api/calendar/events/{id}", "delete", "200"),
+        ] {
+            let operation = &document["paths"][path][method];
+            assert_eq!(
+                operation["responses"]["409"]["content"]["application/json"]["schema"]["$ref"],
+                "#/components/schemas/ApiErrorResponse",
+                "{method} {path}"
+            );
+            assert!(operation["responses"][success].is_object());
+            if method != "delete" {
+                assert_eq!(
+                    operation["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+                    "#/components/schemas/UpsertCalendarEventRequest"
+                );
+            }
         }
     }
 

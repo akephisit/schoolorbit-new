@@ -3125,8 +3125,24 @@ export interface paths {
 		};
 		get: operations['listCalendarEvents'];
 		put?: never;
-		post?: never;
+		post: operations['createCalendarEvent'];
 		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/calendar/events/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['updateCalendarEvent'];
+		post?: never;
+		delete: operations['deleteCalendarEvent'];
 		options?: never;
 		head?: never;
 		patch?: never;
@@ -6327,6 +6343,44 @@ export interface components {
 			data: {
 				locked: components['schemas']['ActivityResultLock'][];
 				skipped: components['schemas']['GroupResultReadiness'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CalendarEvent: {
+			data: {
+				/** Format: uuid */
+				academicTermId: string | null;
+				/** Format: uuid */
+				academicYearId: string;
+				allDay: boolean;
+				categoryColor: string | null;
+				/** Format: uuid */
+				categoryId: string | null;
+				categoryName: string | null;
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				createdBy: string | null;
+				description: string | null;
+				/** Format: date */
+				endDate: string;
+				endTime: string | null;
+				/** Format: uuid */
+				id: string;
+				isPublic: boolean;
+				location: string | null;
+				reminders: components['schemas']['CalendarEventReminder'][];
+				/** Format: date */
+				startDate: string;
+				startTime: string | null;
+				tags: components['schemas']['CalendarEventTag'][];
+				targets: components['schemas']['CalendarEventTarget'][];
+				title: string;
+				/** Format: date-time */
+				updatedAt: string;
+				/** Format: uuid */
+				updatedBy: string | null;
 			};
 			message?: string;
 			success: boolean;
@@ -10765,6 +10819,13 @@ export interface components {
 			homeroomId: string | null;
 			/** Format: uuid */
 			id: string;
+		};
+		CalendarEventTargetInput: {
+			audienceType: components['schemas']['CalendarAudienceType'];
+			/** Format: uuid */
+			gradeLevelId?: string | null;
+			/** Format: uuid */
+			homeroomId?: string | null;
 		};
 		CalendarPublicEvent: {
 			/** Format: uuid */
@@ -17192,6 +17253,29 @@ export interface components {
 					/** Format: uuid */
 					teacherId: string;
 			  };
+		UpsertCalendarEventRequest: {
+			/** Format: uuid */
+			academicTermId?: string | null;
+			/** Format: uuid */
+			academicYearId: string;
+			allDay: boolean;
+			/** Format: uuid */
+			categoryId?: string | null;
+			description?: string | null;
+			/** Format: date */
+			endDate: string;
+			endTime?: string | null;
+			isPublic: boolean;
+			location?: string | null;
+			notifyAudience: boolean;
+			reminderOffsetsDays: number[];
+			/** Format: date */
+			startDate: string;
+			startTime?: string | null;
+			tagIds?: string[];
+			targets: components['schemas']['CalendarEventTargetInput'][];
+			title: string;
+		};
 		UpsertDayRoomAssignmentRequest: {
 			/** Format: int32 */
 			capacityOverride?: number | null;
@@ -31566,6 +31650,224 @@ export interface operations {
 			};
 			/** @description Calendar read permission required */
 			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createCalendarEvent: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpsertCalendarEventRequest'];
+			};
+		};
+		responses: {
+			/** @description Calendar event created */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CalendarEvent'];
+				};
+			};
+			/** @description Invalid event dates, targets or tags */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Calendar manage permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic year not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic year or term is closed */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Term does not belong to the year */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateCalendarEvent: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Calendar event ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpsertCalendarEventRequest'];
+			};
+		};
+		responses: {
+			/** @description Calendar event updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CalendarEvent'];
+				};
+			};
+			/** @description Invalid event dates, targets or tags */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Calendar manage permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Event or academic year not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic context is closed or the event moved concurrently */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Term does not belong to the year */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteCalendarEvent: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Calendar event ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Calendar event removed */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Calendar manage permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Event not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic context is closed or the event moved concurrently */
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};
