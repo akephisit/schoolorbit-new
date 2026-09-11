@@ -6,6 +6,10 @@ use sqlx::{FromRow, PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 
 use crate::error::AppError;
+use crate::modules::academic::core::{
+    models::{AcademicTermStatus, AcademicYearStatus},
+    services::lifecycle_guard::AcademicWriteState,
+};
 use crate::modules::academic::delivery::models::{
     AcademicChangeFinding, AcademicChangeFindingCode, AcademicChangeFindingSeverity,
     AcademicChangeImpactCounts, AcademicOfferingScheduleCount, AcademicTermChangeActionKind,
@@ -1159,23 +1163,32 @@ async fn append_term_and_version_findings(
     target_version_id: Uuid,
     findings: &mut Vec<AcademicChangeFinding>,
 ) -> Result<(), AppError> {
-    let (term_status, term_start, academic_year_end): (String, NaiveDate, NaiveDate) =
-        sqlx::query_as(
-            r#"SELECT term.status, term.start_date, year.end_date
+    let (year_status, term_status, term_start, academic_year_end): (
+        AcademicYearStatus,
+        AcademicTermStatus,
+        NaiveDate,
+        NaiveDate,
+    ) = sqlx::query_as(
+        r#"SELECT year.status, term.status, term.start_date, year.end_date
                FROM academic_terms term
                JOIN academic_years year ON year.id = term.academic_year_id
                WHERE term.id = $1"#,
-        )
-        .bind(change_set.academic_term_id)
-        .fetch_optional(&mut **transaction)
-        .await?
-        .ok_or_else(|| AppError::Conflict("ไม่พบภาคเรียนของชุดการเปลี่ยนแปลง".to_string()))?;
-    if matches!(term_status.as_str(), "closing" | "closed" | "cancelled") {
+    )
+    .bind(change_set.academic_term_id)
+    .fetch_optional(&mut **transaction)
+    .await?
+    .ok_or_else(|| AppError::Conflict("ไม่พบภาคเรียนของชุดการเปลี่ยนแปลง".to_string()))?;
+    if !(AcademicWriteState {
+        year_status,
+        term_status,
+    })
+    .is_writable()
+    {
         findings.push(change_finding(
             AcademicChangeFindingCode::TermNotWritable,
             AcademicChangeFindingSeverity::Blocking,
-            "ภาคเรียนปิดรับการแก้ไข",
-            "เปิดภาคเรียนสำหรับงานจัดการเรียนก่อนเผยแพร่ชุดนี้",
+            "ปีหรือภาคเรียนปิดรับการแก้ไข",
+            "ดูข้อมูลเดิมได้ แต่เผยแพร่ชุดการเปลี่ยนแปลงในปีหรือภาคเรียนที่ปิดแล้วไม่ได้",
             1,
             None,
             None,
@@ -1184,7 +1197,8 @@ async fn append_term_and_version_findings(
     }
     if change_set.effective_from < term_start
         || change_set.effective_from > academic_year_end
-        || (term_status == "active" && change_set.effective_from < Utc::now().date_naive())
+        || (term_status == AcademicTermStatus::Active
+            && change_set.effective_from < Utc::now().date_naive())
     {
         findings.push(change_finding(
             AcademicChangeFindingCode::EffectiveDateInvalid,

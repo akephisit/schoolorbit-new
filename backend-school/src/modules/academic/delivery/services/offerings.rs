@@ -21,8 +21,8 @@ use super::super::models::{
     PublishLearningOfferingRequest, UpdateLearningOfferingRequest,
 };
 use super::{
-    append_audit, require_active_owner, require_writable_term, stable_hash, validate_row_version,
-    TermContext,
+    append_audit, require_active_owner, require_writable_offering_term, require_writable_term,
+    stable_hash, validate_row_version, TermContext,
 };
 
 const OFFERING_COLUMNS: &str = r#"
@@ -320,6 +320,7 @@ pub async fn update(
 ) -> Result<LearningOffering, AppError> {
     validate_row_version(request.row_version)?;
     let mut transaction = pool.begin().await?;
+    let term = require_writable_offering_term(&mut transaction, id).await?;
     let row: (
         Uuid,
         Uuid,
@@ -344,7 +345,6 @@ pub async fn update(
             "รายการเปิดสอนถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string(),
         ));
     }
-    let term = require_writable_term(&mut transaction, row.0, false).await?;
     validate_targets(&mut transaction, &term, &request.targets).await?;
     sqlx::query("DELETE FROM learning_offering_targets WHERE learning_offering_id = $1")
         .bind(id)
@@ -396,6 +396,7 @@ pub async fn publish(
     }
 
     let mut transaction = pool.begin().await?;
+    let term = require_writable_offering_term(&mut transaction, id).await?;
     let row: (
         Uuid,
         Uuid,
@@ -418,7 +419,6 @@ pub async fn publish(
             "รายการเปิดสอนถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string(),
         ));
     }
-    let term = require_writable_term(&mut transaction, row.0, false).await?;
     validate_publishable(&mut transaction, id, row.2, &term).await?;
     sqlx::query(
         "UPDATE learning_groups SET status = 'published', row_version = row_version + 1, \
@@ -529,6 +529,7 @@ pub async fn apply_from_curriculum(
     }
 
     let mut transaction = pool.begin().await?;
+    let term = require_writable_term(&mut transaction, request.academic_term_id, true).await?;
     let preview =
         build_curriculum_preview(&mut transaction, request.academic_term_id, &program_ids).await?;
     if preview.source_hash != request.source_hash {
@@ -538,7 +539,6 @@ pub async fn apply_from_curriculum(
     }
     validate_preparation_choices(&preview.proposals, &choices)?;
 
-    let term = require_writable_term(&mut transaction, request.academic_term_id, true).await?;
     let mut offering_ids = Vec::new();
     let mut group_ids = Vec::new();
     let mut created_offering_count = 0_usize;

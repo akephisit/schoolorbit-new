@@ -5,6 +5,7 @@ use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::error::AppError;
+use crate::modules::academic::core::services::lifecycle_guard;
 use crate::modules::academic::models::timetable_version::{
     CloneTimetableVersionRequest, TimetableVersion, TimetableVersionDisplayState,
     TimetableVersionStatus, TimetableVersionTarget,
@@ -45,7 +46,6 @@ struct CloneSourceRow {
     academic_year_id: Uuid,
     status: TimetableVersionStatus,
     row_version: i64,
-    term_status: String,
     term_start_date: NaiveDate,
     academic_year_end_date: NaiveDate,
     bell_schedule_id: Uuid,
@@ -167,6 +167,23 @@ pub async fn clone_draft(
     get_version(pool, new_version_id, Utc::now().date_naive()).await
 }
 
+/// Coordinate before version/block locks. Resolve immutable IDs without row
+/// locks and acquire the term write mode initially, including nested Delivery
+/// callers which already hold that same term lock.
+pub(crate) async fn require_version_term_write(
+    transaction: &mut Transaction<'_, Postgres>,
+    version_id: Uuid,
+) -> Result<(), AppError> {
+    let (year_id, term_id): (Uuid, Uuid) = sqlx::query_as(
+        "SELECT academic_year_id, academic_term_id FROM academic_timetable_versions WHERE id=$1",
+    )
+    .bind(version_id)
+    .fetch_optional(&mut **transaction)
+    .await?
+    .ok_or_else(|| AppError::NotFound("ไม่พบรุ่นตารางสอน".into()))?;
+    lifecycle_guard::require_term_write_exclusive(transaction, year_id, term_id).await
+}
+
 pub(crate) async fn clone_draft_in_transaction(
     transaction: &mut Transaction<'_, Postgres>,
     actor_id: Uuid,
@@ -181,13 +198,13 @@ pub(crate) async fn clone_draft_in_transaction(
         ));
     }
 
+    require_version_term_write(transaction, source_id).await?;
     let source: CloneSourceRow = sqlx::query_as(
         r#"SELECT source.id,
                   source.academic_term_id,
                   source.academic_year_id,
                   source.status,
                   source.row_version,
-                  term.status AS term_status,
                   term.start_date AS term_start_date,
                   year.end_date AS academic_year_end_date,
                   term.bell_schedule_id
@@ -195,7 +212,7 @@ pub(crate) async fn clone_draft_in_transaction(
            JOIN academic_terms term ON term.id = source.academic_term_id
            JOIN academic_years year ON year.id = source.academic_year_id
            WHERE source.id = $1
-           FOR UPDATE OF source, term"#,
+           FOR UPDATE OF source"#,
     )
     .bind(source_id)
     .fetch_optional(&mut **transaction)
@@ -212,14 +229,6 @@ pub(crate) async fn clone_draft_in_transaction(
             "รุ่นตารางเรียนต้นทางถูกแก้ไขแล้ว (expected {}, actual {})",
             source_row_version, source.row_version
         )));
-    }
-    if matches!(
-        source.term_status.as_str(),
-        "closing" | "closed" | "cancelled"
-    ) {
-        return Err(AppError::Conflict(
-            "ภาคเรียนนี้ปิดรับการสร้างรุ่นตารางเรียนใหม่แล้ว".to_string(),
-        ));
     }
     if effective_from < source.term_start_date || effective_from > source.academic_year_end_date {
         return Err(AppError::ValidationError(

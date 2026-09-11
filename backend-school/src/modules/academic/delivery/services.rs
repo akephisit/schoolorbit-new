@@ -4,6 +4,7 @@ use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::error::AppError;
+use crate::modules::academic::core::services::lifecycle_guard;
 
 pub mod activities;
 pub mod change_sets;
@@ -33,13 +34,19 @@ pub(super) async fn require_writable_term(
     academic_term_id: Uuid,
     lock_for_update: bool,
 ) -> Result<TermContext, AppError> {
-    let lock = if lock_for_update {
-        "FOR UPDATE"
+    let year_id: Uuid =
+        sqlx::query_scalar("SELECT academic_year_id FROM academic_terms WHERE id=$1")
+            .bind(academic_term_id)
+            .fetch_optional(&mut **transaction)
+            .await?
+            .ok_or_else(|| AppError::ValidationError("ไม่พบภาคเรียนที่เลือก".to_string()))?;
+    if lock_for_update {
+        lifecycle_guard::require_term_write_exclusive(transaction, year_id, academic_term_id)
+            .await?;
     } else {
-        "FOR SHARE"
-    };
-    let query = format!(
-        "SELECT term.id, term.academic_year_id, term.code, term.start_date, \
+        lifecycle_guard::require_term_write(transaction, year_id, academic_term_id).await?;
+    }
+    let query = "SELECT term.id, term.academic_year_id, term.code, term.start_date, \
          term.planned_end_date, term.closed_on, year.end_date AS academic_year_end_date, \
          term.term_type, (SELECT count(*)::integer FROM academic_terms occurrence \
              WHERE occurrence.academic_year_id = term.academic_year_id \
@@ -48,18 +55,12 @@ pub(super) async fn require_writable_term(
          term.status, term.row_version \
          FROM academic_terms term \
          JOIN academic_years year ON year.id = term.academic_year_id \
-         WHERE term.id = $1 {lock}"
-    );
-    let term: TermContext = sqlx::query_as(&query)
+         WHERE term.id = $1";
+    let term: TermContext = sqlx::query_as(query)
         .bind(academic_term_id)
         .fetch_optional(&mut **transaction)
         .await?
         .ok_or_else(|| AppError::ValidationError("ไม่พบภาคเรียนที่เลือก".to_string()))?;
-    if matches!(term.status.as_str(), "closing" | "closed" | "cancelled") {
-        return Err(AppError::ValidationError(
-            "ภาคเรียนนี้ปิดรับการแก้ไขข้อมูลจัดการเรียนแล้ว".to_string(),
-        ));
-    }
     Ok(term)
 }
 
@@ -80,6 +81,20 @@ pub(super) async fn require_active_owner(
             "หน่วยงานเจ้าของข้อมูลไม่ถูกต้องหรือไม่ได้ใช้งาน".to_string(),
         ))
     }
+}
+
+/// Resolve immutable context without locking the offering; lifecycle locks
+/// must precede offering/group locks in every writer.
+pub(super) async fn require_writable_offering_term(
+    transaction: &mut Transaction<'_, Postgres>,
+    offering_id: Uuid,
+) -> Result<TermContext, AppError> {
+    let term_id = sqlx::query_scalar("SELECT academic_term_id FROM learning_offerings WHERE id=$1")
+        .bind(offering_id)
+        .fetch_optional(&mut **transaction)
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบรายการเปิดสอน".to_string()))?;
+    require_writable_term(transaction, term_id, false).await
 }
 
 /// Mark every academic confirmation derived from a learning group's roster or

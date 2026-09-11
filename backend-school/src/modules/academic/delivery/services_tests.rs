@@ -593,6 +593,315 @@ async fn prepare_concurrent_delivery_runtime_fixture(name: &str) -> PgPool {
     pool
 }
 
+#[tokio::test]
+async fn lifecycle_delivery_closure_checks_the_year_and_keeps_closing_editable() {
+    let pool = prepare_delivery_runtime_fixture("delivery_lifecycle_states").await;
+    let context = planning_runtime_context(&pool).await;
+    for (year_status, term_status, writable) in [
+        ("closing", "closing", true),
+        ("closed", "planning", false),
+        ("archived", "planning", false),
+        ("planning", "closed", false),
+        ("planning", "cancelled", false),
+    ] {
+        sqlx::query("UPDATE academic_years SET status=$2 WHERE id=$1")
+            .bind(context.year_id)
+            .bind(year_status)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE academic_terms SET status=$2, closed_on=CASE WHEN $2='closed' THEN start_date ELSE NULL END WHERE id=$1")
+            .bind(context.term_id).bind(term_status).execute(&pool).await.unwrap();
+        for exclusive in [false, true] {
+            let mut tx = pool.begin().await.unwrap();
+            let result =
+                super::services::require_writable_term(&mut tx, context.term_id, exclusive).await;
+            assert_eq!(
+                result.is_ok(),
+                writable,
+                "{year_status}/{term_status}, exclusive={exclusive}: {result:?}"
+            );
+            if !writable {
+                assert!(matches!(result, Err(AppError::Conflict(_))));
+            }
+            tx.rollback().await.unwrap();
+        }
+    }
+}
+
+#[tokio::test]
+async fn lifecycle_delivery_waits_before_locking_offering_or_group() {
+    let pool = prepare_concurrent_delivery_runtime_fixture("delivery_lifecycle_order").await;
+    let context = planning_runtime_context(&pool).await;
+    let offering = offerings::create(&pool, context.teacher_id, course_request(&context))
+        .await
+        .unwrap();
+    let group = groups::create(
+        &pool,
+        context.teacher_id,
+        offering.id,
+        CreateLearningGroupRequest {
+            code: "LOCK-ORDER".into(),
+            name: "Lock ordering".into(),
+            description: None,
+            capacity: Some(40),
+            preferred_room_ids: vec![],
+        },
+    )
+    .await
+    .unwrap();
+    for operation in 0..5 {
+        let offering = offerings::get(&pool, offering.id).await.unwrap();
+        let group = groups::get(&pool, group.id).await.unwrap();
+        let mut boundary = pool.begin().await.unwrap();
+        let boundary_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+            .fetch_one(&mut *boundary)
+            .await
+            .unwrap();
+        sqlx::query("SELECT id FROM academic_terms WHERE id=$1 FOR UPDATE")
+            .bind(context.term_id)
+            .execute(&mut *boundary)
+            .await
+            .unwrap();
+        let worker_pool = pool.clone();
+        let actor = context.teacher_id;
+        let targets = course_request(&context).targets().to_vec();
+        let worker = tokio::spawn(async move {
+            match operation {
+                0 => offerings::update(
+                    &worker_pool,
+                    actor,
+                    offering.id,
+                    UpdateLearningOfferingRequest {
+                        row_version: offering.row_version,
+                        targets,
+                    },
+                )
+                .await
+                .map(|_| ()),
+                1 => groups::create(
+                    &worker_pool,
+                    actor,
+                    offering.id,
+                    CreateLearningGroupRequest {
+                        code: "LOCK-SECOND".into(),
+                        name: "Second group".into(),
+                        description: None,
+                        capacity: Some(40),
+                        preferred_room_ids: vec![],
+                    },
+                )
+                .await
+                .map(|_| ()),
+                2 => groups::update(
+                    &worker_pool,
+                    actor,
+                    group.id,
+                    super::models::UpdateLearningGroupRequest {
+                        row_version: group.row_version,
+                        code: group.code,
+                        name: group.name,
+                        description: None,
+                        capacity: Some(40),
+                        preferred_room_ids: vec![],
+                    },
+                )
+                .await
+                .map(|_| ()),
+                3 => groups::replace_homerooms(
+                    &worker_pool,
+                    actor,
+                    group.id,
+                    ReplaceLearningGroupHomeroomsRequest {
+                        row_version: group.row_version,
+                        homeroom_ids: vec![],
+                    },
+                )
+                .await
+                .map(|_| ()),
+                _ => offerings::publish(
+                    &worker_pool,
+                    actor,
+                    offering.id,
+                    PublishLearningOfferingRequest {
+                        row_version: offering.row_version,
+                        idempotency_key: Uuid::new_v4(),
+                    },
+                )
+                .await
+                .map(|_| ()),
+            }
+        });
+        let mut waiting = false;
+        for _ in 0..200 {
+            waiting = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid)))")
+                .bind(boundary_pid).fetch_one(&pool).await.unwrap();
+            if waiting {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        let mut probe = pool.begin().await.unwrap();
+        let offering_available =
+            sqlx::query("SELECT id FROM learning_offerings WHERE id=$1 FOR UPDATE NOWAIT")
+                .bind(offering.id)
+                .execute(&mut *probe)
+                .await
+                .is_ok();
+        let group_available = if offering_available {
+            sqlx::query("SELECT id FROM learning_groups WHERE id=$1 FOR UPDATE NOWAIT")
+                .bind(group.id)
+                .execute(&mut *probe)
+                .await
+                .is_ok()
+        } else {
+            false
+        };
+        probe.rollback().await.unwrap();
+        boundary.commit().await.unwrap();
+        let result = tokio::time::timeout(std::time::Duration::from_secs(10), worker)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            waiting,
+            "operation {operation} must wait for the term boundary"
+        );
+        assert!(
+            offering_available && group_available,
+            "operation {operation} locked an entity before its lifecycle boundary"
+        );
+        if operation != 4 {
+            assert!(result.is_ok(), "operation {operation}: {result:?}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn lifecycle_delivery_closed_context_retains_history_and_rejects_mutations() {
+    let pool = prepare_delivery_runtime_fixture("delivery_lifecycle_mutations").await;
+    let context = planning_runtime_context(&pool).await;
+    let offering = offerings::create(&pool, context.teacher_id, course_request(&context))
+        .await
+        .unwrap();
+    let group = groups::create(
+        &pool,
+        context.teacher_id,
+        offering.id,
+        CreateLearningGroupRequest {
+            code: "CLOSED".into(),
+            name: "Historical group".into(),
+            description: None,
+            capacity: Some(40),
+            preferred_room_ids: vec![],
+        },
+    )
+    .await
+    .unwrap();
+    for (year_status, term_status) in [("closed", "planning"), ("planning", "closed")] {
+        sqlx::query("UPDATE academic_years SET status=$2 WHERE id=$1")
+            .bind(context.year_id)
+            .bind(year_status)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE academic_terms SET status=$2,closed_on=CASE WHEN $2='closed' THEN start_date ELSE NULL END WHERE id=$1")
+            .bind(context.term_id).bind(term_status).execute(&pool).await.unwrap();
+        let outcomes = [
+            offerings::create(&pool, context.teacher_id, course_request(&context))
+                .await
+                .map(|_| ()),
+            offerings::update(
+                &pool,
+                context.teacher_id,
+                offering.id,
+                UpdateLearningOfferingRequest {
+                    row_version: offering.row_version,
+                    targets: course_request(&context).targets().to_vec(),
+                },
+            )
+            .await
+            .map(|_| ()),
+            groups::create(
+                &pool,
+                context.teacher_id,
+                offering.id,
+                CreateLearningGroupRequest {
+                    code: "NEW".into(),
+                    name: "Must not exist".into(),
+                    description: None,
+                    capacity: None,
+                    preferred_room_ids: vec![],
+                },
+            )
+            .await
+            .map(|_| ()),
+            groups::update(
+                &pool,
+                context.teacher_id,
+                group.id,
+                super::models::UpdateLearningGroupRequest {
+                    row_version: group.row_version,
+                    code: group.code.clone(),
+                    name: "Changed".into(),
+                    description: None,
+                    capacity: None,
+                    preferred_room_ids: vec![],
+                },
+            )
+            .await
+            .map(|_| ()),
+            groups::replace_teachers(
+                &pool,
+                context.teacher_id,
+                group.id,
+                ReplaceLearningGroupTeachersRequest {
+                    row_version: group.row_version,
+                    teachers: vec![],
+                },
+            )
+            .await
+            .map(|_| ()),
+            groups::replace_homerooms(
+                &pool,
+                context.teacher_id,
+                group.id,
+                ReplaceLearningGroupHomeroomsRequest {
+                    row_version: group.row_version,
+                    homeroom_ids: vec![],
+                },
+            )
+            .await
+            .map(|_| ()),
+            offerings::publish(
+                &pool,
+                context.teacher_id,
+                offering.id,
+                PublishLearningOfferingRequest {
+                    row_version: offering.row_version,
+                    idempotency_key: Uuid::new_v4(),
+                },
+            )
+            .await
+            .map(|_| ()),
+        ];
+        for (operation, outcome) in outcomes.into_iter().enumerate() {
+            assert!(
+                matches!(outcome, Err(AppError::Conflict(_))),
+                "{year_status}/{term_status} operation {operation}: {outcome:?}"
+            );
+        }
+        assert_eq!(
+            serde_json::to_value(offerings::get(&pool, offering.id).await.unwrap()).unwrap(),
+            serde_json::to_value(&offering).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(groups::get(&pool, group.id).await.unwrap()).unwrap(),
+            serde_json::to_value(&group).unwrap()
+        );
+    }
+}
+
 async fn wait_for_offering_lock_waiters(pool: &PgPool, expected: i64) {
     for _ in 0..200 {
         let waiting: i64 = sqlx::query_scalar(
@@ -1556,6 +1865,39 @@ async fn teacher_handoff_preview_and_apply_replace_exact_instructors_atomically(
         preview_hash: fresh_preview.preview_hash.clone().unwrap(),
         idempotency_key: stable_uuid("teacher-handoff:apply"),
     };
+    for (year_status, term_status) in [("closed", "active"), ("active", "closed")] {
+        sqlx::query("UPDATE academic_years SET status=$2 WHERE id=$1")
+            .bind(context.year_id)
+            .bind(year_status)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE academic_terms SET status=$2,closed_on=CASE WHEN $2='closed' THEN start_date ELSE NULL END WHERE id=$1")
+            .bind(context.term_id).bind(term_status).execute(&pool).await.unwrap();
+        assert!(
+            matches!(
+                teacher_handoff::apply(
+                    &pool,
+                    context.teacher_id,
+                    changed.id,
+                    apply_request.clone()
+                )
+                .await,
+                Err(AppError::Conflict(_))
+            ),
+            "closed context must reject a new handoff"
+        );
+    }
+    sqlx::query("UPDATE academic_years SET status='active' WHERE id=$1")
+        .bind(context.year_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE academic_terms SET status='planning',closed_on=NULL WHERE id=$1")
+        .bind(context.term_id)
+        .execute(&pool)
+        .await
+        .unwrap();
     let applied =
         teacher_handoff::apply(&pool, context.teacher_id, changed.id, apply_request.clone())
             .await
@@ -1575,11 +1917,21 @@ async fn teacher_handoff_preview_and_apply_replace_exact_instructors_atomically(
     .unwrap();
     assert!(exact_ids.contains(&replacement_teacher_id));
     assert!(!exact_ids.contains(&stopped_teacher_id));
+    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=start_date WHERE id=$1")
+        .bind(context.term_id)
+        .execute(&pool)
+        .await
+        .unwrap();
     let replayed = teacher_handoff::apply(&pool, context.teacher_id, changed.id, apply_request)
         .await
-        .expect("the same idempotency key and request must replay the receipt");
+        .expect("a completed handoff must replay its retained receipt even after closure");
     assert_eq!(replayed.academic_term_id, changed.academic_term_id);
     assert!(replayed.response.replayed);
+    sqlx::query("UPDATE academic_terms SET status='planning',closed_on=NULL WHERE id=$1")
+        .bind(context.term_id)
+        .execute(&pool)
+        .await
+        .unwrap();
 
     let readiness = change_sets::preview_change_set(&pool, changed.id)
         .await
@@ -2057,19 +2409,70 @@ async fn change_set_creation_rejects_unwritable_terms_and_out_of_range_dates() {
         .execute(&pool)
         .await
         .unwrap();
-    let closed = change_sets::create_change_set(
+    let closing = change_sets::create_change_set(
         &pool,
         context.teacher_id,
         CreateAcademicTermChangeSetRequest {
             academic_term_id: context.term_id,
-            effective_from: term_start,
+            effective_from: term_start.checked_add_signed(Duration::days(14)).unwrap(),
             reason: "ภาคเรียนกำลังปิด".to_string(),
             idempotency_key: stable_uuid("change-set:closing-term"),
         },
     )
     .await
-    .expect_err("a closing term must reject change-set creation");
-    assert!(matches!(closed, AppError::ValidationError(_)));
+    .expect("closing allows preparing outstanding operational changes");
+    assert_eq!(closing.status, AcademicTermChangeSetStatus::Draft);
+    for (year_status, term_status) in [("closed", "planning"), ("active", "closed")] {
+        sqlx::query("UPDATE academic_years SET status=$2 WHERE id=$1")
+            .bind(context.year_id)
+            .bind(year_status)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE academic_terms SET status=$2,closed_on=CASE WHEN $2='closed' THEN start_date ELSE NULL END WHERE id=$1")
+            .bind(context.term_id).bind(term_status).execute(&pool).await.unwrap();
+        let closed = change_sets::create_change_set(
+            &pool,
+            context.teacher_id,
+            CreateAcademicTermChangeSetRequest {
+                academic_term_id: context.term_id,
+                effective_from: term_start,
+                reason: "Must not create".into(),
+                idempotency_key: Uuid::new_v4(),
+            },
+        )
+        .await;
+        assert!(matches!(closed, Err(AppError::Conflict(_))));
+        let update = change_sets::update_change_set(
+            &pool,
+            context.teacher_id,
+            closing.id,
+            UpdateAcademicTermChangeSetRequest {
+                row_version: closing.row_version,
+                effective_from: closing.effective_from,
+                reason: "Must not change".into(),
+            },
+        )
+        .await;
+        assert!(matches!(update, Err(AppError::Conflict(_))));
+        let cancel = change_sets::cancel_change_set(
+            &pool,
+            context.teacher_id,
+            closing.id,
+            CancelAcademicTermChangeSetRequest {
+                row_version: closing.row_version,
+            },
+        )
+        .await;
+        assert!(matches!(cancel, Err(AppError::Conflict(_))));
+        assert_eq!(
+            change_sets::get_change_set(&pool, closing.id)
+                .await
+                .unwrap()
+                .row_version,
+            closing.row_version
+        );
+    }
 }
 
 #[tokio::test]
@@ -2636,6 +3039,40 @@ async fn change_set_preview_blocks_an_empty_change_set_with_a_stable_hash() {
         finding.code == AcademicChangeFindingCode::ChangeSetNoItems
             && finding.severity == AcademicChangeFindingSeverity::Blocking
     }));
+    for (year_status, term_status, blocked) in [
+        ("closing", "closing", false),
+        ("closed", "planning", true),
+        ("active", "closed", true),
+    ] {
+        sqlx::query("UPDATE academic_years SET status=$2 WHERE id=$1")
+            .bind(context.year_id)
+            .bind(year_status)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE academic_terms SET status=$2,closed_on=CASE WHEN $2='closed' THEN start_date ELSE NULL END WHERE id=$1")
+            .bind(context.term_id).bind(term_status).execute(&pool).await.unwrap();
+        let state = change_sets::preview_change_set(&pool, change_set.id)
+            .await
+            .unwrap();
+        assert_eq!(
+            state
+                .findings
+                .iter()
+                .any(|finding| finding.code == AcademicChangeFindingCode::TermNotWritable),
+            blocked
+        );
+    }
+    sqlx::query("UPDATE academic_years SET status='active' WHERE id=$1")
+        .bind(context.year_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE academic_terms SET status='planning',closed_on=NULL WHERE id=$1")
+        .bind(context.term_id)
+        .execute(&pool)
+        .await
+        .unwrap();
     assert_eq!(preview.impact_counts.groups, 0);
     assert!(!preview.schedule_counts.is_empty());
     let repeated = change_sets::preview_change_set(&pool, change_set.id)
@@ -4979,7 +5416,7 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     };
     request.academic_term_id = closed_term_id;
     let closed = offerings::create(&pool, context.teacher_id, closed_request).await;
-    assert!(matches!(closed, Err(AppError::ValidationError(_))));
+    assert!(matches!(closed, Err(AppError::Conflict(_))));
 }
 
 #[tokio::test]

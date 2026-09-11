@@ -133,7 +133,7 @@ async fn list_resolve_and_clone_preserve_version_isolation_and_targets() {
         .execute(&pool)
         .await
         .unwrap();
-    let closed = timetable_version_service::clone_draft(
+    let closing = timetable_version_service::clone_draft(
         &pool,
         actor_id,
         source_id,
@@ -143,7 +143,34 @@ async fn list_resolve_and_clone_preserve_version_isolation_and_targets() {
         },
     )
     .await;
-    assert!(matches!(closed, Err(AppError::Conflict(_))));
+    assert!(
+        closing.is_ok(),
+        "closing must allow unfinished operational preparation: {closing:?}"
+    );
+    for (year_status, term_status) in [("closed", "active"), ("active", "closed")] {
+        sqlx::query("UPDATE academic_years SET status=$2 WHERE id=(SELECT academic_year_id FROM academic_terms WHERE id=$1)")
+            .bind(term_id).bind(year_status).execute(&pool).await.unwrap();
+        sqlx::query("UPDATE academic_terms SET status=$2,closed_on=CASE WHEN $2='closed' THEN start_date ELSE NULL END WHERE id=$1")
+            .bind(term_id).bind(term_status).execute(&pool).await.unwrap();
+        let closed = timetable_version_service::clone_draft(
+            &pool,
+            actor_id,
+            source_id,
+            CloneTimetableVersionRequest {
+                effective_from,
+                source_row_version,
+            },
+        )
+        .await;
+        assert!(matches!(closed, Err(AppError::Conflict(_))));
+        assert_eq!(
+            timetable_version_service::resolve_for_date(&pool, term_id, term_start)
+                .await
+                .unwrap()
+                .id,
+            source_id
+        );
+    }
 }
 
 #[tokio::test]

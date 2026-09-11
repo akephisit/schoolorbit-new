@@ -8,6 +8,7 @@ use crate::modules::academic::models::timetable::{
     TimetableTemplateTargetSelector, UpdateTemplateRequest,
 };
 
+use super::timetable_version_service::require_version_term_write;
 use super::{timetable_block_conflicts::map_write_error, timetable_block_queries};
 
 #[derive(Debug, FromRow)]
@@ -275,6 +276,7 @@ pub async fn apply_template(
     let template = get_template(pool, template_id).await?;
     let series_id = Uuid::new_v4();
     let mut transaction = pool.begin().await?;
+    require_version_term_write(&mut transaction, request.timetable_version_id).await?;
     let (academic_year_id, bell_schedule_id, version_effective_from): (
         Uuid,
         Uuid,
@@ -282,11 +284,9 @@ pub async fn apply_template(
     ) = sqlx::query_as(
         r#"SELECT version.academic_year_id, version.bell_schedule_id, version.effective_from
            FROM academic_timetable_versions version
-           JOIN academic_terms term ON term.id = version.academic_term_id
            WHERE version.id = $1
              AND version.academic_term_id = $2
              AND version.status = 'draft'
-             AND term.status <> 'closed'
            FOR UPDATE OF version"#,
     )
     .bind(request.timetable_version_id)
@@ -571,16 +571,16 @@ pub async fn clear_timetable(
 ) -> Result<Vec<crate::modules::academic::models::timetable_block::TimetableBlock>, AppError> {
     let entry_types = canonical_entry_types(request.entry_types)?;
     let mut transaction = pool.begin().await?;
+    require_version_term_write(&mut transaction, request.timetable_version_id).await?;
     let is_draft: bool = sqlx::query_scalar(
-        r#"SELECT EXISTS (
-               SELECT 1 FROM academic_timetable_versions
-               WHERE id = $1 AND academic_term_id = $2 AND status = 'draft'
-           )"#,
+        r#"SELECT status = 'draft' FROM academic_timetable_versions
+           WHERE id = $1 AND academic_term_id = $2 FOR UPDATE"#,
     )
     .bind(request.timetable_version_id)
     .bind(request.academic_term_id)
-    .fetch_one(&mut *transaction)
-    .await?;
+    .fetch_optional(&mut *transaction)
+    .await?
+    .unwrap_or(false);
     if !is_draft {
         return Err(AppError::Conflict("ล้างได้เฉพาะรุ่นตารางฉบับร่าง".to_string()));
     }

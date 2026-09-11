@@ -15,12 +15,221 @@ use crate::modules::academic::models::timetable_block::{
     TimetableTargetKind, UpdateTimetableBlockRequest,
 };
 use crate::policies::timetable_access_policy::TimetableAccessFilter;
-use crate::test_helpers::create_named_test_pool;
+use crate::test_helpers::create_named_test_pool_with_max_connections;
 
 const ACTOR_ID: &str = "50000000-0000-0000-0000-000000000002";
 
+#[tokio::test]
+async fn timetable_lifecycle_preserves_closed_blocks_and_individual_targets() {
+    let pool = migrated_pool("timetable_lifecycle_blocks").await;
+    let actor = Uuid::parse_str(ACTOR_ID).unwrap();
+    let (version, term, year, bell) = draft_version(&pool).await;
+    let period: Uuid = sqlx::query_scalar("SELECT id FROM bell_schedule_periods WHERE bell_schedule_id=$1 AND is_active ORDER BY order_index LIMIT 1")
+        .bind(bell).fetch_one(&pool).await.unwrap();
+    let request = CreateStructuralTimetableBlocksRequest {
+        timetable_version_id: version,
+        academic_term_id: term,
+        structural_kind: TimetableStructuralKind::FlagCeremony,
+        title: "Closure boundary".into(),
+        note: None,
+        slots: ["MON", "TUE"]
+            .into_iter()
+            .map(|day| TimetableStructuralSlotInput {
+                day_of_week: day.into(),
+                bell_schedule_period_id: period,
+            })
+            .collect(),
+        homeroom_ids: vec![],
+        teacher_ids: vec![],
+        all_homerooms: true,
+        all_teachers: false,
+        room_id: None,
+    };
+    let blocks = timetable_block_service::create_structural_blocks(&pool, actor, request.clone())
+        .await
+        .unwrap();
+    let block = &blocks[0];
+    let target = &block.homerooms[0];
+    for (year_status, term_status) in [
+        ("closed", "active"),
+        ("active", "closed"),
+        ("active", "cancelled"),
+    ] {
+        sqlx::query("UPDATE academic_years SET status=$2 WHERE id=$1")
+            .bind(year)
+            .bind(year_status)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE academic_terms SET status=$2,closed_on=CASE WHEN $2='closed' THEN start_date ELSE NULL END WHERE id=$1")
+            .bind(term).bind(term_status).execute(&pool).await.unwrap();
+        let mut create_request = request.clone();
+        create_request.slots = vec![TimetableStructuralSlotInput {
+            day_of_week: "WED".into(),
+            bell_schedule_period_id: period,
+        }];
+        let outcomes = [
+            timetable_block_service::create_structural_blocks(&pool, actor, create_request)
+                .await
+                .map(|_| ()),
+            timetable_block_service::remove_target(
+                &pool,
+                actor,
+                block.id,
+                RemoveTimetableBlockTargetRequest {
+                    timetable_version_id: version,
+                    block_row_version: block.row_version,
+                    target_kind: TimetableTargetKind::Homeroom,
+                    target_id: target.id,
+                    target_row_version: target.row_version,
+                },
+            )
+            .await
+            .map(|_| ()),
+            timetable_block_service::update_block(
+                &pool,
+                actor,
+                block.id,
+                UpdateTimetableBlockRequest {
+                    timetable_version_id: version,
+                    row_version: block.row_version,
+                    day_of_week: Some("THU".into()),
+                    bell_schedule_period_id: None,
+                    title: None,
+                    clear_title: false,
+                    note: None,
+                    clear_note: false,
+                    room_id: None,
+                    clear_room: false,
+                    instructor_ids: None,
+                },
+            )
+            .await
+            .map(|_| ()),
+            timetable_block_service::swap_blocks(
+                &pool,
+                actor,
+                crate::modules::academic::models::timetable_block::SwapTimetableBlocksRequest {
+                    timetable_version_id: version,
+                    block_a_id: block.id,
+                    block_a_row_version: block.row_version,
+                    block_b_id: blocks[1].id,
+                    block_b_row_version: blocks[1].row_version,
+                },
+            )
+            .await
+            .map(|_| ()),
+            timetable_block_service::deactivate_block(
+                &pool,
+                actor,
+                block.id,
+                version,
+                block.row_version,
+            )
+            .await
+            .map(|_| ()),
+            timetable_block_service::deactivate_series(
+                &pool,
+                actor,
+                block.series_id.unwrap(),
+                version,
+            )
+            .await
+            .map(|_| ()),
+        ];
+        for (operation, outcome) in outcomes.into_iter().enumerate() {
+            assert!(
+                matches!(outcome, Err(AppError::Conflict(_))),
+                "{year_status}/{term_status}, operation {operation}: {outcome:?}"
+            );
+        }
+        assert_eq!(
+            serde_json::to_value(
+                timetable_block_service::get_block(&pool, block.id)
+                    .await
+                    .unwrap()
+            )
+            .unwrap(),
+            serde_json::to_value(block).unwrap()
+        );
+    }
+    sqlx::query("UPDATE academic_years SET status='active' WHERE id=$1")
+        .bind(year)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE academic_terms SET status='closing',closed_on=NULL WHERE id=$1")
+        .bind(term)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut boundary = pool.begin().await.unwrap();
+    let boundary_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *boundary)
+        .await
+        .unwrap();
+    sqlx::query("SELECT id FROM academic_terms WHERE id=$1 FOR UPDATE")
+        .bind(term)
+        .execute(&mut *boundary)
+        .await
+        .unwrap();
+    let worker_pool = pool.clone();
+    let (block_id, row_version) = (block.id, block.row_version);
+    let worker = tokio::spawn(async move {
+        timetable_block_service::deactivate_block(
+            &worker_pool,
+            actor,
+            block_id,
+            version,
+            row_version,
+        )
+        .await
+    });
+    let mut waiting = false;
+    for _ in 0..200 {
+        waiting = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid)))",
+        )
+        .bind(boundary_pid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        if waiting {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    let mut probe = pool.begin().await.unwrap();
+    let version_available =
+        sqlx::query("SELECT id FROM academic_timetable_versions WHERE id=$1 FOR UPDATE NOWAIT")
+            .bind(version)
+            .execute(&mut *probe)
+            .await
+            .is_ok();
+    let block_available = if version_available {
+        sqlx::query("SELECT id FROM academic_timetable_blocks WHERE id=$1 FOR UPDATE NOWAIT")
+            .bind(block_id)
+            .execute(&mut *probe)
+            .await
+            .is_ok()
+    } else {
+        false
+    };
+    probe.rollback().await.unwrap();
+    boundary.commit().await.unwrap();
+    let outcome = tokio::time::timeout(std::time::Duration::from_secs(10), worker)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        waiting && version_available && block_available,
+        "a waiting writer must not lock the version or block before the term"
+    );
+    assert!(outcome.is_ok(), "closing must remain writable: {outcome:?}");
+}
+
 async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
-    let pool = create_named_test_pool(test_name).await;
+    let pool = create_named_test_pool_with_max_connections(test_name, 3).await;
     apply_migrations_through(&pool, 40).await.unwrap();
     seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
         .await

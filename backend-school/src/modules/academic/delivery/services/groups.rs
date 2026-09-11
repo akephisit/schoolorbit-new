@@ -16,8 +16,8 @@ use super::super::models::{
     RosterStatus, TeacherAssignmentInput, UpdateLearningGroupRequest,
 };
 use super::{
-    append_audit, invalidate_group_academic_confirmations, require_writable_term, stable_hash,
-    validate_row_version,
+    append_audit, invalidate_group_academic_confirmations, require_writable_offering_term,
+    require_writable_term, stable_hash, validate_row_version,
 };
 
 const GROUP_COLUMNS: &str = r#"
@@ -250,6 +250,7 @@ pub async fn create(
 ) -> Result<LearningGroup, AppError> {
     validate_group_fields(&request.code, &request.name, request.capacity)?;
     let mut transaction = pool.begin().await?;
+    require_writable_offering_term(&mut transaction, offering_id).await?;
     let (term_id, year_id, offering_status): (Uuid, Uuid, LearningOfferingStatus) = sqlx::query_as(
         "SELECT academic_term_id, academic_year_id, status \
              FROM learning_offerings WHERE id = $1 FOR UPDATE",
@@ -264,7 +265,6 @@ pub async fn create(
     ) {
         return Err(AppError::Conflict("รายการเปิดสอนปิดแล้ว".to_string()));
     }
-    require_writable_term(&mut transaction, term_id, false).await?;
     ensure_unique_group_code(&mut transaction, offering_id, None, &request.code).await?;
     validate_preferred_rooms(&mut transaction, &request.preferred_room_ids).await?;
     let id = Uuid::new_v4();
@@ -322,9 +322,10 @@ pub async fn update(
     validate_row_version(request.row_version)?;
     validate_group_fields(&request.code, &request.name, request.capacity)?;
     let mut transaction = pool.begin().await?;
-    let group = lock_group(&mut transaction, id).await?;
+    let term_id = find_group_term(&mut transaction, id).await?;
+    require_writable_term(&mut transaction, term_id, false).await?;
+    let group = lock_offering_then_group(&mut transaction, id, term_id).await?;
     require_mutable_group(&group, request.row_version, false)?;
-    require_writable_term(&mut transaction, group.academic_term_id, false).await?;
     ensure_unique_group_code(
         &mut transaction,
         group.learning_offering_id,
@@ -446,9 +447,10 @@ pub async fn replace_homerooms(
     validate_row_version(request.row_version)?;
     let homeroom_ids = unique_ids(&request.homeroom_ids, "ห้องเรียนซ้ำกัน")?;
     let mut transaction = pool.begin().await?;
-    let group = lock_group(&mut transaction, id).await?;
+    let term_id = find_group_term(&mut transaction, id).await?;
+    require_writable_term(&mut transaction, term_id, false).await?;
+    let group = lock_offering_then_group(&mut transaction, id, term_id).await?;
     require_mutable_group(&group, request.row_version, true)?;
-    require_writable_term(&mut transaction, group.academic_term_id, false).await?;
     validate_homeroom_coverage(&mut transaction, &group, &homeroom_ids).await?;
     sqlx::query("DELETE FROM learning_group_homerooms WHERE learning_group_id = $1")
         .bind(id)

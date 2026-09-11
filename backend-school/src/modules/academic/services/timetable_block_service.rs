@@ -15,6 +15,7 @@ use crate::policies::timetable_access_policy::TimetableAccessFilter;
 use super::timetable_block_conflicts::{canonical_ids, map_write_error, normalize_day};
 use super::timetable_block_queries;
 use super::timetable_block_sync;
+use super::timetable_version_service::require_version_term_write;
 
 #[derive(Debug, FromRow)]
 struct VersionContext {
@@ -22,7 +23,6 @@ struct VersionContext {
     academic_year_id: Uuid,
     bell_schedule_id: Uuid,
     status: String,
-    term_status: String,
 }
 
 #[derive(Debug, FromRow)]
@@ -507,6 +507,7 @@ pub async fn remove_target(
     request: RemoveTimetableBlockTargetRequest,
 ) -> Result<TimetableBlock, AppError> {
     let mut transaction = pool.begin().await?;
+    ensure_draft_version_id(&mut transaction, request.timetable_version_id).await?;
     let (block_kind, scheduling_mode): (String, Option<String>) = sqlx::query_as(
         r#"SELECT block.block_kind, block.scheduling_mode
            FROM academic_timetable_blocks block
@@ -778,17 +779,33 @@ pub async fn swap_blocks(
         ));
     }
     let mut transaction = pool.begin().await?;
+    ensure_draft_version_id(&mut transaction, request.timetable_version_id).await?;
     let mut ids = [request.block_a_id, request.block_b_id];
     ids.sort_unstable();
-    sqlx::query(
+    let locked = sqlx::query(
         r#"SELECT id FROM academic_timetable_blocks
-           WHERE id = ANY($1) ORDER BY id FOR UPDATE"#,
+           WHERE id = ANY($1) AND timetable_version_id=$2 AND is_active
+           ORDER BY id FOR UPDATE"#,
     )
     .bind(&ids[..])
+    .bind(request.timetable_version_id)
     .fetch_all(&mut *transaction)
     .await?;
-    let block_a = load_locked_block(&mut transaction, request.block_a_id).await?;
-    let block_b = load_locked_block(&mut transaction, request.block_b_id).await?;
+    if locked.len() != 2 {
+        return Err(stale_block());
+    }
+    let block_a = load_locked_block(
+        &mut transaction,
+        request.block_a_id,
+        request.timetable_version_id,
+    )
+    .await?;
+    let block_b = load_locked_block(
+        &mut transaction,
+        request.block_b_id,
+        request.timetable_version_id,
+    )
+    .await?;
     if block_a.timetable_version_id != request.timetable_version_id
         || block_b.timetable_version_id != request.timetable_version_id
         || block_a.row_version != request.block_a_row_version
@@ -796,7 +813,6 @@ pub async fn swap_blocks(
     {
         return Err(stale_block());
     }
-    ensure_draft_version_id(&mut transaction, request.timetable_version_id).await?;
     sqlx::query("UPDATE academic_timetable_blocks SET is_active = false WHERE id = ANY($1)")
         .bind(&ids[..])
         .execute(&mut *transaction)
@@ -964,26 +980,28 @@ async fn lock_block(
     timetable_version_id: Uuid,
     row_version: i64,
 ) -> Result<LockedBlock, AppError> {
-    let block = load_locked_block(transaction, block_id).await?;
+    ensure_draft_version_id(transaction, timetable_version_id).await?;
+    let block = load_locked_block(transaction, block_id, timetable_version_id).await?;
     if block.timetable_version_id != timetable_version_id || block.row_version != row_version {
         return Err(stale_block());
     }
-    ensure_draft_version_id(transaction, timetable_version_id).await?;
     Ok(block)
 }
 
 async fn load_locked_block(
     transaction: &mut Transaction<'_, Postgres>,
     block_id: Uuid,
+    version_id: Uuid,
 ) -> Result<LockedBlock, AppError> {
     sqlx::query_as(
         r#"SELECT timetable_version_id, bell_schedule_id,
                   bell_schedule_period_id, day_of_week, block_kind,
                   scheduling_mode, row_version
            FROM academic_timetable_blocks
-           WHERE id = $1 AND is_active FOR UPDATE"#,
+           WHERE id = $1 AND timetable_version_id=$2 AND is_active FOR UPDATE"#,
     )
     .bind(block_id)
+    .bind(version_id)
     .fetch_optional(&mut **transaction)
     .await?
     .ok_or_else(stale_block)
@@ -993,11 +1011,11 @@ async fn ensure_draft_version_id(
     transaction: &mut Transaction<'_, Postgres>,
     version_id: Uuid,
 ) -> Result<(), AppError> {
+    require_version_term_write(transaction, version_id).await?;
     let editable: bool = sqlx::query_scalar(
-        r#"SELECT version.status = 'draft' AND term.status NOT IN ('closed', 'cancelled')
+        r#"SELECT version.status = 'draft'
            FROM academic_timetable_versions version
-           JOIN academic_terms term ON term.id = version.academic_term_id
-           WHERE version.id = $1 FOR UPDATE OF version, term"#,
+           WHERE version.id = $1 FOR UPDATE OF version"#,
     )
     .bind(version_id)
     .fetch_optional(&mut **transaction)
@@ -1116,14 +1134,13 @@ async fn lock_draft_version(
     academic_term_id: Uuid,
     period_id: Uuid,
 ) -> Result<VersionContext, AppError> {
+    require_version_term_write(transaction, version_id).await?;
     let version: VersionContext = sqlx::query_as(
         r#"SELECT version.academic_term_id, version.academic_year_id,
-                  version.bell_schedule_id, version.status,
-                  term.status AS term_status
+                  version.bell_schedule_id, version.status
            FROM academic_timetable_versions version
-           JOIN academic_terms term ON term.id = version.academic_term_id
            WHERE version.id = $1 AND version.academic_term_id = $2
-           FOR UPDATE OF version, term"#,
+           FOR UPDATE OF version"#,
     )
     .bind(version_id)
     .bind(academic_term_id)
@@ -1133,11 +1150,6 @@ async fn lock_draft_version(
     if version.status != "draft" {
         return Err(AppError::Conflict(
             "แก้ไขได้เฉพาะรุ่นตารางสอนแบบร่าง".to_string(),
-        ));
-    }
-    if matches!(version.term_status.as_str(), "closed" | "cancelled") {
-        return Err(AppError::Conflict(
-            "ภาคเรียนนี้ปิดแล้ว ไม่สามารถแก้ตารางสอนได้".to_string(),
         ));
     }
     ensure_period(transaction, version.bell_schedule_id, period_id).await?;

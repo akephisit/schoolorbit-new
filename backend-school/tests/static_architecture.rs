@@ -5134,14 +5134,37 @@ fn learning_group_team_changes_are_versioned_and_serialized() {
         manifest_dir().join("src/modules/academic/delivery/services/groups.rs"),
     ));
 
+    // The structural extractor masks SQL literals. Use its balanced boundary
+    // while inspecting the original block for the required SQL statements.
+    let block_with_literals = |marker: &str| {
+        let start = service.find(marker).unwrap();
+        let length = extract_braced_block(&service, marker, false).len();
+        &service[start..start + length]
+    };
+    let replacement = block_with_literals("pub async fn replace_teachers");
     assert!(
-        service.contains("pub async fn replace_teachers")
-            && service.contains("let group = lock_group(&mut transaction, id).await?")
-            && service.contains("require_mutable_group(&group, request.row_version, false)?")
-            && service.contains("DELETE FROM learning_group_teachers")
-            && service.contains("INSERT INTO learning_group_teachers"),
+        replacement.contains("require_mutable_group(&group, request.row_version, false)?")
+            && replacement.contains("DELETE FROM learning_group_teachers")
+            && replacement.contains("INSERT INTO learning_group_teachers")
+            && replacement.contains("increment_group_revision(&mut transaction, id).await?"),
         "teaching-team replacement must lock and version the canonical learning group"
     );
+    let boundary = replacement.find("require_writable_term(").unwrap();
+    let group_lock = replacement.find("lock_offering_then_group(").unwrap();
+    let mutation = replacement
+        .find("DELETE FROM learning_group_teachers")
+        .unwrap();
+    assert!(boundary < group_lock && group_lock < mutation);
+    let ordered_lock = block_with_literals("async fn lock_offering_then_group");
+    assert!(
+        ordered_lock
+            .find("FROM learning_offerings WHERE id = $1 FOR UPDATE")
+            .unwrap()
+            < ordered_lock.find("lock_group(transaction, id)").unwrap(),
+        "offering locks must precede group locks"
+    );
+    let group_lock = block_with_literals("async fn lock_group");
+    assert!(group_lock.contains("FROM learning_groups WHERE id = $1 FOR UPDATE"));
     assert!(!service.contains("classroom_courses"));
 }
 

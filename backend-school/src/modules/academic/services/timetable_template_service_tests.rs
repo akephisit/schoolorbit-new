@@ -166,6 +166,62 @@ async fn template_source_apply_and_clear_are_version_scoped() {
     )
     .await
     .unwrap();
+    for (year_status, term_status) in [
+        ("closed", "active"),
+        ("active", "closed"),
+        ("active", "cancelled"),
+    ] {
+        sqlx::query("UPDATE academic_years SET status=$2 WHERE id=$1")
+            .bind(draft.academic_year_id)
+            .bind(year_status)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE academic_terms SET status=$2,closed_on=CASE WHEN $2='closed' THEN start_date ELSE NULL END WHERE id=$1")
+            .bind(term_id).bind(term_status).execute(&pool).await.unwrap();
+        let apply = timetable_template_service::apply_template(
+            &pool,
+            actor_id,
+            template.template.id,
+            ApplyTemplateRequest {
+                timetable_version_id: draft.id,
+                academic_term_id: term_id,
+            },
+        )
+        .await;
+        assert!(
+            matches!(apply, Err(AppError::Conflict(_))),
+            "closed context must reject a valid template: {apply:?}"
+        );
+        let clear = timetable_template_service::clear_timetable(
+            &pool,
+            actor_id,
+            ClearTimetableRequest {
+                timetable_version_id: draft.id,
+                academic_term_id: term_id,
+                entry_types: None,
+            },
+        )
+        .await;
+        assert!(matches!(clear, Err(AppError::Conflict(_))));
+        assert_eq!(
+            timetable_version_service::resolve_for_date(&pool, term_id, term_start)
+                .await
+                .unwrap()
+                .id,
+            source_id
+        );
+    }
+    sqlx::query("UPDATE academic_years SET status='active' WHERE id=$1")
+        .bind(draft.academic_year_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE academic_terms SET status='active',closed_on=NULL WHERE id=$1")
+        .bind(term_id)
+        .execute(&pool)
+        .await
+        .unwrap();
     let group_template_entry = template
         .entries
         .iter()

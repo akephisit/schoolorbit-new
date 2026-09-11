@@ -6,6 +6,7 @@ use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::error::AppError;
+use crate::modules::academic::core::services::lifecycle_guard;
 use crate::modules::academic::delivery::models::{
     AcademicTermChangeActionKind, ApplyTeacherHandoffRequest, ApplyTeacherHandoffResponse,
     PreviewTeacherHandoffRequest, TeacherHandoffConflict, TeacherHandoffConflictKind,
@@ -16,7 +17,7 @@ use crate::modules::academic::services::effective_teacher_service::{
     eligible_teacher_ids_for_group, project_effective_assignments_in_tx,
 };
 
-use super::{stable_hash, validate_row_version};
+use super::{require_writable_term, stable_hash, validate_row_version};
 
 #[derive(Debug, FromRow)]
 struct HandoffContextRow {
@@ -144,6 +145,7 @@ pub async fn apply(
     })?;
 
     let mut transaction = pool.begin().await?;
+    lifecycle_guard::lock_transition_shared(&mut transaction).await?;
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
         .bind(format!(
             "academic-teacher-handoff:{}",
@@ -174,6 +176,15 @@ pub async fn apply(
         });
     }
 
+    // Completed retries above only return retained receipts. New mutations must
+    // take the academic boundary before locking the change set or timetable.
+    let term_id =
+        sqlx::query_scalar("SELECT academic_term_id FROM academic_term_change_sets WHERE id=$1")
+            .bind(change_set_id)
+            .fetch_optional(&mut *transaction)
+            .await?
+            .ok_or_else(|| AppError::NotFound("ไม่พบชุดการเปลี่ยนแปลงภาคเรียน".to_string()))?;
+    require_writable_term(&mut transaction, term_id, false).await?;
     let entry_ids = entries.iter().map(|(id, _)| *id).collect::<Vec<_>>();
     let preview_request = PreviewTeacherHandoffRequest {
         change_set_row_version: request.change_set_row_version,

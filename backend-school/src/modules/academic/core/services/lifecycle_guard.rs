@@ -66,20 +66,32 @@ pub(crate) async fn lock_context(
     year: Uuid,
     term: Uuid,
 ) -> Result<AcademicWriteState, AppError> {
+    lock_context_with_term_mode(tx, year, term, false).await
+}
+
+async fn lock_context_with_term_mode(
+    tx: &mut Transaction<'_, Postgres>,
+    year: Uuid,
+    term: Uuid,
+    exclusive_term: bool,
+) -> Result<AcademicWriteState, AppError> {
     lock_transition_shared(tx).await?;
     let year_status = sqlx::query_scalar("SELECT status FROM academic_years WHERE id=$1 FOR SHARE")
         .bind(year)
         .fetch_optional(&mut **tx)
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบปีการศึกษา".into()))?;
-    let term_status = sqlx::query_scalar(
-        "SELECT status FROM academic_terms WHERE id=$1 AND academic_year_id=$2 FOR SHARE",
-    )
-    .bind(term)
-    .bind(year)
-    .fetch_optional(&mut **tx)
-    .await?
-    .ok_or_else(|| AppError::ValidationError("ภาคเรียนไม่อยู่ในปีการศึกษาที่เลือก".into()))?;
+    let term_query = if exclusive_term {
+        "SELECT status FROM academic_terms WHERE id=$1 AND academic_year_id=$2 FOR UPDATE"
+    } else {
+        "SELECT status FROM academic_terms WHERE id=$1 AND academic_year_id=$2 FOR SHARE"
+    };
+    let term_status = sqlx::query_scalar(term_query)
+        .bind(term)
+        .bind(year)
+        .fetch_optional(&mut **tx)
+        .await?
+        .ok_or_else(|| AppError::ValidationError("ภาคเรียนไม่อยู่ในปีการศึกษาที่เลือก".into()))?;
     Ok(AcademicWriteState {
         year_status,
         term_status,
@@ -92,6 +104,18 @@ pub(crate) async fn require_term_write(
     term: Uuid,
 ) -> Result<(), AppError> {
     lock_context(tx, year, term).await?.require_writable()
+}
+
+/// Acquire the write mode initially: never upgrade a shared term lock after
+/// taking domain locks, since two concurrent upgrades can deadlock.
+pub(crate) async fn require_term_write_exclusive(
+    tx: &mut Transaction<'_, Postgres>,
+    year: Uuid,
+    term: Uuid,
+) -> Result<(), AppError> {
+    lock_context_with_term_mode(tx, year, term, true)
+        .await?
+        .require_writable()
 }
 
 #[cfg(test)]

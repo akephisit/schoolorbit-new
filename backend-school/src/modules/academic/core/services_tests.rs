@@ -182,6 +182,74 @@ async fn lifecycle_guard_serializes_source_writes_and_transitions_in_both_orders
     source.rollback().await.unwrap();
 }
 
+#[tokio::test]
+async fn lifecycle_exclusive_term_writers_serialize_without_shared_lock_upgrades() {
+    use super::services::lifecycle_guard::{require_term_write, require_term_write_exclusive};
+    let pool = crate::test_helpers::create_named_test_pool_with_max_connections(
+        "lifecycle_exclusive_term",
+        2,
+    )
+    .await;
+    crate::modules::academic::cutover_test_support::seed_release_two_predecessor(&pool)
+        .await
+        .unwrap();
+    let term: Uuid = sqlx::query_scalar(
+        "SELECT id FROM academic_terms WHERE academic_year_id=$1 AND status='active'",
+    )
+    .bind(CURRENT_YEAR_ID)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    for first_exclusive in [false, true] {
+        let mut first = pool.begin().await.unwrap();
+        if first_exclusive {
+            require_term_write_exclusive(&mut first, CURRENT_YEAR_ID, term)
+                .await
+                .unwrap();
+        } else {
+            require_term_write(&mut first, CURRENT_YEAR_ID, term)
+                .await
+                .unwrap();
+        }
+        let mut second = pool.begin().await.unwrap();
+        sqlx::query("SET LOCAL lock_timeout = '200ms'")
+            .execute(&mut *second)
+            .await
+            .unwrap();
+        let error = require_term_write_exclusive(&mut second, CURRENT_YEAR_ID, term)
+            .await
+            .unwrap_err();
+        let crate::error::AppError::DbError(error) = error else {
+            panic!("expected lock contention");
+        };
+        assert_eq!(
+            error
+                .as_database_error()
+                .and_then(|error| error.code())
+                .as_deref(),
+            Some("55P03")
+        );
+        second.rollback().await.unwrap();
+        first.commit().await.unwrap();
+        let mut next = pool.begin().await.unwrap();
+        require_term_write_exclusive(&mut next, CURRENT_YEAR_ID, term)
+            .await
+            .unwrap();
+        // The exclusive entry point must really hold the write mode, not a
+        // shared lock that is upgraded later by a domain mutation.
+        let mut probe = pool.begin().await.unwrap();
+        assert!(
+            sqlx::query("SELECT id FROM academic_terms WHERE id=$1 FOR SHARE NOWAIT")
+                .bind(term)
+                .execute(&mut *probe)
+                .await
+                .is_err()
+        );
+        probe.rollback().await.unwrap();
+        next.commit().await.unwrap();
+    }
+}
+
 async fn create_published_program_option_fixture(
     pool: &PgPool,
     owner_id: Uuid,
