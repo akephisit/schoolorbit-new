@@ -3,6 +3,7 @@ import type {
 	ExamInvigilatorAssignmentSummary,
 	ExamInvigilatorWorkspace,
 	ExamScheduleReadiness,
+	ExamScheduleItem,
 	ExamScheduleWorkspace,
 	ExamSession
 } from '$lib/api/examSchedule';
@@ -590,6 +591,8 @@ function reportColumnWidthBounds(
 		return { min: 20, max: 28 };
 	}
 	if (headerText === 'เวลารับ' || headerText === 'เวลาส่ง') return { min: 9, max: 12 };
+	if (headerText === 'วันที่ส่ง') return { min: 14, max: 14 };
+	if (headerText === 'ลำดับ') return { min: 6, max: 6 };
 	if (headerText === 'หมายเหตุ') return { min: 12, max: 22 };
 	return { min: 8, max: 28 };
 }
@@ -1056,6 +1059,49 @@ function printablePaperTransferSheet(
 	};
 }
 
+function printablePaperReceiptSheet(workspace: ExamScheduleWorkspace): ExamScheduleReportSheet {
+	const items = new Map<string, ExamScheduleItem | ExamSession>();
+	for (const session of workspace.scheduledSessions) {
+		items.set(session.examScheduleItemId, session);
+	}
+	for (const item of workspace.unscheduledItems) {
+		if (!items.has(item.id)) items.set(item.id, item);
+	}
+	const orderedItems = [...items.values()].sort(
+		(a, b) =>
+			compareThaiNatural(safeText(a.homeroomName), safeText(b.homeroomName)) ||
+			compareThaiNatural(safeText(a.subjectCode), safeText(b.subjectCode)) ||
+			compareThaiNatural(safeText(a.subjectNameTh), safeText(b.subjectNameTh))
+	);
+	return {
+		name: 'รับข้อสอบ',
+		rows: [
+			['ใบลงชื่อส่งข้อสอบจากครูผู้สอนให้ฝ่ายวิชาการ'],
+			[printableReportTitle(workspace)],
+			[],
+			['ลำดับ', 'รหัสวิชา', 'วิชา', 'ชั้น/ห้อง', 'วันที่ส่ง', 'ลงชื่อครูผู้ส่ง', 'หมายเหตุ'],
+			...orderedItems.map(
+				(item, index): WorksheetRow => [
+					index + 1,
+					safeText(item.subjectCode, '-'),
+					safeText(item.subjectNameTh) ||
+						safeText(item.subjectNameEn) ||
+						safeText(item.subjectCode, 'ไม่ระบุวิชา'),
+					safeText(item.homeroomName, '-'),
+					'',
+					'',
+					''
+				]
+			)
+		],
+		'!merges': [
+			{ s: { r: 0, c: 0 }, e: { r: 0, c: 6 } },
+			{ s: { r: 1, c: 0 }, e: { r: 1, c: 6 } }
+		],
+		'!printTitlesRow': '1:4'
+	};
+}
+
 function objectSheet<Row extends WorksheetObjectRow>(
 	rows: Row[],
 	columns: ExamScheduleExportColumn[]
@@ -1255,7 +1301,8 @@ export function buildExamScheduleExportWorkbook(
 			lowerSecondaryHomeroomReport,
 			upperSecondaryHomeroomReport,
 			invigilatorSummary,
-			paperTransferReport
+			paperTransferReport,
+			printablePaperReceiptSheet(workspace)
 		],
 		lowerSecondaryReport,
 		upperSecondaryReport,

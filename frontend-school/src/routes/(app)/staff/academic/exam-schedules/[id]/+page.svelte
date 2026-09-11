@@ -663,6 +663,7 @@
 	function styleReportSheet(worksheet: Worksheet, reportSheet: ExamScheduleReportSheet) {
 		const columnCount = reportSheetColumnCount(reportSheet);
 		const reportIsPaperTransferSheet = isPaperTransferSheet(reportSheet);
+		const reportIsPaperReceiptSheet = reportSheet.name === 'รับข้อสอบ';
 		worksheet.pageSetup = {
 			paperSize: 9,
 			orientation: 'portrait',
@@ -714,6 +715,7 @@
 					? 30
 					: 22;
 			if (isPaperTransferHeader) row.height = 42;
+			if (reportIsPaperReceiptSheet) row.height = rowNumber === 4 ? 32 : 38;
 
 			for (let columnNumber = 1; columnNumber <= columnCount; columnNumber += 1) {
 				const cell = row.getCell(columnNumber);

@@ -259,7 +259,8 @@ describe('exam schedule export helpers', () => {
 				'ตารางสอบแยกห้อง ม.ต้น',
 				'ตารางสอบแยกห้อง ม.ปลาย',
 				'กรรมการคุมสอบ',
-				'รับส่งข้อสอบ'
+				'รับส่งข้อสอบ',
+				'รับข้อสอบ'
 			]
 		);
 		assert.equal(workbook.report.rows[0][0], 'ตารางสอบวัดผลกลางภาคเรียนที่ 2 ปีการศึกษา 2568');
@@ -655,5 +656,65 @@ describe('exam schedule export helpers', () => {
 		assert.deepEqual(workbook.paperTransferReport.rows[repeatedDayIndex + 2], [
 			'เวลา 20.00-20.45 น.'
 		]);
+	});
+});
+
+describe('teacher paper submission register', () => {
+	it('includes unscheduled subjects and keeps different classrooms separate with blank signatures', () => {
+		const workspace = exportWorkspace([
+			scheduledSession({
+				id: 's1',
+				examScheduleItemId: 'i1',
+				homeroomName: 'ม.1/2',
+				subjectCode: 'ค21101',
+				subjectNameTh: 'คณิตศาสตร์'
+			}),
+			scheduledSession({
+				id: 's2',
+				examScheduleItemId: 'i2',
+				homeroomId: 'h2',
+				homeroomName: 'ม.1/1',
+				subjectCode: 'ค21101',
+				subjectNameTh: 'คณิตศาสตร์'
+			})
+		]);
+		workspace.unscheduledItems = [
+			{
+				...baseSession,
+				id: 'i3',
+				subjectId: 'thai',
+				homeroomName: 'ม.2/1',
+				subjectCode: 'ท22101',
+				subjectNameTh: 'ภาษาไทย'
+			}
+		];
+		const sheet = buildExamScheduleExportWorkbook(workspace, null).reportSheets.find(
+			(sheet) => sheet.name === 'รับข้อสอบ'
+		);
+		assert.ok(sheet, 'export includes a teacher submission register');
+		assert.deepEqual(sheet.rows.slice(4), [
+			[1, 'ค21101', 'คณิตศาสตร์', 'ม.1/1', '', '', ''],
+			[2, 'ค21101', 'คณิตศาสตร์', 'ม.1/2', '', '', ''],
+			[3, 'ท22101', 'ภาษาไทย', 'ม.2/1', '', '', '']
+		]);
+		assert.equal(sheet['!printTitlesRow'], '1:4');
+	});
+
+	it('does not duplicate one exam item when represented by multiple sessions', () => {
+		const session = scheduledSession({ id: 's1', homeroomName: 'ม.1/1', subjectCode: 'ค21101' });
+		const sheet = buildExamScheduleExportWorkbook(
+			exportWorkspace([session, { ...session, id: 's2' }]),
+			null
+		).reportSheets.find((sheet) => sheet.name === 'รับข้อสอบ');
+		assert.ok(sheet);
+		assert.equal(sheet.rows.slice(4).length, 1);
+	});
+
+	it('exports an empty register without inventing subjects', () => {
+		const sheet = buildExamScheduleExportWorkbook(exportWorkspace([]), null).reportSheets.find(
+			(sheet) => sheet.name === 'รับข้อสอบ'
+		);
+		assert.ok(sheet);
+		assert.equal(sheet.rows.length, 4);
 	});
 });
