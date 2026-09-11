@@ -129,6 +129,7 @@ pub async fn list_cycles(
     request_body = CreateSupervisionCycleRequest,
     responses(
         (status = 201, description = "Supervision cycle created", body = ApiResponse<SupervisionCycle>),
+        (status = 409, description = "Academic year or term is closed", body = ApiErrorResponse),
         (status = 400, description = "Invalid supervision cycle", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Supervision management denied", body = ApiErrorResponse)
@@ -157,6 +158,7 @@ pub async fn create_cycle(
     request_body = UpdateSupervisionCycleRequest,
     responses(
         (status = 200, description = "Supervision cycle updated", body = ApiResponse<SupervisionCycle>),
+        (status = 409, description = "Academic lifecycle or cycle context conflict", body = ApiErrorResponse),
         (status = 400, description = "Invalid supervision cycle", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Supervision management denied", body = ApiErrorResponse),
@@ -562,6 +564,7 @@ pub async fn update_requested_observation(
     params(("id" = Uuid, Path, description = "Supervision observation ID")),
     responses(
         (status = 200, description = "Requested observation cancelled", body = ApiResponse<SupervisionObservation>),
+        (status = 409, description = "Academic year or term is closed", body = ApiErrorResponse),
         (status = 400, description = "Requested observation cannot be cancelled", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Supervision request denied", body = ApiErrorResponse),
@@ -675,6 +678,7 @@ pub async fn replace_observation_evaluators(
     request_body = CancelObservationRequest,
     responses(
         (status = 200, description = "Supervision observation cancelled", body = ApiResponse<SupervisionObservation>),
+        (status = 409, description = "Academic year or term is closed", body = ApiErrorResponse),
         (status = 400, description = "Observation cannot be cancelled", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Observation management denied", body = ApiErrorResponse),
@@ -756,6 +760,7 @@ pub async fn approve_observation_request(
     request_body = ReturnObservationRequest,
     responses(
         (status = 200, description = "Supervision request returned", body = ApiResponse<SupervisionObservation>),
+        (status = 409, description = "Academic year or term is closed", body = ApiErrorResponse),
         (status = 400, description = "Supervision request cannot be returned", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Observation management denied", body = ApiErrorResponse),
@@ -798,6 +803,7 @@ pub async fn return_observation_request(
     request_body = SaveEvaluationRequest,
     responses(
         (status = 200, description = "Supervision evaluation submitted", body = ApiResponse<SupervisionObservation>),
+        (status = 409, description = "Academic year or term is closed", body = ApiErrorResponse),
         (status = 400, description = "Invalid supervision evaluation", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Evaluation submission denied", body = ApiErrorResponse),
@@ -829,6 +835,7 @@ pub async fn submit_my_evaluation(
     params(("id" = Uuid, Path, description = "Supervision observation ID")),
     responses(
         (status = 200, description = "Supervision observation certified", body = ApiResponse<SupervisionObservation>),
+        (status = 409, description = "Academic year or term is closed", body = ApiErrorResponse),
         (status = 400, description = "Observation cannot be certified", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Observation management denied", body = ApiErrorResponse),
@@ -864,6 +871,7 @@ pub async fn certify_observation(
     params(("id" = Uuid, Path, description = "Supervision observation ID")),
     responses(
         (status = 200, description = "Supervision observation approved", body = ApiResponse<SupervisionObservation>),
+        (status = 409, description = "Academic year or term is closed", body = ApiErrorResponse),
         (status = 400, description = "Observation cannot be approved", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Academic approval denied", body = ApiErrorResponse),
@@ -894,6 +902,7 @@ pub async fn approve_observation(
     request_body = AcknowledgeObservationRequest,
     responses(
         (status = 200, description = "Supervision observation acknowledged", body = ApiResponse<SupervisionObservation>),
+        (status = 409, description = "Academic year or term is closed", body = ApiErrorResponse),
         (status = 400, description = "Observation cannot be acknowledged", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Acknowledgement denied", body = ApiErrorResponse),

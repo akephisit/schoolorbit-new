@@ -121,7 +121,24 @@ pub async fn resolve_for_date(
     term_id: Uuid,
     on_date: NaiveDate,
 ) -> Result<TimetableVersion, AppError> {
-    let version_id: Uuid = sqlx::query_scalar(
+    let version_id = resolve_version_id_for_date(pool, term_id, on_date).await?;
+    let sql = format!("{VERSION_SELECT} WHERE version.id = $1");
+    let row = sqlx::query_as::<_, TimetableVersionRow>(&sql)
+        .bind(version_id)
+        .fetch_one(pool)
+        .await?;
+    let mut versions = hydrate_versions(pool, vec![row], on_date).await?;
+    versions.pop().ok_or_else(|| {
+        AppError::InternalServerError("ไม่สามารถโหลดตารางเรียนตามวันที่เลือกได้".to_string())
+    })
+}
+
+pub(crate) async fn resolve_version_id_for_date<'e>(
+    executor: impl sqlx::Executor<'e, Database = Postgres>,
+    term_id: Uuid,
+    on_date: NaiveDate,
+) -> Result<Uuid, AppError> {
+    sqlx::query_scalar(
         r#"SELECT id
            FROM academic_timetable_versions
            WHERE academic_term_id = $1
@@ -132,19 +149,9 @@ pub async fn resolve_for_date(
     )
     .bind(term_id)
     .bind(on_date)
-    .fetch_optional(pool)
+    .fetch_optional(executor)
     .await?
-    .ok_or_else(|| AppError::NotFound(format!("ไม่พบตารางเรียนที่เผยแพร่และมีผลในวันที่ {on_date}")))?;
-
-    let sql = format!("{VERSION_SELECT} WHERE version.id = $1");
-    let row = sqlx::query_as::<_, TimetableVersionRow>(&sql)
-        .bind(version_id)
-        .fetch_one(pool)
-        .await?;
-    let mut versions = hydrate_versions(pool, vec![row], on_date).await?;
-    versions.pop().ok_or_else(|| {
-        AppError::InternalServerError("ไม่สามารถโหลดตารางเรียนตามวันที่เลือกได้".to_string())
-    })
+    .ok_or_else(|| AppError::NotFound(format!("ไม่พบตารางเรียนที่เผยแพร่และมีผลในวันที่ {on_date}")))
 }
 
 pub async fn clone_draft(

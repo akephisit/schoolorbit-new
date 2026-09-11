@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
-use sqlx::{PgPool, Postgres};
+use sqlx::{PgConnection, PgPool, Postgres};
 use uuid::Uuid;
 
 use crate::error::AppError;
@@ -11,6 +11,7 @@ use crate::modules::supervision::models::{
     UpdateSupervisionCycleRequest,
 };
 
+use super::lifecycle::{require_context_writes, require_cycle_write};
 use super::shared::{parse_cycle_status, parse_target_type};
 
 #[derive(Debug, sqlx::FromRow)]
@@ -74,6 +75,14 @@ pub async fn list_cycles(
 }
 
 pub async fn get_cycle(pool: &PgPool, id: Uuid) -> Result<SupervisionCycle, AppError> {
+    let mut connection = pool.acquire().await?;
+    get_cycle_with_connection(&mut connection, id).await
+}
+
+async fn get_cycle_with_connection(
+    connection: &mut PgConnection,
+    id: Uuid,
+) -> Result<SupervisionCycle, AppError> {
     let row = sqlx::query_as::<_, SupervisionCycleRow>(
         r#"
         SELECT id, academic_year_id, academic_term_id, title, description,
@@ -84,7 +93,7 @@ pub async fn get_cycle(pool: &PgPool, id: Uuid) -> Result<SupervisionCycle, AppE
         "#,
     )
     .bind(id)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *connection)
     .await
     .map_err(|error| {
         tracing::error!("Failed to get supervision cycle: {}", error);
@@ -92,7 +101,7 @@ pub async fn get_cycle(pool: &PgPool, id: Uuid) -> Result<SupervisionCycle, AppE
     })?
     .ok_or_else(|| AppError::NotFound("ไม่พบรอบนิเทศ".to_string()))?;
 
-    let targets = load_cycle_targets(pool, id).await?;
+    let targets = load_cycle_targets(connection, id).await?;
     cycle_from_row_with_targets(row, targets)
 }
 
@@ -108,7 +117,6 @@ pub async fn create_cycle(
         input.ends_at,
     )?;
     validate_cycle_targets(&input.targets)?;
-    validate_cycle_context(pool, input.academic_year_id, input.academic_term_id).await?;
 
     let mut tx = pool.begin().await.map_err(|error| {
         tracing::error!(
@@ -118,6 +126,7 @@ pub async fn create_cycle(
         AppError::InternalServerError("ไม่สามารถเริ่มสร้างรอบนิเทศได้".to_string())
     })?;
 
+    require_context_writes(&mut tx, &[(input.academic_year_id, input.academic_term_id)]).await?;
     let status = input.status.unwrap_or(SupervisionCycleStatus::Draft);
     let cycle_id: Uuid = sqlx::query_scalar(
         r#"
@@ -165,7 +174,19 @@ pub async fn update_cycle(
     id: Uuid,
     input: UpdateSupervisionCycleRequest,
 ) -> Result<SupervisionCycle, AppError> {
-    let current = get_cycle(pool, id).await?;
+    let mut tx = pool.begin().await?;
+    let before = get_cycle_with_connection(&mut tx, id).await?;
+    let target = (
+        input.academic_year_id.unwrap_or(before.academic_year_id),
+        input.academic_term_id.unwrap_or(before.academic_term_id),
+    );
+    let locked = require_cycle_write(&mut tx, id, Some(target)).await?;
+    if locked != (before.academic_year_id, before.academic_term_id) {
+        return Err(AppError::Conflict(
+            "รอบนิเทศถูกย้ายปีหรือภาคเรียนแล้ว กรุณาโหลดข้อมูลใหม่".into(),
+        ));
+    }
+    let current = get_cycle_with_connection(&mut tx, id).await?;
     let academic_year_id = input.academic_year_id.unwrap_or(current.academic_year_id);
     let academic_term_id = input.academic_term_id.unwrap_or(current.academic_term_id);
     let title = input.title.unwrap_or(current.title);
@@ -181,16 +202,16 @@ pub async fn update_cycle(
     if let Some(targets) = &input.targets {
         validate_cycle_targets(targets)?;
     }
-    validate_cycle_context(pool, academic_year_id, academic_term_id).await?;
-
-    let mut tx = pool.begin().await.map_err(|error| {
-        tracing::error!(
-            "Failed to begin update supervision cycle transaction: {}",
-            error
-        );
-        AppError::InternalServerError("ไม่สามารถเริ่มแก้ไขรอบนิเทศได้".to_string())
-    })?;
-
+    if target != locked {
+        let incompatible: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM supervision_observations WHERE cycle_id=$1 AND (academic_year_id<>$2 OR ($3::uuid IS NOT NULL AND academic_term_id<>$3)))",
+        ).bind(id).bind(academic_year_id).bind(academic_term_id).fetch_one(&mut *tx).await?;
+        if incompatible {
+            return Err(AppError::Conflict(
+                "รอบนิเทศมีรายการนิเทศที่ไม่ตรงกับปีหรือภาคเรียนปลายทาง".into(),
+            ));
+        }
+    }
     sqlx::query(
         r#"
         UPDATE supervision_cycles
@@ -263,35 +284,6 @@ fn validate_cycle_schedule(
     }
 
     Ok(())
-}
-
-async fn validate_cycle_context(
-    pool: &PgPool,
-    academic_year_id: Uuid,
-    academic_term_id: Option<Uuid>,
-) -> Result<(), AppError> {
-    let context_exists: bool = sqlx::query_scalar(
-        r#"SELECT CASE
-               WHEN $2::uuid IS NULL THEN EXISTS (
-                   SELECT 1 FROM academic_years WHERE id = $1
-               )
-               ELSE EXISTS (
-                   SELECT 1 FROM academic_terms
-                   WHERE id = $2 AND academic_year_id = $1
-               )
-           END"#,
-    )
-    .bind(academic_year_id)
-    .bind(academic_term_id)
-    .fetch_one(pool)
-    .await?;
-    if context_exists {
-        Ok(())
-    } else {
-        Err(AppError::ValidationError(
-            "ปีการศึกษาหรือภาคเรียนของรอบนิเทศไม่สัมพันธ์กัน".to_string(),
-        ))
-    }
 }
 
 fn validate_cycle_targets(targets: &[CreateSupervisionCycleTargetRequest]) -> Result<(), AppError> {
@@ -369,7 +361,7 @@ async fn insert_cycle_targets(
 }
 
 async fn load_cycle_targets(
-    pool: &PgPool,
+    connection: &mut PgConnection,
     cycle_id: Uuid,
 ) -> Result<Vec<SupervisionCycleTarget>, AppError> {
     let rows = sqlx::query_as::<_, SupervisionCycleTargetRow>(
@@ -382,7 +374,7 @@ async fn load_cycle_targets(
         "#,
     )
     .bind(cycle_id)
-    .fetch_all(pool)
+    .fetch_all(connection)
     .await
     .map_err(|error| {
         tracing::error!("Failed to load supervision cycle targets: {}", error);

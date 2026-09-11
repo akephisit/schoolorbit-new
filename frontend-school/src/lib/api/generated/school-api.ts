@@ -38732,6 +38732,15 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Academic year or term is closed */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 		};
 	};
 	updateSupervisionCycle: {
@@ -38788,6 +38797,15 @@ export interface operations {
 			};
 			/** @description Supervision cycle not found */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic lifecycle or cycle context conflict */
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -39032,6 +39050,15 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Academic year or term is closed */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 		};
 	};
 	approveSupervisionObservation: {
@@ -39084,6 +39111,15 @@ export interface operations {
 			};
 			/** @description Supervision observation not found */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic year or term is closed */
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -39226,6 +39262,15 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Academic year or term is closed */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 		};
 	};
 	certifySupervisionObservation: {
@@ -39278,6 +39323,15 @@ export interface operations {
 			};
 			/** @description Supervision observation not found */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic year or term is closed */
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -39341,6 +39395,15 @@ export interface operations {
 			};
 			/** @description Supervision observation not found */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic year or term is closed */
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -39529,6 +39592,15 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Academic year or term is closed */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 		};
 	};
 	updateRequestedSupervisionObservation: {
@@ -39657,6 +39729,15 @@ export interface operations {
 			};
 			/** @description Supervision observation not found */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic year or term is closed */
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};

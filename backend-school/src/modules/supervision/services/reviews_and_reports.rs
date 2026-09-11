@@ -12,12 +12,8 @@ use crate::modules::supervision::models::{
     SupervisionTeacherStatusRow,
 };
 
-use super::evaluations::load_evaluator_submission_states;
 use super::observations::{get_observation, set_observation_status};
-use super::shared::{
-    all_required_evaluators_submitted, parse_optional_observation_status,
-    SupervisionObservationListAccess,
-};
+use super::shared::{parse_optional_observation_status, SupervisionObservationListAccess};
 use super::templates::get_template;
 
 #[derive(Debug, sqlx::FromRow)]
@@ -66,13 +62,6 @@ pub async fn certify_observation(
     actor_user_id: Uuid,
     observation_id: Uuid,
 ) -> Result<SupervisionObservation, AppError> {
-    let states = load_evaluator_submission_states(pool, observation_id).await?;
-    if !all_required_evaluators_submitted(&states) {
-        return Err(AppError::ValidationError(
-            "ผู้ประเมินหลักยังส่งผลไม่ครบ".to_string(),
-        ));
-    }
-
     set_observation_status(
         pool,
         observation_id,
@@ -80,6 +69,7 @@ pub async fn certify_observation(
         SupervisionObservationStatus::Approved,
         "subject_group_certified",
         None,
+        super::observations::ObservationTransitionPolicy::Certification,
     )
     .await
 }
@@ -96,6 +86,7 @@ pub async fn approve_observation(
         SupervisionObservationStatus::Published,
         "academic_approved",
         None,
+        super::observations::ObservationTransitionPolicy::Manager,
     )
     .await
 }
@@ -128,6 +119,7 @@ pub async fn acknowledge_observation(
         SupervisionObservationStatus::Completed,
         action_kind,
         input.comment,
+        super::observations::ObservationTransitionPolicy::ObservedTeacher,
     )
     .await
 }

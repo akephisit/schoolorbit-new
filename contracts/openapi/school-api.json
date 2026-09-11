@@ -72724,6 +72724,16 @@
               }
             },
             "description": "Supervision management denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year or term is closed"
           }
         },
         "tags": [
@@ -72806,6 +72816,16 @@
               }
             },
             "description": "Supervision cycle not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic lifecycle or cycle context conflict"
           }
         },
         "tags": [
@@ -73127,6 +73147,16 @@
               }
             },
             "description": "Supervision observation not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year or term is closed"
           }
         },
         "tags": [
@@ -73199,6 +73229,16 @@
               }
             },
             "description": "Supervision observation not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year or term is closed"
           }
         },
         "tags": [
@@ -73373,6 +73413,16 @@
               }
             },
             "description": "Supervision observation not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year or term is closed"
           }
         },
         "tags": [
@@ -73445,6 +73495,16 @@
               }
             },
             "description": "Supervision observation not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year or term is closed"
           }
         },
         "tags": [
@@ -73527,6 +73587,16 @@
               }
             },
             "description": "Supervision observation not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year or term is closed"
           }
         },
         "tags": [
@@ -73753,6 +73823,16 @@
               }
             },
             "description": "Supervision observation not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year or term is closed"
           }
         },
         "tags": [
@@ -73925,6 +74005,16 @@
               }
             },
             "description": "Supervision observation not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year or term is closed"
           }
         },
         "tags": [

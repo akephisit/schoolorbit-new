@@ -6601,13 +6601,29 @@ fn supervision_collection_hydrators_are_set_based() {
         "supervision template lists must share the set-based template hydrator"
     );
     assert!(
-        !Regex::new(r"(?s)for\s+row\s+in\s+rows\s*\{.*?observation_from_row\(pool")
+        !Regex::new(r"(?s)for\s+row\s+in\s+rows\s*\{.*?(?:observation_from_row|get_observation(?:_with_connection)?)\(")
             .unwrap()
             .is_match(&observation_list),
         "supervision observation lists must not call the detail hydrator per parent row"
     );
     assert!(
-        observation_list.contains("hydrate_observations(pool, rows).await"),
+        observation_list.contains("hydrate_observations(&mut connection, rows).await"),
         "supervision observation lists must share the set-based observation hydrator"
     );
+    for loader in [
+        "load_observation_evaluators",
+        "load_observation_actions",
+        "load_observation_average_ratings",
+    ] {
+        let body = extract_braced_block(&observations, &format!("async fn {loader}"), false);
+        assert!(
+            body.contains(".bind(observation_ids)"),
+            "{loader} must bind the complete observation batch"
+        );
+        assert_eq!(
+            body.matches(".fetch_all(").count(),
+            1,
+            "{loader} must use one collection query"
+        );
+    }
 }

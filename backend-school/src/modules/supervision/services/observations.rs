@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use chrono::{DateTime, Datelike, NaiveDate, Utc, Weekday};
 use sqlx::types::Json;
-use sqlx::{PgPool, Postgres, QueryBuilder, Row};
+use sqlx::{PgConnection, PgPool, Postgres, QueryBuilder, Row, Transaction};
 use uuid::Uuid;
 
 use crate::error::AppError;
@@ -20,14 +20,17 @@ use crate::scheduling::SCHOOL_TIMEZONE;
 use super::cycles::SupervisionCycleTargetRow;
 use super::evaluations::{
     evaluator_availability_from_row, insert_supervision_evaluators,
-    validate_evaluator_availability_for_observation, EvaluatorAvailabilityRow,
+    load_evaluator_submission_states, validate_evaluator_availability_for_observation,
+    EvaluatorAvailabilityRow,
 };
+use super::lifecycle::{require_cycle_write, require_observation_write};
 use super::shared::{
-    can_transition_observation_status, evaluator_conflict_status_codes, has_required_evaluator,
-    manager_can_edit_observation, parse_cycle_status, parse_evaluator_status,
-    parse_observation_status, parse_optional_observation_status, parse_target_type,
-    resolve_supervision_target_rule, teacher_can_edit_requested_observation,
-    SupervisionObservationListAccess, SupervisionTargetMatch, SupervisionTargetRule,
+    all_required_evaluators_submitted, can_transition_observation_status,
+    evaluator_conflict_status_codes, has_required_evaluator, manager_can_edit_observation,
+    parse_cycle_status, parse_evaluator_status, parse_observation_status,
+    parse_optional_observation_status, parse_target_type, resolve_supervision_target_rule,
+    teacher_can_edit_requested_observation, SupervisionObservationListAccess,
+    SupervisionTargetMatch, SupervisionTargetRule,
 };
 
 #[derive(Debug, sqlx::FromRow)]
@@ -120,12 +123,21 @@ pub async fn list_observations(
     filter: SupervisionObservationFilter,
 ) -> Result<Vec<SupervisionObservation>, AppError> {
     let rows = list_observation_rows(pool, access, filter).await?;
-    hydrate_observations(pool, rows).await
+    let mut connection = pool.acquire().await?;
+    hydrate_observations(&mut connection, rows).await
 }
 
 pub async fn get_observation(pool: &PgPool, id: Uuid) -> Result<SupervisionObservation, AppError> {
-    let row = load_observation_row(pool, id).await?;
-    hydrate_observations(pool, vec![row])
+    let mut connection = pool.acquire().await?;
+    get_observation_with_connection(&mut connection, id).await
+}
+
+pub(super) async fn get_observation_with_connection(
+    connection: &mut PgConnection,
+    id: Uuid,
+) -> Result<SupervisionObservation, AppError> {
+    let row = load_observation_row(&mut *connection, id).await?;
+    hydrate_observations(connection, vec![row])
         .await?
         .pop()
         .ok_or_else(|| AppError::NotFound("ไม่พบรายการนิเทศ".to_string()))
@@ -254,13 +266,25 @@ pub async fn request_observation(
     actor_user_id: Uuid,
     input: RequestSupervisionObservationRequest,
 ) -> Result<SupervisionObservation, AppError> {
-    let cycle = load_cycle_for_request(pool, input.cycle_id).await?;
+    let mut tx = pool.begin().await?;
+    let before = load_cycle_for_request(&mut *tx, input.cycle_id).await?;
+    ensure_cycle_target_allows_teacher(&mut tx, input.cycle_id, actor_user_id).await?;
+    let context = require_cycle_write(
+        &mut tx,
+        input.cycle_id,
+        Some((before.academic_year_id, Some(input.academic_term_id))),
+    )
+    .await?;
+    if context != (before.academic_year_id, before.academic_term_id) {
+        return Err(AppError::Conflict("รอบนิเทศเปลี่ยนแล้ว กรุณาโหลดข้อมูลใหม่".into()));
+    }
+    let cycle = load_cycle_for_request(&mut *tx, input.cycle_id).await?;
     validate_cycle_accepts_requests(&cycle)?;
-    validate_observation_context(pool, &cycle, input.academic_term_id).await?;
-    ensure_cycle_target_allows_teacher(pool, cycle.id, actor_user_id).await?;
+    validate_observation_context(&mut *tx, &cycle, input.academic_term_id).await?;
+    ensure_cycle_target_allows_teacher(&mut tx, cycle.id, actor_user_id).await?;
 
     let lesson = resolve_lesson_input(
-        pool,
+        &mut tx,
         &cycle,
         input.academic_term_id,
         actor_user_id,
@@ -298,7 +322,7 @@ pub async fn request_observation(
     .bind(&lesson.manual_period_label)
     .bind(&lesson.manual_reason)
     .bind(Json(lesson.snapshot))
-    .fetch_one(pool)
+    .fetch_one(&mut *tx)
     .await
     .map_err(|error| {
         tracing::error!("Failed to request supervision observation: {}", error);
@@ -306,7 +330,7 @@ pub async fn request_observation(
     })?;
 
     insert_observation_action(
-        pool,
+        &mut tx,
         observation_id,
         Some(actor_user_id),
         "requested",
@@ -316,6 +340,7 @@ pub async fn request_observation(
     )
     .await?;
 
+    tx.commit().await?;
     get_observation(pool, observation_id).await
 }
 
@@ -325,19 +350,22 @@ pub async fn update_requested_observation(
     observation_id: Uuid,
     input: UpdateRequestedObservationRequest,
 ) -> Result<SupervisionObservation, AppError> {
-    let current = get_observation(pool, observation_id).await?;
+    let mut tx = pool.begin().await?;
+    let current = get_observation_with_connection(&mut tx, observation_id).await?;
     if current.observed_user_id != actor_user_id {
         return Err(AppError::Forbidden("แก้ไขคำขอนิเทศของผู้อื่นไม่ได้".to_string()));
     }
+    require_observation_write(&mut tx, observation_id).await?;
+    let current = get_observation_with_connection(&mut tx, observation_id).await?;
     if !teacher_can_edit_requested_observation(current.status) {
         return Err(AppError::ValidationError(
             "แก้ไขคำขอนิเทศได้เฉพาะสถานะรออนุมัติ".to_string(),
         ));
     }
 
-    let cycle = load_cycle_for_request(pool, current.cycle_id).await?;
+    let cycle = load_cycle_for_request(&mut *tx, current.cycle_id).await?;
     let lesson = resolve_lesson_input(
-        pool,
+        &mut tx,
         &cycle,
         current.academic_term_id,
         actor_user_id,
@@ -374,13 +402,14 @@ pub async fn update_requested_observation(
     .bind(&lesson.manual_period_label)
     .bind(&lesson.manual_reason)
     .bind(Json(lesson.snapshot))
-    .execute(pool)
+    .execute(&mut *tx)
     .await
     .map_err(|error| {
         tracing::error!("Failed to update supervision request: {}", error);
         AppError::InternalServerError("ไม่สามารถแก้ไขคำขอนิเทศได้".to_string())
     })?;
 
+    tx.commit().await?;
     get_observation(pool, observation_id).await
 }
 
@@ -389,16 +418,6 @@ pub async fn cancel_requested_observation(
     actor_user_id: Uuid,
     observation_id: Uuid,
 ) -> Result<SupervisionObservation, AppError> {
-    let current = get_observation(pool, observation_id).await?;
-    if current.observed_user_id != actor_user_id {
-        return Err(AppError::Forbidden("ยกเลิกคำขอนิเทศของผู้อื่นไม่ได้".to_string()));
-    }
-    if !teacher_can_edit_requested_observation(current.status) {
-        return Err(AppError::ValidationError(
-            "ยกเลิกคำขอนิเทศได้เฉพาะสถานะรออนุมัติ".to_string(),
-        ));
-    }
-
     set_observation_status(
         pool,
         observation_id,
@@ -406,6 +425,7 @@ pub async fn cancel_requested_observation(
         SupervisionObservationStatus::Cancelled,
         "request_cancelled",
         None,
+        ObservationTransitionPolicy::RequestedTeacher,
     )
     .await
 }
@@ -416,14 +436,16 @@ pub async fn update_observation(
     observation_id: Uuid,
     input: UpdateSupervisionObservationRequest,
 ) -> Result<SupervisionObservation, AppError> {
-    let current = get_observation(pool, observation_id).await?;
+    let mut tx = pool.begin().await?;
+    require_observation_write(&mut tx, observation_id).await?;
+    let current = get_observation_with_connection(&mut tx, observation_id).await?;
     if !manager_can_edit_observation(current.status) {
         return Err(AppError::ValidationError(
             "แก้ไขรายการนิเทศได้เฉพาะสถานะรออนุมัติ วางแผน หรือส่งกลับ".to_string(),
         ));
     }
 
-    let cycle = load_cycle_for_request(pool, current.cycle_id).await?;
+    let cycle = load_cycle_for_request(&mut *tx, current.cycle_id).await?;
     let template_id = input.template_id.unwrap_or(current.template_id);
     let manual_lesson = match (input.manual_lesson, current.manual_lesson) {
         (Some(manual), _) => Some(manual),
@@ -452,7 +474,7 @@ pub async fn update_observation(
         Some(input.observed_at.unwrap_or(current.observed_at))
     };
     let lesson = resolve_lesson_input(
-        pool,
+        &mut tx,
         &cycle,
         current.academic_term_id,
         current.observed_user_id,
@@ -467,7 +489,7 @@ pub async fn update_observation(
         .map(|evaluator| evaluator.evaluator_user_id)
         .collect::<Vec<_>>();
     validate_evaluator_availability_for_observation(
-        pool,
+        &mut *tx,
         observation_id,
         lesson.observed_at,
         &evaluator_user_ids,
@@ -503,7 +525,7 @@ pub async fn update_observation(
     .bind(&lesson.manual_period_label)
     .bind(&lesson.manual_reason)
     .bind(Json(lesson.snapshot))
-    .execute(pool)
+    .execute(&mut *tx)
     .await
     .map_err(|error| {
         tracing::error!("Failed to update supervision observation: {}", error);
@@ -511,7 +533,7 @@ pub async fn update_observation(
     })?;
 
     insert_observation_action(
-        pool,
+        &mut tx,
         observation_id,
         Some(actor_user_id),
         "updated",
@@ -521,6 +543,7 @@ pub async fn update_observation(
     )
     .await?;
 
+    tx.commit().await?;
     get_observation(pool, observation_id).await
 }
 
@@ -537,6 +560,7 @@ pub async fn cancel_observation(
         SupervisionObservationStatus::Cancelled,
         "cancelled",
         input.reason,
+        ObservationTransitionPolicy::Manager,
     )
     .await
 }
@@ -553,7 +577,9 @@ pub async fn approve_observation_request(
         ));
     }
 
-    let observation = get_observation(pool, observation_id).await?;
+    let mut tx = pool.begin().await?;
+    require_observation_write(&mut tx, observation_id).await?;
+    let observation = get_observation_with_connection(&mut tx, observation_id).await?;
     if observation.status != SupervisionObservationStatus::Requested
         && observation.status != SupervisionObservationStatus::Returned
     {
@@ -577,20 +603,12 @@ pub async fn approve_observation_request(
         .map(|evaluator| evaluator.evaluator_user_id)
         .collect::<Vec<_>>();
     validate_evaluator_availability_for_observation(
-        pool,
+        &mut *tx,
         observation_id,
         observation.observed_at,
         &requested_evaluator_user_ids,
     )
     .await?;
-
-    let mut tx = pool.begin().await.map_err(|error| {
-        tracing::error!(
-            "Failed to begin approve supervision request transaction: {}",
-            error
-        );
-        AppError::InternalServerError("ไม่สามารถเริ่มอนุมัติคำขอนิเทศได้".to_string())
-    })?;
 
     sqlx::query(
         r#"
@@ -619,16 +637,8 @@ pub async fn approve_observation_request(
 
     insert_supervision_evaluators(&mut tx, observation_id, &input.evaluators).await?;
 
-    tx.commit().await.map_err(|error| {
-        tracing::error!(
-            "Failed to commit approve supervision request transaction: {}",
-            error
-        );
-        AppError::InternalServerError("ไม่สามารถบันทึกการอนุมัติคำขอนิเทศได้".to_string())
-    })?;
-
     insert_observation_action(
-        pool,
+        &mut tx,
         observation_id,
         Some(actor_user_id),
         "planned",
@@ -638,6 +648,7 @@ pub async fn approve_observation_request(
     )
     .await?;
 
+    tx.commit().await?;
     get_observation(pool, observation_id).await
 }
 
@@ -654,6 +665,7 @@ pub async fn return_observation_request(
         SupervisionObservationStatus::Returned,
         "request_returned",
         input.comment,
+        ObservationTransitionPolicy::Manager,
     )
     .await
 }
@@ -740,8 +752,8 @@ async fn list_observation_rows(
         })
 }
 
-async fn load_observation_row(
-    pool: &PgPool,
+async fn load_observation_row<'e>(
+    pool: impl sqlx::Executor<'e, Database = Postgres>,
     id: Uuid,
 ) -> Result<SupervisionObservationRow, AppError> {
     let mut builder = QueryBuilder::<Postgres>::new(observation_select_sql());
@@ -779,7 +791,7 @@ fn observation_select_sql() -> &'static str {
 }
 
 async fn hydrate_observations(
-    pool: &PgPool,
+    connection: &mut PgConnection,
     rows: Vec<SupervisionObservationRow>,
 ) -> Result<Vec<SupervisionObservation>, AppError> {
     if rows.is_empty() {
@@ -787,9 +799,12 @@ async fn hydrate_observations(
     }
 
     let observation_ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
-    let mut evaluators_by_observation = load_observation_evaluators(pool, &observation_ids).await?;
-    let mut actions_by_observation = load_observation_actions(pool, &observation_ids).await?;
-    let average_ratings = load_observation_average_ratings(pool, &observation_ids).await?;
+    let mut evaluators_by_observation =
+        load_observation_evaluators(&mut *connection, &observation_ids).await?;
+    let mut actions_by_observation =
+        load_observation_actions(&mut *connection, &observation_ids).await?;
+    let average_ratings =
+        load_observation_average_ratings(&mut *connection, &observation_ids).await?;
 
     rows.into_iter()
         .map(|row| {
@@ -840,8 +855,8 @@ fn manual_lesson_from_row(row: &SupervisionObservationRow) -> Option<ManualLesso
     })
 }
 
-async fn load_observation_evaluators(
-    pool: &PgPool,
+async fn load_observation_evaluators<'e>(
+    pool: impl sqlx::Executor<'e, Database = Postgres>,
     observation_ids: &[Uuid],
 ) -> Result<HashMap<Uuid, Vec<SupervisionEvaluator>>, AppError> {
     let rows = sqlx::query_as::<_, SupervisionEvaluatorRow>(
@@ -876,8 +891,8 @@ async fn load_observation_evaluators(
     Ok(evaluators_by_observation)
 }
 
-async fn load_observation_actions(
-    pool: &PgPool,
+async fn load_observation_actions<'e>(
+    pool: impl sqlx::Executor<'e, Database = Postgres>,
     observation_ids: &[Uuid],
 ) -> Result<HashMap<Uuid, Vec<SupervisionAction>>, AppError> {
     let rows = sqlx::query_as::<_, SupervisionActionRow>(
@@ -911,8 +926,8 @@ async fn load_observation_actions(
     Ok(actions_by_observation)
 }
 
-async fn load_observation_average_ratings(
-    pool: &PgPool,
+async fn load_observation_average_ratings<'e>(
+    pool: impl sqlx::Executor<'e, Database = Postgres>,
     observation_ids: &[Uuid],
 ) -> Result<HashMap<Uuid, f64>, AppError> {
     let rows = sqlx::query_as::<_, (Uuid, f64)>(
@@ -958,8 +973,8 @@ fn action_from_row(row: SupervisionActionRow) -> Result<SupervisionAction, AppEr
     })
 }
 
-async fn load_cycle_for_request(
-    pool: &PgPool,
+async fn load_cycle_for_request<'e>(
+    pool: impl sqlx::Executor<'e, Database = Postgres>,
     cycle_id: Uuid,
 ) -> Result<CycleForRequestRow, AppError> {
     sqlx::query_as::<_, CycleForRequestRow>(
@@ -981,7 +996,7 @@ async fn load_cycle_for_request(
 }
 
 async fn ensure_cycle_target_allows_teacher(
-    pool: &PgPool,
+    connection: &mut PgConnection,
     cycle_id: Uuid,
     staff_user_id: Uuid,
 ) -> Result<(), AppError> {
@@ -994,7 +1009,7 @@ async fn ensure_cycle_target_allows_teacher(
         "#,
     )
     .bind(cycle_id)
-    .fetch_all(pool)
+    .fetch_all(&mut *connection)
     .await
     .map_err(|error| {
         tracing::error!("Failed to load supervision target rules: {}", error);
@@ -1017,7 +1032,7 @@ async fn ensure_cycle_target_allows_teacher(
         });
     }
 
-    let staff_match = load_supervision_target_match(pool, staff_user_id).await?;
+    let staff_match = load_supervision_target_match(connection, staff_user_id).await?;
     if resolve_supervision_target_rule(&rules, &staff_match).is_some() {
         Ok(())
     } else {
@@ -1028,7 +1043,7 @@ async fn ensure_cycle_target_allows_teacher(
 }
 
 async fn load_supervision_target_match(
-    pool: &PgPool,
+    connection: &mut PgConnection,
     staff_user_id: Uuid,
 ) -> Result<SupervisionTargetMatch, AppError> {
     let organization_unit_ids = sqlx::query_scalar::<_, Uuid>(
@@ -1040,7 +1055,7 @@ async fn load_supervision_target_match(
         "#,
     )
     .bind(staff_user_id)
-    .fetch_all(pool)
+    .fetch_all(&mut *connection)
     .await
     .map_err(|error| {
         tracing::error!(
@@ -1061,7 +1076,7 @@ async fn load_supervision_target_match(
         "#,
     )
     .bind(staff_user_id)
-    .fetch_all(pool)
+    .fetch_all(&mut *connection)
     .await
     .map_err(|error| {
         tracing::error!(
@@ -1105,8 +1120,8 @@ fn validate_cycle_accepts_requests(cycle: &CycleForRequestRow) -> Result<(), App
     Ok(())
 }
 
-async fn validate_observation_context(
-    pool: &PgPool,
+async fn validate_observation_context<'e>(
+    pool: impl sqlx::Executor<'e, Database = Postgres>,
     cycle: &CycleForRequestRow,
     academic_term_id: Uuid,
 ) -> Result<(), AppError> {
@@ -1153,7 +1168,7 @@ struct ResolvedLessonInput {
 }
 
 async fn resolve_lesson_input(
-    pool: &PgPool,
+    connection: &mut PgConnection,
     cycle: &CycleForRequestRow,
     academic_term_id: Uuid,
     actor_user_id: Uuid,
@@ -1165,13 +1180,16 @@ async fn resolve_lesson_input(
         (Some(block_group_id), Some(observed_at), None) => {
             validate_observed_at_in_cycle(cycle, observed_at)?;
             let observed_date = bangkok_observation_date(observed_at);
-            let timetable_version =
-                timetable_version_service::resolve_for_date(pool, academic_term_id, observed_date)
-                    .await?;
+            let timetable_version_id = timetable_version_service::resolve_version_id_for_date(
+                &mut *connection,
+                academic_term_id,
+                observed_date,
+            )
+            .await?;
             let entry = load_timetable_block_group_context_for_teacher(
-                pool,
+                &mut *connection,
                 block_group_id,
-                timetable_version.id,
+                timetable_version_id,
                 actor_user_id,
                 cycle.academic_year_id,
                 academic_term_id,
@@ -1193,7 +1211,7 @@ async fn resolve_lesson_input(
                 manual_period_label: None,
                 manual_reason: None,
                 snapshot: load_timetable_block_group_lesson_snapshot(
-                    pool,
+                    &mut *connection,
                     block_group_id,
                     observed_at,
                 )
@@ -1276,8 +1294,8 @@ struct TimetableBlockGroupLessonContext {
     homeroom_id: Option<Uuid>,
 }
 
-async fn load_timetable_block_group_context_for_teacher(
-    pool: &PgPool,
+async fn load_timetable_block_group_context_for_teacher<'e>(
+    pool: impl sqlx::Executor<'e, Database = Postgres>,
     block_group_id: Uuid,
     timetable_version_id: Uuid,
     teacher_user_id: Uuid,
@@ -1320,8 +1338,8 @@ async fn load_timetable_block_group_context_for_teacher(
     })
 }
 
-async fn load_timetable_block_group_lesson_snapshot(
-    pool: &PgPool,
+async fn load_timetable_block_group_lesson_snapshot<'e>(
+    pool: impl sqlx::Executor<'e, Database = Postgres>,
     block_group_id: Uuid,
     observed_at: DateTime<Utc>,
 ) -> Result<LessonSnapshot, AppError> {
@@ -1370,6 +1388,13 @@ async fn load_timetable_block_group_lesson_snapshot(
     })
 }
 
+pub(super) enum ObservationTransitionPolicy {
+    Manager,
+    RequestedTeacher,
+    Certification,
+    ObservedTeacher,
+}
+
 pub(super) async fn set_observation_status(
     pool: &PgPool,
     observation_id: Uuid,
@@ -1377,8 +1402,37 @@ pub(super) async fn set_observation_status(
     to_status: SupervisionObservationStatus,
     action_kind: &str,
     comment: Option<String>,
+    policy: ObservationTransitionPolicy,
 ) -> Result<SupervisionObservation, AppError> {
-    let current = get_observation(pool, observation_id).await?;
+    let mut tx = pool.begin().await?;
+    if matches!(
+        policy,
+        ObservationTransitionPolicy::RequestedTeacher
+            | ObservationTransitionPolicy::ObservedTeacher
+    ) {
+        let current = get_observation_with_connection(&mut tx, observation_id).await?;
+        if current.observed_user_id != actor_user_id {
+            return Err(AppError::Forbidden("แก้ไขรายการนิเทศของผู้อื่นไม่ได้".into()));
+        }
+    }
+    require_observation_write(&mut tx, observation_id).await?;
+    let current = get_observation_with_connection(&mut tx, observation_id).await?;
+    match policy {
+        ObservationTransitionPolicy::RequestedTeacher
+            if !teacher_can_edit_requested_observation(current.status) =>
+        {
+            return Err(AppError::ValidationError(
+                "ยกเลิกคำขอนิเทศได้เฉพาะสถานะรออนุมัติ".into(),
+            ));
+        }
+        ObservationTransitionPolicy::Certification => {
+            let states = load_evaluator_submission_states(&mut *tx, observation_id).await?;
+            if !all_required_evaluators_submitted(&states) {
+                return Err(AppError::ValidationError("ผู้ประเมินหลักยังส่งผลไม่ครบ".into()));
+            }
+        }
+        _ => {}
+    }
     if !can_transition_observation_status(current.status, to_status) {
         return Err(AppError::ValidationError(
             "ไม่สามารถเปลี่ยนสถานะนิเทศตามลำดับนี้ได้".to_string(),
@@ -1395,7 +1449,7 @@ pub(super) async fn set_observation_status(
     )
     .bind(observation_id)
     .bind(to_status.as_str())
-    .execute(pool)
+    .execute(&mut *tx)
     .await
     .map_err(|error| {
         tracing::error!("Failed to set supervision observation status: {}", error);
@@ -1403,7 +1457,7 @@ pub(super) async fn set_observation_status(
     })?;
 
     insert_observation_action(
-        pool,
+        &mut tx,
         observation_id,
         Some(actor_user_id),
         action_kind,
@@ -1413,11 +1467,12 @@ pub(super) async fn set_observation_status(
     )
     .await?;
 
+    tx.commit().await?;
     get_observation(pool, observation_id).await
 }
 
 pub(super) async fn insert_observation_action(
-    pool: &PgPool,
+    tx: &mut Transaction<'_, Postgres>,
     observation_id: Uuid,
     actor_user_id: Option<Uuid>,
     action_kind: &str,
@@ -1439,7 +1494,7 @@ pub(super) async fn insert_observation_action(
     .bind(from_status.map(SupervisionObservationStatus::as_str))
     .bind(to_status.map(SupervisionObservationStatus::as_str))
     .bind(comment)
-    .execute(pool)
+    .execute(&mut **tx)
     .await
     .map_err(|error| {
         tracing::error!("Failed to insert supervision action: {}", error);
@@ -1497,6 +1552,53 @@ mod tests {
         .fetch_one(&pool)
         .await
         .unwrap();
+        let (source_group, source_teacher, source_year, source_term, source_day): (Uuid, Uuid, Uuid, Uuid, String) = sqlx::query_as(
+            "SELECT block_group.id, instructor.instructor_id, block.academic_year_id, block.academic_term_id, block.day_of_week
+             FROM academic_timetable_blocks block
+             JOIN academic_timetable_block_groups block_group ON block_group.block_id=block.id
+             JOIN academic_timetable_block_group_instructors instructor ON instructor.block_group_id=block_group.id
+             WHERE block.timetable_version_id=$1 AND block.is_active AND block_group.is_active
+             ORDER BY block_group.id,instructor.instructor_id LIMIT 1",
+        ).bind(source_id).fetch_one(&pool).await.unwrap();
+        let observed_at = (0..7)
+            .map(|days| {
+                (term_start + chrono::Duration::days(days))
+                    .and_hms_opt(5, 0, 0)
+                    .unwrap()
+                    .and_utc()
+            })
+            .find(|at| super::day_of_week_matches_observed_at(&source_day, *at))
+            .unwrap();
+        let cycle = super::CycleForRequestRow {
+            id: Uuid::new_v4(),
+            academic_year_id: source_year,
+            academic_term_id: Some(source_term),
+            template_id: Uuid::new_v4(),
+            status: "open".into(),
+            booking_opens_at: None,
+            booking_closes_at: None,
+            starts_at: observed_at - chrono::Duration::days(1),
+            ends_at: observed_at + chrono::Duration::days(1),
+        };
+        let mut transaction = pool.begin().await.unwrap();
+        let lesson = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            super::resolve_lesson_input(
+                &mut transaction,
+                &cycle,
+                source_term,
+                source_teacher,
+                Some(source_group),
+                Some(observed_at),
+                None,
+            ),
+        )
+        .await
+        .expect("timetable resolution must reuse the transaction's only connection")
+        .unwrap();
+        assert_eq!(lesson.timetable_block_group_id, Some(source_group));
+        assert_eq!(lesson.snapshot.source.as_deref(), Some("timetable"));
+        transaction.rollback().await.unwrap();
         let draft = timetable_version_service::clone_draft(
             &pool,
             actor_id,

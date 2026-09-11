@@ -3278,6 +3278,14 @@ mod tests {
             ])
         );
         for (path, method, _) in expected {
+            if method != "get" && !path.starts_with("/api/supervision/templates") {
+                assert_eq!(
+                    document["paths"][path][method]["responses"]["409"]["content"]
+                        ["application/json"]["schema"]["$ref"],
+                    "#/components/schemas/ApiErrorResponse",
+                    "{method} {path} must document academic lifecycle conflicts"
+                );
+            }
             if let Some(parameters) = document["paths"][path][method]["parameters"].as_array() {
                 assert!(parameters.iter().all(|parameter| !parameter["name"]
                     .as_str()
