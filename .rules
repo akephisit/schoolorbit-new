@@ -39,6 +39,19 @@ Do not trust sweeping analysis without verifying it against the current tree. In
 - Read the full migration timeline before proposing a column, trigger, or data migration.
 - Minimal AI entry-point files are loaded by tools and are not unused placeholders.
 
+### Git branches, worktrees, and integration
+
+- Start every change from the latest `origin/main` on a dedicated feature, fix, or chore branch. Do not implement directly on `main`.
+- When one session is working sequentially, use a branch in the repository root by default so the existing dependencies and build caches remain available.
+- Use a separate worktree when multiple sessions or independent tasks must run concurrently, or when the work needs filesystem isolation. Work size alone does not require a worktree.
+- Every worktree owns a distinct branch. Never check out or mutate another session's branch or remove a worktree until its owner is finished and its working tree is clean.
+- Work inline by default. Use subagents only when the user explicitly requests delegation or parallel agent work.
+- Bounded changes use the approved short design in chat and do not create a plan artifact. Large, high-risk, or architectural changes require the approved design/specification and implementation plan described in this file; checkpoint commits may be used on their feature branch.
+- Before integration, require a clean working tree, fetch `origin/main`, and inspect branch divergence. If `origin/main` advanced, merge it into the feature branch, resolve conflicts there, and rerun every affected focused and matrix check before continuing.
+- Feature branches may contain multiple focused or checkpoint commits. Integrate an approved feature into `main` with a squash merge so `main` receives one coherent commit for that feature.
+- Update local `main` to the fetched `origin/main` before the squash merge. Push normally; never force-push `main`.
+- Keep the feature branch and any worktree until the required deployment and acceptance checks pass. Remove them only after confirming no session or recovery work still depends on them.
+
 ## 2. Adding or Changing a Feature
 
 For every feature or behavior change:
