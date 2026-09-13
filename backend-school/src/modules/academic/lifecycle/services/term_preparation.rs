@@ -241,12 +241,12 @@ async fn json_rows(
     tx: &mut Transaction<'_, Postgres>,
     sql: &str,
     term_id: Uuid,
-) -> Result<Vec<serde_json::Value>, AppError> {
-    let rows: Vec<sqlx::types::Json<serde_json::Value>> = sqlx::query_scalar(sql)
+) -> Result<Vec<String>, AppError> {
+    let rows: Vec<String> = sqlx::query_scalar(sql)
         .bind(term_id)
         .fetch_all(&mut **tx)
         .await?;
-    Ok(rows.into_iter().map(|row| row.0).collect())
+    Ok(rows)
 }
 
 async fn module_source_fingerprint(
@@ -262,7 +262,7 @@ async fn module_source_fingerprint(
                 "plans",
                 json_rows(
                     tx,
-                    "SELECT to_jsonb(plan) FROM course_assessment_plans plan WHERE plan.academic_term_id=$1 ORDER BY plan.id",
+                    "SELECT to_jsonb(plan)::text FROM course_assessment_plans plan WHERE plan.academic_term_id=$1 ORDER BY plan.id",
                     term_id,
                 )
                 .await?,
@@ -271,7 +271,7 @@ async fn module_source_fingerprint(
                 "phases",
                 json_rows(
                     tx,
-                    "SELECT to_jsonb(phase) FROM course_assessment_phases phase JOIN course_assessment_plans plan ON plan.id=phase.plan_id WHERE plan.academic_term_id=$1 ORDER BY plan.id,phase.phase_code,phase.id",
+                    "SELECT to_jsonb(phase)::text FROM course_assessment_phases phase JOIN course_assessment_plans plan ON plan.id=phase.plan_id WHERE plan.academic_term_id=$1 ORDER BY plan.id,phase.phase_code,phase.id",
                     term_id,
                 )
                 .await?,
@@ -283,7 +283,7 @@ async fn module_source_fingerprint(
                 "version",
                 json_rows(
                     tx,
-                    &format!("SELECT to_jsonb(version) FROM academic_timetable_versions version WHERE version.id=({selected})"),
+                    &format!("SELECT to_jsonb(version)::text FROM academic_timetable_versions version WHERE version.id=({selected})"),
                     term_id,
                 )
                 .await?,
@@ -292,30 +292,30 @@ async fn module_source_fingerprint(
                 "targets",
                 json_rows(
                     tx,
-                    &format!("SELECT to_jsonb(target) FROM academic_timetable_version_targets target WHERE target.timetable_version_id=({selected}) ORDER BY target.learning_offering_id"),
+                    &format!("SELECT to_jsonb(target)::text FROM academic_timetable_version_targets target WHERE target.timetable_version_id=({selected}) ORDER BY target.learning_offering_id"),
                     term_id,
                 )
                 .await?,
             ));
             for (name, sql) in [
-                ("blocks", "SELECT to_jsonb(block) FROM academic_timetable_blocks block WHERE block.timetable_version_id=(SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1) AND block.is_active ORDER BY block.id"),
-                ("groups", "SELECT to_jsonb(block_group) FROM academic_timetable_block_groups block_group JOIN academic_timetable_blocks block ON block.id=block_group.block_id WHERE block.timetable_version_id=(SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1) AND block.is_active AND block_group.is_active ORDER BY block_group.id"),
-                ("instructors", "SELECT to_jsonb(instructor) FROM academic_timetable_block_group_instructors instructor JOIN academic_timetable_block_groups block_group ON block_group.id=instructor.block_group_id JOIN academic_timetable_blocks block ON block.id=block_group.block_id WHERE block.timetable_version_id=(SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1) AND block.is_active AND block_group.is_active ORDER BY instructor.id"),
-                ("homerooms", "SELECT to_jsonb(homeroom) FROM academic_timetable_block_homerooms homeroom JOIN academic_timetable_blocks block ON block.id=homeroom.block_id WHERE block.timetable_version_id=(SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1) AND block.is_active AND homeroom.is_active ORDER BY homeroom.id"),
-                ("teachers", "SELECT to_jsonb(teacher) FROM academic_timetable_block_teachers teacher JOIN academic_timetable_blocks block ON block.id=teacher.block_id WHERE block.timetable_version_id=(SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1) AND block.is_active AND teacher.is_active ORDER BY teacher.id"),
+                ("blocks", "SELECT to_jsonb(block)::text FROM academic_timetable_blocks block WHERE block.timetable_version_id=(SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1) AND block.is_active ORDER BY block.id"),
+                ("groups", "SELECT to_jsonb(block_group)::text FROM academic_timetable_block_groups block_group JOIN academic_timetable_blocks block ON block.id=block_group.block_id WHERE block.timetable_version_id=(SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1) AND block.is_active AND block_group.is_active ORDER BY block_group.id"),
+                ("instructors", "SELECT to_jsonb(instructor)::text FROM academic_timetable_block_group_instructors instructor JOIN academic_timetable_block_groups block_group ON block_group.id=instructor.block_group_id JOIN academic_timetable_blocks block ON block.id=block_group.block_id WHERE block.timetable_version_id=(SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1) AND block.is_active AND block_group.is_active ORDER BY instructor.id"),
+                ("homerooms", "SELECT to_jsonb(homeroom)::text FROM academic_timetable_block_homerooms homeroom JOIN academic_timetable_blocks block ON block.id=homeroom.block_id WHERE block.timetable_version_id=(SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1) AND block.is_active AND homeroom.is_active ORDER BY homeroom.id"),
+                ("teachers", "SELECT to_jsonb(teacher)::text FROM academic_timetable_block_teachers teacher JOIN academic_timetable_blocks block ON block.id=teacher.block_id WHERE block.timetable_version_id=(SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1) AND block.is_active AND teacher.is_active ORDER BY teacher.id"),
             ] {
                 tables.push((name, json_rows(tx, sql, term_id).await?));
             }
         }
         TermPreparationModule::Exams => {
             for (name, sql) in [
-                ("rounds", "SELECT to_jsonb(exam_round) FROM academic_exam_rounds exam_round WHERE exam_round.academic_term_id=$1 ORDER BY exam_round.id"),
-                ("days", "SELECT to_jsonb(day) FROM academic_exam_days day WHERE day.academic_term_id=$1 ORDER BY day.id"),
-                ("gradeLevels", "SELECT to_jsonb(grade) FROM academic_exam_day_grade_levels grade JOIN academic_exam_days day ON day.id=grade.exam_day_id WHERE day.academic_term_id=$1 ORDER BY grade.exam_day_id,grade.grade_level_id"),
-                ("blockedWindows", "SELECT to_jsonb(blocked_window) FROM academic_exam_day_blocked_windows blocked_window JOIN academic_exam_days day ON day.id=blocked_window.exam_day_id WHERE day.academic_term_id=$1 ORDER BY blocked_window.id"),
-                ("roomAssignments", "SELECT to_jsonb(assignment) FROM academic_exam_day_room_assignments assignment WHERE assignment.academic_term_id=$1 ORDER BY assignment.id"),
-                ("items", "SELECT to_jsonb(item) FROM academic_exam_schedule_items item WHERE item.academic_term_id=$1 ORDER BY item.id"),
-                ("sessions", "SELECT to_jsonb(session) FROM academic_exam_sessions session JOIN academic_exam_schedule_items item ON item.id=session.exam_schedule_item_id WHERE item.academic_term_id=$1 ORDER BY session.id"),
+                ("rounds", "SELECT to_jsonb(exam_round)::text FROM academic_exam_rounds exam_round WHERE exam_round.academic_term_id=$1 ORDER BY exam_round.id"),
+                ("days", "SELECT to_jsonb(day)::text FROM academic_exam_days day WHERE day.academic_term_id=$1 ORDER BY day.id"),
+                ("gradeLevels", "SELECT to_jsonb(grade)::text FROM academic_exam_day_grade_levels grade JOIN academic_exam_days day ON day.id=grade.exam_day_id WHERE day.academic_term_id=$1 ORDER BY grade.exam_day_id,grade.grade_level_id"),
+                ("blockedWindows", "SELECT to_jsonb(blocked_window)::text FROM academic_exam_day_blocked_windows blocked_window JOIN academic_exam_days day ON day.id=blocked_window.exam_day_id WHERE day.academic_term_id=$1 ORDER BY blocked_window.id"),
+                ("roomAssignments", "SELECT to_jsonb(assignment)::text FROM academic_exam_day_room_assignments assignment WHERE assignment.academic_term_id=$1 ORDER BY assignment.id"),
+                ("items", "SELECT to_jsonb(item)::text FROM academic_exam_schedule_items item WHERE item.academic_term_id=$1 ORDER BY item.id"),
+                ("sessions", "SELECT to_jsonb(session)::text FROM academic_exam_sessions session JOIN academic_exam_schedule_items item ON item.id=session.exam_schedule_item_id WHERE item.academic_term_id=$1 ORDER BY session.id"),
             ] {
                 tables.push((name, json_rows(tx, sql, term_id).await?));
             }
@@ -325,7 +325,7 @@ async fn module_source_fingerprint(
                 "cycles",
                 json_rows(
                     tx,
-                    "SELECT to_jsonb(cycle) FROM supervision_cycles cycle WHERE cycle.academic_term_id=$1 ORDER BY cycle.id",
+                    "SELECT to_jsonb(cycle)::text FROM supervision_cycles cycle WHERE cycle.academic_term_id=$1 ORDER BY cycle.id",
                     term_id,
                 )
                 .await?,
@@ -334,7 +334,7 @@ async fn module_source_fingerprint(
                 "targets",
                 json_rows(
                     tx,
-                    "SELECT to_jsonb(target) FROM supervision_cycle_targets target JOIN supervision_cycles cycle ON cycle.id=target.cycle_id WHERE cycle.academic_term_id=$1 ORDER BY target.id",
+                    "SELECT to_jsonb(target)::text FROM supervision_cycle_targets target JOIN supervision_cycles cycle ON cycle.id=target.cycle_id WHERE cycle.academic_term_id=$1 ORDER BY target.id",
                     term_id,
                 )
                 .await?,

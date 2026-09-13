@@ -182,8 +182,8 @@ async function mock(
 							: level === 'corrector'
 								? ['academic_promotion.correct.school']
 								: [
-									`academic_promotion.${level === 'manager' ? 'manage' : level === 'approver' ? 'approve' : 'execute'}.school`
-								])
+										`academic_promotion.${level === 'manager' ? 'manage' : level === 'approver' ? 'approve' : 'execute'}.school`
+									])
 					]
 				} satisfies Schema['CurrentUserResponse']);
 			if (path === '/api/academic/context/options')
@@ -244,7 +244,12 @@ async function mock(
 					sourceYearId: id(1),
 					targetYearId: id(2),
 					totalCount: impactScenario === 'empty' ? 0 : impactScenario === 'changed-page' ? 2 : 1,
-					pendingCount: impactScenario === 'empty' || impactResolution ? 0 : impactScenario === 'changed-page' ? 2 : 1,
+					pendingCount:
+						impactScenario === 'empty' || impactResolution
+							? 0
+							: impactScenario === 'changed-page'
+								? 2
+								: 1,
 					nextCursor:
 						impactScenario === 'changed-page' && !url.searchParams.has('afterId') ? id(60) : null,
 					sourceChecksum: (url.searchParams.has('afterId') ? 'd' : 'c').repeat(64),
@@ -422,7 +427,11 @@ test('executed promotion corrections are lazy read-only evidence and persist on 
 	await expect(dialog.getByText('ค21101 · คณิตศาสตร์พื้นฐาน', { exact: true })).toBeVisible();
 	expect(observed.writes).toHaveLength(0);
 	expect(observed.impactReads).toHaveLength(2);
-	await page.screenshot({ path: testInfo.outputPath('promotion-impacts-desktop.png'), fullPage: true, animations: 'disabled' });
+	await page.screenshot({
+		path: testInfo.outputPath('promotion-impacts-desktop.png'),
+		fullPage: true,
+		animations: 'disabled'
+	});
 });
 
 test('empty promotion impacts can be dismissed on mobile', async ({ page }, testInfo) => {
@@ -468,7 +477,9 @@ test('authorized corrector explicitly retains an executed decision and sees its 
 	await expect(evidence.getByText('รอจัดการ 1 รายการ', { exact: true })).toBeVisible();
 	await evidence.getByRole('button', { name: 'จัดการผลกระทบ', exact: true }).click();
 	const resolution = page.getByRole('dialog', { name: 'จัดการผลกระทบหลังแก้ผล' });
-	await resolution.getByLabel('เหตุผลการจัดการ', { exact: true }).fill('ตรวจแล้วไม่กระทบผลเลื่อนชั้นเดิม');
+	await resolution
+		.getByLabel('เหตุผลการจัดการ', { exact: true })
+		.fill('ตรวจแล้วไม่กระทบผลเลื่อนชั้นเดิม');
 	await resolution.getByRole('button', { name: 'ยืนยันการจัดการ', exact: true }).click();
 	await expect(resolution).toHaveCount(0);
 	await expect(evidence.getByText('จัดการแล้ว · คงผลเดิม', { exact: true })).toBeVisible();

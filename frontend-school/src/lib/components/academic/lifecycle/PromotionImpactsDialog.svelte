@@ -316,10 +316,13 @@
 				ตรวจผลที่เปลี่ยนจากรุ่นอ้างอิง โดยไม่แก้ประวัติรอบเลื่อนชั้นเดิม
 			</Dialog.Description>
 		</Dialog.Header>
-		<div class="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-sm">
+		<div
+			class="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-sm"
+		>
 			<ShieldAlert class="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-400" />
 			<p>
-				การเปิดดูหน้านี้ไม่เปลี่ยนชั้นหรือห้อง หากเลือกปรับผลใหม่ ระบบจะปรับได้เฉพาะก่อนเปิดปีการศึกษาปลายทาง
+				การเปิดดูหน้านี้ไม่เปลี่ยนชั้นหรือห้อง หากเลือกปรับผลใหม่
+				ระบบจะปรับได้เฉพาะก่อนเปิดปีการศึกษาปลายทาง
 			</p>
 		</div>
 		{#if loading && !workspace}
@@ -468,7 +471,9 @@
 		{#if selectedImpact && selectedStudent}
 			<div class="rounded-xl border bg-muted/30 p-3 text-sm">
 				<p class="font-medium">
-					ผลที่แก้: {formatEffectiveResultValue(selectedImpact.evidence.correction.previous)} → {formatEffectiveResultValue(selectedImpact.evidence.correction.corrected)}
+					ผลที่แก้: {formatEffectiveResultValue(selectedImpact.evidence.correction.previous)} → {formatEffectiveResultValue(
+						selectedImpact.evidence.correction.corrected
+					)}
 				</p>
 				<p class="mt-1 text-xs text-muted-foreground">
 					การปรับผลใหม่จะสร้างหลักฐานเพิ่ม และไม่แก้รอบเลื่อนชั้นหรือหลักฐานเดิม
@@ -629,20 +634,18 @@
 			{#if resolutionValidation && !resolutionNeedsRefresh}
 				<p class="text-sm text-amber-700 dark:text-amber-400">{resolutionValidation}</p>
 			{/if}
-			{#if resolutionError}<p role="alert" class="text-sm text-destructive">{resolutionError}</p>{/if}
+			{#if resolutionError}<p role="alert" class="text-sm text-destructive">
+					{resolutionError}
+				</p>{/if}
 		{/if}
 		<Dialog.Footer>
 			<Button variant="outline" disabled={saving} onclick={closeResolution}>ยกเลิก</Button>
 			{#if resolutionNeedsRefresh}
-				<LoadingButton loading={loading} onclick={reloadResolutionEvidence}>
+				<LoadingButton {loading} onclick={reloadResolutionEvidence}>
 					โหลดหลักฐานล่าสุด
 				</LoadingButton>
 			{:else}
-				<LoadingButton
-					loading={saving}
-					disabled={!!resolutionValidation}
-					onclick={saveResolution}
-				>
+				<LoadingButton loading={saving} disabled={!!resolutionValidation} onclick={saveResolution}>
 					ยืนยันการจัดการ
 				</LoadingButton>
 			{/if}

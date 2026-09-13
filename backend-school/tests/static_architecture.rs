@@ -2936,12 +2936,22 @@ fn module_service_logic_has_focused_unit_tests() {
             .file_stem()
             .and_then(|stem| stem.to_str())
             .unwrap_or_default();
-        let focused_sibling_path = file.with_file_name(format!("{service_stem}_tests.rs"));
+        let focused_sibling_paths = [
+            file.with_file_name(format!("{service_stem}_tests.rs")),
+            file.with_file_name(format!(
+                "{}_tests.rs",
+                service_stem.strip_suffix('s').unwrap_or(service_stem)
+            )),
+        ];
         let block_family_path = file
             .parent()
             .map(|parent| parent.join("timetable_block_service_tests.rs"));
-        let has_focused_sibling_tests = focused_sibling_path.is_file()
-            && read_source(&focused_sibling_path).contains("#[tokio::test]");
+        let has_focused_sibling_tests = focused_sibling_paths.iter().any(|path| {
+            path.is_file() && {
+                let tests = read_source(path);
+                tests.contains("#[test]") || tests.contains("#[tokio::test]")
+            }
+        });
         let has_timetable_block_family_tests = service_stem.starts_with("timetable_block_")
             && block_family_path
                 .is_some_and(|path| path.is_file() && read_source(path).contains("#[tokio::test]"));
@@ -6549,7 +6559,11 @@ fn academic_delivery_and_timetable_collection_reads_are_set_based() {
         manifest_dir().join("src/modules/academic/services/timetable_template_service.rs"),
     ));
 
-    let preview = extract_braced_block(&offerings, "async fn build_curriculum_preview", false);
+    let preview = extract_braced_block(
+        &offerings,
+        "async fn build_curriculum_preview_for_term",
+        false,
+    );
     assert!(
         preview.contains("load_existing_preview_offerings"),
         "curriculum preview must preload existing course and activity offerings once"

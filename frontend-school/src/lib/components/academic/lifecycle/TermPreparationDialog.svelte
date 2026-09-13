@@ -175,11 +175,7 @@
 		);
 	}
 
-	function setEntityMapping(
-		kind: TermPreparationMappingKind,
-		sourceId: string,
-		targetId: string
-	) {
+	function setEntityMapping(kind: TermPreparationMappingKind, sourceId: string, targetId: string) {
 		mappings = {
 			...mappings,
 			entities: [
@@ -284,7 +280,9 @@
 		</Dialog.Header>
 
 		<div class="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4">
-			<section class="grid items-end gap-3 rounded-xl border bg-muted/20 p-4 sm:grid-cols-[1fr_auto_1fr]">
+			<section
+				class="grid items-end gap-3 rounded-xl border bg-muted/20 p-4 sm:grid-cols-[1fr_auto_1fr]"
+			>
 				<div>
 					<p class="text-xs font-medium text-muted-foreground">ต้นทางที่ปิดแล้ว</p>
 					<p class="mt-1 font-semibold">{sourceTerm?.name ?? 'ภาคเรียนที่เลือก'}</p>
@@ -324,7 +322,9 @@
 				</div>
 				<div class="grid gap-2 sm:grid-cols-2">
 					{#each moduleDefinitions as item (item.id)}
-						<label class="flex cursor-pointer items-start gap-3 rounded-lg border p-3 hover:bg-muted/30">
+						<label
+							class="flex cursor-pointer items-start gap-3 rounded-lg border p-3 hover:bg-muted/30"
+						>
 							<Checkbox
 								checked={modules.includes(item.id)}
 								disabled={busy || loading}
@@ -342,7 +342,7 @@
 			</section>
 
 			<div class="flex justify-end">
-				<LoadingButton loading={loading} disabled={!canPreview} onclick={() => void preview()}>
+				<LoadingButton {loading} disabled={!canPreview} onclick={() => void preview()}>
 					<RefreshCw class="size-4" />ตรวจตัวอย่าง
 				</LoadingButton>
 			</div>
@@ -384,7 +384,9 @@
 						</div>
 						<div class="max-h-80 divide-y overflow-y-auto rounded-lg border">
 							{#each workspace.mappingRequirements as requirement (`${requirement.kind}:${requirement.sourceId}`)}
-								<div class="grid gap-2 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(14rem,1fr)] sm:items-center">
+								<div
+									class="grid gap-2 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(14rem,1fr)] sm:items-center"
+								>
 									<div class="min-w-0">
 										<p class="truncate text-sm font-medium">{requirement.sourceLabel}</p>
 										<p class="text-xs text-muted-foreground">{kindLabels[requirement.kind]}</p>
@@ -398,7 +400,8 @@
 									>
 										<Select.Trigger class="w-full">
 											{requirement.targetOptions.find(
-												(option) => option.id === entityValue(requirement.kind, requirement.sourceId)
+												(option) =>
+													option.id === entityValue(requirement.kind, requirement.sourceId)
 											)?.label ?? 'เลือกปลายทาง'}
 										</Select.Trigger>
 										<Select.Content>
@@ -410,7 +413,9 @@
 								</div>
 							{/each}
 							{#each workspace.dateRequirements as requirement (requirement.sourceDate)}
-								<div class="grid gap-2 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(14rem,1fr)] sm:items-center">
+								<div
+									class="grid gap-2 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(14rem,1fr)] sm:items-center"
+								>
 									<div>
 										<p class="text-sm font-medium">{requirement.sourceLabel}</p>
 										<p class="text-xs text-muted-foreground">วันที่ปลายทาง</p>
@@ -431,14 +436,18 @@
 				{/if}
 
 				{#if workspace.findings.length === 0}
-					<p class="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+					<p
+						class="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900"
+					>
 						<CheckCircle2 class="size-5" />พร้อมสร้างแบบร่าง ข้อมูลต้นทางจะไม่ถูกแก้ไข
 					</p>
 				{:else}
 					<ul class="divide-y rounded-lg border" aria-label="เงื่อนไขการเตรียมภาคเรียน">
 						{#each workspace.findings as finding (`${finding.code}:${finding.message}`)}
 							<li class="p-3 text-sm">
-								<span class={finding.severity === 'blocking' ? 'text-destructive' : 'text-amber-800'}>
+								<span
+									class={finding.severity === 'blocking' ? 'text-destructive' : 'text-amber-800'}
+								>
 									{finding.severity === 'blocking' ? 'ต้องแก้ก่อน · ' : 'ควรตรวจ · '}
 								</span>{finding.message}
 							</li>
@@ -448,9 +457,14 @@
 			{/if}
 
 			{#if errorMessage}<p role="alert" class="text-sm text-destructive">{errorMessage}</p>{/if}
-			<div class="flex items-start gap-2 rounded-lg bg-muted/50 p-3 text-xs leading-relaxed text-muted-foreground">
+			<div
+				class="flex items-start gap-2 rounded-lg bg-muted/50 p-3 text-xs leading-relaxed text-muted-foreground"
+			>
 				<CalendarRange class="mt-0.5 size-4 shrink-0" />
-				<span>การเตรียมนี้ไม่เปลี่ยนตัวเลือกปี/ภาคเรียนบนแถบด้านบน และไม่มีแบบร่างใดเริ่มใช้งานจนกว่าจะเผยแพร่ในหน้าของส่วนนั้น</span>
+				<span
+					>การเตรียมนี้ไม่เปลี่ยนตัวเลือกปี/ภาคเรียนบนแถบด้านบน
+					และไม่มีแบบร่างใดเริ่มใช้งานจนกว่าจะเผยแพร่ในหน้าของส่วนนั้น</span
+				>
 			</div>
 		</div>
 

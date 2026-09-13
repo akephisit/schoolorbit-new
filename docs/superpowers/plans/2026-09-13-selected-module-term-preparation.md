@@ -108,6 +108,6 @@ POST /api/academic/lifecycle/term-preparations/apply
 
 ### Task 7: Release integration and exact-build boundary
 
-- [ ] Run the complete `.rules` matrix serially and verify no scores/results/rosters/source timetable or observation records changed in preparation tests.
-- [ ] Rebase/merge current `origin/main` only after preserving unrelated shared-session files, resolve generated-contract changes from source, and obtain a final code review.
+- [x] Run the complete `.rules` matrix serially and verify no scores/results/rosters/source timetable or observation records changed in preparation tests.
+- [x] Rebase/merge current `origin/main` only after preserving unrelated shared-session files, resolve generated-contract changes from source, and obtain a final code review.
 - [ ] Commit and push the complete branch to `main` only after local gates. Then verify the exact deployed build on `sandbox.schoolorbit.app` with owned `E2E-LIFECYCLE-` fixtures; do not report mocked browser coverage as live evidence.
