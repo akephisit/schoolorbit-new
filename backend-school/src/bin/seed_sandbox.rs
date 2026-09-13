@@ -23,6 +23,15 @@ pub mod utils {
 pub mod migration;
 
 #[cfg(test)]
+pub mod db {
+    pub use crate::migration;
+}
+
+#[cfg(test)]
+#[path = "../test_helpers.rs"]
+mod test_helpers;
+
+#[cfg(test)]
 #[path = "../modules/academic/cutover_test_preflight.rs"]
 mod cutover_test_preflight;
 

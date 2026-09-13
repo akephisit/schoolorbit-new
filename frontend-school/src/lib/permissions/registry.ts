@@ -46,9 +46,11 @@ const SCOPE_META: Record<string, PermissionMeta> = {
 };
 
 const ACTION_LABELS: Record<string, string> = {
+	activate: 'เริ่มใช้งาน',
 	all: 'ทั้งหมด',
 	approve: 'อนุมัติ',
 	assign: 'มอบหมาย',
+	close: 'ปิด',
 	correct: 'แก้ไขผล',
 	create: 'สร้าง',
 	delete: 'ลบ',
@@ -59,6 +61,7 @@ const ACTION_LABELS: Record<string, string> = {
 	manage_members: 'จัดการสมาชิก',
 	read: 'ดู',
 	remove: 'ถอดออก',
+	reopen: 'เปิดกลับ',
 	request: 'ส่งคำขอ',
 	scores: 'คะแนน',
 	update: 'แก้ไข',

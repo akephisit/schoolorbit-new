@@ -3,7 +3,11 @@ use crate::error::AppError;
 use bigdecimal::BigDecimal;
 use chrono::NaiveDate;
 use std::str::FromStr;
+pub(crate) mod activation_context;
+#[cfg(test)]
+pub(crate) mod activation_context_tests;
 
+pub(crate) mod activation;
 pub mod bell_schedules;
 pub mod catalog;
 pub mod context;
@@ -11,9 +15,18 @@ pub mod curriculum;
 pub mod curriculum_structure;
 pub(crate) mod lifecycle_guard;
 pub mod progressions;
+pub(crate) mod promotion_context;
+pub(crate) mod promotion_execution;
+pub(crate) mod promotion_reconciliation;
+pub(crate) mod promotion_students;
+pub(crate) mod promotion_targets;
 pub(crate) mod student_year_batch;
 pub mod student_years;
+pub(crate) mod term_transitions;
 pub mod workspaces;
+pub(crate) mod year_commands;
+pub(crate) mod year_reopening;
+pub(crate) mod year_transitions;
 pub mod years_terms;
 
 pub fn validate_canonical_decimal(value: &str, max_scale: usize) -> Result<BigDecimal, AppError> {

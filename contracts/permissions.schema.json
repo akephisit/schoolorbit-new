@@ -31,9 +31,11 @@
     },
     "action": {
       "enum": [
+        "activate",
         "all",
         "approve",
         "assign",
+        "close",
         "correct",
         "create",
         "delete",
@@ -46,6 +48,7 @@
         "publish",
         "read",
         "remove",
+        "reopen",
         "request",
         "scores",
         "update",

@@ -12,6 +12,25 @@ use crate::modules::academic::models::timetable_version::{
 };
 use crate::modules::academic::services::timetable_block_conflicts::map_write_error;
 
+pub(crate) mod opening;
+#[path = "timetable_version_service/term_preparation.rs"]
+mod term_preparation;
+pub(crate) use term_preparation::apply as apply_term_preparation;
+
+pub(crate) async fn pending_term_work(
+    tx: &mut Transaction<'_, Postgres>,
+    year: Uuid,
+    term: Uuid,
+) -> Result<Vec<crate::modules::academic::lifecycle::models::PendingTermWork>, AppError> {
+    Ok(sqlx::query_as(
+        "SELECT version.id,
+         md5(to_jsonb(version)::text || COALESCE((SELECT jsonb_agg(to_jsonb(block) ORDER BY block.id)::text
+             FROM academic_timetable_blocks block WHERE block.timetable_version_id=version.id),'[]')) AS revision,
+         false AS blocks_closure FROM academic_timetable_versions version WHERE academic_year_id=$1
+         AND academic_term_id=$2 AND status='draft' ORDER BY version.id",
+    ).bind(year).bind(term).fetch_all(&mut **tx).await?)
+}
+
 #[derive(Debug, Clone, FromRow)]
 struct TimetableVersionRow {
     id: Uuid,

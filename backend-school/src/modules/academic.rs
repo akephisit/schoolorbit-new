@@ -9,6 +9,7 @@ pub mod delivery;
 pub mod gradebook;
 pub mod handlers;
 pub mod learner_evaluation;
+pub mod lifecycle;
 pub mod models;
 pub mod reconciliation;
 pub mod results;
@@ -24,6 +25,7 @@ pub fn academic_routes() -> Router<AppState> {
         .merge(delivery::routes())
         .merge(gradebook::routes())
         .merge(learner_evaluation::routes())
+        .merge(lifecycle::routes())
         .merge(results::routes());
     base.merge(
         Router::new()

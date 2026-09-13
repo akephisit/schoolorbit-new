@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+pub(crate) use rounds_and_days::pending_term_work;
 mod invigilation;
 mod published_views;
 mod publishing;
@@ -7,7 +8,9 @@ mod room_assignments;
 mod rounds_and_days;
 mod sessions_and_conflicts;
 mod shared;
+mod term_preparation;
 mod workspace;
+pub(crate) use term_preparation::apply as apply_term_preparation;
 
 pub use self::invigilation::{
     assign_invigilator_to_assignment, get_invigilator_workspace, list_invigilator_staff_options,

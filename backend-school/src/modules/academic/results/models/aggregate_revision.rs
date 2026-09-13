@@ -84,3 +84,35 @@ pub struct TermAggregateRevision {
     /// Recalculated against the policy pinned to this revision, not a newer policy.
     pub is_current: bool,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TermClosureStudent {
+    pub student_academic_year_id: Uuid,
+    pub revision_id: Option<Uuid>,
+    pub revision: Option<i64>,
+    pub policy_id: Option<Uuid>,
+    pub is_current: bool,
+    pub blockers: Vec<AggregateBlocker>,
+    pub hold_reason: Option<String>,
+    pub current_source_checksum: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TermClosureCoverage {
+    pub students: Vec<TermClosureStudent>,
+    pub ready: bool,
+    pub source_checksum: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AggregateStudent {
+    pub student_academic_year_id: Uuid,
+    pub student_code: Option<String>,
+    pub student_name: String,
+    pub grade_level_name: String,
+    pub study_program_name: String,
+    pub closure: TermClosureStudent,
+}

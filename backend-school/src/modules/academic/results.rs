@@ -1,5 +1,5 @@
 #[cfg(test)]
-mod aggregate_revision_tests;
+pub(crate) mod aggregate_revision_tests;
 pub mod handlers;
 pub mod models;
 pub mod services;
@@ -23,6 +23,19 @@ pub fn routes() -> axum::Router<crate::AppState> {
                 post(handlers::activate_policy),
             )
             .route("/readiness", get(handlers::readiness))
+            .route(
+                "/aggregate-students",
+                get(handlers::list_aggregate_students),
+            )
+            .route("/annual-students", get(handlers::list_annual_students))
+            .route(
+                "/students/{student_year_id}/annual-preview",
+                get(handlers::preview_annual),
+            )
+            .route(
+                "/students/{student_year_id}/annual-revisions",
+                get(handlers::list_annual_revisions).post(handlers::lock_annual),
+            )
             .route(
                 "/aggregate-policies",
                 get(handlers::list_aggregate_policies).post(handlers::create_aggregate_policy),

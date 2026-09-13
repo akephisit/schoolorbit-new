@@ -66,6 +66,13 @@ function validatePermissionAction(action) {
 	}
 }
 
+test('lifecycle transitions have distinct canonical capabilities', () => {
+	for (const action of ['close', 'reopen', 'activate']) {
+		assert.equal(validatePermissionAction(action), true, `${action} must be grantable independently`);
+	}
+	assert.equal(validatePermissionAction('force_close'), false);
+});
+
 async function temporaryPaths(t, contract = validContract) {
 	const root = await mkdtemp(path.join(tmpdir(), 'schoolorbit-permission-generator-'));
 	t.after(() => rm(root, { recursive: true, force: true }));

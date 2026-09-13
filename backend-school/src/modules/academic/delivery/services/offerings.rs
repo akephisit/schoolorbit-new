@@ -21,8 +21,8 @@ use super::super::models::{
     PublishLearningOfferingRequest, UpdateLearningOfferingRequest,
 };
 use super::{
-    append_audit, require_active_owner, require_writable_offering_term, require_writable_term,
-    stable_hash, validate_row_version, TermContext,
+    append_audit, load_term_context, require_active_owner, require_writable_offering_term,
+    require_writable_term, stable_hash, validate_row_version, TermContext,
 };
 
 const OFFERING_COLUMNS: &str = r#"
@@ -35,6 +35,24 @@ const OFFERING_COLUMNS: &str = r#"
 
 const DELIVERY_NAMESPACE: Uuid = Uuid::from_u128(0x83c8_46da_e34e_5146_8ff1_f7ca_aa6e_20a4);
 const MAX_TERM_OFFERINGS: usize = 500;
+
+pub(crate) fn prepared_offering_id(
+    term_id: Uuid,
+    kind: LearningOfferingKind,
+    catalog_version_id: Uuid,
+) -> Uuid {
+    Uuid::new_v5(
+        &DELIVERY_NAMESPACE,
+        format!("offering:{term_id}:{kind:?}:{catalog_version_id}").as_bytes(),
+    )
+}
+
+pub(crate) fn prepared_group_id(offering_id: Uuid, group_key: &str) -> Uuid {
+    Uuid::new_v5(
+        &DELIVERY_NAMESPACE,
+        format!("group:{offering_id}:{}", group_key.trim()).as_bytes(),
+    )
+}
 
 #[derive(Debug, sqlx::FromRow)]
 struct CourseVersionSource {
@@ -463,6 +481,73 @@ pub async fn preview_from_curriculum(
     Ok(preview)
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct TermPreparationDeliveryOutcome {
+    pub offering_ids: Vec<Uuid>,
+    pub group_ids: Vec<Uuid>,
+    pub created_offering_count: usize,
+    pub created_group_count: usize,
+}
+
+/// Build Delivery exclusively from the curriculum applicable to the target
+/// term. The caller owns the transaction so lifecycle can keep all selected
+/// module drafts atomic.
+pub(crate) async fn preview_term_preparation(
+    transaction: &mut Transaction<'_, Postgres>,
+    target_term_id: Uuid,
+) -> Result<CurriculumOfferingPreview, AppError> {
+    let program_ids: Vec<Uuid> = sqlx::query_scalar(
+        r#"SELECT DISTINCT homeroom.study_program_id
+           FROM homerooms homeroom
+           JOIN academic_terms term ON term.academic_year_id=homeroom.academic_year_id
+           WHERE term.id=$1 AND homeroom.is_active
+           ORDER BY homeroom.study_program_id"#,
+    )
+    .bind(target_term_id)
+    .fetch_all(&mut **transaction)
+    .await?;
+    if program_ids.is_empty() {
+        return Err(AppError::ValidationError(
+            "ปีการศึกษาเป้าหมายยังไม่มีห้องประจำชั้นและแผนการเรียน".into(),
+        ));
+    }
+    let term = load_term_context(transaction, target_term_id).await?;
+    if term.status != "planning" {
+        return Err(AppError::Conflict(
+            "ภาคเรียนเป้าหมายต้องอยู่ในสถานะวางแผน".into(),
+        ));
+    }
+    build_curriculum_preview_for_term(transaction, target_term_id, &program_ids, term, false).await
+}
+
+pub(crate) async fn apply_term_preparation(
+    transaction: &mut Transaction<'_, Postgres>,
+    preview: &CurriculumOfferingPreview,
+) -> Result<TermPreparationDeliveryOutcome, AppError> {
+    let term = require_writable_term(transaction, preview.academic_term_id, true).await?;
+    let choices = preview
+        .proposals
+        .iter()
+        .map(|proposal| CurriculumPreparationChoice {
+            proposal_id: proposal.proposal_id.clone(),
+            action: if proposal.default_groups.is_empty() {
+                PreparationAction::DeferGroups
+            } else {
+                PreparationAction::Apply
+            },
+            groups: proposal.default_groups.clone(),
+        })
+        .collect::<Vec<_>>();
+    validate_preparation_choices(&preview.proposals, &choices)?;
+    let applied = apply_preview_in_transaction(transaction, &term, preview, &choices).await?;
+    Ok(TermPreparationDeliveryOutcome {
+        offering_ids: applied.offering_ids,
+        group_ids: applied.group_ids,
+        created_offering_count: applied.created_offering_count,
+        created_group_count: applied.created_group_count,
+    })
+}
+
 pub async fn apply_from_curriculum(
     pool: &PgPool,
     actor_user_id: Uuid,
@@ -539,6 +624,60 @@ pub async fn apply_from_curriculum(
     }
     validate_preparation_choices(&preview.proposals, &choices)?;
 
+    let applied = apply_preview_in_transaction(&mut transaction, &term, &preview, &choices).await?;
+    sqlx::query(
+        "INSERT INTO learning_delivery_apply_runs (
+             idempotency_key, academic_term_id, request_hash, source_hash,
+             offering_ids, group_ids, created_offering_count,
+             retained_offering_count, created_group_count, retained_group_count,
+             skipped_count, actor_user_id
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+    )
+    .bind(request.idempotency_key)
+    .bind(request.academic_term_id)
+    .bind(&request_hash)
+    .bind(&preview.source_hash)
+    .bind(&applied.offering_ids)
+    .bind(&applied.group_ids)
+    .bind(applied.created_offering_count as i32)
+    .bind(applied.retained_offering_count as i32)
+    .bind(applied.created_group_count as i32)
+    .bind(applied.retained_group_count as i32)
+    .bind(applied.skipped_count as i32)
+    .bind(actor_user_id)
+    .execute(&mut *transaction)
+    .await?;
+    transaction.commit().await?;
+
+    Ok(ApplyCurriculumOfferingsResult {
+        academic_term_id: request.academic_term_id,
+        source_hash: preview.source_hash,
+        offering_ids: applied.offering_ids,
+        group_ids: applied.group_ids,
+        created_offering_count: applied.created_offering_count,
+        retained_offering_count: applied.retained_offering_count,
+        created_group_count: applied.created_group_count,
+        retained_group_count: applied.retained_group_count,
+        skipped_count: applied.skipped_count,
+    })
+}
+
+struct AppliedCurriculumPreview {
+    offering_ids: Vec<Uuid>,
+    group_ids: Vec<Uuid>,
+    created_offering_count: usize,
+    retained_offering_count: usize,
+    created_group_count: usize,
+    retained_group_count: usize,
+    skipped_count: usize,
+}
+
+async fn apply_preview_in_transaction(
+    transaction: &mut Transaction<'_, Postgres>,
+    term: &TermContext,
+    preview: &CurriculumOfferingPreview,
+    choices: &[CurriculumPreparationChoice],
+) -> Result<AppliedCurriculumPreview, AppError> {
     let mut offering_ids = Vec::new();
     let mut group_ids = Vec::new();
     let mut created_offering_count = 0_usize;
@@ -550,7 +689,7 @@ pub async fn apply_from_curriculum(
         let choice = choices
             .iter()
             .find(|choice| choice.proposal_id == proposal.proposal_id)
-            .ok_or_else(|| AppError::ValidationError("ตัวเลือกการเตรียมรายการไม่ครบ".to_string()))?;
+            .ok_or_else(|| AppError::ValidationError("ตัวเลือกการเตรียมรายการไม่ครบ".into()))?;
         if choice.action == PreparationAction::Skip {
             skipped_count += 1;
             continue;
@@ -564,21 +703,19 @@ pub async fn apply_from_curriculum(
         if choice.action == PreparationAction::Apply && !proposal.conflicts.is_empty() {
             return Err(AppError::Conflict(proposal.conflicts[0].message.clone()));
         }
-
         let offering_id = if let Some(existing) = proposal.existing_offering_id {
             retained_offering_count += 1;
             existing
         } else {
             created_offering_count += 1;
-            insert_generated_offering(&mut transaction, &term, proposal).await?
+            insert_generated_offering(transaction, term, proposal).await?
         };
-        insert_homeroom_targets(&mut transaction, offering_id, &term, proposal).await?;
+        insert_homeroom_targets(transaction, offering_id, term, proposal).await?;
         offering_ids.push(offering_id);
-
         if choice.action == PreparationAction::Apply {
             for group in &choice.groups {
                 let outcome = super::groups::apply_curriculum_generated_group(
-                    &mut transaction,
+                    transaction,
                     offering_id,
                     term.id,
                     term.academic_year_id,
@@ -598,33 +735,7 @@ pub async fn apply_from_curriculum(
     offering_ids.dedup();
     group_ids.sort_unstable();
     group_ids.dedup();
-    sqlx::query(
-        "INSERT INTO learning_delivery_apply_runs (
-             idempotency_key, academic_term_id, request_hash, source_hash,
-             offering_ids, group_ids, created_offering_count,
-             retained_offering_count, created_group_count, retained_group_count,
-             skipped_count, actor_user_id
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
-    )
-    .bind(request.idempotency_key)
-    .bind(request.academic_term_id)
-    .bind(&request_hash)
-    .bind(&preview.source_hash)
-    .bind(&offering_ids)
-    .bind(&group_ids)
-    .bind(created_offering_count as i32)
-    .bind(retained_offering_count as i32)
-    .bind(created_group_count as i32)
-    .bind(retained_group_count as i32)
-    .bind(skipped_count as i32)
-    .bind(actor_user_id)
-    .execute(&mut *transaction)
-    .await?;
-    transaction.commit().await?;
-
-    Ok(ApplyCurriculumOfferingsResult {
-        academic_term_id: request.academic_term_id,
-        source_hash: preview.source_hash,
+    Ok(AppliedCurriculumPreview {
         offering_ids,
         group_ids,
         created_offering_count,
@@ -1482,7 +1593,17 @@ async fn build_curriculum_preview(
     program_ids: &[Uuid],
 ) -> Result<CurriculumOfferingPreview, AppError> {
     let term = require_writable_term(transaction, academic_term_id, false).await?;
-    let valid_program_ids: Vec<Uuid> = sqlx::query_scalar(
+    build_curriculum_preview_for_term(transaction, academic_term_id, program_ids, term, true).await
+}
+
+async fn build_curriculum_preview_for_term(
+    transaction: &mut Transaction<'_, Postgres>,
+    academic_term_id: Uuid,
+    program_ids: &[Uuid],
+    term: TermContext,
+    lock_rows: bool,
+) -> Result<CurriculumOfferingPreview, AppError> {
+    let valid_program_query = format!(
         "SELECT program.id FROM study_programs program \
          JOIN curriculum_versions version ON version.id = program.curriculum_version_id \
          WHERE program.id = ANY($1) AND program.status = 'published' \
@@ -1491,13 +1612,14 @@ async fn build_curriculum_preview(
                <= (SELECT start_date FROM academic_years WHERE id = $2) \
            AND (version.end_academic_year_id IS NULL OR \
                 (SELECT end_date FROM academic_years WHERE id = version.end_academic_year_id) \
-                    >= (SELECT start_date FROM academic_years WHERE id = $2)) \
-         FOR SHARE",
-    )
-    .bind(program_ids)
-    .bind(term.academic_year_id)
-    .fetch_all(&mut **transaction)
-    .await?;
+                    >= (SELECT start_date FROM academic_years WHERE id = $2)){}",
+        if lock_rows { " FOR SHARE" } else { "" }
+    );
+    let valid_program_ids: Vec<Uuid> = sqlx::query_scalar(&valid_program_query)
+        .bind(program_ids)
+        .bind(term.academic_year_id)
+        .fetch_all(&mut **transaction)
+        .await?;
     if valid_program_ids.len() != program_ids.len() {
         return Err(AppError::ValidationError(
             "แผนการเรียนต้องเผยแพร่และอยู่ในหลักสูตรที่เผยแพร่แล้ว".to_string(),
@@ -1830,14 +1952,7 @@ async fn insert_generated_offering(
     )
     .await?;
     require_active_owner(transaction, owner_id).await?;
-    let id = Uuid::new_v5(
-        &DELIVERY_NAMESPACE,
-        format!(
-            "offering:{}:{:?}:{}",
-            term.id, proposal.resource_kind, proposal.catalog_version_id
-        )
-        .as_bytes(),
-    );
+    let id = prepared_offering_id(term.id, proposal.resource_kind, proposal.catalog_version_id);
     sqlx::query(
         r#"INSERT INTO learning_offerings (
                id, academic_term_id, academic_year_id, kind, code_snapshot,

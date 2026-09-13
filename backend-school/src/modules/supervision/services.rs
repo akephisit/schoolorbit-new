@@ -5,10 +5,12 @@ mod observations;
 mod reviews_and_reports;
 mod shared;
 mod templates;
+mod term_preparation;
 
 #[allow(unused_imports)]
 pub use cycles::{create_cycle, get_cycle, list_cycles, update_cycle};
 pub use evaluations::{replace_observation_evaluators, submit_my_evaluation};
+pub(crate) use lifecycle::pending_term_work;
 pub use observations::{
     approve_observation_request, cancel_observation, cancel_requested_observation,
     evaluator_availability, get_observation, list_observations, observation_timetable_options,
@@ -28,3 +30,4 @@ pub use shared::{
     SupervisionObservationListAccess, SupervisionTargetMatch, SupervisionTargetRule,
 };
 pub use templates::{create_template, get_template, list_templates, update_template};
+pub(crate) use term_preparation::apply as apply_term_preparation;

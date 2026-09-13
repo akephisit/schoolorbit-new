@@ -5,6 +5,7 @@
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { getAcademicContextStore } from '$lib/academic-context/store';
+	import { aggregateCapabilities } from '$lib/academic/results/aggregate-access';
 	import {
 		sortAssignedFirst,
 		type CourseOutcomeSelection
@@ -41,6 +42,7 @@
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
+	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
@@ -89,6 +91,7 @@
 
 	const academicYearId = $derived($academicContext.selected.academicYearId);
 	const academicTermId = $derived($academicContext.selected.academicTermId);
+	const canReadAggregate = $derived(aggregateCapabilities($can).read);
 	const canReadResult = $derived(
 		$can.hasAny(
 			PERMISSIONS.ACADEMIC_RESULT_READ_ASSIGNED,
@@ -435,6 +438,21 @@
 	title="สรุปผลการเรียน"
 	description="ตรวจผลที่ระบบคำนวณ ยืนยันรายห้อง ประเมินกิจกรรม และดูผลประเมินผู้เรียนประจำภาคเรียน"
 >
+	{#snippet actions()}
+		{#if canReadAggregate && academicYearId}
+			<Button
+				variant="outline"
+				href={`/staff/academic/results/annual?academicYearId=${academicYearId}`}>สรุปผลรายปี</Button
+			>
+		{/if}
+		{#if canReadAggregate && academicYearId && academicTermId}
+			<Button
+				variant="outline"
+				href={`/staff/academic/results/aggregates?academicYearId=${academicYearId}&academicTermId=${academicTermId}`}
+				>สรุปผลรายภาค</Button
+			>
+		{/if}
+	{/snippet}
 	{#if !canReadResult && !canReadLearnerEvaluation}
 		<PageState
 			variant="permission"

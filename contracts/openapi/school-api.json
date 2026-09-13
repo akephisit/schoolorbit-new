@@ -2090,6 +2090,40 @@
         ],
         "type": "object"
       },
+      "AggregateStudent": {
+        "properties": {
+          "closure": {
+            "$ref": "#/components/schemas/TermClosureStudent"
+          },
+          "gradeLevelName": {
+            "type": "string"
+          },
+          "studentAcademicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "studentCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "studentName": {
+            "type": "string"
+          },
+          "studyProgramName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "studentAcademicYearId",
+          "studentName",
+          "gradeLevelName",
+          "studyProgramName",
+          "closure"
+        ],
+        "type": "object"
+      },
       "AggregationPolicyBand": {
         "additionalProperties": false,
         "properties": {
@@ -2160,6 +2194,322 @@
           "lifecycle",
           "rowVersion",
           "bands"
+        ],
+        "type": "object"
+      },
+      "AnnualClosureCoverage": {
+        "properties": {
+          "ready": {
+            "type": "boolean"
+          },
+          "sourceChecksum": {
+            "type": "string"
+          },
+          "students": {
+            "items": {
+              "$ref": "#/components/schemas/AnnualClosureStudent"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "students",
+          "ready",
+          "sourceChecksum"
+        ],
+        "type": "object"
+      },
+      "AnnualClosureStudent": {
+        "properties": {
+          "holdReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "isCurrent": {
+            "type": "boolean"
+          },
+          "revision": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "revisionId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "studentAcademicYearId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "studentAcademicYearId",
+          "isCurrent"
+        ],
+        "type": "object"
+      },
+      "AnnualCorrectionEvidence": {
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "annualRevisionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "correction": {
+            "$ref": "#/components/schemas/ResultCorrectionRecord"
+          },
+          "criterionName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "evaluationDomain": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LearnerEvaluationDomain"
+              }
+            ]
+          },
+          "offeringCode": {
+            "type": "string"
+          },
+          "offeringName": {
+            "type": "string"
+          },
+          "resultId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sourceEffectiveVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "termName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "annualRevisionId",
+          "academicTermId",
+          "termName",
+          "offeringCode",
+          "offeringName",
+          "resultId",
+          "sourceEffectiveVersion",
+          "correction"
+        ],
+        "type": "object"
+      },
+      "AnnualLockInput": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedRevision": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "holdReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sourceChecksum": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sourceChecksum",
+          "requestId"
+        ],
+        "type": "object"
+      },
+      "AnnualResultContext": {
+        "additionalProperties": false,
+        "properties": {
+          "academicYearId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "academicYearId"
+        ],
+        "type": "object"
+      },
+      "AnnualResultPreview": {
+        "properties": {
+          "academicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "canLock": {
+            "type": "boolean"
+          },
+          "needsHold": {
+            "type": "boolean"
+          },
+          "sourceChecksum": {
+            "type": "string"
+          },
+          "studentAcademicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "terms": {
+            "items": {
+              "$ref": "#/components/schemas/AnnualTermSource"
+            },
+            "type": "array"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/CourseCreditTotals"
+          }
+        },
+        "required": [
+          "academicYearId",
+          "studentAcademicYearId",
+          "terms",
+          "totals",
+          "canLock",
+          "needsHold",
+          "sourceChecksum"
+        ],
+        "type": "object"
+      },
+      "AnnualResultRevision": {
+        "properties": {
+          "holdReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "isCurrent": {
+            "type": "boolean"
+          },
+          "lockedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "lockedBy": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "officialGpa": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/AnnualResultPreview"
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "snapshot",
+          "lockedBy",
+          "lockedAt",
+          "isCurrent"
+        ],
+        "type": "object"
+      },
+      "AnnualResultStudent": {
+        "properties": {
+          "closure": {
+            "$ref": "#/components/schemas/AnnualClosureStudent"
+          },
+          "gradeLevelName": {
+            "type": "string"
+          },
+          "studentAcademicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "studentCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "studentName": {
+            "type": "string"
+          },
+          "studyProgramName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "studentAcademicYearId",
+          "studentName",
+          "gradeLevelName",
+          "studyProgramName",
+          "closure"
+        ],
+        "type": "object"
+      },
+      "AnnualTermSource": {
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "isCurrent": {
+            "type": "boolean"
+          },
+          "revision": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TermAggregateRevision"
+              }
+            ]
+          },
+          "sequence": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "termName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "academicTermId",
+          "termName",
+          "sequence",
+          "isCurrent"
         ],
         "type": "object"
       },
@@ -3263,6 +3613,123 @@
               "lifecycle",
               "rowVersion",
               "bands"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_AnnualResultPreview": {
+        "properties": {
+          "data": {
+            "properties": {
+              "academicYearId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "canLock": {
+                "type": "boolean"
+              },
+              "needsHold": {
+                "type": "boolean"
+              },
+              "sourceChecksum": {
+                "type": "string"
+              },
+              "studentAcademicYearId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "terms": {
+                "items": {
+                  "$ref": "#/components/schemas/AnnualTermSource"
+                },
+                "type": "array"
+              },
+              "totals": {
+                "$ref": "#/components/schemas/CourseCreditTotals"
+              }
+            },
+            "required": [
+              "academicYearId",
+              "studentAcademicYearId",
+              "terms",
+              "totals",
+              "canLock",
+              "needsHold",
+              "sourceChecksum"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_AnnualResultRevision": {
+        "properties": {
+          "data": {
+            "properties": {
+              "holdReason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "isCurrent": {
+                "type": "boolean"
+              },
+              "lockedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "lockedBy": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "officialGpa": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "revision": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "snapshot": {
+                "$ref": "#/components/schemas/AnnualResultPreview"
+              }
+            },
+            "required": [
+              "id",
+              "revision",
+              "snapshot",
+              "lockedBy",
+              "lockedAt",
+              "isCurrent"
             ],
             "type": "object"
           },
@@ -9196,6 +9663,45 @@
         ],
         "type": "object"
       },
+      "ApiResponse_OpeningPolicy": {
+        "properties": {
+          "data": {
+            "properties": {
+              "requireHomeroomPlacements": {
+                "type": "boolean"
+              },
+              "requirePublishedOfferings": {
+                "type": "boolean"
+              },
+              "requirePublishedTimetable": {
+                "type": "boolean"
+              },
+              "rowVersion": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "rowVersion",
+              "requireHomeroomPlacements",
+              "requirePublishedOfferings",
+              "requirePublishedTimetable"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_OrganizationUnit": {
         "properties": {
           "data": {
@@ -9672,6 +10178,561 @@
               "address",
               "profileImageFileId",
               "hiredDate"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_PromotionExecutionResult": {
+        "properties": {
+          "data": {
+            "properties": {
+              "failures": {
+                "items": {
+                  "$ref": "#/components/schemas/PromotionExecutionFailure"
+                },
+                "type": "array"
+              },
+              "holdCount": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "receipts": {
+                "items": {
+                  "$ref": "#/components/schemas/PromotionExecutionReceipt"
+                },
+                "type": "array"
+              },
+              "remainingCount": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "run": {
+                "$ref": "#/components/schemas/PromotionRun"
+              }
+            },
+            "required": [
+              "run",
+              "receipts",
+              "failures",
+              "remainingCount",
+              "holdCount"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_PromotionImpactResolution": {
+        "properties": {
+          "data": {
+            "properties": {
+              "correctionId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "impactId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "itemId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "outcome": {
+                "$ref": "#/components/schemas/PromotionImpactResolutionOutcome"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "replacementDecision": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/PromotionDecisionInput"
+                  }
+                ]
+              },
+              "requestId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "resolutionKind": {
+                "$ref": "#/components/schemas/PromotionImpactResolutionKind"
+              },
+              "resolvedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "resolvedBy": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "runId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "sourceChecksum": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "requestId",
+              "runId",
+              "itemId",
+              "correctionId",
+              "impactId",
+              "resolutionKind",
+              "reason",
+              "sourceChecksum",
+              "outcome",
+              "resolvedBy",
+              "resolvedAt"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_PromotionImpactWorkspace": {
+        "properties": {
+          "data": {
+            "properties": {
+              "impacts": {
+                "items": {
+                  "$ref": "#/components/schemas/PromotionCorrectionImpact"
+                },
+                "type": "array"
+              },
+              "nextCursor": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "pendingCount": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "runId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "sourceChecksum": {
+                "type": "string"
+              },
+              "sourceYearId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "targetYearId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "totalCount": {
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "runId",
+              "sourceYearId",
+              "targetYearId",
+              "impacts",
+              "totalCount",
+              "pendingCount",
+              "sourceChecksum"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_PromotionItemReview": {
+        "properties": {
+          "data": {
+            "properties": {
+              "item": {
+                "$ref": "#/components/schemas/PromotionRunItem"
+              },
+              "run": {
+                "$ref": "#/components/schemas/PromotionRun"
+              }
+            },
+            "required": [
+              "run",
+              "item"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_PromotionPolicyOptions": {
+        "properties": {
+          "data": {
+            "properties": {
+              "grades": {
+                "items": {
+                  "$ref": "#/components/schemas/PromotionGradeReference"
+                },
+                "type": "array"
+              },
+              "programs": {
+                "items": {
+                  "$ref": "#/components/schemas/PromotionProgramReference"
+                },
+                "type": "array"
+              },
+              "progressionSet": {
+                "$ref": "#/components/schemas/GradeProgressionSet"
+              }
+            },
+            "required": [
+              "grades",
+              "programs",
+              "progressionSet"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_PromotionPolicyVersion": {
+        "properties": {
+          "data": {
+            "properties": {
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "progressionRowVersion": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "reviewedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "reviewedBy": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "rules": {
+                "items": {
+                  "$ref": "#/components/schemas/PromotionRuleInput"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "rules",
+              "progressionRowVersion",
+              "reviewedBy",
+              "reviewedAt"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_PromotionRun": {
+        "properties": {
+          "data": {
+            "properties": {
+              "approvalId": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "approvedAt": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "approvedBy": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "createdBy": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "executedAt": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "executedBy": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "policyId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "reviewedAt": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reviewedBy": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "rowVersion": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "sourceYearId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "status": {
+                "$ref": "#/components/schemas/PromotionRunStatus"
+              },
+              "targetYearId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "sourceYearId",
+              "targetYearId",
+              "policyId",
+              "status",
+              "rowVersion",
+              "createdBy",
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_PromotionRunCalculation": {
+        "properties": {
+          "data": {
+            "properties": {
+              "items": {
+                "items": {
+                  "$ref": "#/components/schemas/PromotionRunItem"
+                },
+                "type": "array"
+              },
+              "run": {
+                "$ref": "#/components/schemas/PromotionRun"
+              }
+            },
+            "required": [
+              "run",
+              "items"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_PromotionRunList": {
+        "properties": {
+          "data": {
+            "properties": {
+              "nextCursor": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "runs": {
+                "items": {
+                  "$ref": "#/components/schemas/PromotionRun"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "runs"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_PromotionRunWorkspace": {
+        "properties": {
+          "data": {
+            "properties": {
+              "approvalChecksum": {
+                "type": "string"
+              },
+              "run": {
+                "$ref": "#/components/schemas/PromotionRun"
+              },
+              "sourceYear": {
+                "$ref": "#/components/schemas/YearLifecycleContext"
+              },
+              "students": {
+                "items": {
+                  "$ref": "#/components/schemas/PromotionRunStudent"
+                },
+                "type": "array"
+              },
+              "targetYear": {
+                "$ref": "#/components/schemas/YearLifecycleContext"
+              }
+            },
+            "required": [
+              "run",
+              "sourceYear",
+              "targetYear",
+              "students",
+              "approvalChecksum"
             ],
             "type": "object"
           },
@@ -12031,6 +13092,75 @@
         ],
         "type": "object"
       },
+      "ApiResponse_TermActivationWorkspace": {
+        "properties": {
+          "data": {
+            "properties": {
+              "canActivate": {
+                "type": "boolean"
+              },
+              "context": {
+                "$ref": "#/components/schemas/TermLifecycleContext"
+              },
+              "eligiblePlacements": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "findings": {
+                "items": {
+                  "$ref": "#/components/schemas/LifecycleFinding"
+                },
+                "type": "array"
+              },
+              "opensYear": {
+                "type": "boolean"
+              },
+              "plannedStudents": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "policy": {
+                "$ref": "#/components/schemas/OpeningPolicy"
+              },
+              "predecessor": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/YearLifecycleContext"
+                  }
+                ]
+              },
+              "sourceChecksum": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "context",
+              "opensYear",
+              "policy",
+              "plannedStudents",
+              "eligiblePlacements",
+              "findings",
+              "canActivate",
+              "sourceChecksum"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_TermAggregatePreview": {
         "properties": {
           "data": {
@@ -12150,6 +13280,170 @@
         ],
         "type": "object"
       },
+      "ApiResponse_TermLifecycleWorkspace": {
+        "properties": {
+          "data": {
+            "properties": {
+              "availableActions": {
+                "items": {
+                  "$ref": "#/components/schemas/TermTransitionAction"
+                },
+                "type": "array"
+              },
+              "context": {
+                "$ref": "#/components/schemas/TermLifecycleContext"
+              },
+              "coverage": {
+                "$ref": "#/components/schemas/TermClosureCoverage"
+              },
+              "findings": {
+                "items": {
+                  "$ref": "#/components/schemas/LifecycleFinding"
+                },
+                "type": "array"
+              },
+              "sourceChecksum": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "context",
+              "findings",
+              "coverage",
+              "availableActions",
+              "sourceChecksum"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_TermPreparationOutcome": {
+        "properties": {
+          "data": {
+            "properties": {
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "modules": {
+                "items": {
+                  "$ref": "#/components/schemas/TermPreparationModuleOutcome"
+                },
+                "type": "array"
+              },
+              "requestId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "runId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "sourceTermId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "targetTermId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "runId",
+              "requestId",
+              "sourceTermId",
+              "targetTermId",
+              "modules",
+              "createdAt"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_TermPreparationWorkspace": {
+        "properties": {
+          "data": {
+            "properties": {
+              "canApply": {
+                "type": "boolean"
+              },
+              "context": {
+                "$ref": "#/components/schemas/TermPreparationContext"
+              },
+              "dateRequirements": {
+                "items": {
+                  "$ref": "#/components/schemas/TermPreparationDateRequirement"
+                },
+                "type": "array"
+              },
+              "findings": {
+                "items": {
+                  "$ref": "#/components/schemas/LifecycleFinding"
+                },
+                "type": "array"
+              },
+              "mappingRequirements": {
+                "items": {
+                  "$ref": "#/components/schemas/TermPreparationMappingRequirement"
+                },
+                "type": "array"
+              },
+              "modules": {
+                "items": {
+                  "$ref": "#/components/schemas/TermPreparationModuleEvidence"
+                },
+                "type": "array"
+              },
+              "sourceChecksum": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "context",
+              "modules",
+              "mappingRequirements",
+              "dateRequirements",
+              "findings",
+              "canApply",
+              "sourceChecksum"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_TermResultPreview": {
         "properties": {
           "data": {
@@ -12201,6 +13495,46 @@
               "activities",
               "activityTotals",
               "sourceChecksum"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_TermTransitionOutcome": {
+        "properties": {
+          "data": {
+            "properties": {
+              "action": {
+                "$ref": "#/components/schemas/TermTransitionAction"
+              },
+              "completedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "context": {
+                "$ref": "#/components/schemas/TermLifecycleContext"
+              },
+              "requestId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "requestId",
+              "action",
+              "context",
+              "completedAt"
             ],
             "type": "object"
           },
@@ -13432,6 +14766,58 @@
         ],
         "type": "object"
       },
+      "ApiResponse_Vec_AggregateStudent": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "closure": {
+                  "$ref": "#/components/schemas/TermClosureStudent"
+                },
+                "gradeLevelName": {
+                  "type": "string"
+                },
+                "studentAcademicYearId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "studentCode": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "studentName": {
+                  "type": "string"
+                },
+                "studyProgramName": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "studentAcademicYearId",
+                "studentName",
+                "gradeLevelName",
+                "studyProgramName",
+                "closure"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Vec_AggregationPolicyVersion": {
         "properties": {
           "data": {
@@ -13469,6 +14855,123 @@
                 "lifecycle",
                 "rowVersion",
                 "bands"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_AnnualResultRevision": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "holdReason": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "isCurrent": {
+                  "type": "boolean"
+                },
+                "lockedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "lockedBy": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "officialGpa": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "revision": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "snapshot": {
+                  "$ref": "#/components/schemas/AnnualResultPreview"
+                }
+              },
+              "required": [
+                "id",
+                "revision",
+                "snapshot",
+                "lockedBy",
+                "lockedAt",
+                "isCurrent"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_AnnualResultStudent": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "closure": {
+                  "$ref": "#/components/schemas/AnnualClosureStudent"
+                },
+                "gradeLevelName": {
+                  "type": "string"
+                },
+                "studentAcademicYearId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "studentCode": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "studentName": {
+                  "type": "string"
+                },
+                "studyProgramName": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "studentAcademicYearId",
+                "studentName",
+                "gradeLevelName",
+                "studyProgramName",
+                "closure"
               ],
               "type": "object"
             },
@@ -17665,6 +19168,62 @@
         ],
         "type": "object"
       },
+      "ApiResponse_Vec_PromotionPolicyVersion": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "progressionRowVersion": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "reviewedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "reviewedBy": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "rules": {
+                  "items": {
+                    "$ref": "#/components/schemas/PromotionRuleInput"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "rules",
+                "progressionRowVersion",
+                "reviewedBy",
+                "reviewedAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Vec_QuestionDetail": {
         "properties": {
           "data": {
@@ -19205,6 +20764,182 @@
         ],
         "type": "object"
       },
+      "ApiResponse_YearLifecycleWorkspace": {
+        "properties": {
+          "data": {
+            "properties": {
+              "availableActions": {
+                "items": {
+                  "$ref": "#/components/schemas/YearTransitionAction"
+                },
+                "type": "array"
+              },
+              "canClose": {
+                "type": "boolean"
+              },
+              "context": {
+                "$ref": "#/components/schemas/YearLifecycleContext"
+              },
+              "coverage": {
+                "$ref": "#/components/schemas/AnnualClosureCoverage"
+              },
+              "findings": {
+                "items": {
+                  "$ref": "#/components/schemas/LifecycleFinding"
+                },
+                "type": "array"
+              },
+              "sourceChecksum": {
+                "type": "string"
+              },
+              "terms": {
+                "items": {
+                  "$ref": "#/components/schemas/YearTermLifecycleState"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "context",
+              "terms",
+              "coverage",
+              "findings",
+              "availableActions",
+              "canClose",
+              "sourceChecksum"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_YearReopeningOutcome": {
+        "properties": {
+          "data": {
+            "properties": {
+              "completedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "context": {
+                "$ref": "#/components/schemas/YearLifecycleContext"
+              },
+              "requestId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "requestId",
+              "context",
+              "completedAt"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_YearReopeningWorkspace": {
+        "properties": {
+          "data": {
+            "properties": {
+              "canReopen": {
+                "type": "boolean"
+              },
+              "context": {
+                "$ref": "#/components/schemas/YearLifecycleContext"
+              },
+              "findings": {
+                "items": {
+                  "$ref": "#/components/schemas/LifecycleFinding"
+                },
+                "type": "array"
+              },
+              "sourceChecksum": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "context",
+              "findings",
+              "canReopen",
+              "sourceChecksum"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_YearTransitionOutcome": {
+        "properties": {
+          "data": {
+            "properties": {
+              "action": {
+                "$ref": "#/components/schemas/YearTransitionAction"
+              },
+              "completedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "context": {
+                "$ref": "#/components/schemas/YearLifecycleContext"
+              },
+              "requestId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "requestId",
+              "action",
+              "context",
+              "completedAt"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApplyAcademicMenuTemplateRequest": {
         "additionalProperties": false,
         "properties": {
@@ -19425,6 +21160,43 @@
         ],
         "type": "object"
       },
+      "ApplyTermPreparationInput": {
+        "additionalProperties": false,
+        "properties": {
+          "mappings": {
+            "$ref": "#/components/schemas/TermPreparationMappings"
+          },
+          "modules": {
+            "items": {
+              "$ref": "#/components/schemas/TermPreparationModule"
+            },
+            "type": "array"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sourceChecksum": {
+            "type": "string"
+          },
+          "sourceTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "targetTermId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "sourceChecksum",
+          "sourceTermId",
+          "targetTermId",
+          "modules"
+        ],
+        "type": "object"
+      },
       "ApproveObservationRequest": {
         "properties": {
           "evaluators": {
@@ -19434,6 +21206,28 @@
             "type": "array"
           }
         },
+        "type": "object"
+      },
+      "ApprovePromotionRunInput": {
+        "additionalProperties": false,
+        "properties": {
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sourceChecksum": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "rowVersion",
+          "sourceChecksum"
+        ],
         "type": "object"
       },
       "AssessmentCoordinatorOption": {
@@ -20108,6 +21902,24 @@
         "required": [
           "locked",
           "skipped"
+        ],
+        "type": "object"
+      },
+      "CalculatePromotionRunInput": {
+        "additionalProperties": false,
+        "properties": {
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "requestId",
+          "rowVersion"
         ],
         "type": "object"
       },
@@ -25140,6 +26952,34 @@
         ],
         "type": "object"
       },
+      "CreatePromotionRunInput": {
+        "additionalProperties": false,
+        "properties": {
+          "policyId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sourceYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "targetYearId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "sourceYearId",
+          "targetYearId",
+          "policyId"
+        ],
+        "type": "object"
+      },
       "CreateRoleRequest": {
         "properties": {
           "code": {
@@ -29468,6 +31308,30 @@
         ],
         "type": "string"
       },
+      "ExecutePromotionRunInput": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "requestId",
+          "rowVersion",
+          "limit"
+        ],
+        "type": "object"
+      },
       "FeatureListResponse": {
         "properties": {
           "data": {
@@ -32548,6 +34412,44 @@
         },
         "type": "object"
       },
+      "LifecycleFinding": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "count": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "resolutionUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "severity": {
+            "$ref": "#/components/schemas/LifecycleSeverity"
+          }
+        },
+        "required": [
+          "code",
+          "severity",
+          "count",
+          "message"
+        ],
+        "type": "object"
+      },
+      "LifecycleSeverity": {
+        "enum": [
+          "ready",
+          "warning",
+          "blocking"
+        ],
+        "type": "string"
+      },
       "ListMembersQuery": {
         "properties": {
           "include_children": {
@@ -33286,6 +35188,30 @@
           "grade_program"
         ],
         "type": "string"
+      },
+      "OpeningPolicy": {
+        "properties": {
+          "requireHomeroomPlacements": {
+            "type": "boolean"
+          },
+          "requirePublishedOfferings": {
+            "type": "boolean"
+          },
+          "requirePublishedTimetable": {
+            "type": "boolean"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rowVersion",
+          "requireHomeroomPlacements",
+          "requirePublishedOfferings",
+          "requirePublishedTimetable"
+        ],
+        "type": "object"
       },
       "OrganizationAssignment": {
         "properties": {
@@ -34181,6 +36107,34 @@
         ],
         "type": "object"
       },
+      "PreviewTermPreparationInput": {
+        "additionalProperties": false,
+        "properties": {
+          "mappings": {
+            "$ref": "#/components/schemas/TermPreparationMappings"
+          },
+          "modules": {
+            "items": {
+              "$ref": "#/components/schemas/TermPreparationModule"
+            },
+            "type": "array"
+          },
+          "sourceTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "targetTermId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sourceTermId",
+          "targetTermId",
+          "modules"
+        ],
+        "type": "object"
+      },
       "ProfileResponse": {
         "properties": {
           "address": {
@@ -34312,6 +36266,1022 @@
           "hiredDate"
         ],
         "type": "object"
+      },
+      "PromotionCorrectionImpact": {
+        "properties": {
+          "evidence": {
+            "$ref": "#/components/schemas/AnnualCorrectionEvidence"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "itemId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "resolution": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PromotionImpactResolution"
+              }
+            ]
+          },
+          "studentAcademicYearId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "itemId",
+          "studentAcademicYearId",
+          "evidence"
+        ],
+        "type": "object"
+      },
+      "PromotionDecisionInput": {
+        "additionalProperties": false,
+        "properties": {
+          "condition": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/PromotionDecisionOutcome"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "targetGradeLevelId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "targetHomeroomId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "targetStudyProgramId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "type": "object"
+      },
+      "PromotionDecisionOutcome": {
+        "enum": [
+          "promote",
+          "repeat",
+          "graduate",
+          "transfer_out",
+          "hold",
+          "conditional"
+        ],
+        "type": "string"
+      },
+      "PromotionExecutionFailure": {
+        "properties": {
+          "itemId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "itemId",
+          "message"
+        ],
+        "type": "object"
+      },
+      "PromotionExecutionReceipt": {
+        "properties": {
+          "approvalId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "executedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "executedBy": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "itemId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "runId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sourceRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "targetPlacementId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "targetStudentYearId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "itemId",
+          "runId",
+          "requestId",
+          "approvalId",
+          "sourceRowVersion",
+          "executedBy",
+          "executedAt"
+        ],
+        "type": "object"
+      },
+      "PromotionExecutionResult": {
+        "properties": {
+          "failures": {
+            "items": {
+              "$ref": "#/components/schemas/PromotionExecutionFailure"
+            },
+            "type": "array"
+          },
+          "holdCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "receipts": {
+            "items": {
+              "$ref": "#/components/schemas/PromotionExecutionReceipt"
+            },
+            "type": "array"
+          },
+          "remainingCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "run": {
+            "$ref": "#/components/schemas/PromotionRun"
+          }
+        },
+        "required": [
+          "run",
+          "receipts",
+          "failures",
+          "remainingCount",
+          "holdCount"
+        ],
+        "type": "object"
+      },
+      "PromotionGradeReference": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "levelType": {
+            "type": "string"
+          },
+          "year": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "levelType",
+          "year",
+          "isActive"
+        ],
+        "type": "object"
+      },
+      "PromotionImpactQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "afterId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "PromotionImpactResolution": {
+        "properties": {
+          "correctionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "impactId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "itemId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/PromotionImpactResolutionOutcome"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "replacementDecision": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PromotionDecisionInput"
+              }
+            ]
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "resolutionKind": {
+            "$ref": "#/components/schemas/PromotionImpactResolutionKind"
+          },
+          "resolvedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "resolvedBy": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "runId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sourceChecksum": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "requestId",
+          "runId",
+          "itemId",
+          "correctionId",
+          "impactId",
+          "resolutionKind",
+          "reason",
+          "sourceChecksum",
+          "outcome",
+          "resolvedBy",
+          "resolvedAt"
+        ],
+        "type": "object"
+      },
+      "PromotionImpactResolutionKind": {
+        "enum": [
+          "keep_existing",
+          "replace_decision"
+        ],
+        "type": "string"
+      },
+      "PromotionImpactResolutionOutcome": {
+        "properties": {
+          "adjusted": {
+            "type": "boolean"
+          },
+          "sourceRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "targetPlacementId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "targetStudentYearId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "adjusted",
+          "sourceRowVersion"
+        ],
+        "type": "object"
+      },
+      "PromotionImpactWorkspace": {
+        "properties": {
+          "impacts": {
+            "items": {
+              "$ref": "#/components/schemas/PromotionCorrectionImpact"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pendingCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "runId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sourceChecksum": {
+            "type": "string"
+          },
+          "sourceYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "targetYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "totalCount": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "runId",
+          "sourceYearId",
+          "targetYearId",
+          "impacts",
+          "totalCount",
+          "pendingCount",
+          "sourceChecksum"
+        ],
+        "type": "object"
+      },
+      "PromotionItemReview": {
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/PromotionRunItem"
+          },
+          "run": {
+            "$ref": "#/components/schemas/PromotionRun"
+          }
+        },
+        "required": [
+          "run",
+          "item"
+        ],
+        "type": "object"
+      },
+      "PromotionItemStatus": {
+        "enum": [
+          "calculated",
+          "reviewed",
+          "executed",
+          "failed"
+        ],
+        "type": "string"
+      },
+      "PromotionPolicyInput": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/PromotionRuleInput"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "rules"
+        ],
+        "type": "object"
+      },
+      "PromotionPolicyOptions": {
+        "properties": {
+          "grades": {
+            "items": {
+              "$ref": "#/components/schemas/PromotionGradeReference"
+            },
+            "type": "array"
+          },
+          "programs": {
+            "items": {
+              "$ref": "#/components/schemas/PromotionProgramReference"
+            },
+            "type": "array"
+          },
+          "progressionSet": {
+            "$ref": "#/components/schemas/GradeProgressionSet"
+          }
+        },
+        "required": [
+          "grades",
+          "programs",
+          "progressionSet"
+        ],
+        "type": "object"
+      },
+      "PromotionPolicyVersion": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "progressionRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "reviewedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "reviewedBy": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/PromotionRuleInput"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "rules",
+          "progressionRowVersion",
+          "reviewedBy",
+          "reviewedAt"
+        ],
+        "type": "object"
+      },
+      "PromotionProgramReference": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "curriculumId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "curriculumName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/VersionStatus"
+          },
+          "versionName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "curriculumId",
+          "curriculumName",
+          "versionName",
+          "status"
+        ],
+        "type": "object"
+      },
+      "PromotionRecommendation": {
+        "properties": {
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/PromotionRecommendationFinding"
+            },
+            "type": "array"
+          },
+          "suggestedOutcome": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PromotionSuccessOutcome"
+              }
+            ]
+          },
+          "targetGradeLevelId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "targetStudyProgramId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "findings"
+        ],
+        "type": "object"
+      },
+      "PromotionRecommendationFinding": {
+        "enum": [
+          "policy_rule_missing",
+          "annual_result_missing",
+          "annual_result_stale",
+          "reviewed_annual_hold",
+          "insufficient_earned_credits",
+          "exceptional_outcomes",
+          "activities_not_passed",
+          "learner_evaluation_not_passed",
+          "learner_evaluation_missing"
+        ],
+        "type": "string"
+      },
+      "PromotionRuleInput": {
+        "additionalProperties": false,
+        "properties": {
+          "fromGradeLevelId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "fromStudyProgramId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "minimumEarnedCredits": {
+            "type": "string"
+          },
+          "minimumLearnerLevel": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "requireActivitiesPassed": {
+            "type": "boolean"
+          },
+          "requireNoExceptionalOutcomes": {
+            "type": "boolean"
+          },
+          "successOutcome": {
+            "$ref": "#/components/schemas/PromotionSuccessOutcome"
+          },
+          "targetGradeLevelId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "targetStudyProgramId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "fromGradeLevelId",
+          "fromStudyProgramId",
+          "successOutcome",
+          "minimumEarnedCredits",
+          "requireNoExceptionalOutcomes",
+          "requireActivitiesPassed",
+          "minimumLearnerLevel"
+        ],
+        "type": "object"
+      },
+      "PromotionRun": {
+        "properties": {
+          "approvalId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "approvedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "approvedBy": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "createdBy": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "executedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "executedBy": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "policyId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reviewedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reviewedBy": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sourceYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PromotionRunStatus"
+          },
+          "targetYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "sourceYearId",
+          "targetYearId",
+          "policyId",
+          "status",
+          "rowVersion",
+          "createdBy",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "PromotionRunCalculation": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PromotionRunItem"
+            },
+            "type": "array"
+          },
+          "run": {
+            "$ref": "#/components/schemas/PromotionRun"
+          }
+        },
+        "required": [
+          "run",
+          "items"
+        ],
+        "type": "object"
+      },
+      "PromotionRunItem": {
+        "properties": {
+          "annualRevisionId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "decision": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PromotionDecisionInput"
+              }
+            ]
+          },
+          "existingTargetStudentYearId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "recommendation": {
+            "$ref": "#/components/schemas/PromotionRecommendation"
+          },
+          "reviewedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reviewedBy": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "runId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sourceChecksum": {
+            "type": "string"
+          },
+          "sourceGradeLevelId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sourceRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sourceStudyProgramId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sourceYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PromotionItemStatus"
+          },
+          "studentAcademicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "studentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "targetYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "runId",
+          "sourceYearId",
+          "targetYearId",
+          "studentAcademicYearId",
+          "studentId",
+          "sourceGradeLevelId",
+          "sourceStudyProgramId",
+          "sourceRowVersion",
+          "sourceChecksum",
+          "recommendation",
+          "status",
+          "rowVersion",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "PromotionRunList": {
+        "properties": {
+          "nextCursor": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/PromotionRun"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "runs"
+        ],
+        "type": "object"
+      },
+      "PromotionRunListQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "beforeId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "targetYearId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "sourceYearId"
+        ],
+        "type": "object"
+      },
+      "PromotionRunStatus": {
+        "enum": [
+          "draft",
+          "calculated",
+          "reviewed",
+          "approved",
+          "executing",
+          "completed",
+          "failed"
+        ],
+        "type": "string"
+      },
+      "PromotionRunStudent": {
+        "properties": {
+          "annualResultCurrent": {
+            "type": "boolean"
+          },
+          "item": {
+            "$ref": "#/components/schemas/PromotionRunItem"
+          },
+          "needsRecalculation": {
+            "type": "boolean"
+          },
+          "receipt": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PromotionExecutionReceipt"
+              }
+            ]
+          },
+          "studentCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "studentName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "item",
+          "studentName",
+          "annualResultCurrent",
+          "needsRecalculation"
+        ],
+        "type": "object"
+      },
+      "PromotionRunWorkspace": {
+        "properties": {
+          "approvalChecksum": {
+            "type": "string"
+          },
+          "run": {
+            "$ref": "#/components/schemas/PromotionRun"
+          },
+          "sourceYear": {
+            "$ref": "#/components/schemas/YearLifecycleContext"
+          },
+          "students": {
+            "items": {
+              "$ref": "#/components/schemas/PromotionRunStudent"
+            },
+            "type": "array"
+          },
+          "targetYear": {
+            "$ref": "#/components/schemas/YearLifecycleContext"
+          }
+        },
+        "required": [
+          "run",
+          "sourceYear",
+          "targetYear",
+          "students",
+          "approvalChecksum"
+        ],
+        "type": "object"
+      },
+      "PromotionSuccessOutcome": {
+        "enum": [
+          "promote",
+          "graduate"
+        ],
+        "type": "string"
       },
       "PublicCertificateRenderRequest": {
         "additionalProperties": false,
@@ -35482,6 +38452,41 @@
         ],
         "type": "string"
       },
+      "ResolvePromotionImpactInput": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "replacementDecision": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PromotionDecisionInput"
+              }
+            ]
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "resolutionKind": {
+            "$ref": "#/components/schemas/PromotionImpactResolutionKind"
+          },
+          "sourceChecksum": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "sourceChecksum",
+          "resolutionKind",
+          "reason"
+        ],
+        "type": "object"
+      },
       "ResponseBatchInput": {
         "properties": {
           "cells": {
@@ -35869,6 +38874,23 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "ReviewPromotionItemInput": {
+        "additionalProperties": false,
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/PromotionDecisionInput"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rowVersion",
+          "decision"
+        ],
         "type": "object"
       },
       "RevokeCertificateRequest": {
@@ -40126,6 +43148,60 @@
         ],
         "type": "object"
       },
+      "TermActivationWorkspace": {
+        "properties": {
+          "canActivate": {
+            "type": "boolean"
+          },
+          "context": {
+            "$ref": "#/components/schemas/TermLifecycleContext"
+          },
+          "eligiblePlacements": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/LifecycleFinding"
+            },
+            "type": "array"
+          },
+          "opensYear": {
+            "type": "boolean"
+          },
+          "plannedStudents": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/OpeningPolicy"
+          },
+          "predecessor": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/YearLifecycleContext"
+              }
+            ]
+          },
+          "sourceChecksum": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "context",
+          "opensYear",
+          "policy",
+          "plannedStudents",
+          "eligiblePlacements",
+          "findings",
+          "canActivate",
+          "sourceChecksum"
+        ],
+        "type": "object"
+      },
       "TermAggregatePreview": {
         "properties": {
           "blockers": {
@@ -40215,6 +43291,598 @@
         ],
         "type": "object"
       },
+      "TermClosureCoverage": {
+        "properties": {
+          "ready": {
+            "type": "boolean"
+          },
+          "sourceChecksum": {
+            "type": "string"
+          },
+          "students": {
+            "items": {
+              "$ref": "#/components/schemas/TermClosureStudent"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "students",
+          "ready",
+          "sourceChecksum"
+        ],
+        "type": "object"
+      },
+      "TermClosureStudent": {
+        "properties": {
+          "blockers": {
+            "items": {
+              "$ref": "#/components/schemas/AggregateBlocker"
+            },
+            "type": "array"
+          },
+          "currentSourceChecksum": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "holdReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "isCurrent": {
+            "type": "boolean"
+          },
+          "policyId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "revisionId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "studentAcademicYearId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "studentAcademicYearId",
+          "isCurrent",
+          "blockers"
+        ],
+        "type": "object"
+      },
+      "TermLifecycleContext": {
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "academicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "bellScheduleId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "blocksYearClosure": {
+            "type": "boolean"
+          },
+          "closedOn": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "includedInYearResult": {
+            "type": "boolean"
+          },
+          "plannedEndDate": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sequence": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "termName": {
+            "type": "string"
+          },
+          "termRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "termStartDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "termStatus": {
+            "$ref": "#/components/schemas/AcademicTermStatus"
+          },
+          "yearEndDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "yearName": {
+            "type": "string"
+          },
+          "yearRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "yearStartDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "yearStatus": {
+            "$ref": "#/components/schemas/AcademicYearStatus"
+          }
+        },
+        "required": [
+          "academicYearId",
+          "academicTermId",
+          "yearName",
+          "termName",
+          "yearStatus",
+          "termStatus",
+          "yearRowVersion",
+          "termRowVersion",
+          "yearStartDate",
+          "yearEndDate",
+          "termStartDate",
+          "sequence",
+          "bellScheduleId",
+          "includedInYearResult",
+          "blocksYearClosure"
+        ],
+        "type": "object"
+      },
+      "TermLifecycleQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "academicYearId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "academicYearId"
+        ],
+        "type": "object"
+      },
+      "TermLifecycleWorkspace": {
+        "properties": {
+          "availableActions": {
+            "items": {
+              "$ref": "#/components/schemas/TermTransitionAction"
+            },
+            "type": "array"
+          },
+          "context": {
+            "$ref": "#/components/schemas/TermLifecycleContext"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/TermClosureCoverage"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/LifecycleFinding"
+            },
+            "type": "array"
+          },
+          "sourceChecksum": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "context",
+          "findings",
+          "coverage",
+          "availableActions",
+          "sourceChecksum"
+        ],
+        "type": "object"
+      },
+      "TermPreparationContext": {
+        "properties": {
+          "sourceLabel": {
+            "type": "string"
+          },
+          "sourceStatus": {
+            "type": "string"
+          },
+          "sourceTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sourceYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "targetEndDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "targetLabel": {
+            "type": "string"
+          },
+          "targetStartDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "targetStatus": {
+            "type": "string"
+          },
+          "targetTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "targetYearId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sourceTermId",
+          "sourceYearId",
+          "sourceLabel",
+          "sourceStatus",
+          "targetTermId",
+          "targetYearId",
+          "targetLabel",
+          "targetStatus",
+          "targetStartDate",
+          "targetEndDate"
+        ],
+        "type": "object"
+      },
+      "TermPreparationDateMapping": {
+        "additionalProperties": false,
+        "properties": {
+          "sourceDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "targetDate": {
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sourceDate",
+          "targetDate"
+        ],
+        "type": "object"
+      },
+      "TermPreparationDateRequirement": {
+        "properties": {
+          "requiredBy": {
+            "items": {
+              "$ref": "#/components/schemas/TermPreparationModule"
+            },
+            "type": "array"
+          },
+          "selectedTargetDate": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "sourceLabel": {
+            "type": "string"
+          },
+          "suggestedTargetDate": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "sourceDate",
+          "sourceLabel",
+          "requiredBy"
+        ],
+        "type": "object"
+      },
+      "TermPreparationEntityMapping": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/TermPreparationMappingKind"
+          },
+          "sourceId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "targetId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "sourceId",
+          "targetId"
+        ],
+        "type": "object"
+      },
+      "TermPreparationMappingKind": {
+        "enum": [
+          "learning_offering",
+          "learning_group",
+          "teacher",
+          "homeroom",
+          "room",
+          "bell_period",
+          "assessment_plan"
+        ],
+        "type": "string"
+      },
+      "TermPreparationMappingOption": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ],
+        "type": "object"
+      },
+      "TermPreparationMappingRequirement": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/TermPreparationMappingKind"
+          },
+          "requiredBy": {
+            "items": {
+              "$ref": "#/components/schemas/TermPreparationModule"
+            },
+            "type": "array"
+          },
+          "selectedTargetId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sourceLabel": {
+            "type": "string"
+          },
+          "suggestedTargetId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "targetOptions": {
+            "items": {
+              "$ref": "#/components/schemas/TermPreparationMappingOption"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind",
+          "sourceId",
+          "sourceLabel",
+          "requiredBy",
+          "targetOptions"
+        ],
+        "type": "object"
+      },
+      "TermPreparationMappings": {
+        "additionalProperties": false,
+        "properties": {
+          "dates": {
+            "items": {
+              "$ref": "#/components/schemas/TermPreparationDateMapping"
+            },
+            "type": "array"
+          },
+          "entities": {
+            "items": {
+              "$ref": "#/components/schemas/TermPreparationEntityMapping"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "TermPreparationModule": {
+        "enum": [
+          "delivery",
+          "assessments",
+          "timetable",
+          "exams",
+          "supervision"
+        ],
+        "type": "string"
+      },
+      "TermPreparationModuleEvidence": {
+        "properties": {
+          "draftCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "module": {
+            "$ref": "#/components/schemas/TermPreparationModule"
+          },
+          "sourceCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/LifecycleSeverity"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "targetExistingCount": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "module",
+          "sourceCount",
+          "targetExistingCount",
+          "draftCount",
+          "status",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "TermPreparationModuleOutcome": {
+        "properties": {
+          "createdCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "module": {
+            "$ref": "#/components/schemas/TermPreparationModule"
+          },
+          "targetIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "module",
+          "createdCount",
+          "targetIds"
+        ],
+        "type": "object"
+      },
+      "TermPreparationOutcome": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "modules": {
+            "items": {
+              "$ref": "#/components/schemas/TermPreparationModuleOutcome"
+            },
+            "type": "array"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "runId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sourceTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "targetTermId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "runId",
+          "requestId",
+          "sourceTermId",
+          "targetTermId",
+          "modules",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "TermPreparationWorkspace": {
+        "properties": {
+          "canApply": {
+            "type": "boolean"
+          },
+          "context": {
+            "$ref": "#/components/schemas/TermPreparationContext"
+          },
+          "dateRequirements": {
+            "items": {
+              "$ref": "#/components/schemas/TermPreparationDateRequirement"
+            },
+            "type": "array"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/LifecycleFinding"
+            },
+            "type": "array"
+          },
+          "mappingRequirements": {
+            "items": {
+              "$ref": "#/components/schemas/TermPreparationMappingRequirement"
+            },
+            "type": "array"
+          },
+          "modules": {
+            "items": {
+              "$ref": "#/components/schemas/TermPreparationModuleEvidence"
+            },
+            "type": "array"
+          },
+          "sourceChecksum": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "context",
+          "modules",
+          "mappingRequirements",
+          "dateRequirements",
+          "findings",
+          "canApply",
+          "sourceChecksum"
+        ],
+        "type": "object"
+      },
       "TermResultPreview": {
         "properties": {
           "academicTermId": {
@@ -40287,6 +43955,99 @@
           "academicYearId",
           "academicTermId",
           "passingGrade"
+        ],
+        "type": "object"
+      },
+      "TermTransitionAction": {
+        "enum": [
+          "mark_ready",
+          "begin_closing",
+          "cancel_closing",
+          "close",
+          "reopen",
+          "cancel",
+          "activate"
+        ],
+        "type": "string"
+      },
+      "TermTransitionOutcome": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/TermTransitionAction"
+          },
+          "completedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "context": {
+            "$ref": "#/components/schemas/TermLifecycleContext"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "action",
+          "context",
+          "completedAt"
+        ],
+        "type": "object"
+      },
+      "TermTransitionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "academicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "acknowledgedWarningCodes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "action": {
+            "$ref": "#/components/schemas/TermTransitionAction"
+          },
+          "closedOn": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expectedTermVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "expectedYearVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "readinessChecksum": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "academicYearId",
+          "requestId",
+          "action",
+          "expectedYearVersion",
+          "expectedTermVersion",
+          "readinessChecksum",
+          "acknowledgedWarningCodes"
         ],
         "type": "object"
       },
@@ -42865,6 +46626,31 @@
         },
         "type": "object"
       },
+      "UpdateOpeningPolicyInput": {
+        "additionalProperties": false,
+        "properties": {
+          "requireHomeroomPlacements": {
+            "type": "boolean"
+          },
+          "requirePublishedOfferings": {
+            "type": "boolean"
+          },
+          "requirePublishedTimetable": {
+            "type": "boolean"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rowVersion",
+          "requireHomeroomPlacements",
+          "requirePublishedOfferings",
+          "requirePublishedTimetable"
+        ],
+        "type": "object"
+      },
       "UpdateOrganizationPermissionsRequest": {
         "properties": {
           "grants": {
@@ -44367,6 +48153,267 @@
           "archived"
         ],
         "type": "string"
+      },
+      "YearLifecycleContext": {
+        "properties": {
+          "academicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "endDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "startDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AcademicYearStatus"
+          },
+          "year": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "academicYearId",
+          "year",
+          "name",
+          "startDate",
+          "endDate",
+          "status",
+          "rowVersion"
+        ],
+        "type": "object"
+      },
+      "YearLifecycleWorkspace": {
+        "properties": {
+          "availableActions": {
+            "items": {
+              "$ref": "#/components/schemas/YearTransitionAction"
+            },
+            "type": "array"
+          },
+          "canClose": {
+            "type": "boolean"
+          },
+          "context": {
+            "$ref": "#/components/schemas/YearLifecycleContext"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/AnnualClosureCoverage"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/LifecycleFinding"
+            },
+            "type": "array"
+          },
+          "sourceChecksum": {
+            "type": "string"
+          },
+          "terms": {
+            "items": {
+              "$ref": "#/components/schemas/YearTermLifecycleState"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "context",
+          "terms",
+          "coverage",
+          "findings",
+          "availableActions",
+          "canClose",
+          "sourceChecksum"
+        ],
+        "type": "object"
+      },
+      "YearReopeningOutcome": {
+        "properties": {
+          "completedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "context": {
+            "$ref": "#/components/schemas/YearLifecycleContext"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "context",
+          "completedAt"
+        ],
+        "type": "object"
+      },
+      "YearReopeningRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedYearVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sourceChecksum": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "expectedYearVersion",
+          "sourceChecksum",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "YearReopeningWorkspace": {
+        "properties": {
+          "canReopen": {
+            "type": "boolean"
+          },
+          "context": {
+            "$ref": "#/components/schemas/YearLifecycleContext"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/LifecycleFinding"
+            },
+            "type": "array"
+          },
+          "sourceChecksum": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "context",
+          "findings",
+          "canReopen",
+          "sourceChecksum"
+        ],
+        "type": "object"
+      },
+      "YearTermLifecycleState": {
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "blocksYearClosure": {
+            "type": "boolean"
+          },
+          "includedInYearResult": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sequence": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AcademicTermStatus"
+          }
+        },
+        "required": [
+          "academicTermId",
+          "name",
+          "sequence",
+          "status",
+          "includedInYearResult",
+          "blocksYearClosure",
+          "rowVersion"
+        ],
+        "type": "object"
+      },
+      "YearTransitionAction": {
+        "enum": [
+          "begin_closing",
+          "cancel_closing",
+          "close"
+        ],
+        "type": "string"
+      },
+      "YearTransitionOutcome": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/YearTransitionAction"
+          },
+          "completedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "context": {
+            "$ref": "#/components/schemas/YearLifecycleContext"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "action",
+          "context",
+          "completedAt"
+        ],
+        "type": "object"
+      },
+      "YearTransitionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "acknowledgedWarningCodes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "action": {
+            "$ref": "#/components/schemas/YearTransitionAction"
+          },
+          "expectedYearVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "readinessChecksum": {
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "action",
+          "expectedYearVersion",
+          "readinessChecksum",
+          "acknowledgedWarningCodes"
+        ],
+        "type": "object"
       }
     }
   },
@@ -54103,6 +58150,2246 @@
         ]
       }
     },
+    "/api/academic/lifecycle/opening-policy": {
+      "get": {
+        "operationId": "getAcademicOpeningPolicy",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_OpeningPolicy"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      },
+      "put": {
+        "operationId": "updateAcademicOpeningPolicy",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateOpeningPolicyInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_OpeningPolicy"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/lifecycle/promotion-policies": {
+      "get": {
+        "operationId": "listPromotionPolicies",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_PromotionPolicyVersion"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      },
+      "post": {
+        "operationId": "createPromotionPolicy",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromotionPolicyInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PromotionPolicyVersion"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/lifecycle/promotion-policies/options": {
+      "get": {
+        "operationId": "getPromotionPolicyOptions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PromotionPolicyOptions"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/lifecycle/promotion-runs": {
+      "get": {
+        "operationId": "listPromotionRuns",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "sourceYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "targetYearId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "beforeId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PromotionRunList"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      },
+      "post": {
+        "operationId": "createPromotionRun",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePromotionRunInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PromotionRun"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/lifecycle/promotion-runs/{run_id}": {
+      "get": {
+        "operationId": "getPromotionRunWorkspace",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PromotionRunWorkspace"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/lifecycle/promotion-runs/{run_id}/approve": {
+      "post": {
+        "operationId": "approvePromotionRun",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApprovePromotionRunInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PromotionRun"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/lifecycle/promotion-runs/{run_id}/calculate": {
+      "post": {
+        "operationId": "calculatePromotionRun",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CalculatePromotionRunInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PromotionRunCalculation"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/lifecycle/promotion-runs/{run_id}/execute": {
+      "post": {
+        "operationId": "executePromotionRun",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecutePromotionRunInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PromotionExecutionResult"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/lifecycle/promotion-runs/{run_id}/impacts": {
+      "get": {
+        "operationId": "getPromotionRunImpacts",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "afterId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PromotionImpactWorkspace"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/lifecycle/promotion-runs/{run_id}/impacts/{impact_id}/resolve": {
+      "post": {
+        "operationId": "resolvePromotionRunImpact",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "impact_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolvePromotionImpactInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PromotionImpactResolution"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/lifecycle/promotion-runs/{run_id}/items/{item_id}": {
+      "put": {
+        "operationId": "reviewPromotionRunItem",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewPromotionItemInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PromotionItemReview"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/lifecycle/term-preparations/apply": {
+      "post": {
+        "operationId": "applyAcademicTermPreparation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyTermPreparationInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TermPreparationOutcome"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/lifecycle/term-preparations/preview": {
+      "post": {
+        "operationId": "previewAcademicTermPreparation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewTermPreparationInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TermPreparationWorkspace"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/lifecycle/terms/{term_id}": {
+      "get": {
+        "operationId": "getTermLifecycleWorkspace",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "term_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TermLifecycleWorkspace"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/lifecycle/terms/{term_id}/activation": {
+      "get": {
+        "operationId": "getTermActivationWorkspace",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "term_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TermActivationWorkspace"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/lifecycle/terms/{term_id}/transitions": {
+      "post": {
+        "operationId": "transitionAcademicTerm",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "term_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TermTransitionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TermTransitionOutcome"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/lifecycle/years/{year_id}": {
+      "get": {
+        "operationId": "getYearLifecycleWorkspace",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "year_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_YearLifecycleWorkspace"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/lifecycle/years/{year_id}/reopening": {
+      "get": {
+        "operationId": "getYearReopeningWorkspace",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "year_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_YearReopeningWorkspace"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      },
+      "post": {
+        "operationId": "reopenAcademicYear",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "year_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/YearReopeningRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_YearReopeningOutcome"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/lifecycle/years/{year_id}/transitions": {
+      "post": {
+        "operationId": "transitionAcademicYear",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "year_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/YearTransitionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_YearTransitionOutcome"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
     "/api/academic/offerings": {
       "get": {
         "operationId": "listLearningOfferings",
@@ -55613,6 +61900,197 @@
         ]
       }
     },
+    "/api/academic/results/aggregate-students": {
+      "get": {
+        "operationId": "listAggregateStudents",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_AggregateStudent"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/results/annual-students": {
+      "get": {
+        "operationId": "listAnnualResultStudents",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_AnnualResultStudent"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
     "/api/academic/results/corrections": {
       "post": {
         "operationId": "correctEffectiveAcademicResult",
@@ -56788,6 +63266,314 @@
             "description": ""
           },
           "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/results/students/{student_year_id}/annual-preview": {
+      "get": {
+        "operationId": "previewAnnualResult",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "student_year_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AnnualResultPreview"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/results/students/{student_year_id}/annual-revisions": {
+      "get": {
+        "operationId": "listAnnualResultRevisions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "student_year_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_AnnualResultRevision"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      },
+      "post": {
+        "operationId": "lockAnnualResult",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "student_year_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnnualLockInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AnnualResultRevision"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "422": {
             "content": {
               "application/json": {
                 "schema": {

@@ -826,7 +826,7 @@ mod tests {
     }
 }
 
-pub(super) async fn append_audit<T: serde::Serialize>(
+pub(crate) async fn append_audit<T: serde::Serialize>(
     transaction: &mut Transaction<'_, Postgres>,
     event_code: &str,
     entity_type: &str,

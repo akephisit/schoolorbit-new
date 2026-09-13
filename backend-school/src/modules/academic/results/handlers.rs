@@ -12,6 +12,89 @@ use axum::{
 };
 use uuid::Uuid;
 
+#[utoipa::path(get,path="/api/academic/results/annual-students",operation_id="listAnnualResultStudents",tag="academic",params(AnnualResultContext),responses((status=200,body=ApiResponse<Vec<AnnualResultStudent>>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse)))]
+pub async fn list_annual_students(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<AnnualResultContext>,
+) -> Result<Json<ApiResponse<Vec<AnnualResultStudent>>>, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    Ok(Json(ApiResponse::ok(
+        services::list_annual_students(
+            &context.tenant.pool,
+            &context.actor,
+            query.academic_year_id,
+        )
+        .await?,
+    )))
+}
+
+#[utoipa::path(get,path="/api/academic/results/students/{student_year_id}/annual-preview",operation_id="previewAnnualResult",tag="academic",params(AnnualResultContext,("student_year_id"=Uuid,Path)),responses((status=200,body=ApiResponse<AnnualResultPreview>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse)))]
+pub async fn preview_annual(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(student_year_id): Path<Uuid>,
+    Query(query): Query<AnnualResultContext>,
+) -> Result<Json<ApiResponse<AnnualResultPreview>>, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    Ok(Json(ApiResponse::ok(
+        services::preview_annual(
+            &context.tenant.pool,
+            &context.actor,
+            query.academic_year_id,
+            student_year_id,
+        )
+        .await?,
+    )))
+}
+
+#[utoipa::path(get,path="/api/academic/results/students/{student_year_id}/annual-revisions",operation_id="listAnnualResultRevisions",tag="academic",params(AnnualResultContext,("student_year_id"=Uuid,Path)),responses((status=200,body=ApiResponse<Vec<AnnualResultRevision>>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse)))]
+pub async fn list_annual_revisions(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(student_year_id): Path<Uuid>,
+    Query(query): Query<AnnualResultContext>,
+) -> Result<Json<ApiResponse<Vec<AnnualResultRevision>>>, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    Ok(Json(ApiResponse::ok(
+        services::list_annual_revisions(
+            &context.tenant.pool,
+            &context.actor,
+            query.academic_year_id,
+            student_year_id,
+        )
+        .await?,
+    )))
+}
+
+#[utoipa::path(post,path="/api/academic/results/students/{student_year_id}/annual-revisions",operation_id="lockAnnualResult",tag="academic",params(AnnualResultContext,("student_year_id"=Uuid,Path)),request_body=AnnualLockInput,responses((status=200,body=ApiResponse<AnnualResultRevision>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse)))]
+pub async fn lock_annual(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(student_year_id): Path<Uuid>,
+    Query(query): Query<AnnualResultContext>,
+    Json(input): Json<AnnualLockInput>,
+) -> Result<Json<ApiResponse<AnnualResultRevision>>, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let result = services::lock_annual(
+        &context.tenant.pool,
+        &context.actor,
+        query.academic_year_id,
+        student_year_id,
+        input,
+    )
+    .await?;
+    state.websocket_manager.broadcast_academic_core_changed(
+        session.tenant.subdomain.clone(),
+        session.user_id,
+        "academic_result",
+        Some(result.id),
+        Some(query.academic_year_id),
+        None,
+    );
+    Ok(Json(ApiResponse::ok(result)))
+}
+
 fn signal(state: &AppState, session: &AuthenticatedSession, context: &ResultContext, id: Uuid) {
     state.websocket_manager.broadcast_academic_core_changed(
         session.tenant.subdomain.clone(),
@@ -21,6 +104,18 @@ fn signal(state: &AppState, session: &AuthenticatedSession, context: &ResultCont
         Some(context.academic_year_id),
         Some(context.academic_term_id),
     );
+}
+
+#[utoipa::path(get,path="/api/academic/results/aggregate-students",operation_id="listAggregateStudents",tag="academic",params(ResultContext),responses((status=200,body=ApiResponse<Vec<AggregateStudent>>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse)))]
+pub async fn list_aggregate_students(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<ResultContext>,
+) -> Result<Json<ApiResponse<Vec<AggregateStudent>>>, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    Ok(Json(ApiResponse::ok(
+        services::list_aggregate_students(&context.tenant.pool, &context.actor, &query).await?,
+    )))
 }
 
 #[utoipa::path(get,path="/api/academic/results/aggregate-policies",operation_id="listAggregatePolicies",tag="academic",responses((status=200,body=ApiResponse<Vec<AggregatePolicyVersion>>),(status=403,body=ApiErrorResponse)))]

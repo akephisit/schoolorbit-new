@@ -5,6 +5,291 @@ use crate::modules::academic::learner_evaluation::{
 use uuid::Uuid;
 
 #[tokio::test]
+async fn year_lifecycle_closes_current_annual_results_only_after_exact_warning_acknowledgement() {
+    use crate::modules::academic::{
+        core::{
+            models::{AcademicYearStatus, YearTransitionAction as Action, YearTransitionRequest},
+            services::year_transitions,
+        },
+        lifecycle::services as lifecycle,
+    };
+    let (pool, mut actor, ctx, _) = ready_aggregate_fixture("year_complete_closure").await;
+    crate::modules::academic::cutover_test_support::apply_migrations_through(&pool, 70)
+        .await
+        .unwrap();
+    actor
+        .permissions
+        .push(crate::permissions::registry::codes::WILDCARD.into());
+    sqlx::query("UPDATE academic_terms SET included_in_year_result=(id=$2),status=CASE WHEN id=$2 THEN 'closed' ELSE 'planning' END,closed_on=CASE WHEN id=$2 THEN start_date ELSE NULL END,blocks_year_closure=(id=$2) WHERE academic_year_id=$1").bind(ctx.academic_year_id).bind(ctx.academic_term_id).execute(&pool).await.unwrap();
+    let policy = create_aggregate_policy(
+        &pool,
+        &actor,
+        AggregatePolicyInput {
+            name: "Year closure source".into(),
+            passing_grade: "1".into(),
+            minimum_learner_level: 1,
+            allow_reviewed_holds: false,
+        },
+    )
+    .await
+    .unwrap();
+    let workspace = lifecycle::get_year_workspace(&pool, &actor, ctx.academic_year_id)
+        .await
+        .unwrap();
+    assert!(!workspace.coverage.students.is_empty());
+    for student in workspace.coverage.students {
+        let id = student.student_academic_year_id;
+        let preview = preview_aggregate(
+            &pool,
+            &actor,
+            id,
+            &AggregatePreviewQuery {
+                academic_year_id: ctx.academic_year_id,
+                academic_term_id: ctx.academic_term_id,
+                policy_id: policy.id,
+            },
+        )
+        .await
+        .unwrap();
+        assert!(preview.can_lock, "{:?}", preview.blockers);
+        lock_term_aggregate(
+            &pool,
+            &actor,
+            &ctx,
+            id,
+            AggregateLockInput {
+                policy_id: policy.id,
+                source_checksum: preview.source_checksum,
+                expected_revision: None,
+                request_id: Uuid::new_v4(),
+                hold_reason: None,
+            },
+        )
+        .await
+        .unwrap();
+        let preview = preview_annual(&pool, &actor, ctx.academic_year_id, id)
+            .await
+            .unwrap();
+        lock_annual(
+            &pool,
+            &actor,
+            ctx.academic_year_id,
+            id,
+            AnnualLockInput {
+                expected_revision: None,
+                source_checksum: preview.source_checksum,
+                request_id: Uuid::new_v4(),
+                hold_reason: None,
+            },
+        )
+        .await
+        .unwrap();
+    }
+    let preserved_before:String=sqlx::query_scalar("SELECT md5(jsonb_build_array((SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM student_academic_years s WHERE academic_year_id=$1),(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM academic_annual_result_revisions r WHERE academic_year_id=$1),(SELECT jsonb_agg(to_jsonb(c) ORDER BY id) FROM academic_gradebook_phase_controls c WHERE academic_year_id=$1))::text)").bind(ctx.academic_year_id).fetch_one(&pool).await.unwrap();
+    let ws = lifecycle::get_year_workspace(&pool, &actor, ctx.academic_year_id)
+        .await
+        .unwrap();
+    assert!(ws.can_close);
+    assert!(ws
+        .findings
+        .iter()
+        .any(|row| row.code == "year.optional_terms"));
+    year_transitions::transition_year(
+        &pool,
+        &actor,
+        ctx.academic_year_id,
+        YearTransitionRequest {
+            request_id: Uuid::new_v4(),
+            action: Action::BeginClosing,
+            expected_year_version: ws.context.row_version,
+            readiness_checksum: ws.source_checksum,
+            acknowledged_warning_codes: vec![],
+        },
+    )
+    .await
+    .unwrap();
+    let ws = lifecycle::get_year_workspace(&pool, &actor, ctx.academic_year_id)
+        .await
+        .unwrap();
+    assert!(ws.can_close);
+    let mut input = YearTransitionRequest {
+        request_id: Uuid::new_v4(),
+        action: Action::Close,
+        expected_year_version: ws.context.row_version,
+        readiness_checksum: ws.source_checksum,
+        acknowledged_warning_codes: vec![],
+    };
+    assert!(matches!(
+        year_transitions::transition_year(&pool, &actor, ctx.academic_year_id, input.clone()).await,
+        Err(crate::error::AppError::Conflict(_))
+    ));
+    input.acknowledged_warning_codes = vec!["year.optional_terms".into(), "unknown".into()];
+    assert!(
+        year_transitions::transition_year(&pool, &actor, ctx.academic_year_id, input.clone())
+            .await
+            .is_err()
+    );
+    input.acknowledged_warning_codes = vec!["year.optional_terms".into()];
+    let outcome = year_transitions::transition_year(&pool, &actor, ctx.academic_year_id, input)
+        .await
+        .unwrap();
+    assert_eq!(outcome.context.status, AcademicYearStatus::Closed);
+    let preserved_after:String=sqlx::query_scalar("SELECT md5(jsonb_build_array((SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM student_academic_years s WHERE academic_year_id=$1),(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM academic_annual_result_revisions r WHERE academic_year_id=$1),(SELECT jsonb_agg(to_jsonb(c) ORDER BY id) FROM academic_gradebook_phase_controls c WHERE academic_year_id=$1))::text)").bind(ctx.academic_year_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(preserved_after, preserved_before);
+}
+
+#[tokio::test]
+async fn lifecycle_closure_requires_current_complete_aggregates_and_exact_warning_acknowledgement()
+{
+    use crate::modules::academic::{
+        core::{
+            models::{AcademicTermStatus, TermTransitionAction, TermTransitionRequest},
+            services::term_transitions,
+        },
+        lifecycle::{models::LifecycleSeverity, services as lifecycle},
+    };
+    let (pool, mut actor, ctx, _) = ready_aggregate_fixture("lifecycle_complete_closure").await;
+    crate::modules::academic::cutover_test_support::apply_migrations_through(&pool, 69)
+        .await
+        .unwrap();
+    actor
+        .permissions
+        .push(crate::permissions::registry::codes::WILDCARD.into());
+    let policy = create_aggregate_policy(
+        &pool,
+        &actor,
+        AggregatePolicyInput {
+            name: "Closure policy".into(),
+            passing_grade: "1".into(),
+            minimum_learner_level: 1,
+            allow_reviewed_holds: false,
+        },
+    )
+    .await
+    .unwrap();
+    let workspace =
+        lifecycle::get_workspace(&pool, &actor, ctx.academic_year_id, ctx.academic_term_id)
+            .await
+            .unwrap();
+    for student in &workspace.coverage.students {
+        let preview = preview_aggregate(
+            &pool,
+            &actor,
+            student.student_academic_year_id,
+            &AggregatePreviewQuery {
+                academic_year_id: ctx.academic_year_id,
+                academic_term_id: ctx.academic_term_id,
+                policy_id: policy.id,
+            },
+        )
+        .await
+        .unwrap();
+        assert!(
+            preview.can_lock,
+            "student {}: {:?}",
+            student.student_academic_year_id, preview.blockers
+        );
+        lock_term_aggregate(
+            &pool,
+            &actor,
+            &ctx,
+            student.student_academic_year_id,
+            AggregateLockInput {
+                policy_id: policy.id,
+                source_checksum: preview.source_checksum,
+                expected_revision: None,
+                request_id: Uuid::new_v4(),
+                hold_reason: None,
+            },
+        )
+        .await
+        .unwrap();
+    }
+    sqlx::query("INSERT INTO academic_exam_rounds(academic_year_id,academic_term_id,name,status) VALUES($1,$2,'E2E-LIFECYCLE-warning','draft')").bind(ctx.academic_year_id).bind(ctx.academic_term_id).execute(&pool).await.unwrap();
+    let controls_before:String=sqlx::query_scalar("SELECT md5(jsonb_agg(to_jsonb(control) ORDER BY id)::text) FROM academic_gradebook_phase_controls control WHERE academic_term_id=$1").bind(ctx.academic_term_id).fetch_one(&pool).await.unwrap();
+    let workspace =
+        lifecycle::get_workspace(&pool, &actor, ctx.academic_year_id, ctx.academic_term_id)
+            .await
+            .unwrap();
+    assert!(workspace.coverage.ready);
+    let mut request = TermTransitionRequest {
+        academic_year_id: ctx.academic_year_id,
+        request_id: Uuid::new_v4(),
+        action: TermTransitionAction::BeginClosing,
+        expected_year_version: workspace.context.year_row_version,
+        expected_term_version: workspace.context.term_row_version,
+        readiness_checksum: workspace.source_checksum,
+        acknowledged_warning_codes: vec![],
+        closed_on: None,
+        reason: None,
+    };
+    term_transitions::transition_term(&pool, &actor, ctx.academic_term_id, request.clone())
+        .await
+        .unwrap();
+    let workspace =
+        lifecycle::get_workspace(&pool, &actor, ctx.academic_year_id, ctx.academic_term_id)
+            .await
+            .unwrap();
+    request.action = TermTransitionAction::Close;
+    request.request_id = Uuid::new_v4();
+    request.expected_year_version = workspace.context.year_row_version;
+    request.expected_term_version = workspace.context.term_row_version;
+    request.readiness_checksum = workspace.source_checksum;
+    request.closed_on = Some(workspace.context.term_start_date);
+    assert!(term_transitions::transition_term(
+        &pool,
+        &actor,
+        ctx.academic_term_id,
+        request.clone()
+    )
+    .await
+    .is_err());
+    request.acknowledged_warning_codes = workspace
+        .findings
+        .iter()
+        .filter(|finding| finding.severity == LifecycleSeverity::Warning)
+        .map(|finding| finding.code.clone())
+        .collect();
+    assert!(!request.acknowledged_warning_codes.is_empty());
+    let closed =
+        term_transitions::transition_term(&pool, &actor, ctx.academic_term_id, request.clone())
+            .await
+            .unwrap();
+    assert_eq!(closed.context.term_status, AcademicTermStatus::Closed);
+    assert_eq!(closed.context.closed_on, request.closed_on);
+    let mut tx = pool.begin().await.unwrap();
+    assert!(
+        crate::modules::academic::core::services::lifecycle_guard::require_term_write(
+            &mut tx,
+            ctx.academic_year_id,
+            ctx.academic_term_id
+        )
+        .await
+        .is_err()
+    );
+    tx.rollback().await.unwrap();
+    let workspace =
+        lifecycle::get_workspace(&pool, &actor, ctx.academic_year_id, ctx.academic_term_id)
+            .await
+            .unwrap();
+    request.action = TermTransitionAction::Reopen;
+    request.request_id = Uuid::new_v4();
+    request.expected_year_version = workspace.context.year_row_version;
+    request.expected_term_version = workspace.context.term_row_version;
+    request.readiness_checksum = workspace.source_checksum;
+    request.closed_on = None;
+    request.acknowledged_warning_codes.clear();
+    request.reason = Some("ทบทวนข้อมูลภาคเรียน".into());
+    let reopened = term_transitions::transition_term(&pool, &actor, ctx.academic_term_id, request)
+        .await
+        .unwrap();
+    assert_eq!(reopened.context.term_status, AcademicTermStatus::Closing);
+    assert!(reopened.context.closed_on.is_none());
+    let controls_after:String=sqlx::query_scalar("SELECT md5(jsonb_agg(to_jsonb(control) ORDER BY id)::text) FROM academic_gradebook_phase_controls control WHERE academic_term_id=$1").bind(ctx.academic_term_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(controls_before, controls_after);
+}
+
+#[tokio::test]
 async fn aggregate_batch_providers_preserve_student_boundaries_and_existing_checksums() {
     let (pool, mut actor, ctx, _) = fixture("aggregate_batch_parity").await;
     crate::modules::academic::cutover_test_support::apply_migrations_through(&pool, 66)
@@ -172,8 +457,20 @@ async fn aggregate_batch_providers_reject_foreign_duplicate_and_oversized_reques
     }
 }
 
-async fn ready_aggregate_fixture(
+pub(crate) async fn ready_aggregate_fixture(
     name: &str,
+) -> (
+    sqlx::PgPool,
+    crate::middleware::permission::ActorContext,
+    ResultContext,
+    Uuid,
+) {
+    ready_aggregate_fixture_with_cohort(name, false).await
+}
+
+pub(crate) async fn ready_aggregate_fixture_with_cohort(
+    name: &str,
+    extra_student: bool,
 ) -> (
     sqlx::PgPool,
     crate::middleware::permission::ActorContext,
@@ -194,6 +491,13 @@ async fn ready_aggregate_fixture(
         codes::ACADEMIC_RESULT_CORRECT_SCHOOL.into(),
     ]);
     let student: Uuid = sqlx::query_scalar("SELECT student_academic_year_id FROM learning_group_students WHERE learning_group_id=$1 AND membership_status='active' ORDER BY student_academic_year_id LIMIT 1").bind(group).fetch_one(&pool).await.unwrap();
+    if extra_student {
+        let user = Uuid::new_v4();
+        let enrollment = Uuid::new_v4();
+        sqlx::query("INSERT INTO users(id,username,password_hash,first_name,last_name,user_type,status) VALUES($1,'cohort-fixture-student','fixture-not-a-login','Cohort','Fixture','student','active')").bind(user).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO student_academic_years(id,student_id,academic_year_id,grade_level_id,study_program_id,status) SELECT $1,$2,academic_year_id,grade_level_id,study_program_id,'active' FROM student_academic_years WHERE id=$3").bind(enrollment).bind(user).bind(student).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO learning_group_students(id,learning_group_id,academic_term_id,academic_year_id,student_academic_year_id,student_id,membership_status,roster_source,joined_at,row_version) SELECT gen_random_uuid(),learning_group_id,academic_term_id,academic_year_id,$1,$2,membership_status,roster_source,joined_at,1 FROM learning_group_students WHERE student_academic_year_id=$3 AND membership_status='active'").bind(enrollment).bind(user).bind(student).execute(&pool).await.unwrap();
+    }
     let preview = preview_student_term(
         &pool,
         &actor,
@@ -328,6 +632,16 @@ async fn aggregate_revisions_retain_history_retry_safely_and_detect_corrections(
     assert_eq!(first.revision, 1);
     assert_eq!(first.official_gpa.as_deref(), Some("0.00"));
     assert!(first.is_current);
+    let mut coverage_tx = pool.begin().await.unwrap();
+    let original_coverage = term_closure_coverage(&mut coverage_tx, &ctx).await.unwrap();
+    let covered = original_coverage
+        .students
+        .iter()
+        .find(|row| row.student_academic_year_id == student)
+        .unwrap();
+    assert_eq!(covered.revision_id, Some(first.id));
+    assert!(covered.is_current);
+    coverage_tx.commit().await.unwrap();
     let retry = lock_term_aggregate(&pool, &actor, &ctx, student, input.clone())
         .await
         .unwrap();
@@ -376,6 +690,21 @@ async fn aggregate_revisions_retain_history_retry_safely_and_detect_corrections(
         .unwrap();
     assert_eq!(history.len(), 1);
     assert!(!history[0].is_current);
+    let mut coverage_tx = pool.begin().await.unwrap();
+    let corrected_coverage = term_closure_coverage(&mut coverage_tx, &ctx).await.unwrap();
+    let covered = corrected_coverage
+        .students
+        .iter()
+        .find(|row| row.student_academic_year_id == student)
+        .unwrap();
+    assert_eq!(covered.revision_id, Some(first.id));
+    assert!(!covered.is_current);
+    assert!(!corrected_coverage.ready);
+    assert_ne!(
+        original_coverage.source_checksum,
+        corrected_coverage.source_checksum
+    );
+    coverage_tx.commit().await.unwrap();
     assert_eq!(
         history[0].snapshot.results.courses[0]
             .numeric_grade
@@ -408,6 +737,22 @@ async fn aggregate_revisions_retain_history_retry_safely_and_detect_corrections(
     .unwrap();
     assert_eq!(second.revision, 2);
     assert_eq!(second.official_gpa.as_deref(), Some("4.00"));
+    // Withdrawal cannot remove retained locked results from the closure cohort.
+    sqlx::query("UPDATE student_academic_years SET status='withdrawn' WHERE id=$1")
+        .bind(student)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut coverage_tx = pool.begin().await.unwrap();
+    let revised_coverage = term_closure_coverage(&mut coverage_tx, &ctx).await.unwrap();
+    let covered = revised_coverage
+        .students
+        .iter()
+        .find(|row| row.student_academic_year_id == student)
+        .unwrap();
+    assert_eq!(covered.revision_id, Some(second.id));
+    assert!(covered.is_current);
+    coverage_tx.commit().await.unwrap();
     assert!(
         !lock_term_aggregate(&pool, &actor, &ctx, student, input)
             .await

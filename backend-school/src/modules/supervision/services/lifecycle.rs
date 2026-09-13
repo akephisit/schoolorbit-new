@@ -1,3 +1,20 @@
+pub(crate) async fn pending_term_work(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    year: uuid::Uuid,
+    term: uuid::Uuid,
+) -> Result<Vec<crate::modules::academic::lifecycle::models::PendingTermWork>, crate::error::AppError>
+{
+    Ok(sqlx::query_as(
+        "SELECT id, updated_at::text || ':' || status AS revision, false AS blocks_closure
+         FROM supervision_observations WHERE academic_year_id=$1 AND academic_term_id=$2
+         AND status NOT IN ('completed','cancelled') ORDER BY id",
+    )
+    .bind(year)
+    .bind(term)
+    .fetch_all(&mut **tx)
+    .await?)
+}
+
 use std::collections::BTreeSet;
 
 use sqlx::{Postgres, Transaction};

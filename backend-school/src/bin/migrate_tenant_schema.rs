@@ -18,6 +18,15 @@ pub mod utils {
 #[path = "../db/migration.rs"]
 pub mod migration;
 
+#[cfg(test)]
+pub mod db {
+    pub use crate::migration;
+}
+
+#[cfg(test)]
+#[path = "../test_helpers.rs"]
+mod test_helpers;
+
 type MigrationResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
 #[tokio::main]

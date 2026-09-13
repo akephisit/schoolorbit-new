@@ -103,6 +103,10 @@ test('every protected app page renders the shared page shell', async () => {
 	const pages = (await listFiles(appRoutesDir)).filter((file) => file.endsWith('+page.svelte'));
 	const pageShellDelegates = new Map([
 		[
+			'PromotionRunDetail',
+			await readProjectFile('src/lib/components/academic/lifecycle/PromotionRunDetail.svelte')
+		],
+		[
 			'SupervisionWorkspace',
 			await readProjectFile('src/lib/components/supervision/SupervisionWorkspace.svelte')
 		],

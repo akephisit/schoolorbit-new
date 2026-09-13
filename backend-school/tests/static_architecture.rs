@@ -3392,9 +3392,11 @@ fn permission_registry_uses_canonical_action_and_scope_vocabulary() {
     )
     .expect("valid regex");
     let allowed_actions = [
+        "activate",
         "all",
         "approve",
         "assign",
+        "close",
         "correct",
         "create",
         "delete",
@@ -3409,6 +3411,7 @@ fn permission_registry_uses_canonical_action_and_scope_vocabulary() {
         "publish",
         "read",
         "remove",
+        "reopen",
         "request",
         "revoke",
         "scores",
@@ -6631,4 +6634,35 @@ fn supervision_collection_hydrators_are_set_based() {
             "{loader} must use one collection query"
         );
     }
+}
+
+#[test]
+fn promotion_impact_resolutions_are_forward_only_immutable_receipts() {
+    let migration =
+        read_source(manifest_dir().join("migrations/078_promotion_impact_resolutions.sql"));
+    for required in [
+        "CREATE TABLE academic_promotion_impact_resolutions",
+        "request_id UUID NOT NULL UNIQUE",
+        "source_checksum TEXT NOT NULL",
+        "request_checksum TEXT NOT NULL",
+        "UNIQUE (item_id, correction_id)",
+        "impact_id UUID NOT NULL UNIQUE",
+        "academic_promotion_impact_resolutions_immutable",
+        "BEFORE UPDATE OR DELETE",
+        "ON DELETE RESTRICT",
+    ] {
+        assert!(
+            migration.contains(required),
+            "promotion impact receipt migration is missing `{required}`"
+        );
+    }
+    let service = read_source(
+        manifest_dir()
+            .join("src/modules/academic/lifecycle/services/promotion_impact_resolutions.rs"),
+    );
+    assert!(service.contains("codes::ACADEMIC_PROMOTION_READ_SCHOOL"));
+    assert!(service.contains("codes::ACADEMIC_PROMOTION_CORRECT_SCHOOL"));
+    assert!(!service.contains("\"academic_promotion.correct.school\""));
+    assert!(service.contains("lifecycle_guard::lock_transition"));
+    assert!(service.contains("promotion_reconciliation::reconcile_decision"));
 }

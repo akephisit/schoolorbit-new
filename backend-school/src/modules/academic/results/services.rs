@@ -11,7 +11,17 @@ mod activity_preview;
 mod aggregate_policy;
 mod aggregate_preview;
 mod aggregate_revisions;
+mod aggregate_roster;
 mod aggregation;
+mod annual_calculation;
+mod annual_corrections;
+pub(crate) use annual_corrections::corrections_after_annuals;
+mod annual_revisions;
+mod annual_roster;
+mod promotion_sources;
+pub use annual_roster::list_annual_students;
+pub(crate) use promotion_sources::promotion_annual_sources;
+mod closure_coverage;
 mod corrections;
 mod course_preparation;
 mod cutover;
@@ -27,12 +37,18 @@ pub use aggregate_policy::{create_aggregate_policy, list_aggregate_policies};
 pub(crate) use aggregate_preview::aggregate_students_in_transaction;
 pub use aggregate_preview::preview_aggregate;
 pub use aggregate_revisions::{list_term_aggregate_revisions, lock_term_aggregate};
+pub use aggregate_roster::list_aggregate_students;
+pub(crate) use annual_revisions::{annual_closure_coverage, require_term_without_annual_results};
+pub use annual_revisions::{list_annual_revisions, lock_annual, preview_annual};
 
 #[cfg(test)]
 mod aggregation_tests;
+#[cfg(test)]
+mod annual_correction_tests;
 
 pub use activities::{confirm_activity, get_activity_workspace, save_activity_outcomes};
 pub use aggregation::aggregate_course_credits;
+pub(crate) use closure_coverage::term_closure_coverage;
 pub use corrections::correct_result;
 pub use course_preparation::{confirm_group_results, get_course_workspace, save_selection};
 pub(crate) use cutover::{

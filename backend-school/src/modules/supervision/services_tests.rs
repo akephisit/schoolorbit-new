@@ -21,6 +21,45 @@ struct SupervisionFixture {
     observed_at: DateTime<Utc>,
 }
 
+#[tokio::test]
+async fn lifecycle_supervision_provider_warns_only_for_pending_term_observations() {
+    let pool = migrated_pool("lifecycle_supervision_pending").await;
+    let fixture = insert_fixture(&pool).await;
+    let year = fixture.cycle.academic_year_id;
+    let term = fixture.academic_term_id;
+    let mut tx = pool.begin().await.unwrap();
+    let original = services::pending_term_work(&mut tx, year, term)
+        .await
+        .unwrap();
+    assert_eq!(original.len(), 1);
+    let original_id = original[0].id;
+    tx.rollback().await.unwrap();
+    let observation = request_observation(&pool, &fixture).await;
+    let mut tx = pool.begin().await.unwrap();
+    let pending = services::pending_term_work(&mut tx, year, term)
+        .await
+        .unwrap();
+    assert_eq!(pending.len(), 2);
+    assert!(pending
+        .iter()
+        .any(|row| row.id == observation.id && !row.blocks_closure));
+    assert!(pending.iter().any(|row| row.id == original_id));
+    assert!(services::pending_term_work(&mut tx, Uuid::new_v4(), term)
+        .await
+        .unwrap()
+        .is_empty());
+    sqlx::query("UPDATE supervision_observations SET status='cancelled' WHERE id=$1")
+        .bind(observation.id)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    let remaining = services::pending_term_work(&mut tx, year, term)
+        .await
+        .unwrap();
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0].id, original_id);
+}
+
 async fn migrated_pool(name: &str) -> PgPool {
     migrated_pool_with_connections(name, 1).await
 }

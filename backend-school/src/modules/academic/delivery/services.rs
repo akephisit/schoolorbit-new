@@ -10,9 +10,26 @@ pub mod activities;
 pub mod change_sets;
 pub mod groups;
 pub mod offerings;
+pub(crate) mod opening;
 pub mod roster_memberships;
 pub mod teacher_handoff;
 pub mod workspaces;
+
+pub(crate) async fn pending_term_work(
+    tx: &mut Transaction<'_, Postgres>,
+    year: Uuid,
+    term: Uuid,
+) -> Result<Vec<crate::modules::academic::lifecycle::models::PendingTermWork>, AppError> {
+    Ok(sqlx::query_as(
+        "SELECT change.id,
+         md5(to_jsonb(change)::text || COALESCE((SELECT jsonb_agg(to_jsonb(item) ORDER BY item.id)::text
+             FROM academic_term_change_items item WHERE item.change_set_id=change.id),'[]')) AS revision,
+         EXISTS(SELECT 1 FROM academic_term_change_items item WHERE item.change_set_id=change.id
+             AND item.action_kind IN ('add_offering','stop_offering')) AS blocks_closure
+         FROM academic_term_change_sets change WHERE change.academic_year_id=$1
+         AND change.academic_term_id=$2 AND change.status='draft' ORDER BY change.id",
+    ).bind(year).bind(term).fetch_all(&mut **tx).await?)
+}
 
 pub(super) fn validate_row_version(row_version: i64) -> Result<(), AppError> {
     if row_version <= 0 {
@@ -46,6 +63,16 @@ pub(super) async fn require_writable_term(
     } else {
         lifecycle_guard::require_term_write(transaction, year_id, academic_term_id).await?;
     }
+    load_term_context(transaction, academic_term_id).await
+}
+
+/// Load immutable term metadata without taking row locks. This is reserved for
+/// repeatable-read previews whose caller already owns the lifecycle advisory
+/// lock and must remain a genuinely read-only transaction.
+pub(super) async fn load_term_context(
+    transaction: &mut Transaction<'_, Postgres>,
+    academic_term_id: Uuid,
+) -> Result<TermContext, AppError> {
     let query = "SELECT term.id, term.academic_year_id, term.code, term.start_date, \
          term.planned_end_date, term.closed_on, year.end_date AS academic_year_end_date, \
          term.term_type, (SELECT count(*)::integer FROM academic_terms occurrence \
@@ -56,7 +83,7 @@ pub(super) async fn require_writable_term(
          FROM academic_terms term \
          JOIN academic_years year ON year.id = term.academic_year_id \
          WHERE term.id = $1";
-    let term: TermContext = sqlx::query_as(query)
+    let term = sqlx::query_as(query)
         .bind(academic_term_id)
         .fetch_optional(&mut **transaction)
         .await?

@@ -123,6 +123,8 @@ async fn validate_scope(
     ]
     .into_iter()
     .flatten()
+    .collect::<std::collections::BTreeSet<_>>()
+    .into_iter()
     .collect::<Vec<_>>();
     let grade_count: i64 =
         sqlx::query_scalar("SELECT count(*) FROM grade_levels WHERE id = ANY($1)")

@@ -143,6 +143,12 @@ function extractJsonResponseBlocks(source) {
 	for (const marker of markers) {
 		let index = 0;
 		while ((index = source.indexOf(marker, index)) !== -1) {
+			// SQLx Json encodes a database parameter, not an HTTP response envelope.
+			// Exclude only the binding expression; continue inspecting responses in the same file.
+			if (/\.bind\(\s*(?:sqlx::types::)?$/.test(source.slice(0, index))) {
+				index += marker.length;
+				continue;
+			}
 			const openBrace = source.indexOf('{', index + marker.length);
 			if (openBrace === -1) break;
 
@@ -181,6 +187,21 @@ function extractJsonResponseBlocks(source) {
 
 	return blocks;
 }
+
+test('JSON envelope scanner distinguishes database bindings from HTTP responses', () => {
+	const source = `
+		query.bind(Json(serde_json::json!({"ruleCount": 2})));
+		query.bind( sqlx::types::Json(json!({"rowVersion": 1})) );
+		Ok(axum::Json(serde_json::json!({"items": []})))
+		Ok(Json(json!({"success": true, "data": []})))
+		JsonResponse(serde_json::json!({"success": false, "error": "invalid"}))
+	`;
+	assert.deepEqual(extractJsonResponseBlocks(source).sort(), [
+		'{"items": []}',
+		'{"success": false, "error": "invalid"}',
+		'{"success": true, "data": []}'
+	]);
+});
 
 function topLevelKeys(jsonMacroObject) {
 	const keys = [];

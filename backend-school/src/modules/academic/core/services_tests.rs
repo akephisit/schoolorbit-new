@@ -37,7 +37,7 @@ const CURRENT_YEAR_ID: Uuid = Uuid::from_u128(0x1000_0000_0000_0000_0000_0000_00
 const FUTURE_YEAR_ID: Uuid = Uuid::from_u128(0x1000_0000_0000_0000_0000_0000_0000_0026);
 const DEFAULT_SUBJECT_GROUP_ID: Uuid = Uuid::from_u128(0x783a_4a9d_9ff1_4eac_b370_06b5_8daa_1eb7);
 
-async fn prepare_core_fixture(name: &str) -> PgPool {
+pub(crate) async fn prepare_core_fixture(name: &str) -> PgPool {
     let pool = crate::test_helpers::create_named_test_pool_with_max_connections(name, 3).await;
     apply_migrations_through(&pool, 40).await.unwrap();
     seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
@@ -53,6 +53,36 @@ async fn fixture_actor(pool: &PgPool) -> Uuid {
         .fetch_one(pool)
         .await
         .unwrap()
+}
+
+#[tokio::test]
+async fn promotion_policy_repeat_progression_accepts_the_same_existing_grade() {
+    let pool = prepare_core_fixture("promotion_repeat_progression").await;
+    let actor = fixture_actor(&pool).await;
+    let grade: Uuid = sqlx::query_scalar("SELECT id FROM grade_levels ORDER BY id LIMIT 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let result = progressions::replace(
+        &pool,
+        actor,
+        ReplaceGradeProgressionsRequest {
+            row_version: 1,
+            progressions: vec![super::models::GradeProgressionInput {
+                from_grade_level_id: grade,
+                to_grade_level_id: Some(grade),
+                transition_kind: super::models::GradeProgressionKind::Repeat,
+                curriculum_id: None,
+                is_active: true,
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.row_version, 2);
+    assert_eq!(result.progressions.len(), 1);
+    assert_eq!(result.progressions[0].from_grade_level_id, grade);
+    assert_eq!(result.progressions[0].to_grade_level_id, Some(grade));
 }
 
 async fn deactivation_lifecycle_fixture(
@@ -1558,6 +1588,71 @@ fn flat_version_update_contract_rejects_unknown_fields() {
     let mut unknown = payload;
     unknown["legacyTerm"] = json!("1");
     assert!(serde_json::from_value::<UpdateSubjectVersionRequest>(unknown).is_err());
+}
+
+#[tokio::test]
+async fn context_options_keep_closing_term_as_current_for_staff_and_students() {
+    let pool = prepare_core_fixture("context_closing_current").await;
+    let (year, term): (Uuid, Uuid) =
+        sqlx::query_as("SELECT academic_year_id,id FROM academic_terms WHERE status='active'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let student: Uuid = sqlx::query_scalar(
+        "SELECT student_id FROM student_academic_years WHERE academic_year_id=$1 LIMIT 1",
+    )
+    .bind(year)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE academic_terms SET status='closing' WHERE id=$1")
+        .bind(term)
+        .execute(&pool)
+        .await
+        .unwrap();
+    for options in [
+        context::list_options(&pool).await.unwrap(),
+        context::list_public_options(&pool).await.unwrap(),
+        context::list_options_for_student(&pool, student)
+            .await
+            .unwrap(),
+    ] {
+        assert_eq!(options.active_academic_year_id, Some(year));
+        assert_eq!(options.active_academic_term_id, Some(term));
+    }
+}
+
+#[tokio::test]
+async fn context_options_keep_closing_year_as_current_for_staff_and_students() {
+    let pool = prepare_core_fixture("context_closing_year_current").await;
+    crate::modules::academic::cutover_test_support::apply_migrations_through(&pool, 70)
+        .await
+        .unwrap();
+    let year: Uuid = sqlx::query_scalar("SELECT id FROM academic_years WHERE status='active'")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let student: Uuid = sqlx::query_scalar(
+        "SELECT student_id FROM student_academic_years WHERE academic_year_id=$1 LIMIT 1",
+    )
+    .bind(year)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE academic_years SET status='closing' WHERE id=$1")
+        .bind(year)
+        .execute(&pool)
+        .await
+        .unwrap();
+    for options in [
+        context::list_options(&pool).await.unwrap(),
+        context::list_public_options(&pool).await.unwrap(),
+        context::list_options_for_student(&pool, student)
+            .await
+            .unwrap(),
+    ] {
+        assert_eq!(options.active_academic_year_id, Some(year));
+    }
 }
 
 #[tokio::test]

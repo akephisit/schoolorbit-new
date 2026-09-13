@@ -2,6 +2,76 @@
   "schema_version": 1,
   "permissions": [
     {
+      "module": "academic_promotion",
+      "action": "read",
+      "scope": "school",
+      "name": "ดูการเลื่อนชั้นและเกณฑ์ของโรงเรียน",
+      "description": "ดูเกณฑ์และรายการเตรียมเลื่อนชั้นโดยไม่เปลี่ยนข้อมูลนักเรียน"
+    },
+    {
+      "module": "academic_promotion",
+      "action": "manage",
+      "scope": "school",
+      "name": "จัดเตรียมการเลื่อนชั้น",
+      "description": "จัดทำเกณฑ์และเตรียมรายการเลื่อนชั้น โดยไม่รวมการอนุมัติหรือดำเนินการจริง"
+    },
+    {
+      "module": "academic_promotion",
+      "action": "approve",
+      "scope": "school",
+      "name": "ตรวจและอนุมัติการเลื่อนชั้น",
+      "description": "ยืนยันเกณฑ์และตรวจอนุมัติรายการเลื่อนชั้นก่อนดำเนินการ"
+    },
+    {
+      "module": "academic_promotion",
+      "action": "execute",
+      "scope": "school",
+      "name": "ดำเนินการเลื่อนชั้นที่อนุมัติแล้ว",
+      "description": "สร้างข้อมูลปีถัดไปหรือเปลี่ยนสถานะตามรายการเลื่อนชั้นที่ผ่านการอนุมัติ"
+    },
+    {
+      "module": "academic_promotion",
+      "action": "correct",
+      "scope": "school",
+      "name": "ปรับผลการเลื่อนชั้นหลังดำเนินการ",
+      "description": "แก้ไขผลกระทบหลังเลื่อนชั้นโดยระบุเหตุผลและเก็บหลักฐานการปรับ"
+    },
+    {
+      "module": "academic_lifecycle",
+      "action": "read",
+      "scope": "school",
+      "name": "ดูความพร้อมปีการศึกษาและภาคเรียน",
+      "description": "ดูสถานะและความพร้อมปิดปีการศึกษาและภาคเรียนทั้งโรงเรียน"
+    },
+    {
+      "module": "academic_lifecycle",
+      "action": "manage",
+      "scope": "school",
+      "name": "เตรียมและจัดการสถานะปีและภาคเรียน",
+      "description": "เตรียมภาคเรียนและเริ่มหรือยกเลิกขั้นตอนกำลังปิดปีหรือภาคเรียน โดยไม่ใช่สิทธิ์ยืนยันปิด"
+    },
+    {
+      "module": "academic_lifecycle",
+      "action": "close",
+      "scope": "school",
+      "name": "ปิดปีการศึกษาและภาคเรียน",
+      "description": "ยืนยันปิดปีการศึกษาหรือภาคเรียนหลังผลสรุปและความพร้อมผ่านการตรวจสอบ"
+    },
+    {
+      "module": "academic_lifecycle",
+      "action": "reopen",
+      "scope": "school",
+      "name": "เปิดภาคเรียนที่ปิดแล้วกลับมาตรวจสอบ",
+      "description": "เปิดกลับสู่สถานะกำลังปิดโดยระบุเหตุผลและไม่มีงานต่อเนื่องที่ห้ามเปิดกลับ"
+    },
+    {
+      "module": "academic_lifecycle",
+      "action": "activate",
+      "scope": "school",
+      "name": "เริ่มใช้ภาคเรียน",
+      "description": "เริ่มใช้ภาคเรียนที่พร้อมอย่างชัดเจนหลังตรวจบริบทและภาคเรียนก่อนหน้า"
+    },
+    {
       "module": "system",
       "action": "all",
       "scope": "global",

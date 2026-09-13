@@ -4,9 +4,11 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const ALLOWED_ACTIONS = new Set([
+	'activate',
 	'all',
 	'approve',
 	'assign',
+	'close',
 	'correct',
 	'create',
 	'delete',
@@ -21,6 +23,7 @@ const ALLOWED_ACTIONS = new Set([
 	'publish',
 	'read',
 	'remove',
+	'reopen',
 	'request',
 	'revoke',
 	'scores',

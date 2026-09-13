@@ -6,6 +6,7 @@ use crate::modules::academic::core::models::*;
 use crate::modules::academic::delivery::models::*;
 use crate::modules::academic::gradebook::models::*;
 use crate::modules::academic::learner_evaluation::models::*;
+use crate::modules::academic::lifecycle::models::*;
 use crate::modules::academic::models::assessment::*;
 use crate::modules::academic::models::exam_schedule::*;
 use crate::modules::academic::models::timetable::{
@@ -360,6 +361,34 @@ use utoipa::OpenApi;
         crate::modules::academic::results::handlers::search_effective_results,
         crate::modules::academic::results::handlers::preview_student_term,
         crate::modules::academic::results::handlers::list_aggregate_policies,
+        crate::modules::academic::results::handlers::list_aggregate_students,
+        crate::modules::academic::results::handlers::preview_annual,
+        crate::modules::academic::results::handlers::list_annual_students,
+        crate::modules::academic::results::handlers::list_annual_revisions,
+        crate::modules::academic::results::handlers::lock_annual,
+        crate::modules::academic::lifecycle::handlers::get_workspace,
+        crate::modules::academic::lifecycle::handlers::get_activation_workspace,
+        crate::modules::academic::lifecycle::handlers::get_opening_policy,
+        crate::modules::academic::lifecycle::handlers::update_opening_policy,
+        crate::modules::academic::lifecycle::handlers::promotion_runs::list_promotion_runs,
+        crate::modules::academic::lifecycle::handlers::promotion_runs::get_promotion_run_workspace,
+        crate::modules::academic::lifecycle::handlers::promotion_runs::create_promotion_run,
+        crate::modules::academic::lifecycle::handlers::promotion_runs::calculate_promotion_run,
+        crate::modules::academic::lifecycle::handlers::promotion_runs::review_promotion_run_item,
+        crate::modules::academic::lifecycle::handlers::promotion_runs::approve_promotion_run,
+        crate::modules::academic::lifecycle::handlers::promotion_runs::execute_promotion_run,
+        crate::modules::academic::lifecycle::handlers::promotion_runs::get_promotion_run_impacts,
+        crate::modules::academic::lifecycle::handlers::promotion_runs::resolve_promotion_run_impact,
+        crate::modules::academic::lifecycle::handlers::list_promotion_policies,
+        crate::modules::academic::lifecycle::handlers::create_promotion_policy,
+        crate::modules::academic::lifecycle::handlers::get_promotion_policy_options,
+        crate::modules::academic::lifecycle::handlers::get_year_workspace,
+        crate::modules::academic::lifecycle::handlers::transition_year,
+        crate::modules::academic::lifecycle::handlers::year_reopening::get_year_reopening_workspace,
+        crate::modules::academic::lifecycle::handlers::year_reopening::reopen_year,
+        crate::modules::academic::lifecycle::handlers::transition_term,
+        crate::modules::academic::lifecycle::handlers::preview_term_preparation,
+        crate::modules::academic::lifecycle::handlers::apply_term_preparation,
         crate::modules::academic::results::handlers::create_aggregate_policy,
         crate::modules::academic::results::handlers::preview_aggregate,
         crate::modules::academic::results::handlers::list_term_aggregate_revisions,
@@ -1112,6 +1141,115 @@ use utoipa::OpenApi;
         TermAggregatePreview,
         AggregateLockInput,
         TermAggregateRevision,
+        AnnualResultContext,
+        AnnualResultStudent,
+        AnnualClosureStudent,
+        AnnualClosureCoverage,
+        ApiResponse<Vec<AnnualResultStudent>>,
+        AnnualTermSource,
+        AnnualResultPreview,
+        AnnualLockInput,
+        AnnualResultRevision,
+        ApiResponse<AnnualResultPreview>,
+        ApiResponse<AnnualResultRevision>,
+        ApiResponse<Vec<AnnualResultRevision>>,
+        TermClosureStudent,
+        TermClosureCoverage,
+        AggregateStudent,
+        ApiResponse<Vec<AggregateStudent>>,
+        TermTransitionAction,
+        TermTransitionRequest,
+        TermTransitionOutcome,
+        TermLifecycleContext,
+        TermLifecycleQuery,
+        TermLifecycleWorkspace,
+        TermActivationWorkspace,
+        OpeningPolicy,
+        UpdateOpeningPolicyInput,
+        YearLifecycleContext,
+        YearTermLifecycleState,
+        YearTransitionAction,
+        YearTransitionRequest,
+        YearTransitionOutcome,
+        YearReopeningRequest,
+        YearReopeningOutcome,
+        YearReopeningWorkspace,
+        YearLifecycleWorkspace,
+        PromotionPolicyInput,
+        PromotionRun,
+        PromotionRunStatus,
+        PromotionDecisionOutcome,
+        PromotionDecisionInput,
+        CreatePromotionRunInput,
+        CalculatePromotionRunInput,
+        ApprovePromotionRunInput,
+        ExecutePromotionRunInput,
+        ReviewPromotionItemInput,
+        PromotionRunItem,
+        PromotionItemStatus,
+        PromotionItemReview,
+        PromotionRunCalculation,
+        PromotionExecutionReceipt,
+        PromotionExecutionFailure,
+        PromotionExecutionResult,
+        PromotionRunListQuery,
+        PromotionRunList,
+        PromotionRunStudent,
+        PromotionRunWorkspace,
+        AnnualCorrectionEvidence,
+        PromotionImpactQuery,
+        PromotionCorrectionImpact,
+        PromotionImpactWorkspace,
+        ApiResponse<PromotionImpactWorkspace>,
+        ResolvePromotionImpactInput,
+        PromotionImpactResolutionKind,
+        PromotionImpactResolutionOutcome,
+        PromotionImpactResolution,
+        ApiResponse<PromotionImpactResolution>,
+        ApiResponse<PromotionRun>,
+        ApiResponse<PromotionRunCalculation>,
+        ApiResponse<PromotionItemReview>,
+        ApiResponse<PromotionExecutionResult>,
+        ApiResponse<PromotionRunList>,
+        ApiResponse<PromotionRunWorkspace>,
+        PromotionPolicyOptions,
+        PromotionGradeReference,
+        PromotionProgramReference,
+        ApiResponse<PromotionPolicyOptions>,
+        PromotionPolicyVersion,
+        PromotionRuleInput,
+        PromotionSuccessOutcome,
+        PromotionRecommendation,
+        PromotionRecommendationFinding,
+        ApiResponse<PromotionPolicyVersion>,
+        ApiResponse<Vec<PromotionPolicyVersion>>,
+        ApiResponse<YearLifecycleWorkspace>,
+        ApiResponse<YearTransitionOutcome>,
+        ApiResponse<YearReopeningOutcome>,
+        ApiResponse<YearReopeningWorkspace>,
+        LifecycleFinding,
+        LifecycleSeverity,
+        ApiResponse<TermLifecycleWorkspace>,
+        ApiResponse<TermActivationWorkspace>,
+        ApiResponse<OpeningPolicy>,
+        ApiResponse<TermTransitionOutcome>,
+        TermPreparationModule,
+        TermPreparationMappingKind,
+        TermPreparationEntityMapping,
+        TermPreparationDateMapping,
+        TermPreparationMappings,
+        PreviewTermPreparationInput,
+        ApplyTermPreparationInput,
+        TermPreparationContext,
+        TermPreparationMappingOption,
+        TermPreparationMappingRequirement,
+        TermPreparationDateRequirement,
+        TermPreparationModuleEvidence,
+        TermPreparationWorkspace,
+        TermPreparationModuleOutcome,
+        TermPreparationOutcome,
+        ApiResponse<TermPreparationWorkspace>,
+        ApiResponse<TermPreparationOutcome>,
         ApiResponse<AggregatePolicyVersion>,
         ApiResponse<Vec<AggregatePolicyVersion>>,
         ApiResponse<TermAggregatePreview>,
@@ -4996,6 +5134,12 @@ mod tests {
                     query.is_empty(),
                     "School aggregate policies are not term-scoped"
                 );
+            } else if path == "/api/academic/results/annual-students"
+                || path.contains("/annual-preview")
+                || path.contains("/annual-revisions")
+            {
+                assert_eq!(query.get("academicYearId"), Some(&true), "{path}");
+                assert_eq!(query.get("academicTermId"), None, "{path}");
             } else {
                 assert_eq!(query.get("academicYearId"), Some(&true), "{path}");
                 assert_eq!(query.get("academicTermId"), Some(&true), "{path}");
@@ -5052,5 +5196,455 @@ mod tests {
                 "result correction schema must publish camelCase field {field}"
             );
         }
+    }
+
+    #[test]
+    fn documents_annual_result_revisions_with_year_scoped_context() {
+        let document = school_api_value().unwrap();
+        let preview = "/api/academic/results/students/{student_year_id}/annual-preview";
+        let revisions = "/api/academic/results/students/{student_year_id}/annual-revisions";
+        let roster = "/api/academic/results/annual-students";
+        assert_operations(
+            &document,
+            &[
+                (preview, "get", "previewAnnualResult"),
+                (revisions, "get", "listAnnualResultRevisions"),
+                (revisions, "post", "lockAnnualResult"),
+                (roster, "get", "listAnnualResultStudents"),
+            ],
+        );
+        for (path, method) in [
+            (preview, "get"),
+            (revisions, "get"),
+            (revisions, "post"),
+            (roster, "get"),
+        ] {
+            let operation = &document["paths"][path][method];
+            let parameters = operation["parameters"].as_array().unwrap();
+            assert!(parameters
+                .iter()
+                .any(|row| row["name"] == "academicYearId" && row["required"] == true));
+            assert!(!parameters.iter().any(|row| row["name"] == "academicTermId"));
+            for status in ["200", "400", "401", "403", "404", "409", "422"] {
+                assert!(operation["responses"][status].is_object());
+            }
+        }
+        let schema = &document["components"]["schemas"];
+        assert!(schema["AnnualResultStudent"]["properties"]["studentAcademicYearId"].is_object());
+        assert!(schema["AnnualResultStudent"]["properties"]["nationalId"].is_null());
+        for field in [
+            "expectedRevision",
+            "sourceChecksum",
+            "requestId",
+            "holdReason",
+        ] {
+            assert!(schema["AnnualLockInput"]["properties"][field].is_object());
+        }
+        assert_eq!(schema["AnnualLockInput"]["additionalProperties"], false);
+        for field in ["terms", "totals", "needsHold", "canLock", "sourceChecksum"] {
+            assert!(schema["AnnualResultPreview"]["properties"][field].is_object());
+        }
+    }
+
+    #[test]
+    fn documents_aggregate_roster_context_and_identity() {
+        let document = school_api_value().unwrap();
+        assert_operations(
+            &document,
+            &[(
+                "/api/academic/results/aggregate-students",
+                "get",
+                "listAggregateStudents",
+            )],
+        );
+        let operation = &document["paths"]["/api/academic/results/aggregate-students"]["get"];
+        for name in ["academicYearId", "academicTermId"] {
+            assert!(operation["parameters"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|parameter| parameter["name"] == name && parameter["required"] == true));
+        }
+        let properties = &document["components"]["schemas"]["AggregateStudent"]["properties"];
+        assert!(properties["studentAcademicYearId"].is_object());
+        assert!(properties["closure"].is_object());
+        assert!(properties["nationalId"].is_null());
+    }
+
+    #[test]
+    fn documents_promotion_policy_review_without_implicit_context() {
+        let document = school_api_value().unwrap();
+        assert_eq!(
+            document["paths"]["/api/academic/lifecycle/promotion-policies/options"]["get"]
+                ["operationId"],
+            "getPromotionPolicyOptions"
+        );
+        let path = &document["paths"]["/api/academic/lifecycle/promotion-policies"];
+        for (method, operation) in [
+            ("get", "listPromotionPolicies"),
+            ("post", "createPromotionPolicy"),
+        ] {
+            assert_eq!(path[method]["operationId"], operation);
+            assert!(path[method]["parameters"]
+                .as_array()
+                .is_none_or(|params| params.is_empty()));
+            for status in ["200", "400", "401", "403", "422"] {
+                assert!(path[method]["responses"][status].is_object());
+            }
+        }
+        let request = &document["components"]["schemas"]["PromotionPolicyInput"];
+        assert_eq!(request["additionalProperties"], false);
+        assert!(request["required"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("rules")));
+        let rule = &document["components"]["schemas"]["PromotionRuleInput"];
+        assert_eq!(rule["additionalProperties"], false);
+        assert!(rule["properties"]["minimumEarnedCredits"].is_object());
+        assert!(rule["properties"]["minimumLearnerLevel"].is_object());
+        assert_eq!(
+            document["components"]["schemas"]["PromotionSuccessOutcome"]["enum"],
+            serde_json::json!(["promote", "graduate"])
+        );
+    }
+
+    #[test]
+    fn documents_promotion_run_commands_with_exact_context_and_typed_outcomes() {
+        let document = school_api_value().unwrap();
+        let root = "/api/academic/lifecycle/promotion-runs";
+        for (path, method, operation) in [
+            (root.to_string(), "get", "listPromotionRuns"),
+            (root.to_string(), "post", "createPromotionRun"),
+            (
+                format!("{root}/{{run_id}}"),
+                "get",
+                "getPromotionRunWorkspace",
+            ),
+            (
+                format!("{root}/{{run_id}}/calculate"),
+                "post",
+                "calculatePromotionRun",
+            ),
+            (
+                format!("{root}/{{run_id}}/items/{{item_id}}"),
+                "put",
+                "reviewPromotionRunItem",
+            ),
+            (
+                format!("{root}/{{run_id}}/approve"),
+                "post",
+                "approvePromotionRun",
+            ),
+            (
+                format!("{root}/{{run_id}}/execute"),
+                "post",
+                "executePromotionRun",
+            ),
+        ] {
+            assert_eq!(document["paths"][&path][method]["operationId"], operation);
+            for status in ["200", "400", "401", "403", "404", "409", "422", "500"] {
+                assert!(
+                    document["paths"][&path][method]["responses"][status].is_object(),
+                    "{path} {method} {status}"
+                );
+            }
+        }
+        assert!(document["paths"][root]["get"]["parameters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["name"] == "sourceYearId" && p["required"] == true));
+        for schema in [
+            "CreatePromotionRunInput",
+            "CalculatePromotionRunInput",
+            "ReviewPromotionItemInput",
+            "ApprovePromotionRunInput",
+            "ExecutePromotionRunInput",
+        ] {
+            assert_eq!(
+                document["components"]["schemas"][schema]["additionalProperties"],
+                false
+            );
+        }
+        let properties =
+            &document["components"]["schemas"]["PromotionExecutionResult"]["properties"];
+        for name in ["run", "receipts", "failures", "remainingCount", "holdCount"] {
+            assert!(properties[name].is_object());
+        }
+    }
+
+    #[test]
+    fn documents_promotion_impact_inspection_with_typed_correction_evidence() {
+        let document = school_api_value().unwrap();
+        let path = "/api/academic/lifecycle/promotion-runs/{run_id}/impacts";
+        assert_operations(&document, &[(path, "get", "getPromotionRunImpacts")]);
+        let operation = &document["paths"][path]["get"];
+        assert!(operation["parameters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["name"] == "afterId" && row["in"] == "query"));
+        for status in ["200", "400", "401", "403", "404", "422", "500"] {
+            assert!(operation["responses"][status].is_object());
+        }
+        let evidence = &document["components"]["schemas"]["AnnualCorrectionEvidence"];
+        for field in [
+            "annualRevisionId",
+            "academicTermId",
+            "termName",
+            "resultId",
+            "offeringCode",
+            "offeringName",
+            "sourceEffectiveVersion",
+            "correction",
+        ] {
+            assert!(evidence["required"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|value| value == field));
+        }
+        let page = &document["components"]["schemas"]["PromotionImpactWorkspace"]["properties"];
+        for field in [
+            "runId",
+            "sourceYearId",
+            "targetYearId",
+            "impacts",
+            "totalCount",
+            "nextCursor",
+            "sourceChecksum",
+            "pendingCount",
+        ] {
+            assert!(page[field].is_object());
+        }
+        let resolution_path =
+            "/api/academic/lifecycle/promotion-runs/{run_id}/impacts/{impact_id}/resolve";
+        assert_operations(
+            &document,
+            &[(resolution_path, "post", "resolvePromotionRunImpact")],
+        );
+        for status in ["200", "400", "401", "403", "404", "409", "422", "500"] {
+            assert!(document["paths"][resolution_path]["post"]["responses"][status].is_object());
+        }
+        for schema in [
+            "ResolvePromotionImpactInput",
+            "PromotionImpactResolution",
+            "PromotionImpactResolutionOutcome",
+        ] {
+            assert!(document["components"]["schemas"][schema].is_object());
+        }
+    }
+
+    #[test]
+    fn documents_year_reopening_with_reason_and_a_separate_command() {
+        use crate::modules::academic::core::models::YearReopeningRequest;
+        let document = school_api_value().unwrap();
+        let path = "/api/academic/lifecycle/years/{year_id}/reopening";
+        assert_operations(
+            &document,
+            &[
+                (path, "get", "getYearReopeningWorkspace"),
+                (path, "post", "reopenAcademicYear"),
+            ],
+        );
+        for method in ["get", "post"] {
+            for status in ["200", "400", "401", "403", "404", "409", "422", "500"] {
+                assert!(document["paths"][path][method]["responses"][status].is_object());
+            }
+        }
+        let schema = &document["components"]["schemas"]["YearReopeningRequest"];
+        assert_eq!(schema["additionalProperties"], false);
+        for field in [
+            "requestId",
+            "expectedYearVersion",
+            "sourceChecksum",
+            "reason",
+        ] {
+            assert!(schema["required"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|value| value == field));
+        }
+        let mut request = serde_json::json!({"requestId":uuid::Uuid::new_v4(),"expectedYearVersion":1,"sourceChecksum":"a".repeat(64),"reason":"ตรวจทานปีเดิม"});
+        assert!(serde_json::from_value::<YearReopeningRequest>(request.clone()).is_ok());
+        request["academic_year_id"] = serde_json::json!(uuid::Uuid::new_v4());
+        assert!(serde_json::from_value::<YearReopeningRequest>(request).is_err());
+    }
+
+    #[test]
+    fn documents_selected_module_future_term_preparation() {
+        let document = school_api_value().unwrap();
+        let preview_path = "/api/academic/lifecycle/term-preparations/preview";
+        let apply_path = "/api/academic/lifecycle/term-preparations/apply";
+        assert_operations(
+            &document,
+            &[
+                (preview_path, "post", "previewAcademicTermPreparation"),
+                (apply_path, "post", "applyAcademicTermPreparation"),
+            ],
+        );
+        for path in [preview_path, apply_path] {
+            for status in ["200", "400", "401", "403", "404", "409", "422", "500"] {
+                assert!(document["paths"][path]["post"]["responses"][status].is_object());
+            }
+        }
+        for schema in [
+            "PreviewTermPreparationInput",
+            "ApplyTermPreparationInput",
+            "TermPreparationWorkspace",
+            "TermPreparationOutcome",
+            "TermPreparationMappingRequirement",
+            "TermPreparationDateRequirement",
+        ] {
+            assert!(document["components"]["schemas"][schema].is_object());
+        }
+        assert_eq!(
+            document["components"]["schemas"]["ApplyTermPreparationInput"]["additionalProperties"],
+            false
+        );
+    }
+
+    #[test]
+    fn documents_year_lifecycle_without_implicit_term_or_activation() {
+        let document = school_api_value().unwrap();
+        let workspace = "/api/academic/lifecycle/years/{year_id}";
+        let transitions = "/api/academic/lifecycle/years/{year_id}/transitions";
+        assert_operations(
+            &document,
+            &[
+                (workspace, "get", "getYearLifecycleWorkspace"),
+                (transitions, "post", "transitionAcademicYear"),
+            ],
+        );
+        for (path, method) in [(workspace, "get"), (transitions, "post")] {
+            let operation = &document["paths"][path][method];
+            assert!(operation["parameters"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|p| p["in"] != "query"));
+            for status in ["200", "400", "401", "403", "404", "422"] {
+                assert!(operation["responses"][status].is_object());
+            }
+        }
+        assert!(document["paths"][transitions]["post"]["responses"]["409"].is_object());
+        let request = &document["components"]["schemas"]["YearTransitionRequest"];
+        assert_eq!(request["additionalProperties"], false);
+        for field in [
+            "requestId",
+            "action",
+            "expectedYearVersion",
+            "readinessChecksum",
+            "acknowledgedWarningCodes",
+        ] {
+            assert!(request["required"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|value| value == field));
+        }
+        assert_eq!(
+            document["components"]["schemas"]["YearTransitionAction"]["enum"],
+            serde_json::json!(["begin_closing", "cancel_closing", "close"])
+        );
+    }
+
+    #[test]
+    fn documents_term_lifecycle_workspace_and_explicit_transitions() {
+        let document = school_api_value().unwrap();
+        assert_operations(
+            &document,
+            &[
+                (
+                    "/api/academic/lifecycle/terms/{term_id}",
+                    "get",
+                    "getTermLifecycleWorkspace",
+                ),
+                (
+                    "/api/academic/lifecycle/terms/{term_id}/transitions",
+                    "post",
+                    "transitionAcademicTerm",
+                ),
+            ],
+        );
+        let get = &document["paths"]["/api/academic/lifecycle/terms/{term_id}"]["get"];
+        assert!(get["parameters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(
+                |parameter| parameter["name"] == "academicYearId" && parameter["required"] == true
+            ));
+        let post =
+            &document["paths"]["/api/academic/lifecycle/terms/{term_id}/transitions"]["post"];
+        for status in ["200", "400", "401", "403", "404", "409", "422"] {
+            assert!(post["responses"][status].is_object());
+        }
+        let request = &document["components"]["schemas"]["TermTransitionRequest"];
+        assert_eq!(request["additionalProperties"], false);
+        for field in [
+            "academicYearId",
+            "requestId",
+            "action",
+            "expectedYearVersion",
+            "expectedTermVersion",
+            "readinessChecksum",
+            "acknowledgedWarningCodes",
+        ] {
+            assert!(request["required"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|value| value == field));
+        }
+    }
+
+    #[test]
+    fn documents_opening_inspection_and_versioned_policy_contracts() {
+        let document = school_api_value().unwrap();
+        let activation = "/api/academic/lifecycle/terms/{term_id}/activation";
+        let policy = "/api/academic/lifecycle/opening-policy";
+        assert_operations(
+            &document,
+            &[
+                (activation, "get", "getTermActivationWorkspace"),
+                (policy, "get", "getAcademicOpeningPolicy"),
+                (policy, "put", "updateAcademicOpeningPolicy"),
+            ],
+        );
+        let get_activation = &document["paths"][activation]["get"];
+        assert!(get_activation["parameters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(
+                |parameter| parameter["name"] == "academicYearId" && parameter["required"] == true
+            ));
+        for status in ["200", "400", "401", "403", "404", "409", "422", "500"] {
+            assert!(get_activation["responses"][status].is_object());
+        }
+        for method in ["get", "put"] {
+            let operation = &document["paths"][policy][method];
+            for status in ["200", "400", "401", "403", "409", "422", "500"] {
+                assert!(operation["responses"][status].is_object());
+            }
+        }
+        let update = &document["components"]["schemas"]["UpdateOpeningPolicyInput"];
+        assert_eq!(update["additionalProperties"], false);
+        for field in [
+            "rowVersion",
+            "requireHomeroomPlacements",
+            "requirePublishedOfferings",
+            "requirePublishedTimetable",
+        ] {
+            assert!(update["required"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|value| value == field));
+        }
+        assert!(document["components"]["schemas"]["TermActivationWorkspace"].is_object());
+        assert!(document["components"]["schemas"]["OpeningPolicy"].is_object());
     }
 }

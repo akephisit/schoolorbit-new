@@ -16,6 +16,79 @@ export type AggregatePolicyVersion = Schemas['AggregatePolicyVersion'];
 export type TermAggregatePreview = Schemas['TermAggregatePreview'];
 export type AggregateLockInput = Schemas['AggregateLockInput'];
 export type TermAggregateRevision = Schemas['TermAggregateRevision'];
+export type AnnualResultPreview = Schemas['AnnualResultPreview'];
+export type AnnualResultStudent = Schemas['AnnualResultStudent'];
+export type AnnualResultRevision = Schemas['AnnualResultRevision'];
+export type AnnualLockInput = Schemas['AnnualLockInput'];
+export type AnnualResultContext = NonNullable<
+	operations['previewAnnualResult']['parameters']['query']
+>;
+
+function annualContextQuery(context: AnnualResultContext): AnnualResultContext {
+	const academicYearId = context.academicYearId.trim();
+	if (!academicYearId) throw new Error('กรุณาเลือกปีการศึกษาก่อน');
+	return { academicYearId };
+}
+
+export function listAnnualResultStudents(
+	context: AnnualResultContext,
+	options: ApiRequestOptions = {}
+): Promise<AnnualResultStudent[]> {
+	return data(
+		apiClient.get<AnnualResultStudent[]>('/api/academic/results/annual-students', {
+			...options,
+			query: annualContextQuery(context)
+		}),
+		'ไม่สามารถโหลดรายชื่อนักเรียนสำหรับสรุปผลรายปีได้'
+	);
+}
+
+export function previewAnnualResult(
+	studentYearId: string,
+	context: AnnualResultContext,
+	options: ApiRequestOptions = {}
+): Promise<AnnualResultPreview> {
+	return data(
+		apiClient.get<AnnualResultPreview>(`${studentEndpoint(studentYearId)}/annual-preview`, {
+			...options,
+			query: annualContextQuery(context)
+		}),
+		'ไม่สามารถคำนวณผลรวมรายปีได้'
+	);
+}
+
+export function listAnnualResultRevisions(
+	studentYearId: string,
+	context: AnnualResultContext,
+	options: ApiRequestOptions = {}
+): Promise<AnnualResultRevision[]> {
+	return data(
+		apiClient.get<AnnualResultRevision[]>(`${studentEndpoint(studentYearId)}/annual-revisions`, {
+			...options,
+			query: annualContextQuery(context)
+		}),
+		'ไม่สามารถโหลดประวัติผลรายปีได้'
+	);
+}
+
+export function lockAnnualResult(
+	studentYearId: string,
+	context: AnnualResultContext,
+	input: AnnualLockInput,
+	options: ApiRequestOptions = {}
+): Promise<AnnualResultRevision> {
+	return data(
+		apiClient.post<AnnualResultRevision>(
+			`${studentEndpoint(studentYearId)}/annual-revisions`,
+			input,
+			{
+				...options,
+				query: annualContextQuery(context)
+			}
+		),
+		'ไม่สามารถยืนยันผลรายปีได้'
+	);
+}
 
 function contextQuery(context: AcademicResultContext): ContextQuery {
 	const query = {
@@ -104,5 +177,22 @@ export function listTermAggregateRevisions(
 			{ ...options, query: contextQuery(context) }
 		),
 		'ไม่สามารถโหลดประวัติผลรวมรายภาคได้'
+	);
+}
+
+export type AggregateStudent = Schemas['AggregateStudent'];
+export function listAggregateStudents(
+	context: AcademicResultContext,
+	options: ApiRequestOptions = {}
+): Promise<AggregateStudent[]> {
+	const query = contextQuery(context) satisfies NonNullable<
+		operations['listAggregateStudents']['parameters']['query']
+	>;
+	return data(
+		apiClient.get<AggregateStudent[]>('/api/academic/results/aggregate-students', {
+			...options,
+			query
+		}),
+		'โหลดรายการผลสรุปไม่สำเร็จ'
 	);
 }

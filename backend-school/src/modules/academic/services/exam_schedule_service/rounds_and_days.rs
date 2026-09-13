@@ -1,3 +1,24 @@
+pub(crate) async fn pending_term_work(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    year: uuid::Uuid,
+    term: uuid::Uuid,
+) -> Result<Vec<crate::modules::academic::lifecycle::models::PendingTermWork>, crate::error::AppError>
+{
+    Ok(sqlx::query_as(
+        "SELECT round.id,md5(to_jsonb(round)::text
+         || COALESCE((SELECT jsonb_agg(to_jsonb(day) ORDER BY day.id)::text FROM academic_exam_days day WHERE day.exam_round_id=round.id),'[]')
+         || COALESCE((SELECT jsonb_agg(to_jsonb(session) ORDER BY session.id)::text FROM academic_exam_sessions session WHERE session.exam_round_id=round.id),'[]')
+         || COALESCE((SELECT jsonb_agg(to_jsonb(item) ORDER BY item.id)::text FROM academic_exam_schedule_items item WHERE item.exam_round_id=round.id),'[]')
+         || COALESCE((SELECT jsonb_agg(to_jsonb(blocked) ORDER BY blocked.id)::text FROM academic_exam_day_blocked_windows blocked JOIN academic_exam_days day ON day.id=blocked.exam_day_id WHERE day.exam_round_id=round.id),'[]')
+         || COALESCE((SELECT jsonb_agg(to_jsonb(assignment) ORDER BY assignment.id)::text FROM academic_exam_day_room_assignments assignment JOIN academic_exam_days day ON day.id=assignment.exam_day_id WHERE day.exam_round_id=round.id),'[]')
+         || COALESCE((SELECT jsonb_agg(to_jsonb(invigilator) ORDER BY invigilator.id)::text FROM academic_exam_day_invigilators invigilator JOIN academic_exam_days day ON day.id=invigilator.exam_day_id WHERE day.exam_round_id=round.id),'[]')
+         || COALESCE((SELECT jsonb_agg(to_jsonb(grade) ORDER BY grade.exam_day_id,grade.grade_level_id)::text FROM academic_exam_day_grade_levels grade JOIN academic_exam_days day ON day.id=grade.exam_day_id WHERE day.exam_round_id=round.id),'[]')
+         || COALESCE((SELECT jsonb_agg(to_jsonb(seat) ORDER BY seat.id)::text FROM academic_exam_seat_assignments seat JOIN academic_exam_day_room_assignments assignment ON assignment.id=seat.day_room_assignment_id JOIN academic_exam_days day ON day.id=assignment.exam_day_id WHERE day.exam_round_id=round.id),'[]')) AS revision,
+         false AS blocks_closure FROM academic_exam_rounds round WHERE academic_year_id=$1
+         AND academic_term_id=$2 AND status='draft' ORDER BY round.id",
+    ).bind(year).bind(term).fetch_all(&mut **tx).await?)
+}
+
 use std::collections::HashMap;
 
 use chrono::NaiveTime;

@@ -144,7 +144,7 @@ pub(super) async fn apply_curriculum_generated_group(
         return Ok(GeneratedGroupApplyOutcome { id, created: false });
     }
 
-    let group_id = Uuid::new_v4();
+    let group_id = super::offerings::prepared_group_id(learning_offering_id, &proposal.group_key);
     let code_suffix = proposal.group_key.chars().take(10).collect::<String>();
     sqlx::query(
         r#"INSERT INTO learning_groups (

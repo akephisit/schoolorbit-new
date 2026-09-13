@@ -1075,7 +1075,7 @@ fn normalize_transfer_reason(value: &str) -> Result<String, AppError> {
     Ok(reason.to_string())
 }
 
-fn contains_thirteen_digit_run(value: &str) -> bool {
+pub(super) fn contains_thirteen_digit_run(value: &str) -> bool {
     let mut digits = 0_u8;
     for character in value.chars() {
         if character.is_numeric() {

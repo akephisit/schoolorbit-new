@@ -71,8 +71,8 @@ pub async fn list_options(pool: &PgPool) -> Result<AcademicContextOptions, AppEr
                 FROM academic_terms term
                 JOIN academic_years year ON year.id = term.academic_year_id
             ), '[]'::jsonb),
-            (SELECT year.id FROM academic_years year WHERE year.status = 'active'),
-            (SELECT term.id FROM academic_terms term WHERE term.status = 'active')
+            (SELECT year.id FROM academic_years year WHERE year.status IN ('active', 'closing')),
+            (SELECT term.id FROM academic_terms term WHERE term.status IN ('active', 'closing'))
         "#,
     )
     .fetch_one(pool)
@@ -150,7 +150,7 @@ pub async fn list_options_for_student(
             (
                 SELECT year.id
                 FROM academic_years year
-                WHERE year.status = 'active'
+                WHERE year.status IN ('active', 'closing')
                   AND EXISTS (
                       SELECT 1
                       FROM student_academic_years student_year
@@ -161,7 +161,7 @@ pub async fn list_options_for_student(
             (
                 SELECT term.id
                 FROM academic_terms term
-                WHERE term.status = 'active'
+                WHERE term.status IN ('active', 'closing')
                   AND EXISTS (
                       SELECT 1
                       FROM student_academic_years student_year
@@ -250,8 +250,8 @@ pub async fn list_options_for_parent(
                 FROM linked_terms term
                 JOIN linked_years year ON year.id = term.academic_year_id
             ), '[]'::jsonb),
-            (SELECT id FROM linked_years WHERE status = 'active'),
-            (SELECT id FROM linked_terms WHERE status = 'active')
+            (SELECT id FROM linked_years WHERE status IN ('active', 'closing')),
+            (SELECT id FROM linked_terms WHERE status IN ('active', 'closing'))
         "#,
     )
     .bind(parent_id)

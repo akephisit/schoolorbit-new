@@ -1482,6 +1482,310 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/lifecycle/opening-policy': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getAcademicOpeningPolicy'];
+		put: operations['updateAcademicOpeningPolicy'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/lifecycle/promotion-policies': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listPromotionPolicies'];
+		put?: never;
+		post: operations['createPromotionPolicy'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/lifecycle/promotion-policies/options': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getPromotionPolicyOptions'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/lifecycle/promotion-runs': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listPromotionRuns'];
+		put?: never;
+		post: operations['createPromotionRun'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/lifecycle/promotion-runs/{run_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getPromotionRunWorkspace'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/lifecycle/promotion-runs/{run_id}/approve': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['approvePromotionRun'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/lifecycle/promotion-runs/{run_id}/calculate': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['calculatePromotionRun'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/lifecycle/promotion-runs/{run_id}/execute': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['executePromotionRun'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/lifecycle/promotion-runs/{run_id}/impacts': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getPromotionRunImpacts'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/lifecycle/promotion-runs/{run_id}/impacts/{impact_id}/resolve': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['resolvePromotionRunImpact'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/lifecycle/promotion-runs/{run_id}/items/{item_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['reviewPromotionRunItem'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/lifecycle/term-preparations/apply': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['applyAcademicTermPreparation'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/lifecycle/term-preparations/preview': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['previewAcademicTermPreparation'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/lifecycle/terms/{term_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getTermLifecycleWorkspace'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/lifecycle/terms/{term_id}/activation': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getTermActivationWorkspace'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/lifecycle/terms/{term_id}/transitions': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['transitionAcademicTerm'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/lifecycle/years/{year_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getYearLifecycleWorkspace'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/lifecycle/years/{year_id}/reopening': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getYearReopeningWorkspace'];
+		put?: never;
+		post: operations['reopenAcademicYear'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/lifecycle/years/{year_id}/transitions': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['transitionAcademicYear'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/offerings': {
 		parameters: {
 			query?: never;
@@ -1722,6 +2026,38 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/results/aggregate-students': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listAggregateStudents'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/results/annual-students': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listAnnualResultStudents'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/results/corrections': {
 		parameters: {
 			query?: never;
@@ -1940,6 +2276,38 @@ export interface paths {
 		get: operations['listTermAggregateRevisions'];
 		put?: never;
 		post: operations['lockTermAggregate'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/results/students/{student_year_id}/annual-preview': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['previewAnnualResult'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/results/students/{student_year_id}/annual-revisions': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listAnnualResultRevisions'];
+		put?: never;
+		post: operations['lockAnnualResult'];
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -5930,6 +6298,15 @@ export interface components {
 			/** Format: uuid */
 			policyId: string;
 		};
+		AggregateStudent: {
+			closure: components['schemas']['TermClosureStudent'];
+			gradeLevelName: string;
+			/** Format: uuid */
+			studentAcademicYearId: string;
+			studentCode?: string | null;
+			studentName: string;
+			studyProgramName: string;
+		};
 		AggregationPolicyBand: {
 			lowerBound: string;
 			/** Format: int32 */
@@ -5949,6 +6326,92 @@ export interface components {
 			rowVersion: number;
 			/** Format: int32 */
 			versionNo: number;
+		};
+		AnnualClosureCoverage: {
+			ready: boolean;
+			sourceChecksum: string;
+			students: components['schemas']['AnnualClosureStudent'][];
+		};
+		AnnualClosureStudent: {
+			holdReason?: string | null;
+			isCurrent: boolean;
+			/** Format: int64 */
+			revision?: number | null;
+			/** Format: uuid */
+			revisionId?: string | null;
+			/** Format: uuid */
+			studentAcademicYearId: string;
+		};
+		AnnualCorrectionEvidence: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			annualRevisionId: string;
+			correction: components['schemas']['ResultCorrectionRecord'];
+			criterionName?: string | null;
+			evaluationDomain?: null | components['schemas']['LearnerEvaluationDomain'];
+			offeringCode: string;
+			offeringName: string;
+			/** Format: uuid */
+			resultId: string;
+			/** Format: int64 */
+			sourceEffectiveVersion: number;
+			termName: string;
+		};
+		AnnualLockInput: {
+			/** Format: int64 */
+			expectedRevision?: number | null;
+			holdReason?: string | null;
+			/** Format: uuid */
+			requestId: string;
+			sourceChecksum: string;
+		};
+		AnnualResultContext: {
+			/** Format: uuid */
+			academicYearId: string;
+		};
+		AnnualResultPreview: {
+			/** Format: uuid */
+			academicYearId: string;
+			canLock: boolean;
+			needsHold: boolean;
+			sourceChecksum: string;
+			/** Format: uuid */
+			studentAcademicYearId: string;
+			terms: components['schemas']['AnnualTermSource'][];
+			totals: components['schemas']['CourseCreditTotals'];
+		};
+		AnnualResultRevision: {
+			holdReason?: string | null;
+			/** Format: uuid */
+			id: string;
+			isCurrent: boolean;
+			/** Format: date-time */
+			lockedAt: string;
+			/** Format: uuid */
+			lockedBy: string;
+			officialGpa?: string | null;
+			/** Format: int64 */
+			revision: number;
+			snapshot: components['schemas']['AnnualResultPreview'];
+		};
+		AnnualResultStudent: {
+			closure: components['schemas']['AnnualClosureStudent'];
+			gradeLevelName: string;
+			/** Format: uuid */
+			studentAcademicYearId: string;
+			studentCode?: string | null;
+			studentName: string;
+			studyProgramName: string;
+		};
+		AnnualTermSource: {
+			/** Format: uuid */
+			academicTermId: string;
+			isCurrent: boolean;
+			revision?: null | components['schemas']['TermAggregateRevision'];
+			/** Format: int32 */
+			sequence: number;
+			termName: string;
 		};
 		ApiErrorResponse: {
 			error: string;
@@ -6256,6 +6719,39 @@ export interface components {
 				rowVersion: number;
 				/** Format: int32 */
 				versionNo: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_AnnualResultPreview: {
+			data: {
+				/** Format: uuid */
+				academicYearId: string;
+				canLock: boolean;
+				needsHold: boolean;
+				sourceChecksum: string;
+				/** Format: uuid */
+				studentAcademicYearId: string;
+				terms: components['schemas']['AnnualTermSource'][];
+				totals: components['schemas']['CourseCreditTotals'];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_AnnualResultRevision: {
+			data: {
+				holdReason?: string | null;
+				/** Format: uuid */
+				id: string;
+				isCurrent: boolean;
+				/** Format: date-time */
+				lockedAt: string;
+				/** Format: uuid */
+				lockedBy: string;
+				officialGpa?: string | null;
+				/** Format: int64 */
+				revision: number;
+				snapshot: components['schemas']['AnnualResultPreview'];
 			};
 			message?: string;
 			success: boolean;
@@ -7842,6 +8338,17 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_OpeningPolicy: {
+			data: {
+				requireHomeroomPlacements: boolean;
+				requirePublishedOfferings: boolean;
+				requirePublishedTimetable: boolean;
+				/** Format: int64 */
+				rowVersion: number;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_OrganizationUnit: {
 			data: {
 				category: string;
@@ -7965,6 +8472,162 @@ export interface components {
 				updatedAt: string;
 				username: string;
 				userType: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_PromotionExecutionResult: {
+			data: {
+				failures: components['schemas']['PromotionExecutionFailure'][];
+				/** Format: int64 */
+				holdCount: number;
+				receipts: components['schemas']['PromotionExecutionReceipt'][];
+				/** Format: int64 */
+				remainingCount: number;
+				run: components['schemas']['PromotionRun'];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_PromotionImpactResolution: {
+			data: {
+				/** Format: uuid */
+				correctionId: string;
+				/** Format: uuid */
+				id: string;
+				/** Format: uuid */
+				impactId: string;
+				/** Format: uuid */
+				itemId: string;
+				outcome: components['schemas']['PromotionImpactResolutionOutcome'];
+				reason: string;
+				replacementDecision?: null | components['schemas']['PromotionDecisionInput'];
+				/** Format: uuid */
+				requestId: string;
+				resolutionKind: components['schemas']['PromotionImpactResolutionKind'];
+				/** Format: date-time */
+				resolvedAt: string;
+				/** Format: uuid */
+				resolvedBy: string;
+				/** Format: uuid */
+				runId: string;
+				sourceChecksum: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_PromotionImpactWorkspace: {
+			data: {
+				impacts: components['schemas']['PromotionCorrectionImpact'][];
+				/** Format: uuid */
+				nextCursor?: string | null;
+				pendingCount: number;
+				/** Format: uuid */
+				runId: string;
+				sourceChecksum: string;
+				/** Format: uuid */
+				sourceYearId: string;
+				/** Format: uuid */
+				targetYearId: string;
+				totalCount: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_PromotionItemReview: {
+			data: {
+				item: components['schemas']['PromotionRunItem'];
+				run: components['schemas']['PromotionRun'];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_PromotionPolicyOptions: {
+			data: {
+				grades: components['schemas']['PromotionGradeReference'][];
+				programs: components['schemas']['PromotionProgramReference'][];
+				progressionSet: components['schemas']['GradeProgressionSet'];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_PromotionPolicyVersion: {
+			data: {
+				/** Format: uuid */
+				id: string;
+				name: string;
+				/** Format: int64 */
+				progressionRowVersion: number;
+				/** Format: date-time */
+				reviewedAt: string;
+				/** Format: uuid */
+				reviewedBy: string;
+				rules: components['schemas']['PromotionRuleInput'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_PromotionRun: {
+			data: {
+				/** Format: uuid */
+				approvalId?: string | null;
+				/** Format: date-time */
+				approvedAt?: string | null;
+				/** Format: uuid */
+				approvedBy?: string | null;
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				createdBy: string;
+				/** Format: date-time */
+				executedAt?: string | null;
+				/** Format: uuid */
+				executedBy?: string | null;
+				/** Format: uuid */
+				id: string;
+				/** Format: uuid */
+				policyId: string;
+				/** Format: date-time */
+				reviewedAt?: string | null;
+				/** Format: uuid */
+				reviewedBy?: string | null;
+				/** Format: int64 */
+				rowVersion: number;
+				/** Format: uuid */
+				sourceYearId: string;
+				status: components['schemas']['PromotionRunStatus'];
+				/** Format: uuid */
+				targetYearId: string;
+				/** Format: date-time */
+				updatedAt: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_PromotionRunCalculation: {
+			data: {
+				items: components['schemas']['PromotionRunItem'][];
+				run: components['schemas']['PromotionRun'];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_PromotionRunList: {
+			data: {
+				/** Format: uuid */
+				nextCursor?: string | null;
+				runs: components['schemas']['PromotionRun'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_PromotionRunWorkspace: {
+			data: {
+				approvalChecksum: string;
+				run: components['schemas']['PromotionRun'];
+				sourceYear: components['schemas']['YearLifecycleContext'];
+				students: components['schemas']['PromotionRunStudent'][];
+				targetYear: components['schemas']['YearLifecycleContext'];
 			};
 			message?: string;
 			success: boolean;
@@ -8592,6 +9255,21 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_TermActivationWorkspace: {
+			data: {
+				canActivate: boolean;
+				context: components['schemas']['TermLifecycleContext'];
+				eligiblePlacements: number;
+				findings: components['schemas']['LifecycleFinding'][];
+				opensYear: boolean;
+				plannedStudents: number;
+				policy: components['schemas']['OpeningPolicy'];
+				predecessor?: null | components['schemas']['YearLifecycleContext'];
+				sourceChecksum: string;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_TermAggregatePreview: {
 			data: {
 				blockers: components['schemas']['AggregateBlocker'][];
@@ -8624,6 +9302,47 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_TermLifecycleWorkspace: {
+			data: {
+				availableActions: components['schemas']['TermTransitionAction'][];
+				context: components['schemas']['TermLifecycleContext'];
+				coverage: components['schemas']['TermClosureCoverage'];
+				findings: components['schemas']['LifecycleFinding'][];
+				sourceChecksum: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_TermPreparationOutcome: {
+			data: {
+				/** Format: date-time */
+				createdAt: string;
+				modules: components['schemas']['TermPreparationModuleOutcome'][];
+				/** Format: uuid */
+				requestId: string;
+				/** Format: uuid */
+				runId: string;
+				/** Format: uuid */
+				sourceTermId: string;
+				/** Format: uuid */
+				targetTermId: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_TermPreparationWorkspace: {
+			data: {
+				canApply: boolean;
+				context: components['schemas']['TermPreparationContext'];
+				dateRequirements: components['schemas']['TermPreparationDateRequirement'][];
+				findings: components['schemas']['LifecycleFinding'][];
+				mappingRequirements: components['schemas']['TermPreparationMappingRequirement'][];
+				modules: components['schemas']['TermPreparationModuleEvidence'][];
+				sourceChecksum: string;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_TermResultPreview: {
 			data: {
 				/** Format: uuid */
@@ -8638,6 +9357,18 @@ export interface components {
 				/** Format: uuid */
 				studentAcademicYearId: string;
 				totals: components['schemas']['CourseCreditTotals'];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_TermTransitionOutcome: {
+			data: {
+				action: components['schemas']['TermTransitionAction'];
+				/** Format: date-time */
+				completedAt: string;
+				context: components['schemas']['TermLifecycleContext'];
+				/** Format: uuid */
+				requestId: string;
 			};
 			message?: string;
 			success: boolean;
@@ -8970,6 +9701,19 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Vec_AggregateStudent: {
+			data: {
+				closure: components['schemas']['TermClosureStudent'];
+				gradeLevelName: string;
+				/** Format: uuid */
+				studentAcademicYearId: string;
+				studentCode?: string | null;
+				studentName: string;
+				studyProgramName: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Vec_AggregationPolicyVersion: {
 			data: {
 				bands: components['schemas']['AggregationPolicyBand'][];
@@ -8981,6 +9725,37 @@ export interface components {
 				rowVersion: number;
 				/** Format: int32 */
 				versionNo: number;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_AnnualResultRevision: {
+			data: {
+				holdReason?: string | null;
+				/** Format: uuid */
+				id: string;
+				isCurrent: boolean;
+				/** Format: date-time */
+				lockedAt: string;
+				/** Format: uuid */
+				lockedBy: string;
+				officialGpa?: string | null;
+				/** Format: int64 */
+				revision: number;
+				snapshot: components['schemas']['AnnualResultPreview'];
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_AnnualResultStudent: {
+			data: {
+				closure: components['schemas']['AnnualClosureStudent'];
+				gradeLevelName: string;
+				/** Format: uuid */
+				studentAcademicYearId: string;
+				studentCode?: string | null;
+				studentName: string;
+				studyProgramName: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -10115,6 +10890,22 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Vec_PromotionPolicyVersion: {
+			data: {
+				/** Format: uuid */
+				id: string;
+				name: string;
+				/** Format: int64 */
+				progressionRowVersion: number;
+				/** Format: date-time */
+				reviewedAt: string;
+				/** Format: uuid */
+				reviewedBy: string;
+				rules: components['schemas']['PromotionRuleInput'][];
+			}[];
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Vec_QuestionDetail: {
 			data: (components['schemas']['QuestionSummary'] & {
 				choices: components['schemas']['QuestionChoice'][];
@@ -10526,6 +11317,52 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_YearLifecycleWorkspace: {
+			data: {
+				availableActions: components['schemas']['YearTransitionAction'][];
+				canClose: boolean;
+				context: components['schemas']['YearLifecycleContext'];
+				coverage: components['schemas']['AnnualClosureCoverage'];
+				findings: components['schemas']['LifecycleFinding'][];
+				sourceChecksum: string;
+				terms: components['schemas']['YearTermLifecycleState'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_YearReopeningOutcome: {
+			data: {
+				/** Format: date-time */
+				completedAt: string;
+				context: components['schemas']['YearLifecycleContext'];
+				/** Format: uuid */
+				requestId: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_YearReopeningWorkspace: {
+			data: {
+				canReopen: boolean;
+				context: components['schemas']['YearLifecycleContext'];
+				findings: components['schemas']['LifecycleFinding'][];
+				sourceChecksum: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_YearTransitionOutcome: {
+			data: {
+				action: components['schemas']['YearTransitionAction'];
+				/** Format: date-time */
+				completedAt: string;
+				context: components['schemas']['YearLifecycleContext'];
+				/** Format: uuid */
+				requestId: string;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApplyAcademicMenuTemplateRequest: {
 			revision: string;
 		};
@@ -10581,8 +11418,26 @@ export interface components {
 			/** Format: uuid */
 			timetableVersionId: string;
 		};
+		ApplyTermPreparationInput: {
+			mappings?: components['schemas']['TermPreparationMappings'];
+			modules: components['schemas']['TermPreparationModule'][];
+			/** Format: uuid */
+			requestId: string;
+			sourceChecksum: string;
+			/** Format: uuid */
+			sourceTermId: string;
+			/** Format: uuid */
+			targetTermId: string;
+		};
 		ApproveObservationRequest: {
 			evaluators?: components['schemas']['EvaluatorAssignmentInput'][];
+		};
+		ApprovePromotionRunInput: {
+			/** Format: uuid */
+			requestId: string;
+			/** Format: int64 */
+			rowVersion: number;
+			sourceChecksum: string;
 		};
 		AssessmentCoordinatorOption: {
 			displayName: string;
@@ -10772,6 +11627,12 @@ export interface components {
 		BulkActivityResultLockOutcome: {
 			locked: components['schemas']['ActivityResultLock'][];
 			skipped: components['schemas']['GroupResultReadiness'][];
+		};
+		CalculatePromotionRunInput: {
+			/** Format: uuid */
+			requestId: string;
+			/** Format: int64 */
+			rowVersion: number;
 		};
 		/** @enum {string} */
 		CalendarAudienceType: 'all' | 'staff' | 'student' | 'parent';
@@ -12127,6 +12988,16 @@ export interface components {
 			relationship: string;
 			title?: string | null;
 		};
+		CreatePromotionRunInput: {
+			/** Format: uuid */
+			policyId: string;
+			/** Format: uuid */
+			requestId: string;
+			/** Format: uuid */
+			sourceYearId: string;
+			/** Format: uuid */
+			targetYearId: string;
+		};
 		CreateRoleRequest: {
 			code: string;
 			description?: string | null;
@@ -13318,6 +14189,14 @@ export interface components {
 		};
 		/** @enum {string} */
 		ExamSourceSyncItemStatus: 'applied' | 'conflict';
+		ExecutePromotionRunInput: {
+			/** Format: int32 */
+			limit: number;
+			/** Format: uuid */
+			requestId: string;
+			/** Format: int64 */
+			rowVersion: number;
+		};
 		FeatureListResponse: {
 			data: components['schemas']['FeatureToggle'][];
 			success: boolean;
@@ -14185,6 +15064,15 @@ export interface components {
 			/** Format: uuid */
 			timetableBlockGroupId?: string | null;
 		};
+		LifecycleFinding: {
+			code: string;
+			count: number;
+			message: string;
+			resolutionUrl?: string | null;
+			severity: components['schemas']['LifecycleSeverity'];
+		};
+		/** @enum {string} */
+		LifecycleSeverity: 'ready' | 'warning' | 'blocking';
 		ListMembersQuery: {
 			include_children?: boolean | null;
 		};
@@ -14392,6 +15280,13 @@ export interface components {
 		};
 		/** @enum {string} */
 		OfferingTargetKind: 'homeroom' | 'grade_program';
+		OpeningPolicy: {
+			requireHomeroomPlacements: boolean;
+			requirePublishedOfferings: boolean;
+			requirePublishedTimetable: boolean;
+			/** Format: int64 */
+			rowVersion: number;
+		};
 		OrganizationAssignment: {
 			is_primary?: boolean | null;
 			/** Format: uuid */
@@ -14630,6 +15525,14 @@ export interface components {
 			/** Format: uuid */
 			teacherChangeItemId: string;
 		};
+		PreviewTermPreparationInput: {
+			mappings?: components['schemas']['TermPreparationMappings'];
+			modules: components['schemas']['TermPreparationModule'][];
+			/** Format: uuid */
+			sourceTermId: string;
+			/** Format: uuid */
+			targetTermId: string;
+		};
 		ProfileResponse: {
 			address: string | null;
 			/** Format: date-time */
@@ -14659,6 +15562,316 @@ export interface components {
 			username: string;
 			userType: string;
 		};
+		PromotionCorrectionImpact: {
+			evidence: components['schemas']['AnnualCorrectionEvidence'];
+			/** Format: uuid */
+			id: string;
+			/** Format: uuid */
+			itemId: string;
+			resolution?: null | components['schemas']['PromotionImpactResolution'];
+			/** Format: uuid */
+			studentAcademicYearId: string;
+		};
+		PromotionDecisionInput: {
+			condition?: string | null;
+			outcome: components['schemas']['PromotionDecisionOutcome'];
+			reason?: string | null;
+			/** Format: uuid */
+			targetGradeLevelId?: string | null;
+			/** Format: uuid */
+			targetHomeroomId?: string | null;
+			/** Format: uuid */
+			targetStudyProgramId?: string | null;
+		};
+		/** @enum {string} */
+		PromotionDecisionOutcome:
+			| 'promote'
+			| 'repeat'
+			| 'graduate'
+			| 'transfer_out'
+			| 'hold'
+			| 'conditional';
+		PromotionExecutionFailure: {
+			/** Format: uuid */
+			itemId: string;
+			message: string;
+		};
+		PromotionExecutionReceipt: {
+			/** Format: uuid */
+			approvalId: string;
+			/** Format: date-time */
+			executedAt: string;
+			/** Format: uuid */
+			executedBy: string;
+			/** Format: uuid */
+			itemId: string;
+			/** Format: uuid */
+			requestId: string;
+			/** Format: uuid */
+			runId: string;
+			/** Format: int64 */
+			sourceRowVersion: number;
+			/** Format: uuid */
+			targetPlacementId?: string | null;
+			/** Format: uuid */
+			targetStudentYearId?: string | null;
+		};
+		PromotionExecutionResult: {
+			failures: components['schemas']['PromotionExecutionFailure'][];
+			/** Format: int64 */
+			holdCount: number;
+			receipts: components['schemas']['PromotionExecutionReceipt'][];
+			/** Format: int64 */
+			remainingCount: number;
+			run: components['schemas']['PromotionRun'];
+		};
+		PromotionGradeReference: {
+			/** Format: uuid */
+			id: string;
+			isActive: boolean;
+			levelType: string;
+			/** Format: int32 */
+			year: number;
+		};
+		PromotionImpactQuery: {
+			/** Format: uuid */
+			afterId?: string | null;
+		};
+		PromotionImpactResolution: {
+			/** Format: uuid */
+			correctionId: string;
+			/** Format: uuid */
+			id: string;
+			/** Format: uuid */
+			impactId: string;
+			/** Format: uuid */
+			itemId: string;
+			outcome: components['schemas']['PromotionImpactResolutionOutcome'];
+			reason: string;
+			replacementDecision?: null | components['schemas']['PromotionDecisionInput'];
+			/** Format: uuid */
+			requestId: string;
+			resolutionKind: components['schemas']['PromotionImpactResolutionKind'];
+			/** Format: date-time */
+			resolvedAt: string;
+			/** Format: uuid */
+			resolvedBy: string;
+			/** Format: uuid */
+			runId: string;
+			sourceChecksum: string;
+		};
+		/** @enum {string} */
+		PromotionImpactResolutionKind: 'keep_existing' | 'replace_decision';
+		PromotionImpactResolutionOutcome: {
+			adjusted: boolean;
+			/** Format: int64 */
+			sourceRowVersion: number;
+			/** Format: uuid */
+			targetPlacementId?: string | null;
+			/** Format: uuid */
+			targetStudentYearId?: string | null;
+		};
+		PromotionImpactWorkspace: {
+			impacts: components['schemas']['PromotionCorrectionImpact'][];
+			/** Format: uuid */
+			nextCursor?: string | null;
+			pendingCount: number;
+			/** Format: uuid */
+			runId: string;
+			sourceChecksum: string;
+			/** Format: uuid */
+			sourceYearId: string;
+			/** Format: uuid */
+			targetYearId: string;
+			totalCount: number;
+		};
+		PromotionItemReview: {
+			item: components['schemas']['PromotionRunItem'];
+			run: components['schemas']['PromotionRun'];
+		};
+		/** @enum {string} */
+		PromotionItemStatus: 'calculated' | 'reviewed' | 'executed' | 'failed';
+		PromotionPolicyInput: {
+			name: string;
+			rules: components['schemas']['PromotionRuleInput'][];
+		};
+		PromotionPolicyOptions: {
+			grades: components['schemas']['PromotionGradeReference'][];
+			programs: components['schemas']['PromotionProgramReference'][];
+			progressionSet: components['schemas']['GradeProgressionSet'];
+		};
+		PromotionPolicyVersion: {
+			/** Format: uuid */
+			id: string;
+			name: string;
+			/** Format: int64 */
+			progressionRowVersion: number;
+			/** Format: date-time */
+			reviewedAt: string;
+			/** Format: uuid */
+			reviewedBy: string;
+			rules: components['schemas']['PromotionRuleInput'][];
+		};
+		PromotionProgramReference: {
+			code: string;
+			/** Format: uuid */
+			curriculumId: string;
+			curriculumName: string;
+			/** Format: uuid */
+			id: string;
+			name: string;
+			status: components['schemas']['VersionStatus'];
+			versionName: string;
+		};
+		PromotionRecommendation: {
+			findings: components['schemas']['PromotionRecommendationFinding'][];
+			suggestedOutcome?: null | components['schemas']['PromotionSuccessOutcome'];
+			/** Format: uuid */
+			targetGradeLevelId?: string | null;
+			/** Format: uuid */
+			targetStudyProgramId?: string | null;
+		};
+		/** @enum {string} */
+		PromotionRecommendationFinding:
+			| 'policy_rule_missing'
+			| 'annual_result_missing'
+			| 'annual_result_stale'
+			| 'reviewed_annual_hold'
+			| 'insufficient_earned_credits'
+			| 'exceptional_outcomes'
+			| 'activities_not_passed'
+			| 'learner_evaluation_not_passed'
+			| 'learner_evaluation_missing';
+		PromotionRuleInput: {
+			/** Format: uuid */
+			fromGradeLevelId: string;
+			/** Format: uuid */
+			fromStudyProgramId: string;
+			minimumEarnedCredits: string;
+			/** Format: int32 */
+			minimumLearnerLevel: number;
+			requireActivitiesPassed: boolean;
+			requireNoExceptionalOutcomes: boolean;
+			successOutcome: components['schemas']['PromotionSuccessOutcome'];
+			/** Format: uuid */
+			targetGradeLevelId?: string | null;
+			/** Format: uuid */
+			targetStudyProgramId?: string | null;
+		};
+		PromotionRun: {
+			/** Format: uuid */
+			approvalId?: string | null;
+			/** Format: date-time */
+			approvedAt?: string | null;
+			/** Format: uuid */
+			approvedBy?: string | null;
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: uuid */
+			createdBy: string;
+			/** Format: date-time */
+			executedAt?: string | null;
+			/** Format: uuid */
+			executedBy?: string | null;
+			/** Format: uuid */
+			id: string;
+			/** Format: uuid */
+			policyId: string;
+			/** Format: date-time */
+			reviewedAt?: string | null;
+			/** Format: uuid */
+			reviewedBy?: string | null;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: uuid */
+			sourceYearId: string;
+			status: components['schemas']['PromotionRunStatus'];
+			/** Format: uuid */
+			targetYearId: string;
+			/** Format: date-time */
+			updatedAt: string;
+		};
+		PromotionRunCalculation: {
+			items: components['schemas']['PromotionRunItem'][];
+			run: components['schemas']['PromotionRun'];
+		};
+		PromotionRunItem: {
+			/** Format: uuid */
+			annualRevisionId?: string | null;
+			/** Format: date-time */
+			createdAt: string;
+			decision?: null | components['schemas']['PromotionDecisionInput'];
+			/** Format: uuid */
+			existingTargetStudentYearId?: string | null;
+			/** Format: uuid */
+			id: string;
+			recommendation: components['schemas']['PromotionRecommendation'];
+			/** Format: date-time */
+			reviewedAt?: string | null;
+			/** Format: uuid */
+			reviewedBy?: string | null;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: uuid */
+			runId: string;
+			sourceChecksum: string;
+			/** Format: uuid */
+			sourceGradeLevelId: string;
+			/** Format: int64 */
+			sourceRowVersion: number;
+			/** Format: uuid */
+			sourceStudyProgramId: string;
+			/** Format: uuid */
+			sourceYearId: string;
+			status: components['schemas']['PromotionItemStatus'];
+			/** Format: uuid */
+			studentAcademicYearId: string;
+			/** Format: uuid */
+			studentId: string;
+			/** Format: uuid */
+			targetYearId: string;
+			/** Format: date-time */
+			updatedAt: string;
+		};
+		PromotionRunList: {
+			/** Format: uuid */
+			nextCursor?: string | null;
+			runs: components['schemas']['PromotionRun'][];
+		};
+		PromotionRunListQuery: {
+			/** Format: uuid */
+			beforeId?: string | null;
+			/** Format: uuid */
+			sourceYearId: string;
+			/** Format: uuid */
+			targetYearId?: string | null;
+		};
+		/** @enum {string} */
+		PromotionRunStatus:
+			| 'draft'
+			| 'calculated'
+			| 'reviewed'
+			| 'approved'
+			| 'executing'
+			| 'completed'
+			| 'failed';
+		PromotionRunStudent: {
+			annualResultCurrent: boolean;
+			item: components['schemas']['PromotionRunItem'];
+			needsRecalculation: boolean;
+			receipt?: null | components['schemas']['PromotionExecutionReceipt'];
+			studentCode?: string | null;
+			studentName: string;
+		};
+		PromotionRunWorkspace: {
+			approvalChecksum: string;
+			run: components['schemas']['PromotionRun'];
+			sourceYear: components['schemas']['YearLifecycleContext'];
+			students: components['schemas']['PromotionRunStudent'][];
+			targetYear: components['schemas']['YearLifecycleContext'];
+		};
+		/** @enum {string} */
+		PromotionSuccessOutcome: 'promote' | 'graduate';
 		PublicCertificateRenderRequest: {
 			receipt: string;
 		};
@@ -14965,6 +16178,14 @@ export interface components {
 		RequirementKind: 'required' | 'elective' | 'optional';
 		/** @enum {string} */
 		RequirementResourceKind: 'course' | 'activity';
+		ResolvePromotionImpactInput: {
+			reason: string;
+			replacementDecision?: null | components['schemas']['PromotionDecisionInput'];
+			/** Format: uuid */
+			requestId: string;
+			resolutionKind: components['schemas']['PromotionImpactResolutionKind'];
+			sourceChecksum: string;
+		};
 		ResponseBatchInput: {
 			cells: components['schemas']['ResponseInput'][];
 		};
@@ -15084,6 +16305,11 @@ export interface components {
 		};
 		ReturnObservationRequest: {
 			comment?: string | null;
+		};
+		ReviewPromotionItemInput: {
+			decision: components['schemas']['PromotionDecisionInput'];
+			/** Format: int64 */
+			rowVersion: number;
 		};
 		RevokeCertificateRequest: {
 			createReplacementCandidate: boolean;
@@ -16276,6 +17502,17 @@ export interface components {
 			entries: components['schemas']['TimetableTemplateEntry'][];
 			template: components['schemas']['TimetableTemplate'];
 		};
+		TermActivationWorkspace: {
+			canActivate: boolean;
+			context: components['schemas']['TermLifecycleContext'];
+			eligiblePlacements: number;
+			findings: components['schemas']['LifecycleFinding'][];
+			opensYear: boolean;
+			plannedStudents: number;
+			policy: components['schemas']['OpeningPolicy'];
+			predecessor?: null | components['schemas']['YearLifecycleContext'];
+			sourceChecksum: string;
+		};
 		TermAggregatePreview: {
 			blockers: components['schemas']['AggregateBlocker'][];
 			canLock: boolean;
@@ -16300,6 +17537,174 @@ export interface components {
 			revision: number;
 			snapshot: components['schemas']['TermAggregatePreview'];
 		};
+		TermClosureCoverage: {
+			ready: boolean;
+			sourceChecksum: string;
+			students: components['schemas']['TermClosureStudent'][];
+		};
+		TermClosureStudent: {
+			blockers: components['schemas']['AggregateBlocker'][];
+			currentSourceChecksum?: string | null;
+			holdReason?: string | null;
+			isCurrent: boolean;
+			/** Format: uuid */
+			policyId?: string | null;
+			/** Format: int64 */
+			revision?: number | null;
+			/** Format: uuid */
+			revisionId?: string | null;
+			/** Format: uuid */
+			studentAcademicYearId: string;
+		};
+		TermLifecycleContext: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			academicYearId: string;
+			/** Format: uuid */
+			bellScheduleId: string;
+			blocksYearClosure: boolean;
+			/** Format: date */
+			closedOn?: string | null;
+			includedInYearResult: boolean;
+			/** Format: date */
+			plannedEndDate?: string | null;
+			/** Format: int32 */
+			sequence: number;
+			termName: string;
+			/** Format: int64 */
+			termRowVersion: number;
+			/** Format: date */
+			termStartDate: string;
+			termStatus: components['schemas']['AcademicTermStatus'];
+			/** Format: date */
+			yearEndDate: string;
+			yearName: string;
+			/** Format: int64 */
+			yearRowVersion: number;
+			/** Format: date */
+			yearStartDate: string;
+			yearStatus: components['schemas']['AcademicYearStatus'];
+		};
+		TermLifecycleQuery: {
+			/** Format: uuid */
+			academicYearId: string;
+		};
+		TermLifecycleWorkspace: {
+			availableActions: components['schemas']['TermTransitionAction'][];
+			context: components['schemas']['TermLifecycleContext'];
+			coverage: components['schemas']['TermClosureCoverage'];
+			findings: components['schemas']['LifecycleFinding'][];
+			sourceChecksum: string;
+		};
+		TermPreparationContext: {
+			sourceLabel: string;
+			sourceStatus: string;
+			/** Format: uuid */
+			sourceTermId: string;
+			/** Format: uuid */
+			sourceYearId: string;
+			/** Format: date */
+			targetEndDate: string;
+			targetLabel: string;
+			/** Format: date */
+			targetStartDate: string;
+			targetStatus: string;
+			/** Format: uuid */
+			targetTermId: string;
+			/** Format: uuid */
+			targetYearId: string;
+		};
+		TermPreparationDateMapping: {
+			/** Format: date */
+			sourceDate: string;
+			/** Format: date */
+			targetDate: string;
+		};
+		TermPreparationDateRequirement: {
+			requiredBy: components['schemas']['TermPreparationModule'][];
+			/** Format: date */
+			selectedTargetDate?: string | null;
+			/** Format: date */
+			sourceDate: string;
+			sourceLabel: string;
+			/** Format: date */
+			suggestedTargetDate?: string | null;
+		};
+		TermPreparationEntityMapping: {
+			kind: components['schemas']['TermPreparationMappingKind'];
+			/** Format: uuid */
+			sourceId: string;
+			/** Format: uuid */
+			targetId: string;
+		};
+		/** @enum {string} */
+		TermPreparationMappingKind:
+			| 'learning_offering'
+			| 'learning_group'
+			| 'teacher'
+			| 'homeroom'
+			| 'room'
+			| 'bell_period'
+			| 'assessment_plan';
+		TermPreparationMappingOption: {
+			/** Format: uuid */
+			id: string;
+			label: string;
+		};
+		TermPreparationMappingRequirement: {
+			kind: components['schemas']['TermPreparationMappingKind'];
+			requiredBy: components['schemas']['TermPreparationModule'][];
+			/** Format: uuid */
+			selectedTargetId?: string | null;
+			/** Format: uuid */
+			sourceId: string;
+			sourceLabel: string;
+			/** Format: uuid */
+			suggestedTargetId?: string | null;
+			targetOptions: components['schemas']['TermPreparationMappingOption'][];
+		};
+		TermPreparationMappings: {
+			dates?: components['schemas']['TermPreparationDateMapping'][];
+			entities?: components['schemas']['TermPreparationEntityMapping'][];
+		};
+		/** @enum {string} */
+		TermPreparationModule: 'delivery' | 'assessments' | 'timetable' | 'exams' | 'supervision';
+		TermPreparationModuleEvidence: {
+			draftCount: number;
+			module: components['schemas']['TermPreparationModule'];
+			sourceCount: number;
+			status: components['schemas']['LifecycleSeverity'];
+			summary: string;
+			targetExistingCount: number;
+		};
+		TermPreparationModuleOutcome: {
+			createdCount: number;
+			module: components['schemas']['TermPreparationModule'];
+			targetIds: string[];
+		};
+		TermPreparationOutcome: {
+			/** Format: date-time */
+			createdAt: string;
+			modules: components['schemas']['TermPreparationModuleOutcome'][];
+			/** Format: uuid */
+			requestId: string;
+			/** Format: uuid */
+			runId: string;
+			/** Format: uuid */
+			sourceTermId: string;
+			/** Format: uuid */
+			targetTermId: string;
+		};
+		TermPreparationWorkspace: {
+			canApply: boolean;
+			context: components['schemas']['TermPreparationContext'];
+			dateRequirements: components['schemas']['TermPreparationDateRequirement'][];
+			findings: components['schemas']['LifecycleFinding'][];
+			mappingRequirements: components['schemas']['TermPreparationMappingRequirement'][];
+			modules: components['schemas']['TermPreparationModuleEvidence'][];
+			sourceChecksum: string;
+		};
 		TermResultPreview: {
 			/** Format: uuid */
 			academicTermId: string;
@@ -16321,6 +17726,39 @@ export interface components {
 			academicYearId: string;
 			/** @description Explicit preview criterion, not authority to change school grading policy. */
 			passingGrade: string;
+		};
+		/** @enum {string} */
+		TermTransitionAction:
+			| 'mark_ready'
+			| 'begin_closing'
+			| 'cancel_closing'
+			| 'close'
+			| 'reopen'
+			| 'cancel'
+			| 'activate';
+		TermTransitionOutcome: {
+			action: components['schemas']['TermTransitionAction'];
+			/** Format: date-time */
+			completedAt: string;
+			context: components['schemas']['TermLifecycleContext'];
+			/** Format: uuid */
+			requestId: string;
+		};
+		TermTransitionRequest: {
+			/** Format: uuid */
+			academicYearId: string;
+			acknowledgedWarningCodes: string[];
+			action: components['schemas']['TermTransitionAction'];
+			/** Format: date */
+			closedOn?: string | null;
+			/** Format: int64 */
+			expectedTermVersion: number;
+			/** Format: int64 */
+			expectedYearVersion: number;
+			readinessChecksum: string;
+			reason?: string | null;
+			/** Format: uuid */
+			requestId: string;
 		};
 		/** @enum {string} */
 		TextAlignment: 'left' | 'center' | 'right';
@@ -17016,6 +18454,13 @@ export interface components {
 			name?: string | null;
 			name_en?: string | null;
 		};
+		UpdateOpeningPolicyInput: {
+			requireHomeroomPlacements: boolean;
+			requirePublishedOfferings: boolean;
+			requirePublishedTimetable: boolean;
+			/** Format: int64 */
+			rowVersion: number;
+		};
 		UpdateOrganizationPermissionsRequest: {
 			grants: components['schemas']['OrganizationPermissionGrantInput'][];
 		};
@@ -17390,6 +18835,81 @@ export interface components {
 		};
 		/** @enum {string} */
 		VersionStatus: 'draft' | 'published' | 'archived';
+		YearLifecycleContext: {
+			/** Format: uuid */
+			academicYearId: string;
+			/** Format: date */
+			endDate: string;
+			name: string;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: date */
+			startDate: string;
+			status: components['schemas']['AcademicYearStatus'];
+			/** Format: int32 */
+			year: number;
+		};
+		YearLifecycleWorkspace: {
+			availableActions: components['schemas']['YearTransitionAction'][];
+			canClose: boolean;
+			context: components['schemas']['YearLifecycleContext'];
+			coverage: components['schemas']['AnnualClosureCoverage'];
+			findings: components['schemas']['LifecycleFinding'][];
+			sourceChecksum: string;
+			terms: components['schemas']['YearTermLifecycleState'][];
+		};
+		YearReopeningOutcome: {
+			/** Format: date-time */
+			completedAt: string;
+			context: components['schemas']['YearLifecycleContext'];
+			/** Format: uuid */
+			requestId: string;
+		};
+		YearReopeningRequest: {
+			/** Format: int64 */
+			expectedYearVersion: number;
+			reason: string;
+			/** Format: uuid */
+			requestId: string;
+			sourceChecksum: string;
+		};
+		YearReopeningWorkspace: {
+			canReopen: boolean;
+			context: components['schemas']['YearLifecycleContext'];
+			findings: components['schemas']['LifecycleFinding'][];
+			sourceChecksum: string;
+		};
+		YearTermLifecycleState: {
+			/** Format: uuid */
+			academicTermId: string;
+			blocksYearClosure: boolean;
+			includedInYearResult: boolean;
+			name: string;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: int32 */
+			sequence: number;
+			status: components['schemas']['AcademicTermStatus'];
+		};
+		/** @enum {string} */
+		YearTransitionAction: 'begin_closing' | 'cancel_closing' | 'close';
+		YearTransitionOutcome: {
+			action: components['schemas']['YearTransitionAction'];
+			/** Format: date-time */
+			completedAt: string;
+			context: components['schemas']['YearLifecycleContext'];
+			/** Format: uuid */
+			requestId: string;
+		};
+		YearTransitionRequest: {
+			acknowledgedWarningCodes: string[];
+			action: components['schemas']['YearTransitionAction'];
+			/** Format: int64 */
+			expectedYearVersion: number;
+			readinessChecksum: string;
+			/** Format: uuid */
+			requestId: string;
+		};
 	};
 	responses: never;
 	parameters: never;
@@ -24659,6 +26179,1679 @@ export interface operations {
 			};
 		};
 	};
+	getAcademicOpeningPolicy: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_OpeningPolicy'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateAcademicOpeningPolicy: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateOpeningPolicyInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_OpeningPolicy'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listPromotionPolicies: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_PromotionPolicyVersion'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createPromotionPolicy: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['PromotionPolicyInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_PromotionPolicyVersion'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getPromotionPolicyOptions: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_PromotionPolicyOptions'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listPromotionRuns: {
+		parameters: {
+			query: {
+				beforeId?: string;
+				sourceYearId: string;
+				targetYearId?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_PromotionRunList'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createPromotionRun: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreatePromotionRunInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_PromotionRun'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getPromotionRunWorkspace: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				run_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_PromotionRunWorkspace'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	approvePromotionRun: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				run_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ApprovePromotionRunInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_PromotionRun'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	calculatePromotionRun: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				run_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CalculatePromotionRunInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_PromotionRunCalculation'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	executePromotionRun: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				run_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ExecutePromotionRunInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_PromotionExecutionResult'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getPromotionRunImpacts: {
+		parameters: {
+			query?: {
+				afterId?: string;
+			};
+			header?: never;
+			path: {
+				run_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_PromotionImpactWorkspace'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	resolvePromotionRunImpact: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				impact_id: string;
+				run_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ResolvePromotionImpactInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_PromotionImpactResolution'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	reviewPromotionRunItem: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				item_id: string;
+				run_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ReviewPromotionItemInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_PromotionItemReview'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	applyAcademicTermPreparation: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ApplyTermPreparationInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TermPreparationOutcome'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	previewAcademicTermPreparation: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['PreviewTermPreparationInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TermPreparationWorkspace'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getTermLifecycleWorkspace: {
+		parameters: {
+			query: {
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				term_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TermLifecycleWorkspace'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getTermActivationWorkspace: {
+		parameters: {
+			query: {
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				term_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TermActivationWorkspace'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	transitionAcademicTerm: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				term_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['TermTransitionRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TermTransitionOutcome'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getYearLifecycleWorkspace: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				year_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_YearLifecycleWorkspace'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getYearReopeningWorkspace: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				year_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_YearReopeningWorkspace'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	reopenAcademicYear: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				year_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['YearReopeningRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_YearReopeningOutcome'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	transitionAcademicYear: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				year_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['YearTransitionRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_YearTransitionOutcome'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	listLearningOfferings: {
 		parameters: {
 			query: {
@@ -25847,6 +29040,145 @@ export interface operations {
 			};
 		};
 	};
+	listAggregateStudents: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_AggregateStudent'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listAnnualResultStudents: {
+		parameters: {
+			query: {
+				academicYearId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_AnnualResultStudent'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	correctEffectiveAcademicResult: {
 		parameters: {
 			query: {
@@ -26520,6 +29852,223 @@ export interface operations {
 				};
 			};
 			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	previewAnnualResult: {
+		parameters: {
+			query: {
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				student_year_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AnnualResultPreview'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listAnnualResultRevisions: {
+		parameters: {
+			query: {
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				student_year_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_AnnualResultRevision'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	lockAnnualResult: {
+		parameters: {
+			query: {
+				academicYearId: string;
+			};
+			header?: never;
+			path: {
+				student_year_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['AnnualLockInput'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AnnualResultRevision'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
 				headers: {
 					[name: string]: unknown;
 				};

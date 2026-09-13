@@ -2,8 +2,19 @@ use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
+mod activation;
+pub(crate) use activation::*;
+
+mod year_lifecycle;
+pub use year_lifecycle::*;
+mod year_reopening;
+pub(crate) use year_reopening::YearRecoveryState;
+pub use year_reopening::{YearReopeningOutcome, YearReopeningRequest};
 
 use crate::modules::lookup::models::{AcademicYearLookupItem, GradeLevelLookupItem};
+
+mod term_lifecycle;
+pub use term_lifecycle::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema, sqlx::Type)]
 #[serde(rename_all = "snake_case")]

@@ -48,7 +48,7 @@ fn hold_reason(input: &AggregateLockInput, required: bool) -> Result<Option<Stri
     Ok(reason.map(str::to_owned))
 }
 
-fn write_error(error: sqlx::Error) -> AppError {
+pub(super) fn write_error(error: sqlx::Error) -> AppError {
     if error
         .as_database_error()
         .and_then(|error| error.code())
