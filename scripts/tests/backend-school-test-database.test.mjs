@@ -14,28 +14,36 @@ async function writeExecutable(file, source) {
     await chmod(file, 0o755);
 }
 
-async function fixture(t) {
+async function fixture(t, { withPodman = true } = {}) {
     const root = await mkdtemp(path.join(os.tmpdir(), 'schoolorbit-test-db-'));
     const bin = path.join(root, 'bin');
-    const dockerLog = path.join(root, 'docker.log');
+    const podmanLog = path.join(root, 'podman.log');
     const cargoLog = path.join(root, 'cargo.log');
     const containerState = path.join(root, 'container.exists');
     await mkdir(bin);
     t.after(() => rm(root, { recursive: true, force: true }));
 
-    await writeExecutable(
-        path.join(bin, 'docker'),
-        `#!/usr/bin/env bash
+    await writeExecutable(path.join(bin, 'bash'), '#!/bin/sh\nexec /bin/bash "$@"\n');
+    await writeExecutable(path.join(bin, 'dirname'), '#!/bin/sh\nexec /usr/bin/dirname "$@"\n');
+
+    if (withPodman) {
+        await writeExecutable(
+            path.join(bin, 'podman'),
+            `#!/usr/bin/env bash
 set -u
 command_name=\${1-}
 if ((\$# > 0)); then shift; fi
 {
     printf 'command=%s\\n' "\$command_name"
     for argument in "\$@"; do printf 'arg=%s\\n' "\$argument"; done
-} >> "\$FAKE_DOCKER_LOG"
+} >> "\$FAKE_PODMAN_LOG"
 case "\$command_name" in
-    info) exit "\${FAKE_DOCKER_INFO_STATUS:-0}" ;;
-    context) printf '%s\\n' "\${FAKE_DOCKER_ENDPOINT:-unix:///var/run/docker.sock}" ;;
+    info)
+        if [[ " \$* " == *' --format '* ]]; then
+            printf '%s\\n' "\${FAKE_PODMAN_ROOTLESS:-true}"
+        fi
+        exit "\${FAKE_PODMAN_INFO_STATUS:-0}"
+        ;;
     run)
         previous=''
         container_name=''
@@ -44,41 +52,37 @@ case "\$command_name" in
             previous="\$argument"
         done
         printf '%s\\n' "\$container_name" > "\$FAKE_CONTAINER_STATE"
-        if [[ "\${FAKE_DOCKER_RUN_STATUS:-0}" != 0 ]]; then
-            exit "\$FAKE_DOCKER_RUN_STATUS"
+        if [[ "\${FAKE_PODMAN_RUN_STATUS:-0}" != 0 ]]; then
+            exit "\$FAKE_PODMAN_RUN_STATUS"
         fi
         printf '%s\\n' fake-container-id
         ;;
     exec)
         case " \$* " in
             *' pg_isready '*)
-                if [[ \${FAKE_DOCKER_REQUIRE_TCP_PROBE:-false} == true ]]; then
+                if [[ \${FAKE_PODMAN_REQUIRE_TCP_PROBE:-false} == true ]]; then
                     case " \$* " in
                         *' --host 127.0.0.1 '*) ;;
                         *) exit 1 ;;
                     esac
                 fi
-                exit "\${FAKE_DOCKER_READY_STATUS:-0}"
+                exit "\${FAKE_PODMAN_READY_STATUS:-0}"
                 ;;
-            *' psql '*) exit "\${FAKE_DOCKER_BOOTSTRAP_STATUS:-0}" ;;
+            *' psql '*) exit "\${FAKE_PODMAN_BOOTSTRAP_STATUS:-0}" ;;
             *) exit 64 ;;
         esac
         ;;
-    port) printf '%s\\n' "\${FAKE_DOCKER_BINDING:-127.0.0.1:55432}" ;;
+    port) printf '%s\\n' "\${FAKE_PODMAN_BINDING:-127.0.0.1:55432}" ;;
     container)
         case "\${1-}" in
-            ls)
-                if [[ -f "\$FAKE_CONTAINER_STATE" ]]; then
-                    /usr/bin/cat "\$FAKE_CONTAINER_STATE"
-                fi
-                ;;
+            exists) [[ -f "\$FAKE_CONTAINER_STATE" ]] ;;
             inspect) printf '%s\\n' "\${FAKE_CONTAINER_RUNNING:-true}" ;;
             *) exit 64 ;;
         esac
         ;;
     rm)
-        if [[ "\${FAKE_DOCKER_REMOVE_STATUS:-0}" != 0 ]]; then
-            exit "\$FAKE_DOCKER_REMOVE_STATUS"
+        if [[ "\${FAKE_PODMAN_REMOVE_STATUS:-0}" != 0 ]]; then
+            exit "\$FAKE_PODMAN_REMOVE_STATUS"
         fi
         /usr/bin/rm -f "\$FAKE_CONTAINER_STATE"
         ;;
@@ -86,7 +90,8 @@ case "\$command_name" in
     *) exit 64 ;;
 esac
 `
-    );
+        );
+    }
     await writeExecutable(
         path.join(bin, 'cargo'),
         `#!/usr/bin/env bash
@@ -106,13 +111,13 @@ exit "\${FAKE_CARGO_STATUS:-0}"
 
     return {
         root,
-        dockerLog,
+        podmanLog,
         cargoLog,
         containerState,
         env: {
             ...process.env,
-            PATH: `${bin}:${process.env.PATH}`,
-            FAKE_DOCKER_LOG: dockerLog,
+            PATH: bin,
+            FAKE_PODMAN_LOG: podmanLog,
             FAKE_CARGO_LOG: cargoLog,
             FAKE_CONTAINER_STATE: containerState,
             TEST_DATABASE_URL: 'postgresql://must-not-survive.example/remote'
@@ -130,11 +135,7 @@ function runRunner(f, args = [], extraEnv = {}) {
 
 test('runner overrides remote URL, forwards arguments, and cleans up', async (t) => {
     const f = await fixture(t);
-    const result = runRunner(f, [
-        'modules::auth::session_repository_tests',
-        '--',
-        '--nocapture'
-    ]);
+    const result = runRunner(f, ['modules::auth::session_repository_tests', '--', '--nocapture']);
 
     assert.equal(result.status, 0, result.error?.message ?? result.stderr);
     assert.equal(
@@ -152,7 +153,7 @@ test('runner overrides remote URL, forwards arguments, and cleans up', async (t)
     );
     await assert.rejects(read(f.containerState));
     assert.doesNotMatch(
-        `${result.stdout}${result.stderr}${await read(f.dockerLog)}`,
+        `${result.stdout}${result.stderr}${await read(f.podmanLog)}`,
         /must-not-survive/
     );
 });
@@ -175,7 +176,7 @@ test('cargo failure status survives successful cleanup', async (t) => {
 
 test('startup failure skips cargo and removes a partially created container', async (t) => {
     const f = await fixture(t);
-    const result = runRunner(f, [], { FAKE_DOCKER_RUN_STATUS: '17' });
+    const result = runRunner(f, [], { FAKE_PODMAN_RUN_STATUS: '17' });
 
     assert.equal(result.status, 70);
     await assert.rejects(read(f.cargoLog));
@@ -185,7 +186,7 @@ test('startup failure skips cargo and removes a partially created container', as
 
 test('readiness failure skips cargo and removes the started container', async (t) => {
     const f = await fixture(t);
-    const result = runRunner(f, [], { FAKE_DOCKER_READY_STATUS: '1' });
+    const result = runRunner(f, [], { FAKE_PODMAN_READY_STATUS: '1' });
 
     assert.equal(result.status, 70);
     await assert.rejects(read(f.cargoLog));
@@ -196,7 +197,7 @@ test('readiness failure skips cargo and removes the started container', async (t
 test('container exit during readiness fails immediately and prints local logs', async (t) => {
     const f = await fixture(t);
     const result = runRunner(f, [], {
-        FAKE_DOCKER_READY_STATUS: '1',
+        FAKE_PODMAN_READY_STATUS: '1',
         FAKE_CONTAINER_RUNNING: 'false'
     });
 
@@ -205,12 +206,12 @@ test('container exit during readiness fails immediately and prints local logs', 
     await assert.rejects(read(f.containerState));
     assert.match(result.stderr, /fake postgres startup log/);
     assert.match(result.stderr, /PostgreSQL exited before becoming ready/);
-    assert.equal((await read(f.dockerLog)).match(/^command=exec$/gm)?.length, 1);
+    assert.equal((await read(f.podmanLog)).match(/^command=exec$/gm)?.length, 1);
 });
 
 test('readiness waits for the final local TCP server instead of the init socket', async (t) => {
     const f = await fixture(t);
-    const result = runRunner(f, [], { FAKE_DOCKER_REQUIRE_TCP_PROBE: 'true' });
+    const result = runRunner(f, [], { FAKE_PODMAN_REQUIRE_TCP_PROBE: 'true' });
 
     assert.equal(result.status, 0, result.error?.message ?? result.stderr);
     assert.match(await read(f.cargoLog), /arg=backend-school/);
@@ -221,18 +222,18 @@ test('runner provisions baseline extensions in public before cargo starts', asyn
     const result = runRunner(f);
 
     assert.equal(result.status, 0, result.error?.message ?? result.stderr);
-    const docker = await read(f.dockerLog);
-    const readyAt = docker.indexOf('arg=pg_isready');
-    const psqlAt = docker.indexOf('arg=psql');
+    const podman = await read(f.podmanLog);
+    const readyAt = podman.indexOf('arg=pg_isready');
+    const psqlAt = podman.indexOf('arg=psql');
     assert.ok(readyAt >= 0 && psqlAt > readyAt);
-    assert.match(docker, /CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA public/);
-    assert.match(docker, /CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public/);
+    assert.match(podman, /CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA public/);
+    assert.match(podman, /CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public/);
     assert.match(await read(f.cargoLog), /arg=backend-school/);
 });
 
 test('extension bootstrap failure skips cargo and cleans up', async (t) => {
     const f = await fixture(t);
-    const result = runRunner(f, [], { FAKE_DOCKER_BOOTSTRAP_STATUS: '33' });
+    const result = runRunner(f, [], { FAKE_PODMAN_BOOTSTRAP_STATUS: '33' });
 
     assert.equal(result.status, 70);
     await assert.rejects(read(f.cargoLog));
@@ -240,32 +241,44 @@ test('extension bootstrap failure skips cargo and cleans up', async (t) => {
     assert.match(result.stderr, /failed to provision PostgreSQL test extensions/);
 });
 
-for (const endpoint of ['tcp://db.example:2376', 'ssh://schoolorbit@vps.example']) {
-    test(`remote Docker context is rejected before contacting its engine: ${endpoint}`, async (t) => {
+test('missing Podman fails before Cargo runs', async (t) => {
+    const f = await fixture(t, { withPodman: false });
+    const result = runRunner(f);
+
+    assert.equal(result.status, 127);
+    assert.match(result.stderr, /Podman is required/);
+    await assert.rejects(read(f.cargoLog));
+});
+
+for (const [variable, value] of [
+    ['CONTAINER_HOST', 'ssh://server.example/run/user/1000/podman/podman.sock'],
+    ['CONTAINER_CONNECTION', 'production']
+]) {
+    test(`${variable} remote selection is rejected before contacting Podman`, async (t) => {
         const f = await fixture(t);
-        const result = runRunner(f, [], { FAKE_DOCKER_ENDPOINT: endpoint });
+        const result = runRunner(f, [], { [variable]: value });
 
         assert.equal(result.status, 64);
         await assert.rejects(read(f.cargoLog));
-        assert.match(result.stderr, /local Docker engine/);
-        assert.doesNotMatch(await read(f.dockerLog), /command=info/);
+        assert.match(result.stderr, /local Podman engine/);
+        await assert.rejects(read(f.podmanLog));
     });
 }
 
-test('remote DOCKER_HOST is rejected before inspecting or contacting its engine', async (t) => {
+test('a non-rootless Podman engine is rejected before creating a container', async (t) => {
     const f = await fixture(t);
-    const result = runRunner(f, [], { DOCKER_HOST: 'tcp://db.example:2376' });
+    const result = runRunner(f, [], { FAKE_PODMAN_ROOTLESS: 'false' });
 
     assert.equal(result.status, 64);
+    assert.match(result.stderr, /rootless Podman/);
     await assert.rejects(read(f.cargoLog));
-    assert.match(result.stderr, /local Docker engine/);
-    await assert.rejects(read(f.dockerLog));
+    await assert.rejects(read(f.containerState));
 });
 
 test('cleanup failure makes success fail but does not hide cargo failure', async (t) => {
     const successfulCargo = await fixture(t);
     const cleanupOnly = runRunner(successfulCargo, [], {
-        FAKE_DOCKER_REMOVE_STATUS: '19'
+        FAKE_PODMAN_REMOVE_STATUS: '19'
     });
     assert.equal(cleanupOnly.status, 1);
     assert.match(cleanupOnly.stderr, /failed to remove disposable PostgreSQL container/);
@@ -273,7 +286,7 @@ test('cleanup failure makes success fail but does not hide cargo failure', async
     const failedCargo = await fixture(t);
     const both = runRunner(failedCargo, [], {
         FAKE_CARGO_STATUS: '23',
-        FAKE_DOCKER_REMOVE_STATUS: '19'
+        FAKE_PODMAN_REMOVE_STATUS: '19'
     });
     assert.equal(both.status, 23);
     assert.match(both.stderr, /failed to remove disposable PostgreSQL container/);
@@ -284,15 +297,15 @@ test('container uses loopback and disposable disk storage instead of a capped da
     const result = runRunner(f);
 
     assert.equal(result.status, 0, result.error?.message ?? result.stderr);
-    const docker = await read(f.dockerLog);
-    assert.match(docker, /arg=127\.0\.0\.1::5432/);
-    assert.match(docker, /arg=--mount\narg=type=volume,destination=\/var\/lib\/postgresql\n/);
-    assert.doesNotMatch(docker, /arg=--tmpfs/);
-    assert.match(docker, /arg=--shm-size\narg=1g/);
-    assert.match(docker, /arg=fsync=off/);
-    assert.match(docker, /arg=synchronous_commit=off/);
-    assert.match(docker, /arg=full_page_writes=off/);
-    assert.doesNotMatch(docker, /arg=--volume\n|arg=-v\n|source=|src=/);
+    const podman = await read(f.podmanLog);
+    assert.match(podman, /arg=127\.0\.0\.1::5432/);
+    assert.match(podman, /arg=--mount\narg=type=volume,destination=\/var\/lib\/postgresql\n/);
+    assert.doesNotMatch(podman, /arg=--tmpfs/);
+    assert.match(podman, /arg=--shm-size\narg=1g/);
+    assert.match(podman, /arg=fsync=off/);
+    assert.match(podman, /arg=synchronous_commit=off/);
+    assert.match(podman, /arg=full_page_writes=off/);
+    assert.doesNotMatch(podman, /arg=--volume\n|arg=-v\n|source=|src=/);
 });
 
 for (const cargoStatus of ['0', '23']) {
@@ -300,18 +313,18 @@ for (const cargoStatus of ['0', '23']) {
         const f = await fixture(t);
         const result = runRunner(f, [], { FAKE_CARGO_STATUS: cargoStatus });
         assert.equal(result.status, Number(cargoStatus));
-        const docker = await read(f.dockerLog);
-        const name = docker.match(/arg=--name\narg=([^\n]+)/)?.[1];
+        const podman = await read(f.podmanLog);
+        const name = podman.match(/arg=--name\narg=([^\n]+)/)?.[1];
         assert.ok(name);
-        assert.ok(docker.endsWith(`command=rm\narg=--force\narg=--volumes\narg=${name}\n`));
-        assert.doesNotMatch(docker, /command=volume|command=system|arg=prune/);
+        assert.ok(podman.endsWith(`command=rm\narg=--force\narg=--volumes\narg=${name}\n`));
+        assert.doesNotMatch(podman, /command=volume|command=system|arg=prune/);
         await assert.rejects(read(f.containerState));
     });
 }
 
 test('unexpected published address fails closed and cleans up', async (t) => {
     const f = await fixture(t);
-    const result = runRunner(f, [], { FAKE_DOCKER_BINDING: '0.0.0.0:55432' });
+    const result = runRunner(f, [], { FAKE_PODMAN_BINDING: '0.0.0.0:55432' });
 
     assert.equal(result.status, 70);
     await assert.rejects(read(f.cargoLog));
@@ -408,10 +421,7 @@ test('Neon gate is manual, direct, disposable, and test-scoped', async () => {
     );
     assert.match(provision, /command -v psql/);
     assert.match(provision, /--set=ON_ERROR_STOP=1/);
-    assert.match(
-        provision,
-        /CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA public;/
-    );
+    assert.match(provision, /CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA public;/);
     assert.match(provision, /CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;/);
     const deletion = workflow.slice(deleteAt);
     assert.match(deletion, /if:\s*\$\{\{ always\(\)/);

@@ -25,9 +25,11 @@ FROM base AS builder
 COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 COPY . .
-RUN --mount=type=secret,id=sccache_gha_url,env=ACTIONS_RESULTS_URL \
-    --mount=type=secret,id=sccache_gha_token,env=ACTIONS_RUNTIME_TOKEN \
-    if [ -n "${ACTIONS_RESULTS_URL:-}" ] && [ -n "${ACTIONS_RUNTIME_TOKEN:-}" ]; then \
+RUN --mount=type=secret,id=sccache_gha_url,target=/run/secrets/sccache_gha_url \
+    --mount=type=secret,id=sccache_gha_token,target=/run/secrets/sccache_gha_token \
+    if [ -s /run/secrets/sccache_gha_url ] && [ -s /run/secrets/sccache_gha_token ]; then \
+        ACTIONS_RESULTS_URL="$(cat /run/secrets/sccache_gha_url)" \
+        ACTIONS_RUNTIME_TOKEN="$(cat /run/secrets/sccache_gha_token)" \
         SCCACHE_GHA_ENABLED=on \
         SCCACHE_GHA_CACHE_TO=schoolorbit-backend-admin \
         SCCACHE_GHA_CACHE_FROM=schoolorbit-backend-admin \

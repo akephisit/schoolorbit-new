@@ -21,14 +21,17 @@ SchoolOrbit is a multi-tenant school management system. Its backends use Rust, A
 
 ## Quick Start
 
-Create a local environment file and start the backend stack:
+Install the rootless Podman toolchain, create a local environment file, and start the backend stack:
 
 ```bash
+sudo apt update
+sudo apt install -y podman podman-compose
+podman info
 cp .env.example .env
-docker compose up --build
+podman-compose -f compose.local.yml up --build
 ```
 
-The local Compose stack exposes backend-admin at `http://localhost:8080` and backend-school at `http://localhost:8081`. Configure and run either frontend from its own directory as described in its README.
+The local Podman Compose stack exposes backend-admin at `http://localhost:8080` and backend-school at `http://localhost:8081`. Configure and run either frontend from its own directory as described in its README.
 
 Do not use the example secret values in a shared or production environment.
 

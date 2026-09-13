@@ -4906,7 +4906,7 @@ fn school_session_runtime_is_deployment_owned() {
         .expect("backend-school must build the application");
     assert!(session_config < app);
 
-    for file in ["docker-compose.yml", "podman-compose.yml"] {
+    for file in ["compose.local.yml", "podman-compose.yml"] {
         let compose = read_source(repo_root().join(file));
         let admin_start = compose
             .find("  backend-admin:")
@@ -4934,7 +4934,7 @@ fn school_session_runtime_is_deployment_owned() {
 
 #[test]
 fn recurring_healthchecks_use_liveness_while_deployment_and_smoke_use_readiness() {
-    let docker_compose = read_source(repo_root().join("docker-compose.yml"));
+    let local_compose = read_source(repo_root().join("compose.local.yml"));
     let podman_compose = read_source(repo_root().join("podman-compose.yml"));
     let school_deploy =
         read_source(repo_root().join(".github/workflows/deploy-backend-school.yml"));
@@ -4942,7 +4942,7 @@ fn recurring_healthchecks_use_liveness_while_deployment_and_smoke_use_readiness(
     let admin_deploy = read_source(repo_root().join(".github/workflows/deploy-backend-admin.yml"));
     let smoke = read_source(repo_root().join("scripts/smoke_test.sh"));
 
-    for compose in [&docker_compose, &podman_compose] {
+    for compose in [&local_compose, &podman_compose] {
         assert!(compose.contains("http://localhost:8080/health"));
         assert!(compose.contains("http://localhost:8081/health"));
         assert!(!compose.contains("http://localhost:8080/ready"));
@@ -4952,6 +4952,7 @@ fn recurring_healthchecks_use_liveness_while_deployment_and_smoke_use_readiness(
         assert!(compose.contains("BACKEND_ADMIN_RETRY_BASE_DELAY_MS"));
         assert!(compose.contains("docker.io/clamav/clamav-debian:1.5.3"));
     }
+    assert!(!repo_root().join("docker-compose.yml").exists());
     assert!(school_deploy.contains("docker.io/amazon/aws-cli:2.36.9"));
     assert!(school_deploy.contains("docker.io/clamav/clamav-debian:1.5.3"));
     assert!(!repo_root()

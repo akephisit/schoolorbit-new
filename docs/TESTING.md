@@ -107,17 +107,20 @@ npm run test:unit
 npm run build
 ```
 
-## Installer and Production Topology
+## Container Runtime, Installer, and Production Topology
 
 When the VPS installer, canonical Compose runtime, Nginx templates, deployment workflows, or their durable documentation changes, run from the repository root:
 
 ```bash
+node --test scripts/tests/backend-school-test-database.test.mjs
 shellcheck scripts/schoolorbit-installer scripts/render_nginx_config.sh \
   scripts/prune_runtime_images.sh scripts/clamd_runtime_matches.sh \
+  scripts/test_backend_school.sh \
   scripts/lib/schoolorbit-installer/*.sh \
   scripts/lib/schoolorbit-installer/remote/*.sh
 shfmt -d -i 4 -ci scripts/schoolorbit-installer scripts/render_nginx_config.sh \
   scripts/prune_runtime_images.sh scripts/clamd_runtime_matches.sh \
+  scripts/test_backend_school.sh \
   scripts/lib/schoolorbit-installer/*.sh \
   scripts/lib/schoolorbit-installer/remote/*.sh
 bats scripts/tests/installer
@@ -125,10 +128,10 @@ node --test scripts/tests/prune-ghcr-versions.test.mjs
 node --test frontend-school/tests/static/deployment-installer.test.mjs
 env $(grep -v '^#' scripts/tests/installer/fixtures/runtime.env | xargs) \
   podman-compose -f podman-compose.yml --dry-run up -d >/dev/null
-docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7
+podman run --rm -v "$PWD:/repo" -w /repo docker.io/rhysd/actionlint:1.7.7
 ```
 
-The deployment static guard renders a proxy template into a temporary target, rejects invalid domains without replacing existing output, enforces the single production Compose owner, and confirms backend workflows verify the selected origin rather than the public hostname. Report an unavailable Bats, Podman Compose, or Docker dependency as unrun; do not replace its check with a narrower command.
+The deployment static guard renders a proxy template into a temporary target, rejects invalid domains without replacing existing output, enforces the single production Compose owner, and confirms backend workflows verify the selected origin rather than the public hostname. Report an unavailable Bats, Podman, or Podman Compose dependency as unrun; do not replace its check with a narrower command.
 
 For focused deployment-runtime work, run:
 
@@ -143,18 +146,18 @@ node --test frontend-school/tests/static/documentation-policy.test.mjs
 
 The retention tests use only fake Podman and a loopback HTTP server. They must not contact the
 production VPS, delete a live package version, or replace the manual GHCR dry-run review. Dockerfile
-changes also require local runtime-target builds and config inspection:
+changes also require Podman runtime-target builds and config inspection:
 
 ```bash
-docker build --target runtime -t schoolorbit/backend-admin:verification backend-admin
-docker build --target runtime -t schoolorbit/backend-school:verification backend-school
-docker image inspect schoolorbit/backend-admin:verification \
+podman build --target runtime -t schoolorbit/backend-admin:verification backend-admin
+podman build --target runtime -t schoolorbit/backend-school:verification backend-school
+podman image inspect schoolorbit/backend-admin:verification \
   --format '{{.Config.User}} {{json .Config.Cmd}}'
-docker image inspect schoolorbit/backend-school:verification \
+podman image inspect schoolorbit/backend-school:verification \
   --format '{{.Config.User}} {{json .Config.Cmd}}'
 ```
 
-The guard also owns CI cache policy: backend-admin and backend-school use distinct BuildKit scopes, while API and permission contract jobs share a dependency-oriented backend-school Rust cache. Pull requests are restore-only, and only trusted `main` runs may save it. A cache miss must execute the complete workflow rather than bypassing a gate. API Contract keeps artifact generation/offline export, backend validation, and frontend validation in independent jobs without `needs`; the static guard owns this division and its single-writer Rust cache policy.
+Docker Buildx remains limited to the GitHub Actions backend-image build jobs; repository-local runtime, database tests, image inspection, and workflow linting use Podman without a Docker socket or compatibility alias. The guard also owns CI cache policy: backend-admin and backend-school use distinct BuildKit scopes, while API and permission contract jobs share a dependency-oriented backend-school Rust cache. Pull requests are restore-only, and only trusted `main` runs may save it. A cache miss must execute the complete workflow rather than bypassing a gate. API Contract keeps artifact generation/offline export, backend validation, and frontend validation in independent jobs without `needs`; the static guard owns this division and its single-writer Rust cache policy.
 
 The installer Bats directory includes focused Cockpit coverage:
 
@@ -204,7 +207,7 @@ Never edit an applied migration. Add a new sequential file and test it against i
 Routine backend-school database tests run on the developer's computer. From the repository root:
 
 ```bash
-# Complete backend-school binary suite; PostgreSQL runs in Docker Desktop on this computer.
+# Complete backend-school binary suite; PostgreSQL runs in rootless Podman on this computer.
 ./scripts/test_backend_school.sh
 
 # Focused database-backed test.
@@ -212,7 +215,7 @@ Routine backend-school database tests run on the developer's computer. From the 
   modules::auth::session_repository_tests -- --nocapture
 ```
 
-Docker Desktop WSL integration must be active when the repository runs in WSL. The runner accepts only a local Docker endpoint, runs Cargo and its compilation cache on the computer, and uses a fresh anonymous disk-backed PostgreSQL volume so the complete migration-backed suite is not capped by a 5 GiB data tmpfs. Ensure the local Docker engine has sufficient free disk space. The runner removes its exact PostgreSQL container and associated anonymous volume after success, failure, `INT`, `TERM`, or `HUP`; it never reuses a named volume or prunes unrelated resources. An uncatchable termination such as `SIGKILL` or a host crash can leave these test resources behind and requires exact-target cleanup. It replaces any inherited `TEST_DATABASE_URL` only for the Cargo child and never uses `DATABASE_URL`. Direct Cargo against a persistent Neon URL is not the routine test recipe.
+The runner requires the local rootless Podman engine and rejects `CONTAINER_HOST` or `CONTAINER_CONNECTION`, so it cannot accidentally select a remote runtime. Cargo and its compilation cache stay on the computer, while PostgreSQL uses a fresh anonymous disk-backed volume so the complete migration-backed suite is not capped by a 5 GiB data tmpfs. Ensure the local Podman storage has sufficient free disk space. The runner removes its uniquely named PostgreSQL container and associated anonymous volume after success, failure, `INT`, `TERM`, or `HUP`; it never reuses a named volume or prunes unrelated resources. An uncatchable termination such as `SIGKILL` or a host crash can leave these test resources behind and requires exact-target cleanup. It replaces any inherited `TEST_DATABASE_URL` only for the Cargo child and never uses `DATABASE_URL`. Direct Cargo against a persistent Neon URL is not the routine test recipe.
 
 Tests continue to isolate their schema/data within the disposable database. The local runner removes the whole database container and its anonymous data volume after the command, including on test failure.
 

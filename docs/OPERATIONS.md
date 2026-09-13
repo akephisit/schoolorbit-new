@@ -9,7 +9,7 @@ This guide describes production-facing procedures and invariants. Development co
 - `frontend-admin` is the administrative web application.
 - `frontend-school` is built and deployed per tenant/subdomain and calls the school API.
 
-Local topology is defined in [`docker-compose.yml`](../docker-compose.yml). [`podman-compose.yml`](../podman-compose.yml) is the sole production Compose owner for both backends, Nginx, clamd, their explicitly named networks, and the scanner volume. The production host publishes backend ports only on `127.0.0.1`; containers use service DNS names internally and must not use `localhost` to reach another container.
+Local source-build topology is defined in [`compose.local.yml`](../compose.local.yml), and the production topology is defined in [`podman-compose.yml`](../podman-compose.yml). Run both with rootless Podman and invoke `podman-compose` explicitly. The production file is the sole Compose owner for both backends, Nginx, clamd, their explicitly named networks, and the scanner volume. The production host publishes backend ports only on `127.0.0.1`; containers use service DNS names internally and must not use `localhost` to reach another container.
 
 For first-time production server bootstrap, follow [Podman server setup](./PODMAN_SETUP.md).
 

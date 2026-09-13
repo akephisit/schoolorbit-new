@@ -1,3 +1,4 @@
+use sha2::{Digest, Sha256};
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::env;
 use std::process;
@@ -20,13 +21,19 @@ fn named_test_schema(test_name: &str, _process_id: u32) -> String {
     let sanitized = test_name
         .chars()
         .filter(|ch| ch.is_ascii_alphanumeric() || *ch == '_')
-        .take(32)
         .collect::<String>();
     assert!(
         !sanitized.is_empty(),
         "named test schema requires an identifier-safe test name"
     );
-    format!("schoolorbit_test_{sanitized}")
+
+    if sanitized.len() <= 32 {
+        return format!("schoolorbit_test_{sanitized}");
+    }
+
+    let readable_prefix = &sanitized[..32];
+    let digest = format!("{:x}", Sha256::digest(test_name.as_bytes()));
+    format!("schoolorbit_test_{readable_prefix}_{}", &digest[..12])
 }
 
 fn explicit_test_database_url() -> String {
@@ -266,6 +273,24 @@ mod tests {
             named_test_schema("file-platform cutover!", 12345),
             "schoolorbit_test_fileplatformcutover"
         );
+    }
+
+    #[test]
+    fn named_schema_distinguishes_long_names_with_a_shared_prefix() {
+        let collections = named_test_schema("academic_core_year_relationship_collections", 12345);
+        let limits = named_test_schema("academic_core_year_relationship_limits", 12345);
+
+        assert_ne!(collections, limits);
+        assert_eq!(
+            collections,
+            named_test_schema("academic_core_year_relationship_collections", 67890)
+        );
+        assert!(collections.len() <= 63);
+        assert!(limits.len() <= 63);
+        assert!(collections
+            .chars()
+            .chain(limits.chars())
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_'));
     }
 
     #[test]

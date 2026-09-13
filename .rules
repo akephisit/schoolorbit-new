@@ -167,10 +167,11 @@ Use `ApiResponse` and `ApiErrorResponse`; do not return raw feature DTOs or ad-h
 - New tenant provisioning and release deployments use the centralized runner in `backend-school/src/db/migration.rs`; do not introduce a second tenant migration path.
 - The legacy rebaseline workflow is retired. If a tenant with legacy `_sqlx_migrations` history is discovered, stop and create a new reviewed recovery plan instead of reusing one-time tooling or improvising a cutover.
 - Database-backed tests use `TEST_DATABASE_URL` and isolated test state. Routine backend-school
-  database tests run through `scripts/test_backend_school.sh`, which supplies disposable local
-  PostgreSQL and removes it after the command. Neon migration/schema compatibility runs only
-  through the explicit disposable-branch gate and uses its direct endpoint, never a `-pooler`
-  transaction endpoint.
+  database tests run through `scripts/test_backend_school.sh`, which supplies PostgreSQL in a
+  uniquely named rootless Podman container and removes that exact container and its anonymous
+  volumes after the command, including handled failure and signal paths. Neon migration/schema
+  compatibility runs only through the explicit disposable-branch gate and uses its direct
+  endpoint, never a `-pooler` transaction endpoint.
 
 ## 7. Frontend: SvelteKit 5
 
@@ -245,13 +246,15 @@ Use `ApiResponse` and `ApiErrorResponse`; do not return raw feature DTOs or ad-h
 ## 10. Deployment Constraints
 
 - Runtime configuration is environment-driven; do not bake environment URLs, credentials, keys, or tenant identifiers into images.
+- `compose.local.yml` is the sole local Compose owner. Run it with rootless `podman-compose`; local runtime and database tests must use the native Podman CLI without a Docker socket, Docker compatibility alias, remote Podman connection, or engine fallback.
 - `podman-compose.yml` is the sole production Compose owner for backend-admin, backend-school, Nginx, clamd, their networks, and their volumes. Deployment workflows may recreate only the selected service and its declared dependencies; do not add a second production Compose definition.
+- Docker Buildx is allowed only in GitHub Actions backend-image build jobs. Those jobs publish OCI-compatible images that production and local verification run with Podman; do not require a Docker daemon for repository-local runtime or tests.
 - Backend image workflows use distinct GHA BuildKit cache scopes. API and permission contract workflows share only the dependency-oriented backend-school Rust cache; pull requests are restore-only. Only trusted `main` runs may save the shared Rust dependency cache. A cache miss must run every existing build, contract, test, migration, readiness, and deployment gate.
 - API Contract runs artifact, backend, and frontend validation in independent jobs without `needs`. Keep every contract gate in its owned job; only the artifact job may save the API workflow's shared Rust cache, while the backend job is restore-only.
 - Before DNS cutover, deployment workflows must verify the selected target origin with the intended hostname and pinned Origin CA trust. Do not verify a still-public hostname that may reach the old origin.
 - Containers bind application ports to `0.0.0.0`.
-- `/health` is dependency-free process liveness and owns recurring Docker/Podman and external uptime-monitor healthchecks. `/ready` verifies dependencies and is reserved for deployment, smoke, and intentional readiness checks so routine probes do not keep Neon active.
-- Keep Docker/Podman service networking, reverse-proxy routes, CORS origins, cookies, and public backend URLs aligned.
+- `/health` is dependency-free process liveness and owns recurring container and external uptime-monitor healthchecks. `/ready` verifies dependencies and is reserved for deployment, smoke, and intentional readiness checks so routine probes do not keep Neon active.
+- Keep local and production Podman service networking, reverse-proxy routes, CORS origins, cookies, and public backend URLs aligned.
 - Required backend-school runtime values include `SESSION_HMAC_KEY`, `ENCRYPTION_KEY`, `BLIND_INDEX_KEY`, `INTERNAL_API_SECRET`, `DEPLOY_KEY`, `BASE_DOMAIN`, and `TRUSTED_PROXY_CIDRS`; `SCHOOL_ALLOWED_DEV_ORIGINS` is an explicit local-development allowlist.
 - `SCHOOL_ROLLBACK_JWT_SECRET` exists only for a time-bounded backend-school rollback. The normal school runtime must not use it; `JWT_SECRET` is owned by backend-admin.
 - Internal calls send `X-Internal-Caller`; caller-specific secrets may use `INTERNAL_API_SECRET_<CALLER>` with controlled fallback during rotation.
@@ -327,7 +330,7 @@ bats scripts/tests/installer
 node --test frontend-school/tests/static/deployment-installer.test.mjs
 env $(grep -v '^#' scripts/tests/installer/fixtures/runtime.env | xargs) \
   podman-compose -f podman-compose.yml --dry-run up -d >/dev/null
-docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7
+podman run --rm -v "$PWD:/repo" -w /repo docker.io/rhysd/actionlint:1.7.7
 ```
 
 The deployment static guard renders the proxy template and checks direct-origin deployment behavior. All commands above are required; do not replace unavailable checks with weaker substitutes.

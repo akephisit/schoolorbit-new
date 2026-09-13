@@ -5,13 +5,22 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import test from 'node:test';
+import { parse as parseYaml } from 'yaml';
 
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(import.meta.dirname, '../../..');
 const readRepo = (file) => readFile(path.join(repoRoot, file), 'utf8');
+const loadComposeConfig = async (file, extraArguments = []) => {
+	const { stdout } = await execFileAsync(
+		'podman-compose',
+		[...extraArguments, '-f', file, 'config'],
+		{ cwd: repoRoot }
+	);
+	return parseYaml(stdout);
+};
 
 test('school session runtime is required and isolated from admin JWT', async () => {
-	for (const file of ['docker-compose.yml', 'podman-compose.yml']) {
+	for (const file of ['compose.local.yml', 'podman-compose.yml']) {
 		const compose = await readRepo(file);
 		const adminStart = compose.indexOf('  backend-admin:');
 		const schoolStart = compose.indexOf('  backend-school:');
@@ -111,23 +120,13 @@ test('backend-school deployment validates session runtime before compose activat
 });
 
 test('the resolved production topology has one owner and private backend ports', async () => {
-	const { stdout } = await execFileAsync(
-		'docker',
-		[
-			'compose',
-			'--env-file',
-			'scripts/tests/installer/fixtures/runtime.env',
-			'-f',
-			'podman-compose.yml',
-			'config',
-			'--format',
-			'json'
-		],
-		{ cwd: repoRoot }
-	);
-	const topology = JSON.parse(stdout);
+	const topology = await loadComposeConfig('podman-compose.yml', [
+		'--env-file',
+		'scripts/tests/installer/fixtures/runtime.env'
+	]);
 
 	for (const standalone of [
+		'docker-compose.yml',
 		'backend-admin/docker-compose.yml',
 		'backend-school/docker-compose.yml'
 	]) {
@@ -152,33 +151,20 @@ test('the resolved production topology has one owner and private backend ports',
 		['backend-admin', 8080],
 		['backend-school', 8081]
 	]) {
-		assert.deepEqual(topology.services[service].ports, [
-			{
-				mode: 'ingress',
-				host_ip: '127.0.0.1',
-				target,
-				published: String(target),
-				protocol: 'tcp'
-			}
-		]);
+		assert.deepEqual(topology.services[service].ports, [`127.0.0.1:${target}:${target}`]);
 	}
 });
 
 test('local and production clamd allow 3 GiB for concurrent signature reloads', async () => {
 	for (const [file, extraArguments] of [
-		['docker-compose.yml', []],
+		['compose.local.yml', []],
 		['podman-compose.yml', ['--env-file', 'scripts/tests/installer/fixtures/runtime.env']]
 	]) {
-		const { stdout } = await execFileAsync(
-			'docker',
-			['compose', ...extraArguments, '-f', file, 'config', '--format', 'json'],
-			{ cwd: repoRoot }
-		);
-		const topology = JSON.parse(stdout);
+		const topology = await loadComposeConfig(file, extraArguments);
 
 		assert.equal(
 			topology.services.clamd.mem_limit,
-			String(3 * 1024 * 1024 * 1024),
+			'3g',
 			`${file} must preserve enough memory for concurrent ClamAV database reloads`
 		);
 	}
@@ -547,6 +533,14 @@ test('backend image workflows use distinct BuildKit cache scopes', async () => {
 	assert.equal(new Set(workflowScopes.values()).size, workflowScopes.size);
 	for (const [file, scope] of workflowScopes) {
 		const workflow = await readRepo(file);
+		for (const action of [
+			'docker/login-action@v4',
+			'docker/metadata-action@v6',
+			'docker/setup-buildx-action@v4',
+			'docker/build-push-action@v7'
+		]) {
+			assert.ok(workflow.includes(action), `${file} must retain the CI image builder ${action}`);
+		}
 		assert.ok(workflow.includes(`cache-from: type=gha,scope=${scope}`));
 		assert.ok(workflow.includes(`cache-to: type=gha,scope=${scope},mode=max`));
 		assert.ok(workflow.includes('- name: Summarize Docker cache scope'));
@@ -580,10 +574,19 @@ test('backend runtime images use deterministic builders without ownership copy-u
 				dockerfile,
 				/--checksum=sha256:67c4a96dd237c1f518f6b36083f270f9976d516f1e57fce891755ea782e50006/
 			);
-			assert.match(dockerfile, /--mount=type=secret,id=sccache_gha_url,env=ACTIONS_RESULTS_URL/);
 			assert.match(
 				dockerfile,
-				/--mount=type=secret,id=sccache_gha_token,env=ACTIONS_RUNTIME_TOKEN/
+				/--mount=type=secret,id=sccache_gha_url,target=\/run\/secrets\/sccache_gha_url/
+			);
+			assert.match(
+				dockerfile,
+				/--mount=type=secret,id=sccache_gha_token,target=\/run\/secrets\/sccache_gha_token/
+			);
+			assert.doesNotMatch(dockerfile, /--mount=type=secret[^\n]*,env=/);
+			assert.match(dockerfile, /ACTIONS_RESULTS_URL="\$\(cat \/run\/secrets\/sccache_gha_url\)"/);
+			assert.match(
+				dockerfile,
+				/ACTIONS_RUNTIME_TOKEN="\$\(cat \/run\/secrets\/sccache_gha_token\)"/
 			);
 			assert.match(dockerfile, /SCCACHE_GHA_ENABLED=on/);
 			assert.match(dockerfile, new RegExp(`SCCACHE_GHA_CACHE_TO=schoolorbit-${binary}`));
@@ -889,13 +892,17 @@ test('runtime diagnostics expose container state without environment or applicat
 });
 
 test('installer CI enforces shell provider topology and workflow guards', async () => {
-	const workflow = await readRepo('.github/workflows/installer.yml');
+	const [workflow, rules] = await Promise.all([
+		readRepo('.github/workflows/installer.yml'),
+		readRepo('.rules')
+	]);
 
 	assert.match(workflow, /runs-on: ubuntu-24\.04/);
 	for (const path of [
 		'scripts/schoolorbit-installer',
 		'scripts/lib/schoolorbit-installer/**',
 		'scripts/tests/installer/**',
+		'compose.local.yml',
 		'podman-compose.yml',
 		'nginx-configs/**',
 		'.github/workflows/**',
@@ -910,12 +917,22 @@ test('installer CI enforces shell provider topology and workflow guards', async 
 		'shellcheck scripts/schoolorbit-installer',
 		'shfmt -d -i 4 -ci scripts/schoolorbit-installer',
 		'bats scripts/tests/installer',
+		'npm ci --ignore-scripts --no-audit --no-fund',
 		'node --test frontend-school/tests/static/deployment-installer.test.mjs',
 		'podman-compose -f podman-compose.yml --dry-run up -d',
+		'podman run --rm -v "$PWD:/repo" -w /repo docker.io/rhysd/actionlint:1.7.7',
 		'rhysd/actionlint:1.7.7'
 	]) {
 		assert.ok(workflow.includes(check), `installer workflow must run ${check}`);
 	}
+	assert.ok(
+		workflow.indexOf('npm ci --ignore-scripts --no-audit --no-fund') <
+			workflow.indexOf('node --test frontend-school/tests/static/deployment-installer.test.mjs'),
+		'locked Node dependencies must be installed before the deployment guard runs'
+	);
+	assert.doesNotMatch(workflow, /\bdocker run\b/);
+	assert.match(rules, /^podman run --rm .*rhysd\/actionlint:1\.7\.7$/m);
+	assert.doesNotMatch(rules, /^docker run --rm .*rhysd\/actionlint:1\.7\.7$/m);
 });
 
 test('Cockpit management stays loopback-only, secret-safe, and documented', async () => {

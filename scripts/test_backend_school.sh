@@ -24,24 +24,24 @@ cleanup_armed=false
 cleanup() {
     local original_status=$?
     local cleanup_status=0
-    local existing_container
+    local exists_status
 
     trap - EXIT INT TERM HUP
 
     if [[ $cleanup_armed == true ]]; then
-        if ! existing_container="$(
-            docker container ls --all \
-                --filter "name=^/${CONTAINER_NAME}$" \
-                --format '{{.Names}}'
-        )"; then
-            printf 'ERROR: failed to inspect disposable PostgreSQL container %s\n' \
-                "$CONTAINER_NAME" >&2
-            cleanup_status=1
-        elif [[ $existing_container == "$CONTAINER_NAME" ]] &&
-            ! docker rm --force --volumes "$CONTAINER_NAME" >/dev/null; then
-            printf 'ERROR: failed to remove disposable PostgreSQL container %s\n' \
-                "$CONTAINER_NAME" >&2
-            cleanup_status=1
+        if podman container exists "$CONTAINER_NAME"; then
+            if ! podman rm --force --volumes "$CONTAINER_NAME" >/dev/null; then
+                printf 'ERROR: failed to remove disposable PostgreSQL container %s\n' \
+                    "$CONTAINER_NAME" >&2
+                cleanup_status=1
+            fi
+        else
+            exists_status=$?
+            if ((exists_status != 1)); then
+                printf 'ERROR: failed to inspect disposable PostgreSQL container %s\n' \
+                    "$CONTAINER_NAME" >&2
+                cleanup_status=1
+            fi
         fi
     fi
 
@@ -56,36 +56,28 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 trap 'exit 129' HUP
 
-if ! command -v docker >/dev/null 2>&1; then
-    printf '%s\n' 'ERROR: Docker Desktop is required for backend-school database tests' >&2
+if ! command -v podman >/dev/null 2>&1; then
+    printf '%s\n' 'ERROR: Podman is required for backend-school database tests' >&2
     exit 127
 fi
 
-if [[ -n ${DOCKER_HOST-} ]]; then
-    docker_endpoint=$DOCKER_HOST
-elif ! docker_endpoint="$(
-    docker context inspect --format '{{(index .Endpoints "docker").Host}}'
-)"; then
-    printf '%s\n' 'ERROR: unable to inspect the active Docker context' >&2
+if [[ -n ${CONTAINER_HOST-} || -n ${CONTAINER_CONNECTION-} ]]; then
+    printf '%s\n' 'ERROR: backend-school tests require a local Podman engine' >&2
+    exit 64
+fi
+
+if ! podman_rootless="$(podman info --format '{{.Host.Security.Rootless}}' 2>/dev/null)"; then
+    printf '%s\n' 'ERROR: the local Podman engine is not reachable' >&2
     exit 69
 fi
 
-case "$docker_endpoint" in
-    unix://* | npipe://*) ;;
-    *)
-        printf 'ERROR: backend-school tests require a local Docker engine; got %s\n' \
-            "$docker_endpoint" >&2
-        exit 64
-        ;;
-esac
-
-if ! docker info >/dev/null 2>&1; then
-    printf '%s\n' 'ERROR: the local Docker engine is not reachable' >&2
-    exit 69
+if [[ $podman_rootless != true ]]; then
+    printf '%s\n' 'ERROR: backend-school tests require rootless Podman' >&2
+    exit 64
 fi
 
 cleanup_armed=true
-if ! docker run --detach \
+if ! podman run --detach \
     --name "$CONTAINER_NAME" \
     --publish '127.0.0.1::5432' \
     --mount type=volume,destination=/var/lib/postgresql \
@@ -106,7 +98,7 @@ fi
 
 postgres_ready=false
 for _attempt in {1..120}; do
-    if docker exec "$CONTAINER_NAME" \
+    if podman exec "$CONTAINER_NAME" \
         pg_isready --quiet --host 127.0.0.1 \
         --username "$POSTGRES_USER" --dbname "$POSTGRES_DATABASE" \
         >/dev/null 2>&1; then
@@ -115,9 +107,9 @@ for _attempt in {1..120}; do
     fi
 
     if ! container_running="$(
-        docker container inspect --format '{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null
+        podman container inspect --format '{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null
     )" || [[ $container_running != true ]]; then
-        docker logs --tail 50 "$CONTAINER_NAME" >&2 || true
+        podman logs --tail 50 "$CONTAINER_NAME" >&2 || true
         printf '%s\n' 'ERROR: disposable PostgreSQL exited before becoming ready' >&2
         exit 70
     fi
@@ -125,12 +117,12 @@ for _attempt in {1..120}; do
 done
 
 if [[ $postgres_ready != true ]]; then
-    docker logs --tail 50 "$CONTAINER_NAME" >&2 || true
+    podman logs --tail 50 "$CONTAINER_NAME" >&2 || true
     printf '%s\n' 'ERROR: disposable PostgreSQL did not become ready within 30 seconds' >&2
     exit 70
 fi
 
-if ! docker exec "$CONTAINER_NAME" \
+if ! podman exec "$CONTAINER_NAME" \
     psql --no-psqlrc --username "$POSTGRES_USER" --dbname "$POSTGRES_DATABASE" \
     --set ON_ERROR_STOP=1 --command "$TEST_EXTENSION_SQL" \
     >/dev/null; then
@@ -138,7 +130,7 @@ if ! docker exec "$CONTAINER_NAME" \
     exit 70
 fi
 
-if ! port_binding="$(docker port "$CONTAINER_NAME" 5432/tcp)"; then
+if ! port_binding="$(podman port "$CONTAINER_NAME" 5432/tcp)"; then
     printf '%s\n' 'ERROR: unable to resolve the disposable PostgreSQL port' >&2
     exit 70
 fi
