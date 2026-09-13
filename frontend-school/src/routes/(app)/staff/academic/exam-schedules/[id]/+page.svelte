@@ -663,6 +663,7 @@
 	function styleReportSheet(worksheet: Worksheet, reportSheet: ExamScheduleReportSheet) {
 		const columnCount = reportSheetColumnCount(reportSheet);
 		const reportIsPaperTransferSheet = isPaperTransferSheet(reportSheet);
+		const reportIsPaperReceiptSheet = reportSheet.name === 'รับข้อสอบ';
 		worksheet.pageSetup = {
 			paperSize: 9,
 			orientation: 'portrait',
@@ -706,6 +707,8 @@
 			}
 
 			if (rowNumber < 4) continue;
+			const isReceiptGroupHeader =
+				reportIsPaperReceiptSheet && reportSheet.rows[rowNumber - 1]?.length === 1;
 			const isPaperTransferHeader = isPaperTransferHeaderRow(reportSheet, rowNumber);
 			const isPaperTransferTime = isPaperTransferTimeRow(reportSheet, rowNumber);
 			const isPaperTransferDay = isPaperTransferDayRow(reportSheet, rowNumber);
@@ -714,6 +717,8 @@
 					? 30
 					: 22;
 			if (isPaperTransferHeader) row.height = 42;
+			if (reportIsPaperReceiptSheet)
+				row.height = isReceiptGroupHeader ? 24 : rowNumber === 4 ? 32 : 38;
 
 			for (let columnNumber = 1; columnNumber <= columnCount; columnNumber += 1) {
 				const cell = row.getCell(columnNumber);
@@ -729,6 +734,7 @@
 					!isPaperTransferTime &&
 					headerText === 'วิชา';
 				const shouldAlignLeft =
+					isReceiptGroupHeader ||
 					isPaperTransferTime ||
 					isPaperTransferSubjectCell ||
 					(!reportIsPaperTransferSheet &&
@@ -740,12 +746,12 @@
 				cell.font = {
 					name: reportFontName,
 					size: 16,
-					bold: isTableHeader || isPaperTransferDay || isPaperTransferTime,
+					bold: isTableHeader || isPaperTransferDay || isPaperTransferTime || isReceiptGroupHeader,
 					italic: isPaperTransferTime
 				};
 				cell.border = reportCellBorder(reportSheet, rowNumber, columnNumber);
 				cell.alignment = shouldAlignLeft ? leftAlignment : centeredAlignment;
-				if (isTableHeader || isPaperTransferDay || isPaperTransferTime) {
+				if (isTableHeader || isPaperTransferDay || isPaperTransferTime || isReceiptGroupHeader) {
 					cell.fill = tableHeaderFill;
 				}
 			}

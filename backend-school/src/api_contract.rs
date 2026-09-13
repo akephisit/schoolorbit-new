@@ -1517,6 +1517,7 @@ use utoipa::OpenApi;
         ExamInvigilatorView,
         ExamScheduleItem,
         ExamScheduleItemView,
+        ExamPaperReceiptItem,
         ExamSession,
         ExamSessionView,
         ExamScheduleWorkspace,

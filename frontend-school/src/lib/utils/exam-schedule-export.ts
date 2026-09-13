@@ -590,6 +590,8 @@ function reportColumnWidthBounds(
 		return { min: 20, max: 28 };
 	}
 	if (headerText === 'เวลารับ' || headerText === 'เวลาส่ง') return { min: 9, max: 12 };
+	if (headerText === 'วันที่ส่ง') return { min: 14, max: 14 };
+	if (headerText === 'ลำดับ') return { min: 6, max: 6 };
 	if (headerText === 'หมายเหตุ') return { min: 12, max: 22 };
 	return { min: 8, max: 28 };
 }
@@ -612,6 +614,9 @@ function isHorizontallyMergedReportCell(
 export function examScheduleReportColumnWidths(
 	reportSheet: ExamScheduleReportSheet
 ): ExamScheduleExportColumn[] {
+	if (reportSheet.name === 'รับข้อสอบ') {
+		return [6, 11, 22, 9, 10, 12, 20, 12].map((wch) => ({ wch }));
+	}
 	return Array.from({ length: reportSheetColumnCount(reportSheet) }, (_, columnIndex) => {
 		const headerText = reportHeaderText(reportSheet, columnIndex);
 		const { min, max } = reportColumnWidthBounds(reportSheet, headerText);
@@ -1056,6 +1061,83 @@ function printablePaperTransferSheet(
 	};
 }
 
+function printablePaperReceiptSheet(workspace: ExamScheduleWorkspace): ExamScheduleReportSheet {
+	type ReceiptItem = ExamScheduleWorkspace['paperReceiptItems'][number];
+	const items = new Map<string, ReceiptItem>();
+	for (const item of workspace.paperReceiptItems ?? []) {
+		items.set(
+			JSON.stringify([item.assessmentPhaseId, item.learningGroupId, item.homeroomId]),
+			item
+		);
+	}
+	const levelOrder: Record<string, number> = { kindergarten: 1, primary: 2, secondary: 3 };
+	const orderedItems = [...items.values()].sort(
+		(a, b) =>
+			(a.subjectGroupDisplayOrder ?? Number.MAX_SAFE_INTEGER) -
+				(b.subjectGroupDisplayOrder ?? Number.MAX_SAFE_INTEGER) ||
+			compareThaiNatural(
+				safeText(a.subjectGroupName, 'ไม่ระบุกลุ่มสาระ'),
+				safeText(b.subjectGroupName, 'ไม่ระบุกลุ่มสาระ')
+			) ||
+			compareThaiNatural(a.subjectGroupId ?? '', b.subjectGroupId ?? '') ||
+			(levelOrder[a.gradeLevelType] ?? 4) - (levelOrder[b.gradeLevelType] ?? 4) ||
+			a.gradeLevelYear - b.gradeLevelYear ||
+			compareThaiNatural(a.subjectCode, b.subjectCode) ||
+			compareThaiNatural(a.homeroomName, b.homeroomName)
+	);
+	const rows: WorksheetRow[] = [
+		['ใบลงชื่อส่งข้อสอบ'],
+		[printableReportTitle(workspace)],
+		[],
+		[
+			'ลำดับ',
+			'รหัสวิชา',
+			'วิชา',
+			'ชั้น/ห้อง',
+			'รูปแบบการสอบ',
+			'วันที่ส่ง',
+			'ลงชื่อครูผู้ส่ง',
+			'หมายเหตุ'
+		]
+	];
+	const merges: ExamScheduleExportMerge[] = [
+		{ s: { r: 0, c: 0 }, e: { r: 0, c: 7 } },
+		{ s: { r: 1, c: 0 }, e: { r: 1, c: 7 } }
+	];
+	const rowBreaks: number[] = [];
+	let sequence = 0;
+	for (const [, groupItems] of groupByText(
+		orderedItems,
+		(item) => item.subjectGroupId ?? safeText(item.subjectGroupName)
+	)) {
+		for (let offset = 0; offset < groupItems.length; offset += 16) {
+			if (rows.length > 4) rowBreaks.push(rows.length - 1);
+			const groupRow = rows.length;
+			rows.push(['กลุ่มสาระ: ' + safeText(groupItems[0].subjectGroupName, 'ไม่ระบุกลุ่มสาระ')]);
+			merges.push({ s: { r: groupRow, c: 0 }, e: { r: groupRow, c: 7 } });
+			for (const item of groupItems.slice(offset, offset + 16)) {
+				rows.push([
+					++sequence,
+					safeText(item.subjectCode, '-'),
+					safeText(item.subjectNameTh) || safeText(item.subjectNameEn) || item.subjectCode,
+					safeText(item.homeroomName, '-'),
+					item.examArrangement === 'outside_timetable' ? 'นอกตาราง' : 'ในตาราง',
+					'',
+					'',
+					''
+				]);
+			}
+		}
+	}
+	return {
+		name: 'รับข้อสอบ',
+		rows,
+		'!merges': merges,
+		'!printTitlesRow': '1:4',
+		'!rowBreaks': rowBreaks
+	};
+}
+
 function objectSheet<Row extends WorksheetObjectRow>(
 	rows: Row[],
 	columns: ExamScheduleExportColumn[]
@@ -1255,7 +1337,8 @@ export function buildExamScheduleExportWorkbook(
 			lowerSecondaryHomeroomReport,
 			upperSecondaryHomeroomReport,
 			invigilatorSummary,
-			paperTransferReport
+			paperTransferReport,
+			printablePaperReceiptSheet(workspace)
 		],
 		lowerSecondaryReport,
 		upperSecondaryReport,

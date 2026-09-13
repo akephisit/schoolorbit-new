@@ -403,6 +403,25 @@ pub struct ExamSessionView {
     pub invigilators: Vec<ExamInvigilatorView>,
 }
 
+/// Current assessment sources for the printed teacher paper receipt register.
+#[derive(Debug, Serialize, sqlx::FromRow, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ExamPaperReceiptItem {
+    pub assessment_phase_id: Uuid,
+    pub learning_group_id: Uuid,
+    pub homeroom_id: Uuid,
+    pub subject_code: String,
+    pub subject_name_th: Option<String>,
+    pub subject_name_en: Option<String>,
+    pub subject_group_id: Option<Uuid>,
+    pub subject_group_name: Option<String>,
+    pub subject_group_display_order: Option<i32>,
+    pub grade_level_type: String,
+    pub grade_level_year: i32,
+    pub homeroom_name: String,
+    pub exam_arrangement: String,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ExamScheduleWorkspace {
@@ -411,6 +430,7 @@ pub struct ExamScheduleWorkspace {
     pub unscheduled_items: Vec<ExamScheduleItemView>,
     pub scheduled_sessions: Vec<ExamSessionView>,
     pub source_preview: ExamSourcePreview,
+    pub paper_receipt_items: Vec<ExamPaperReceiptItem>,
     pub readiness: ExamScheduleReadiness,
 }
 

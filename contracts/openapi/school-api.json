@@ -7110,6 +7110,12 @@
                 },
                 "type": "array"
               },
+              "paperReceiptItems": {
+                "items": {
+                  "$ref": "#/components/schemas/ExamPaperReceiptItem"
+                },
+                "type": "array"
+              },
               "readiness": {
                 "$ref": "#/components/schemas/ExamScheduleReadiness"
               },
@@ -7138,6 +7144,7 @@
               "unscheduledItems",
               "scheduledSessions",
               "sourcePreview",
+              "paperReceiptItems",
               "readiness"
             ],
             "type": "object"
@@ -30519,6 +30526,82 @@
         ],
         "type": "object"
       },
+      "ExamPaperReceiptItem": {
+        "description": "Current assessment sources for the printed teacher paper receipt register.",
+        "properties": {
+          "assessmentPhaseId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "examArrangement": {
+            "type": "string"
+          },
+          "gradeLevelType": {
+            "type": "string"
+          },
+          "gradeLevelYear": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "homeroomId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "homeroomName": {
+            "type": "string"
+          },
+          "learningGroupId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "subjectCode": {
+            "type": "string"
+          },
+          "subjectGroupDisplayOrder": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "subjectGroupId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subjectGroupName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subjectNameEn": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subjectNameTh": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "assessmentPhaseId",
+          "learningGroupId",
+          "homeroomId",
+          "subjectCode",
+          "gradeLevelType",
+          "gradeLevelYear",
+          "homeroomName",
+          "examArrangement"
+        ],
+        "type": "object"
+      },
       "ExamRound": {
         "properties": {
           "academicTermId": {
@@ -30861,6 +30944,12 @@
             },
             "type": "array"
           },
+          "paperReceiptItems": {
+            "items": {
+              "$ref": "#/components/schemas/ExamPaperReceiptItem"
+            },
+            "type": "array"
+          },
           "readiness": {
             "$ref": "#/components/schemas/ExamScheduleReadiness"
           },
@@ -30889,6 +30978,7 @@
           "unscheduledItems",
           "scheduledSessions",
           "sourcePreview",
+          "paperReceiptItems",
           "readiness"
         ],
         "type": "object"

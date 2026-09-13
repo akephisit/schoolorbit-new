@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::modules::academic::models::exam_schedule::{
-    ExamScheduleItemView, ExamScheduleReadiness, ExamScheduleReadinessCode,
+    ExamPaperReceiptItem, ExamScheduleItemView, ExamScheduleReadiness, ExamScheduleReadinessCode,
     ExamScheduleReadinessFinding, ExamScheduleWorkspace, ExamSessionView, ExamSourceChange,
     ExamSourceChangeKind, ExamSourcePreview, ExamSourceSyncItemResult, ExamSourceSyncItemStatus,
     SyncExamSourcesRequest, SyncExamSourcesResult,
@@ -121,6 +121,7 @@ pub async fn get_workspace(
     let days = fetch_exam_day_details_for_round(pool, round_id).await?;
     let unscheduled_items = fetch_unscheduled_items(pool, round_id).await?;
     let scheduled_sessions = fetch_scheduled_sessions(pool, round_id).await?;
+    let paper_receipt_items = fetch_paper_receipt_items(pool, round_id).await?;
     let counts = fetch_workspace_counts(pool, round_id).await?;
     let source_preview = preview_exam_sources(pool, round_id).await?;
     let readiness = build_readiness_with_source_changes(counts, source_preview.changes.len());
@@ -131,6 +132,7 @@ pub async fn get_workspace(
         unscheduled_items,
         scheduled_sessions,
         source_preview,
+        paper_receipt_items,
         readiness,
     })
 }
@@ -1001,4 +1003,62 @@ pub(super) async fn fetch_workspace_counts(
         .await?;
 
     Ok(workspace_counts_from_row(row))
+}
+
+// Receipt collection covers configured exams even before scheduling readiness/import.
+// It must never put outside-timetable exams into the scheduling tray or readiness counts.
+async fn fetch_paper_receipt_items(
+    pool: &PgPool,
+    round_id: Uuid,
+) -> Result<Vec<ExamPaperReceiptItem>, AppError> {
+    Ok(sqlx::query_as::<_, ExamPaperReceiptItem>(
+        r#"
+        SELECT DISTINCT phase.id AS assessment_phase_id,
+               learning_group.id AS learning_group_id,
+               homeroom.id AS homeroom_id,
+               subject.code AS subject_code,
+               version.name_th AS subject_name_th,
+               version.name_en AS subject_name_en,
+               subject.subject_group_id,
+               subject_group.name_th AS subject_group_name,
+               subject_group.display_order AS subject_group_display_order,
+               grade.level_type AS grade_level_type,
+               grade.year AS grade_level_year,
+               homeroom.name AS homeroom_name,
+               phase.exam_arrangement
+        FROM academic_exam_rounds round
+        JOIN course_assessment_plans plan
+          ON plan.academic_term_id = round.academic_term_id
+         AND plan.academic_year_id = round.academic_year_id
+        JOIN course_assessment_phases phase
+          ON phase.plan_id = plan.id AND phase.phase_code = round.exam_kind
+        JOIN course_offering_details detail
+          ON detail.learning_offering_id = plan.learning_offering_id
+         AND detail.subject_version_id = plan.subject_version_id
+         AND detail.academic_term_id = plan.academic_term_id
+         AND detail.academic_year_id = plan.academic_year_id
+        JOIN subject_versions version ON version.id = plan.subject_version_id
+        JOIN subjects subject ON subject.id = version.subject_id
+        LEFT JOIN subject_groups subject_group ON subject_group.id = subject.subject_group_id
+        JOIN learning_groups learning_group
+          ON learning_group.learning_offering_id = plan.learning_offering_id
+         AND learning_group.academic_term_id = plan.academic_term_id
+         AND learning_group.academic_year_id = plan.academic_year_id
+         AND learning_group.status <> 'closed'
+        JOIN learning_group_homerooms coverage ON coverage.learning_group_id = learning_group.id
+        JOIN homerooms homeroom
+          ON homeroom.id = coverage.homeroom_id
+         AND homeroom.academic_year_id = plan.academic_year_id
+         AND homeroom.is_active
+        JOIN grade_levels grade ON grade.id = homeroom.grade_level_id
+        WHERE round.id = $1
+          AND phase.exam_arrangement IN ('in_timetable', 'outside_timetable')
+        ORDER BY subject_group_display_order NULLS LAST, subject_group_name NULLS LAST,
+                 grade_level_type, grade_level_year, subject_code, homeroom_name,
+                 assessment_phase_id, learning_group_id, homeroom_id
+        "#,
+    )
+    .bind(round_id)
+    .fetch_all(pool)
+    .await?)
 }

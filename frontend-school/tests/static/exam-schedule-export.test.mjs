@@ -118,6 +118,11 @@ function exportWorkspace(scheduledSessions, extraDays = []) {
 				roomAssignments
 			}
 		].concat(extraDays),
+		paperReceiptItems: scheduledSessions.map((session) => ({
+			...session,
+			assessmentPhaseId: session.assessmentPhaseId ?? session.examScheduleItemId,
+			examArrangement: 'in_timetable'
+		})),
 		unscheduledItems: [],
 		scheduledSessions,
 		readiness: {
@@ -259,7 +264,8 @@ describe('exam schedule export helpers', () => {
 				'ตารางสอบแยกห้อง ม.ต้น',
 				'ตารางสอบแยกห้อง ม.ปลาย',
 				'กรรมการคุมสอบ',
-				'รับส่งข้อสอบ'
+				'รับส่งข้อสอบ',
+				'รับข้อสอบ'
 			]
 		);
 		assert.equal(workbook.report.rows[0][0], 'ตารางสอบวัดผลกลางภาคเรียนที่ 2 ปีการศึกษา 2568');
@@ -655,5 +661,93 @@ describe('exam schedule export helpers', () => {
 		assert.deepEqual(workbook.paperTransferReport.rows[repeatedDayIndex + 2], [
 			'เวลา 20.00-20.45 น.'
 		]);
+	});
+});
+
+describe('teacher paper submission register', () => {
+	const receipt = (overrides = {}) => ({
+		assessmentPhaseId: 'phase-1',
+		learningGroupId: 'group-1',
+		homeroomId: 'room-1',
+		subjectCode: 'ค21101',
+		subjectNameTh: 'คณิตศาสตร์',
+		subjectNameEn: null,
+		subjectGroupId: 'math',
+		subjectGroupName: 'คณิตศาสตร์',
+		subjectGroupDisplayOrder: 2,
+		gradeLevelType: 'secondary',
+		gradeLevelYear: 1,
+		homeroomName: 'ม.1/1',
+		examArrangement: 'in_timetable',
+		...overrides
+	});
+	const build = (items) => {
+		const workspace = exportWorkspace([]);
+		workspace.paperReceiptItems = items;
+		return buildExamScheduleExportWorkbook(workspace, null).reportSheets.find(
+			(s) => s.name === 'รับข้อสอบ'
+		);
+	};
+
+	it('groups by subject group order and sorts grades naturally within each group', () => {
+		const sheet = build([
+			receipt({ homeroomId: 'm2', gradeLevelYear: 2, homeroomName: 'ม.2/1' }),
+			receipt({ homeroomId: 'm10', homeroomName: 'ม.1/10' }),
+			receipt({ homeroomId: 'm2room', homeroomName: 'ม.1/2' }),
+			receipt({
+				subjectGroupId: 'thai',
+				subjectGroupName: 'ภาษาไทย',
+				subjectGroupDisplayOrder: 1,
+				subjectCode: 'ท21101'
+			})
+		]);
+		assert.equal(sheet.rows[0][0], 'ใบลงชื่อส่งข้อสอบ');
+		assert.deepEqual(
+			sheet.rows.filter((r) => typeof r[0] === 'number').map((r) => r[3]),
+			['ม.1/1', 'ม.1/2', 'ม.1/10', 'ม.2/1']
+		);
+		assert.deepEqual(
+			sheet.rows.filter((r) => String(r[0]).startsWith('กลุ่มสาระ')).map((r) => r[0]),
+			['กลุ่มสาระ: ภาษาไทย', 'กลุ่มสาระ: คณิตศาสตร์']
+		);
+	});
+
+	it('includes out-of-timetable exams and labels unplaced in-timetable exams correctly', () => {
+		const sheet = build([
+			receipt(),
+			receipt({ assessmentPhaseId: 'phase-2', examArrangement: 'outside_timetable' })
+		]);
+		assert.deepEqual(
+			sheet.rows.filter((r) => typeof r[0] === 'number').map((r) => r.slice(4)),
+			[
+				['ในตาราง', '', '', ''],
+				['นอกตาราง', '', '', '']
+			]
+		);
+	});
+
+	it('deduplicates source identities without dropping different classrooms', () => {
+		const sheet = build([
+			receipt(),
+			receipt(),
+			receipt({ homeroomId: 'room-2', homeroomName: 'ม.1/2' })
+		]);
+		assert.equal(sheet.rows.filter((r) => typeof r[0] === 'number').length, 2);
+	});
+
+	it('repeats group headings across printed pages and retains blank signature cells', () => {
+		const sheet = build(
+			Array.from({ length: 25 }, (_, i) =>
+				receipt({ homeroomId: String(i), homeroomName: 'ม.1/' + (i + 1) })
+			)
+		);
+		assert.equal(sheet.rows.filter((r) => r[0] === 'กลุ่มสาระ: คณิตศาสตร์').length, 2);
+		assert.equal(sheet['!rowBreaks'].length, 1);
+		assert.equal(sheet['!printTitlesRow'], '1:4');
+		assert.ok(sheet.rows.filter((r) => typeof r[0] === 'number').every((r) => r[6] === ''));
+	});
+
+	it('exports an empty register without inventing subjects', () => {
+		assert.equal(build([]).rows.length, 4);
 	});
 });
