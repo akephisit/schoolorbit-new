@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -18,6 +18,67 @@ const loadComposeConfig = async (file, extraArguments = []) => {
 	);
 	return parseYaml(stdout);
 };
+
+test('Node and Rust workflow jobs select the supported toolchains', async () => {
+	const workflowDirectory = path.join(repoRoot, '.github/workflows');
+	const workflowFiles = (await readdir(workflowDirectory)).filter((file) => /\.ya?ml$/.test(file));
+	const nodeCommand = /\b(?:node|npm|npx)\b/;
+	const rustCommand = /\b(?:cargo|rustc|rustup)\b/;
+
+	for (const file of workflowFiles) {
+		const workflow = parseYaml(await readFile(path.join(workflowDirectory, file), 'utf8'));
+		for (const [jobName, job] of Object.entries(workflow.jobs ?? {})) {
+			const steps = Array.isArray(job.steps) ? job.steps : [];
+			const nodeSetupIndexes = [];
+			const rustSetupIndexes = [];
+
+			for (const [stepIndex, step] of steps.entries()) {
+				if (typeof step.uses === 'string' && step.uses.startsWith('actions/setup-node@')) {
+					nodeSetupIndexes.push(stepIndex);
+					assert.equal(step.uses, 'actions/setup-node@v6', `${file}:${jobName} setup-node action`);
+					assert.equal(
+						String(step.with?.['node-version']),
+						'24',
+						`${file}:${jobName} Node version`
+					);
+				}
+				if (typeof step.uses === 'string' && step.uses.startsWith('dtolnay/rust-toolchain@')) {
+					rustSetupIndexes.push(stepIndex);
+					assert.equal(
+						step.uses,
+						'dtolnay/rust-toolchain@1.98.1',
+						`${file}:${jobName} Rust version`
+					);
+				}
+			}
+
+			const firstNodeCommand = steps.findIndex(
+				(step) => typeof step.run === 'string' && nodeCommand.test(step.run)
+			);
+			if (firstNodeCommand >= 0) {
+				assert.ok(
+					nodeSetupIndexes.some((stepIndex) => stepIndex < firstNodeCommand),
+					`${file}:${jobName} must set up Node 24 before executing Node commands`
+				);
+			}
+
+			const firstRustCommand = steps.findIndex(
+				(step) => typeof step.run === 'string' && rustCommand.test(step.run)
+			);
+			if (firstRustCommand >= 0) {
+				assert.ok(
+					rustSetupIndexes.some((stepIndex) => stepIndex < firstRustCommand),
+					`${file}:${jobName} must set up Rust 1.98.1 before executing Rust commands`
+				);
+			}
+		}
+	}
+
+	for (const packageFile of ['frontend-admin/package.json', 'frontend-school/package.json']) {
+		const packageJson = JSON.parse(await readRepo(packageFile));
+		assert.equal(packageJson.engines?.node, '>=24.0.0 <25', `${packageFile} Node engine`);
+	}
+});
 
 test('school session runtime is required and isolated from admin JWT', async () => {
 	for (const file of ['compose.local.yml', 'podman-compose.yml']) {
@@ -340,6 +401,8 @@ test('Release 2 deployment remains in maintenance until the Gradebook/results cu
 	);
 	const smoke = await readRepo('scripts/smoke_test.sh');
 
+	assert.match(compatibility, /uses: actions\/setup-node@v6/);
+	assert.match(compatibility, /node-version: "24"/);
 	assert.match(compatibility, /cargo test modules::academic::core::schema_tests::migration_060/);
 	assert.match(
 		compatibility,
@@ -566,7 +629,7 @@ test('backend runtime images use deterministic builders without ownership copy-u
 		);
 
 		assert.match(dockerfile, /^# syntax=docker\/dockerfile:1\.10$/m);
-		assert.match(dockerfile, /FROM rust:1\.98\.0-slim-bookworm AS base/);
+		assert.match(dockerfile, /FROM rust:1\.98\.1-slim-bookworm AS base/);
 		assert.match(dockerfile, /cargo install cargo-chef --version 0\.1\.78 --locked/);
 		if (binary === 'backend-admin') {
 			assert.match(dockerfile, /sccache-v0\.17\.0-x86_64-unknown-linux-musl\.tar\.gz/);
@@ -714,6 +777,8 @@ test('GHCR retention is bounded, dry-run by default, and isolated from deploymen
 	assert.match(workflow, /inputs\.dry_run == false/);
 	assert.match(workflow, /schoolorbit-backend-admin/);
 	assert.match(workflow, /schoolorbit-backend-school/);
+	assert.match(workflow, /uses: actions\/setup-node@v6/);
+	assert.match(workflow, /node-version: "24"/);
 	assert.match(workflow, /node scripts\/prune_ghcr_versions\.mjs/);
 	assert.match(workflow, /--keep 30/);
 	assert.match(workflow, /--execute/);
@@ -774,7 +839,7 @@ test('API contract runs artifact backend and frontend gates in independent jobs'
 
 	for (const nodeJob of [artifacts, frontend]) {
 		assert.match(nodeJob, /uses: actions\/setup-node@v6/);
-		assert.match(nodeJob, /node-version: "22"/);
+		assert.match(nodeJob, /node-version: "24"/);
 		assert.match(nodeJob, /cache: npm/);
 		assert.match(nodeJob, /cache-dependency-path: frontend-school\/package-lock\.json/);
 		assert.match(nodeJob, /working-directory: frontend-school\n\s+run: npm ci/);
@@ -782,7 +847,7 @@ test('API contract runs artifact backend and frontend gates in independent jobs'
 	assert.doesNotMatch(backend, /uses: actions\/setup-node@v6/);
 
 	for (const rustJob of [artifacts, backend]) {
-		assert.match(rustJob, /uses: dtolnay\/rust-toolchain@stable/);
+		assert.match(rustJob, /uses: dtolnay\/rust-toolchain@1\.98\.1/);
 		assert.match(rustJob, /uses: Swatinem\/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32/);
 		assert.match(rustJob, /id: rust_cache/);
 		assert.match(rustJob, /shared-key: backend-school-contracts/);
@@ -898,6 +963,8 @@ test('installer CI enforces shell provider topology and workflow guards', async 
 	]);
 
 	assert.match(workflow, /runs-on: ubuntu-24\.04/);
+	assert.match(workflow, /uses: actions\/setup-node@v6/);
+	assert.match(workflow, /node-version: "24"/);
 	for (const path of [
 		'scripts/schoolorbit-installer',
 		'scripts/lib/schoolorbit-installer/**',
