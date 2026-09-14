@@ -72,6 +72,14 @@ A feature is not complete when only its UI is hidden. Backend authorization, res
 
 Feature toggles are optional. Add one only for staged rollout or operational control, and enforce it in the backend as well as the UI; a frontend-only toggle is not an authorization or safety boundary.
 
+### Canonical replacements and data preservation
+
+- Design replacement schemas, APIs, DTOs, and business models around one orderly canonical structure suitable for long-term maintenance. Do not distort the new design merely to keep a legacy runtime interface alive.
+- Persisted legacy data is migration input, not a runtime compatibility requirement. Preserve its valid meaning, stable identities, relationships, and required history through explicit transformation into the canonical model; do not silently discard values, guess ambiguous mappings, or create an indefinite duplicate archive.
+- After cutover, the runtime has one canonical owner and path. Do not add new product behavior to a legacy path except when required to make migration safe, and remove legacy endpoints, fields, aliases, fallbacks, dual reads/writes, and duplicate schema owners after verified cleanup.
+- Compatibility may exist temporarily only when a safe rollout or rollback requires it. The design must name its owner, exact scope, removal condition, and cleanup step before implementation.
+- Data preservation does not override authorized retention, deletion, legal-hold, or PDPA requirements. Do not retain data longer than policy allows merely because it originated in a legacy model.
+
 ## 3. Backend: Rust, Axum, SQLx
 
 ### Request context and architecture
@@ -168,6 +176,9 @@ Use `ApiResponse` and `ApiErrorResponse`; do not return raw feature DTOs or ad-h
 - Never point a clean-baseline release at a tenant whose `_sqlx_migrations` still contains the legacy timeline.
 - New tenant provisioning and release deployments use the centralized runner in `backend-school/src/db/migration.rs`; do not introduce a second tenant migration path.
 - The legacy rebaseline workflow is retired. If a tenant with legacy `_sqlx_migrations` history is discovered, stop and create a new reviewed recovery plan instead of reusing one-time tooling or improvising a cutover.
+- For destructive or semantic replacements, use `expand → migrate/backfill → reconcile → switch consumers → contract/cleanup`, scaled to the affected data and runtime risk. Use new sequential forward migrations for every database-changing phase; implement reconciliation and consumer switching as explicit executable gates in the migration and deployment flow.
+- Make transformations deterministic and safely retryable under the migration runner and recovery design. Before destructive cleanup, verify current aggregate counts, stable identities, relationships, appropriate checksums, and business invariants.
+- If any source value cannot be mapped unambiguously or reconciliation is absent, stale, incomplete, or failed, it blocks both consumer cutover and destructive cleanup. Report only bounded finding codes and aggregate counts; never discard or guess data or expose raw rows, PII, credentials, secrets, or database URLs. Correct the data through an explicit reviewed remediation or recovery plan, then reconcile again.
 - Database-backed tests use `TEST_DATABASE_URL` and isolated test state. Routine backend-school
   database tests run through `scripts/test_backend_school.sh`, which supplies PostgreSQL in a
   uniquely named rootless Podman container and removes that exact container and its anonymous
@@ -261,6 +272,8 @@ Use `ApiResponse` and `ApiErrorResponse`; do not return raw feature DTOs or ad-h
 - `SCHOOL_ROLLBACK_JWT_SECRET` exists only for a time-bounded backend-school rollback. The normal school runtime must not use it; `JWT_SECRET` is owned by backend-admin.
 - Internal calls send `X-Internal-Caller`; caller-specific secrets may use `INTERNAL_API_SECRET_<CALLER>` with controlled fallback during rotation.
 - Treat permission/menu sync, tenant migrations, encryption keys, file storage, and data cutover as deployment concerns. Follow `docs/OPERATIONS.md`.
+- Legacy runtime compatibility is not a default requirement. Any temporary bridge must be limited to the approved rollout or rollback window and removed at its predefined cleanup gate; it must not become a permanent alias, fallback, dual path, or parallel business model.
+- Before consumer cutover, decide whether the prior application version can safely use the expanded schema. Record this decision, the compatible schema boundary, and the point after which old binaries are prohibited in the approved cutover design. If backward binary compatibility would retain a harmful legacy contract, use a tested roll-forward recovery instead of assuming an old binary can be restored.
 - Cockpit management is host-managed, not part of Compose or the application Nginx proxy. It listens only on `127.0.0.1:9090` and is published as `https://server.<base-domain>` through a distinct Cloudflare Tunnel connector running on the target VPS.
 - Do not open inbound TCP 9090. Keep `root` disallowed in Cockpit and log in as the `schoolorbit` account that owns the production rootless Podman namespace. Give that account password-backed `sudo` access for Cockpit's explicit Administrative access switch; do not create a `NOPASSWD` rule.
 - Keep `podman.socket` enabled and active in the linger-enabled `schoolorbit` user manager, with its API at `/run/user/<schoolorbit-uid>/podman/podman.sock`, so Cockpit sees the production rootless namespace. A root-owned Podman socket or rootful container namespace is not a substitute.
@@ -338,6 +351,8 @@ podman run --rm -v "$PWD:/repo" -w /repo docker.io/rhysd/actionlint:1.7.7
 The deployment static guard renders the proxy template and checks direct-origin deployment behavior. All commands above are required; do not replace unavailable checks with weaker substitutes.
 
 Run `scripts/smoke_test.sh` when authentication, CORS, readiness, proxying, deployment, or cross-service behavior changes. Run Playwright from `frontend-school` when browser auth or user workflows change. Credentials must come from `SMOKE_*` or `E2E_*` environment variables and must never be committed.
+
+For canonical replacement or cutover changes, use sanitized legacy-shaped fixtures and test successful mapping, preservation of identities/relationships/invariants, safe retry, every known unmappable state, stale or missing reconciliation, and refusal of both consumer cutover and destructive cleanup before evidence is complete. After cleanup, add guards preventing removed legacy contracts and runtime fallbacks from returning. External rehearsals use disposable or protected copies and emit only bounded aggregate evidence.
 
 Static-test ownership:
 

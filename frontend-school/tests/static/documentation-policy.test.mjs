@@ -79,6 +79,14 @@ function localLinkTargets(source) {
 	return targets;
 }
 
+function requiredSection(source, startHeading, endHeading) {
+	const start = source.indexOf(startHeading);
+	assert.notEqual(start, -1, `.rules must contain section: ${startHeading}`);
+	const end = source.indexOf(endHeading, start + startHeading.length);
+	assert.notEqual(end, -1, `.rules must contain section boundary: ${endHeading}`);
+	return source.slice(start, end);
+}
+
 test('Superpowers Markdown is limited to dated spec and plan artifacts', () => {
 	const accepted = [
 		'docs/superpowers/specs/2026-07-26-admin-auth-design.md',
@@ -142,6 +150,7 @@ test('project rules own durable development and verification workflows', async (
 		'## 7. Frontend: SvelteKit 5',
 		'## 9. Security, PDPA, and Logging',
 		'## 11. Verification Matrix',
+		'### Canonical replacements and data preservation',
 		'TODO.md',
 		'docs/superpowers/specs/',
 		'docs/superpowers/plans/',
@@ -158,12 +167,52 @@ test('project rules own durable development and verification workflows', async (
 		'shellcheck scripts/schoolorbit-installer',
 		'shfmt -d -i 4 -ci scripts/schoolorbit-installer',
 		'node --test frontend-school/tests/static/deployment-installer.test.mjs',
+		'Persisted legacy data is migration input, not a runtime compatibility requirement.',
+		'expand → migrate/backfill → reconcile → switch consumers → contract/cleanup',
+		'Legacy runtime compatibility is not a default requirement.',
 		'git diff --check'
 	];
 
 	for (const value of required) {
 		assert.ok(rules.includes(value), `.rules must contain: ${value}`);
 	}
+
+	const canonicalPolicy = requiredSection(
+		rules,
+		'### Canonical replacements and data preservation',
+		'## 3. Backend: Rust, Axum, SQLx'
+	);
+	assert.match(canonicalPolicy, /do not silently discard values/);
+	assert.match(canonicalPolicy, /owner, exact scope, removal condition, and cleanup step/);
+	assert.match(canonicalPolicy, /PDPA requirements/);
+
+	const migrationPolicy = requiredSection(
+		rules,
+		'## 6. Database Migrations',
+		'## 7. Frontend: SvelteKit 5'
+	);
+	assert.match(migrationPolicy, /every database-changing phase/);
+	assert.match(migrationPolicy, /blocks both consumer cutover and destructive cleanup/);
+	assert.match(migrationPolicy, /never discard or guess data or expose raw rows, PII/);
+
+	const deploymentPolicy = requiredSection(
+		rules,
+		'## 10. Deployment Constraints',
+		'## 11. Verification Matrix'
+	);
+	assert.match(deploymentPolicy, /approved rollout or rollback window/);
+	assert.match(deploymentPolicy, /Record this decision, the compatible schema boundary/);
+
+	const verificationPolicy = requiredSection(
+		rules,
+		'## 11. Verification Matrix',
+		'Static-test ownership:'
+	);
+	assert.match(
+		verificationPolicy,
+		/refusal of both consumer cutover and destructive cleanup before evidence is complete/
+	);
+	assert.match(verificationPolicy, /preventing removed legacy contracts and runtime fallbacks/);
 });
 
 test('canonical docs own the school session and cutover contract', async () => {
