@@ -935,6 +935,22 @@ test('installer CI enforces shell provider topology and workflow guards', async 
 	assert.doesNotMatch(rules, /^docker run --rm .*rhysd\/actionlint:1\.7\.7$/m);
 });
 
+test('permission contract provisions Podman Compose before deployment static contracts', async () => {
+	const workflow = parseYaml(await readRepo('.github/workflows/permission-contract.yml'));
+	const steps = workflow.jobs.verify.steps;
+	const installIndex = steps.findIndex(
+		(step) => typeof step.run === 'string' && step.run.includes('podman-compose')
+	);
+	const staticContractsIndex = steps.findIndex((step) => step.run === 'npm run test:static');
+
+	assert.ok(staticContractsIndex >= 0, 'permission contract must run frontend static contracts');
+	assert.ok(installIndex >= 0, 'permission contract must provision Podman Compose');
+	assert.ok(
+		installIndex < staticContractsIndex,
+		'Podman Compose must be available before frontend static contracts run'
+	);
+});
+
 test('Cockpit management stays loopback-only, secret-safe, and documented', async () => {
 	const [
 		installer,

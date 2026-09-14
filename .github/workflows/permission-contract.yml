@@ -96,6 +96,9 @@ jobs:
         working-directory: frontend-school
         run: npm ci
 
+      - name: Install Podman Compose
+        run: sudo apt-get update && sudo apt-get install -y podman podman-compose
+
       - name: Test frontend static contracts
         working-directory: frontend-school
         run: npm run test:static
