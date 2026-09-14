@@ -32,7 +32,6 @@ struct SourceDay {
 
 #[derive(FromRow)]
 struct SourceRoomAssignment {
-    id: Uuid,
     exam_day_id: Uuid,
     homeroom_id: Uuid,
     room_id: Uuid,
@@ -99,7 +98,7 @@ pub(crate) async fn apply(
         Vec::new()
     } else {
         sqlx::query_as(
-            "SELECT id,exam_day_id,homeroom_id,room_id,capacity_override FROM academic_exam_day_room_assignments WHERE exam_day_id=ANY($1) ORDER BY exam_day_id,id",
+            "SELECT exam_day_id,homeroom_id,room_id,capacity_override FROM academic_exam_day_room_assignments WHERE exam_day_id=ANY($1) ORDER BY exam_day_id,id",
         )
         .bind(&source_day_ids)
         .fetch_all(&mut **tx)

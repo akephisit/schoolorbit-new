@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;

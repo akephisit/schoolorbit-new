@@ -9,15 +9,36 @@ use super::{
     repository::PlatformFile,
 };
 
-#[derive(Debug, ToSchema)]
-#[schema(as = FileUploadMultipart)]
-#[allow(dead_code)] // OpenAPI-only shape; the handler streams multipart fields directly.
-pub struct FileUploadMultipart {
-    pub purpose: FilePurpose,
-    pub resource_id: Option<Uuid>,
-    #[schema(value_type = String, format = Binary)]
-    pub file: Vec<u8>,
+pub struct FileUploadMultipart;
+
+impl utoipa::PartialSchema for FileUploadMultipart {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        use utoipa::openapi::{
+            schema::{SchemaType, Type},
+            KnownFormat, ObjectBuilder, Ref, SchemaFormat,
+        };
+
+        ObjectBuilder::new()
+            .property("purpose", Ref::from_schema_name("FilePurpose"))
+            .required("purpose")
+            .property(
+                "resource_id",
+                ObjectBuilder::new()
+                    .schema_type(SchemaType::from_iter([Type::String, Type::Null]))
+                    .format(Some(SchemaFormat::KnownFormat(KnownFormat::Uuid))),
+            )
+            .property(
+                "file",
+                ObjectBuilder::new()
+                    .schema_type(Type::String)
+                    .format(Some(SchemaFormat::KnownFormat(KnownFormat::Binary))),
+            )
+            .required("file")
+            .into()
+    }
 }
+
+impl ToSchema for FileUploadMultipart {}
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]

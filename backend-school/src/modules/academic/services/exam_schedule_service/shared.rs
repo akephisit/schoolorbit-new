@@ -118,13 +118,6 @@ pub(super) struct InvigilatorSessionWindow {
     pub(super) ends_at: NaiveTime,
 }
 
-pub(super) fn invigilator_workload_minutes(windows: &[InvigilatorSessionWindow]) -> i32 {
-    windows
-        .iter()
-        .map(|window| minutes_between_times(window.starts_at, window.ends_at))
-        .sum()
-}
-
 pub(super) fn minutes_between_times(starts_at: NaiveTime, ends_at: NaiveTime) -> i32 {
     let start_minutes = starts_at.num_seconds_from_midnight() / 60;
     let end_minutes = ends_at.num_seconds_from_midnight() / 60;
@@ -352,7 +345,7 @@ mod tests {
     }
 
     #[test]
-    fn invigilator_conflicts_and_workload_use_live_session_ranges() {
+    fn invigilator_conflicts_use_live_session_ranges() {
         let staff_id = Uuid::from_u128(7);
         let day = Uuid::from_u128(8);
         let candidate = vec![InvigilatorSessionWindow {
@@ -375,7 +368,6 @@ mod tests {
             &candidate,
             &existing
         ));
-        assert_eq!(invigilator_workload_minutes(&existing), 90);
     }
 
     #[test]

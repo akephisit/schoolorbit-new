@@ -5736,9 +5736,14 @@ async fn self_registration_activity_uses_common_delivery() {
     )
     .await
     .unwrap();
-    let students = groups::list_students(&pool, group.id).await.unwrap();
-    assert_eq!(students.len(), 1);
-    assert_eq!(students[0].roster_source, "manual_add");
+    let roster_sources: Vec<String> = sqlx::query_scalar(
+        "SELECT roster_source FROM learning_group_students WHERE learning_group_id = $1",
+    )
+    .bind(group.id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(roster_sources, vec!["manual_add"]);
 }
 
 #[tokio::test]
@@ -6204,10 +6209,15 @@ async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverag
         includes_school_owned: true,
         ..Default::default()
     };
-    let before =
-        workspaces::homeroom_delivery_workspace(&pool, context.year_id, context.term_id, &filter)
-            .await
-            .expect("homeroom workspace should load");
+    let before = workspaces::homeroom_delivery_workspace_for_version(
+        &pool,
+        context.year_id,
+        context.term_id,
+        None,
+        &filter,
+    )
+    .await
+    .expect("homeroom workspace should load");
     let room = before
         .homerooms
         .iter()
@@ -6257,10 +6267,15 @@ async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverag
     .await
     .unwrap();
 
-    let after =
-        workspaces::homeroom_delivery_workspace(&pool, context.year_id, context.term_id, &filter)
-            .await
-            .expect("homeroom workspace should refresh");
+    let after = workspaces::homeroom_delivery_workspace_for_version(
+        &pool,
+        context.year_id,
+        context.term_id,
+        None,
+        &filter,
+    )
+    .await
+    .expect("homeroom workspace should refresh");
     let room = after
         .homerooms
         .iter()
@@ -6285,10 +6300,11 @@ async fn active_homeroom_workspace_projects_the_effective_version_targets() {
     .fetch_one(&pool)
     .await
     .unwrap();
-    let workspace = workspaces::homeroom_delivery_workspace(
+    let workspace = workspaces::homeroom_delivery_workspace_for_version(
         &pool,
         year_id,
         term_id,
+        None,
         &AcademicResourceListFilter {
             includes_school_owned: true,
             ..Default::default()

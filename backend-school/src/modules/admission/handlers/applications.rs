@@ -56,13 +56,27 @@ struct AssignedData<T> {
     assigned: T,
 }
 
-#[derive(Debug, ToSchema)]
-#[allow(dead_code)]
-pub struct StaffDocumentMultipart {
-    pub doc_type: String,
-    #[schema(value_type = String, format = Binary)]
-    pub file: Vec<u8>,
+pub struct StaffDocumentMultipart;
+
+impl utoipa::PartialSchema for StaffDocumentMultipart {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        use utoipa::openapi::{schema::Type, KnownFormat, ObjectBuilder, SchemaFormat};
+
+        ObjectBuilder::new()
+            .property("doc_type", <String as utoipa::PartialSchema>::schema())
+            .required("doc_type")
+            .property(
+                "file",
+                ObjectBuilder::new()
+                    .schema_type(Type::String)
+                    .format(Some(SchemaFormat::KnownFormat(KnownFormat::Binary))),
+            )
+            .required("file")
+            .into()
+    }
 }
+
+impl ToSchema for StaffDocumentMultipart {}
 
 // ==========================================
 // Public submit

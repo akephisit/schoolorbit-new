@@ -242,6 +242,23 @@ test('canonical docs own the school session and cutover contract', async () => {
 	assert.match(auth002, /default `\/api\/auth\/me` minimization is complete/i);
 });
 
+test('operations document owns the coordinated school release contract', async () => {
+	const operations = await readFile(path.join(repoRoot, 'docs/OPERATIONS.md'), 'utf8');
+	const podmanSetup = await readFile(path.join(repoRoot, 'docs/PODMAN_SETUP.md'), 'utf8');
+
+	assert.match(operations, /deploy-school-release\.yml/);
+	assert.match(operations, /frontend-only/);
+	assert.match(operations, /backend-only/);
+	assert.match(operations, /full release/);
+	assert.match(operations, /\/deployment-status/);
+	assert.match(operations, /10 seconds/);
+	assert.match(operations, /reload/i);
+	assert.doesNotMatch(operations, /deploy-backend-school\.yml/);
+	assert.doesNotMatch(operations, /deploy-all-schools\.yml/);
+	assert.doesNotMatch(operations, /SCHOOL_API_KEEP_MAINTENANCE/);
+	assert.match(podmanSetup, /deploy-school-release\.yml/);
+});
+
 test('canonical docs own the school-font rollout and lifecycle contract', async () => {
 	const [operations, testing] = await Promise.all([
 		readFile(path.join(repoRoot, 'docs/OPERATIONS.md'), 'utf8'),

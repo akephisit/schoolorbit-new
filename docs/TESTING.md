@@ -32,6 +32,7 @@ From `backend-school`:
 cargo fmt --all -- --check
 cargo test --test static_architecture
 cargo check
+RUSTFLAGS='-D warnings' cargo check --locked --bin backend-school
 ```
 
 Run focused unit or integration tests for changed modules as well. For API-contract work:
@@ -51,7 +52,7 @@ Session changes require the schema, repository, service, HTTP/middleware, and re
 ./scripts/test_backend_school.sh modules::auth::session_repository_tests -- --nocapture
 ./scripts/test_backend_school.sh modules::auth::session_service_tests -- --nocapture
 ./scripts/test_backend_school.sh modules::auth::session_http_tests -- --nocapture
-./scripts/test_backend_school.sh modules::academic::websockets::tests -- --nocapture
+./scripts/test_backend_school.sh modules::academic::websockets::security_tests -- --nocapture
 ```
 
 From `frontend-school`, verify the browser security boundary and client state:
@@ -96,6 +97,15 @@ During implementation, run the relevant static file directly:
 node --test tests/static/<area>.test.mjs
 ```
 
+For coordinated school release behavior, run:
+
+```bash
+node --test tests/runtime/maintenance-controller.test.mjs \
+  tests/static/school-release-deployment.test.mjs
+node --test ../scripts/tests/school-release-scope.test.mjs
+node --test ../scripts/tests/worker-release-candidates.test.mjs
+```
+
 ## Frontend Admin
 
 From `frontend-admin`:
@@ -113,14 +123,16 @@ When the VPS installer, canonical Compose runtime, Nginx templates, deployment w
 
 ```bash
 node --test scripts/tests/backend-school-test-database.test.mjs
+node --test scripts/tests/school-release-scope.test.mjs \
+  scripts/tests/worker-release-candidates.test.mjs
 shellcheck scripts/schoolorbit-installer scripts/render_nginx_config.sh \
   scripts/prune_runtime_images.sh scripts/clamd_runtime_matches.sh \
-  scripts/test_backend_school.sh \
+  scripts/test_backend_school.sh scripts/resolve_school_release_scope.sh \
   scripts/lib/schoolorbit-installer/*.sh \
   scripts/lib/schoolorbit-installer/remote/*.sh
 shfmt -d -i 4 -ci scripts/schoolorbit-installer scripts/render_nginx_config.sh \
   scripts/prune_runtime_images.sh scripts/clamd_runtime_matches.sh \
-  scripts/test_backend_school.sh \
+  scripts/test_backend_school.sh scripts/resolve_school_release_scope.sh \
   scripts/lib/schoolorbit-installer/*.sh \
   scripts/lib/schoolorbit-installer/remote/*.sh
 bats scripts/tests/installer

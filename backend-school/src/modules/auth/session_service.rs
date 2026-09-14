@@ -80,7 +80,6 @@ pub struct AuthenticatedSession {
     pub tenant: TenantContext,
     pub session_id: Uuid,
     pub user_id: Uuid,
-    pub username: String,
     pub user_type: String,
 }
 
@@ -91,7 +90,6 @@ impl fmt::Debug for AuthenticatedSession {
             .field("tenant_id", &self.tenant.tenant_id)
             .field("session_id", &self.session_id)
             .field("user_id", &self.user_id)
-            .field("username", &"[REDACTED]")
             .field("user_type", &self.user_type)
             .finish()
     }
@@ -124,7 +122,8 @@ impl SessionCredential {
         self.raw.encode()
     }
 
-    pub fn token_hash(&self) -> TokenHash {
+    #[cfg(test)]
+    pub(crate) fn token_hash(&self) -> TokenHash {
         self.raw.token_hash()
     }
 }
@@ -190,6 +189,7 @@ pub struct SessionRevocationResult {
 pub struct PasswordChangeResult {
     pub credential: SessionCredential,
     pub csrf_token: CsrfToken,
+    #[cfg(test)]
     pub revoked_session_ids: Vec<Uuid>,
 }
 
@@ -394,7 +394,6 @@ where
         tenant: context.tenant.clone(),
         session_id: maintained.session_id,
         user_id: maintained.user_id,
-        username: maintained.username,
         user_type: maintained.user_type,
     };
     let csrf_token = session_csrf_token(
@@ -599,6 +598,7 @@ where
             now,
         ),
         csrf_token,
+        #[cfg(test)]
         revoked_session_ids,
     })
 }
@@ -740,7 +740,6 @@ fn authenticated(
         tenant: context.tenant.clone(),
         session_id,
         user_id: user.id,
-        username: user.username.clone(),
         user_type: user.user_type.clone(),
     }
 }

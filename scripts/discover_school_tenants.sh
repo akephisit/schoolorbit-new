@@ -58,7 +58,7 @@ for ((attempt = 1; attempt <= max_attempts; attempt++)); do
             --output "$response_file" \
             --write-out '%{http_code}' \
             --header "X-Internal-Secret: ${internal_api_secret}" \
-            --header "X-Internal-Caller: deploy-all-schools" \
+            --header "X-Internal-Caller: deploy-school-release" \
             "${backend_admin_url%/}/internal/schools?status=active"
     )"; then
         request_succeeded=0

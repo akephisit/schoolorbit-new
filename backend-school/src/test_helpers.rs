@@ -183,45 +183,6 @@ pub async fn run_test_migrations(pool: &PgPool) {
         .expect("Failed to run migrations");
 }
 
-/// Clean up test data
-pub async fn cleanup_test_data(pool: &PgPool) {
-    // Delete in reverse order of dependencies
-    sqlx::query("DELETE FROM user_roles")
-        .execute(pool)
-        .await
-        .ok();
-
-    sqlx::query("DELETE FROM organization_permission_delegations")
-        .execute(pool)
-        .await
-        .ok();
-
-    sqlx::query("DELETE FROM organization_permission_grants")
-        .execute(pool)
-        .await
-        .ok();
-
-    sqlx::query("DELETE FROM organization_members")
-        .execute(pool)
-        .await
-        .ok();
-
-    sqlx::query("DELETE FROM users WHERE email LIKE '%test%'")
-        .execute(pool)
-        .await
-        .ok();
-
-    sqlx::query("DELETE FROM roles WHERE name LIKE '%test%'")
-        .execute(pool)
-        .await
-        .ok();
-
-    sqlx::query("DELETE FROM organization_units WHERE name LIKE '%test%'")
-        .execute(pool)
-        .await
-        .ok();
-}
-
 /// Create a test user
 pub async fn create_test_user(
     pool: &PgPool,

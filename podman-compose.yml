@@ -48,7 +48,7 @@ services:
       - schoolorbit-net
 
   backend-school:
-    image: ghcr.io/akephisit/schoolorbit-backend-school:latest
+    image: ${BACKEND_SCHOOL_IMAGE_REFERENCE:-ghcr.io/akephisit/schoolorbit-backend-school:latest}
     container_name: schoolorbit-backend-school
     restart: unless-stopped
     ports:

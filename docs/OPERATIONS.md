@@ -45,9 +45,8 @@ Recurring Compose healthchecks use `/health` so process monitoring does not wake
 Current workflows:
 
 - [deploy-backend-admin.yml](../.github/workflows/deploy-backend-admin.yml)
-- [deploy-backend-school.yml](../.github/workflows/deploy-backend-school.yml)
+- [deploy-school-release.yml](../.github/workflows/deploy-school-release.yml)
 - [deploy-school-tenant.yml](../.github/workflows/deploy-school-tenant.yml)
-- [deploy-all-schools.yml](../.github/workflows/deploy-all-schools.yml)
 - [runtime-diagnostics.yml](../.github/workflows/runtime-diagnostics.yml)
 - [ghcr-retention.yml](../.github/workflows/ghcr-retention.yml)
 - [permission-contract.yml](../.github/workflows/permission-contract.yml)
@@ -56,24 +55,61 @@ Current workflows:
 - [e2e-sandbox.yml](../.github/workflows/e2e-sandbox.yml)
 - [installer.yml](../.github/workflows/installer.yml)
 
-Backend workflows stage the tracked canonical Compose file, validate it, atomically replace
-`/opt/stack/podman-compose.yml`, and recreate only the selected service. An admin deployment
-does not restart backend-school or clamd. A school deployment starts and verifies clamd when
-required, then recreates backend-school without restarting backend-admin. Production
-backend-school deliberately has no Compose `depends_on`: this prevents older supported
-`podman-compose` releases from expanding a selected-service update into backend-admin or clamd.
-Both workflows verify the selected target origin with the intended hostname and pinned
-Cloudflare Origin CA root; they do not use the still-public hostname as proof of the new origin.
+`Deploy School Release` is the only push-triggered production workflow for `frontend-school` and
+`backend-school`. Every run uses the checked-out 40-character Git SHA as one release ID and the
+`school-production-release` concurrency group serializes school releases. Because GitHub may replace
+a pending run with a newer one, every acceptance persists separate frontend and backend component
+SHAs in a trusted workflow artifact. Automatic scope detection compares each component with its
+accepted SHA instead of only the immediately preceding push. A missing or divergent baseline, or
+any later failed, cancelled, or incomplete release attempt, forces a full release. Scope detection
+then selects one of these paths:
+
+| Changed area | Scope | Release behavior |
+| --- | --- | --- |
+| `frontend-school` only | frontend-only | Build and stage every tenant Worker, synchronize menus through the VPS loopback, then promote every staged version. The school API stays available. |
+| `backend-school` only | backend-only | Build the immutable backend image first, enable maintenance, replace the backend, migrate and audit every tenant, pass readiness and authenticated smoke, then reopen the API. The existing frontend remains active. |
+| Both, or a shared school runtime file | full release | Build the backend and stage every tenant Worker before maintenance, deploy and verify the backend, synchronize menus, promote every tenant, then reopen the API only after all tenant promotions pass. |
+
+A manual dispatch may choose `frontend`, `backend`, or `full`; `auto` applies the same path-based
+classification as a push. `deploy-school-tenant.yml` remains a provisioning-only manual workflow
+for one new tenant and is not a production release path, but it shares the release concurrency group
+so provisioning cannot change a Worker while a coordinated release records or promotes versions.
+
+The school release stages the tracked canonical Compose file, validates it, atomically replaces
+`/opt/stack/podman-compose.yml`, and recreates backend-school without restarting backend-admin.
+It starts and verifies clamd when required. Production backend-school deliberately has no Compose
+`depends_on`: this prevents older supported `podman-compose` releases from expanding a
+selected-service update into backend-admin or clamd. Backend releases verify the selected target
+origin with the intended hostname and pinned Cloudflare Origin CA root; they do not use the
+still-public hostname as proof of the new origin.
 
 `RUNTIME_DEPLOY_ENABLED` gates push-triggered backend deployments and
 `FRONTEND_DEPLOY_ENABLED` gates push-triggered frontend deployments. Manual workflow dispatch
 remains available while either gate is `false`. The replacement-VPS installer keeps both gates
 disabled during migration and enables them only in the final handoff after public verification.
 
-Backend deploys wait for `/ready` before declaring success. Tenant workflows deploy the
-frontend first, then run `npm run sync:menu-routes` as an explicit step with server-only
-`DEPLOY_KEY` and `SUBDOMAIN`. Missing configuration, an incomplete scan, or a rejected
-request fails the deployment workflow instead of being hidden inside the frontend build.
+During a backend or full release, Nginx keeps `GET /deployment-status` available with a no-store
+JSON document containing `status`, `releaseId`, and `retryAfterSeconds`. All other school API
+requests receive a CORS-safe `503` maintenance envelope, except preflight requests, which receive
+`204`. The frontend enters its maintenance page after that typed `503`, after a failed API request
+whose status probe confirms maintenance, or when the initial status probe reports maintenance. It
+polls `/deployment-status` every 10 seconds while visible and reloads the page when the accepted release
+becomes ready. This intentionally discards an unsaved form because the newly accepted frontend and
+backend must start from a clean document.
+
+Backend releases wait for `/ready`, migration/status audits, and authenticated smoke before they can
+be accepted. Frontend promotion runs `npm run sync:menu-routes` through the VPS loopback with the
+server-only `DEPLOY_KEY` and `SUBDOMAIN`, promotes the exact Worker version ID recorded in the
+recovery manifest, and applies its routes. Acceptance verifies that exact active version, its
+immutable JavaScript/CSS assets, and a real browser mount. A same-SHA retry reuses the original
+Worker recovery manifest and backend image digest; it refuses to replace an orphaned candidate when
+the original rollback boundary cannot be proven. When a manifest is absent, the workflow scans the
+complete paginated Worker version inventory before deciding whether a new upload is safe. Reusable
+manifests are accepted only from the same
+coordinated workflow, trusted repository, main ref, and exact release SHA. Missing configuration, an
+incomplete scan, or a rejected request fails the release. A full release keeps maintenance active
+when any tenant promotion fails; the operator fixes forward and reruns the reviewed commit. The
+mutable registry `latest` tag and bounded local image cleanup move only after release acceptance.
 
 After deployment, verify readiness first, then run the smoke test and the relevant browser workflow with runtime credentials.
 
@@ -259,9 +295,10 @@ verified phase:
 ```
 
 The migration bootstraps the target, installs runtime configuration and Origin CA material,
-dispatches the two backend workflows followed by the two frontend workflows, and pins frontend
-deployment discovery, readiness, and menu synchronization to the selected origin until DNS is
-changed. It verifies both APIs directly with `curl --resolve` and pinned Origin CA trust, then
+dispatches backend-admin, frontend-admin, and one `full` school release, and pins school tenant
+discovery and verification to the selected origin until DNS is changed. Menu synchronization uses
+the backend-school VPS loopback while public DNS still points at the prior origin. The installer
+verifies both APIs directly with `curl --resolve` and pinned Origin CA trust, then
 prints the DNS diff and
 requires the exact phrase `CUTOVER <target-ip>` before one two-record Cloudflare batch. Public
 verification covers API identity, both frontends, authenticated SSE, and the File Platform. Only
@@ -385,7 +422,11 @@ Active tenant migrations begin at `backend-school/migrations/001_baseline.sql`. 
 
 New tenant provisioning calls the centralized runner in [`backend-school/src/db/migration.rs`](../backend-school/src/db/migration.rs), applies every pending active migration, and synchronizes the permission contract before creating the tenant administrator.
 
-Backend-school deployment keeps the school API in maintenance mode while it calls `/internal/migrate-all`. It then verifies `/internal/migration-status` reports every tenant at the repository's latest migration with no pending, failed, or outdated tenant. The normal proxy opens only after the authenticated read-only smoke succeeds; an absent `SCHOOL_API_KEEP_MAINTENANCE` variable defaults to maintenance.
+The coordinated school release keeps the school API in maintenance mode while it calls
+`/internal/migrate-all`. It then verifies `/internal/migration-status` reports every tenant at the
+repository's latest migration with no pending, failed, or outdated tenant. The normal proxy opens
+only after the authenticated read-only smoke and, for a full release, every staged frontend
+promotion succeeds.
 
 The one-time legacy rebaseline is complete and its operational scripts are retired. If a tenant with legacy `_sqlx_migrations` history is discovered, stop the rollout and prepare a new reviewed recovery plan. Never point the current release at that database, copy migration history, or edit SQLx checksum records.
 
@@ -401,25 +442,19 @@ Phase A reconciliation endpoint are retired and must not be restored.
 
 For the Phase B deployment:
 
-1. Keep `SCHOOL_API_KEEP_MAINTENANCE=true`. Confirm the protected pre-045 database snapshot still
-   exists, and do not delete it during deployment.
-2. Deploy the reviewed Phase B image. `/internal/migrate-all` applies every pending migration,
+1. Confirm the protected pre-045 database snapshot exists, and do not delete it during deployment.
+2. Dispatch the reviewed commit as a `full` school release. `/internal/migrate-all` applies every pending migration,
    including 045; do not invoke tenant migrations through another path.
 3. Require `/internal/migration-status` to report every tenant at the repository's latest version
    with no pending, failed, or outdated tenant. Each tenant's `academicCoreCutover` must report
    migration version 45, `cleanupCompleted`, `passed: true`, and only passing bounded checks.
-4. Verify generated API and permission contracts, `/ready`, and selected authenticated read-only
-   workflows in multiple year and term contexts. To run the private smoke while keeping maintenance,
-   dispatch the
-   reviewed commit with `academic_core_cleanup_smoke=true` and the selected
-   `academic_core_smoke_subdomain`. Credentials come only from `SMOKE_USERNAME` and
+4. Require generated API and permission contracts, `/ready`, and the authenticated read-only smoke
+   in the selected `academic_core_smoke_subdomain`. Credentials come only from `SMOKE_USERNAME` and
    `SMOKE_PASSWORD`; the workflow reaches backend-school through VPS loopback and exposes no public
    maintenance bypass.
-5. Keep maintenance active after a successful cleanup deployment until a separate go/no-go review.
-   On `go`, set `SCHOOL_API_KEEP_MAINTENANCE=false` and deploy the same reviewed Phase B commit.
-   The workflow reruns the authenticated smoke automatically, leaves maintenance in place on any
-   failure, and opens the normal proxy only in the following successful step. Record the first accepted
-   write as the snapshot rollback boundary.
+5. Treat approval to dispatch the reviewed full release as the go/no-go decision. The workflow keeps
+   maintenance active on any failure and opens the normal proxy only after every acceptance gate
+   passes. Record the first accepted write as the snapshot rollback boundary.
 
 Any migration, cleanup-audit, readiness, contract, or smoke failure keeps maintenance active. Before
 the first accepted write, rollback means restoring the protected snapshot and the matching pre-045
@@ -438,7 +473,7 @@ invariant.
 
 For the Release 2 deployment:
 
-1. Create and retain a protected snapshot, then keep `SCHOOL_API_KEEP_MAINTENANCE=true`.
+1. Create and retain a protected snapshot before dispatching the release.
 2. Use one reviewed commit for the migration, backend, contracts, frontend, and deployment gate.
    Dispatch the manual Neon compatibility workflow first; it must use a fresh disposable child
    branch and its direct non-pooled endpoint to run the migration-060 schema and status-audit tests.
@@ -450,7 +485,8 @@ For the Release 2 deployment:
 5. Require generated API and permission contracts, route/menu synchronization, `/ready`, and the
    authenticated read-only smoke to pass. The smoke samples at most two canonical term contexts and
    includes Gradebook subjects, learner-evaluation subjects, and result readiness.
-6. Open traffic only after an explicit go/no-go review. Record the first accepted write as the
+6. Treat the reviewed `full` release dispatch as the explicit go/no-go decision. The workflow opens
+   traffic automatically after every gate passes. Record the first accepted write as the
    protected-snapshot rollback boundary.
 
 Before the first accepted write, rollback restores the protected snapshot together with the matching
@@ -524,13 +560,13 @@ Configuration fails closed at startup for missing, placeholder, shared-bucket, o
 2. Check the configured public and private bucket names directly with `HeadBucket`, without requiring account-wide bucket-list access or printing credentials. Create `R2_PRIVATE_BUCKET_NAME` only when that exact private name is absent.
 3. Do not attach a public domain, public bucket policy, or `r2.dev` access to the private bucket. Verify `HeadBucket` succeeds for both buckets. Apply the private-bucket CORS policy for `https://*.schoolorbit.app` with `GET` and `HEAD`, then read the policy back before deployment continues.
 4. Start the pinned `docker.io/clamav/clamav-debian` runtime. Persist `/var/lib/clamav`, expose no host port, and wait for its healthcheck before backend-school.
-5. For a normal release, deploy backend-school only and wait for `/ready`. For
-   the File Platform contract cutover, the backend-school workflow first places
+5. For a backend-only release, select the `backend` scope and wait for `/ready`. For
+   the File Platform contract cutover, the coordinated school release first places
    school-api in maintenance mode, starts the cutover image, waits for
    `/ready`, migrates every active tenant, verifies every tenant reached the
    latest migration, and only then restores the normal proxy.
 
-The backend-school workflow performs exact-name checks before creation through the pinned AWS CLI image, validates and promotes the canonical production Compose definition, starts `schoolorbit-clamd` when required, and recreates `schoolorbit-backend-school`. It does not restart backend-admin or create a second production topology.
+The school release workflow performs exact-name checks before creation through the pinned AWS CLI image, validates and promotes the canonical production Compose definition, starts `schoolorbit-clamd` when required, and recreates `schoolorbit-backend-school`. It does not restart backend-admin or create a second production topology.
 
 To diagnose private browser delivery, request a fresh typed grant through the authenticated file-download endpoint and keep `data.url` in memory. Fetch that URL separately with the tenant `Origin`, credentials omitted, and referrer disabled. Confirm the R2 response includes a matching `Access-Control-Allow-Origin`; never print, persist, or paste the grant URL because its query string is a temporary bearer credential.
 
@@ -542,7 +578,7 @@ transactional preflight refuses to drop legacy columns when a logical file has
 no version, a ready file has no matching current version, or a legacy profile
 or achievement path lacks its file-ID replacement.
 
-The backend-school deployment workflow performs this cutover while the school
+The coordinated school release workflow performs this cutover while the school
 API returns a CORS-safe `503` maintenance response. It starts the new image,
 waits for `/ready`, calls the internal all-tenant migration endpoint, and
 restores normal traffic only when every active tenant reports the same latest

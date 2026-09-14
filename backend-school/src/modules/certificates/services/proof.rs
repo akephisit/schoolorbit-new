@@ -9,6 +9,7 @@ use crate::{error::AppError, utils::field_encryption};
 pub struct CertificateProof {
     encrypted: String,
     hash: String,
+    #[cfg(test)]
     plaintext: Zeroizing<String>,
 }
 
@@ -21,6 +22,7 @@ impl CertificateProof {
         &self.hash
     }
 
+    #[cfg(test)]
     pub fn plaintext(&self) -> &str {
         &self.plaintext
     }
@@ -47,6 +49,7 @@ pub fn generate_certificate_proof() -> Result<CertificateProof, AppError> {
     Ok(CertificateProof {
         encrypted,
         hash,
+        #[cfg(test)]
         plaintext,
     })
 }

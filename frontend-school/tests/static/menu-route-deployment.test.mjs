@@ -20,7 +20,7 @@ test('menu synchronization is an explicit fail-visible post-deployment step', as
 	const packageJson = JSON.parse(await readProjectFile('package.json'));
 	const workflows = await Promise.all([
 		readRepoFile('.github/workflows/deploy-school-tenant.yml'),
-		readRepoFile('.github/workflows/deploy-all-schools.yml')
+		readRepoFile('.github/workflows/deploy-school-release.yml')
 	]);
 
 	assert.equal(
@@ -33,11 +33,10 @@ test('menu synchronization is an explicit fail-visible post-deployment step', as
 		assert.doesNotMatch(workflow, /VITE_DEPLOY_KEY/);
 		assert.match(workflow, /name: Synchronize menu routes/);
 		assert.match(workflow, /DEPLOY_KEY:\s*\$\{\{\s*secrets\.DEPLOY_KEY\s*\}\}/);
-		assert.match(workflow, /run: npm run sync:menu-routes/);
+		assert.match(workflow, /npm run sync:menu-routes/);
 		assert.ok(
-			workflow.indexOf('cloudflare/wrangler-action') <
-				workflow.indexOf('run: npm run sync:menu-routes'),
-			'menu synchronization must run after the tenant deployment'
+			workflow.indexOf('cloudflare/wrangler-action') < workflow.indexOf('npm run sync:menu-routes'),
+			'menu synchronization must be an explicit release step'
 		);
 	}
 });

@@ -90,7 +90,7 @@ test('canonical file upload path is proxied without a trailing-slash redirect', 
 });
 
 test('backend deployment validates and installs the tracked school API proxy config', async () => {
-	const workflow = await readRepoFile('.github/workflows/deploy-backend-school.yml');
+	const workflow = await readRepoFile('.github/workflows/deploy-school-release.yml');
 
 	assert.match(workflow, /nginx-configs\/school-api\.conf\.template/);
 	assert.match(workflow, /nginx-configs\/school-api\.maintenance\.conf\.template/);

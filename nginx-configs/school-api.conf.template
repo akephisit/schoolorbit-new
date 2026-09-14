@@ -34,6 +34,24 @@ server {
     ssl_certificate /etc/nginx/ssl/schoolorbit-origin.pem;
     ssl_certificate_key /etc/nginx/ssl/schoolorbit-origin.key;
 
+    location = /deployment-status {
+        add_header 'Access-Control-Allow-Origin' $allow_origin always;
+        add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
+        add_header 'Cache-Control' 'no-store' always;
+
+        if ($request_method = 'OPTIONS') {
+            add_header 'Access-Control-Allow-Origin' $allow_origin always;
+            add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
+            add_header 'Access-Control-Max-Age' 600 always;
+            add_header 'Cache-Control' 'no-store' always;
+            add_header 'Content-Length' 0;
+            return 204;
+        }
+
+        default_type application/json;
+        return 200 '{"status":"${DEPLOYMENT_STATUS}","releaseId":"${RELEASE_ID}","retryAfterSeconds":10}';
+    }
+
     # ========================================
     # 🔥 GLOBAL FILE UPLOAD SETTINGS (สำคัญมาก!)
     # ========================================

@@ -33,14 +33,6 @@ impl<'a> ValidatedFile<'a> {
         self.inspection.detected_content()
     }
 
-    pub const fn dimensions(&self) -> Option<(u32, u32)> {
-        self.inspection.dimensions()
-    }
-
-    pub const fn canonical_extension(&self) -> &'static str {
-        self.inspection.canonical_extension()
-    }
-
     pub const fn canonical_mime_type(&self) -> &'static str {
         self.inspection.canonical_mime_type()
     }
@@ -66,25 +58,10 @@ impl InspectedFile {
         self.detected_content
     }
 
-    pub const fn dimensions(&self) -> Option<(u32, u32)> {
-        match &self.metadata {
-            FileInspectionMetadata::Image {
-                width_px,
-                height_px,
-            } => Some((*width_px, *height_px)),
-            _ => None,
-        }
-    }
-
-    pub const fn canonical_extension(&self) -> &'static str {
-        self.detected_content.canonical_extension()
-    }
-
     pub const fn canonical_mime_type(&self) -> &'static str {
         self.detected_content.mime_type()
     }
 
-    #[allow(dead_code)] // Task 6 consumes this staged inspection contract before derivatives.
     pub const fn is_image(&self) -> bool {
         matches!(
             self.detected_content,
@@ -901,20 +878,18 @@ mod tests {
     #[test]
     fn detects_supported_content_from_bytes_and_returns_canonical_metadata() {
         let cases = [
-            (ImageFormat::Png, DetectedContent::Png, "png"),
-            (ImageFormat::Jpeg, DetectedContent::Jpeg, "jpg"),
-            (ImageFormat::WebP, DetectedContent::Webp, "webp"),
+            (ImageFormat::Png, DetectedContent::Png),
+            (ImageFormat::Jpeg, DetectedContent::Jpeg),
+            (ImageFormat::WebP, DetectedContent::Webp),
         ];
 
-        for (format, content, extension) in cases {
+        for (format, content) in cases {
             let bytes = encoded_image(format, 2, 3);
             let inspection = inspect_file(FilePurpose::QuestionBankImage, &bytes)
                 .expect("valid image bytes must be inspected independently of multipart metadata");
 
             assert_eq!(inspection.detected_content(), content);
-            assert_eq!(inspection.canonical_extension(), extension);
             assert_eq!(inspection.canonical_mime_type(), content.mime_type());
-            assert_eq!(inspection.dimensions(), Some((2, 3)));
             assert_eq!(
                 inspection.metadata(),
                 &FileInspectionMetadata::Image {
@@ -1103,8 +1078,6 @@ mod tests {
             .expect("xref table, trailer root, and final startxref must be accepted");
 
         assert_eq!(inspection.detected_content(), DetectedContent::Pdf);
-        assert_eq!(inspection.canonical_extension(), "pdf");
-        assert_eq!(inspection.dimensions(), None);
     }
 
     #[test]

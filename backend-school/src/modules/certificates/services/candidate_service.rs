@@ -40,7 +40,6 @@ struct CampaignAccessRow {
 #[derive(Clone, Debug, FromRow)]
 struct TemplateRow {
     id: Uuid,
-    name: String,
     normalized_name: String,
     allowed_recipient_types: Vec<String>,
     is_active: bool,
@@ -666,26 +665,6 @@ pub async fn update_candidate(
     .await?;
     tx.commit().await.map_err(candidate_db_error)?;
     get_candidate(pool, actor, candidate_id).await
-}
-
-pub async fn confirm_external(
-    pool: &PgPool,
-    actor: &ActorContext,
-    candidate_id: Uuid,
-) -> Result<CertificateCandidateDetail, AppError> {
-    let outcome = bulk_update(
-        pool,
-        actor,
-        CertificateCandidateBulkRequest::ConfirmExternal {
-            candidate_ids: vec![candidate_id],
-        },
-    )
-    .await?;
-    outcome
-        .candidates
-        .into_iter()
-        .next()
-        .ok_or_else(candidate_not_found)
 }
 
 pub async fn delete_candidate(
@@ -1408,7 +1387,7 @@ async fn load_templates(
     campaign_id: Uuid,
 ) -> Result<Vec<TemplateRow>, AppError> {
     sqlx::query_as::<_, TemplateRow>(
-        "SELECT template.id, template.name, template.normalized_name,
+        "SELECT template.id, template.normalized_name,
                 template.allowed_recipient_types, template.is_active,
                 (template.background_file_id IS NOT NULL
                  AND background.lifecycle_status = 'ready'

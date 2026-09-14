@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 const root = resolve(import.meta.dirname, '../..');
-const workflow = await readFile(join(root, '.github/workflows/deploy-backend-school.yml'), 'utf8');
+const workflow = await readFile(join(root, '.github/workflows/deploy-school-release.yml'), 'utf8');
 const start = workflow.indexOf('            private_cors_origin=');
 const end = workflow.indexOf('            unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY', start);
 assert.ok(start >= 0 && end > start);

@@ -104,8 +104,6 @@ struct AssetRow {
 
 #[derive(Clone, Debug, FromRow)]
 struct UploadedFileRow {
-    file_id: Uuid,
-    display_filename: String,
     purpose_code: String,
     lifecycle_status: String,
     retention_class: String,
@@ -1211,7 +1209,7 @@ async fn load_uploaded_file(
     expected_purpose: &str,
 ) -> Result<UploadedFileRow, AppError> {
     let row = sqlx::query_as::<_, UploadedFileRow>(
-        "SELECT f.id AS file_id, f.display_filename, f.purpose_code,
+        "SELECT f.purpose_code,
                 f.lifecycle_status, f.retention_class,
                 f.inspection_metadata,
                 v.storage_status, v.scan_status
@@ -1362,20 +1360,6 @@ async fn validate_layout_asset_references(
         ));
     }
     Ok(())
-}
-
-pub(super) fn referenced_school_font_ids(layout: &CertificateLayoutV1) -> BTreeSet<Uuid> {
-    layout
-        .elements
-        .iter()
-        .filter_map(|element| match element {
-            CertificateElement::Text(text) => match text.font_source {
-                CertificateFontSource::SchoolFont { font_id } => Some(font_id),
-                CertificateFontSource::BuiltIn => None,
-            },
-            CertificateElement::Image(_) | CertificateElement::Qr(_) => None,
-        })
-        .collect()
 }
 
 async fn sync_school_font_references(

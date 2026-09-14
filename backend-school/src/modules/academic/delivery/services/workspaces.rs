@@ -123,16 +123,6 @@ struct WorkspaceTimetableVersionRow {
     effective_from: chrono::NaiveDate,
 }
 
-pub async fn homeroom_delivery_workspace(
-    pool: &PgPool,
-    academic_year_id: Uuid,
-    academic_term_id: Uuid,
-    filter: &AcademicResourceListFilter,
-) -> Result<HomeroomDeliveryWorkspace, AppError> {
-    homeroom_delivery_workspace_for_version(pool, academic_year_id, academic_term_id, None, filter)
-        .await
-}
-
 pub async fn homeroom_delivery_workspace_for_version(
     pool: &PgPool,
     academic_year_id: Uuid,

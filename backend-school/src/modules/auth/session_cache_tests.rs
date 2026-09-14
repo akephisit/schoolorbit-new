@@ -14,7 +14,6 @@ fn snapshot(now: chrono::DateTime<Utc>, user_id: Uuid) -> MaintainedSession {
     MaintainedSession {
         session_id: Uuid::nil(),
         user_id,
-        username: "test".into(),
         user_type: "staff".into(),
         presented_as: PresentedTokenKind::Current,
         remember_me: false,
@@ -438,8 +437,6 @@ async fn affected_permission_change_preserves_verified_rotation_cookie() {
                     if first {
                         cache.invalidate_identity_tenant("a");
                         row.replacement = Some(RawSessionToken::from_bytes([22; 32]));
-                    } else {
-                        row.username = "refreshed".into();
                     }
                     Ok(Some(row))
                 }
@@ -449,7 +446,6 @@ async fn affected_permission_change_preserves_verified_rotation_cookie() {
         .unwrap()
         .unwrap();
     assert_eq!(calls.load(Ordering::SeqCst), 2);
-    assert_eq!(row.username, "refreshed");
     assert_eq!(
         row.replacement.unwrap().token_hash().as_bytes(),
         replacement_hash.as_bytes()

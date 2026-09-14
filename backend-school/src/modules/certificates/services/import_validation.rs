@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use unicode_normalization::UnicodeNormalization;
 
@@ -67,13 +67,6 @@ impl StandardColumn {
             Self::TemplateName => "แบบเกียรติบัตร",
         }
     }
-
-    pub const fn is_renderable(self) -> bool {
-        matches!(
-            self,
-            Self::Title | Self::FirstName | Self::LastName | Self::ActivityItem | Self::AwardOrRole
-        )
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -140,7 +133,6 @@ impl ImportRowValidationOutcome {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum VariableInterpolationError {
     InvalidSyntax,
-    UnknownVariable(String),
 }
 
 pub fn classify_header(header: &str) -> HeaderClass {
@@ -364,13 +356,6 @@ pub fn parse_recipient_type(value: &str) -> Option<RecipientType> {
     }
 }
 
-pub fn recipient_type_is_allowed(
-    recipient_type: RecipientType,
-    allowed_recipient_types: &[RecipientType],
-) -> bool {
-    allowed_recipient_types.contains(&recipient_type)
-}
-
 pub fn normalize_name_for_match(value: &str) -> String {
     normalized_comparison_key(value)
 }
@@ -419,44 +404,6 @@ pub fn referenced_variables(content: &str) -> Result<Vec<String>, VariableInterp
         return Err(VariableInterpolationError::InvalidSyntax);
     }
     Ok(variables)
-}
-
-pub fn interpolate_plain_text(
-    content: &str,
-    values: &BTreeMap<String, String>,
-) -> Result<String, VariableInterpolationError> {
-    let normalized_values = values
-        .iter()
-        .map(|(key, value)| (normalized_comparison_key(key), value))
-        .collect::<BTreeMap<_, _>>();
-    let mut output = String::with_capacity(content.len());
-    let mut cursor = 0;
-    while let Some(relative_start) = content[cursor..].find('{') {
-        let start = cursor + relative_start;
-        if content[cursor..start].contains('}') {
-            return Err(VariableInterpolationError::InvalidSyntax);
-        }
-        output.push_str(&content[cursor..start]);
-        let value_start = start + 1;
-        let Some(relative_end) = content[value_start..].find('}') else {
-            return Err(VariableInterpolationError::InvalidSyntax);
-        };
-        let end = value_start + relative_end;
-        let display = normalize_display_text(&content[value_start..end]);
-        if display.is_empty() || display.contains(['{', '}']) {
-            return Err(VariableInterpolationError::InvalidSyntax);
-        }
-        let value = normalized_values
-            .get(&normalized_comparison_key(&display))
-            .ok_or_else(|| VariableInterpolationError::UnknownVariable(display.clone()))?;
-        output.push_str(value);
-        cursor = end + 1;
-    }
-    if content[cursor..].contains('}') {
-        return Err(VariableInterpolationError::InvalidSyntax);
-    }
-    output.push_str(&content[cursor..]);
-    Ok(output)
 }
 
 pub fn normalize_display_text(value: &str) -> String {
@@ -523,15 +470,11 @@ mod tests {
     use std::collections::BTreeMap;
 
     use crate::modules::certificates::{
-        models::{
-            CertificateImportRequest, CertificateImportRowInput, CertificateImportSource,
-            RecipientType,
-        },
+        models::{CertificateImportRequest, CertificateImportRowInput, CertificateImportSource},
         services::import_validation::{
-            classify_header, interpolate_plain_text, normalize_name_for_match,
-            recipient_type_is_allowed, validate_import_headers, validate_import_request,
-            validate_import_row, variable_catalog, HeaderClass, ImportHeaderError,
-            ImportRequestError, ImportRowIssue, StandardColumn,
+            classify_header, normalize_name_for_match, validate_import_headers,
+            validate_import_request, validate_import_row, variable_catalog, HeaderClass,
+            ImportHeaderError, ImportRequestError, ImportRowIssue, StandardColumn,
         },
     };
 
@@ -612,43 +555,11 @@ mod tests {
     }
 
     #[test]
-    fn normalizes_names_and_interpolates_only_known_plain_text_variables() {
+    fn normalizes_names_for_matching() {
         assert_eq!(
             normalize_name_for_match("  JOSE\u{301}   SMITH "),
             normalize_name_for_match("josé smith")
         );
-
-        let values = BTreeMap::from([
-            ("ชื่อ".to_string(), "<กมล>".to_string()),
-            ("รางวัลหรือบทบาท".to_string(), "วิทยากร".to_string()),
-        ]);
-        assert_eq!(
-            interpolate_plain_text("มอบให้ {ชื่อ} ในฐานะ {รางวัลหรือบทบาท}", &values).unwrap(),
-            "มอบให้ <กมล> ในฐานะ วิทยากร"
-        );
-        assert!(interpolate_plain_text("{ตัวแปรที่ไม่มี}", &values).is_err());
-        assert!(interpolate_plain_text("วงเล็บเกิน } {ชื่อ}", &values).is_err());
-    }
-
-    #[test]
-    fn recipient_template_compatibility_is_exact_for_every_type() {
-        let all = [
-            RecipientType::Student,
-            RecipientType::Staff,
-            RecipientType::External,
-        ];
-        for recipient in all {
-            for allowed in all {
-                assert_eq!(
-                    recipient_type_is_allowed(recipient, &[allowed]),
-                    recipient == allowed
-                );
-            }
-        }
-        assert!(recipient_type_is_allowed(
-            RecipientType::External,
-            &[RecipientType::Student, RecipientType::External]
-        ));
     }
 
     fn external_row() -> CertificateImportRowInput {

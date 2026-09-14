@@ -24,13 +24,6 @@ pub struct SupervisionTargetMatch {
     pub organization_unit_ids: Vec<Uuid>,
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq)]
-pub struct EvaluatorRatingInput {
-    pub submitted: bool,
-    pub rating_scores: Vec<Option<f64>>,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EvaluatorSubmissionState {
     pub is_required: bool,
@@ -142,28 +135,6 @@ pub(super) fn has_required_evaluator(evaluators: &[EvaluatorAssignmentInput]) ->
     evaluators
         .iter()
         .any(|evaluator| evaluator.is_required.unwrap_or(true))
-}
-
-#[allow(dead_code)]
-pub fn average_submitted_evaluator_rating(inputs: &[EvaluatorRatingInput]) -> Option<f64> {
-    let evaluator_averages = inputs
-        .iter()
-        .filter(|input| input.submitted)
-        .filter_map(|input| {
-            let ratings: Vec<f64> = input.rating_scores.iter().flatten().copied().collect();
-            if ratings.is_empty() {
-                None
-            } else {
-                Some(ratings.iter().sum::<f64>() / ratings.len() as f64)
-            }
-        })
-        .collect::<Vec<_>>();
-
-    if evaluator_averages.is_empty() {
-        return None;
-    }
-
-    Some(evaluator_averages.iter().sum::<f64>() / evaluator_averages.len() as f64)
 }
 
 pub fn can_view_observation_results(
@@ -481,26 +452,6 @@ mod tests {
         assert!(retained
             .iter()
             .any(|evaluator| evaluator.evaluator_user_id == requested_user_id));
-    }
-    #[test]
-    fn average_rating_uses_equal_submitted_evaluator_weights() {
-        let evaluator_a = EvaluatorRatingInput {
-            submitted: true,
-            rating_scores: vec![Some(5.0), Some(5.0)],
-        };
-        let evaluator_b = EvaluatorRatingInput {
-            submitted: true,
-            rating_scores: vec![Some(1.0), None],
-        };
-        let evaluator_c = EvaluatorRatingInput {
-            submitted: false,
-            rating_scores: vec![Some(5.0)],
-        };
-
-        let average = average_submitted_evaluator_rating(&[evaluator_a, evaluator_b, evaluator_c])
-            .expect("submitted rating average");
-
-        assert!((average - 3.0).abs() < f64::EPSILON);
     }
     #[test]
     fn observation_results_release_after_academic_approval_for_regular_readers() {

@@ -32,7 +32,6 @@ type ValidationKey = (String, Uuid, Uuid);
 struct CachedAuthentication {
     session_id: Uuid,
     user_id: Uuid,
-    username: String,
     user_type: String,
     remember_me: bool,
     rotated_at: DateTime<Utc>,
@@ -46,7 +45,6 @@ impl CachedAuthentication {
         Self {
             session_id: row.session_id,
             user_id: row.user_id,
-            username: row.username.clone(),
             user_type: row.user_type.clone(),
             remember_me: row.remember_me,
             rotated_at: row.rotated_at,
@@ -72,7 +70,6 @@ impl CachedAuthentication {
         MaintainedSession {
             session_id: self.session_id,
             user_id: self.user_id,
-            username: self.username,
             user_type: self.user_type,
             presented_as: PresentedTokenKind::Current,
             remember_me: self.remember_me,

@@ -4878,12 +4878,14 @@ async fn purging_campaign_hides_issued_surfaces_and_blocks_issue_and_revoke() {
         .await,
         Err(AppError::NotFound(_))
     ));
-    let public_render_error = render_service::public_manifest(
+    let public_render_error = render_service::public_manifest_rate_limited(
         &pool,
         &failing_platform,
         "sandbox",
         "schoolorbit.test",
         tenant_id,
+        "127.0.0.1".parse().unwrap(),
+        &crate::modules::certificates::verification_limiter::CertificateVerificationLimiter::new(),
         &public_receipt,
     )
     .await
@@ -5102,11 +5104,6 @@ async fn matched_accounts_cannot_become_external_in_single_or_bulk_flows() {
     let candidate = &imported.candidates[0];
     assert_eq!(candidate.matched_user_id, Some(student_user_id));
 
-    assert!(
-        candidate_service::confirm_external(&pool, &actor, candidate.id)
-            .await
-            .is_err()
-    );
     assert!(candidate_service::bulk_update(
         &pool,
         &actor,
@@ -5406,16 +5403,30 @@ async fn candidate_matching_decision_table_recomputes_names_accounts_and_statuse
     let inactive = &imported.candidates[2];
     assert_eq!(inactive.matched_user_id, Some(inactive_id));
     assert_eq!(inactive.match_status, CandidateMatchStatus::Inactive);
-    assert!(
-        candidate_service::confirm_external(&pool, &actor, inactive.id)
-            .await
-            .is_err()
-    );
+    assert!(candidate_service::bulk_update(
+        &pool,
+        &actor,
+        CertificateCandidateBulkRequest::ConfirmExternal {
+            candidate_ids: vec![inactive.id],
+        },
+    )
+    .await
+    .is_err());
 
     let unmatched = &imported.candidates[3];
-    let converted = candidate_service::confirm_external(&pool, &actor, unmatched.id)
-        .await
-        .unwrap();
+    let converted = candidate_service::bulk_update(
+        &pool,
+        &actor,
+        CertificateCandidateBulkRequest::ConfirmExternal {
+            candidate_ids: vec![unmatched.id],
+        },
+    )
+    .await
+    .unwrap()
+    .candidates
+    .into_iter()
+    .next()
+    .unwrap();
     assert_eq!(converted.recipient_type, RecipientType::External);
     assert_eq!(
         converted.match_status,
@@ -5918,7 +5929,14 @@ async fn concurrent_account_creation_is_ordered_before_external_confirmation() {
     let confirm_pool = pool.clone();
     let confirm_actor = actor.clone();
     let confirmation = tokio::spawn(async move {
-        candidate_service::confirm_external(&confirm_pool, &confirm_actor, candidate_id).await
+        candidate_service::bulk_update(
+            &confirm_pool,
+            &confirm_actor,
+            CertificateCandidateBulkRequest::ConfirmExternal {
+                candidate_ids: vec![candidate_id],
+            },
+        )
+        .await
     });
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert!(

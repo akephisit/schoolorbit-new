@@ -103,11 +103,7 @@ impl ExamSessionRow {
 struct ExamScheduleItemPlacementContext {
     id: Uuid,
     exam_round_id: Uuid,
-    academic_term_id: Uuid,
-    assessment_phase_id: Uuid,
-    course_assessment_plan_id: Uuid,
     homeroom_id: Uuid,
-    subject_id: Uuid,
     grade_level_id: Uuid,
     duration_minutes: i32,
 }
@@ -440,14 +436,7 @@ async fn fetch_schedule_item_placement_context(
         r#"
         SELECT item.id,
                item.exam_round_id,
-               item.academic_term_id,
-               item.academic_year_id,
-               item.assessment_phase_id,
-               item.course_assessment_plan_id,
-               item.learning_offering_id,
-               item.learning_group_id,
                item.homeroom_id,
-               item.subject_id,
                item.grade_level_id,
                item.duration_minutes
         FROM academic_exam_schedule_items item

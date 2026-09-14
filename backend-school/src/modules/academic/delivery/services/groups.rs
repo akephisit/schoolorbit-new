@@ -9,9 +9,9 @@ use crate::policies::resource_access_policy::AcademicResourceListFilter;
 
 use super::super::models::{
     ActivityRegistrationType, ApplyRosterRequest, CreateLearningGroupRequest,
-    CurriculumGroupProposal, LearningGroup, LearningGroupRow, LearningGroupStudent,
-    LearningGroupStudentRow, LearningGroupTeacherAssignment, LearningOfferingKind,
-    LearningOfferingStatus, PublishRosterRequest, ReplaceLearningGroupHomeroomsRequest,
+    CurriculumGroupProposal, LearningGroup, LearningGroupRow, LearningGroupStudentRow,
+    LearningGroupTeacherAssignment, LearningOfferingKind, LearningOfferingStatus,
+    PublishRosterRequest, ReplaceLearningGroupHomeroomsRequest,
     ReplaceLearningGroupTeachersRequest, RosterOverrideAction, RosterPreview, RosterPreviewStudent,
     RosterStatus, TeacherAssignmentInput, UpdateLearningGroupRequest,
 };
@@ -493,24 +493,6 @@ pub async fn replace_homerooms(
     )
     .await?;
     get(pool, id).await
-}
-
-pub async fn list_students(
-    pool: &PgPool,
-    group_id: Uuid,
-) -> Result<Vec<LearningGroupStudent>, AppError> {
-    get(pool, group_id).await?;
-    let rows: Vec<LearningGroupStudentRow> = sqlx::query_as(
-        r#"SELECT id, learning_group_id, student_academic_year_id, student_id,
-                  membership_status, roster_source, joined_at, left_at,
-                  published_at, row_version
-           FROM learning_group_students WHERE learning_group_id = $1
-           ORDER BY student_id, joined_at, id"#,
-    )
-    .bind(group_id)
-    .fetch_all(pool)
-    .await?;
-    Ok(rows.into_iter().map(Into::into).collect())
 }
 
 pub async fn preview_roster(pool: &PgPool, group_id: Uuid) -> Result<RosterPreview, AppError> {

@@ -77,8 +77,6 @@ struct CampaignRow {
     academic_year_id: Uuid,
     academic_year_value: i32,
     owner_organization_unit_id: Option<Uuid>,
-    name: String,
-    event_date: NaiveDate,
     status: String,
     activity_sequence: Option<i32>,
     next_certificate_sequence: i32,
@@ -1149,7 +1147,7 @@ async fn lock_campaign(
     sqlx::query_as::<_, CampaignRow>(
         "SELECT campaign.id, campaign.academic_year_id,
                 academic_year.year AS academic_year_value,
-                campaign.owner_organization_unit_id, campaign.name, campaign.event_date,
+                campaign.owner_organization_unit_id,
                 campaign.status, campaign.activity_sequence,
                 campaign.next_certificate_sequence
          FROM certificate_campaigns campaign

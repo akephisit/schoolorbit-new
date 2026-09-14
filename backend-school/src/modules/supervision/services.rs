@@ -7,8 +7,9 @@ mod shared;
 mod templates;
 mod term_preparation;
 
-#[allow(unused_imports)]
-pub use cycles::{create_cycle, get_cycle, list_cycles, update_cycle};
+#[cfg(test)]
+pub use cycles::get_cycle;
+pub use cycles::{create_cycle, list_cycles, update_cycle};
 pub use evaluations::{replace_observation_evaluators, submit_my_evaluation};
 pub(crate) use lifecycle::pending_term_work;
 pub use observations::{
@@ -21,13 +22,9 @@ pub use reviews_and_reports::{
     acknowledge_observation, approve_observation, certify_observation, cycle_progress,
     cycle_teacher_status, get_observation_review,
 };
-#[allow(unused_imports)]
 pub use shared::{
-    all_required_evaluators_submitted, average_submitted_evaluator_rating,
-    can_transition_observation_status, can_view_observation_results,
-    evaluator_conflict_status_codes, manager_can_edit_observation, resolve_supervision_target_rule,
-    teacher_can_edit_requested_observation, EvaluatorRatingInput, EvaluatorSubmissionState,
-    SupervisionObservationListAccess, SupervisionTargetMatch, SupervisionTargetRule,
+    can_view_observation_results, teacher_can_edit_requested_observation,
+    SupervisionObservationListAccess,
 };
 pub use templates::{create_template, get_template, list_templates, update_template};
 pub(crate) use term_preparation::apply as apply_term_preparation;

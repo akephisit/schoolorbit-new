@@ -16,6 +16,10 @@ on:
         required: true
         type: string
 
+concurrency:
+  group: school-production-release
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest

@@ -21,7 +21,7 @@ use crate::{
     },
     test_helpers::{create_named_test_pool, run_test_migrations},
     utils::{
-        subdomain::{parse_realtime_tenant_hint, TenantOriginPolicy},
+        subdomain::{parse_realtime_tenant_hint, TenantOriginPolicy, SCHOOL_SUBDOMAIN_HEADER},
         tenant::TenantContext,
     },
 };
@@ -126,18 +126,12 @@ impl HandlerFixture {
         token
     }
 
-    fn authenticated(
-        &self,
-        user_id: Uuid,
-        session_id: Uuid,
-        username: &str,
-    ) -> AuthenticatedSession {
+    fn authenticated(&self, user_id: Uuid, session_id: Uuid) -> AuthenticatedSession {
         AuthenticatedSession {
             identity_cache: Arc::clone(&self.runtime.permission_cache.session_cache),
             tenant: self.tenant.clone(),
             session_id,
             user_id,
-            username: username.to_string(),
             user_type: "staff".to_string(),
         }
     }
@@ -245,15 +239,18 @@ fn logout_expires_new_and_legacy_cookies() {
 #[test]
 fn unsafe_origin_must_equal_the_resolved_tenant_origin() {
     let policy = TenantOriginPolicy::for_tests("schoolorbit.app", []);
-    assert!(policy
-        .validate("https://demo.schoolorbit.app", "demo")
-        .is_ok());
-    assert!(policy
-        .validate("https://other.schoolorbit.app", "demo")
-        .is_err());
-    assert!(policy
-        .validate("https://demo.schoolorbit.app.evil.test", "demo")
-        .is_err());
+    let resolve = |origin: &'static str, tenant: &'static str| {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::ORIGIN, HeaderValue::from_static(origin));
+        headers.insert(SCHOOL_SUBDOMAIN_HEADER, HeaderValue::from_static(tenant));
+        policy.resolve_tenant(&headers, None)
+    };
+    assert_eq!(
+        resolve("https://demo.schoolorbit.app", "demo").unwrap(),
+        "demo"
+    );
+    assert!(resolve("https://other.schoolorbit.app", "demo").is_err());
+    assert!(resolve("https://demo.schoolorbit.app.evil.test", "demo").is_err());
 }
 
 #[test]
@@ -649,7 +646,7 @@ async fn protected_mutation_headers_follow_committed_results() {
     fixture
         .insert_session(foreign_user_id, foreign_id, 53)
         .await;
-    let session = fixture.authenticated(user_id, current_id, username);
+    let session = fixture.authenticated(user_id, current_id);
 
     let app = Router::new()
         .route("/me", get(me))
@@ -839,11 +836,7 @@ async fn protected_mutation_headers_follow_committed_results() {
     fixture.insert_session(user_id, logout_all_id, 54).await;
     let logout_all_app = Router::new()
         .route("/logout-all", post(logout_all))
-        .layer(Extension(fixture.authenticated(
-            user_id,
-            logout_all_id,
-            username,
-        )))
+        .layer(Extension(fixture.authenticated(user_id, logout_all_id)))
         .with_state(fixture.runtime.clone());
     let logout_all_response = logout_all_app
         .oneshot(
@@ -862,11 +855,7 @@ async fn protected_mutation_headers_follow_committed_results() {
     fixture.insert_session(user_id, unavailable_id, 55).await;
     let unavailable_app = Router::new()
         .route("/logout-all", post(logout_all))
-        .layer(Extension(fixture.authenticated(
-            user_id,
-            unavailable_id,
-            username,
-        )))
+        .layer(Extension(fixture.authenticated(user_id, unavailable_id)))
         .with_state(fixture.runtime.clone());
     fixture.pool.close().await;
     let unavailable = unavailable_app

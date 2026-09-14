@@ -1802,12 +1802,14 @@ test('tenant routing uses Origin by default with explicit X-School-Subdomain ove
 	assert.match(smokeTest, /access-control-allow-headers[\s\S]*x-school-subdomain/);
 });
 
-test('frontend application code routes backend API calls through apiClient', async () => {
+test('frontend application code routes business API calls through apiClient', async () => {
 	const frontendFiles = await listFiles(path.join(repoRoot, 'frontend-school/src'), (file) =>
 		/\.(svelte|ts)$/.test(file)
 	);
+	const deploymentStatusPath = 'frontend-school/src/lib/deployment/maintenance.ts';
 	const allowedFetchFiles = new Set([
 		'frontend-school/src/lib/api/client.ts',
+		deploymentStatusPath,
 		'frontend-school/src/lib/utils/pdf.ts',
 		'frontend-school/src/service-worker.ts'
 	]);
@@ -1824,6 +1826,12 @@ test('frontend application code routes backend API calls through apiClient', asy
 	}
 
 	assert.deepEqual(violations, []);
+
+	const deploymentStatus = await readFile(path.join(repoRoot, deploymentStatusPath), 'utf8');
+	assert.equal(deploymentStatus.match(/\bfetch\s*\(/g)?.length, 1);
+	assert.match(deploymentStatus, /fetch\(`\$\{backendUrl\}\/deployment-status`/);
+	assert.match(deploymentStatus, /credentials:\s*'omit'/);
+	assert.match(deploymentStatus, /cache:\s*'no-store'/);
 });
 
 test('web push notifications favor fresh visible Android notifications', async () => {

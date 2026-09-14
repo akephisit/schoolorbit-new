@@ -91,7 +91,6 @@ struct CampaignRow {
 
 #[derive(Debug, FromRow)]
 struct SubmissionCandidateRow {
-    id: Uuid,
     campaign_id: Uuid,
     template_id: Option<Uuid>,
     recipient_type: String,
@@ -777,7 +776,7 @@ async fn lock_submission_candidates(
     candidate_ids: &[Uuid],
 ) -> Result<Vec<SubmissionCandidateRow>, AppError> {
     sqlx::query_as::<_, SubmissionCandidateRow>(
-        "SELECT candidate.id, candidate.campaign_id, candidate.template_id,
+        "SELECT candidate.campaign_id, candidate.template_id,
                 candidate.recipient_type, candidate.matched_user_id,
                 candidate.lookup_student_id, candidate.lookup_staff_username,
                 candidate.selected_name_source, candidate.match_status,

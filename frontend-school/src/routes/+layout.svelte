@@ -5,6 +5,12 @@
 	import { onMount } from 'svelte';
 	import InstallPrompt from '$lib/components/pwa/InstallPrompt.svelte';
 	import IOSInstallPrompt from '$lib/components/pwa/IOSInstallPrompt.svelte';
+	import MaintenancePage from '$lib/components/app-state/MaintenancePage.svelte';
+	import {
+		deploymentState,
+		startDeploymentMonitor,
+		stopDeploymentMonitor
+	} from '$lib/deployment/maintenance';
 	import { initPWA } from '$lib/stores/pwa';
 
 	let { children } = $props();
@@ -12,6 +18,12 @@
 	// Initialize PWA listeners once
 	onMount(() => {
 		initPWA();
+		document.documentElement.dataset.schoolorbitAppMounted = 'true';
+		void startDeploymentMonitor();
+		return () => {
+			delete document.documentElement.dataset.schoolorbitAppMounted;
+			stopDeploymentMonitor();
+		};
 	});
 
 	// Force light theme for public pages (landing, login)
@@ -55,13 +67,17 @@
 	<meta name="twitter:image" content={`${page.url.origin}/icon-192.png`} />
 </svelte:head>
 
-<!-- Sonner Toaster for global notifications -->
-<Toaster position="bottom-right" richColors />
+{#if $deploymentState.status === 'maintenance'}
+	<MaintenancePage releaseId={$deploymentState.releaseId} />
+{:else}
+	<!-- Sonner Toaster for global notifications -->
+	<Toaster position="bottom-right" richColors />
 
-<!-- PWA Install Prompt (Android/Desktop) -->
-<InstallPrompt />
+	<!-- PWA Install Prompt (Android/Desktop) -->
+	<InstallPrompt />
 
-<!-- iOS Install Prompt (Safari) -->
-<IOSInstallPrompt />
+	<!-- iOS Install Prompt (Safari) -->
+	<IOSInstallPrompt />
 
-{@render children()}
+	{@render children()}
+{/if}

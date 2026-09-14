@@ -17,8 +17,6 @@ pub enum CertificateAction {
     Update,
     Delete,
     Submit,
-    Issue,
-    Revoke,
     Download,
 }
 
@@ -33,25 +31,10 @@ pub struct CertificateAccessGrant {
     pub scope: CertificateAccessScope,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct CertificateCampaignAccessTarget {
-    pub campaign_id: Uuid,
-    pub owner_organization_unit_id: Option<Uuid>,
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CertificateOwnerListScope {
     ExactUnits(Vec<Uuid>),
     School,
-}
-
-pub async fn require_campaign_action(
-    pool: &PgPool,
-    actor: &ActorContext,
-    campaign: &CertificateCampaignAccessTarget,
-    action: CertificateAction,
-) -> Result<CertificateAccessGrant, AppError> {
-    require_owner_action(pool, actor, campaign.owner_organization_unit_id, action).await
 }
 
 pub async fn require_template_action(
@@ -150,14 +133,6 @@ fn action_permissions(action: CertificateAction) -> ActionPermissions {
         CertificateAction::Submit => ActionPermissions {
             organization_unit: Some(codes::CERTIFICATE_SUBMIT_ORGANIZATION_UNIT),
             school: codes::CERTIFICATE_SUBMIT_SCHOOL,
-        },
-        CertificateAction::Issue => ActionPermissions {
-            organization_unit: None,
-            school: codes::CERTIFICATE_ISSUE_SCHOOL,
-        },
-        CertificateAction::Revoke => ActionPermissions {
-            organization_unit: None,
-            school: codes::CERTIFICATE_REVOKE_SCHOOL,
         },
         CertificateAction::Download => ActionPermissions {
             organization_unit: Some(codes::CERTIFICATE_DOWNLOAD_ORGANIZATION_UNIT),

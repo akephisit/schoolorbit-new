@@ -58,9 +58,8 @@ _github_expected_title() {
     local workflow=$1 deployment_id=$2
     case "$workflow" in
         deploy-backend-admin.yml) printf 'Deploy Backend Admin (%s)\n' "$deployment_id" ;;
-        deploy-backend-school.yml) printf 'Deploy Backend School (%s)\n' "$deployment_id" ;;
         deploy-frontend-admin.yml) printf 'Deploy Frontend Admin (%s)\n' "$deployment_id" ;;
-        deploy-all-schools.yml) printf 'Deploy Frontend Schools (%s)\n' "$deployment_id" ;;
+        deploy-school-release.yml) printf 'Deploy School Release (%s)\n' "$deployment_id" ;;
         *) die 64 'Unsupported deployment workflow' ;;
     esac
 }
@@ -83,8 +82,11 @@ github_dispatch_and_wait() {
         --ref "${SO_CONFIG[ref]}"
         -f "deployment_id=$deployment_id"
     )
-    if [[ $workflow == deploy-all-schools.yml ]]; then
-        dispatch_args+=(-f "target_origin_ip=${SO_CONFIG[target]}")
+    if [[ $workflow == deploy-school-release.yml ]]; then
+        dispatch_args+=(
+            -f "release_scope=full"
+            -f "target_origin_ip=${SO_CONFIG[target]}"
+        )
     fi
     gh "${dispatch_args[@]}" >/dev/null || die 69 "Unable to dispatch $workflow" || return
 

@@ -59,6 +59,36 @@ fn read_source(path: impl AsRef<Path>) -> String {
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.as_ref().display()))
 }
 
+#[test]
+fn backend_source_does_not_suppress_dead_code_or_unused_imports() {
+    let allow_attribute = Regex::new(r"(?s)#\s*!?\s*\[\s*allow\s*\(([^)]*)\)\s*\]")
+        .expect("allow attribute regex should compile");
+    let forbidden_lints = ["dead_code", "unused_imports"];
+    let mut violations = Vec::new();
+
+    for file in list_files(manifest_dir().join("src"), |path| {
+        path.extension().is_some_and(|extension| extension == "rs")
+    }) {
+        let source = read_source(&file);
+        for captures in allow_attribute.captures_iter(&source) {
+            let Some(lints) = captures.get(1) else {
+                continue;
+            };
+            for lint in lints.as_str().split(',').map(str::trim) {
+                if forbidden_lints.contains(&lint) {
+                    violations.push(format!("{}: allow({lint})", relative(&file)));
+                }
+            }
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "backend source must fix dead code and unused imports instead of suppressing them:\n{}",
+        violations.join("\n")
+    );
+}
+
 fn assert_typed_session_handlers(paths: &[&str]) {
     for path in paths {
         let source = read_source(manifest_dir().join(path));
@@ -300,13 +330,10 @@ fn supervision_service_facade_is_thin_and_preserves_public_surface() {
 
     for public_item in [
         "acknowledge_observation",
-        "all_required_evaluators_submitted",
         "approve_observation",
         "approve_observation_request",
-        "average_submitted_evaluator_rating",
         "cancel_observation",
         "cancel_requested_observation",
-        "can_transition_observation_status",
         "can_view_observation_results",
         "certify_observation",
         "create_cycle",
@@ -314,7 +341,6 @@ fn supervision_service_facade_is_thin_and_preserves_public_surface() {
         "cycle_progress",
         "cycle_teacher_status",
         "evaluator_availability",
-        "evaluator_conflict_status_codes",
         "get_cycle",
         "get_observation",
         "get_observation_review",
@@ -322,11 +348,9 @@ fn supervision_service_facade_is_thin_and_preserves_public_surface() {
         "list_cycles",
         "list_observations",
         "list_templates",
-        "manager_can_edit_observation",
         "observation_timetable_options",
         "replace_observation_evaluators",
         "request_observation",
-        "resolve_supervision_target_rule",
         "return_observation_request",
         "submit_my_evaluation",
         "teacher_can_edit_requested_observation",
@@ -4937,8 +4961,7 @@ fn recurring_healthchecks_use_liveness_while_deployment_and_smoke_use_readiness(
     let local_compose = read_source(repo_root().join("compose.local.yml"));
     let podman_compose = read_source(repo_root().join("podman-compose.yml"));
     let school_deploy =
-        read_source(repo_root().join(".github/workflows/deploy-backend-school.yml"));
-    let frontend_deploy = read_source(repo_root().join(".github/workflows/deploy-all-schools.yml"));
+        read_source(repo_root().join(".github/workflows/deploy-school-release.yml"));
     let admin_deploy = read_source(repo_root().join(".github/workflows/deploy-backend-admin.yml"));
     let smoke = read_source(repo_root().join("scripts/smoke_test.sh"));
 
@@ -4981,9 +5004,10 @@ fn recurring_healthchecks_use_liveness_while_deployment_and_smoke_use_readiness(
     assert!(admin_deploy.contains("seq 1 12"));
     assert!(school_deploy.contains("timeout 180 bash -c"));
     assert!(admin_deploy.contains("timeout 180 bash -c"));
-    assert!(frontend_deploy.contains("BACKEND_SCHOOL_URL: ${{ vars.BACKEND_SCHOOL_URL }}"));
-    assert!(frontend_deploy.contains("${BACKEND_SCHOOL_URL%/}/ready"));
-    assert!(frontend_deploy.contains(r#".filePlatform == "ready""#));
+    assert!(school_deploy.contains("BACKEND_SCHOOL_URL: ${{ vars.BACKEND_SCHOOL_URL }}"));
+    assert!(school_deploy.contains("127.0.0.1:18081:127.0.0.1:8081"));
+    assert!(school_deploy.contains("http://127.0.0.1:18081/health"));
+    assert!(school_deploy.contains(r#".filePlatform == "ready""#));
     assert!(smoke.contains("$SMOKE_ADMIN_API_URL/ready"));
     assert!(smoke.contains("$SMOKE_API_URL/ready"));
 }
@@ -5014,16 +5038,15 @@ fn scheduled_jobs_never_trigger_lazy_tenant_migrations() {
 }
 
 #[test]
-fn backend_school_deploy_can_finish_in_maintenance_mode() {
-    let deploy = read_source(repo_root().join(".github/workflows/deploy-backend-school.yml"));
+fn coordinated_school_release_keeps_maintenance_until_acceptance() {
+    let deploy = read_source(repo_root().join(".github/workflows/deploy-school-release.yml"));
 
-    assert!(deploy.contains(
-        "SCHOOL_API_KEEP_MAINTENANCE: ${{ vars.SCHOOL_API_KEEP_MAINTENANCE || 'true' }}"
-    ));
-    assert!(deploy.contains("envs: SCHOOL_API_KEEP_MAINTENANCE"));
-    assert!(deploy.contains("keep_school_api_maintenance=${SCHOOL_API_KEEP_MAINTENANCE:-true}"));
     assert!(deploy
         .contains("School API remains in maintenance until the authenticated smoke completes"));
+    assert!(deploy.contains("needs.promote-frontends.result == 'success'"));
+    assert!(deploy.contains("Open accepted School API release"));
+    assert!(deploy.contains("Public release smoke failed; maintenance restored"));
+    assert!(!deploy.contains("SCHOOL_API_KEEP_MAINTENANCE"));
     assert!(deploy.contains(".academicCoreCutover.migrationVersion == 45"));
     assert!(deploy.contains(".academicCoreCutover.status == \"cleanupCompleted\""));
     assert!(deploy.contains(".academicCoreCutover.passed == true"));
@@ -5035,24 +5058,22 @@ fn backend_school_deploy_can_finish_in_maintenance_mode() {
 
 #[test]
 fn academic_core_smoke_is_private_authenticated_read_only_and_precedes_go_live() {
-    let deploy = read_source(repo_root().join(".github/workflows/deploy-backend-school.yml"));
+    let deploy = read_source(repo_root().join(".github/workflows/deploy-school-release.yml"));
     let smoke = read_source(repo_root().join("scripts/smoke_test.sh"));
 
-    assert!(deploy.contains("academic_core_cleanup_smoke:"));
     assert!(deploy.contains("academic_core_smoke_subdomain:"));
     assert!(deploy.contains("Validate Academic Core authenticated smoke inputs"));
     assert!(deploy.contains("Run Academic Core authenticated smoke"));
-    assert!(deploy.contains("Open School API after authenticated smoke"));
+    assert!(deploy.contains("Open accepted School API release"));
     assert!(deploy.contains("SMOKE_USERNAME: ${{ secrets.SMOKE_USERNAME }}"));
     assert!(deploy.contains("SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}"));
     assert!(deploy.contains("SMOKE_API_URL=http://localhost:8081"));
     assert!(deploy.contains("SMOKE_ACADEMIC_CONTEXT=true"));
     assert!(deploy.contains("SMOKE_DIRECT_BACKEND=true"));
-    assert!(deploy.contains("vars.SCHOOL_API_KEEP_MAINTENANCE || 'true'"));
     assert!(deploy.contains("restore_maintenance"));
     assert!(
         deploy.find("Run Academic Core authenticated smoke")
-            < deploy.find("Open School API after authenticated smoke"),
+            < deploy.find("Open accepted School API release"),
         "the normal proxy may open only after authenticated smoke"
     );
     assert!(smoke.contains("SMOKE_DIRECT_BACKEND"));

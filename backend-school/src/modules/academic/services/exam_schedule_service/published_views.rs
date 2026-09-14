@@ -52,12 +52,7 @@ struct StaffPublishedExamAssignmentRow {
 #[derive(Debug, sqlx::FromRow)]
 struct StaffPublishedExamSessionRow {
     round_id: Uuid,
-    round_name: String,
-    academic_term_id: Uuid,
-    published_at: Option<DateTime<Utc>>,
     exam_day_id: Uuid,
-    day_label: Option<String>,
-    exam_date: NaiveDate,
     session_id: Uuid,
     starts_at: NaiveTime,
     ends_at: NaiveTime,
@@ -361,12 +356,7 @@ async fn list_published_exam_schedule_for_staff(
     let session_rows = sqlx::query_as::<_, StaffPublishedExamSessionRow>(
         r#"
         SELECT round.id AS round_id,
-               round.name AS round_name,
-               round.academic_term_id,
-               round.published_at,
                day.id AS exam_day_id,
-               day.label AS day_label,
-               day.exam_date,
                session.id AS session_id,
                session.starts_at,
                session.ends_at,
@@ -624,7 +614,7 @@ fn group_staff_published_exam_rows(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
+    use chrono::{NaiveDate, NaiveTime, Utc};
 
     fn t(value: &str) -> NaiveTime {
         NaiveTime::parse_from_str(value, "%H:%M").expect("test time must be valid")
@@ -638,18 +628,12 @@ mod tests {
         assignment_id: Uuid,
         homeroom_id: Uuid,
         room_id: Uuid,
-        published_at: DateTime<Utc>,
         starts_at: NaiveTime,
         ends_at: NaiveTime,
     ) -> StaffPublishedExamSessionRow {
         StaffPublishedExamSessionRow {
             round_id,
-            round_name: "กลางภาค 1/2569".to_string(),
-            academic_term_id: Uuid::from_u128(6),
-            published_at: Some(published_at),
             exam_day_id: day_id,
-            day_label: Some("วันแรก".to_string()),
-            exam_date: NaiveDate::from_ymd_opt(2026, 8, 3).expect("date must be valid"),
             session_id,
             starts_at,
             ends_at,
@@ -727,7 +711,6 @@ mod tests {
                 assignment_id,
                 homeroom_id,
                 room_id,
-                published_at,
                 t("08:30"),
                 t("09:30"),
             ),
@@ -738,7 +721,6 @@ mod tests {
                 assignment_id,
                 homeroom_id,
                 room_id,
-                published_at,
                 t("10:00"),
                 t("11:30"),
             ),

@@ -1130,7 +1130,6 @@ mod security_tests {
             },
             session_id: Uuid::new_v4(),
             user_id: Uuid::new_v4(),
-            username: "teacher.one".to_string(),
             user_type: "staff".to_string(),
         }
     }

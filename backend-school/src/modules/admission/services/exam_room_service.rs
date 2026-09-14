@@ -388,14 +388,12 @@ pub async fn assign_exam_seats(
     struct AppRow {
         id: Uuid,
         application_number: Option<String>,
-        #[allow(dead_code)]
-        track_name: Option<String>,
     }
 
     let order_clause = exam_assignment_order_clause(&sort_order);
 
     let query = format!(
-        r#"SELECT aa.id, aa.application_number, at.name AS track_name
+        r#"SELECT aa.id, aa.application_number
            FROM admission_applications aa
            LEFT JOIN admission_tracks at ON at.id = aa.admission_track_id
            WHERE aa.admission_round_id = $1 AND aa.status = 'verified' {}"#,

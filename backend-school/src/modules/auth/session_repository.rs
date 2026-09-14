@@ -79,7 +79,6 @@ pub struct SessionRow {
 pub struct MaintainedSession {
     pub session_id: Uuid,
     pub user_id: Uuid,
-    pub username: String,
     pub user_type: String,
     pub presented_as: PresentedTokenKind,
     pub remember_me: bool,
@@ -132,7 +131,6 @@ struct AuthenticationRow {
     idle_expires_at: DateTime<Utc>,
     absolute_expires_at: DateTime<Utc>,
     revoked_at: Option<DateTime<Utc>>,
-    username: String,
     user_type: String,
     user_status: String,
 }
@@ -141,7 +139,7 @@ const AUTHENTICATION_COLUMNS: &str = r#"
     SELECT s.id, s.user_id, s.current_token_hash, s.previous_token_hash,
            s.previous_token_valid_until, s.remember_me, s.rotated_at, s.last_seen_at,
            s.idle_expires_at, s.absolute_expires_at, s.revoked_at,
-           u.username, u.user_type, u.status AS user_status
+           u.user_type, u.status AS user_status
     FROM auth_sessions s
     JOIN users u ON u.id = s.user_id
     WHERE s.current_token_hash = $1 OR s.previous_token_hash = $1
@@ -757,7 +755,6 @@ fn maintained(
     MaintainedSession {
         session_id: row.id,
         user_id: row.user_id,
-        username: row.username,
         user_type: row.user_type,
         presented_as,
         remember_me: row.remember_me,

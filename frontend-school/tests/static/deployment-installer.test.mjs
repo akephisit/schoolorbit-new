@@ -10,6 +10,7 @@ import { parse as parseYaml } from 'yaml';
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(import.meta.dirname, '../../..');
 const readRepo = (file) => readFile(path.join(repoRoot, file), 'utf8');
+const releaseId = '0123456789abcdef0123456789abcdef01234567';
 const loadComposeConfig = async (file, extraArguments = []) => {
 	const { stdout } = await execFileAsync(
 		'podman-compose',
@@ -112,7 +113,7 @@ test('school session runtime is required and isolated from admin JWT', async () 
 });
 
 test('backend-school deployment validates session runtime before compose activation', async () => {
-	const workflow = await readRepo('.github/workflows/deploy-backend-school.yml');
+	const workflow = await readRepo('.github/workflows/deploy-school-release.yml');
 	const validatorStart = workflow.indexOf('            runtime_env_value() {');
 	const exportDefinition = workflow.indexOf('            export_school_compose_env() {');
 	const composeActivation = workflow.indexOf(
@@ -232,7 +233,7 @@ test('local and production clamd allow 3 GiB for concurrent signature reloads', 
 });
 
 test('backend-school deployment reuses only an exact ClamAV runtime and verifies health', async () => {
-	const workflow = await readRepo('.github/workflows/deploy-backend-school.yml');
+	const workflow = await readRepo('.github/workflows/deploy-school-release.yml');
 	const scannerStart = workflow.indexOf(
 		'# The scanner gets an isolated container network and no published port.'
 	);
@@ -268,7 +269,7 @@ test('backend-school deployment reuses only an exact ClamAV runtime and verifies
 });
 
 test('scanner creation passes PID limit to older Compose without affecting other services', async () => {
-	const workflow = await readRepo('.github/workflows/deploy-backend-school.yml');
+	const workflow = await readRepo('.github/workflows/deploy-school-release.yml');
 	const helper = workflow.slice(
 		workflow.indexOf('            compose_up_quiet() {'),
 		workflow.indexOf('            reconnect_backend_network() {')
@@ -302,7 +303,7 @@ compose_up_quiet nginx
 });
 
 test('backend-school replacement force-removes the stale container without touching dependencies', async () => {
-	const workflow = await readRepo('.github/workflows/deploy-backend-school.yml');
+	const workflow = await readRepo('.github/workflows/deploy-school-release.yml');
 	const replacementStart = workflow.indexOf(
 		'# Recreate backend-school only; do not restart unrelated services.'
 	);
@@ -354,7 +355,7 @@ test('backend-school replacement force-removes the stale container without touch
 });
 
 test('backend-school migration failure reports only bounded deployment diagnostics', async () => {
-	const workflow = await readRepo('.github/workflows/deploy-backend-school.yml');
+	const workflow = await readRepo('.github/workflows/deploy-school-release.yml');
 	const diagnosticStart = workflow.indexOf('            print_migration_verification_failure() {');
 	const verificationFailure = workflow.indexOf(
 		'              echo "Tenant migration verification failed; maintenance remains enabled"'
@@ -391,7 +392,7 @@ test('backend-school migration failure reports only bounded deployment diagnosti
 });
 
 test('Release 2 deployment remains in maintenance until the Gradebook/results cutover passes', async () => {
-	const deployment = await readRepo('.github/workflows/deploy-backend-school.yml');
+	const deployment = await readRepo('.github/workflows/deploy-school-release.yml');
 	const compatibility = await readRepo('.github/workflows/backend-school-neon-compatibility.yml');
 	const migrationHandler = await readRepo(
 		'backend-school/src/modules/system/handlers/migration.rs'
@@ -433,7 +434,7 @@ test('Release 2 deployment remains in maintenance until the Gradebook/results cu
 });
 
 test('backend-school deployment repairs the admin network alias before maintenance activation', async () => {
-	const workflow = await readRepo('.github/workflows/deploy-backend-school.yml');
+	const workflow = await readRepo('.github/workflows/deploy-school-release.yml');
 	const adminNetworkRepair = workflow.indexOf(
 		'            reconnect_backend_network schoolorbit-backend-admin backend-admin'
 	);
@@ -454,7 +455,7 @@ test('backend-school deployment repairs the admin network alias before maintenan
 test('backend workflows use the recoverable shared network alias helper', async () => {
 	for (const workflowPath of [
 		'.github/workflows/deploy-backend-admin.yml',
-		'.github/workflows/deploy-backend-school.yml'
+		'.github/workflows/deploy-school-release.yml'
 	]) {
 		const workflow = await readRepo(workflowPath);
 		const uploadedHelper = workflow.indexOf(
@@ -481,7 +482,9 @@ test('the proxy renderer substitutes only a validated base domain', async (t) =>
 	await execFileAsync(path.join(repoRoot, 'scripts/render_nginx_config.sh'), [
 		path.join(repoRoot, 'nginx-configs/school-api.conf.template'),
 		output,
-		'example.test'
+		'example.test',
+		releaseId,
+		'ready'
 	]);
 
 	const rendered = await readFile(output, 'utf8');
@@ -491,6 +494,61 @@ test('the proxy renderer substitutes only a validated base domain', async (t) =>
 	assert.match(rendered, /ssl_certificate_key \/etc\/nginx\/ssl\/schoolorbit-origin\.key;/);
 	assert.doesNotMatch(rendered, /\$\{BASE_DOMAIN(?:_REGEX)?\}/);
 	assert.doesNotMatch(rendered, /schoolorbit\.app/);
+});
+
+test('school proxy status stays reachable and identifies the coordinated release', async (t) => {
+	const temporary = await mkdtemp(path.join(os.tmpdir(), 'schoolorbit-release-status-'));
+	t.after(() => rm(temporary, { recursive: true, force: true }));
+
+	for (const [template, status] of [
+		['nginx-configs/school-api.conf.template', 'ready'],
+		['nginx-configs/school-api.maintenance.conf.template', 'maintenance']
+	]) {
+		const output = path.join(temporary, `${status}.conf`);
+		await execFileAsync(path.join(repoRoot, 'scripts/render_nginx_config.sh'), [
+			path.join(repoRoot, template),
+			output,
+			'example.test',
+			releaseId,
+			status
+		]);
+		const rendered = await readFile(output, 'utf8');
+		assert.match(rendered, /location = \/deployment-status/);
+		assert.match(rendered, /return 200/);
+		assert.match(rendered, /Cache-Control[^\n]*no-store/);
+		assert.match(rendered, new RegExp(`"status":"${status}"`));
+		assert.match(rendered, new RegExp(`"releaseId":"${releaseId}"`));
+		assert.match(rendered, /"retryAfterSeconds":10/);
+		assert.doesNotMatch(rendered, /\$\{(?:RELEASE_ID|DEPLOYMENT_STATUS)\}/);
+	}
+
+	const maintenance = await readFile(path.join(temporary, 'maintenance.conf'), 'utf8');
+	assert.match(maintenance, /if \(\$request_method = OPTIONS\)[\s\S]*return 204/);
+	assert.match(maintenance, /return 503 '\{"success":false,"error":"maintenance"/);
+	assert.match(maintenance, /Retry-After "10"/);
+});
+
+test('school proxy renderer rejects a missing or invalid release contract', async (t) => {
+	const temporary = await mkdtemp(path.join(os.tmpdir(), 'schoolorbit-release-invalid-'));
+	t.after(() => rm(temporary, { recursive: true, force: true }));
+	const output = path.join(temporary, 'school.conf');
+	await writeFile(output, 'known-good\n');
+
+	for (const args of [
+		['example.test'],
+		['example.test', 'main', 'ready'],
+		['example.test', releaseId, 'deploying']
+	]) {
+		await assert.rejects(
+			execFileAsync(path.join(repoRoot, 'scripts/render_nginx_config.sh'), [
+				path.join(repoRoot, 'nginx-configs/school-api.conf.template'),
+				output,
+				...args
+			]),
+			(error) => error.code === 64
+		);
+		assert.equal(await readFile(output, 'utf8'), 'known-good\n');
+	}
 });
 
 test('the proxy renderer rejects an invalid domain without replacing its output', async (t) => {
@@ -540,7 +598,7 @@ test('backend workflows deploy the canonical target and verify the selected orig
 
 	const workflowPortCounts = new Map([
 		['.github/workflows/deploy-backend-admin.yml', 2],
-		['.github/workflows/deploy-backend-school.yml', 4]
+		['.github/workflows/deploy-school-release.yml', 4]
 	]);
 	for (const [file, expectedPortCount] of workflowPortCounts) {
 		const workflow = await readRepo(file);
@@ -590,7 +648,7 @@ test('backend workflows deploy the canonical target and verify the selected orig
 test('backend image workflows use distinct BuildKit cache scopes', async () => {
 	const workflowScopes = new Map([
 		['.github/workflows/deploy-backend-admin.yml', 'backend-admin'],
-		['.github/workflows/deploy-backend-school.yml', 'backend-school']
+		['.github/workflows/deploy-school-release.yml', 'backend-school']
 	]);
 
 	assert.equal(new Set(workflowScopes.values()).size, workflowScopes.size);
@@ -679,7 +737,7 @@ test('backend runtime images use deterministic builders without ownership copy-u
 test('backend workflows export Cargo timings and only admin uses compiler cache credentials', async () => {
 	const workflows = new Map([
 		['.github/workflows/deploy-backend-admin.yml', 'backend-admin'],
-		['.github/workflows/deploy-backend-school.yml', 'backend-school']
+		['.github/workflows/deploy-school-release.yml', 'backend-school']
 	]);
 
 	for (const [file, backend] of workflows) {
@@ -728,8 +786,8 @@ test('backend workflows clean only bounded SchoolOrbit image history after accep
 			'            [ -z "$proxy_backup" ] || rm -f "$proxy_backup"'
 		],
 		[
-			'.github/workflows/deploy-backend-school.yml',
-			'            podman tag "${backend_image}:${{ github.sha }}" "${backend_image}:rollback"'
+			'.github/workflows/deploy-school-release.yml',
+			'            podman tag "${backend_image}:${{ needs.resolve-scope.outputs.release_id }}" "${backend_image}:latest"'
 		]
 	]);
 
@@ -744,7 +802,7 @@ test('backend workflows clean only bounded SchoolOrbit image history after accep
 		assert.ok(cleanup > acceptance, `${file} must clean images only after acceptance`);
 		assert.match(
 			workflow.slice(cleanup),
-			/"\$image_cleanup" ghcr\.io\/akephisit\/schoolorbit-backend-(?:admin|school) 3/
+			/"\$image_cleanup" (?:ghcr\.io\/akephisit\/schoolorbit-backend-(?:admin|school)|"\$backend_image") 3/
 		);
 		assert.doesNotMatch(workflow, /podman (?:system|volume|container|image) prune/);
 	}
@@ -753,7 +811,7 @@ test('backend workflows clean only bounded SchoolOrbit image history after accep
 test('backend workflows emit bounded deployment phase timings', async () => {
 	for (const file of [
 		'.github/workflows/deploy-backend-admin.yml',
-		'.github/workflows/deploy-backend-school.yml'
+		'.github/workflows/deploy-school-release.yml'
 	]) {
 		const workflow = await readRepo(file);
 		assert.match(workflow, /scripts\/lib\/schoolorbit-installer\/remote\/deployment_timing\.sh/);
@@ -911,7 +969,7 @@ test('frontend deployments keep environment values out of committed Worker confi
 	assert.match(adminWorkerDeploy, /BACKEND_SCHOOL_URL: \$\{\{ vars\.BACKEND_SCHOOL_URL \}\}/);
 
 	for (const file of [
-		'.github/workflows/deploy-all-schools.yml',
+		'.github/workflows/deploy-school-release.yml',
 		'.github/workflows/deploy-school-tenant.yml'
 	]) {
 		const workflow = await readRepo(file);

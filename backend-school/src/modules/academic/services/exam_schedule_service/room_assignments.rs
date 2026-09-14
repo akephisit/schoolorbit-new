@@ -31,14 +31,11 @@ struct DayRoomAssignmentViewRow {
 }
 #[derive(Debug, sqlx::FromRow)]
 struct ClassroomAssignmentContext {
-    homeroom_id: Uuid,
-    homeroom_name: String,
     grade_level_id: Uuid,
     is_active: Option<bool>,
 }
 #[derive(Debug, sqlx::FromRow)]
 struct RoomAssignmentContext {
-    room_id: Uuid,
     capacity: i32,
     status: String,
 }
@@ -319,9 +316,7 @@ async fn fetch_classroom_assignment_context(
 ) -> Result<ClassroomAssignmentContext, AppError> {
     sqlx::query_as::<_, ClassroomAssignmentContext>(
         r#"
-        SELECT id AS homeroom_id,
-               name AS homeroom_name,
-               grade_level_id,
+        SELECT grade_level_id,
                is_active
         FROM homerooms
         WHERE id = $1
@@ -338,8 +333,7 @@ async fn fetch_room_assignment_context(
 ) -> Result<RoomAssignmentContext, AppError> {
     sqlx::query_as::<_, RoomAssignmentContext>(
         r#"
-        SELECT id AS room_id,
-               capacity,
+        SELECT capacity,
                status
         FROM rooms
         WHERE id = $1

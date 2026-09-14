@@ -114,9 +114,8 @@ _phase_deploy_apply() {
     local workflow
     local -a workflows=(
         deploy-backend-admin.yml
-        deploy-backend-school.yml
         deploy-frontend-admin.yml
-        deploy-all-schools.yml
+        deploy-school-release.yml
     )
     SO_WORKFLOW_RUNS='[]'
     vps_create_deployment_key || return
@@ -428,7 +427,7 @@ run_migration_dry_run() {
     done
     info 'Dry-run plan (no mutations applied)'
     _print_cutover_diff cutover
-    info 'Planned mutations: bootstrap VPS, install TLS/runtime, configure GitHub, dispatch four workflows, confirm DNS cutover, verify public services, configure Cockpit Tunnel, enable rollout gates.'
+    info 'Planned mutations: bootstrap VPS, install TLS/runtime, configure GitHub, dispatch admin workflows and one coordinated school release, confirm DNS cutover, verify public services, configure Cockpit Tunnel, enable rollout gates.'
 }
 
 run_cockpit_dry_run() {

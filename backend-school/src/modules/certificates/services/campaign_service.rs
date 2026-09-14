@@ -52,8 +52,6 @@ const CAMPAIGN_SELECT: &str = r#"
             AS candidate_count,
         (SELECT COUNT(*) FROM certificates certificate WHERE certificate.campaign_id = c.id)
             AS issued_certificate_count,
-        (SELECT COUNT(*) FROM certificate_issue_requests request WHERE request.campaign_id = c.id)
-            AS issue_request_count,
         EXISTS (
             SELECT 1 FROM certificate_issue_requests request
             WHERE request.campaign_id = c.id AND request.status IN ('pending', 'reviewing')
@@ -85,13 +83,11 @@ struct CampaignRow {
     template_count: i64,
     candidate_count: i64,
     issued_certificate_count: i64,
-    issue_request_count: i64,
     has_open_issue_request: bool,
 }
 
 #[derive(Debug, FromRow)]
 struct LockedCampaign {
-    id: Uuid,
     academic_year_id: Uuid,
     owner_organization_unit_id: Option<Uuid>,
     name: String,
@@ -541,7 +537,7 @@ async fn lock_campaign(
     campaign_id: Uuid,
 ) -> Result<LockedCampaign, AppError> {
     sqlx::query_as(
-        "SELECT id, academic_year_id, owner_organization_unit_id, name, event_date,
+        "SELECT academic_year_id, owner_organization_unit_id, name, event_date,
                 status, activity_sequence, updated_at
          FROM certificate_campaigns
          WHERE id = $1

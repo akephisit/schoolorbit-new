@@ -63,7 +63,6 @@ mod tests {
             },
             session_id: Uuid::parse_str("22222222-2222-2222-2222-222222222222").unwrap(),
             user_id: Uuid::parse_str(USER_ID).unwrap(),
-            username: "teacher.one".to_string(),
             user_type: "staff".to_string(),
         }
     }

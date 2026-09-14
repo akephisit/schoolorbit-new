@@ -1,3 +1,5 @@
+#![deny(dead_code, unused_imports)]
+
 pub mod api_contract;
 pub mod api_response;
 mod app;

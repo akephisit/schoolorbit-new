@@ -9,7 +9,6 @@ use crate::utils::subdomain::{extract_subdomain_from_request, TenantOriginPolicy
 use crate::AppState;
 
 #[derive(Clone)]
-#[allow(dead_code)]
 pub struct TenantContext {
     pub tenant_id: Uuid,
     pub subdomain: String,

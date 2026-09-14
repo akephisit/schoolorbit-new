@@ -24,9 +24,8 @@ use super::rounds_and_days::{
 use super::sessions_and_conflicts::grade_level_allowed_by_day_scope;
 use super::shared::{
     add_minutes, exam_invigilator_staff_lock_keys, exam_session_conflict_lock_keys,
-    has_invigilator_time_conflict, has_same_classroom_conflict, invigilator_workload_minutes,
-    time_ranges_overlap, validate_session_window, CandidateSession, InvigilatorSessionWindow,
-    SessionValidationError,
+    has_invigilator_time_conflict, has_same_classroom_conflict, time_ranges_overlap,
+    validate_session_window, CandidateSession, InvigilatorSessionWindow, SessionValidationError,
 };
 use super::workspace::{
     build_readiness, build_readiness_with_source_changes, WorkspaceCounts, WORKSPACE_COUNTS_SQL,
@@ -157,32 +156,6 @@ fn detects_classroom_time_conflict() {
         ends_at: t("10:30"),
     }];
     assert!(has_same_classroom_conflict(&candidate, &existing));
-}
-
-#[test]
-fn invigilator_workload_sums_session_minutes_without_gaps() {
-    let assignment_id = Uuid::from_u128(1);
-    let staff_id = Uuid::from_u128(2);
-    let windows = vec![
-        InvigilatorSessionWindow {
-            assignment_id,
-            exam_day_id: Uuid::from_u128(10),
-            staff_id,
-            starts_at: t("08:30"),
-            ends_at: t("09:30"),
-        },
-        InvigilatorSessionWindow {
-            assignment_id,
-            exam_day_id: Uuid::from_u128(10),
-            staff_id,
-            starts_at: t("10:00"),
-            ends_at: t("11:30"),
-        },
-    ];
-
-    let minutes = invigilator_workload_minutes(&windows);
-
-    assert_eq!(minutes, 150);
 }
 
 #[test]

@@ -11,6 +11,8 @@ import {
 } from '$lib/api/session-security';
 import { appendApiQuery, type ApiQuery } from '$lib/api/query';
 import { normalizeSchoolSubdomain } from '$lib/api/school-subdomain';
+import { confirmMaintenance, probeDeploymentStatus } from '$lib/deployment/maintenance';
+import { isMaintenanceResponse } from '$lib/deployment/maintenance-controller';
 import { authStore } from '$lib/stores/auth';
 
 export const BACKEND_URL = PUBLIC_BACKEND_URL || 'https://school-api.schoolorbit.app';
@@ -204,12 +206,24 @@ class APIClient {
 			requestOptions.referrerPolicy = 'no-referrer';
 			requestOptions.cache = 'no-store';
 		}
-		const response = await fetch(`${this.baseURL}${endpoint}`, requestOptions);
+		let response: Response;
+		try {
+			response = await fetch(`${this.baseURL}${endpoint}`, requestOptions);
+		} catch (error) {
+			if (!(error instanceof DOMException && error.name === 'AbortError')) {
+				await probeDeploymentStatus();
+			}
+			throw error;
+		}
 		if (usesSession) {
 			captureSessionSecurityHeaders(response.headers);
 			if (response.status === 401) this.handleUnauthorized();
 		}
 		return response;
+	}
+
+	private async observeMaintenance(response: Response, data: unknown): Promise<void> {
+		if (isMaintenanceResponse(response.status, data)) await confirmMaintenance();
 	}
 
 	private responseMetadata(response: Response): {
@@ -234,6 +248,7 @@ class APIClient {
 
 		const response = await this.fetchBackend(endpoint, { ...options, headers }, transport);
 		const data = await this.parseResponse(response);
+		await this.observeMaintenance(response, data);
 		const metadata = this.responseMetadata(response);
 		const normalized = normalizeApiResponse<T, E>(
 			data,
@@ -259,6 +274,7 @@ class APIClient {
 		}
 
 		const data = await this.parseResponse(response);
+		await this.observeMaintenance(response, data);
 		const normalized = normalizeApiResponse<Blob>(
 			data,
 			metadata.status,
@@ -409,6 +425,7 @@ class APIClient {
 			body
 		});
 		const data = await this.parseResponse(response);
+		await this.observeMaintenance(response, data);
 		const metadata = this.responseMetadata(response);
 		const normalized = normalizeApiResponse<T, E>(
 			data,

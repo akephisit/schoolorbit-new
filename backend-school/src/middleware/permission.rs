@@ -21,7 +21,6 @@ impl ActorContext {
             .any(|permission| self.has_permission(permission))
     }
 
-    #[allow(dead_code)]
     pub fn has_all_permissions(&self, required_permissions: &[&str]) -> bool {
         required_permissions
             .iter()
@@ -54,7 +53,6 @@ impl ActorContext {
         }
     }
 
-    #[allow(dead_code)]
     pub fn require_all_permissions(&self, required_permissions: &[&str]) -> Result<(), AppError> {
         if self.has_all_permissions(required_permissions) {
             Ok(())

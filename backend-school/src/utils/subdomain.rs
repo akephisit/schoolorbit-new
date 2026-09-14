@@ -33,17 +33,6 @@ impl TenantOriginPolicy {
         Self::new(base_domain, allowed_dev_origins)
     }
 
-    pub fn validate(&self, raw_origin: &str, tenant: &str) -> Result<(), AppError> {
-        let parsed = parse_authoritative_url(raw_origin, true)?;
-        let resolved = self.production_tenant(&parsed)?;
-        let tenant = normalize_subdomain(tenant).ok_or_else(origin_rejected)?;
-        if resolved.as_deref() == Some(tenant.as_str()) {
-            Ok(())
-        } else {
-            Err(origin_rejected())
-        }
-    }
-
     pub fn resolve_tenant(
         &self,
         headers: &HeaderMap,

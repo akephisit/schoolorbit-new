@@ -32,15 +32,31 @@ pub struct PortalUploadDocumentData {
     pub doc_type: String,
 }
 
-#[derive(Debug, ToSchema)]
-#[allow(dead_code)]
-pub struct PortalDocumentMultipart {
-    pub doc_type: String,
-    pub national_id: String,
-    pub date_of_birth: String,
-    #[schema(value_type = String, format = Binary)]
-    pub file: Vec<u8>,
+pub struct PortalDocumentMultipart;
+
+impl utoipa::PartialSchema for PortalDocumentMultipart {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        use utoipa::openapi::{schema::Type, KnownFormat, ObjectBuilder, SchemaFormat};
+
+        ObjectBuilder::new()
+            .property("doc_type", <String as utoipa::PartialSchema>::schema())
+            .required("doc_type")
+            .property("national_id", <String as utoipa::PartialSchema>::schema())
+            .required("national_id")
+            .property("date_of_birth", <String as utoipa::PartialSchema>::schema())
+            .required("date_of_birth")
+            .property(
+                "file",
+                ObjectBuilder::new()
+                    .schema_type(Type::String)
+                    .format(Some(SchemaFormat::KnownFormat(KnownFormat::Binary))),
+            )
+            .required("file")
+            .into()
+    }
 }
+
+impl ToSchema for PortalDocumentMultipart {}
 
 pub async fn check_application(
     State(state): State<AppState>,

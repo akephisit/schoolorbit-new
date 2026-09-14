@@ -500,12 +500,12 @@ printf "%s" "$status"
     [ "$(jq -r '.phases["management-publish"].status' "$SCHOOLORBIT_STATE_HOME/runs/run-test/state.json")" = passed ]
 }
 
-@test "deployment phase dispatches the four workflows in dependency order" {
+@test "deployment phase dispatches admin then one coordinated school release" {
     install_orchestration_fakes
     schoolorbit_main migrate-vps --repository owner/repo --target 192.0.2.20 --base-domain example.test
 
     actual=$(awk '/^workflow run/ { print $3 }' "$FAKE_COMMAND_LOG" | tr '\n' ' ' | sed 's/ $//')
-    expected='deploy-backend-admin.yml deploy-backend-school.yml deploy-frontend-admin.yml deploy-all-schools.yml'
+    expected='deploy-backend-admin.yml deploy-frontend-admin.yml deploy-school-release.yml'
     [ "$actual" = "$expected" ]
 }
 

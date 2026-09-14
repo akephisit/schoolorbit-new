@@ -4,9 +4,7 @@ use uuid::Uuid;
 use crate::error::AppError;
 use crate::middleware::permission::ActorContext;
 use crate::permissions::registry::codes;
-use crate::policies::resource_access_policy::{
-    self, AcademicResourceListFilter, AcademicResourcePermissions,
-};
+use crate::policies::resource_access_policy::{self, AcademicResourcePermissions};
 
 const READ_ASSIGNED_PERMISSIONS: &[&str] = &[
     codes::ACADEMIC_TIMETABLE_READ_ASSIGNED,
@@ -54,17 +52,6 @@ pub struct TimetableAccessFilter {
     pub organization_unit_ids: Vec<Uuid>,
     pub organization_tree_unit_ids: Vec<Uuid>,
     pub includes_school_owned: bool,
-}
-
-impl TimetableAccessFilter {
-    pub fn as_academic_resource_filter(&self) -> AcademicResourceListFilter {
-        AcademicResourceListFilter {
-            assigned_actor_id: self.assigned_actor_id,
-            organization_unit_ids: self.organization_unit_ids.clone(),
-            organization_tree_unit_ids: self.organization_tree_unit_ids.clone(),
-            includes_school_owned: self.includes_school_owned,
-        }
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

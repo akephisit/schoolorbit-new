@@ -13,7 +13,7 @@ const discoveryScript = path.join(repoRoot, 'scripts/discover_school_tenants.sh'
 
 test('pre-cutover frontend deployment pins API traffic to the selected origin', async () => {
 	const workflow = await readFile(
-		path.join(repoRoot, '.github/workflows/deploy-all-schools.yml'),
+		path.join(repoRoot, '.github/workflows/deploy-school-release.yml'),
 		'utf8'
 	);
 	const originRouting = await readFile(
@@ -23,15 +23,13 @@ test('pre-cutover frontend deployment pins API traffic to the selected origin', 
 
 	assert.match(workflow, /target_origin_ip:/);
 	assert.match(workflow, /scripts\/lib\/schoolorbit-installer\/configure_pre_cutover_origin\.sh/);
-	assert.match(workflow, /--resolve "\$school_origin:443:\$TARGET_ORIGIN_IP"/);
 	assert.match(
 		workflow,
 		/CURL_CA_BUNDLE: \$\{\{ steps\.origin-routing\.outputs\.origin_ca_root \}\}/
 	);
-	assert.match(
-		workflow,
-		/NODE_EXTRA_CA_CERTS: \$\{\{ steps\.origin-routing\.outputs\.origin_ca_root \}\}/
-	);
+	assert.match(workflow, /127\.0\.0\.1:18081:127\.0\.0\.1:8081/);
+	assert.match(workflow, /PUBLIC_BACKEND_URL=http:\/\/127\.0\.0\.1:18081/);
+	assert.match(workflow, /SMOKE_RESOLVE_IP=127\.0\.0\.1/);
 	assert.match(
 		originRouting,
 		/https:\/\/developers\.cloudflare\.com\/ssl\/static\/origin_ca_rsa_root\.pem/
@@ -121,7 +119,7 @@ test('tenant discovery uses the authenticated Backend Admin school listing', asy
 	assert.deepEqual(observedRequest, {
 		url: '/internal/schools?status=active',
 		secret: 'test-internal-secret',
-		caller: 'deploy-all-schools'
+		caller: 'deploy-school-release'
 	});
 	assert.equal(result.output, 'schools=[{"subdomain":"snwsb"},{"subdomain":"sandbox"}]\n');
 });

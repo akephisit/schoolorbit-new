@@ -111,7 +111,6 @@ string_enum!(CertificateIssueCode {
     ReviewerRequestedChanges,
 });
 string_enum!(CertificateResourceLockCode { ResourceLocked });
-string_enum!(CertificateIssueRunOutcome { Issued, Returned });
 string_enum!(CertificateStatus { Issued, Revoked });
 string_enum!(CertificateTemplateAssetKind { Image });
 string_enum!(GeometryAction {
@@ -157,17 +156,6 @@ impl CertificateImportSource {
             Self::Manual => "manual",
             Self::AccountSearch => "account_search",
             Self::Replacement => "replacement",
-        }
-    }
-
-    pub fn parse(value: &str) -> Option<Self> {
-        match value {
-            "xlsx" => Some(Self::Xlsx),
-            "csv" => Some(Self::Csv),
-            "manual" => Some(Self::Manual),
-            "account_search" => Some(Self::AccountSearch),
-            "replacement" => Some(Self::Replacement),
-            _ => None,
         }
     }
 }

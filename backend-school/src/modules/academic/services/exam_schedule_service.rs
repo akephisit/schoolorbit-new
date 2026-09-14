@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 pub(crate) use rounds_and_days::pending_term_work;
 mod invigilation;
 mod published_views;

@@ -345,26 +345,6 @@ pub async fn own_manifest(
     .await
 }
 
-pub async fn public_manifest(
-    pool: &PgPool,
-    platform: &FilePlatform,
-    tenant_subdomain: &str,
-    base_domain: &str,
-    tenant_id: Uuid,
-    receipt: &str,
-) -> Result<CertificateRenderManifest, AppError> {
-    let certificate_id =
-        verification_service::validate_public_render_receipt(receipt, tenant_id, Utc::now())?;
-    public_manifest_for_certificate(
-        pool,
-        platform,
-        tenant_subdomain,
-        base_domain,
-        certificate_id,
-    )
-    .await
-}
-
 async fn public_manifest_for_certificate(
     pool: &PgPool,
     platform: &FilePlatform,
