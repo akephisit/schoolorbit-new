@@ -392,6 +392,11 @@ SMOKE_PASSWORD='provided-at-runtime' \
 
 Alternatively, copy `.env.smoke.example` to the ignored `.env.smoke.local`. The script loads that file by default; `SMOKE_ENV_FILE` can point elsewhere. Credentials must come from `SMOKE_*` environment variables or the ignored environment file and must never be committed.
 
+When `SMOKE_RESOLVE_IP` pins the API hostnames directly to an origin that uses a Cloudflare Origin
+CA certificate, set `SMOKE_CA_CERT` to the readable pinned CA file. The option applies only to
+admin/school API requests; the tenant frontend request continues to use the normal public trust
+store.
+
 If credentials are absent, authenticated checks are skipped. Report that limitation rather than describing the smoke suite as fully passing.
 
 Set `SMOKE_ACADEMIC_CONTEXT=true` only for an explicitly selected cutover tenant. After login, the

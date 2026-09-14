@@ -19,6 +19,7 @@ if [[ -f "$smoke_env_file" ]]; then
         SMOKE_ACADEMIC_CONTEXT
         SMOKE_DIRECT_BACKEND
         SMOKE_RESOLVE_IP
+        SMOKE_CA_CERT
         FILE_SMOKE_PNG
     )
     declare -A smoke_env_overrides=()
@@ -52,6 +53,7 @@ SMOKE_REQUIRE_AUTH="${SMOKE_REQUIRE_AUTH:-false}"
 SMOKE_ACADEMIC_CONTEXT="${SMOKE_ACADEMIC_CONTEXT:-false}"
 SMOKE_DIRECT_BACKEND="${SMOKE_DIRECT_BACKEND:-false}"
 SMOKE_RESOLVE_IP="${SMOKE_RESOLVE_IP:-}"
+SMOKE_CA_CERT="${SMOKE_CA_CERT:-}"
 FILE_SMOKE_PNG="${FILE_SMOKE_PNG:-}"
 
 SMOKE_API_URL="${SMOKE_API_URL%/}"
@@ -73,6 +75,10 @@ case "$SMOKE_DIRECT_BACKEND" in
         exit 64
         ;;
 esac
+if [[ -n $SMOKE_CA_CERT && ! -r $SMOKE_CA_CERT ]]; then
+    printf 'SMOKE_CA_CERT must name a readable CA certificate.\n' >&2
+    exit 64
+fi
 
 admin_api_host=${SMOKE_ADMIN_API_URL#https://}
 admin_api_host=${admin_api_host%%/*}
@@ -89,6 +95,10 @@ if [[ -n $SMOKE_RESOLVE_IP ]]; then
     fi
     admin_api_curl_options+=(--resolve "${admin_api_host}:443:${SMOKE_RESOLVE_IP}")
     school_api_curl_options+=(--resolve "${school_api_host}:443:${SMOKE_RESOLVE_IP}")
+fi
+if [[ -n $SMOKE_CA_CERT ]]; then
+    admin_api_curl_options+=(--cacert "$SMOKE_CA_CERT")
+    school_api_curl_options+=(--cacert "$SMOKE_CA_CERT")
 fi
 
 failures=0

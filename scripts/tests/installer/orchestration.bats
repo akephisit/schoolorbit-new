@@ -305,6 +305,9 @@ install_orchestration_fakes() {
 }
 
 @test "smoke resolve pins only API calls and accepts a bounded authenticated SSE stream" {
+    local origin_ca="$TEST_ROOT/origin-ca.pem"
+    printf '%s\n' fixture-origin-ca >"$origin_ca"
+
     make_fake_command curl '
 set -eu
 printf "curl" >>"$FAKE_COMMAND_LOG"
@@ -338,7 +341,7 @@ while [ "$#" -gt 0 ]; do
             esac
             shift 2
             ;;
-        -F|-w|--write-out|--resolve|--max-time|--data|--data-binary) shift 2 ;;
+        -F|-w|--write-out|--resolve|--cacert|--max-time|--data|--data-binary) shift 2 ;;
         http://*|https://*) url=$1; shift ;;
         *) shift ;;
     esac
@@ -419,6 +422,7 @@ printf "%s" "$status"
         SMOKE_PASSWORD=Smoke-Pass-7vK9nM3q \
         SMOKE_REQUIRE_AUTH=true \
         SMOKE_RESOLVE_IP=192.0.2.20 \
+        SMOKE_CA_CERT="$origin_ca" \
         scripts/smoke_test.sh
 
     [ "$status" -eq 0 ]
@@ -428,11 +432,14 @@ printf "%s" "$status"
     [[ $output == *'current session logout status 200'* ]]
     grep -F -- '--resolve admin-api.example.test:443:192.0.2.20' "$FAKE_COMMAND_LOG"
     grep -F -- '--resolve school-api.example.test:443:192.0.2.20' "$FAKE_COMMAND_LOG"
+    grep -E -- "--resolve admin-api\\.example\\.test:443:192\\.0\\.2\\.20 .*--cacert $origin_ca" "$FAKE_COMMAND_LOG"
+    grep -E -- "--resolve school-api\\.example\\.test:443:192\\.0\\.2\\.20 .*--cacert $origin_ca" "$FAKE_COMMAND_LOG"
     grep -Fq -- '/api/auth/sessions' "$FAKE_COMMAND_LOG"
     grep -Fq -- '/api/auth/logout' "$FAKE_COMMAND_LOG"
     grep -Fq -- 'X-CSRF-Token: fixture-csrf-token' "$FAKE_COMMAND_LOG"
     tenant_request=$(grep -F 'https://smoke-school.example.test/' "$FAKE_COMMAND_LOG")
     [[ $tenant_request != *'--resolve'* ]]
+    [[ $tenant_request != *'--cacert'* ]]
     [[ $output != *'Smoke-Pass-7vK9nM3q'* ]]
 }
 

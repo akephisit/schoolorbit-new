@@ -100,9 +100,10 @@ backend must start from a clean document.
 Backend releases wait for `/ready`, migration/status audits, and authenticated smoke before they can
 be accepted. Frontend promotion runs `npm run sync:menu-routes` through the VPS loopback with the
 server-only `DEPLOY_KEY` and `SUBDOMAIN`, promotes the exact Worker version ID recorded in the
-recovery manifest, and applies its routes. Acceptance verifies that exact active version, its
-immutable JavaScript/CSS assets, and a real browser mount. A same-SHA retry reuses the original
-Worker recovery manifest and backend image digest; it refuses to replace an orphaned candidate when
+recovery manifest, and applies its routes. Acceptance verifies that exact active version, then uses
+bounded condition-based retries for its complete immutable JavaScript/CSS assets and a real browser
+mount so Cloudflare propagation delay does not fail an otherwise healthy release. A same-SHA retry
+reuses the original Worker recovery manifest and backend image digest; it refuses to replace an orphaned candidate when
 the original rollback boundary cannot be proven. When a manifest is absent, the workflow scans the
 complete paginated Worker version inventory before deciding whether a new upload is safe. Reusable
 manifests are accepted only from the same

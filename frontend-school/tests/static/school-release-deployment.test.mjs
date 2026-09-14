@@ -90,6 +90,10 @@ test('locked Wrangler accepts exact version-ID promotion arguments', () => {
 
 test('frontend promotion is gated by backend acceptance and ready waits for every tenant', async () => {
 	const source = await readFile(workflowPath, 'utf8');
+	const readinessVerifier = await readFile(
+		path.join(repoRoot, 'frontend-school/scripts/verify-tenant-worker-readiness.mjs'),
+		'utf8'
+	);
 	const workflow = parseYaml(source);
 	const promote = workflow.jobs['promote-frontends'];
 	const accept = workflow.jobs['accept-release'];
@@ -102,18 +106,45 @@ test('frontend promotion is gated by backend acceptance and ready waits for ever
 	assert.match(source, /--percentage 100/);
 	assert.doesNotMatch(source, /versions deploy --version-tag/);
 	assert.match(source, /Promoted tenant Worker did not activate the recorded candidate/);
-	assert.match(source, /_app\/immutable/);
-	assert.match(source, /schoolorbitAppMounted/);
+	assert.match(readinessVerifier, /_app\/immutable/);
+	assert.match(readinessVerifier, /schoolorbitAppMounted/);
 	assert.match(source, /wrangler triggers deploy --config wrangler-triggers\.json/);
 	assert.match(source, /\{name:\$name,routes:/);
-	assert.match(source, /url_effective/);
-	assert.match(source, /new URL\(process\.argv\[1\], process\.argv\[2\]\)/);
+	assert.match(source, /verify-tenant-worker-readiness\.mjs/);
 	assert.match(source, /npm run sync:menu-routes/);
 	assert.match(source, /127\.0\.0\.1:18081/);
 	assert.match(JSON.stringify(accept.needs), /promote-frontends/);
 	assert.match(String(accept.if), /promote-frontends\.result == 'success'/);
 	assert.match(source, /Open accepted School API release/);
 	assert.match(source, /restore_maintenance/);
+});
+
+test('frontend promotion waits for complete tenant assets and application mount readiness', async () => {
+	const workflow = parseYaml(await readFile(workflowPath, 'utf8'));
+	const steps = workflow.jobs['promote-frontends'].steps;
+	const chromiumIndex = steps.findIndex(
+		(step) => step.name === 'Install Chromium for application mount check'
+	);
+	const readinessIndex = steps.findIndex(
+		(step) => step.name === 'Verify promoted frontend readiness'
+	);
+
+	assert.ok(chromiumIndex >= 0);
+	assert.ok(readinessIndex > chromiumIndex);
+	assert.equal(
+		steps[readinessIndex].env.TENANT_ORIGIN,
+		'https://${{ matrix.school.subdomain }}.${{ vars.BASE_DOMAIN }}'
+	);
+	assert.equal(steps[readinessIndex].run.trim(), 'node scripts/verify-tenant-worker-readiness.mjs');
+});
+
+test('release acceptance trusts the pinned Origin CA only for resolved API smoke calls', async () => {
+	const workflow = parseYaml(await readFile(workflowPath, 'utf8'));
+	const acceptance = workflow.jobs['accept-release'].steps.find(
+		(step) => step.name === 'Open accepted School API release'
+	);
+
+	assert.match(acceptance.with.script, /SMOKE_CA_CERT="\$origin_root"/);
 });
 
 test('backend runtime selects the candidate SHA without advancing latest before acceptance', async () => {

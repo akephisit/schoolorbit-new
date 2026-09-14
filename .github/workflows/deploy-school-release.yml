@@ -1452,8 +1452,6 @@ jobs:
       - name: Verify promoted tenant Worker
         working-directory: frontend-school
         env:
-          SUBDOMAIN: ${{ matrix.school.subdomain }}
-          BASE_DOMAIN: ${{ vars.BASE_DOMAIN }}
           CANDIDATE_VERSION_ID: ${{ steps.staged-worker.outputs.version_id }}
         run: |
           set -euo pipefail
@@ -1464,11 +1462,7 @@ jobs:
               length == 1 and
               ((.[0].version_id // .[0].id) == $candidate) and
               (.[0].percentage == 100)
-            ' "$RUNNER_TEMP/promoted-deployments.json" >/dev/null &&
-              document_url="$(curl --fail --silent --show-error --location --max-time 15 \
-                "https://${SUBDOMAIN}.${BASE_DOMAIN}/" \
-                --output "$RUNNER_TEMP/tenant-root.html" \
-                --write-out '%{url_effective}')"
+            ' "$RUNNER_TEMP/promoted-deployments.json" >/dev/null
             then
               break
             fi
@@ -1479,69 +1473,15 @@ jobs:
             sleep 5
           done
 
-          mapfile -t assets < <(
-            grep -Eo '(src|href)="[^"]+"' "$RUNNER_TEMP/tenant-root.html" |
-              cut -d'"' -f2 |
-              grep -E '(^|/)_app/immutable/.*\.(js|css)(\?.*)?$' |
-              sort -u
-          )
-          if [ "${#assets[@]}" -eq 0 ]; then
-            echo "Promoted tenant page does not reference immutable application assets"
-            exit 1
-          fi
-          expected_origin="https://${SUBDOMAIN}.${BASE_DOMAIN}"
-          for asset in "${assets[@]}"; do
-            resolved_asset="$(
-              node -e '
-                const asset = new URL(process.argv[1], process.argv[2]);
-                const documentUrl = new URL(process.argv[2]);
-                if (documentUrl.origin !== process.argv[3] ||
-                    asset.origin !== process.argv[3] ||
-                    !asset.pathname.startsWith("/_app/immutable/")) process.exit(1);
-                process.stdout.write(asset.href);
-              ' "$asset" "$document_url" "$expected_origin"
-            )" || {
-              echo "Promoted tenant page references an invalid application asset"
-              exit 1
-            }
-            curl --fail --silent --show-error --location --max-time 15 \
-              "$resolved_asset" >/dev/null
-          done
-
       - name: Install Chromium for application mount check
         working-directory: frontend-school
         run: npx playwright install --with-deps chromium
 
-      - name: Verify promoted application mounts
+      - name: Verify promoted frontend readiness
         working-directory: frontend-school
         env:
           TENANT_ORIGIN: https://${{ matrix.school.subdomain }}.${{ vars.BASE_DOMAIN }}
-        run: |
-          node --input-type=module <<'NODE'
-          import { chromium } from 'playwright';
-
-          const browser = await chromium.launch({ headless: true });
-          try {
-            const page = await browser.newPage();
-            let pageErrorCount = 0;
-            page.on('pageerror', () => {
-              pageErrorCount += 1;
-            });
-            const response = await page.goto(process.env.TENANT_ORIGIN, {
-              waitUntil: 'domcontentloaded',
-              timeout: 60_000
-            });
-            if (!response?.ok()) throw new Error('Tenant root did not return a successful document');
-            await page.waitForFunction(
-              () => document.documentElement.dataset.schoolorbitAppMounted === 'true',
-              undefined,
-              { timeout: 30_000 }
-            );
-            if (pageErrorCount > 0) throw new Error('Tenant application raised a page error while mounting');
-          } finally {
-            await browser.close();
-          }
-          NODE
+        run: node scripts/verify-tenant-worker-readiness.mjs
 
   accept-release:
     needs: [resolve-scope, build-backend, stage-frontends, deploy-backend, promote-frontends]
@@ -1639,6 +1579,7 @@ jobs:
               SMOKE_ACADEMIC_CONTEXT=true \
               SMOKE_DIRECT_BACKEND=false \
               SMOKE_RESOLVE_IP=127.0.0.1 \
+              SMOKE_CA_CERT="$origin_root" \
               SMOKE_USERNAME="$SMOKE_USERNAME" \
               SMOKE_PASSWORD="$SMOKE_PASSWORD" \
               bash "$smoke_script"
