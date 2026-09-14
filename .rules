@@ -48,6 +48,8 @@ Do not trust sweeping analysis without verifying it against the current tree. In
 - Work inline by default. Use subagents only when the user explicitly requests delegation or parallel agent work.
 - Bounded changes use the approved short design in chat and do not create a plan artifact. Large, high-risk, or architectural changes require the approved design/specification and implementation plan described in this file; checkpoint commits may be used on their feature branch.
 - Before integration, require a clean working tree, fetch `origin/main`, and inspect branch divergence. If `origin/main` advanced, merge it into the feature branch, resolve conflicts there, and rerun every affected focused and matrix check before continuing.
+- Verification evidence belongs to the exact tested Git tree and relevant test environment, not to a branch name or commit hash. After a conflict-free squash merge from an unchanged base, confirm that the feature and integrated root tree object IDs are identical. If they match and no hook, generator, dependency install, manual step, or external test dependency changed the tracked tree or relevant test environment, reuse the completed focused and matrix results; do not rerun them only because the branch or commit hash changed.
+- Rerun affected checks when the base advanced, conflicts were resolved, the integrated tree differs, required coverage was incomplete or failed, or the relevant toolchain, dependencies, or external test environment changed. GitHub Actions triggered by a push remain separate CI and deployment verification; they do not require duplicating an already-valid local suite immediately before the push.
 - Feature branches may contain multiple focused or checkpoint commits. Integrate an approved feature into `main` with a squash merge so `main` receives one coherent commit for that feature.
 - Update local `main` to the fetched `origin/main` before the squash merge. Push normally; never force-push `main`.
 - Keep the feature branch and any worktree until the required deployment and acceptance checks pass. Remove them only after confirming no session or recovery work still depends on them.
@@ -267,7 +269,7 @@ Use `ApiResponse` and `ApiErrorResponse`; do not return raw feature DTOs or ad-h
 
 ## 11. Verification Matrix
 
-Always run focused tests for touched behavior plus:
+Run focused tests for each distinct candidate tree and relevant test environment, plus the applicable matrix below. Reuse prior results only under the exact-tree integration rule in section 1. Always run:
 
 ```bash
 git diff --check
