@@ -1,10 +1,10 @@
-use crate::error::AppError;
 use crate::modules::menu::models::{RouteRegistration, RouteRegistrationResponse};
 use crate::modules::system::services::route_registration_service;
 use crate::utils::{
     subdomain::extract_subdomain_from_request, tenant::tenant_context_by_subdomain,
 };
 use crate::AppState;
+use school_http::HttpError as AppError;
 
 use axum::{
     extract::State,

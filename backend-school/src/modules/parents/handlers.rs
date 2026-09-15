@@ -1,10 +1,5 @@
-use crate::api_response::{ApiErrorResponse, ApiResponse};
-use crate::error::AppError;
-use crate::modules::academic::core::models::AcademicContextOptions;
-use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::modules::parents::models::ParentProfile;
 use crate::modules::parents::services as parent_service;
-use crate::modules::students::models::StudentAcademicYearQuery;
 use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 use axum::{
@@ -14,6 +9,11 @@ use axum::{
     Json,
 };
 use chrono::NaiveDate;
+use school_academic_core::models::AcademicContextOptions;
+use school_auth::session_service::AuthenticatedSession;
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse};
+use school_students::models::StudentAcademicYearQuery;
 use uuid::Uuid;
 
 /// GET /api/parent/profile - ผู้ปกครองดูข้อมูลตนเองและบุตรหลาน
@@ -56,7 +56,7 @@ pub async fn get_own_parent_profile(
         StudentAcademicYearQuery
     ),
     responses(
-        (status = 200, description = "Linked child's profile", body = ApiResponse<crate::modules::students::models::StudentProfile>),
+        (status = 200, description = "Linked child's profile", body = ApiResponse<school_students::models::StudentProfile>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Parent-child access denied", body = ApiErrorResponse),
         (status = 404, description = "Child profile not found", body = ApiErrorResponse)
@@ -124,7 +124,7 @@ pub async fn get_parent_academic_context_options(
     tag = "parent",
     params(("student_id" = Uuid, Path, description = "Linked student user ID")),
     responses(
-        (status = 200, description = "Academic years and terms available to the linked student", body = ApiResponse<crate::modules::academic::core::models::AcademicContextOptions>),
+        (status = 200, description = "Academic years and terms available to the linked student", body = ApiResponse<school_academic_core::models::AcademicContextOptions>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Parent-child access denied", body = ApiErrorResponse)
     )
@@ -156,7 +156,7 @@ pub async fn get_child_academic_context_options(
         ChildTimetableQuery
     ),
     responses(
-        (status = 200, description = "Linked child's timetable blocks", body = ApiResponse<Vec<crate::modules::academic::models::timetable_block::TimetableBlock>>),
+        (status = 200, description = "Linked child's timetable blocks", body = ApiResponse<Vec<school_academic_timetable::models::timetable_block::TimetableBlock>>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Parent-child access denied", body = ApiErrorResponse)
     )
@@ -227,10 +227,10 @@ pub async fn get_child_exam_schedule(
     tag = "parent",
     params(
         ("student_id" = Uuid, Path, description = "Linked student user ID"),
-        crate::modules::calendar::models::CalendarEventQuery
+        school_calendar::models::CalendarEventQuery
     ),
     responses(
-        (status = 200, description = "Calendar events visible for the linked child", body = ApiResponse<Vec<crate::modules::calendar::models::CalendarViewerEvent>>),
+        (status = 200, description = "Calendar events visible for the linked child", body = ApiResponse<Vec<school_calendar::models::CalendarViewerEvent>>),
         (status = 400, description = "Invalid date range", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Parent-child access denied", body = ApiErrorResponse)
@@ -240,7 +240,7 @@ pub async fn get_child_calendar_events(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(student_id): Path<Uuid>,
-    Query(query): Query<crate::modules::calendar::models::CalendarEventQuery>,
+    Query(query): Query<school_calendar::models::CalendarEventQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let events = parent_service::get_child_calendar_events(

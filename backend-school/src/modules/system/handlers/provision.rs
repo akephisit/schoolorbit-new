@@ -1,10 +1,10 @@
 use serde::Serialize;
 
-use crate::api_response::ApiResponse;
-use crate::error::AppError;
 use crate::modules::system::models::ProvisionRequest;
 use crate::modules::system::services::provision_service;
 use axum::{http::StatusCode, response::IntoResponse, Json};
+use school_http::ApiResponse;
+use school_http::HttpError as AppError;
 
 #[derive(Debug, Serialize)]
 struct ProvisionTenantData {

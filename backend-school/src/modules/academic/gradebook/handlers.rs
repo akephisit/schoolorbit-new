@@ -1,15 +1,15 @@
-use super::{models::*, services};
-use crate::modules::auth::session_service::AuthenticatedSession;
+use super::services as gradebook_adapter;
 use crate::utils::request_context::actor_tenant_context_from_session;
-use crate::{
-    api_response::{ApiErrorResponse, ApiResponse},
-    error::AppError,
-    AppState,
-};
+use crate::AppState;
 use axum::{
     extract::{Extension, Path, Query, State},
     Json,
 };
+use school_academic_assessment::gradebook::models::*;
+use school_academic_assessment::gradebook::services as gradebook_service;
+use school_auth::session_service::AuthenticatedSession;
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse};
 use uuid::Uuid;
 
 fn signal(state: &AppState, session: &AuthenticatedSession, context: &GradebookContext, id: Uuid) {
@@ -31,7 +31,7 @@ pub async fn list_subjects(
 ) -> Result<Json<ApiResponse<Vec<GradebookSubject>>>, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     Ok(Json(ApiResponse::ok(
-        services::list_subjects(&context.tenant.pool, &context.actor, &query).await?,
+        gradebook_service::list_subjects(&context.tenant.pool, &context.actor, &query).await?,
     )))
 }
 #[utoipa::path(get,path="/api/academic/gradebook/controls",operation_id="listGradebookControls",tag="academic",params(GradebookContext),responses((status=200,body=ApiResponse<Vec<GradebookControl>>),(status=403,body=ApiErrorResponse)))]
@@ -42,7 +42,7 @@ pub async fn list_controls(
 ) -> Result<Json<ApiResponse<Vec<GradebookControl>>>, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     Ok(Json(ApiResponse::ok(
-        services::list_controls(&context.tenant.pool, &context.actor, &query).await?,
+        gradebook_service::list_controls(&context.tenant.pool, &context.actor, &query).await?,
     )))
 }
 #[utoipa::path(put,path="/api/academic/gradebook/controls/{control_id}",operation_id="updateGradebookControl",tag="academic",params(GradebookContext,("control_id"=Uuid,Path)),request_body=UpdateControlInput,responses((status=200,body=ApiResponse<GradebookControl>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
@@ -55,11 +55,12 @@ pub async fn update_control(
 ) -> Result<Json<ApiResponse<GradebookControl>>, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let result =
-        services::update_control(&context.tenant.pool, &context.actor, id, &query, input).await?;
+        gradebook_service::update_control(&context.tenant.pool, &context.actor, id, &query, input)
+            .await?;
     signal(&state, &session, &query, id);
     Ok(Json(ApiResponse::ok(result)))
 }
-#[utoipa::path(get,path="/api/academic/gradebook/groups/{group_id}/phases/{phase_code}",operation_id="getGradebookGroupPhaseWorkspace",tag="academic",params(GradebookContext,("group_id"=Uuid,Path),("phase_code"=crate::modules::academic::models::assessment::AssessmentPhaseCode,Path)),responses((status=200,body=ApiResponse<GroupPhaseWorkspace>),(status=403,body=ApiErrorResponse)))]
+#[utoipa::path(get,path="/api/academic/gradebook/groups/{group_id}/phases/{phase_code}",operation_id="getGradebookGroupPhaseWorkspace",tag="academic",params(GradebookContext,("group_id"=Uuid,Path),("phase_code"=school_academic_assessment::assessment::models::AssessmentPhaseCode,Path)),responses((status=200,body=ApiResponse<GroupPhaseWorkspace>),(status=403,body=ApiErrorResponse)))]
 pub async fn get_group_phase_workspace(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -68,9 +69,10 @@ pub async fn get_group_phase_workspace(
 ) -> Result<Json<ApiResponse<GroupPhaseWorkspace>>, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let phase =
-        services::resolve_phase_id(&context.tenant.pool, group, &phase_code, &query).await?;
+        gradebook_service::resolve_phase_id(&context.tenant.pool, group, &phase_code, &query)
+            .await?;
     Ok(Json(ApiResponse::ok(
-        services::get_group_phase_workspace(
+        gradebook_service::get_group_phase_workspace(
             &context.tenant.pool,
             &context.actor,
             group,
@@ -80,7 +82,7 @@ pub async fn get_group_phase_workspace(
         .await?,
     )))
 }
-#[utoipa::path(post,path="/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/items",operation_id="createGradebookItem",tag="academic",params(GradebookContext,("group_id"=Uuid,Path),("phase_code"=crate::modules::academic::models::assessment::AssessmentPhaseCode,Path)),request_body=ItemInput,responses((status=200,body=ApiResponse<ScoreItem>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[utoipa::path(post,path="/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/items",operation_id="createGradebookItem",tag="academic",params(GradebookContext,("group_id"=Uuid,Path),("phase_code"=school_academic_assessment::assessment::models::AssessmentPhaseCode,Path)),request_body=ItemInput,responses((status=200,body=ApiResponse<ScoreItem>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
 pub async fn create_item(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -90,8 +92,9 @@ pub async fn create_item(
 ) -> Result<Json<ApiResponse<ScoreItem>>, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let phase =
-        services::resolve_phase_id(&context.tenant.pool, group, &phase_code, &query).await?;
-    let result = services::create_item(
+        gradebook_service::resolve_phase_id(&context.tenant.pool, group, &phase_code, &query)
+            .await?;
+    let result = gradebook_adapter::create_item(
         &context.tenant.pool,
         &context.actor,
         group,
@@ -103,7 +106,7 @@ pub async fn create_item(
     signal(&state, &session, &query, group);
     Ok(Json(ApiResponse::ok(result)))
 }
-#[utoipa::path(put,path="/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/items/{item_id}",operation_id="updateGradebookItem",tag="academic",params(GradebookContext,("group_id"=Uuid,Path),("phase_code"=crate::modules::academic::models::assessment::AssessmentPhaseCode,Path),("item_id"=Uuid,Path)),request_body=ItemInput,responses((status=200,body=ApiResponse<ScoreItem>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[utoipa::path(put,path="/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/items/{item_id}",operation_id="updateGradebookItem",tag="academic",params(GradebookContext,("group_id"=Uuid,Path),("phase_code"=school_academic_assessment::assessment::models::AssessmentPhaseCode,Path),("item_id"=Uuid,Path)),request_body=ItemInput,responses((status=200,body=ApiResponse<ScoreItem>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
 pub async fn update_item(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -113,8 +116,9 @@ pub async fn update_item(
 ) -> Result<Json<ApiResponse<ScoreItem>>, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let phase =
-        services::resolve_phase_id(&context.tenant.pool, group, &phase_code, &query).await?;
-    let result = services::update_item(
+        gradebook_service::resolve_phase_id(&context.tenant.pool, group, &phase_code, &query)
+            .await?;
+    let result = gradebook_adapter::update_item(
         &context.tenant.pool,
         &context.actor,
         group,
@@ -127,7 +131,7 @@ pub async fn update_item(
     signal(&state, &session, &query, group);
     Ok(Json(ApiResponse::ok(result)))
 }
-#[utoipa::path(delete,path="/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/items/{item_id}",operation_id="removeGradebookItem",tag="academic",params(GradebookContext,("group_id"=Uuid,Path),("phase_code"=crate::modules::academic::models::assessment::AssessmentPhaseCode,Path),("item_id"=Uuid,Path)),request_body=RemoveItemInput,responses((status=200,body=ApiResponse<ScoreItemRemovalOutcome>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[utoipa::path(delete,path="/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/items/{item_id}",operation_id="removeGradebookItem",tag="academic",params(GradebookContext,("group_id"=Uuid,Path),("phase_code"=school_academic_assessment::assessment::models::AssessmentPhaseCode,Path),("item_id"=Uuid,Path)),request_body=RemoveItemInput,responses((status=200,body=ApiResponse<ScoreItemRemovalOutcome>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
 pub async fn remove_item(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -137,8 +141,9 @@ pub async fn remove_item(
 ) -> Result<Json<ApiResponse<ScoreItemRemovalOutcome>>, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let phase =
-        services::resolve_phase_id(&context.tenant.pool, group, &phase_code, &query).await?;
-    let result = services::remove_item(
+        gradebook_service::resolve_phase_id(&context.tenant.pool, group, &phase_code, &query)
+            .await?;
+    let result = gradebook_adapter::remove_item(
         &context.tenant.pool,
         &context.actor,
         group,
@@ -151,7 +156,7 @@ pub async fn remove_item(
     signal(&state, &session, &query, group);
     Ok(Json(ApiResponse::ok(result)))
 }
-#[utoipa::path(put,path="/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/scores",operation_id="saveGradebookScoresBatch",tag="academic",params(GradebookContext,("group_id"=Uuid,Path),("phase_code"=crate::modules::academic::models::assessment::AssessmentPhaseCode,Path)),request_body=ScoreBatchInput,responses((status=200,body=ApiResponse<ScoreBatchOutcome>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[utoipa::path(put,path="/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/scores",operation_id="saveGradebookScoresBatch",tag="academic",params(GradebookContext,("group_id"=Uuid,Path),("phase_code"=school_academic_assessment::assessment::models::AssessmentPhaseCode,Path)),request_body=ScoreBatchInput,responses((status=200,body=ApiResponse<ScoreBatchOutcome>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
 pub async fn save_scores_batch(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -161,8 +166,9 @@ pub async fn save_scores_batch(
 ) -> Result<Json<ApiResponse<ScoreBatchOutcome>>, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let phase =
-        services::resolve_phase_id(&context.tenant.pool, group, &phase_code, &query).await?;
-    let result = services::save_scores_batch(
+        gradebook_service::resolve_phase_id(&context.tenant.pool, group, &phase_code, &query)
+            .await?;
+    let result = gradebook_adapter::save_scores_batch(
         &context.tenant.pool,
         &context.actor,
         group,
@@ -174,7 +180,7 @@ pub async fn save_scores_batch(
     signal(&state, &session, &query, group);
     Ok(Json(ApiResponse::ok(result)))
 }
-#[utoipa::path(post,path="/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/confirm",operation_id="confirmGradebookPhase",tag="academic",params(GradebookContext,("group_id"=Uuid,Path),("phase_code"=crate::modules::academic::models::assessment::AssessmentPhaseCode,Path)),request_body=ConfirmInput,responses((status=200,body=ApiResponse<PhaseConfirmation>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[utoipa::path(post,path="/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/confirm",operation_id="confirmGradebookPhase",tag="academic",params(GradebookContext,("group_id"=Uuid,Path),("phase_code"=school_academic_assessment::assessment::models::AssessmentPhaseCode,Path)),request_body=ConfirmInput,responses((status=200,body=ApiResponse<PhaseConfirmation>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
 pub async fn confirm_phase(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -184,8 +190,9 @@ pub async fn confirm_phase(
 ) -> Result<Json<ApiResponse<PhaseConfirmation>>, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let phase =
-        services::resolve_phase_id(&context.tenant.pool, group, &phase_code, &query).await?;
-    let result = services::confirm_phase(
+        gradebook_service::resolve_phase_id(&context.tenant.pool, group, &phase_code, &query)
+            .await?;
+    let result = gradebook_adapter::confirm_phase(
         &context.tenant.pool,
         &context.actor,
         group,

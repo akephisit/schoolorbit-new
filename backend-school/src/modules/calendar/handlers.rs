@@ -1,12 +1,4 @@
-use crate::api_response::{ApiErrorResponse, ApiResponse};
-use crate::error::AppError;
-use crate::modules::auth::session_service::AuthenticatedSession;
-use crate::modules::calendar::models::{
-    CalendarEventQuery, UpsertCalendarCategoryRequest, UpsertCalendarEventRequest,
-    UpsertCalendarTagRequest,
-};
 use crate::modules::calendar::services as calendar_service;
-use crate::permissions::registry::codes;
 use crate::utils::request_context::{
     actor_tenant_context_from_session, current_user_tenant_context_from_session,
 };
@@ -18,6 +10,14 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use school_auth::session_service::AuthenticatedSession;
+use school_calendar::models::{
+    CalendarEventQuery, UpsertCalendarCategoryRequest, UpsertCalendarEventRequest,
+    UpsertCalendarTagRequest,
+};
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse};
+use school_permissions::registry::codes;
 use uuid::Uuid;
 
 #[utoipa::path(
@@ -27,7 +27,7 @@ use uuid::Uuid;
     tag = "calendar",
     params(CalendarEventQuery),
     responses(
-        (status = 200, description = "School calendar events", body = ApiResponse<Vec<crate::modules::calendar::models::CalendarEvent>>),
+        (status = 200, description = "School calendar events", body = ApiResponse<Vec<school_calendar::models::CalendarEvent>>),
         (status = 400, description = "Invalid date range", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Calendar read permission required", body = ApiErrorResponse)
@@ -53,7 +53,7 @@ pub async fn list_calendar_events(
     tag = "calendar",
     request_body = UpsertCalendarEventRequest,
     responses(
-        (status = 201, description = "Calendar event created", body = ApiResponse<crate::modules::calendar::models::CalendarEvent>),
+        (status = 201, description = "Calendar event created", body = ApiResponse<school_calendar::models::CalendarEvent>),
         (status = 400, description = "Invalid event dates, targets or tags", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Calendar manage permission required", body = ApiErrorResponse),
@@ -105,7 +105,7 @@ pub async fn create_calendar_event(
     params(("id" = Uuid, Path, description = "Calendar event ID")),
     request_body = UpsertCalendarEventRequest,
     responses(
-        (status = 200, description = "Calendar event updated", body = ApiResponse<crate::modules::calendar::models::CalendarEvent>),
+        (status = 200, description = "Calendar event updated", body = ApiResponse<school_calendar::models::CalendarEvent>),
         (status = 400, description = "Invalid event dates, targets or tags", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Calendar manage permission required", body = ApiErrorResponse),
@@ -157,7 +157,7 @@ pub async fn update_calendar_event(
     tag = "calendar",
     params(("id" = Uuid, Path, description = "Calendar event ID")),
     responses(
-        (status = 200, description = "Calendar event removed", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 200, description = "Calendar event removed", body = ApiResponse<school_http::EmptyData>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Calendar manage permission required", body = ApiErrorResponse),
         (status = 404, description = "Event not found", body = ApiErrorResponse),
@@ -183,7 +183,7 @@ pub async fn delete_calendar_event(
     operation_id = "listCalendarCategories",
     tag = "calendar",
     responses(
-        (status = 200, description = "Calendar categories", body = ApiResponse<Vec<crate::modules::calendar::models::CalendarCategory>>),
+        (status = 200, description = "Calendar categories", body = ApiResponse<Vec<school_calendar::models::CalendarCategory>>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Calendar read permission required", body = ApiErrorResponse)
     )
@@ -246,7 +246,7 @@ pub async fn delete_calendar_category(
     operation_id = "listCalendarTags",
     tag = "calendar",
     responses(
-        (status = 200, description = "Calendar tags", body = ApiResponse<Vec<crate::modules::calendar::models::CalendarTag>>),
+        (status = 200, description = "Calendar tags", body = ApiResponse<Vec<school_calendar::models::CalendarTag>>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Calendar read permission required", body = ApiErrorResponse)
     )
@@ -310,7 +310,7 @@ pub async fn delete_calendar_tag(
     tag = "calendar",
     params(CalendarEventQuery),
     responses(
-        (status = 200, description = "Calendar events visible to the current student or staff member", body = ApiResponse<Vec<crate::modules::calendar::models::CalendarViewerEvent>>),
+        (status = 200, description = "Calendar events visible to the current student or staff member", body = ApiResponse<Vec<school_calendar::models::CalendarViewerEvent>>),
         (status = 400, description = "Invalid date range", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Student or staff account required", body = ApiErrorResponse)
@@ -333,7 +333,7 @@ pub async fn list_my_calendar_events(
     tag = "calendar",
     params(CalendarEventQuery),
     responses(
-        (status = 200, description = "Public calendar events", body = ApiResponse<Vec<crate::modules::calendar::models::CalendarPublicEvent>>),
+        (status = 200, description = "Public calendar events", body = ApiResponse<Vec<school_calendar::models::CalendarPublicEvent>>),
         (status = 400, description = "Invalid date range", body = ApiErrorResponse)
     )
 )]

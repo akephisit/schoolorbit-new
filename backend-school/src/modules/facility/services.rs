@@ -1,8 +1,8 @@
-use crate::error::AppError;
 use crate::modules::facility::models::{
     Building, CreateBuildingRequest, CreateRoomRequest, Room, RoomFilter, UpdateBuildingRequest,
     UpdateRoomRequest,
 };
+use school_errors::AppError;
 use sqlx::PgPool;
 use uuid::Uuid;
 

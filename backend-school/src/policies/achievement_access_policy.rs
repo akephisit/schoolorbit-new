@@ -1,11 +1,11 @@
 use uuid::Uuid;
 
-use crate::error::AppError;
-use crate::middleware::permission::ActorContext;
-use crate::permissions::registry::codes;
 use crate::policies::resource_access_policy::{
     self, ResourceAccessPermissions, ResourceAccessTarget, UserResourceListAccess,
 };
+use school_authorization::ActorContext;
+use school_errors::AppError;
+use school_permissions::registry::codes;
 
 const ACHIEVEMENT_READ_ACCESS: ResourceAccessPermissions = ResourceAccessPermissions {
     own: Some(codes::ACHIEVEMENT_READ_OWN),

@@ -5,19 +5,20 @@ use axum::{
 };
 use uuid::Uuid;
 
-use crate::api_response::{ApiErrorResponse, ApiResponse};
-use crate::error::AppError;
-use crate::modules::academic::models::assessment::{
+use crate::modules::academic::assessment_adapter;
+use crate::utils::request_context::actor_tenant_context_from_session;
+use crate::AppState;
+use school_academic_assessment::assessment::models::{
     AssessmentPhaseControlListQuery, AssessmentPlanListQuery, SaveAssessmentPlanRequest,
     UpdateAssessmentPhaseControlRequest,
 };
-use crate::modules::academic::services::assessment_service;
-use crate::modules::auth::session_service::AuthenticatedSession;
-use crate::policies::assessment_access_policy::{
+use school_academic_assessment::assessment::services as assessment_service;
+use school_academic_assessment::policy::assessment::{
     require_assessment_plan_access, require_assessment_plan_list_access, AssessmentAction,
 };
-use crate::utils::request_context::actor_tenant_context_from_session;
-use crate::AppState;
+use school_auth::session_service::AuthenticatedSession;
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse};
 
 #[utoipa::path(
     get,
@@ -26,7 +27,7 @@ use crate::AppState;
     tag = "academic",
     params(AssessmentPlanListQuery),
     responses(
-        (status = 200, description = "Assessment plans for the selected term", body = ApiResponse<Vec<crate::modules::academic::models::assessment::AssessmentPlanSummary>>),
+        (status = 200, description = "Assessment plans for the selected term", body = ApiResponse<Vec<school_academic_assessment::assessment::models::AssessmentPlanSummary>>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Assessment read permission denied", body = ApiErrorResponse)
     )
@@ -60,7 +61,7 @@ pub async fn list_assessment_plans(
     tag = "academic",
     params(AssessmentPhaseControlListQuery),
     responses(
-        (status = 200, description = "Assessment phase controls", body = ApiResponse<Vec<crate::modules::academic::models::assessment::AssessmentPhaseControl>>),
+        (status = 200, description = "Assessment phase controls", body = ApiResponse<Vec<school_academic_assessment::assessment::models::AssessmentPhaseControl>>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Assessment phase control read permission denied", body = ApiErrorResponse)
     )
@@ -86,7 +87,7 @@ pub async fn list_assessment_phase_controls(
     params(("control_id" = Uuid, Path, description = "Assessment phase control ID")),
     request_body = UpdateAssessmentPhaseControlRequest,
     responses(
-        (status = 200, description = "Updated assessment phase control", body = ApiResponse<crate::modules::academic::models::assessment::AssessmentPhaseControl>),
+        (status = 200, description = "Updated assessment phase control", body = ApiResponse<school_academic_assessment::assessment::models::AssessmentPhaseControl>),
         (status = 400, description = "Invalid assessment phase control", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Assessment phase control manage permission denied", body = ApiErrorResponse),
@@ -119,7 +120,7 @@ pub async fn update_assessment_phase_control(
     tag = "academic",
     params(("offering_id" = Uuid, Path, description = "Learning offering ID")),
     responses(
-        (status = 200, description = "Assessment plan for an offering", body = ApiResponse<crate::modules::academic::models::assessment::AssessmentPlanDetail>),
+        (status = 200, description = "Assessment plan for an offering", body = ApiResponse<school_academic_assessment::assessment::models::AssessmentPlanDetail>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Assessment plan read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Offering not found", body = ApiErrorResponse)
@@ -150,7 +151,7 @@ pub async fn get_assessment_plan(
     params(("offering_id" = Uuid, Path, description = "Learning offering ID")),
     request_body = SaveAssessmentPlanRequest,
     responses(
-        (status = 200, description = "Saved assessment plan", body = ApiResponse<crate::modules::academic::models::assessment::AssessmentPlanDetail>),
+        (status = 200, description = "Saved assessment plan", body = ApiResponse<school_academic_assessment::assessment::models::AssessmentPlanDetail>),
         (status = 400, description = "Invalid assessment plan", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Assessment plan manage permission denied", body = ApiErrorResponse),
@@ -173,7 +174,7 @@ pub async fn save_assessment_plan(
     )
     .await?;
     let can_manage_school = assessment_service::actor_can_manage_all_plans(&context.actor);
-    let plan = assessment_service::save_plan(
+    let plan = assessment_adapter::save_plan(
         &context.tenant.pool,
         offering_id,
         context.actor.user_id,

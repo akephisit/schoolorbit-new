@@ -2,11 +2,11 @@ use sqlx::PgPool;
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
-use crate::error::AppError;
 use crate::modules::notification::events::TenantNotificationEvent;
 use crate::services::notification::{
     NotificationService, NotificationType, TenantNotificationPublisher,
 };
+use school_errors::AppError;
 
 use super::models::{
     CreateNotificationRequest, ListNotificationsQuery, ListNotificationsResponse, Notification,

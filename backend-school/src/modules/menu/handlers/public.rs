@@ -6,13 +6,13 @@ use axum::{
 use serde::Serialize;
 use utoipa::ToSchema;
 
-use crate::api_response::{ApiErrorResponse, ApiResponse};
-use crate::error::AppError;
-use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::modules::menu::models::*;
 use crate::modules::menu::services::public_menu_service;
 use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
+use school_auth::session_service::AuthenticatedSession;
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse};
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct UserMenuData {

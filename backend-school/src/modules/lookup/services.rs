@@ -1,14 +1,14 @@
 use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 
-use crate::error::AppError;
 use crate::modules::facility::models::Room;
+use school_errors::AppError;
 
 use super::models::{
-    AcademicLookupQuery, AcademicYearLookupItem, GradeLevelLookupItem, HomeroomLookupItem,
-    LookupItem, LookupQuery, OrganizationUnitLookupItem, RoleLookupItem, StaffLookupItem,
-    StudentLookupItem,
+    AcademicLookupQuery, HomeroomLookupItem, LookupItem, LookupQuery, OrganizationUnitLookupItem,
+    RoleLookupItem, StaffLookupItem, StudentLookupItem,
 };
+use school_academic_core::models::{AcademicYearLookupItem, GradeLevelLookupItem};
 
 #[derive(Debug, FromRow)]
 struct StaffRow {
@@ -62,7 +62,7 @@ struct AcademicYearRow {
     id: Uuid,
     name: String,
     year: i32,
-    status: crate::modules::academic::core::models::AcademicYearStatus,
+    status: school_academic_core::models::AcademicYearStatus,
 }
 
 #[derive(Debug, FromRow)]
@@ -657,13 +657,11 @@ fn homeroom_grade_level_label(level_type: Option<&str>, year: Option<i32>) -> Op
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        modules::academic::cutover_test_support::{
-            apply_migrations_through, apply_phase_b_runtime_migrations,
-            seed_academic_cutover_fixture, CutoverFixture,
-        },
-        test_helpers::create_named_test_pool,
+    use crate::modules::academic::cutover_test_support::{
+        apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
+        CutoverFixture,
     };
+    use school_test_db::create_named_test_pool;
 
     fn academic_query(academic_year_id: Uuid) -> AcademicLookupQuery {
         AcademicLookupQuery {

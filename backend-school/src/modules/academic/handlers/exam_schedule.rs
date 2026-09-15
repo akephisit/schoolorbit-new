@@ -1,5 +1,3 @@
-use crate::api_response::{ApiErrorResponse, ApiResponse};
-use crate::error::AppError;
 use crate::modules::academic::models::exam_schedule::{
     CreateExamRoundRequest, DayRoomAssignmentView, ExamDayDetail, ExamInvigilatorStaffOption,
     ExamInvigilatorWorkspace, ExamRound, ExamScheduleWorkspace, ExamSessionView, ExamSourcePreview,
@@ -8,8 +6,6 @@ use crate::modules::academic::models::exam_schedule::{
     UpsertDayRoomAssignmentRequest, UpsertExamDayRequest,
 };
 use crate::modules::academic::services::exam_schedule_service;
-use crate::modules::auth::session_service::AuthenticatedSession;
-use crate::permissions::registry::codes;
 use crate::utils::request_context::{
     actor_tenant_context_from_session, current_user_tenant_context_from_session,
 };
@@ -20,6 +16,10 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use school_auth::session_service::AuthenticatedSession;
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse};
+use school_permissions::registry::codes;
 use serde::Deserialize;
 use utoipa::IntoParams;
 use uuid::Uuid;
@@ -144,7 +144,7 @@ pub async fn update_round(
     params(("round_id" = Uuid, Path, description = "Exam round ID")),
     responses(
         (status = 409, description = "Academic year or term is closed, or the resource changed", body = ApiErrorResponse),
-        (status = 200, description = "Exam round deleted", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 200, description = "Exam round deleted", body = ApiResponse<school_http::EmptyData>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
         (status = 404, description = "Exam round not found", body = ApiErrorResponse)
@@ -324,7 +324,7 @@ pub async fn update_day(
     params(("exam_day_id" = Uuid, Path, description = "Exam day ID")),
     responses(
         (status = 409, description = "Academic year or term is closed, or the resource changed", body = ApiErrorResponse),
-        (status = 200, description = "Exam day deleted", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 200, description = "Exam day deleted", body = ApiResponse<school_http::EmptyData>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
         (status = 404, description = "Exam day not found", body = ApiErrorResponse)
@@ -659,7 +659,7 @@ pub async fn place_session(
     params(("session_id" = Uuid, Path, description = "Exam session ID")),
     responses(
         (status = 409, description = "Academic year or term is closed, or the resource changed", body = ApiErrorResponse),
-        (status = 200, description = "Exam session deleted", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 200, description = "Exam session deleted", body = ApiResponse<school_http::EmptyData>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
         (status = 404, description = "Exam session not found", body = ApiErrorResponse)

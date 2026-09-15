@@ -1,10 +1,10 @@
 use uuid::Uuid;
 
-use crate::error::AppError;
-use crate::middleware::permission::{load_actor_context_for_session, ActorContext};
-use crate::modules::auth::session_service::AuthenticatedSession;
-use crate::utils::tenant::TenantContext;
 use crate::AppState;
+use school_auth::session_service::AuthenticatedSession;
+use school_authorization::{load_actor_context_for_session, ActorContext};
+use school_errors::AppError;
+use school_tenancy::TenantContext;
 
 pub struct ActorTenantContext {
     pub tenant: TenantContext,
@@ -52,19 +52,17 @@ mod tests {
         let pool = PgPoolOptions::new()
             .connect_lazy("postgres://invalid:invalid@127.0.0.1:1/invalid")
             .unwrap();
-        AuthenticatedSession {
-            identity_cache: std::sync::Arc::new(
-                crate::modules::auth::session_cache::SessionCache::new(),
-            ),
-            tenant: TenantContext {
+        AuthenticatedSession::for_tests(
+            std::sync::Arc::new(school_auth::session_cache::SessionCache::new()),
+            TenantContext {
                 tenant_id: Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap(),
                 subdomain: tenant.to_string(),
                 pool,
             },
-            session_id: Uuid::parse_str("22222222-2222-2222-2222-222222222222").unwrap(),
-            user_id: Uuid::parse_str(USER_ID).unwrap(),
-            user_type: "staff".to_string(),
-        }
+            Uuid::parse_str("22222222-2222-2222-2222-222222222222").unwrap(),
+            Uuid::parse_str(USER_ID).unwrap(),
+            "staff",
+        )
     }
 
     #[tokio::test]

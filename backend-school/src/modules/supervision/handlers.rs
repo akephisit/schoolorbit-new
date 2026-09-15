@@ -10,11 +10,14 @@ use uuid::Uuid;
 
 use utoipa::{IntoParams, ToSchema};
 
-use crate::api_response::{ApiErrorResponse, ApiResponse};
-use crate::error::AppError;
-use crate::middleware::permission::ActorContext;
-use crate::modules::auth::session_service::AuthenticatedSession;
-use crate::modules::supervision::models::{
+use crate::policies::supervision_access_policy;
+use crate::utils::request_context::actor_tenant_context_from_session;
+use crate::AppState;
+use school_auth::session_service::AuthenticatedSession;
+use school_authorization::ActorContext;
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse};
+use school_supervision::models::{
     AcknowledgeObservationRequest, ApproveObservationRequest, CancelObservationRequest,
     CreateSupervisionCycleRequest, CreateSupervisionTemplateRequest,
     ReplaceObservationEvaluatorsRequest, RequestSupervisionObservationRequest,
@@ -24,10 +27,7 @@ use crate::modules::supervision::models::{
     UpdateRequestedObservationRequest, UpdateSupervisionCycleRequest,
     UpdateSupervisionObservationRequest, UpdateSupervisionTemplateRequest,
 };
-use crate::modules::supervision::services;
-use crate::policies::supervision_access_policy;
-use crate::utils::request_context::actor_tenant_context_from_session;
-use crate::AppState;
+use school_supervision::services;
 
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
 #[into_params(parameter_in = Query)]
@@ -371,7 +371,7 @@ pub async fn get_observation(
     tag = "supervision",
     params(("id" = Uuid, Path, description = "Supervision observation ID")),
     responses(
-        (status = 200, description = "Supervision observation review", body = ApiResponse<crate::modules::supervision::models::SupervisionObservationReview>),
+        (status = 200, description = "Supervision observation review", body = ApiResponse<school_supervision::models::SupervisionObservationReview>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Observation review access denied", body = ApiErrorResponse),
         (status = 404, description = "Supervision observation not found", body = ApiErrorResponse)
@@ -458,7 +458,7 @@ pub async fn evaluator_availability(
     tag = "supervision",
     params(("id" = Uuid, Path, description = "Supervision observation ID")),
     responses(
-        (status = 200, description = "Timetable block-group options for the observation", body = ApiResponse<ItemsData<crate::modules::supervision::models::SupervisionTimetableOption>>),
+        (status = 200, description = "Timetable block-group options for the observation", body = ApiResponse<ItemsData<school_supervision::models::SupervisionTimetableOption>>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Observation management denied", body = ApiErrorResponse),
         (status = 404, description = "Supervision observation not found", body = ApiErrorResponse)
@@ -933,7 +933,7 @@ pub async fn acknowledge_observation(
     tag = "supervision",
     params(("id" = Uuid, Path, description = "Supervision cycle ID")),
     responses(
-        (status = 200, description = "Supervision cycle progress", body = ApiResponse<crate::modules::supervision::models::SupervisionCycleProgress>),
+        (status = 200, description = "Supervision cycle progress", body = ApiResponse<school_supervision::models::SupervisionCycleProgress>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Supervision report access denied", body = ApiErrorResponse),
         (status = 404, description = "Supervision cycle not found", body = ApiErrorResponse)

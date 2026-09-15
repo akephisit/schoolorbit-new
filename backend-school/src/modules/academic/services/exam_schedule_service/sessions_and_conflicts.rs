@@ -2,10 +2,10 @@ use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use crate::error::AppError;
 use crate::modules::academic::models::exam_schedule::{
     BlockedWindow, ExamInvigilatorView, ExamSessionView, PlaceExamSessionRequest,
 };
+use school_errors::AppError;
 
 use super::invigilation::{
     fetch_invigilator_staff_ids_for_assignment, fetch_invigilators_by_assignment_ids,

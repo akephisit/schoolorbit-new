@@ -1,66 +1,196 @@
-[package]
-name = "backend-school"
+[workspace]
+members = [
+    "crates/school-errors",
+    "crates/school-http",
+    "crates/school-authorization",
+    "crates/school-auth",
+    "crates/school-academic-core",
+    "crates/school-academic-delivery",
+    "crates/school-academic-timetable",
+    "crates/school-academic-assessment",
+    "crates/school-academic-results",
+    "crates/school-academic-lifecycle",
+    "crates/school-workflow",
+    "crates/school-question-bank",
+    "crates/school-admission",
+    "crates/school-supervision",
+    "crates/school-students",
+    "crates/school-staff",
+    "crates/school-calendar",
+    "crates/school-crypto",
+    "crates/school-test-db",
+    "crates/school-tenancy",
+    "crates/school-file-platform",
+    "crates/school-fonts",
+    "crates/school-certificates",
+    "crates/school-migrations",
+    "crates/school-permissions",
+]
+resolver = "2"
+
+[workspace.package]
 version = "0.1.0"
 edition = "2021"
 
-[dependencies]
+[workspace.lints.rust]
+dead_code = "deny"
+unused_imports = "deny"
+
+[workspace.dependencies]
+aes-gcm = "0.10"
+async-stream = "0.3.6"
+async-trait = "0.1"
+aws-config = "1.1"
+aws-credential-types = "1.1"
+aws-sdk-s3 = "1.11"
 axum = { version = "0.8.7", features = ["multipart", "ws"] }
-tokio = { version = "1", features = ["full"] }
-tower = "0.5"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-bigdecimal = { version = "0.4", features = ["serde"] }
-utoipa = { version = "5.5.0", features = ["chrono", "uuid"] }
-sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "migrate", "chrono", "uuid", "bigdecimal", "tls-native-tls"] }
+base64 = "0.22"
 bcrypt = "0.19"
-dotenvy = "0.15"
+bigdecimal = { version = "0.4", features = ["serde"] }
+bytes = "1.11"
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.10.4"
-uuid = { version = "1.10", features = ["serde", "v4", "v5"] }
-reqwest = { version = "0.12", features = ["json"] }
-async-trait = "0.1"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-subtle = "2.6"
-ipnet = "2"
-zeroize = { version = "1", features = ["derive"] }
-unicode-normalization = "0.1"
-
-# File Storage & R2/S3 Integration
-aws-config = "1.1"
-aws-sdk-s3 = "1.11"
-aws-credential-types = "1.1"
-
-# Image Processing
-image = "0.25"
-lopdf = { version = "0.38", default-features = false }
-ttf-parser = "0.25"
-mime_guess = "2.0"
-bytes = "1.11"
-url = "2.5"
-
-# File Hashing (for checksums)
-sha2 = "0.10"
-hmac = "0.12"
-hex = "0.4"
-
-# Field Encryption (AES-256-GCM)
-aes-gcm = "0.10"
-base64 = "0.22"
-sha256 = "1.5"
-rand = "0.9"
-tokio-cron-scheduler = "0.15.1"
-thiserror = "2.0.18"
 dashmap = "6.1.0"
+dotenvy = "0.15"
 futures = "0.3.31"
-tokio-stream = "0.1.18"
-async-stream = "0.3.6"
-web-push = "0.11.0"
-
-
-[dev-dependencies]
-tokio-test = "0.4"
+hex = "0.4"
+hmac = "0.12"
+http = "1"
 http-body-util = "0.1"
-tower = { version = "0.5", features = ["util"] }
+image = "0.25"
+ipnet = "2"
+lopdf = { version = "0.38", default-features = false }
+mime_guess = "2.0"
 rand = "0.9"
 regex = "1"
+reqwest = { version = "0.12", features = ["json"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+sha256 = "1.5"
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "migrate", "chrono", "uuid", "bigdecimal", "tls-native-tls"] }
+subtle = "2.6"
+thiserror = "2.0.18"
+tokio = { version = "1", features = ["full"] }
+tokio-cron-scheduler = "0.15.1"
+tokio-stream = "0.1.18"
+tokio-test = "0.4"
+tower = "0.5"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+ttf-parser = "0.25"
+unicode-normalization = "0.1"
+url = "2.5"
+utoipa = { version = "5.5.0", features = ["chrono", "uuid"] }
+uuid = { version = "1.10", features = ["serde", "v4", "v5"] }
+web-push = "0.11.0"
+zeroize = { version = "1", features = ["derive"] }
+school-permissions = { path = "crates/school-permissions" }
+school-migrations = { path = "crates/school-migrations" }
+school-errors = { path = "crates/school-errors" }
+school-http = { path = "crates/school-http" }
+school-authorization = { path = "crates/school-authorization" }
+school-auth = { path = "crates/school-auth" }
+school-academic-core = { path = "crates/school-academic-core" }
+school-academic-delivery = { path = "crates/school-academic-delivery" }
+school-academic-timetable = { path = "crates/school-academic-timetable" }
+school-academic-assessment = { path = "crates/school-academic-assessment" }
+school-academic-results = { path = "crates/school-academic-results" }
+school-academic-lifecycle = { path = "crates/school-academic-lifecycle" }
+school-workflow = { path = "crates/school-workflow" }
+school-question-bank = { path = "crates/school-question-bank" }
+school-admission = { path = "crates/school-admission" }
+school-supervision = { path = "crates/school-supervision" }
+school-students = { path = "crates/school-students" }
+school-staff = { path = "crates/school-staff" }
+school-calendar = { path = "crates/school-calendar" }
+school-crypto = { path = "crates/school-crypto" }
+school-test-db = { path = "crates/school-test-db" }
+school-tenancy = { path = "crates/school-tenancy" }
+school-file-platform = { path = "crates/school-file-platform" }
+school-fonts = { path = "crates/school-fonts" }
+school-certificates = { path = "crates/school-certificates" }
+
+[package]
+name = "backend-school"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+axum = { workspace = true }
+tokio = { workspace = true }
+tower = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+bigdecimal = { workspace = true }
+utoipa = { workspace = true }
+sqlx = { workspace = true }
+bcrypt = { workspace = true }
+dotenvy = { workspace = true }
+chrono = { workspace = true }
+chrono-tz = { workspace = true }
+uuid = { workspace = true }
+reqwest = { workspace = true }
+async-trait = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+subtle = { workspace = true }
+ipnet = { workspace = true }
+unicode-normalization = { workspace = true }
+
+bytes = { workspace = true }
+url = { workspace = true }
+
+# File Hashing (for checksums)
+sha2 = { workspace = true }
+hmac = { workspace = true }
+hex = { workspace = true }
+
+base64 = { workspace = true }
+rand = { workspace = true }
+tokio-cron-scheduler = { workspace = true }
+thiserror = { workspace = true }
+dashmap = { workspace = true }
+futures = { workspace = true }
+async-stream = { workspace = true }
+web-push = { workspace = true }
+school-migrations = { workspace = true }
+school-permissions = { workspace = true }
+school-errors = { workspace = true }
+school-http = { workspace = true }
+school-authorization = { workspace = true }
+school-auth = { workspace = true }
+school-academic-core = { workspace = true }
+school-academic-delivery = { workspace = true }
+school-academic-timetable = { workspace = true }
+school-academic-assessment = { workspace = true }
+school-academic-results = { workspace = true }
+school-academic-lifecycle = { workspace = true }
+school-workflow = { workspace = true }
+school-question-bank = { workspace = true }
+school-admission = { workspace = true }
+school-supervision = { workspace = true }
+school-students = { workspace = true }
+school-staff = { workspace = true }
+school-calendar = { workspace = true }
+school-crypto = { workspace = true }
+school-tenancy = { workspace = true }
+school-file-platform = { workspace = true }
+school-fonts = { workspace = true }
+school-certificates = { workspace = true }
+
+[dev-dependencies]
+school-supervision = { workspace = true, features = ["integration-test-support"] }
+school-academic-lifecycle = { workspace = true, features = ["integration-test-support"] }
+school-auth = { workspace = true, features = ["test-support"] }
+school-crypto = { workspace = true, features = ["test-support"] }
+school-test-db = { workspace = true }
+school-tenancy = { workspace = true, features = ["test-support"] }
+tokio-test = { workspace = true }
+http-body-util = { workspace = true }
+tower = { workspace = true, features = ["util"] }
+rand = { workspace = true }
+regex = { workspace = true }
+
+[lints]
+workspace = true

@@ -2,16 +2,16 @@ use chrono::NaiveDate;
 use uuid::Uuid;
 
 use super::{timetable_template_service, timetable_version_service};
-use crate::error::AppError;
 use crate::modules::academic::cutover_test_support::{
     apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
     CutoverFixture,
 };
-use crate::modules::academic::models::timetable::{
+use school_academic_timetable::models::timetable::{
     ApplyTemplateRequest, ClearTimetableRequest, FromCurrentRequest,
 };
-use crate::modules::academic::models::timetable_version::CloneTimetableVersionRequest;
-use crate::test_helpers::create_named_test_pool;
+use school_academic_timetable::models::timetable_version::CloneTimetableVersionRequest;
+use school_errors::AppError;
+use school_test_db::create_named_test_pool;
 
 #[tokio::test]
 async fn template_source_apply_and_clear_are_version_scoped() {

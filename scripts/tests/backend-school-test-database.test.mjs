@@ -25,6 +25,12 @@ async function fixture(t, { withPodman = true } = {}) {
 
     await writeExecutable(path.join(bin, 'bash'), '#!/bin/sh\nexec /bin/bash "$@"\n');
     await writeExecutable(path.join(bin, 'dirname'), '#!/bin/sh\nexec /usr/bin/dirname "$@"\n');
+    for (const command of ['grep', 'mktemp', 'rm', 'tee']) {
+        await writeExecutable(
+            path.join(bin, command),
+            `#!/bin/sh\nexec /usr/bin/${command} "$@"\n`
+        );
+    }
 
     if (withPodman) {
         await writeExecutable(
@@ -104,6 +110,12 @@ if [[ -n \${FAKE_CARGO_BLOCK_FILE-} ]]; then
     trap 'exit 143' TERM
     while :; do /bin/sleep 1; done
 fi
+case "\${FAKE_CARGO_REPORT:-passing}" in
+    passing) printf '%s\n' 'test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out' ;;
+    zero) printf '%s\n' 'test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out' ;;
+    none) ;;
+    *) exit 64 ;;
+esac
 exit "\${FAKE_CARGO_STATUS:-0}"
 `
     );
@@ -164,6 +176,81 @@ test('no arguments select the backend-school binary target', async (t) => {
 
     assert.equal(result.status, 0, result.error?.message ?? result.stderr);
     assert.match(await read(f.cargoLog), /arg=test\narg=--bin\narg=backend-school\n$/);
+});
+
+test('validated package mode selects the extracted crate and forwards its filter', async (t) => {
+    const f = await fixture(t);
+    const result = runRunner(f, [
+        '--package',
+        'school-auth',
+        'session_repository_tests',
+        '--',
+        '--nocapture'
+    ]);
+
+    assert.equal(result.status, 0, result.error?.message ?? result.stderr);
+    assert.equal(
+        await read(f.cargoLog),
+        [
+            'url=postgresql://schoolorbit_test:schoolorbit_test@127.0.0.1:55432/schoolorbit_test?sslmode=disable',
+            'arg=test',
+            'arg=-p',
+            'arg=school-auth',
+            'arg=session_repository_tests',
+            'arg=--',
+            'arg=--nocapture',
+            ''
+        ].join('\n')
+    );
+});
+
+for (const packageName of ['../backend-school', 'backend-school', 'missing-owner']) {
+    test(`invalid package mode target ${packageName} fails before Podman`, async (t) => {
+        const f = await fixture(t);
+        const result = runRunner(f, ['--package', packageName]);
+
+        assert.equal(result.status, 64);
+        assert.match(result.stderr, /workspace package/);
+        await assert.rejects(read(f.podmanLog));
+        await assert.rejects(read(f.cargoLog));
+    });
+}
+
+test('a focused command that matches zero tests fails instead of reporting success', async (t) => {
+    const f = await fixture(t);
+    const result = runRunner(
+        f,
+        ['--package', 'school-auth', 'removed_test_module'],
+        { FAKE_CARGO_REPORT: 'zero' }
+    );
+
+    assert.equal(result.status, 65);
+    assert.match(result.stderr, /matched zero tests/);
+    await assert.rejects(read(f.containerState));
+});
+
+test('explicit local binary target runs seed sandbox tests in the same database boundary', async (t) => {
+    const f = await fixture(t);
+    const result = runRunner(
+        f,
+        ['canonical_seed_is_idempotent_across_student_year_and_placement', '--', '--exact'],
+        { BACKEND_SCHOOL_TEST_BIN: 'seed_sandbox' }
+    );
+
+    assert.equal(result.status, 0, result.error?.message ?? result.stderr);
+    assert.equal(
+        await read(f.cargoLog),
+        [
+            'url=postgresql://schoolorbit_test:schoolorbit_test@127.0.0.1:55432/schoolorbit_test?sslmode=disable',
+            'arg=test',
+            'arg=--bin',
+            'arg=seed_sandbox',
+            'arg=canonical_seed_is_idempotent_across_student_year_and_placement',
+            'arg=--',
+            'arg=--exact',
+            ''
+        ].join('\n')
+    );
 });
 
 test('cargo failure status survives successful cleanup', async (t) => {

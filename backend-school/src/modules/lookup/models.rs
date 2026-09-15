@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-use crate::modules::academic::core::models::AcademicYearStatus;
+pub use school_academic_core::models::HomeroomLookupItem;
 
 /// Generic lookup item - minimal data for dropdowns
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -62,41 +62,6 @@ pub struct OrganizationUnitLookupItem {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(value_type = Uuid)]
     pub subject_group_id: Option<Uuid>,
-}
-
-/// Grade level lookup item
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct GradeLevelLookupItem {
-    pub id: Uuid,
-    pub code: String,
-    pub name: String,
-    #[schema(required = true)]
-    pub short_name: Option<String>,
-    pub level_type: String,
-    pub level_order: i32,
-}
-
-/// Homeroom lookup item for a caller-selected academic year.
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct HomeroomLookupItem {
-    pub id: Uuid,
-    pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = String)]
-    pub grade_level: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = Uuid)]
-    pub grade_level_id: Option<Uuid>,
-}
-
-/// Academic year lookup item
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct AcademicYearLookupItem {
-    pub id: Uuid,
-    pub name: String,
-    pub year: i32, // Numeric year for easy filtering/selection
-    pub status: AcademicYearStatus,
 }
 
 /// Student lookup item with the placement in the caller-selected academic year.

@@ -1,5 +1,5 @@
-use crate::error::AppError;
 use crate::modules::system::models::ProvisionRequest;
+use school_errors::AppError;
 use sqlx::postgres::PgPoolOptions;
 
 pub struct ProvisionOutcome {
@@ -29,7 +29,7 @@ pub async fn provision_tenant(payload: ProvisionRequest) -> Result<ProvisionOutc
             AppError::InternalServerError(format!("Database connection failed: {}", error))
         })?;
 
-    crate::db::migration::run_tenant_migrations(&pool)
+    school_migrations::run_tenant_migrations(&pool)
         .await
         .map_err(|error| {
             tracing::error!("Tenant migration failed: {}", error);

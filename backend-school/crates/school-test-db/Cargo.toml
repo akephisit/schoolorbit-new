@@ -1,0 +1,16 @@
+[package]
+name = "school-test-db"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bcrypt = { workspace = true }
+dotenvy = { workspace = true }
+school-migrations = { workspace = true }
+sha2 = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+
+[lints]
+workspace = true

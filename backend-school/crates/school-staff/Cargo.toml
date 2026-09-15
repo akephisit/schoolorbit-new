@@ -1,0 +1,24 @@
+[package]
+name = "school-staff"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bcrypt = { workspace = true }
+chrono = { workspace = true }
+school-crypto = { workspace = true }
+school-errors = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+utoipa = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+school-authorization = { workspace = true }
+school-test-db = { workspace = true }
+
+[lints]
+workspace = true

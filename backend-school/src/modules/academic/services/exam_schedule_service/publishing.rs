@@ -2,8 +2,8 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::shared::{require_exam_write, ExamWriteTarget};
-use crate::error::AppError;
 use crate::modules::academic::models::exam_schedule::ExamRound;
+use school_errors::AppError;
 
 use super::workspace::{
     build_readiness_with_source_changes, count_source_changes_in_tx, fetch_workspace_counts_in_tx,

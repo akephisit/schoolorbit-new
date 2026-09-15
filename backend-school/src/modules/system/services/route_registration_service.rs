@@ -1,6 +1,6 @@
-use crate::error::AppError;
 use crate::modules::menu::models::{RouteItem, RouteRegistration};
 use crate::modules::menu::services::academic_template_service::recommended_section;
+use school_errors::AppError;
 use sqlx::{PgPool, Postgres, Transaction};
 use std::collections::HashSet;
 
@@ -244,7 +244,7 @@ fn route_workspace_code<'a>(workspace: Option<&'a str>, group: &'a str) -> &'a s
 mod tests {
     use super::*;
     use crate::modules::menu::models::{RouteItem, RouteRegistration};
-    use crate::test_helpers::{create_named_test_pool, run_test_migrations};
+    use school_test_db::{create_named_test_pool, run_test_migrations};
     use sqlx::{FromRow, PgPool};
     use uuid::Uuid;
 

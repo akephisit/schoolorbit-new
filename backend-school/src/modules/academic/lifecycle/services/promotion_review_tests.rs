@@ -1,11 +1,9 @@
 use super::*;
-use crate::{
-    modules::academic::{
-        cutover_test_support::apply_migrations_through,
-        results::{self, models as rm, services as rs},
-    },
-    permissions::registry::codes,
+use crate::modules::academic::{
+    cutover_test_support::apply_migrations_through,
+    results::{self, models as rm, services as rs},
 };
+use school_permissions::registry::codes;
 
 pub(crate) fn hold(row_version: i64) -> ReviewPromotionItemInput {
     ReviewPromotionItemInput {
@@ -153,7 +151,7 @@ async fn ready_run_cohort(
             codes::ACADEMIC_PROMOTION_MANAGE_SCHOOL.into(),
         ],
     };
-    let run = super::super::create_run(
+    let run = super::create_run(
         &pool,
         &actor,
         CreatePromotionRunInput {
@@ -165,7 +163,7 @@ async fn ready_run_cohort(
     )
     .await
     .unwrap();
-    let calc = super::super::calculate_run(
+    let calc = super::calculate_run(
         &pool,
         &actor,
         run.id,
@@ -238,7 +236,7 @@ async fn promotion_review_requires_manage_current_evidence_and_explicit_decision
     ));
     let saved: PromotionRunItem = sqlx::query_as(&format!(
         "SELECT {} FROM academic_promotion_run_items WHERE id=$1",
-        super::super::promotion_calculation::ITEM_COLUMNS
+        super::promotion_calculation::ITEM_COLUMNS
     ))
     .bind(item.id)
     .fetch_one(&pool)
@@ -275,11 +273,9 @@ async fn promotion_review_requires_manage_current_evidence_and_explicit_decision
 #[tokio::test]
 async fn promotion_review_cannot_override_missing_annual_results_with_a_reason() {
     let (pool, actor, input) =
-        super::super::promotion_runs::tests::fixture("promotion_review_missing").await;
-    let run = super::super::create_run(&pool, &actor, input)
-        .await
-        .unwrap();
-    let calc = super::super::calculate_run(
+        super::promotion_runs::tests::fixture("promotion_review_missing").await;
+    let run = super::create_run(&pool, &actor, input).await.unwrap();
+    let calc = super::calculate_run(
         &pool,
         &actor,
         run.id,
@@ -316,7 +312,7 @@ async fn promotion_review_rolls_back_on_audit_failure_and_recalculation_requires
     let review = review_item(&pool, &actor, calc.run.id, item.id, hold(1))
         .await
         .unwrap();
-    let calc = super::super::calculate_run(
+    let calc = super::calculate_run(
         &pool,
         &actor,
         calc.run.id,

@@ -1,19 +1,11 @@
 use axum::http::HeaderMap;
 use sqlx::PgPool;
-use uuid::Uuid;
 
-use crate::db::school_mapping::get_school_database_info;
-use crate::error::AppError;
-use crate::modules::auth::runtime::AuthRuntime;
 use crate::utils::subdomain::{extract_subdomain_from_request, TenantOriginPolicy};
 use crate::AppState;
-
-#[derive(Clone)]
-pub struct TenantContext {
-    pub tenant_id: Uuid,
-    pub subdomain: String,
-    pub pool: PgPool,
-}
+use school_auth::runtime::AuthRuntime;
+use school_errors::AppError;
+use school_tenancy::{get_school_database_info, TenantContext};
 
 pub async fn resolve_tenant_context(
     state: &AppState,
@@ -54,7 +46,7 @@ pub async fn resolve_tenant_context_by_subdomain(
         })?;
 
     if permissions_changed {
-        state.permission_cache.invalidate_tenant(subdomain);
+        state.invalidate_permission_tenant(subdomain);
         state.notify_all_permissions_changed(subdomain);
     }
 
@@ -114,7 +106,7 @@ pub async fn resolve_auth_tenant_context(
         .map_err(|_| AppError::ServiceUnavailable("tenant_pool".to_string()))?;
 
     if permissions_changed {
-        runtime.permission_cache.invalidate_tenant(&subdomain);
+        runtime.invalidate_permission_tenant(&subdomain);
         runtime.notify_all_permissions_changed(&subdomain);
     }
 
@@ -136,17 +128,13 @@ mod tests {
         routing::get,
         Router,
     };
+    use school_authorization::PermissionCache;
+    use school_http::AppErrorHttpExt;
+    use school_tenancy::{AdminClient, AdminClientConfig, PoolManager};
     use tokio::{net::TcpListener, sync::broadcast};
 
-    use crate::{
-        db::{
-            admin_client::{AdminClient, AdminClientConfig},
-            permission_cache::PermissionCache,
-            pool_manager::PoolManager,
-        },
-        modules::auth::{
-            config::SessionConfig, runtime::AuthRuntime, session_crypto::SessionHmacKey,
-        },
+    use school_auth::{
+        config::SessionConfig, runtime::AuthRuntime, session_crypto::SessionHmacKey,
     };
 
     use super::resolve_auth_tenant_context;
@@ -184,6 +172,7 @@ mod tests {
                 AdminClientConfig::for_tests(Duration::from_secs(1), 1, Duration::from_millis(1)),
             )),
             pool_manager: Arc::new(PoolManager::new()),
+            identity_cache: Arc::new(school_auth::session_cache::SessionCache::new()),
             permission_cache: Arc::new(PermissionCache::new()),
             config: Arc::new(SessionConfig::for_tests(SessionHmacKey::for_tests(
                 [17; 32],

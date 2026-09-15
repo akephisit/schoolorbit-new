@@ -1,7 +1,7 @@
 pub mod handlers;
-pub mod models;
-pub mod services;
 
+#[cfg(test)]
+mod observation_integration_tests;
 #[cfg(test)]
 mod services_tests;
 

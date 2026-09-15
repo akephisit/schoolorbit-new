@@ -1,0 +1,1465 @@
+use chrono::{DateTime, NaiveDate, Utc};
+use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
+use utoipa::{IntoParams, ToSchema};
+use uuid::Uuid;
+
+use school_academic_core::models::HomeroomLookupItem;
+use school_academic_core::models::{GradeLevelLookupItem, RequirementKind, StudyProgramOption};
+
+/// Staff lookup item with title
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct StaffLookupItem {
+    pub id: Uuid,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = String)]
+    pub title: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
+pub struct Room {
+    pub id: Uuid,
+    #[schema(required = true)]
+    pub building_id: Option<Uuid>,
+    pub name_th: String,
+    #[schema(required = true)]
+    pub name_en: Option<String>,
+    #[schema(required = true)]
+    pub code: Option<String>,
+    pub room_type: String,
+    pub capacity: i32,
+    #[schema(required = true)]
+    pub floor: Option<i32>,
+    pub status: String,
+    #[schema(required = true)]
+    pub description: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    #[sqlx(default)]
+    #[schema(required = true)]
+    pub building_name: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, sqlx::Type, ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "text", rename_all = "snake_case")]
+pub enum LearningOfferingKind {
+    Course,
+    Activity,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, sqlx::Type, ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "text", rename_all = "snake_case")]
+pub enum LearningOfferingStatus {
+    Draft,
+    Published,
+    Cancelled,
+    Closed,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, sqlx::Type, ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "text", rename_all = "snake_case")]
+pub enum OfferingTargetKind {
+    Homeroom,
+    GradeProgram,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, sqlx::Type, ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "text", rename_all = "snake_case")]
+pub enum ActivityRegistrationType {
+    #[serde(rename = "self")]
+    #[sqlx(rename = "self")]
+    SelfRegistration,
+    Assigned,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, sqlx::Type, ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "text", rename_all = "snake_case")]
+pub enum ActivitySchedulingMode {
+    Synchronized,
+    Independent,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, sqlx::Type, ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "text", rename_all = "snake_case")]
+pub enum LearningTeacherRole {
+    Primary,
+    Secondary,
+    Assistant,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, sqlx::Type, ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "text", rename_all = "snake_case")]
+pub enum RosterStatus {
+    Draft,
+    Published,
+    Closed,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, sqlx::Type, ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "text", rename_all = "snake_case")]
+pub enum MembershipStatus {
+    Active,
+    Ended,
+    Removed,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RosterOverrideAction {
+    Add,
+    Remove,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CurriculumPreviewAction {
+    Create,
+    Retain,
+    Conflict,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PreparationAction {
+    Apply,
+    Skip,
+    DeferGroups,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PreparationGroupingState {
+    Proposed,
+    Deferred,
+    Conflict,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, sqlx::Type, ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "text", rename_all = "snake_case")]
+pub enum AcademicTermChangeSetStatus {
+    Draft,
+    Published,
+    Cancelled,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, sqlx::Type, ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "text", rename_all = "snake_case")]
+pub enum AcademicTermChangeActionKind {
+    AddOffering,
+    StopOffering,
+    AdjustWeeklyPeriodTarget,
+    AddGroupTeacher,
+    AdjustGroupTeacherRole,
+    StopGroupTeacher,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(
+    tag = "actionKind",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
+pub enum AcademicTermChangeItem {
+    AddOffering {
+        id: Uuid,
+        #[schema(rename = "learningOfferingId")]
+        learning_offering_id: Uuid,
+        #[schema(rename = "weeklyPeriodTarget")]
+        weekly_period_target: i32,
+        #[schema(rename = "rowVersion")]
+        row_version: i64,
+        #[schema(rename = "createdBy")]
+        created_by: Uuid,
+        #[schema(rename = "createdAt")]
+        created_at: DateTime<Utc>,
+        #[schema(rename = "updatedAt")]
+        updated_at: DateTime<Utc>,
+    },
+    StopOffering {
+        id: Uuid,
+        #[schema(rename = "learningOfferingId")]
+        learning_offering_id: Uuid,
+        #[schema(rename = "rowVersion")]
+        row_version: i64,
+        #[schema(rename = "createdBy")]
+        created_by: Uuid,
+        #[schema(rename = "createdAt")]
+        created_at: DateTime<Utc>,
+        #[schema(rename = "updatedAt")]
+        updated_at: DateTime<Utc>,
+    },
+    AdjustWeeklyPeriodTarget {
+        id: Uuid,
+        #[schema(rename = "learningOfferingId")]
+        learning_offering_id: Uuid,
+        #[schema(rename = "weeklyPeriodTarget")]
+        weekly_period_target: i32,
+        #[schema(rename = "rowVersion")]
+        row_version: i64,
+        #[schema(rename = "createdBy")]
+        created_by: Uuid,
+        #[schema(rename = "createdAt")]
+        created_at: DateTime<Utc>,
+        #[schema(rename = "updatedAt")]
+        updated_at: DateTime<Utc>,
+    },
+    AddGroupTeacher {
+        id: Uuid,
+        #[schema(rename = "learningGroupId")]
+        learning_group_id: Uuid,
+        #[schema(rename = "learningGroupLabel")]
+        learning_group_label: String,
+        #[schema(rename = "teacherId")]
+        teacher_id: Uuid,
+        #[schema(rename = "teacherLabel")]
+        teacher_label: String,
+        #[schema(rename = "teacherRole")]
+        teacher_role: LearningTeacherRole,
+        #[schema(rename = "rowVersion")]
+        row_version: i64,
+        #[schema(rename = "createdBy")]
+        created_by: Uuid,
+        #[schema(rename = "createdAt")]
+        created_at: DateTime<Utc>,
+        #[schema(rename = "updatedAt")]
+        updated_at: DateTime<Utc>,
+    },
+    AdjustGroupTeacherRole {
+        id: Uuid,
+        #[schema(rename = "learningGroupId")]
+        learning_group_id: Uuid,
+        #[schema(rename = "learningGroupLabel")]
+        learning_group_label: String,
+        #[schema(rename = "learningGroupTeacherId")]
+        learning_group_teacher_id: Uuid,
+        #[schema(rename = "teacherId")]
+        teacher_id: Uuid,
+        #[schema(rename = "teacherLabel")]
+        teacher_label: String,
+        #[schema(rename = "teacherRole")]
+        teacher_role: LearningTeacherRole,
+        #[schema(rename = "rowVersion")]
+        row_version: i64,
+        #[schema(rename = "createdBy")]
+        created_by: Uuid,
+        #[schema(rename = "createdAt")]
+        created_at: DateTime<Utc>,
+        #[schema(rename = "updatedAt")]
+        updated_at: DateTime<Utc>,
+    },
+    StopGroupTeacher {
+        id: Uuid,
+        #[schema(rename = "learningGroupId")]
+        learning_group_id: Uuid,
+        #[schema(rename = "learningGroupLabel")]
+        learning_group_label: String,
+        #[schema(rename = "learningGroupTeacherId")]
+        learning_group_teacher_id: Uuid,
+        #[schema(rename = "teacherId")]
+        teacher_id: Uuid,
+        #[schema(rename = "teacherLabel")]
+        teacher_label: String,
+        #[schema(rename = "teacherRole")]
+        teacher_role: LearningTeacherRole,
+        #[schema(rename = "rowVersion")]
+        row_version: i64,
+        #[schema(rename = "createdBy")]
+        created_by: Uuid,
+        #[schema(rename = "createdAt")]
+        created_at: DateTime<Utc>,
+        #[schema(rename = "updatedAt")]
+        updated_at: DateTime<Utc>,
+    },
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AcademicTermChangeSet {
+    pub id: Uuid,
+    pub academic_term_id: Uuid,
+    pub academic_year_id: Uuid,
+    pub effective_from: NaiveDate,
+    pub reason: String,
+    pub status: AcademicTermChangeSetStatus,
+    pub base_timetable_version_id: Uuid,
+    pub target_timetable_version_id: Uuid,
+    pub row_version: i64,
+    pub created_by: Uuid,
+    pub published_by: Option<Uuid>,
+    pub published_at: Option<DateTime<Utc>>,
+    pub cancelled_by: Option<Uuid>,
+    pub cancelled_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub items: Vec<AcademicTermChangeItem>,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateAcademicTermChangeSetRequest {
+    pub academic_term_id: Uuid,
+    pub effective_from: NaiveDate,
+    pub reason: String,
+    pub idempotency_key: Uuid,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdateAcademicTermChangeSetRequest {
+    pub row_version: i64,
+    pub effective_from: NaiveDate,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CancelAcademicTermChangeSetRequest {
+    pub row_version: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AcademicTermChangeSetQuery {
+    pub academic_term_id: Uuid,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(
+    tag = "action",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
+pub enum UpsertAcademicTermChangeItemRequest {
+    AddCourse {
+        #[schema(rename = "changeSetRowVersion")]
+        change_set_row_version: i64,
+        offering: CreateCourseOfferingRequest,
+    },
+    AddActivity {
+        #[schema(rename = "changeSetRowVersion")]
+        change_set_row_version: i64,
+        #[schema(rename = "weeklyPeriodTarget")]
+        weekly_period_target: i32,
+        offering: CreateActivityOfferingRequest,
+    },
+    StopOffering {
+        #[schema(rename = "changeSetRowVersion")]
+        change_set_row_version: i64,
+        #[schema(rename = "itemRowVersion")]
+        item_row_version: Option<i64>,
+        #[schema(rename = "learningOfferingId")]
+        learning_offering_id: Uuid,
+    },
+    AdjustWeeklyPeriodTarget {
+        #[schema(rename = "changeSetRowVersion")]
+        change_set_row_version: i64,
+        #[schema(rename = "itemRowVersion")]
+        item_row_version: Option<i64>,
+        #[schema(rename = "learningOfferingId")]
+        learning_offering_id: Uuid,
+        #[schema(rename = "weeklyPeriodTarget")]
+        weekly_period_target: i32,
+    },
+    AddGroupTeacher {
+        #[schema(rename = "changeSetRowVersion")]
+        change_set_row_version: i64,
+        #[schema(rename = "itemRowVersion")]
+        item_row_version: Option<i64>,
+        #[schema(rename = "learningGroupId")]
+        learning_group_id: Uuid,
+        #[schema(rename = "teacherId")]
+        teacher_id: Uuid,
+        #[schema(rename = "teacherRole")]
+        teacher_role: LearningTeacherRole,
+    },
+    AdjustGroupTeacherRole {
+        #[schema(rename = "changeSetRowVersion")]
+        change_set_row_version: i64,
+        #[schema(rename = "itemRowVersion")]
+        item_row_version: Option<i64>,
+        #[schema(rename = "learningGroupId")]
+        learning_group_id: Uuid,
+        #[schema(rename = "learningGroupTeacherId")]
+        learning_group_teacher_id: Uuid,
+        #[schema(rename = "teacherId")]
+        teacher_id: Uuid,
+        #[schema(rename = "teacherRole")]
+        teacher_role: LearningTeacherRole,
+    },
+    StopGroupTeacher {
+        #[schema(rename = "changeSetRowVersion")]
+        change_set_row_version: i64,
+        #[schema(rename = "itemRowVersion")]
+        item_row_version: Option<i64>,
+        #[schema(rename = "learningGroupId")]
+        learning_group_id: Uuid,
+        #[schema(rename = "learningGroupTeacherId")]
+        learning_group_teacher_id: Uuid,
+        #[schema(rename = "teacherId")]
+        teacher_id: Uuid,
+    },
+}
+
+impl UpsertAcademicTermChangeItemRequest {
+    pub fn change_set_row_version(&self) -> i64 {
+        match self {
+            Self::AddCourse {
+                change_set_row_version,
+                ..
+            }
+            | Self::AddActivity {
+                change_set_row_version,
+                ..
+            }
+            | Self::StopOffering {
+                change_set_row_version,
+                ..
+            }
+            | Self::AdjustWeeklyPeriodTarget {
+                change_set_row_version,
+                ..
+            }
+            | Self::AddGroupTeacher {
+                change_set_row_version,
+                ..
+            }
+            | Self::AdjustGroupTeacherRole {
+                change_set_row_version,
+                ..
+            }
+            | Self::StopGroupTeacher {
+                change_set_row_version,
+                ..
+            } => *change_set_row_version,
+        }
+    }
+
+    pub fn existing_learning_offering_id(&self) -> Option<Uuid> {
+        match self {
+            Self::StopOffering {
+                learning_offering_id,
+                ..
+            }
+            | Self::AdjustWeeklyPeriodTarget {
+                learning_offering_id,
+                ..
+            } => Some(*learning_offering_id),
+            Self::AddCourse { .. }
+            | Self::AddActivity { .. }
+            | Self::AddGroupTeacher { .. }
+            | Self::AdjustGroupTeacherRole { .. }
+            | Self::StopGroupTeacher { .. } => None,
+        }
+    }
+
+    pub fn existing_learning_group_id(&self) -> Option<Uuid> {
+        match self {
+            Self::AddGroupTeacher {
+                learning_group_id, ..
+            }
+            | Self::AdjustGroupTeacherRole {
+                learning_group_id, ..
+            }
+            | Self::StopGroupTeacher {
+                learning_group_id, ..
+            } => Some(*learning_group_id),
+            Self::AddCourse { .. }
+            | Self::AddActivity { .. }
+            | Self::StopOffering { .. }
+            | Self::AdjustWeeklyPeriodTarget { .. } => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DeleteAcademicTermChangeItemRequest {
+    pub change_set_row_version: i64,
+    pub item_row_version: i64,
+}
+
+#[derive(
+    Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, ToSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum AcademicChangeFindingSeverity {
+    Blocking,
+    Warning,
+}
+
+#[derive(
+    Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, ToSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum AcademicChangeFindingCode {
+    ChangeSetNoItems,
+    ChangeSetStale,
+    TermNotWritable,
+    EffectiveDateInvalid,
+    BaseTimetableVersionStale,
+    TargetTimetableVersionStale,
+    ChangeItemStale,
+    ResourceStale,
+    DraftGroup,
+    MissingPrimaryTeacher,
+    MissingEntryInstructor,
+    UnpublishedRoster,
+    OfferingUnavailable,
+    MissingWeeklyPeriodTarget,
+    WeeklyPeriodDeficit,
+    WeeklyPeriodExcess,
+    HomeroomConflict,
+    LearningGroupConflict,
+    TeacherConflict,
+    RoomConflict,
+    StoppedOfferingStillScheduled,
+    MissingEffectiveTeacher,
+    StoppedTeacherStillScheduled,
+    EntryInstructorNotEffective,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AcademicChangeFinding {
+    pub code: AcademicChangeFindingCode,
+    pub severity: AcademicChangeFindingSeverity,
+    pub title: String,
+    pub guidance: String,
+    pub affected_count: i64,
+    pub route: Option<String>,
+    pub resource_id: Option<Uuid>,
+    pub learning_group_id: Option<Uuid>,
+    pub learning_offering_id: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AcademicChangeImpactCounts {
+    pub groups: i64,
+    pub homerooms: i64,
+    pub membership_intervals: i64,
+    pub teacher_assignments: i64,
+    pub target_timetable_entries: i64,
+    pub course_assessment_plans: i64,
+    pub course_assessment_phases: i64,
+    pub learning_group_score_items: i64,
+    pub student_scores: i64,
+    pub result_selections: i64,
+    pub result_confirmations: i64,
+    pub activity_evaluations: i64,
+    pub learner_evaluations: i64,
+    pub official_result_locks: i64,
+    pub official_results: i64,
+    pub result_corrections: i64,
+    pub exam_schedule_items: i64,
+    pub supervision_observations: i64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AcademicOfferingScheduleCount {
+    pub learning_offering_id: Uuid,
+    pub learning_group_id: Uuid,
+    pub offering_label: String,
+    pub learning_group_label: String,
+    pub actual_periods: i64,
+    pub target_periods: i32,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AcademicTermChangeSetPreview {
+    pub change_set_id: Uuid,
+    pub change_set_row_version: i64,
+    pub target_timetable_version_id: Uuid,
+    pub target_timetable_version_row_version: i64,
+    pub effective_from: NaiveDate,
+    pub impact_counts: AcademicChangeImpactCounts,
+    pub schedule_counts: Vec<AcademicOfferingScheduleCount>,
+    pub findings: Vec<AcademicChangeFinding>,
+    pub preview_hash: String,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PublishAcademicTermChangeSetRequest {
+    pub row_version: i64,
+    pub target_timetable_version_row_version: i64,
+    pub preview_hash: String,
+    #[serde(default)]
+    pub acknowledged_warning_codes: Vec<AcademicChangeFindingCode>,
+    pub idempotency_key: Uuid,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TeacherHandoffMode {
+    AssignOne,
+    AssignCoteachers,
+    Manual,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PreviewTeacherHandoffRequest {
+    pub change_set_row_version: i64,
+    pub target_timetable_version_row_version: i64,
+    pub teacher_change_item_id: Uuid,
+    #[serde(default)]
+    pub entry_ids: Vec<Uuid>,
+    pub mode: TeacherHandoffMode,
+    #[serde(default)]
+    pub instructor_ids: Vec<Uuid>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TeacherHandoffEntryVersion {
+    pub entry_id: Uuid,
+    pub row_version: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ApplyTeacherHandoffRequest {
+    pub change_set_row_version: i64,
+    pub target_timetable_version_row_version: i64,
+    pub teacher_change_item_id: Uuid,
+    pub entries: Vec<TeacherHandoffEntryVersion>,
+    pub mode: TeacherHandoffMode,
+    #[serde(default)]
+    pub instructor_ids: Vec<Uuid>,
+    pub preview_hash: String,
+    pub idempotency_key: Uuid,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TeacherHandoffInstructorPreview {
+    pub instructor_id: Uuid,
+    pub display_name: String,
+    pub role: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TeacherHandoffConflictKind {
+    InstructorCollision,
+    DuplicateInstructor,
+    IneligibleInstructor,
+    EntryOutsideTarget,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TeacherHandoffConflict {
+    pub kind: TeacherHandoffConflictKind,
+    pub message: String,
+    pub entry_ids: Vec<Uuid>,
+    pub instructor_ids: Vec<Uuid>,
+    pub timetable_route: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TeacherHandoffEntryPreview {
+    pub entry_id: Uuid,
+    pub row_version: i64,
+    pub learning_group_id: Uuid,
+    pub learning_group_label: String,
+    pub offering_label: String,
+    pub day_of_week: String,
+    pub bell_schedule_period_id: Uuid,
+    pub period_label: String,
+    pub room_label: Option<String>,
+    pub before_instructors: Vec<TeacherHandoffInstructorPreview>,
+    pub after_instructors: Vec<TeacherHandoffInstructorPreview>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TeacherHandoffPreview {
+    pub change_set_id: Uuid,
+    pub change_set_row_version: i64,
+    pub teacher_change_item_id: Uuid,
+    pub target_timetable_version_id: Uuid,
+    pub target_timetable_version_row_version: i64,
+    pub mode: TeacherHandoffMode,
+    pub affected_entries: Vec<TeacherHandoffEntryPreview>,
+    pub proposed_entries: Vec<TeacherHandoffEntryPreview>,
+    pub conflicts: Vec<TeacherHandoffConflict>,
+    pub preview_hash: Option<String>,
+    pub can_apply: bool,
+    pub timetable_route: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyTeacherHandoffResponse {
+    pub handoff: TeacherHandoffPreview,
+    pub updated_entries: Vec<TeacherHandoffEntryVersion>,
+    pub replayed: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ActivityAttendanceRequirement {
+    #[schema(value_type = Option<String>, pattern = r"^(0|[1-9]\d*)(\.\d{1,2})?$")]
+    pub minimum_percent: Option<String>,
+    pub required_sessions: Option<i32>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ActivityPassCriteria {
+    pub require_attendance: bool,
+    pub require_teacher_confirmation: bool,
+    pub outcomes: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OfferingTargetInput {
+    pub target_kind: OfferingTargetKind,
+    pub homeroom_id: Option<Uuid>,
+    pub grade_level_id: Uuid,
+    pub study_program_id: Uuid,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateCourseOfferingRequest {
+    pub academic_term_id: Uuid,
+    pub subject_version_id: Uuid,
+    pub curriculum_course_requirement_id: Option<Uuid>,
+    pub targets: Vec<OfferingTargetInput>,
+    #[schema(value_type = String, pattern = r"^(0|[1-9]\d*)(\.\d{1,2})?$")]
+    pub assessment_total_score: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateActivityOfferingRequest {
+    pub academic_term_id: Uuid,
+    pub activity_version_id: Uuid,
+    pub curriculum_activity_requirement_id: Option<Uuid>,
+    pub targets: Vec<OfferingTargetInput>,
+    pub registration_type: ActivityRegistrationType,
+    pub scheduling_mode: ActivitySchedulingMode,
+    pub capacity: Option<i32>,
+    pub attendance_requirement: ActivityAttendanceRequirement,
+    pub pass_criteria: ActivityPassCriteria,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CreateLearningOfferingRequest {
+    Course(CreateCourseOfferingRequest),
+    Activity(CreateActivityOfferingRequest),
+}
+
+impl CreateLearningOfferingRequest {
+    pub fn academic_term_id(&self) -> Uuid {
+        match self {
+            Self::Course(request) => request.academic_term_id,
+            Self::Activity(request) => request.academic_term_id,
+        }
+    }
+
+    pub fn targets(&self) -> &[OfferingTargetInput] {
+        match self {
+            Self::Course(request) => &request.targets,
+            Self::Activity(request) => &request.targets,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdateLearningOfferingRequest {
+    pub row_version: i64,
+    pub targets: Vec<OfferingTargetInput>,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PublishLearningOfferingRequest {
+    pub row_version: i64,
+    pub idempotency_key: Uuid,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LearningOfferingQuery {
+    pub academic_term_id: Uuid,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HomeroomDeliveryQuery {
+    pub academic_year_id: Uuid,
+    pub academic_term_id: Uuid,
+    pub timetable_version_id: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LearningGroupTermQuery {
+    pub academic_term_id: Uuid,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct StudentActivityRegistrationQuery {
+    pub academic_term_id: Uuid,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PreviewCurriculumOfferingsRequest {
+    pub academic_term_id: Uuid,
+    pub study_program_ids: Vec<Uuid>,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ApplyCurriculumOfferingsRequest {
+    pub academic_term_id: Uuid,
+    pub study_program_ids: Vec<Uuid>,
+    pub source_hash: String,
+    pub idempotency_key: Uuid,
+    pub choices: Vec<CurriculumPreparationChoice>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LearningOfferingTarget {
+    pub id: Uuid,
+    pub target_kind: OfferingTargetKind,
+    pub homeroom_id: Option<Uuid>,
+    pub grade_level_id: Uuid,
+    pub study_program_id: Uuid,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CourseOfferingSnapshot {
+    pub subject_version_id: Uuid,
+    pub subject_id: Uuid,
+    pub curriculum_course_requirement_id: Option<Uuid>,
+    pub credit: String,
+    pub hours: Option<String>,
+    pub standard_periods_per_week: i32,
+    #[schema(value_type = String, pattern = r"^(0|[1-9]\d*)(\.\d{1,2})?$")]
+    pub assessment_total_score: String,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityOfferingSnapshot {
+    pub activity_version_id: Uuid,
+    pub activity_id: Uuid,
+    pub curriculum_activity_requirement_id: Option<Uuid>,
+    pub registration_type: ActivityRegistrationType,
+    pub scheduling_mode: ActivitySchedulingMode,
+    pub hours: String,
+    pub capacity: Option<i32>,
+    pub attendance_requirement: ActivityAttendanceRequirement,
+    pub pass_criteria: ActivityPassCriteria,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct StudentActivityGroupOption {
+    pub id: Uuid,
+    pub code: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub capacity: Option<i32>,
+    pub member_count: i64,
+    pub teacher_names: Vec<String>,
+    pub enrolled: bool,
+    pub registration_open: bool,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct StudentActivityOfferingOption {
+    pub id: Uuid,
+    pub academic_term_id: Uuid,
+    pub academic_year_id: Uuid,
+    pub code: String,
+    pub name: String,
+    pub activity_type: String,
+    pub enrolled_group_id: Option<Uuid>,
+    pub groups: Vec<StudentActivityGroupOption>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct StudentActivityRegistrationResult {
+    pub learning_offering_id: Uuid,
+    pub learning_group_id: Uuid,
+    pub student_academic_year_id: Uuid,
+    pub enrolled: bool,
+    pub revision: i64,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum LearningOfferingSnapshot {
+    Course(CourseOfferingSnapshot),
+    Activity(ActivityOfferingSnapshot),
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LearningOffering {
+    pub id: Uuid,
+    pub academic_term_id: Uuid,
+    pub academic_year_id: Uuid,
+    pub kind: LearningOfferingKind,
+    pub code_snapshot: String,
+    pub name_snapshot: String,
+    pub source_requirement_kind: Option<String>,
+    pub source_requirement_id: Option<Uuid>,
+    pub status: LearningOfferingStatus,
+    pub published_at: Option<DateTime<Utc>>,
+    #[schema(required = true)]
+    pub starts_on: Option<NaiveDate>,
+    #[schema(required = true)]
+    pub ends_on: Option<NaiveDate>,
+    #[schema(required = true)]
+    pub stop_reason: Option<String>,
+    pub owning_organization_unit_id: Uuid,
+    pub row_version: i64,
+    pub migrated: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub snapshot: LearningOfferingSnapshot,
+    pub targets: Vec<LearningOfferingTarget>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LearningOfferingOverviewItem {
+    pub offering: LearningOffering,
+    pub grade_levels: Vec<GradeLevelLookupItem>,
+    pub study_programs: Vec<StudyProgramOption>,
+    pub group_count: i64,
+    pub teacher_assignment_count: i64,
+    pub groups_without_primary_teacher: i64,
+    pub published_roster_count: i64,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LearningDeliveryOverview {
+    pub academic_term_id: Uuid,
+    pub offerings: Vec<LearningOfferingOverviewItem>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HomeroomOfferingState {
+    Missing,
+    Draft,
+    Published,
+    Closed,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HomeroomGroupMode {
+    Missing,
+    Normal,
+    Combined,
+    Split,
+    Deferred,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HomeroomTeacherState {
+    MissingPrimary,
+    Assigned,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HomeroomTimetableState {
+    Unscheduled,
+    PartlyScheduled,
+    Scheduled,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CurriculumDeliveryAlignmentState {
+    MatchesCurriculum,
+    CurriculumRequirementNotOffered,
+    ExtraOffering,
+    EndedEarly,
+    OperationalPeriodsDiffer,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DeliveryPrerequisite {
+    pub code: String,
+    pub message: String,
+    pub recovery_path: String,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UnlinkedDeliveryItem {
+    pub offering_id: Uuid,
+    pub group_id: Option<Uuid>,
+    pub code: String,
+    pub name: String,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct HomeroomDeliveryGroupSummary {
+    pub id: Uuid,
+    pub code: String,
+    pub name: String,
+    pub status: LearningOfferingStatus,
+    pub teachers_locked: bool,
+    pub roster_status: RosterStatus,
+    pub homeroom_ids: Vec<Uuid>,
+    pub homeroom_names: Vec<String>,
+    pub primary_teacher_count: i64,
+    pub timetable_entry_count: i64,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct HomeroomDeliveryItem {
+    pub requirement_id: Uuid,
+    pub resource_kind: LearningOfferingKind,
+    pub catalog_version_id: Uuid,
+    pub code: String,
+    pub name: String,
+    pub requirement_kind: RequirementKind,
+    pub standard_periods_per_week: Option<i32>,
+    #[schema(required = true)]
+    pub weekly_period_target: Option<i32>,
+    #[schema(required = true)]
+    pub scheduling_mode: Option<ActivitySchedulingMode>,
+    pub offering_id: Option<Uuid>,
+    pub offering_state: HomeroomOfferingState,
+    pub group_mode: HomeroomGroupMode,
+    pub teacher_state: HomeroomTeacherState,
+    pub timetable_state: HomeroomTimetableState,
+    pub alignment_states: Vec<CurriculumDeliveryAlignmentState>,
+    pub groups: Vec<HomeroomDeliveryGroupSummary>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CurriculumDeliveryExtraOffering {
+    pub offering_id: Uuid,
+    pub resource_kind: LearningOfferingKind,
+    pub catalog_version_id: Uuid,
+    pub code: String,
+    pub name: String,
+    #[schema(required = true)]
+    pub weekly_period_target: Option<i32>,
+    #[schema(required = true)]
+    pub starts_on: Option<NaiveDate>,
+    #[schema(required = true)]
+    pub ends_on: Option<NaiveDate>,
+    pub alignment_states: Vec<CurriculumDeliveryAlignmentState>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct HomeroomDeliveryRoom {
+    pub homeroom: HomeroomLookupItem,
+    pub grade_level: GradeLevelLookupItem,
+    pub study_program: StudyProgramOption,
+    pub curriculum_version_id: Uuid,
+    pub expected_count: usize,
+    pub ready_count: usize,
+    pub items: Vec<HomeroomDeliveryItem>,
+    pub extra_offerings: Vec<CurriculumDeliveryExtraOffering>,
+    pub blockers: Vec<DeliveryPrerequisite>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct HomeroomDeliveryWorkspace {
+    pub academic_term_id: Uuid,
+    pub academic_year_id: Uuid,
+    #[schema(required = true)]
+    pub timetable_version_id: Option<Uuid>,
+    #[schema(required = true)]
+    pub timetable_version_status: Option<school_academic_core::models::TimetableVersionStatus>,
+    #[schema(required = true)]
+    pub timetable_version_effective_from: Option<NaiveDate>,
+    pub homerooms: Vec<HomeroomDeliveryRoom>,
+    pub unlinked: Vec<UnlinkedDeliveryItem>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DeliveryCatalogVersionOption {
+    pub id: Uuid,
+    pub kind: LearningOfferingKind,
+    pub code: String,
+    pub name: String,
+    pub version_no: i32,
+    pub label: String,
+    #[schema(required = true)]
+    pub standard_periods_per_week: Option<i32>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DeliveryManagementOptions {
+    pub academic_term_id: Uuid,
+    pub academic_year_id: Uuid,
+    pub catalog_versions: Vec<DeliveryCatalogVersionOption>,
+    pub grade_levels: Vec<GradeLevelLookupItem>,
+    pub study_programs: Vec<StudyProgramOption>,
+    pub homerooms: Vec<HomeroomLookupItem>,
+    pub learning_groups: Vec<LearningGroup>,
+    pub teachers: Vec<StaffLookupItem>,
+    pub rooms: Vec<Room>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CurriculumGroupProposal {
+    pub group_key: String,
+    pub name: String,
+    pub homeroom_ids: Vec<Uuid>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PreparationConflict {
+    pub code: String,
+    pub message: String,
+    pub offering_id: Option<Uuid>,
+    pub group_id: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CurriculumPreparationProposal {
+    pub proposal_id: String,
+    pub offering_action: CurriculumPreviewAction,
+    pub resource_kind: LearningOfferingKind,
+    pub catalog_version_id: Uuid,
+    pub requirement_ids: Vec<Uuid>,
+    pub target_homeroom_ids: Vec<Uuid>,
+    pub code: String,
+    pub name: String,
+    pub credit: Option<String>,
+    pub hours: Option<String>,
+    pub existing_offering_id: Option<Uuid>,
+    pub grouping_state: PreparationGroupingState,
+    pub default_groups: Vec<CurriculumGroupProposal>,
+    pub conflicts: Vec<PreparationConflict>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CurriculumPreparationChoice {
+    pub proposal_id: String,
+    pub action: PreparationAction,
+    pub groups: Vec<CurriculumGroupProposal>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CurriculumOfferingPreview {
+    pub academic_term_id: Uuid,
+    pub source_hash: String,
+    pub proposals: Vec<CurriculumPreparationProposal>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyCurriculumOfferingsResult {
+    pub academic_term_id: Uuid,
+    pub source_hash: String,
+    pub offering_ids: Vec<Uuid>,
+    pub group_ids: Vec<Uuid>,
+    pub created_offering_count: usize,
+    pub retained_offering_count: usize,
+    pub created_group_count: usize,
+    pub retained_group_count: usize,
+    pub skipped_count: usize,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateLearningGroupRequest {
+    pub code: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub capacity: Option<i32>,
+    pub preferred_room_ids: Vec<Uuid>,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdateLearningGroupRequest {
+    pub row_version: i64,
+    pub code: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub capacity: Option<i32>,
+    pub preferred_room_ids: Vec<Uuid>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TeacherAssignmentInput {
+    pub teacher_id: Uuid,
+    pub role: LearningTeacherRole,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LearningGroupTeacherAssignment {
+    pub id: Uuid,
+    pub teacher_id: Uuid,
+    pub display_name: String,
+    pub role: LearningTeacherRole,
+    pub starts_on: NaiveDate,
+    pub ends_on: Option<NaiveDate>,
+    pub row_version: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReplaceLearningGroupTeachersRequest {
+    pub row_version: i64,
+    pub teachers: Vec<TeacherAssignmentInput>,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReplaceLearningGroupHomeroomsRequest {
+    pub row_version: i64,
+    pub homeroom_ids: Vec<Uuid>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(transparent)]
+pub struct LearningGroupHomeroomIds(pub Vec<Uuid>);
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LearningGroup {
+    pub id: Uuid,
+    pub learning_offering_id: Uuid,
+    pub academic_term_id: Uuid,
+    pub academic_year_id: Uuid,
+    pub code: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub capacity: Option<i32>,
+    pub status: LearningOfferingStatus,
+    pub teachers_locked: bool,
+    pub roster_status: RosterStatus,
+    pub roster_published_at: Option<DateTime<Utc>>,
+    pub row_version: i64,
+    pub migrated: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub teacher_assignments: Vec<LearningGroupTeacherAssignment>,
+    pub homeroom_ids: Vec<Uuid>,
+    pub preferred_room_ids: Vec<Uuid>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RosterPreviewStudent {
+    pub student_academic_year_id: Uuid,
+    pub student_id: Uuid,
+    pub student_code: Option<String>,
+    pub display_name: String,
+    pub grade_level_name: String,
+    pub homeroom_name: Option<String>,
+    pub proposed_active: bool,
+    pub currently_active: bool,
+    pub conflict_reason: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RosterPreview {
+    pub learning_group_id: Uuid,
+    pub source_hash: String,
+    pub added: usize,
+    pub removed: usize,
+    pub retained: usize,
+    pub conflicts: usize,
+    pub students: Vec<RosterPreviewStudent>,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RosterOverrideInput {
+    pub student_academic_year_id: Uuid,
+    pub action: RosterOverrideAction,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ApplyRosterRequest {
+    pub row_version: i64,
+    pub source_hash: String,
+    pub overrides: Vec<RosterOverrideInput>,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PublishRosterRequest {
+    pub row_version: i64,
+    pub idempotency_key: Uuid,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LearningGroupStudent {
+    pub id: Uuid,
+    pub learning_group_id: Uuid,
+    pub student_academic_year_id: Uuid,
+    pub student_id: Uuid,
+    pub membership_status: MembershipStatus,
+    pub roster_source: String,
+    pub joined_at: NaiveDate,
+    pub left_at: Option<NaiveDate>,
+    pub published_at: Option<DateTime<Utc>>,
+    pub row_version: i64,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DatedRosterMembership {
+    pub id: Uuid,
+    pub learning_group_id: Uuid,
+    pub student_academic_year_id: Uuid,
+    pub student_id: Uuid,
+    pub student_code: Option<String>,
+    pub display_name: String,
+    pub membership_status: MembershipStatus,
+    pub roster_source: String,
+    pub joined_at: NaiveDate,
+    pub left_at: Option<NaiveDate>,
+    pub published_at: Option<DateTime<Utc>>,
+    pub row_version: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AddDatedRosterMembershipRequest {
+    pub group_row_version: i64,
+    pub student_academic_year_id: Uuid,
+    pub joined_at: NaiveDate,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RemoveDatedRosterMembershipRequest {
+    pub group_row_version: i64,
+    pub membership_row_version: i64,
+    pub left_at: NaiveDate,
+}
+
+#[derive(Debug, FromRow)]
+pub(super) struct LearningOfferingRow {
+    pub id: Uuid,
+    pub academic_term_id: Uuid,
+    pub academic_year_id: Uuid,
+    pub kind: LearningOfferingKind,
+    pub code_snapshot: String,
+    pub name_snapshot: String,
+    pub source_requirement_kind: Option<String>,
+    pub source_requirement_id: Option<Uuid>,
+    pub status: LearningOfferingStatus,
+    pub published_at: Option<DateTime<Utc>>,
+    pub starts_on: Option<NaiveDate>,
+    pub ends_on: Option<NaiveDate>,
+    pub stop_reason: Option<String>,
+    pub owning_organization_unit_id: Uuid,
+    pub row_version: i64,
+    pub migrated: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, FromRow)]
+pub(super) struct LearningGroupRow {
+    pub id: Uuid,
+    pub learning_offering_id: Uuid,
+    pub academic_term_id: Uuid,
+    pub academic_year_id: Uuid,
+    pub code: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub capacity: Option<i32>,
+    pub status: LearningOfferingStatus,
+    pub roster_status: RosterStatus,
+    pub roster_published_at: Option<DateTime<Utc>>,
+    pub row_version: i64,
+    pub migrated: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, FromRow)]
+pub(super) struct LearningGroupStudentRow {
+    pub id: Uuid,
+    pub learning_group_id: Uuid,
+    pub student_academic_year_id: Uuid,
+    pub student_id: Uuid,
+    pub membership_status: MembershipStatus,
+    pub roster_source: String,
+    pub joined_at: NaiveDate,
+    pub left_at: Option<NaiveDate>,
+    pub published_at: Option<DateTime<Utc>>,
+    pub row_version: i64,
+}
+
+impl From<LearningGroupStudentRow> for LearningGroupStudent {
+    fn from(row: LearningGroupStudentRow) -> Self {
+        Self {
+            id: row.id,
+            learning_group_id: row.learning_group_id,
+            student_academic_year_id: row.student_academic_year_id,
+            student_id: row.student_id,
+            membership_status: row.membership_status,
+            roster_source: row.roster_source,
+            joined_at: row.joined_at,
+            left_at: row.left_at,
+            published_at: row.published_at,
+            row_version: row.row_version,
+        }
+    }
+}

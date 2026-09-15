@@ -8,34 +8,30 @@ use axum::{
     Extension, Router,
 };
 use chrono::{Duration, Utc};
+use school_authorization::PermissionCache;
+use school_tenancy::{AdminClient, AdminClientConfig, PoolManager, TenantContext};
 use sqlx::PgPool;
 use tokio::sync::broadcast;
 use tower::ServiceExt;
 use uuid::Uuid;
 
-use crate::{
-    db::{
-        admin_client::{AdminClient, AdminClientConfig},
-        permission_cache::PermissionCache,
-        pool_manager::PoolManager,
-    },
-    test_helpers::{create_named_test_pool, run_test_migrations},
-    utils::{
-        subdomain::{parse_realtime_tenant_hint, TenantOriginPolicy, SCHOOL_SUBDOMAIN_HEADER},
-        tenant::TenantContext,
-    },
+use crate::utils::subdomain::{
+    parse_realtime_tenant_hint, TenantOriginPolicy, SCHOOL_SUBDOMAIN_HEADER,
 };
+use school_test_db::{create_named_test_pool, run_test_migrations};
 
 use super::{
-    config::SessionConfig,
     http::{expire_auth_cookies, presented_session_token, set_session_cookie, validate_csrf},
-    models::{CurrentUserResponse, LoginRequest},
-    runtime::AuthRuntime,
-    session_crypto::{identifier_bucket, session_csrf_token, RawSessionToken, SessionHmacKey},
     session_handlers::{
         change_password, list_sessions, login_with_tenant, logout_all, logout_with_tenant, me,
         revoke_session,
     },
+};
+use school_auth::{
+    config::SessionConfig,
+    models::{CurrentUserResponse, LoginRequest},
+    runtime::AuthRuntime,
+    session_crypto::{identifier_bucket, session_csrf_token, RawSessionToken, SessionHmacKey},
     session_policy::normalize_login_identifier,
     session_service::AuthenticatedSession,
 };
@@ -68,6 +64,7 @@ impl HandlerFixture {
                 AdminClientConfig::from_env().expect("default admin client config must be valid"),
             )),
             pool_manager: Arc::new(PoolManager::new()),
+            identity_cache: Arc::new(school_auth::session_cache::SessionCache::new()),
             permission_cache: Arc::new(PermissionCache::new()),
             config,
             session_events,
@@ -127,13 +124,13 @@ impl HandlerFixture {
     }
 
     fn authenticated(&self, user_id: Uuid, session_id: Uuid) -> AuthenticatedSession {
-        AuthenticatedSession {
-            identity_cache: Arc::clone(&self.runtime.permission_cache.session_cache),
-            tenant: self.tenant.clone(),
+        AuthenticatedSession::for_tests(
+            Arc::clone(&self.runtime.identity_cache),
+            self.tenant.clone(),
             session_id,
             user_id,
-            user_type: "staff".to_string(),
-        }
+            "staff",
+        )
     }
 }
 
@@ -159,7 +156,7 @@ fn auth_headers(fixture: &HandlerFixture, session_id: Uuid, token: &RawSessionTo
     headers
 }
 
-fn response_from_result(result: Result<Response, crate::error::AppError>) -> Response {
+fn response_from_result(result: Result<Response, school_http::HttpError>) -> Response {
     result.unwrap_or_else(IntoResponse::into_response)
 }
 
@@ -402,9 +399,7 @@ fn authoritative_headers_and_realtime_hint_reject_ambiguity() {
 
 #[test]
 fn duplicate_csrf_headers_are_rejected_without_selecting_a_value() {
-    let key =
-        SessionHmacKey::from_secret("session-http-tests-use-a-long-stable-secret-key-material")
-            .expect("test HMAC key must be valid");
+    let key = SessionHmacKey::for_tests([43; 32]);
     let expected = session_csrf_token(&key, Uuid::nil(), Uuid::from_u128(1));
     let encoded = expected.expose_for_header();
     let mut headers = HeaderMap::new();
@@ -891,6 +886,8 @@ mod protected_router {
         Json, Router,
     };
     use chrono::{Duration, Utc};
+    use school_authorization::PermissionCache;
+    use school_tenancy::{AdminClient, AdminClientConfig, PoolManager};
     use serde_json::json;
     use tokio::{net::TcpListener, sync::broadcast, task::JoinHandle};
     use tower::ServiceExt;
@@ -898,22 +895,17 @@ mod protected_router {
 
     use crate::{
         app::{APPLICATION_BODY_LIMIT, AUTH_JSON_BODY_LIMIT},
-        db::{
-            admin_client::{AdminClient, AdminClientConfig},
-            permission_cache::PermissionCache,
-            pool_manager::PoolManager,
-        },
         middleware::session::{maintenance_mode, session_middleware},
-        modules::auth::{
-            config::SessionConfig,
-            runtime::AuthRuntime,
-            session_crypto::{session_csrf_token, RawSessionToken, SessionHmacKey},
-            session_service::AuthenticatedSession,
-        },
-        test_helpers::{create_named_test_pool, run_test_migrations},
     };
+    use school_auth::{
+        config::SessionConfig,
+        runtime::AuthRuntime,
+        session_crypto::{session_csrf_token, RawSessionToken, SessionHmacKey},
+        session_service::AuthenticatedSession,
+    };
+    use school_test_db::{create_named_test_pool, run_test_migrations};
 
-    use super::super::session_repository::SessionMaintenanceMode;
+    use school_auth::session_repository::SessionMaintenanceMode;
 
     #[derive(Clone)]
     struct DirectoryState(Arc<HashMap<String, (Uuid, String)>>);
@@ -995,6 +987,7 @@ mod protected_router {
                     ),
                 )),
                 pool_manager,
+                identity_cache: Arc::new(school_auth::session_cache::SessionCache::new()),
                 permission_cache: Arc::new(PermissionCache::new()),
                 config,
                 session_events: events,

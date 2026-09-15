@@ -6,26 +6,26 @@ use axum::{
 };
 use uuid::Uuid;
 
-use crate::api_response::{ApiErrorResponse, ApiResponse, EmptyData};
-use crate::error::AppError;
-use crate::modules::academic::models::timetable::{
-    ApplyTemplateRequest, ClearTimetableRequest, CreateTemplateRequest, FromCurrentRequest,
-    UpdateTemplateRequest,
-};
-use crate::modules::academic::services::timetable_template_service;
 use crate::modules::academic::websockets::TimetableEvent;
-use crate::modules::auth::session_service::AuthenticatedSession;
-use crate::permissions::registry::codes;
 use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
+use school_academic_timetable::models::timetable::{
+    ApplyTemplateRequest, ClearTimetableRequest, CreateTemplateRequest, FromCurrentRequest,
+    UpdateTemplateRequest,
+};
+use school_academic_timetable::services::timetable_template_service;
+use school_auth::session_service::AuthenticatedSession;
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse, EmptyData};
+use school_permissions::registry::codes;
 
 #[utoipa::path(
     get,
     path = "/api/academic/timetable-templates",
     operation_id = "listTimetableTemplates",
     responses(
-        (status = 200, description = "Timetable templates", body = ApiResponse<Vec<crate::modules::academic::models::timetable::TimetableTemplate>>),
+        (status = 200, description = "Timetable templates", body = ApiResponse<Vec<school_academic_timetable::models::timetable::TimetableTemplate>>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Timetable template read permission denied", body = ApiErrorResponse)
     ),
@@ -51,7 +51,7 @@ pub async fn list_templates(
     operation_id = "getTimetableTemplate",
     params(("id" = Uuid, Path, description = "Timetable template ID")),
     responses(
-        (status = 200, description = "Timetable template with entries", body = ApiResponse<crate::modules::academic::models::timetable::TemplateWithEntries>),
+        (status = 200, description = "Timetable template with entries", body = ApiResponse<school_academic_timetable::models::timetable::TemplateWithEntries>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Timetable template read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Timetable template not found", body = ApiErrorResponse)
@@ -79,7 +79,7 @@ pub async fn get_template(
     operation_id = "createTimetableTemplate",
     request_body = CreateTemplateRequest,
     responses(
-        (status = 200, description = "Created timetable template", body = ApiResponse<crate::modules::academic::models::timetable::TimetableTemplate>),
+        (status = 200, description = "Created timetable template", body = ApiResponse<school_academic_timetable::models::timetable::TimetableTemplate>),
         (status = 400, description = "Invalid timetable template", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Timetable template manage permission denied", body = ApiErrorResponse)
@@ -111,7 +111,7 @@ pub async fn create_template(
     params(("id" = Uuid, Path, description = "Timetable template ID")),
     request_body = UpdateTemplateRequest,
     responses(
-        (status = 200, description = "Updated timetable template", body = ApiResponse<crate::modules::academic::models::timetable::TimetableTemplate>),
+        (status = 200, description = "Updated timetable template", body = ApiResponse<school_academic_timetable::models::timetable::TimetableTemplate>),
         (status = 400, description = "Invalid timetable template", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Timetable template manage permission denied", body = ApiErrorResponse),
@@ -166,7 +166,7 @@ pub async fn delete_template(
     operation_id = "createTimetableTemplateFromCurrent",
     request_body = FromCurrentRequest,
     responses(
-        (status = 200, description = "Created timetable template from selected term", body = ApiResponse<crate::modules::academic::models::timetable::TimetableTemplate>),
+        (status = 200, description = "Created timetable template from selected term", body = ApiResponse<school_academic_timetable::models::timetable::TimetableTemplate>),
         (status = 400, description = "Invalid timetable template", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Timetable template manage permission denied", body = ApiErrorResponse)
@@ -198,7 +198,7 @@ pub async fn from_current(
     params(("template_id" = Uuid, Path, description = "Timetable template ID")),
     request_body = ApplyTemplateRequest,
     responses(
-        (status = 200, description = "Applied timetable template", body = ApiResponse<crate::modules::academic::models::timetable::TemplateApplyResult>),
+        (status = 200, description = "Applied timetable template", body = ApiResponse<school_academic_timetable::models::timetable::TemplateApplyResult>),
         (status = 400, description = "Template cannot be applied", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Timetable template manage permission denied", body = ApiErrorResponse),
@@ -244,7 +244,7 @@ pub async fn apply_template(
     operation_id = "clearTimetable",
     request_body = ClearTimetableRequest,
     responses(
-        (status = 200, description = "Cleared timetable blocks", body = ApiResponse<Vec<crate::modules::academic::models::timetable_block::TimetableBlock>>),
+        (status = 200, description = "Cleared timetable blocks", body = ApiResponse<Vec<school_academic_timetable::models::timetable_block::TimetableBlock>>),
         (status = 400, description = "Invalid clear request", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Timetable manage permission denied", body = ApiErrorResponse)

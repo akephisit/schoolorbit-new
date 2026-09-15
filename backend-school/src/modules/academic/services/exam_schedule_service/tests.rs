@@ -3,11 +3,11 @@ use std::collections::HashMap;
 use chrono::NaiveTime;
 use uuid::Uuid;
 
-use crate::error::AppError;
 use crate::modules::academic::models::exam_schedule::{
     BlockedWindow, BlockedWindowInput, ExamInvigilatorView, ExamScheduleReadinessCode,
     ExamScheduleReadinessFinding, UpdateExamRoundRequest, UpsertDayRoomAssignmentRequest,
 };
+use school_errors::AppError;
 
 use super::invigilation::{
     build_invigilator_candidate_session_windows, build_invigilator_staff_workloads,

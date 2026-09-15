@@ -7,8 +7,9 @@ use crate::modules::academic::{
     results::{models as result_models, services as result_services},
     services::timetable_version_service,
 };
-use crate::{middleware::permission::ActorContext, permissions::registry::codes};
 use chrono::{Duration, NaiveDate};
+use school_authorization::ActorContext;
+use school_permissions::registry::codes;
 use uuid::Uuid;
 
 fn lifecycle_actor(user_id: Uuid) -> ActorContext {

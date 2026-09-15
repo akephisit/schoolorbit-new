@@ -11,7 +11,7 @@ use crate::modules::academic::models::exam_schedule::{
     PlaceExamSessionRequest, SyncExamSourcesRequest, UpsertDayRoomAssignmentRequest,
     UpsertExamDayRequest,
 };
-use crate::test_helpers::create_named_test_pool_with_max_connections;
+use school_test_db::create_named_test_pool_with_max_connections;
 
 async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
     let pool = create_named_test_pool_with_max_connections(test_name, 3).await;
@@ -159,7 +159,7 @@ async fn placing_exam_session_returns_canonical_academic_context() {
     .await;
     foreign_item_lock.rollback().await.unwrap();
     assert!(
-        matches!(rejected, Ok(Err(crate::error::AppError::BadRequest(_)))),
+        matches!(rejected, Ok(Err(school_errors::AppError::BadRequest(_)))),
         "foreign-round placement must reject before waiting on its item: {rejected:?}"
     );
 }
@@ -570,10 +570,10 @@ async fn creating_exam_round_accepts_canonical_writable_term_statuses() {
 
 #[tokio::test]
 async fn exam_lifecycle_rejects_closed_context_mutations_and_retains_history() {
-    use crate::error::AppError;
     use crate::modules::academic::models::exam_schedule::{
         GenerateSeatsRequest, UpdateExamInvigilatorsRequest, UpdateExamRoundRequest,
     };
+    use school_errors::AppError;
 
     fn blocked<T: std::fmt::Debug>(result: Result<T, AppError>) {
         assert!(matches!(result, Err(AppError::Conflict(_))), "{result:?}");
@@ -833,7 +833,7 @@ async fn creating_exam_round_in_closed_term_returns_conflict() {
     .await
     .unwrap_err();
 
-    assert!(matches!(error, crate::error::AppError::Conflict(_)));
+    assert!(matches!(error, school_errors::AppError::Conflict(_)));
 }
 
 #[tokio::test]
@@ -925,7 +925,7 @@ async fn deleting_a_published_exam_round_without_publish_permission_is_denied() 
         .await
         .unwrap_err();
 
-    assert!(matches!(error, crate::error::AppError::Forbidden(_)));
+    assert!(matches!(error, school_errors::AppError::Forbidden(_)));
     let round_count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM academic_exam_rounds WHERE id = $1")
             .bind(round_id)

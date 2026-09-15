@@ -452,7 +452,10 @@ test('backend auth middleware and login validation errors use the response envel
 		path.join(repoRoot, 'backend-school/src/middleware/session.rs'),
 		'utf8'
 	);
-	const appError = await readFile(path.join(repoRoot, 'backend-school/src/error.rs'), 'utf8');
+	const appError = await readFile(
+		path.join(repoRoot, 'backend-school/crates/school-http/src/lib.rs'),
+		'utf8'
+	);
 	const loginHandler = await readFile(
 		path.join(repoRoot, 'backend-school/src/modules/auth/session_handlers.rs'),
 		'utf8'
@@ -472,7 +475,7 @@ test('backend auth middleware and login validation errors use the response envel
 
 test('permission registry covers backend and frontend permission references', async () => {
 	const registrySource = await readFile(
-		path.join(repoRoot, 'backend-school/src/permissions/registry_generated.rs'),
+		path.join(repoRoot, 'backend-school/crates/school-permissions/src/registry_generated.rs'),
 		'utf8'
 	);
 	const { constants, allPermissionConstantNames, allPermissionCodes, modules } =
@@ -561,7 +564,7 @@ test('permission contract matches generated registries exactly', async () => {
 	);
 	const contractData = contractProjection(contract);
 	const backendSource = await readFile(
-		path.join(repoRoot, 'backend-school/src/permissions/registry_generated.rs'),
+		path.join(repoRoot, 'backend-school/crates/school-permissions/src/registry_generated.rs'),
 		'utf8'
 	);
 	const backendData = extractPermissionRegistry(backendSource);
@@ -589,7 +592,7 @@ test('permission contract matches generated registries exactly', async () => {
 
 test('permission registry wrappers use generated contract', async () => {
 	const backendWrapper = await readFile(
-		path.join(repoRoot, 'backend-school/src/permissions/registry.rs'),
+		path.join(repoRoot, 'backend-school/crates/school-permissions/src/registry.rs'),
 		'utf8'
 	);
 	const frontendWrapper = await readFile(
@@ -632,7 +635,7 @@ test('permission contract developer workflow is complete and non-deploying', asy
 		'node scripts/generate-permissions.mjs --check',
 		'node --test scripts/tests/generate-permissions.test.mjs',
 		'cargo fmt --all -- --check',
-		'cargo check --bin backend-school',
+		'cargo check --workspace --all-targets',
 		'cargo test --test static_architecture',
 		'npm ci',
 		'npm run test:static',
@@ -655,7 +658,7 @@ test('permission contract developer workflow is complete and non-deploying', asy
 
 test('daily teaching overview permission is registered across backend and frontend', async () => {
 	const backendRegistry = await readFile(
-		path.join(repoRoot, 'backend-school/src/permissions/registry_generated.rs'),
+		path.join(repoRoot, 'backend-school/crates/school-permissions/src/registry_generated.rs'),
 		'utf8'
 	);
 	const frontendRegistry = await readFile(

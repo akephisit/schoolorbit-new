@@ -1,15 +1,13 @@
-use crate::{
-    modules::academic::{
-        cutover_test_preflight::run_academic_core_preflight,
-        cutover_test_support::{
-            apply_cutover_fixture_fault, apply_migrations_through,
-            record_passing_phase_a_reconciliation_marker, seed_academic_cutover_fixture,
-            CutoverFixture, CutoverFixtureFault,
-        },
+use crate::modules::academic::{
+    cutover_test_preflight::run_academic_core_preflight,
+    cutover_test_support::{
+        apply_cutover_fixture_fault, apply_migrations_through,
+        record_passing_phase_a_reconciliation_marker, seed_academic_cutover_fixture,
+        CutoverFixture, CutoverFixtureFault,
     },
-    test_helpers::{create_named_test_pool, create_named_test_pool_with_max_connections},
 };
 use chrono::NaiveDate;
+use school_test_db::{create_named_test_pool, create_named_test_pool_with_max_connections};
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -1524,7 +1522,7 @@ async fn migration_runner_applies_authorized_cleanup_and_preserves_active_permis
         .await
         .unwrap();
 
-    crate::db::migration::run_tenant_migrations(&pool)
+    school_migrations::run_tenant_migrations(&pool)
         .await
         .expect("the centralized runner must apply authorized cleanup and sync permissions");
 

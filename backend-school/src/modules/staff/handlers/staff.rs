@@ -1,10 +1,4 @@
-use crate::api_response::{ApiErrorResponse, ApiResponse, IdData};
-use crate::error::AppError;
-use crate::modules::auth::session_service::AuthenticatedSession;
-use crate::modules::staff::models::*;
-use crate::modules::staff::services::{dashboard_service, staff_service};
-use crate::permissions::registry::codes;
-use crate::policies::staff_access_policy;
+use crate::policies::{resource_access_policy::UserResourceListAccess, staff_access_policy};
 use crate::utils::request_context::{
     actor_tenant_context_from_session, current_user_tenant_context_from_session,
 };
@@ -15,6 +9,12 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use school_auth::session_service::AuthenticatedSession;
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse, IdData};
+use school_permissions::registry::codes;
+use school_staff::models::*;
+use school_staff::services::{dashboard_service, staff_service};
 use serde::Serialize;
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -28,6 +28,20 @@ pub struct StaffListData {
     pub total_pages: i64,
 }
 
+fn staff_list_access(access: UserResourceListAccess) -> StaffListAccess {
+    match access {
+        UserResourceListAccess::Own(user_id) => StaffListAccess::Own(user_id),
+        UserResourceListAccess::Assigned(user_id) => StaffListAccess::Assigned(user_id),
+        UserResourceListAccess::OrganizationUnit(user_id) => {
+            StaffListAccess::OrganizationUnit(user_id)
+        }
+        UserResourceListAccess::OrganizationTree(user_id) => {
+            StaffListAccess::OrganizationTree(user_id)
+        }
+        UserResourceListAccess::School => StaffListAccess::School,
+    }
+}
+
 // ============================================
 // Handlers
 // ============================================
@@ -39,7 +53,7 @@ pub struct StaffListData {
     tag = "staff",
     params(StaffDashboardQuery),
     responses(
-        (status = 200, description = "Aggregate staff dashboard overview", body = ApiResponse<crate::modules::staff::services::dashboard_service::StaffDashboardOverview>),
+        (status = 200, description = "Aggregate staff dashboard overview", body = ApiResponse<school_staff::services::dashboard_service::StaffDashboardOverview>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Active staff account required", body = ApiErrorResponse)
     )
@@ -79,7 +93,9 @@ pub async fn list_staff(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    let access = staff_access_policy::resolve_staff_profile_list_access(&actor)?;
+    let access = staff_list_access(staff_access_policy::resolve_staff_profile_list_access(
+        &actor,
+    )?);
 
     let (items, total, page, page_size) = staff_service::list_staff(&pool, filter, access).await?;
     let total_pages = (total as f64 / page_size as f64).ceil() as i64;
@@ -132,7 +148,7 @@ pub async fn get_staff_profile(
     tag = "staff",
     request_body = CreateStaffRequest,
     responses(
-        (status = 201, description = "Staff member created", body = ApiResponse<crate::api_response::UuidIdData>),
+        (status = 201, description = "Staff member created", body = ApiResponse<school_http::UuidIdData>),
         (status = 400, description = "Invalid staff data", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Staff creation permission denied", body = ApiErrorResponse)
@@ -167,7 +183,7 @@ pub async fn create_staff(
     params(("id" = Uuid, Path, description = "Staff user ID")),
     request_body = UpdateStaffRequest,
     responses(
-        (status = 200, description = "Staff member updated", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 200, description = "Staff member updated", body = ApiResponse<school_http::EmptyData>),
         (status = 400, description = "Invalid staff data", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Staff update permission denied", body = ApiErrorResponse),
@@ -188,7 +204,7 @@ pub async fn update_staff(
 
     let replaced_file_id = staff_service::update_staff(&pool, staff_id, payload).await?;
     // Status/roles are already committed; invalidate identity before fallible cleanup.
-    state.permission_cache.invalidate_user(&tenant, staff_id);
+    state.invalidate_permission_user(&tenant, staff_id);
     state.notify_permission_changed(&tenant, staff_id);
     if let Some(file_id) = replaced_file_id {
         crate::modules::files::consumer_service::request_deletions(
@@ -213,7 +229,7 @@ pub async fn update_staff(
     tag = "staff",
     params(("id" = Uuid, Path, description = "Staff user ID")),
     responses(
-        (status = 200, description = "Staff member deactivated", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 200, description = "Staff member deactivated", body = ApiResponse<school_http::EmptyData>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Staff deletion permission denied", body = ApiErrorResponse),
         (status = 404, description = "Staff member not found", body = ApiErrorResponse)
@@ -231,7 +247,7 @@ pub async fn delete_staff(
     actor.require_permission(codes::STAFF_DELETE_ALL)?;
 
     staff_service::soft_delete_staff(&pool, staff_id).await?;
-    state.permission_cache.invalidate_user(&tenant, staff_id);
+    state.invalidate_permission_user(&tenant, staff_id);
     state.notify_permission_changed(&tenant, staff_id);
 
     Ok((
@@ -249,7 +265,7 @@ pub async fn delete_staff(
     tag = "staff",
     params(("id" = Uuid, Path, description = "Staff user ID")),
     responses(
-        (status = 200, description = "Limited staff profile without national ID", body = ApiResponse<crate::modules::staff::services::staff_service::PublicStaffProfile>),
+        (status = 200, description = "Limited staff profile without national ID", body = ApiResponse<school_staff::services::staff_service::PublicStaffProfile>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 404, description = "Staff member not found", body = ApiErrorResponse)
     )

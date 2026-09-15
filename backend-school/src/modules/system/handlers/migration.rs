@@ -1,12 +1,12 @@
-use crate::error::AppError;
 use crate::modules::academic::reconciliation::{
     read_academic_core_cleanup_audit, ReconciliationCheck, PHASE_B_MIGRATION_VERSION,
 };
-use crate::modules::academic::results::services::{
-    read_gradebook_results_cutover_audit, GRADEBOOK_RESULTS_MIGRATION_VERSION,
-};
 use crate::AppState;
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
+use school_academic_results::services::{
+    read_gradebook_results_cutover_audit, GRADEBOOK_RESULTS_MIGRATION_VERSION,
+};
+use school_http::HttpError as AppError;
 use serde::Serialize;
 use sqlx::PgPool;
 
@@ -117,10 +117,7 @@ async fn gradebook_results_cutover_status(
         Err(error) => {
             tracing::warn!(
                 reason = "gradebook_results_cutover_audit_query_failed",
-                database_code = ?match &error {
-                    AppError::DbError(sqlx::Error::Database(database_error)) => database_error.code(),
-                    _ => None,
-                }
+                database_code = ?error.database_code()
             );
             gradebook_results_cutover_unavailable(current_version)
         }
@@ -181,10 +178,7 @@ async fn academic_core_cutover_status(
         Err(error) => {
             tracing::warn!(
                 reason = "academic_core_cleanup_audit_query_failed",
-                database_code = ?match &error {
-                    AppError::DbError(sqlx::Error::Database(database_error)) => database_error.code(),
-                    _ => None,
-                }
+                database_code = ?error.database_code()
             );
             AcademicCoreCutoverStatus {
                 status: "failed".to_string(),
@@ -429,7 +423,7 @@ async fn migrate_single_school(
     {
         Ok((pool, permissions_changed)) => {
             if permissions_changed {
-                state.permission_cache.invalidate_tenant(subdomain);
+                state.invalidate_permission_tenant(subdomain);
                 state.notify_all_permissions_changed(subdomain);
             }
             pool
@@ -540,13 +534,11 @@ async fn get_current_version(pool: &PgPool) -> Result<i64, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        modules::academic::cutover_test_support::{
-            apply_migrations_through, record_passing_phase_a_reconciliation_marker,
-            seed_academic_cutover_fixture, seed_release_two_predecessor, CutoverFixture,
-        },
-        test_helpers::create_named_test_pool,
+    use crate::modules::academic::cutover_test_support::{
+        apply_migrations_through, record_passing_phase_a_reconciliation_marker,
+        seed_academic_cutover_fixture, seed_release_two_predecessor, CutoverFixture,
     };
+    use school_test_db::create_named_test_pool;
 
     async fn phase_a_pool(name: &str) -> PgPool {
         let pool = create_named_test_pool(name).await;

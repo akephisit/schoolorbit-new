@@ -1,9 +1,9 @@
-use crate::error::AppError;
-use crate::test_helpers::{create_test_pool, run_test_migrations};
+use school_errors::AppError;
+use school_test_db::{create_test_pool, run_test_migrations};
 use uuid::Uuid;
 
-use super::models::{CreateParentRequest, UpdateStudentRequest};
-use super::services;
+use school_students::models::{CreateParentRequest, UpdateStudentRequest};
+use school_students::services;
 
 #[tokio::test]
 async fn update_missing_student_returns_not_found() {

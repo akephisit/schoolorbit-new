@@ -2,8 +2,14 @@ use super::{models::*, services::*};
 use crate::modules::academic::cutover_test_support::{
     apply_migrations_through, seed_release_two_predecessor,
 };
-use crate::test_helpers::create_named_test_pool_with_max_connections;
-use crate::{error::AppError, middleware::permission::ActorContext, permissions::registry::codes};
+use school_academic_assessment::gradebook::services::{
+    get_group_phase_workspace, list_controls, list_subjects, resolve_phase_id, source_checksums,
+    update_control,
+};
+use school_authorization::ActorContext;
+use school_errors::AppError;
+use school_permissions::registry::codes;
+use school_test_db::create_named_test_pool_with_max_connections;
 use uuid::Uuid;
 
 #[tokio::test]
@@ -210,7 +216,7 @@ async fn gradebook_defaults_limit_generated_subject_group_reads_to_heads() {
         .bind(unit).bind(codes::ACADEMIC_RESULT_READ_ORGANIZATION_UNIT).execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO organization_permission_grants (organization_unit_id,permission_id,position_code) SELECT $1,id,'head' FROM permissions WHERE code=$2 ON CONFLICT DO NOTHING")
         .bind(unit).bind(codes::ACADEMIC_GRADEBOOK_READ_ORGANIZATION_UNIT).execute(&pool).await.unwrap();
-    crate::db::migration::run_tenant_migrations(&pool)
+    school_migrations::run_tenant_migrations(&pool)
         .await
         .unwrap();
     for code in [

@@ -1,10 +1,10 @@
 use sqlx::{PgPool, Postgres};
 use uuid::Uuid;
 
-use crate::error::AppError;
-use crate::middleware::permission::ActorContext;
 use crate::policies::achievement_access_policy;
 use crate::policies::resource_access_policy::UserResourceListAccess;
+use school_authorization::ActorContext;
+use school_errors::AppError;
 
 use super::models::{
     Achievement, AchievementListFilter, CreateAchievementRequest, UpdateAchievementRequest,

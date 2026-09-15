@@ -6,18 +6,19 @@ use axum::{
 };
 use uuid::Uuid;
 
-use crate::api_response::{ApiErrorResponse, ApiResponse};
-use crate::error::AppError;
-use crate::middleware::permission::ActorContext;
-use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::policies::learning_offering_access_policy::{self, OfferingAction};
 use crate::utils::request_context::{actor_tenant_context_from_session, ActorTenantContext};
 use crate::AppState;
-
-use super::models::*;
-use super::services::{
+use school_academic_delivery::models::*;
+use school_academic_delivery::services::{
     activities, change_sets, groups, offerings, roster_memberships, teacher_handoff, workspaces,
 };
+use school_auth::session_service::AuthenticatedSession;
+use school_authorization::ActorContext;
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse};
+
+use super::adapters::TIMETABLE_MUTATIONS;
 
 fn ok<T: serde::Serialize>(data: T) -> Response {
     Json(ApiResponse::ok(data)).into_response()
@@ -687,6 +688,7 @@ pub async fn create_group(
     )
     .await?;
     let group = groups::create(
+        &TIMETABLE_MUTATIONS,
         &context.tenant.pool,
         context.actor.user_id,
         offering_id,
@@ -756,7 +758,14 @@ pub async fn update_group(
         OfferingAction::Manage,
     )
     .await?;
-    let group = groups::update(&context.tenant.pool, context.actor.user_id, id, request).await?;
+    let group = groups::update(
+        &TIMETABLE_MUTATIONS,
+        &context.tenant.pool,
+        context.actor.user_id,
+        id,
+        request,
+    )
+    .await?;
     signal_group_changed(&state, &session, &context.actor, &group);
     Ok(ok(group))
 }
@@ -822,8 +831,14 @@ pub async fn replace_group_homerooms(
         OfferingAction::Manage,
     )
     .await?;
-    let group =
-        groups::replace_homerooms(&context.tenant.pool, context.actor.user_id, id, request).await?;
+    let group = groups::replace_homerooms(
+        &TIMETABLE_MUTATIONS,
+        &context.tenant.pool,
+        context.actor.user_id,
+        id,
+        request,
+    )
+    .await?;
     signal_group_changed(&state, &session, &context.actor, &group);
     Ok(ok(group))
 }
@@ -889,8 +904,14 @@ pub async fn replace_group_teachers(
         OfferingAction::Manage,
     )
     .await?;
-    let group =
-        groups::replace_teachers(&context.tenant.pool, context.actor.user_id, id, request).await?;
+    let group = groups::replace_teachers(
+        &TIMETABLE_MUTATIONS,
+        &context.tenant.pool,
+        context.actor.user_id,
+        id,
+        request,
+    )
+    .await?;
     signal_group_changed(&state, &session, &context.actor, &group);
     Ok(ok(group))
 }
@@ -1058,9 +1079,13 @@ pub async fn create_term_change_set(
         OfferingAction::Manage,
     )
     .await?;
-    let change_set =
-        change_sets::create_change_set(&context.tenant.pool, context.actor.user_id, request)
-            .await?;
+    let change_set = change_sets::create_change_set(
+        &TIMETABLE_MUTATIONS,
+        &context.tenant.pool,
+        context.actor.user_id,
+        request,
+    )
+    .await?;
     signal_term_change_set_changed(&state, &session, &context, &change_set, &[]).await?;
     Ok(created(change_set))
 }

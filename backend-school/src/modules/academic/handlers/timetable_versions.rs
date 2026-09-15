@@ -5,19 +5,19 @@ use axum::{
 };
 use uuid::Uuid;
 
-use crate::api_response::{ApiErrorResponse, ApiResponse};
-use crate::error::AppError;
-use crate::modules::academic::models::timetable_version::{
-    CloneTimetableVersionRequest, ResolveTimetableVersionQuery, TimetableVersionQuery,
-};
-use crate::modules::academic::services::timetable_version_service;
-use crate::modules::auth::session_service::AuthenticatedSession;
-use crate::permissions::registry::codes;
 use crate::policies::learning_offering_access_policy::{
     require_learning_offering_list_access, OfferingAction,
 };
 use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
+use school_academic_timetable::models::timetable_version::{
+    CloneTimetableVersionRequest, ResolveTimetableVersionQuery, TimetableVersionQuery,
+};
+use school_academic_timetable::services::timetable_version_service;
+use school_auth::session_service::AuthenticatedSession;
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse};
+use school_permissions::registry::codes;
 
 #[utoipa::path(
     get,
@@ -25,7 +25,7 @@ use crate::AppState;
     operation_id = "listTimetableVersions",
     params(TimetableVersionQuery),
     responses(
-        (status = 200, description = "Timetable versions for the selected term", body = ApiResponse<Vec<crate::modules::academic::models::timetable_version::TimetableVersion>>),
+        (status = 200, description = "Timetable versions for the selected term", body = ApiResponse<Vec<school_academic_timetable::models::timetable_version::TimetableVersion>>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Timetable read permission denied", body = ApiErrorResponse)
     ),
@@ -55,7 +55,7 @@ pub async fn list_versions(
     operation_id = "resolveTimetableVersion",
     params(ResolveTimetableVersionQuery),
     responses(
-        (status = 200, description = "Published timetable version effective on the selected date", body = ApiResponse<crate::modules::academic::models::timetable_version::TimetableVersion>),
+        (status = 200, description = "Published timetable version effective on the selected date", body = ApiResponse<school_academic_timetable::models::timetable_version::TimetableVersion>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Timetable read permission denied", body = ApiErrorResponse),
         (status = 404, description = "No effective timetable version", body = ApiErrorResponse)
@@ -90,7 +90,7 @@ pub async fn resolve_version(
     params(("source_id" = Uuid, Path, description = "Published timetable version ID")),
     request_body = CloneTimetableVersionRequest,
     responses(
-        (status = 200, description = "Draft timetable version cloned from the published source", body = ApiResponse<crate::modules::academic::models::timetable_version::TimetableVersion>),
+        (status = 200, description = "Draft timetable version cloned from the published source", body = ApiResponse<school_academic_timetable::models::timetable_version::TimetableVersion>),
         (status = 400, description = "Invalid effective date", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Timetable manage permission denied", body = ApiErrorResponse),

@@ -1,3 +1,5 @@
+use school_http::HttpError as AppError;
+use school_http::{ApiResponse, EmptyData};
 use std::net::SocketAddr;
 
 use axum::{
@@ -7,24 +9,18 @@ use axum::{
     Json,
 };
 use chrono::Utc;
+use school_tenancy::TenantContext;
 use uuid::Uuid;
 
-use crate::{
-    api_response::{ApiResponse, EmptyData},
-    error::AppError,
-    utils::{
-        client_address::client_address,
-        tenant::{resolve_auth_tenant_context, TenantContext},
-    },
-};
+use crate::utils::{client_address::client_address, tenant::resolve_auth_tenant_context};
 
-use super::{
+use super::http::{
+    append_expired_auth_cookies, append_response_cookie, csrf_response_header,
+    expire_legacy_cookie, presented_session_token, set_session_cookie, validate_csrf,
+};
+use school_auth::{
     audit::{self, SessionFailureReason},
     config::CSRF_HEADER_NAME,
-    http::{
-        append_expired_auth_cookies, append_response_cookie, csrf_response_header,
-        expire_legacy_cookie, presented_session_token, set_session_cookie, validate_csrf,
-    },
     models::{
         ChangePasswordRequest, CurrentUserResponse, LoginData, LoginRequest, SessionListData,
         SessionResponse,
@@ -43,11 +39,11 @@ use super::{
     request_body = LoginRequest,
     responses(
         (status = 200, description = "Authenticated session", body = ApiResponse<LoginData>),
-        (status = 400, description = "Malformed request", body = crate::api_response::ApiErrorResponse),
-        (status = 401, description = "Invalid credentials", body = crate::api_response::ApiErrorResponse),
-        (status = 403, description = "Origin rejected", body = crate::api_response::ApiErrorResponse),
-        (status = 429, description = "Login rate limited", body = crate::api_response::ApiErrorResponse),
-        (status = 503, description = "Authentication service unavailable", body = crate::api_response::ApiErrorResponse)
+        (status = 400, description = "Malformed request", body = school_http::ApiErrorResponse),
+        (status = 401, description = "Invalid credentials", body = school_http::ApiErrorResponse),
+        (status = 403, description = "Origin rejected", body = school_http::ApiErrorResponse),
+        (status = 429, description = "Login rate limited", body = school_http::ApiErrorResponse),
+        (status = 503, description = "Authentication service unavailable", body = school_http::ApiErrorResponse)
     )
 )]
 pub async fn login(
@@ -111,9 +107,9 @@ pub(super) async fn login_with_tenant(
     tag = "auth",
     responses(
         (status = 200, description = "Session revoked or stale credentials cleared", body = ApiResponse<EmptyData>),
-        (status = 401, description = "Ambiguous session credential", body = crate::api_response::ApiErrorResponse),
-        (status = 403, description = "Origin or CSRF rejected", body = crate::api_response::ApiErrorResponse),
-        (status = 503, description = "Session store unavailable", body = crate::api_response::ApiErrorResponse)
+        (status = 401, description = "Ambiguous session credential", body = school_http::ApiErrorResponse),
+        (status = 403, description = "Origin or CSRF rejected", body = school_http::ApiErrorResponse),
+        (status = 503, description = "Session store unavailable", body = school_http::ApiErrorResponse)
     )
 )]
 pub async fn logout(
@@ -166,8 +162,8 @@ pub(super) async fn logout_with_tenant(
     tag = "auth",
     responses(
         (status = 200, description = "Minimal current user", body = ApiResponse<CurrentUserResponse>),
-        (status = 401, description = "Authentication required", body = crate::api_response::ApiErrorResponse),
-        (status = 503, description = "Identity or permission store unavailable", body = crate::api_response::ApiErrorResponse)
+        (status = 401, description = "Authentication required", body = school_http::ApiErrorResponse),
+        (status = 503, description = "Identity or permission store unavailable", body = school_http::ApiErrorResponse)
     )
 )]
 pub async fn me(
@@ -190,8 +186,8 @@ pub async fn me(
     tag = "auth",
     responses(
         (status = 200, description = "Active sessions", body = ApiResponse<SessionListData>),
-        (status = 401, description = "Authentication required", body = crate::api_response::ApiErrorResponse),
-        (status = 503, description = "Session store unavailable", body = crate::api_response::ApiErrorResponse)
+        (status = 401, description = "Authentication required", body = school_http::ApiErrorResponse),
+        (status = 503, description = "Session store unavailable", body = school_http::ApiErrorResponse)
     )
 )]
 pub async fn list_sessions(
@@ -227,8 +223,8 @@ pub async fn list_sessions(
     params(("id" = Uuid, Path, description = "Owned session identifier")),
     responses(
         (status = 200, description = "Owned session revoked", body = ApiResponse<EmptyData>),
-        (status = 404, description = "Owned session not found", body = crate::api_response::ApiErrorResponse),
-        (status = 503, description = "Session store unavailable", body = crate::api_response::ApiErrorResponse)
+        (status = 404, description = "Owned session not found", body = school_http::ApiErrorResponse),
+        (status = 503, description = "Session store unavailable", body = school_http::ApiErrorResponse)
     )
 )]
 pub async fn revoke_session(
@@ -254,7 +250,7 @@ pub async fn revoke_session(
     tag = "auth",
     responses(
         (status = 200, description = "All owned sessions revoked", body = ApiResponse<EmptyData>),
-        (status = 503, description = "Session store unavailable", body = crate::api_response::ApiErrorResponse)
+        (status = 503, description = "Session store unavailable", body = school_http::ApiErrorResponse)
     )
 )]
 pub async fn logout_all(
@@ -274,10 +270,10 @@ pub async fn logout_all(
     request_body = ChangePasswordRequest,
     responses(
         (status = 200, description = "Password changed and current credential replaced", body = ApiResponse<EmptyData>),
-        (status = 400, description = "Password validation failed", body = crate::api_response::ApiErrorResponse),
-        (status = 401, description = "Authentication required", body = crate::api_response::ApiErrorResponse),
-        (status = 409, description = "Concurrent password change", body = crate::api_response::ApiErrorResponse),
-        (status = 503, description = "Session store unavailable", body = crate::api_response::ApiErrorResponse)
+        (status = 400, description = "Password validation failed", body = school_http::ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = school_http::ApiErrorResponse),
+        (status = 409, description = "Concurrent password change", body = school_http::ApiErrorResponse),
+        (status = 503, description = "Session store unavailable", body = school_http::ApiErrorResponse)
     )
 )]
 pub async fn change_password(
@@ -348,7 +344,7 @@ fn expired_auth_response(message: &str) -> Response {
     response
 }
 
-fn insert_csrf_header(response: &mut Response, token: &super::session_crypto::CsrfToken) {
+fn insert_csrf_header(response: &mut Response, token: &school_auth::session_crypto::CsrfToken) {
     response.headers_mut().insert(
         HeaderName::from_static(CSRF_HEADER_NAME),
         csrf_response_header(token),
@@ -364,9 +360,9 @@ fn single_user_agent(headers: &HeaderMap) -> Option<&str> {
     Some(value)
 }
 
-fn audit_origin_rejection(error: AppError) -> AppError {
-    if matches!(error, AppError::Forbidden(_)) {
+fn audit_origin_rejection(error: school_errors::AppError) -> AppError {
+    if matches!(error, school_errors::AppError::Forbidden(_)) {
         audit::origin_rejected(SessionFailureReason::InvalidOrigin);
     }
-    error
+    error.into()
 }

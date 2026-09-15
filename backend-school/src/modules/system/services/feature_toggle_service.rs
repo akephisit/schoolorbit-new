@@ -1,5 +1,5 @@
-use crate::error::AppError;
 use crate::modules::menu::models::FeatureToggle;
+use school_errors::AppError;
 use sqlx::PgPool;
 use uuid::Uuid;
 

@@ -215,6 +215,25 @@ test('project rules own durable development and verification workflows', async (
 	assert.match(verificationPolicy, /preventing removed legacy contracts and runtime fallbacks/);
 });
 
+test('backend school workspace rules and verification commands are canonical', async () => {
+	const [rules, testing, backendReadme] = await Promise.all([
+		readFile(path.join(repoRoot, '.rules'), 'utf8'),
+		readFile(path.join(repoRoot, 'docs/TESTING.md'), 'utf8'),
+		readFile(path.join(repoRoot, 'backend-school/README.md'), 'utf8')
+	]);
+
+	for (const source of [rules, testing, backendReadme]) {
+		assert.match(source, /cargo check --workspace --all-targets/);
+	}
+	assert.match(rules, /backend-school\/crates\/school-permissions\/src\/registry\.rs/);
+	assert.match(rules, /backend-school\/crates\/school-migrations\/src\/lib\.rs/);
+	assert.match(rules, /cohesive owner/i);
+	assert.match(rules, /compile-scope/i);
+	assert.match(backendReadme, /cargo test -p school-permissions/);
+	assert.match(backendReadme, /cargo test -p school-migrations/);
+	assert.match(testing, /BACKEND_SCHOOL_TEST_BIN=seed_sandbox/);
+});
+
 test('canonical docs own the school session and cutover contract', async () => {
 	const [rules, testing, operations, podmanSetup, backendReadme, todo] = await Promise.all([
 		readFile(path.join(repoRoot, '.rules'), 'utf8'),
@@ -271,7 +290,7 @@ test('canonical docs own the school-font rollout and lifecycle contract', async 
 	assert.match(operations, /fix forward|fail-forward/i);
 	assert.match(operations, /reference-safe|reference count/i);
 	assert.match(operations, /reconciler/i);
-	assert.match(testing, /modules::school_fonts/);
+	assert.match(testing, /--package school-fonts/);
 	assert.match(testing, /school-font-library\.spec\.ts/);
 	assert.match(testing, /certificate-lifecycle\.spec\.ts/);
 	assert.match(testing, /survives campaign purge/i);

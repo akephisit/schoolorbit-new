@@ -398,7 +398,7 @@ test('Release 2 deployment remains in maintenance until the Gradebook/results cu
 		'backend-school/src/modules/system/handlers/migration.rs'
 	);
 	const cutoverAudit = await readRepo(
-		'backend-school/src/modules/academic/results/services/cutover.rs'
+		'backend-school/crates/school-academic-results/src/services/cutover.rs'
 	);
 	const smoke = await readRepo('scripts/smoke_test.sh');
 
@@ -884,7 +884,7 @@ test('API contract runs artifact backend and frontend gates in independent jobs'
 		'cargo fmt --all -- --check',
 		'cargo test api_contract::tests --bin backend-school',
 		'cargo test structured_logging --test static_architecture',
-		'cargo check --bin backend-school'
+		'cargo check --workspace --all-targets'
 	]) {
 		assert.ok(backend.includes(command), `backend must retain ${command}`);
 	}
@@ -942,7 +942,7 @@ test('Permission Contract keeps its cached validation gates unchanged', async ()
 		'node scripts/generate-permissions.mjs --check',
 		'node --test scripts/tests/generate-permissions.test.mjs',
 		'cargo fmt --all -- --check',
-		'cargo check --bin backend-school',
+		'cargo check --workspace --all-targets',
 		'cargo test --test static_architecture',
 		'npm run test:static',
 		'npm run check'

@@ -1,12 +1,13 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::error::AppError;
-use crate::middleware::permission::ActorContext;
-use crate::permissions::registry::codes;
-use crate::policies::resource_access_policy::{
-    self, AcademicResourceAccess, AcademicResourceListFilter, AcademicResourcePermissions,
+use school_authorization::ActorContext;
+use school_authorization::{
+    self as resource_access_policy, AcademicResourceAccess, AcademicResourceListFilter,
+    AcademicResourcePermissions,
 };
+use school_errors::AppError;
+use school_permissions::registry::codes;
 
 const NO_PERMISSIONS: &[&str] = &[];
 const CURRICULUM_READ_UNIT_PERMISSIONS: &[&str] = &[
@@ -129,8 +130,8 @@ mod tests {
     use crate::modules::academic::cutover_test_support::{
         apply_migrations_through, seed_academic_cutover_fixture, CutoverFixture,
     };
-    use crate::permissions::registry::codes;
-    use crate::test_helpers::create_named_test_pool;
+    use school_permissions::registry::codes;
+    use school_test_db::create_named_test_pool;
 
     const ACTOR_ID: &str = "50000000-0000-0000-0000-000000000002";
     const CURRICULUM_ID: &str = "30000000-0000-0000-0000-000000000001";

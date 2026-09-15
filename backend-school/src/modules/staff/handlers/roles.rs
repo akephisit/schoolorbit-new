@@ -1,9 +1,3 @@
-use crate::api_response::{ApiErrorResponse, ApiResponse, EmptyData, IdData, UuidIdData};
-use crate::error::AppError;
-use crate::modules::auth::session_service::AuthenticatedSession;
-use crate::modules::staff::models::*;
-use crate::modules::staff::services::{organization_unit_service, role_service};
-use crate::permissions::registry::codes;
 use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 use axum::{
@@ -12,6 +6,12 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use school_auth::session_service::AuthenticatedSession;
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse, EmptyData, IdData, UuidIdData};
+use school_permissions::registry::codes;
+use school_staff::models::*;
+use school_staff::services::{organization_unit_service, role_service};
 use serde::Deserialize;
 use utoipa::IntoParams;
 use uuid::Uuid;
@@ -148,7 +148,7 @@ pub async fn update_role(
     let status_outcome = role_service::update_role(&pool, role_id, payload, actor.user_id).await?;
 
     if permissions_changed || status_outcome.changed() {
-        state.permission_cache.invalidate_tenant(&tenant);
+        state.invalidate_permission_tenant(&tenant);
         state.notify_all_permissions_changed(&tenant);
     }
 
@@ -182,7 +182,7 @@ pub async fn deactivate_role(
 
     let outcome = role_service::set_role_active(&pool, role_id, false, actor.user_id).await?;
     if outcome.changed() {
-        state.permission_cache.invalidate_tenant(&tenant);
+        state.invalidate_permission_tenant(&tenant);
         state.notify_all_permissions_changed(&tenant);
     }
 
@@ -319,7 +319,7 @@ pub async fn update_organization_unit(
         organization_unit_service::update_organization_unit(&pool, unit_id, payload, actor.user_id)
             .await?;
     if status_outcome.changed() {
-        state.permission_cache.invalidate_tenant(&tenant);
+        state.invalidate_permission_tenant(&tenant);
         state.notify_all_permissions_changed(&tenant);
     }
     Ok(Json(ApiResponse::empty_with_message("อัปเดตหน่วยงานสำเร็จ")).into_response())
@@ -358,7 +358,7 @@ pub async fn deactivate_organization_unit(
     )
     .await?;
     if outcome.changed() {
-        state.permission_cache.invalidate_tenant(&tenant);
+        state.invalidate_permission_tenant(&tenant);
         state.notify_all_permissions_changed(&tenant);
     }
 

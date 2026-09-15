@@ -1,0 +1,260 @@
+use std::collections::BTreeSet;
+
+use sqlx::PgPool;
+use uuid::Uuid;
+
+use crate::models::QuestionScopeRow;
+use school_authorization::{accessible_exact_units_for_permission, ActorContext};
+use school_errors::AppError;
+use school_permissions::registry::codes;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuestionBankAccess {
+    pub read_school: bool,
+    pub read_assigned_user_id: Option<Uuid>,
+    pub read_organization_unit_ids: Vec<Uuid>,
+    pub manage_school: bool,
+    pub manage_assigned_user_id: Option<Uuid>,
+    pub manage_organization_unit_ids: Vec<Uuid>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PermissionFlags {
+    read_school: bool,
+    read_assigned: bool,
+    read_organization_unit: bool,
+    manage_school: bool,
+    manage_assigned: bool,
+    manage_organization_unit: bool,
+}
+
+pub async fn resolve_access(
+    pool: &PgPool,
+    actor: &ActorContext,
+) -> Result<QuestionBankAccess, AppError> {
+    let flags = permission_flags(actor);
+    if !flags.read_school && !flags.read_assigned && !flags.read_organization_unit {
+        actor.require_any_permission(&[
+            codes::ACADEMIC_QUESTION_BANK_READ_ASSIGNED,
+            codes::ACADEMIC_QUESTION_BANK_READ_ORGANIZATION_UNIT,
+            codes::ACADEMIC_QUESTION_BANK_READ_SCHOOL,
+            codes::ACADEMIC_QUESTION_BANK_MANAGE_ASSIGNED,
+            codes::ACADEMIC_QUESTION_BANK_MANAGE_ORGANIZATION_UNIT,
+            codes::ACADEMIC_QUESTION_BANK_MANAGE_SCHOOL,
+        ])?;
+    }
+
+    let mut read_organization_unit_ids = BTreeSet::new();
+    if actor.has_permission(codes::ACADEMIC_QUESTION_BANK_READ_ORGANIZATION_UNIT) {
+        read_organization_unit_ids.extend(
+            accessible_exact_units_for_permission(
+                pool,
+                actor.user_id,
+                codes::ACADEMIC_QUESTION_BANK_READ_ORGANIZATION_UNIT,
+            )
+            .await?,
+        );
+    }
+    let manage_organization_unit_ids =
+        if actor.has_permission(codes::ACADEMIC_QUESTION_BANK_MANAGE_ORGANIZATION_UNIT) {
+            accessible_exact_units_for_permission(
+                pool,
+                actor.user_id,
+                codes::ACADEMIC_QUESTION_BANK_MANAGE_ORGANIZATION_UNIT,
+            )
+            .await?
+        } else {
+            Vec::new()
+        };
+    read_organization_unit_ids.extend(manage_organization_unit_ids.iter().copied());
+
+    Ok(QuestionBankAccess {
+        read_school: flags.read_school,
+        read_assigned_user_id: flags.read_assigned.then_some(actor.user_id),
+        read_organization_unit_ids: read_organization_unit_ids.into_iter().collect(),
+        manage_school: flags.manage_school,
+        manage_assigned_user_id: flags.manage_assigned.then_some(actor.user_id),
+        manage_organization_unit_ids,
+    })
+}
+
+pub async fn require_question_read_access(
+    pool: &PgPool,
+    actor: &ActorContext,
+    scope: &QuestionScopeRow,
+) -> Result<(), AppError> {
+    let access = resolve_access(pool, actor).await?;
+    if access.read_school {
+        return Ok(());
+    }
+    if access.read_assigned_user_id.is_some()
+        && (scope.owner_user_id == actor.user_id
+            || subject_is_assigned_to_actor(pool, scope.subject_id, actor.user_id).await?)
+    {
+        return Ok(());
+    }
+    if scope
+        .owning_organization_unit_id
+        .is_some_and(|organization_unit_id| {
+            access
+                .read_organization_unit_ids
+                .contains(&organization_unit_id)
+        })
+    {
+        return Ok(());
+    }
+    Err(AppError::Forbidden("ไม่มีสิทธิ์ดูข้อสอบนี้".to_string()))
+}
+
+pub async fn require_question_manage_access(
+    pool: &PgPool,
+    actor: &ActorContext,
+    scope: &QuestionScopeRow,
+) -> Result<(), AppError> {
+    let access = resolve_access(pool, actor).await?;
+    if access.manage_school {
+        return Ok(());
+    }
+    if access.manage_assigned_user_id.is_some() && scope.owner_user_id == actor.user_id {
+        return Ok(());
+    }
+    if scope
+        .owning_organization_unit_id
+        .is_some_and(|organization_unit_id| {
+            access
+                .manage_organization_unit_ids
+                .contains(&organization_unit_id)
+        })
+    {
+        return Ok(());
+    }
+    Err(AppError::Forbidden("ไม่มีสิทธิ์จัดการข้อสอบนี้".to_string()))
+}
+
+pub async fn require_subject_create_access(
+    pool: &PgPool,
+    actor: &ActorContext,
+    subject_id: Uuid,
+) -> Result<(), AppError> {
+    let access = resolve_access(pool, actor).await?;
+    let owning_organization_unit_id = owning_organization_unit_id_for_subject(pool, subject_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบรายวิชาในคลังวิชา".to_string()))?;
+
+    if access.manage_school {
+        return Ok(());
+    }
+    if access.manage_assigned_user_id.is_some()
+        && subject_is_assigned_to_actor(pool, Some(subject_id), actor.user_id).await?
+    {
+        return Ok(());
+    }
+    if owning_organization_unit_id.is_some_and(|organization_unit_id| {
+        access
+            .manage_organization_unit_ids
+            .contains(&organization_unit_id)
+    }) {
+        return Ok(());
+    }
+
+    Err(AppError::Forbidden(
+        "ไม่มีสิทธิ์สร้างข้อสอบสำหรับรายวิชานี้".to_string(),
+    ))
+}
+
+fn permission_flags(actor: &ActorContext) -> PermissionFlags {
+    let manage_school = actor.has_permission(codes::ACADEMIC_QUESTION_BANK_MANAGE_SCHOOL);
+    let manage_assigned = actor.has_permission(codes::ACADEMIC_QUESTION_BANK_MANAGE_ASSIGNED);
+    let manage_organization_unit =
+        actor.has_permission(codes::ACADEMIC_QUESTION_BANK_MANAGE_ORGANIZATION_UNIT);
+
+    PermissionFlags {
+        read_school: manage_school
+            || actor.has_permission(codes::ACADEMIC_QUESTION_BANK_READ_SCHOOL),
+        read_assigned: manage_assigned
+            || actor.has_permission(codes::ACADEMIC_QUESTION_BANK_READ_ASSIGNED),
+        read_organization_unit: manage_organization_unit
+            || actor.has_permission(codes::ACADEMIC_QUESTION_BANK_READ_ORGANIZATION_UNIT),
+        manage_school,
+        manage_assigned,
+        manage_organization_unit,
+    }
+}
+
+async fn owning_organization_unit_id_for_subject(
+    pool: &PgPool,
+    subject_id: Uuid,
+) -> Result<Option<Option<Uuid>>, AppError> {
+    sqlx::query_scalar("SELECT owning_organization_unit_id FROM subjects WHERE id = $1")
+        .bind(subject_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|error| {
+            tracing::error!("Failed to fetch question bank subject: {}", error);
+            AppError::InternalServerError("ไม่สามารถตรวจสอบรายวิชาได้".to_string())
+        })
+}
+
+async fn subject_is_assigned_to_actor(
+    pool: &PgPool,
+    subject_id: Option<Uuid>,
+    actor_id: Uuid,
+) -> Result<bool, AppError> {
+    let Some(subject_id) = subject_id else {
+        return Ok(false);
+    };
+    sqlx::query_scalar(
+        r#"
+SELECT EXISTS(
+    SELECT 1
+    FROM course_offering_details detail
+    JOIN learning_groups learning_group
+      ON learning_group.learning_offering_id = detail.learning_offering_id
+    JOIN learning_group_teachers teacher
+      ON teacher.learning_group_id = learning_group.id
+    WHERE detail.subject_id = $1
+      AND teacher.teacher_id = $2
+)
+"#,
+    )
+    .bind(subject_id)
+    .bind(actor_id)
+    .fetch_one(pool)
+    .await
+    .map_err(|error| {
+        tracing::error!("Failed to check assigned question subject: {}", error);
+        AppError::InternalServerError("ไม่สามารถตรวจสอบรายวิชาที่รับผิดชอบได้".to_string())
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn actor(permissions: &[&str]) -> ActorContext {
+        ActorContext {
+            user_id: Uuid::new_v4(),
+            permissions: permissions
+                .iter()
+                .map(|permission| permission.to_string())
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn manage_assigned_also_grants_assigned_read() {
+        let flags = permission_flags(&actor(&[codes::ACADEMIC_QUESTION_BANK_MANAGE_ASSIGNED]));
+        assert!(flags.manage_assigned);
+        assert!(flags.read_assigned);
+        assert!(!flags.read_school);
+    }
+
+    #[test]
+    fn school_manage_implies_school_read_without_widening_other_scopes() {
+        let flags = permission_flags(&actor(&[codes::ACADEMIC_QUESTION_BANK_MANAGE_SCHOOL]));
+        assert!(flags.manage_school);
+        assert!(flags.read_school);
+        assert!(!flags.read_assigned);
+        assert!(!flags.read_organization_unit);
+    }
+}

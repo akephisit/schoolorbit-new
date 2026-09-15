@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-use super::{
+use school_file_platform::{
     platform_service::PublicDelivery,
     platform_types::{DownloadGrant, FileLifecycleStatus, FilePurpose, FileVisibility},
     repository::PlatformFile,
@@ -127,7 +127,7 @@ pub struct FileDeleteResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::modules::files::platform_service::PublicDelivery;
+    use school_file_platform::platform_service::PublicDelivery;
 
     #[test]
     fn metadata_exposes_only_platform_identity_and_authorized_fields() {

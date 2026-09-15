@@ -8,6 +8,7 @@ on:
       - "scripts/tests/generate-api-contracts.test.mjs"
       - "backend-school/Cargo.toml"
       - "backend-school/Cargo.lock"
+      - "backend-school/crates/**"
       - "backend-school/src/api_contract.rs"
       - "backend-school/src/api_response.rs"
       - "backend-school/src/main.rs"
@@ -29,6 +30,7 @@ on:
       - "scripts/tests/generate-api-contracts.test.mjs"
       - "backend-school/Cargo.toml"
       - "backend-school/Cargo.lock"
+      - "backend-school/crates/**"
       - "backend-school/src/api_contract.rs"
       - "backend-school/src/api_response.rs"
       - "backend-school/src/main.rs"
@@ -155,7 +157,7 @@ jobs:
 
       - name: Check backend
         working-directory: backend-school
-        run: cargo check --bin backend-school
+        run: cargo check --workspace --all-targets
 
   frontend:
     name: Frontend contract verification

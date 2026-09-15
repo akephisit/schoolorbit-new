@@ -1,10 +1,10 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::error::AppError;
-use crate::middleware::permission::ActorContext;
-use crate::permissions::registry::codes;
 use crate::policies::resource_access_policy;
+use school_authorization::ActorContext;
+use school_errors::AppError;
+use school_permissions::registry::codes;
 
 const STAFF_PROFILE_ACCESS: resource_access_policy::ResourceAccessPermissions =
     resource_access_policy::ResourceAccessPermissions {

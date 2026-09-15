@@ -1,15 +1,8 @@
-use crate::error::AppError;
-use serde::{Deserialize, Serialize};
+use school_errors::AppError;
+use serde::Deserialize;
 use sqlx::{types::Json, PgPool};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ReconciliationCheck {
-    pub code: String,
-    pub passed: bool,
-    pub source_count: i64,
-    pub target_count: i64,
-}
+pub use school_academic_core::models::ReconciliationCheck;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AcademicCoreCleanupAuditStatus {

@@ -7,8 +7,8 @@ use super::{
         CutoverFixtureFault,
     },
 };
-use crate::test_helpers::create_named_test_pool;
 use chrono::NaiveDate;
+use school_test_db::create_named_test_pool;
 
 async fn academic_fixture_checksum(pool: &sqlx::PgPool) -> String {
     sqlx::query_scalar(

@@ -1,16 +1,4 @@
-use crate::error::AppError;
-use crate::modules::academic::services::timetable_realtime_service::{
-    authorize_socket, TimetableSocketAccess,
-};
-use crate::modules::auth::{
-    audit::{self, SessionFailureReason},
-    events::SessionRevocationEvent,
-    http::presented_session_token,
-    session_crypto::RawSessionToken,
-    session_repository::SessionMaintenanceMode,
-    session_service::{self, AuthenticatedSession},
-};
-use crate::modules::notification::events::PermissionChangeEvent;
+use crate::modules::auth::http::presented_session_token;
 use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::utils::subdomain::parse_realtime_tenant_hint;
 use crate::utils::tenant::resolve_auth_tenant_context;
@@ -26,6 +14,18 @@ use axum::{
 use chrono::Utc;
 use dashmap::DashMap;
 use futures::stream::StreamExt;
+use school_academic_timetable::services::timetable_realtime_service::{
+    authorize_socket, TimetableSocketAccess,
+};
+use school_auth::events::PermissionChangeEvent;
+use school_auth::{
+    audit::{self, SessionFailureReason},
+    events::SessionRevocationEvent,
+    session_crypto::RawSessionToken,
+    session_repository::SessionMaintenanceMode,
+    session_service::{self, AuthenticatedSession},
+};
+use school_http::HttpError as AppError;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashSet, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -1110,28 +1110,26 @@ fn generate_color_from_uuid(id: &Uuid) -> String {
 #[cfg(test)]
 mod security_tests {
     use super::*;
-    use crate::modules::auth::events::SessionRevocationEvent;
-    use crate::modules::auth::session_service::AuthenticatedSession;
-    use crate::modules::notification::events::PermissionChangeEvent;
-    use crate::utils::tenant::TenantContext;
+    use school_auth::events::PermissionChangeEvent;
+    use school_auth::events::SessionRevocationEvent;
+    use school_auth::session_service::AuthenticatedSession;
+    use school_tenancy::TenantContext;
     use sqlx::postgres::PgPoolOptions;
 
     fn authenticated_session(tenant: &str) -> AuthenticatedSession {
-        AuthenticatedSession {
-            identity_cache: std::sync::Arc::new(
-                crate::modules::auth::session_cache::SessionCache::new(),
-            ),
-            tenant: TenantContext {
+        AuthenticatedSession::for_tests(
+            std::sync::Arc::new(school_auth::session_cache::SessionCache::new()),
+            TenantContext {
                 tenant_id: Uuid::new_v4(),
                 subdomain: tenant.to_string(),
                 pool: PgPoolOptions::new()
                     .connect_lazy("postgres://invalid:invalid@127.0.0.1:1/invalid")
                     .unwrap(),
             },
-            session_id: Uuid::new_v4(),
-            user_id: Uuid::new_v4(),
-            user_type: "staff".to_string(),
-        }
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            "staff",
+        )
     }
 
     fn session_channel(

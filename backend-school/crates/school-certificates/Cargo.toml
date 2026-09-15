@@ -1,0 +1,41 @@
+[package]
+name = "school-certificates"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+base64 = { workspace = true }
+chrono = { workspace = true }
+chrono-tz = { workspace = true }
+dashmap = { workspace = true }
+rand = { workspace = true }
+school-authorization = { workspace = true }
+school-crypto = { workspace = true }
+school-errors = { workspace = true }
+school-file-platform = { workspace = true }
+school-fonts = { workspace = true }
+school-permissions = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+sqlx = { workspace = true }
+subtle = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+unicode-normalization = { workspace = true }
+utoipa = { workspace = true }
+uuid = { workspace = true }
+zeroize = { workspace = true }
+
+[dev-dependencies]
+async-trait = { workspace = true }
+axum = { workspace = true }
+bytes = { workspace = true }
+school-crypto = { workspace = true, features = ["test-support"] }
+school-http = { workspace = true }
+school-test-db = { workspace = true }
+tokio = { workspace = true }
+url = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,13 +1,11 @@
-use crate::api_response::{ApiErrorResponse, ApiResponse, EmptyData};
-use crate::error::AppError;
-use crate::modules::auth::session_service::AuthenticatedSession;
-use crate::modules::staff::models::UpdateOrganizationPermissionsRequest;
-use crate::modules::staff::services::organization_permission_service::{
-    self, OrganizationPermissionGrant,
-};
-use crate::permissions::registry::codes;
 use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
+use school_auth::session_service::AuthenticatedSession;
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse, EmptyData};
+use school_permissions::registry::codes;
+use school_staff::models::UpdateOrganizationPermissionsRequest;
+use school_staff::services::organization_permission_service::{self, OrganizationPermissionGrant};
 
 use axum::{
     extract::{Extension, Path, State},
@@ -83,7 +81,7 @@ pub async fn update_organization_permissions(
     .await?;
 
     // Organization permission grants changed; all cached effective permissions are stale.
-    state.permission_cache.invalidate_tenant(&tenant);
+    state.invalidate_permission_tenant(&tenant);
     state.notify_all_permissions_changed(&tenant);
 
     Ok(Json(ApiResponse::empty_with_message(

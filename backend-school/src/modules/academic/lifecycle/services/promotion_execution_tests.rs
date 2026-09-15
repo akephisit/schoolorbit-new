@@ -1,21 +1,23 @@
-use super::super::{
+use super::promotion_calculation::ITEM_COLUMNS;
+use super::promotion_execution::{execute_item, read_run, start_batch, RECEIPT_COLUMNS};
+use super::*;
+use super::{
     promotion_approval,
     promotion_run_review::{
         review_item,
         tests::{hold, ready_run},
     },
 };
-use super::*;
-use crate::{
-    modules::academic::cutover_test_support::apply_migrations_through, permissions::registry::codes,
-};
+use crate::modules::academic::cutover_test_support::apply_migrations_through;
+use crate::modules::academic::results;
+use school_permissions::registry::codes;
 
 #[tokio::test]
 async fn promotion_execution_partial_batch_preserves_completed_items_after_another_student_is_corrected(
 ) {
     use crate::modules::academic::results::{models as rm, services as rs};
     let (pool, reviewer, results_actor, context, calc) =
-        super::super::promotion_run_review::tests::ready_run_with_extra_student(
+        super::promotion_run_review::tests::ready_run_with_extra_student(
             "promotion_execution_partial",
         )
         .await;
@@ -113,7 +115,7 @@ async fn promotion_execution_partial_batch_preserves_completed_items_after_anoth
     assert_eq!(second.remaining_count, 1);
     assert_eq!(second.failures.len(), 1);
     assert!(second.receipts.is_empty());
-    let recalculated = super::super::calculate_run(
+    let recalculated = super::calculate_run(
         &pool,
         &reviewer,
         run.id,
@@ -208,7 +210,7 @@ async fn promotion_execution_partial_batch_preserves_completed_items_after_anoth
     )
     .await
     .unwrap();
-    let recalculated = super::super::calculate_run(
+    let recalculated = super::calculate_run(
         &pool,
         &reviewer,
         run.id,
@@ -373,8 +375,7 @@ pub(crate) async fn started_run_fixture(
         row_version: approved.row_version,
         limit: 1,
     };
-    let checksum =
-        super::super::checksum(&(executor.user_id, calc.run.id, "execute", &input)).unwrap();
+    let checksum = super::checksum(&(executor.user_id, calc.run.id, "execute", &input)).unwrap();
     let mut tx = pool.begin().await.unwrap();
     lifecycle_guard::lock_transition(&mut tx).await.unwrap();
     start_batch(&mut tx, &executor, calc.run.id, &input, &checksum)
@@ -511,8 +512,7 @@ async fn promotion_execution_can_finish_after_reload_when_all_item_receipts_alre
         row_version: approved.row_version,
         limit: 1,
     };
-    let checksum =
-        super::super::checksum(&(executor.user_id, calc.run.id, "execute", &input)).unwrap();
+    let checksum = super::checksum(&(executor.user_id, calc.run.id, "execute", &input)).unwrap();
     let mut tx = pool.begin().await.unwrap();
     lifecycle_guard::lock_transition(&mut tx).await.unwrap();
     let batch = start_batch(&mut tx, &executor, calc.run.id, &input, &checksum)
@@ -632,8 +632,7 @@ async fn promotion_execution_requires_approval_and_exact_permission_then_replays
     let mut input = input;
     input.row_version = approved.row_version;
     // Simulate the process stopping after the durable batch was recorded.
-    let checksum =
-        super::super::checksum(&(executor.user_id, calc.run.id, "execute", &input)).unwrap();
+    let checksum = super::checksum(&(executor.user_id, calc.run.id, "execute", &input)).unwrap();
     let mut tx = pool.begin().await.unwrap();
     lifecycle_guard::lock_transition(&mut tx).await.unwrap();
     let batch = start_batch(&mut tx, &executor, calc.run.id, &input, &checksum)
@@ -642,7 +641,7 @@ async fn promotion_execution_requires_approval_and_exact_permission_then_replays
     tx.commit().await.unwrap();
     let mut tx = pool.begin().await.unwrap();
     lifecycle_guard::lock_transition(&mut tx).await.unwrap();
-    let collision = super::super::promotion_runs::replay_command::<PromotionRun>(
+    let collision = super::promotion_runs::replay_command::<PromotionRun>(
         &mut tx,
         input.request_id,
         "approve",

@@ -1,22 +1,12 @@
-use super::{models::*, services};
+use super::services;
+use school_academic_lifecycle::models::*;
+use school_auth::session_service::AuthenticatedSession;
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse};
 pub mod promotion_runs;
 pub mod year_reopening;
-use crate::{
-    api_response::{ApiErrorResponse, ApiResponse},
-    error::AppError,
-    modules::{
-        academic::core::{
-            models::{
-                TermTransitionOutcome, TermTransitionRequest, YearTransitionOutcome,
-                YearTransitionRequest,
-            },
-            services::{term_transitions, year_transitions},
-        },
-        auth::session_service::AuthenticatedSession,
-    },
-    utils::request_context::actor_tenant_context_from_session,
-    AppState,
-};
+use super::services::{term_transitions, year_transitions};
+use crate::{utils::request_context::actor_tenant_context_from_session, AppState};
 use axum::{
     extract::{Extension, Path, Query, State},
     Json,

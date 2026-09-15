@@ -3,9 +3,9 @@ use axum::{
     response::Response,
 };
 
-use crate::error::AppError;
+use school_errors::AppError;
 
-use super::{
+use school_auth::{
     config::{CSRF_HEADER_NAME, LEGACY_COOKIE_NAME, SESSION_COOKIE_NAME},
     session_crypto::{CsrfToken, RawSessionToken},
 };

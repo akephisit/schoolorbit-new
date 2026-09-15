@@ -2,7 +2,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::models::{SchoolSettingsResponse, SchoolSettingsRow};
-use crate::error::AppError;
+use school_errors::AppError;
 
 fn empty_settings_row() -> SchoolSettingsRow {
     SchoolSettingsRow { logo_file_id: None }

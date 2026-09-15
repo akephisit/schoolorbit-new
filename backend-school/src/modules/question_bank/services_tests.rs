@@ -1,18 +1,19 @@
-use super::models::{
-    ImageAlignment, ImageNodeAttributes, QuestionBankListQuery, RichBlockNode, RichContent,
-    RichDocument, RichInlineNode, RichTextMark, UpsertQuestionChoiceRequest, UpsertQuestionRequest,
-    RICH_CONTENT_SCHEMA_VERSION,
-};
-use super::services;
-use crate::error::AppError;
-use crate::middleware::permission::ActorContext;
 use crate::modules::academic::cutover_test_support::{
     apply_migrations_through, apply_phase_b_runtime_migrations,
     record_passing_phase_a_reconciliation_marker, seed_academic_cutover_fixture, CutoverFixture,
 };
-use crate::permissions::registry::codes;
-use crate::policies::question_bank_access_policy;
-use crate::test_helpers::{create_named_test_pool, create_test_user};
+use school_authorization::ActorContext;
+use school_errors::AppError;
+use school_http::AppErrorHttpExt;
+use school_permissions::registry::codes;
+use school_question_bank::access_policy as question_bank_access_policy;
+use school_question_bank::models::{
+    ImageAlignment, ImageNodeAttributes, QuestionBankListQuery, RichBlockNode, RichContent,
+    RichDocument, RichInlineNode, RichTextMark, UpsertQuestionChoiceRequest, UpsertQuestionRequest,
+    RICH_CONTENT_SCHEMA_VERSION,
+};
+use school_question_bank::services;
+use school_test_db::{create_named_test_pool, create_test_user};
 use sqlx::PgPool;
 use uuid::Uuid;
 

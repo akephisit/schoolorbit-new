@@ -7,7 +7,7 @@ use axum::{
 use std::env;
 use subtle::ConstantTimeEq;
 
-use crate::error::AppError;
+use school_http::HttpError as AppError;
 
 pub const INTERNAL_SECRET_HEADER: &str = "X-Internal-Secret";
 pub const INTERNAL_CALLER_HEADER: &str = "X-Internal-Caller";

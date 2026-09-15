@@ -1,14 +1,14 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::error::AppError;
-use crate::middleware::permission::ActorContext;
-use crate::modules::supervision::services::SupervisionObservationListAccess;
-use crate::permissions::registry::codes;
 use crate::policies::resource_access_policy::{
     accessible_organization_unit_ids, require_user_resource_access, ResourceAccessPermissions,
     UserResourceListAccess,
 };
+use school_authorization::ActorContext;
+use school_errors::AppError;
+use school_permissions::registry::codes;
+use school_supervision::services::SupervisionObservationListAccess;
 
 pub fn can_manage_school(actor: &ActorContext) -> bool {
     actor.has_permission(codes::SUPERVISION_MANAGE_SCHOOL)

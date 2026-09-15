@@ -14,6 +14,1150 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
+fn workspace_crate_dir(name: &str) -> PathBuf {
+    manifest_dir().join("crates").join(name)
+}
+
+fn school_dependencies_in_section(manifest: &str, section: &str) -> BTreeSet<String> {
+    let header = format!("[{section}]");
+    let body = manifest
+        .split(&header)
+        .nth(1)
+        .unwrap_or_else(|| panic!("manifest must contain {header}"))
+        .split("\n[")
+        .next()
+        .unwrap_or_default();
+
+    body.lines()
+        .filter_map(|line| {
+            let name = line.split('#').next()?.split('=').next()?.trim();
+            name.starts_with("school-").then(|| name.to_string())
+        })
+        .collect()
+}
+
+#[test]
+fn permission_registry_has_one_workspace_owner() {
+    let manifest = read_source(manifest_dir().join("Cargo.toml"));
+    let crate_root = workspace_crate_dir("school-permissions");
+    let wrapper = read_source(crate_root.join("src/registry.rs"));
+
+    assert!(manifest.contains("\"crates/school-permissions\""));
+    assert!(manifest.contains("school-permissions = { path = \"crates/school-permissions\" }"));
+    assert!(wrapper.contains("include!(\"registry_generated.rs\")"));
+    assert!(!manifest_dir().join("src/permissions.rs").exists());
+    assert!(!manifest_dir().join("src/permissions").exists());
+}
+
+#[test]
+fn workspace_crates_follow_the_approved_dependency_graph() {
+    let root = read_source(manifest_dir().join("Cargo.toml"));
+    let approved_graph: [(&str, &[&str]); 25] = [
+        ("school-permissions", &[]),
+        ("school-migrations", &["school-permissions"]),
+        ("school-errors", &[]),
+        ("school-http", &["school-errors"]),
+        (
+            "school-authorization",
+            &["school-errors", "school-permissions"],
+        ),
+        ("school-crypto", &[]),
+        ("school-test-db", &["school-migrations"]),
+        ("school-tenancy", &["school-migrations"]),
+        (
+            "school-auth",
+            &[
+                "school-authorization",
+                "school-crypto",
+                "school-errors",
+                "school-tenancy",
+            ],
+        ),
+        ("school-file-platform", &[]),
+        (
+            "school-fonts",
+            &[
+                "school-authorization",
+                "school-errors",
+                "school-file-platform",
+                "school-permissions",
+            ],
+        ),
+        (
+            "school-certificates",
+            &[
+                "school-authorization",
+                "school-crypto",
+                "school-errors",
+                "school-file-platform",
+                "school-fonts",
+                "school-permissions",
+            ],
+        ),
+        (
+            "school-academic-core",
+            &[
+                "school-authorization",
+                "school-errors",
+                "school-permissions",
+            ],
+        ),
+        (
+            "school-academic-delivery",
+            &[
+                "school-academic-core",
+                "school-authorization",
+                "school-errors",
+                "school-permissions",
+            ],
+        ),
+        (
+            "school-academic-timetable",
+            &[
+                "school-academic-core",
+                "school-academic-delivery",
+                "school-authorization",
+                "school-errors",
+                "school-permissions",
+            ],
+        ),
+        (
+            "school-academic-assessment",
+            &[
+                "school-academic-core",
+                "school-authorization",
+                "school-errors",
+                "school-permissions",
+            ],
+        ),
+        (
+            "school-academic-results",
+            &[
+                "school-academic-assessment",
+                "school-academic-core",
+                "school-authorization",
+                "school-errors",
+                "school-permissions",
+            ],
+        ),
+        (
+            "school-academic-lifecycle",
+            &[
+                "school-academic-assessment",
+                "school-academic-core",
+                "school-academic-delivery",
+                "school-academic-results",
+                "school-academic-timetable",
+                "school-authorization",
+                "school-errors",
+                "school-permissions",
+            ],
+        ),
+        (
+            "school-admission",
+            &[
+                "school-academic-core",
+                "school-crypto",
+                "school-errors",
+                "school-file-platform",
+            ],
+        ),
+        (
+            "school-supervision",
+            &[
+                "school-academic-core",
+                "school-academic-timetable",
+                "school-errors",
+            ],
+        ),
+        ("school-staff", &["school-crypto", "school-errors"]),
+        (
+            "school-students",
+            &["school-academic-core", "school-crypto", "school-errors"],
+        ),
+        (
+            "school-calendar",
+            &["school-academic-core", "school-errors"],
+        ),
+        (
+            "school-question-bank",
+            &[
+                "school-authorization",
+                "school-errors",
+                "school-file-platform",
+                "school-permissions",
+            ],
+        ),
+        (
+            "school-workflow",
+            &[
+                "school-authorization",
+                "school-errors",
+                "school-permissions",
+            ],
+        ),
+    ];
+    let approved_members: BTreeSet<_> = approved_graph
+        .iter()
+        .map(|(package, _)| package.to_string())
+        .collect();
+
+    for (package, expected_dependencies) in approved_graph {
+        assert!(root.contains(&format!("\"crates/{package}\"")));
+        assert!(root.contains(&format!("{package} = {{ path = \"crates/{package}\" }}")));
+        let manifest = read_source(workspace_crate_dir(package).join("Cargo.toml"));
+        assert!(manifest.contains("[lints]\nworkspace = true"));
+        assert!(!manifest.contains("backend-school"));
+        assert!(!manifest.contains("path ="));
+
+        let actual = school_dependencies_in_section(&manifest, "dependencies");
+        let expected: BTreeSet<_> = expected_dependencies
+            .iter()
+            .map(|dependency| dependency.to_string())
+            .collect();
+        assert_eq!(
+            actual, expected,
+            "unexpected production edges for {package}"
+        );
+    }
+
+    let declared_members: BTreeSet<_> = root
+        .split("[workspace]")
+        .nth(1)
+        .and_then(|body| body.split("resolver =").next())
+        .expect("workspace member list must precede resolver")
+        .lines()
+        .filter_map(|line| {
+            line.trim()
+                .strip_prefix("\"crates/")
+                .and_then(|value| value.strip_suffix("\","))
+                .map(str::to_string)
+        })
+        .collect();
+    assert_eq!(declared_members, approved_members);
+    assert!(!school_dependencies_in_section(&root, "dependencies").contains("school-test-db"));
+    assert!(school_dependencies_in_section(&root, "dev-dependencies").contains("school-test-db"));
+
+    let permissions = read_source(workspace_crate_dir("school-permissions").join("Cargo.toml"));
+    let migrations = read_source(workspace_crate_dir("school-migrations").join("Cargo.toml"));
+    let errors = read_source(workspace_crate_dir("school-errors").join("Cargo.toml"));
+    let http = read_source(workspace_crate_dir("school-http").join("Cargo.toml"));
+    let authorization = read_source(workspace_crate_dir("school-authorization").join("Cargo.toml"));
+    let auth = read_source(workspace_crate_dir("school-auth").join("Cargo.toml"));
+    let academic_core = read_source(workspace_crate_dir("school-academic-core").join("Cargo.toml"));
+    let tenancy = read_source(workspace_crate_dir("school-tenancy").join("Cargo.toml"));
+    let file_platform = read_source(workspace_crate_dir("school-file-platform").join("Cargo.toml"));
+    let crypto = read_source(workspace_crate_dir("school-crypto").join("Cargo.toml"));
+    let fonts = read_source(workspace_crate_dir("school-fonts").join("Cargo.toml"));
+    let certificates = read_source(workspace_crate_dir("school-certificates").join("Cargo.toml"));
+    let test_db = read_source(workspace_crate_dir("school-test-db").join("Cargo.toml"));
+    let authorization_source = list_files(
+        workspace_crate_dir("school-authorization").join("src"),
+        |path| path.extension().is_some_and(|extension| extension == "rs"),
+    )
+    .into_iter()
+    .map(read_source)
+    .collect::<String>();
+    let root_package_dependency = Regex::new(r"(?m)^\s*backend-school\s*=")
+        .expect("root package dependency regex should compile");
+
+    assert!(root.contains("members = ["));
+    assert!(root.contains("\"crates/school-permissions\""));
+    assert!(root.contains("\"crates/school-migrations\""));
+    assert!(root.contains("\"crates/school-errors\""));
+    assert!(root.contains("\"crates/school-http\""));
+    assert!(root.contains("\"crates/school-authorization\""));
+    assert!(root.contains("\"crates/school-auth\""));
+    assert!(root.contains("\"crates/school-academic-core\""));
+    assert!(root.contains("\"crates/school-tenancy\""));
+    assert!(root.contains("\"crates/school-file-platform\""));
+    assert!(root.contains("\"crates/school-crypto\""));
+    assert!(root.contains("\"crates/school-fonts\""));
+    assert!(root.contains("\"crates/school-certificates\""));
+    assert!(root.contains("\"crates/school-test-db\""));
+    assert!(root.contains("school-permissions = { path = \"crates/school-permissions\" }"));
+    assert!(root.contains("school-migrations = { path = \"crates/school-migrations\" }"));
+
+    for manifest in [
+        &permissions,
+        &migrations,
+        &errors,
+        &http,
+        &authorization,
+        &auth,
+        &academic_core,
+        &tenancy,
+        &file_platform,
+        &crypto,
+        &fonts,
+        &certificates,
+        &test_db,
+    ] {
+        assert!(manifest.contains("[lints]\nworkspace = true"));
+        assert!(!root_package_dependency.is_match(manifest));
+        assert!(!manifest.contains("path ="));
+    }
+
+    assert!(!permissions.contains("school-migrations"));
+    assert!(migrations.contains("school-permissions = { workspace = true }"));
+    assert!(!errors.contains("axum"));
+    assert!(http.contains("school-errors = { workspace = true }"));
+    assert!(authorization.contains("school-errors = { workspace = true }"));
+    assert!(authorization.contains("school-permissions = { workspace = true }"));
+    assert!(!authorization.contains("school-http"));
+    assert!(!authorization_source.contains("SessionCache"));
+    assert!(!authorization_source.contains("modules::auth"));
+    let auth_dependencies = auth
+        .split("[dependencies]")
+        .nth(1)
+        .and_then(|rest| rest.split("[dev-dependencies]").next())
+        .expect("auth manifest must keep dependency sections");
+    let auth_dev_dependencies = auth
+        .split("[dev-dependencies]")
+        .nth(1)
+        .and_then(|rest| rest.split("[lints]").next())
+        .expect("auth manifest must keep dev dependencies");
+    for required in [
+        "school-authorization",
+        "school-crypto",
+        "school-errors",
+        "school-tenancy",
+    ] {
+        assert!(auth_dependencies.contains(required));
+    }
+    for forbidden in [
+        "axum",
+        "school-file-platform",
+        "school-http",
+        "school-test-db",
+    ] {
+        assert!(!auth_dependencies.contains(forbidden));
+    }
+    assert!(auth_dev_dependencies.contains("school-test-db = { workspace = true }"));
+    let academic_core_dependencies = academic_core
+        .split("[dependencies]")
+        .nth(1)
+        .and_then(|rest| rest.split("[dev-dependencies]").next())
+        .expect("Academic Core manifest must keep dependency sections");
+    let academic_core_dev_dependencies = academic_core
+        .split("[dev-dependencies]")
+        .nth(1)
+        .and_then(|rest| rest.split("[lints]").next())
+        .expect("Academic Core manifest must keep dev dependencies");
+    for required in [
+        "school-authorization",
+        "school-errors",
+        "school-permissions",
+    ] {
+        assert!(academic_core_dependencies.contains(required));
+    }
+    for forbidden in [
+        "axum",
+        "school-auth =",
+        "school-certificates",
+        "school-file-platform",
+        "school-fonts",
+        "school-http",
+        "school-test-db",
+    ] {
+        assert!(!academic_core_dependencies.contains(forbidden));
+    }
+    assert!(academic_core_dev_dependencies.contains("school-test-db = { workspace = true }"));
+    assert!(test_db.contains("school-migrations = { workspace = true }"));
+    assert!(tenancy.contains("school-migrations = { workspace = true }"));
+    assert!(!tenancy.contains("school-authorization"));
+    assert!(!tenancy.contains("school-http"));
+    let file_platform_dependencies = file_platform
+        .split("[dependencies]")
+        .nth(1)
+        .and_then(|rest| rest.split("[dev-dependencies]").next())
+        .expect("File Platform manifest must keep dependency sections");
+    let file_platform_dev_dependencies = file_platform
+        .split("[dev-dependencies]")
+        .nth(1)
+        .and_then(|rest| rest.split("[lints]").next())
+        .expect("File Platform manifest must keep dev dependencies");
+    for forbidden in [
+        "axum",
+        "school-auth",
+        "school-authorization",
+        "school-certificates",
+        "school-fonts",
+        "school-test-db",
+    ] {
+        assert!(!file_platform_dependencies.contains(forbidden));
+    }
+    assert!(file_platform_dev_dependencies.contains("school-test-db = { workspace = true }"));
+    let crypto_dependencies = crypto
+        .split("[dependencies]")
+        .nth(1)
+        .and_then(|rest| rest.split("[lints]").next())
+        .expect("crypto manifest must keep dependency sections");
+    assert!(!crypto_dependencies.contains("school-"));
+    assert!(crypto.contains("test-support = []"));
+    let font_dependencies = fonts
+        .split("[dependencies]")
+        .nth(1)
+        .and_then(|rest| rest.split("[dev-dependencies]").next())
+        .expect("font manifest must keep dependency sections");
+    for required in [
+        "school-authorization",
+        "school-errors",
+        "school-file-platform",
+        "school-permissions",
+    ] {
+        assert!(font_dependencies.contains(required));
+    }
+    assert!(!font_dependencies.contains("school-certificates"));
+    let certificate_dependencies = certificates
+        .split("[dependencies]")
+        .nth(1)
+        .and_then(|rest| rest.split("[dev-dependencies]").next())
+        .expect("certificate manifest must keep dependency sections");
+    for required in [
+        "school-authorization",
+        "school-crypto",
+        "school-errors",
+        "school-file-platform",
+        "school-fonts",
+        "school-permissions",
+    ] {
+        assert!(certificate_dependencies.contains(required));
+    }
+    assert!(!certificate_dependencies.contains("school-test-db"));
+    for runtime_manifest in [&permissions, &migrations, &errors, &http, &authorization] {
+        assert!(!runtime_manifest.contains("school-test-db"));
+    }
+    assert!(!manifest_dir().join("src/db/permission_cache.rs").exists());
+    assert!(!manifest_dir().join("src/middleware/permission.rs").exists());
+
+    for file in list_files(manifest_dir().join("src"), |path| {
+        path.extension().is_some_and(|extension| extension == "rs")
+    }) {
+        let source = read_source(&file);
+        let legacy_cache = ["crate::db", "::permission_cache"].concat();
+        let legacy_permission = ["crate::middleware", "::permission"].concat();
+        assert!(!source.contains(&legacy_cache));
+        assert!(!source.contains(&legacy_permission));
+    }
+}
+
+#[test]
+fn shared_errors_and_final_domain_facades_keep_narrow_boundaries() {
+    let root_manifest = read_source(manifest_dir().join("Cargo.toml"));
+    let error_manifest = read_source(workspace_crate_dir("school-errors").join("Cargo.toml"));
+    let errors = read_source(workspace_crate_dir("school-errors").join("src/lib.rs"));
+    let certificate_request = read_source(
+        workspace_crate_dir("school-certificates").join("src/services/request_service.rs"),
+    );
+    let admission = read_source(workspace_crate_dir("school-admission").join("src/lib.rs"));
+    let admission_services =
+        read_source(workspace_crate_dir("school-admission").join("src/services.rs"));
+    let assessment_adapter =
+        read_source(manifest_dir().join("src/modules/academic/assessment_adapter.rs"));
+    let gradebook_adapter =
+        read_source(manifest_dir().join("src/modules/academic/gradebook/services.rs"));
+
+    assert!(!error_manifest.contains("http ="));
+    assert!(!errors.contains("StatusCode"));
+    assert!(!errors.contains("ResourceLocked"));
+    assert!(!errors.contains("fn status_code"));
+    assert!(!errors.contains("fn public_message"));
+    assert!(certificate_request.contains("CertificateServiceError"));
+    assert!(certificate_request.contains("ResourceLocked"));
+
+    assert!(!admission.contains("pub mod models"));
+    assert!(!admission.contains("pub mod services"));
+    assert!(admission_services.contains("mod pii;"));
+    assert!(!admission_services.contains("pub mod pii;"));
+    for adapter in [assessment_adapter, gradebook_adapter] {
+        assert!(!adapter.contains("pub use"));
+    }
+
+    let application_dependencies = root_manifest
+        .rsplit_once("[package]")
+        .expect("workspace root must retain an application package")
+        .1
+        .split("[dependencies]")
+        .nth(1)
+        .expect("application package must declare dependencies")
+        .split("\n[")
+        .next()
+        .unwrap_or_default();
+    for moved_dependency in [
+        "aws-config",
+        "aws-credential-types",
+        "aws-sdk-s3",
+        "image",
+        "lopdf",
+        "mime_guess",
+        "sha256",
+        "tokio-stream",
+        "ttf-parser",
+        "zeroize",
+    ] {
+        assert!(
+            !application_dependencies.lines().any(|line| line
+                .trim_start()
+                .starts_with(&format!("{moved_dependency} ="))),
+            "application dependency `{moved_dependency}` belongs to an extracted owner"
+        );
+    }
+}
+
+#[test]
+fn school_academic_core_is_the_single_core_domain_owner() {
+    let manifest = read_source(manifest_dir().join("Cargo.toml"));
+    let crate_root = workspace_crate_dir("school-academic-core");
+
+    assert!(manifest.contains("\"crates/school-academic-core\""));
+    assert!(manifest.contains("school-academic-core = { path = \"crates/school-academic-core\" }"));
+    for owner in ["models.rs", "services.rs"] {
+        assert!(!manifest_dir()
+            .join("src/modules/academic/core")
+            .join(owner)
+            .exists());
+        assert!(crate_root.join("src").join(owner).exists());
+    }
+    for adapter in ["handlers.rs", "schema_tests.rs", "services_tests.rs"] {
+        assert!(manifest_dir()
+            .join("src/modules/academic/core")
+            .join(adapter)
+            .exists());
+    }
+
+    let mut boundary_violations = Vec::new();
+    for file in list_files(crate_root.join("src"), |path| {
+        path.extension().is_some_and(|extension| extension == "rs")
+    }) {
+        let source = strip_comments(&strip_cfg_test_modules(&read_source(&file)));
+        for forbidden in [
+            "crate::AppState",
+            "backend_school::",
+            "modules::academic",
+            "school_academic_lifecycle",
+        ] {
+            if source.contains(forbidden) {
+                boundary_violations.push(format!("{}: {forbidden}", relative(&file)));
+            }
+        }
+    }
+    assert!(
+        boundary_violations.is_empty(),
+        "Academic Core must not depend on the application or upper academic domains:\n{}",
+        boundary_violations.join("\n")
+    );
+
+    let lower_domain_roots = [
+        "src/modules/academic/delivery",
+        "src/modules/academic/gradebook",
+        "src/modules/academic/learner_evaluation",
+        "src/modules/academic/results",
+        "src/modules/academic/services",
+    ];
+    let mut lifecycle_violations = Vec::new();
+    for root in lower_domain_roots {
+        for file in list_files(manifest_dir().join(root), |path| {
+            path.extension().is_some_and(|extension| extension == "rs")
+                && !path
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .is_some_and(|stem| stem.ends_with("_tests"))
+        }) {
+            let source = strip_comments(&strip_cfg_test_modules(&read_source(&file)));
+            for forbidden in ["academic::lifecycle", "super::super::lifecycle"] {
+                if source.contains(forbidden) {
+                    lifecycle_violations.push(format!("{}: {forbidden}", relative(&file)));
+                }
+            }
+        }
+    }
+    assert!(
+        lifecycle_violations.is_empty(),
+        "lower academic domains must communicate through Core-owned contracts, not Lifecycle:\n{}",
+        lifecycle_violations.join("\n")
+    );
+}
+
+#[test]
+fn academic_delivery_and_timetable_have_acyclic_workspace_owners() {
+    let manifest = read_source(manifest_dir().join("Cargo.toml"));
+    let delivery_root = workspace_crate_dir("school-academic-delivery");
+    let timetable_root = workspace_crate_dir("school-academic-timetable");
+
+    for crate_name in ["school-academic-delivery", "school-academic-timetable"] {
+        assert!(manifest.contains(&format!("\"crates/{crate_name}\"")));
+        assert!(manifest.contains(&format!(
+            "{crate_name} = {{ path = \"crates/{crate_name}\" }}"
+        )));
+    }
+
+    let delivery_manifest = read_source(delivery_root.join("Cargo.toml"));
+    let timetable_manifest = read_source(timetable_root.join("Cargo.toml"));
+    assert!(delivery_manifest.contains("school-academic-core = { workspace = true }"));
+    assert!(!delivery_manifest.contains("school-academic-timetable"));
+    assert!(timetable_manifest.contains("school-academic-core = { workspace = true }"));
+    assert!(timetable_manifest.contains("school-academic-delivery = { workspace = true }"));
+    for crate_manifest in [&delivery_manifest, &timetable_manifest] {
+        assert!(crate_manifest.contains("[lints]\nworkspace = true"));
+        assert!(!crate_manifest.contains("backend-school"));
+    }
+
+    for (crate_root, forbidden) in [
+        (
+            &delivery_root,
+            [
+                "crate::AppState",
+                "backend_school::",
+                "modules::academic",
+                "school_academic_timetable",
+            ],
+        ),
+        (
+            &timetable_root,
+            [
+                "crate::AppState",
+                "backend_school::",
+                "modules::academic",
+                "school_academic_lifecycle",
+            ],
+        ),
+    ] {
+        let mut violations = Vec::new();
+        for file in list_files(crate_root.join("src"), |path| {
+            path.extension().is_some_and(|extension| extension == "rs")
+        }) {
+            let source = strip_comments(&strip_cfg_test_modules(&read_source(&file)));
+            for token in forbidden {
+                if source.contains(token) {
+                    violations.push(format!("{}: {token}", relative(&file)));
+                }
+            }
+        }
+        assert!(
+            violations.is_empty(),
+            "academic crate boundary violations:\n{}",
+            violations.join("\n")
+        );
+    }
+
+    for old_delivery_owner in [
+        "src/modules/academic/delivery/models.rs",
+        "src/modules/academic/delivery/services/activities.rs",
+        "src/modules/academic/delivery/services/change_sets.rs",
+        "src/modules/academic/delivery/services/groups.rs",
+        "src/modules/academic/delivery/services/offerings.rs",
+        "src/modules/academic/delivery/services/opening.rs",
+        "src/modules/academic/delivery/services/roster_memberships.rs",
+        "src/modules/academic/delivery/services/teacher_handoff.rs",
+        "src/modules/academic/delivery/services/workspaces.rs",
+        "src/modules/academic/services/effective_teacher_service.rs",
+    ] {
+        assert!(!manifest_dir().join(old_delivery_owner).exists());
+    }
+    for old_timetable_owner in [
+        "src/modules/academic/models/timetable.rs",
+        "src/modules/academic/models/timetable_block.rs",
+        "src/modules/academic/models/timetable_version.rs",
+        "src/modules/academic/services/timetable_block_conflicts.rs",
+        "src/modules/academic/services/timetable_block_queries.rs",
+        "src/modules/academic/services/timetable_block_service.rs",
+        "src/modules/academic/services/timetable_block_sync.rs",
+        "src/modules/academic/services/timetable_realtime_service.rs",
+        "src/modules/academic/services/timetable_template_service.rs",
+        "src/modules/academic/services/timetable_version_service.rs",
+    ] {
+        assert!(!manifest_dir().join(old_timetable_owner).exists());
+    }
+}
+
+#[test]
+fn academic_assessment_and_results_have_acyclic_workspace_owners() {
+    let manifest = read_source(manifest_dir().join("Cargo.toml"));
+    let assessment_root = workspace_crate_dir("school-academic-assessment");
+    let results_root = workspace_crate_dir("school-academic-results");
+
+    for crate_name in ["school-academic-assessment", "school-academic-results"] {
+        assert!(manifest.contains(&format!("\"crates/{crate_name}\"")));
+        assert!(manifest.contains(&format!(
+            "{crate_name} = {{ path = \"crates/{crate_name}\" }}"
+        )));
+    }
+
+    let assessment_manifest = read_source(assessment_root.join("Cargo.toml"));
+    let results_manifest = read_source(results_root.join("Cargo.toml"));
+    assert!(assessment_manifest.contains("school-academic-core = { workspace = true }"));
+    assert!(!assessment_manifest.contains("school-academic-results"));
+    assert!(results_manifest.contains("school-academic-core = { workspace = true }"));
+    assert!(results_manifest.contains("school-academic-assessment = { workspace = true }"));
+    for crate_manifest in [&assessment_manifest, &results_manifest] {
+        assert!(crate_manifest.contains("[lints]\nworkspace = true"));
+        assert!(!crate_manifest.contains("backend-school"));
+    }
+
+    for (crate_root, forbidden) in [
+        (
+            &assessment_root,
+            [
+                "crate::AppState",
+                "backend_school::",
+                "modules::academic",
+                "school_academic_results",
+                "school_academic_timetable",
+                "school_academic_lifecycle",
+            ],
+        ),
+        (
+            &results_root,
+            [
+                "crate::AppState",
+                "backend_school::",
+                "modules::academic",
+                "school_academic_delivery",
+                "school_academic_timetable",
+                "school_academic_lifecycle",
+            ],
+        ),
+    ] {
+        let mut violations = Vec::new();
+        for file in list_files(crate_root.join("src"), |path| {
+            path.extension().is_some_and(|extension| extension == "rs")
+        }) {
+            let source = strip_comments(&strip_cfg_test_modules(&read_source(&file)));
+            for token in forbidden {
+                if source.contains(token) {
+                    violations.push(format!("{}: {token}", relative(&file)));
+                }
+            }
+        }
+        assert!(
+            violations.is_empty(),
+            "academic Assessment/Results crate boundary violations:\n{}",
+            violations.join("\n")
+        );
+    }
+
+    for old_assessment_owner in [
+        "src/modules/academic/models/assessment.rs",
+        "src/modules/academic/services/assessment_service.rs",
+        "src/modules/academic/gradebook/models.rs",
+        "src/modules/academic/gradebook/services/confirmations.rs",
+        "src/modules/academic/gradebook/services/controls.rs",
+        "src/modules/academic/gradebook/services/items.rs",
+        "src/modules/academic/gradebook/services/scores.rs",
+        "src/modules/academic/gradebook/services/workspace.rs",
+        "src/modules/academic/learner_evaluation/models.rs",
+        "src/modules/academic/learner_evaluation/services.rs",
+        "src/policies/assessment_access_policy.rs",
+        "src/policies/gradebook_access_policy.rs",
+        "src/policies/learner_evaluation_access_policy.rs",
+    ] {
+        assert!(!manifest_dir().join(old_assessment_owner).exists());
+    }
+    for old_results_owner in [
+        "src/modules/academic/results/models.rs",
+        "src/modules/academic/results/services.rs",
+        "src/policies/academic_result_access_policy.rs",
+        "src/policies/academic_aggregate_access_policy.rs",
+    ] {
+        assert!(!manifest_dir().join(old_results_owner).exists());
+    }
+}
+
+#[test]
+fn academic_lifecycle_has_one_top_level_workspace_owner_and_typed_external_ports() {
+    let manifest = read_source(manifest_dir().join("Cargo.toml"));
+    let lifecycle_root = workspace_crate_dir("school-academic-lifecycle");
+
+    assert!(manifest.contains("\"crates/school-academic-lifecycle\""));
+    assert!(manifest
+        .contains("school-academic-lifecycle = { path = \"crates/school-academic-lifecycle\" }"));
+
+    let lifecycle_manifest = read_source(lifecycle_root.join("Cargo.toml"));
+    for dependency in [
+        "school-academic-core",
+        "school-academic-delivery",
+        "school-academic-timetable",
+        "school-academic-assessment",
+        "school-academic-results",
+    ] {
+        assert!(lifecycle_manifest.contains(&format!("{dependency} = {{ workspace = true }}")));
+    }
+    assert!(lifecycle_manifest.contains("[lints]\nworkspace = true"));
+    assert!(!lifecycle_manifest.contains("backend-school"));
+
+    let mut crate_violations = Vec::new();
+    for file in list_files(lifecycle_root.join("src"), |path| {
+        path.extension().is_some_and(|extension| extension == "rs")
+    }) {
+        let source = strip_comments(&strip_cfg_test_modules(&read_source(&file)));
+        for forbidden in [
+            "crate::AppState",
+            "backend_school::",
+            "crate::modules",
+            "modules::academic",
+            "modules::supervision",
+        ] {
+            if source.contains(forbidden) {
+                crate_violations.push(format!("{}: {forbidden}", relative(&file)));
+            }
+        }
+    }
+    assert!(
+        crate_violations.is_empty(),
+        "Lifecycle must depend on public crates and typed ports, not application modules:\n{}",
+        crate_violations.join("\n")
+    );
+
+    for lower_crate in [
+        "school-academic-core",
+        "school-academic-delivery",
+        "school-academic-timetable",
+        "school-academic-assessment",
+        "school-academic-results",
+    ] {
+        let lower_manifest = read_source(workspace_crate_dir(lower_crate).join("Cargo.toml"));
+        assert!(!lower_manifest.contains("school-academic-lifecycle"));
+    }
+
+    assert!(!manifest_dir()
+        .join("src/modules/academic/lifecycle/models.rs")
+        .exists());
+    assert!(!manifest_dir()
+        .join("src/modules/academic/lifecycle/models")
+        .exists());
+    for old_service_owner in list_files(
+        manifest_dir().join("src/modules/academic/lifecycle/services"),
+        |path| {
+            path.extension().is_some_and(|extension| extension == "rs")
+                && !path
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .is_some_and(|stem| stem.ends_with("_tests"))
+        },
+    ) {
+        panic!(
+            "Lifecycle implementation still has a root owner: {}",
+            relative(&old_service_owner)
+        );
+    }
+
+    let port = read_source(lifecycle_root.join("src/ports.rs"));
+    assert!(port.contains("trait ExternalLifecyclePort"));
+    assert!(port.contains("pending_exam_work"));
+    assert!(port.contains("pending_supervision_work"));
+    assert!(port.contains("apply_exam_preparation"));
+    assert!(port.contains("apply_supervision_preparation"));
+
+    let adapter =
+        read_source(manifest_dir().join("src/modules/academic/lifecycle_provider_adapter.rs"));
+    assert!(adapter.contains("impl ExternalLifecyclePort"));
+    assert!(adapter.contains("exam_schedule_service"));
+    assert!(adapter.contains("school_supervision::services"));
+}
+
+#[test]
+fn eligible_satellite_domains_have_singular_workspace_owners() {
+    let manifest = read_source(manifest_dir().join("Cargo.toml"));
+    let admitted = [
+        "school-admission",
+        "school-supervision",
+        "school-staff",
+        "school-calendar",
+        "school-question-bank",
+        "school-workflow",
+        "school-students",
+    ];
+
+    for package in admitted {
+        assert!(
+            manifest.contains(&format!("\"crates/{package}\"")),
+            "missing admitted satellite workspace member {package}"
+        );
+        assert!(manifest.contains(&format!("{package} = {{ path = \"crates/{package}\" }}")));
+
+        let crate_root = workspace_crate_dir(package);
+        let crate_manifest = read_source(crate_root.join("Cargo.toml"));
+        assert!(crate_manifest.contains("[lints]\nworkspace = true"));
+        assert!(!crate_manifest.contains("backend-school"));
+
+        let mut violations = Vec::new();
+        for file in list_files(crate_root.join("src"), |path| {
+            path.extension().is_some_and(|extension| extension == "rs")
+        }) {
+            let source = strip_comments(&strip_cfg_test_modules(&read_source(&file)));
+            for forbidden in [
+                "crate::AppState",
+                "backend_school::",
+                "crate::modules",
+                "crate::policies",
+                "crate::utils",
+                "crate::scheduling",
+            ] {
+                if source.contains(forbidden) {
+                    violations.push(format!("{}: {forbidden}", relative(&file)));
+                }
+            }
+        }
+        assert!(
+            violations.is_empty(),
+            "satellite crate must use only public package contracts:\n{}",
+            violations.join("\n")
+        );
+    }
+
+    for removed_owner in [
+        "src/modules/admission/models.rs",
+        "src/modules/admission/models",
+        "src/modules/admission/services.rs",
+        "src/modules/admission/services",
+        "src/modules/supervision/models.rs",
+        "src/modules/supervision/services.rs",
+        "src/modules/staff/models.rs",
+        "src/modules/staff/services.rs",
+        "src/modules/question_bank/models.rs",
+        "src/modules/question_bank/services.rs",
+        "src/modules/work/services.rs",
+        "src/modules/workflow/models.rs",
+        "src/modules/workflow/services.rs",
+        "src/modules/students/models.rs",
+        "src/modules/students/services.rs",
+        "src/modules/calendar/models.rs",
+    ] {
+        assert!(
+            !manifest_dir().join(removed_owner).exists(),
+            "satellite production owner remains in application: {removed_owner}"
+        );
+    }
+
+    let parents = read_source(manifest_dir().join("src/modules/parents/services.rs"));
+    assert!(parents.contains("school_students"));
+    assert!(parents.contains("school_calendar"));
+    assert!(parents.contains("exam_schedule_service"));
+}
+
+#[test]
+fn school_test_db_is_a_dev_only_workspace_owner() {
+    let manifest = read_source(manifest_dir().join("Cargo.toml"));
+    let dependencies = manifest
+        .split("[dependencies]")
+        .nth(1)
+        .and_then(|rest| rest.split("[dev-dependencies]").next())
+        .expect("root manifest must keep dependency sections");
+    let dev_dependencies = manifest
+        .split("[dev-dependencies]")
+        .nth(1)
+        .and_then(|rest| rest.split("[lints]").next())
+        .expect("root manifest must keep dev dependencies");
+
+    assert!(manifest.contains("\"crates/school-test-db\""));
+    assert!(!dependencies.contains("school-test-db"));
+    assert!(dev_dependencies.contains("school-test-db = { workspace = true }"));
+    assert!(!manifest_dir().join("src/test_helpers.rs").exists());
+    for file in list_files(manifest_dir().join("src"), |path| {
+        path.extension().is_some_and(|extension| extension == "rs")
+    }) {
+        let legacy_test_helper = ["crate::test", "_helpers"].concat();
+        assert!(!read_source(&file).contains(&legacy_test_helper));
+    }
+}
+
+#[test]
+fn school_tenancy_is_the_single_tenant_runtime_owner() {
+    let manifest = read_source(manifest_dir().join("Cargo.toml"));
+
+    assert!(manifest.contains("\"crates/school-tenancy\""));
+    assert!(manifest.contains("school-tenancy = { path = \"crates/school-tenancy\" }"));
+    assert!(!manifest_dir().join("src/db/admin_client.rs").exists());
+    assert!(!manifest_dir().join("src/db/pool_manager.rs").exists());
+    assert!(!manifest_dir().join("src/db/school_mapping.rs").exists());
+
+    let request_adapter = read_source(manifest_dir().join("src/utils/tenant.rs"));
+    let pool_manager =
+        read_source(workspace_crate_dir("school-tenancy").join("src/pool_manager.rs"));
+    assert!(request_adapter.contains("HeaderMap"));
+    assert!(request_adapter.contains("TenantOriginPolicy"));
+    assert!(!request_adapter.contains("struct TenantContext"));
+    assert!(pool_manager.contains("statement_cache_capacity(0)"));
+    assert!(pool_manager.contains("max_connections_per_school: 5"));
+    assert!(pool_manager.contains("pool_ttl: Duration::from_secs(1800)"));
+}
+
+#[test]
+fn school_file_platform_is_the_single_file_runtime_owner() {
+    let manifest = read_source(manifest_dir().join("Cargo.toml"));
+    let crate_root = workspace_crate_dir("school-file-platform");
+
+    assert!(manifest.contains("\"crates/school-file-platform\""));
+    assert!(manifest.contains("school-file-platform = { path = \"crates/school-file-platform\" }"));
+    for owner in [
+        "file_inspector.rs",
+        "malware_scanner.rs",
+        "platform_service.rs",
+        "platform_types.rs",
+        "purpose_registry.rs",
+        "r2_storage_provider.rs",
+        "reconciler.rs",
+        "repository.rs",
+        "runtime_config.rs",
+        "storage_provider.rs",
+        "schema_tests.rs",
+    ] {
+        assert!(!manifest_dir()
+            .join("src/modules/files")
+            .join(owner)
+            .exists());
+        assert!(crate_root.join("src").join(owner).exists());
+    }
+    assert!(!manifest_dir().join("src/utils/file_hash.rs").exists());
+    assert!(!manifest_dir().join("src/utils/file_processor.rs").exists());
+
+    for adapter in ["consumer_service.rs", "handlers.rs", "models.rs"] {
+        assert!(manifest_dir()
+            .join("src/modules/files")
+            .join(adapter)
+            .exists());
+    }
+    assert!(manifest_dir()
+        .join("src/policies/file_access_policy.rs")
+        .exists());
+}
+
+#[test]
+fn crypto_fonts_and_certificates_have_singular_workspace_owners() {
+    let manifest = read_source(manifest_dir().join("Cargo.toml"));
+    for package in ["school-crypto", "school-fonts", "school-certificates"] {
+        assert!(manifest.contains(&format!("\"crates/{package}\"")));
+        assert!(manifest.contains(&format!("{package} = {{ path = \"crates/{package}\" }}")));
+        assert!(workspace_crate_dir(package).join("src/lib.rs").exists());
+    }
+
+    assert!(!manifest_dir()
+        .join("src/utils/field_encryption.rs")
+        .exists());
+    assert!(workspace_crate_dir("school-crypto")
+        .join("src/lib.rs")
+        .exists());
+
+    for owner in ["models.rs", "services.rs", "services_tests.rs"] {
+        assert!(!manifest_dir()
+            .join("src/modules/school_fonts")
+            .join(owner)
+            .exists());
+        assert!(workspace_crate_dir("school-fonts")
+            .join("src")
+            .join(owner)
+            .exists());
+    }
+    assert!(manifest_dir()
+        .join("src/modules/school_fonts/handlers.rs")
+        .exists());
+
+    for owner in [
+        "models.rs",
+        "services.rs",
+        "services_tests.rs",
+        "verification_limiter.rs",
+    ] {
+        assert!(!manifest_dir()
+            .join("src/modules/certificates")
+            .join(owner)
+            .exists());
+        assert!(workspace_crate_dir("school-certificates")
+            .join("src")
+            .join(owner)
+            .exists());
+    }
+    assert!(manifest_dir()
+        .join("src/modules/certificates/handlers.rs")
+        .exists());
+    assert!(manifest_dir()
+        .join("src/modules/certificates/schema_tests.rs")
+        .exists());
+    assert!(!manifest_dir()
+        .join("src/policies/certificate_access_policy.rs")
+        .exists());
+    assert!(workspace_crate_dir("school-certificates")
+        .join("src/access_policy.rs")
+        .exists());
+}
+
+#[test]
+fn school_auth_is_the_single_session_runtime_owner() {
+    let manifest = read_source(manifest_dir().join("Cargo.toml"));
+    let crate_root = workspace_crate_dir("school-auth");
+    let crate_manifest = read_source(crate_root.join("Cargo.toml"));
+
+    assert!(manifest.contains("\"crates/school-auth\""));
+    assert!(manifest.contains("school-auth = { path = \"crates/school-auth\" }"));
+    assert!(crate_manifest.contains("school-authorization = { workspace = true }"));
+    assert!(crate_manifest.contains("school-crypto = { workspace = true }"));
+    assert!(crate_manifest.contains("school-errors = { workspace = true }"));
+    assert!(crate_manifest.contains("school-tenancy = { workspace = true }"));
+
+    for owner in [
+        "audit.rs",
+        "config.rs",
+        "events.rs",
+        "models.rs",
+        "runtime.rs",
+        "services.rs",
+        "session_cache.rs",
+        "session_crypto.rs",
+        "session_policy.rs",
+        "session_repository.rs",
+        "session_service.rs",
+        "throttle_repository.rs",
+    ] {
+        assert!(!manifest_dir().join("src/modules/auth").join(owner).exists());
+        assert!(crate_root.join("src").join(owner).exists());
+    }
+
+    for adapter in ["handlers.rs", "http.rs", "session_handlers.rs"] {
+        assert!(manifest_dir()
+            .join("src/modules/auth")
+            .join(adapter)
+            .exists());
+    }
+    assert!(
+        !read_source(manifest_dir().join("src/modules/notification/events.rs"))
+            .contains("pub struct PermissionChangeEvent")
+    );
+
+    let runtime = read_source(crate_root.join("src/runtime.rs"));
+    let services = read_source(crate_root.join("src/services.rs"));
+    assert!(runtime.contains("pub struct AuthRuntime"));
+    assert!(runtime.contains("identity_cache: Arc<SessionCache>"));
+    assert!(runtime.contains("permission_cache: Arc<PermissionCache>"));
+    assert!(!runtime.contains("AppState"));
+    assert!(!runtime.contains("FromRef"));
+    for file_sql in [
+        "FROM files",
+        "UPDATE files",
+        "purpose_code = 'profile_image'",
+    ] {
+        assert!(!strip_cfg_test_modules(&services).contains(file_sql));
+    }
+}
+
+#[test]
+fn workspace_crates_do_not_depend_on_application_state_or_source_paths() {
+    let mut violations = Vec::new();
+
+    for file in list_files(manifest_dir().join("crates"), |path| {
+        path.extension().is_some_and(|extension| extension == "rs")
+    }) {
+        let source = strip_comments(&strip_cfg_test_modules(&read_source(&file)));
+        for forbidden in ["crate::AppState", "backend_school::", "#[path ="] {
+            if source.contains(forbidden) {
+                violations.push(format!("{}: {forbidden}", relative(&file)));
+            }
+        }
+    }
+
+    assert_eq!(violations, Vec::<String>::new());
+}
+
 fn collect_files(
     dir: &Path,
     predicate: &dyn Fn(&Path) -> bool,
@@ -156,7 +1300,10 @@ fn gradebook_handlers_keep_database_and_authorization_in_services() {
     ] {
         let body = extract_braced_block(&handlers, &format!("pub async fn {name}("), false);
         assert!(body.contains("actor_tenant_context_from_session"));
-        assert!(body.contains("services::"));
+        assert!(
+            body.contains("gradebook_service::") || body.contains("gradebook_adapter::"),
+            "Gradebook handler {name} must delegate to its domain service or application adapter"
+        );
         assert!(body.contains("ApiResponse::ok"));
     }
 }
@@ -226,7 +1373,7 @@ fn only_auth_boundary_parses_browser_session_credentials() {
     ];
     let cookie_name_owners = [
         "src/middleware/session.rs",
-        "src/modules/auth/config.rs",
+        "crates/school-auth/src/config.rs",
         "src/modules/auth/http.rs",
         "src/modules/auth/session_handlers.rs",
         "src/modules/academic/websockets.rs",
@@ -301,8 +1448,8 @@ fn exam_schedule_shared_module_is_private() {
 
 #[test]
 fn supervision_service_uses_private_child_modules() {
-    let facade = read_source(manifest_dir().join("src/modules/supervision/services.rs"));
-    let shared = manifest_dir().join("src/modules/supervision/services/shared.rs");
+    let facade = read_source(manifest_dir().join("crates/school-supervision/src/services.rs"));
+    let shared = manifest_dir().join("crates/school-supervision/src/services/shared.rs");
 
     assert!(facade.contains("mod shared;"));
     assert!(!facade.contains("pub mod shared;"));
@@ -311,8 +1458,8 @@ fn supervision_service_uses_private_child_modules() {
 
 #[test]
 fn supervision_service_facade_is_thin_and_preserves_public_surface() {
-    let facade = read_source(manifest_dir().join("src/modules/supervision/services.rs"));
-    let service_dir = manifest_dir().join("src/modules/supervision/services");
+    let facade = read_source(manifest_dir().join("crates/school-supervision/src/services.rs"));
+    let service_dir = manifest_dir().join("crates/school-supervision/src/services");
 
     for module in [
         "cycles",
@@ -385,7 +1532,8 @@ fn supervision_service_facade_is_thin_and_preserves_public_surface() {
 #[test]
 fn timetable_block_service_uses_only_canonical_delivery_identity() {
     let service = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/services/timetable_block_service.rs"),
+        manifest_dir()
+            .join("crates/school-academic-timetable/src/services/timetable_block_service.rs"),
     ));
 
     for required in [
@@ -419,7 +1567,8 @@ fn timetable_block_service_uses_only_canonical_delivery_identity() {
 #[test]
 fn timetable_blocks_hydrate_exact_block_group_instructors() {
     let service = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/services/timetable_block_queries.rs"),
+        manifest_dir()
+            .join("crates/school-academic-timetable/src/services/timetable_block_queries.rs"),
     ));
     let relationship_loader = service
         .split("let instructor_rows: Vec<InstructorRow>")
@@ -434,10 +1583,10 @@ fn timetable_blocks_hydrate_exact_block_group_instructors() {
 #[test]
 fn timetable_exact_instructor_consumers_do_not_fallback_to_group_teachers() {
     let daily_teaching = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/services/daily_teaching_service.rs"),
+        manifest_dir().join("crates/school-academic-timetable/src/services/daily_teaching.rs"),
     ));
     let supervision = strip_comments(&read_source(
-        manifest_dir().join("src/modules/supervision/services/observations.rs"),
+        manifest_dir().join("crates/school-supervision/src/services/observations.rs"),
     ));
     let supervision_block_group_lookup = supervision
         .split_once("async fn load_timetable_block_group_context_for_teacher")
@@ -498,7 +1647,8 @@ fn personal_staff_timetable_stays_exact_own_scope_without_academic_list_permissi
 #[test]
 fn student_timetable_uses_requested_date_for_roster_membership() {
     let service = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/services/timetable_block_service.rs"),
+        manifest_dir()
+            .join("crates/school-academic-timetable/src/services/timetable_block_service.rs"),
     ));
     let student_entries = service
         .split("pub async fn list_student_blocks")
@@ -528,18 +1678,13 @@ fn student_timetable_uses_requested_date_for_roster_membership() {
 fn calendar_service_uses_private_child_modules() {
     let facade = read_source(manifest_dir().join("src/modules/calendar/services.rs"));
     let service_dir = manifest_dir().join("src/modules/calendar/services");
+    let domain_facade = read_source(workspace_crate_dir("school-calendar").join("src/services.rs"));
+    let domain_service_dir = workspace_crate_dir("school-calendar").join("src/services");
 
-    for module in [
-        "categories_and_tags",
-        "events",
-        "notifications",
-        "reminders",
-        "shared",
-        "visibility",
-    ] {
+    for module in ["notifications", "reminders"] {
         assert!(
             facade.contains(&format!("mod {module};")),
-            "calendar facade must declare private module `{module}`"
+            "calendar application facade must declare private adapter module `{module}`"
         );
         assert!(
             !facade.contains(&format!("pub mod {module};")),
@@ -547,10 +1692,26 @@ fn calendar_service_uses_private_child_modules() {
         );
         assert!(
             service_dir.join(format!("{module}.rs")).is_file(),
-            "calendar child module `{module}` must have its own source file"
+            "calendar adapter module `{module}` must have its own source file"
         );
     }
 
+    for module in ["categories_and_tags", "events", "shared", "visibility"] {
+        assert!(
+            domain_facade.contains(&format!("mod {module};")),
+            "calendar domain facade must declare private module `{module}`"
+        );
+        assert!(
+            !domain_facade.contains(&format!("pub mod {module};")),
+            "calendar domain child module `{module}` must remain private"
+        );
+        assert!(
+            domain_service_dir.join(format!("{module}.rs")).is_file(),
+            "calendar domain module `{module}` must have its own source file"
+        );
+    }
+
+    let public_surface = format!("{facade}\n{domain_facade}");
     for public_item in [
         "create_event",
         "list_management_events",
@@ -563,7 +1724,7 @@ fn calendar_service_uses_private_child_modules() {
         "process_due_calendar_reminders_for_all_tenants",
     ] {
         assert!(
-            facade.contains(public_item),
+            public_surface.contains(public_item),
             "calendar facade must preserve public item `{public_item}`"
         );
     }
@@ -671,9 +1832,9 @@ fn student_deactivation_invalidates_effective_permissions() {
     assert!(
         body.contains("student_service::delete_student(&pool, student_id, actor.user_id).await?")
     );
-    assert!(body.contains("permission_cache.invalidate_user(&tenant, student_id)"));
+    assert!(body.contains("invalidate_permission_user(&tenant, student_id)"));
     assert!(body.contains("notify_permission_changed(&tenant, student_id)"));
-    let service = read_source(manifest_dir().join("src/modules/students/services.rs"));
+    let service = read_source(manifest_dir().join("crates/school-students/src/services.rs"));
     let mutation = extract_braced_block(&service, "pub async fn delete_student", false);
     assert!(mutation.contains("student_years::withdraw_for_account_deactivation"));
     assert!(!service.contains("UPDATE student_academic_years"));
@@ -1088,7 +2249,8 @@ fn permission_invalidation_violations(relative_path: &str, source: &str) -> Vec<
         extract_method_invocations(source, &lexical, "notify_all_permissions_changed");
     let mut violations = Vec::new();
 
-    for invalidation in extract_method_invocations(source, &lexical, "invalidate_tenant") {
+    for invalidation in extract_method_invocations(source, &lexical, "invalidate_permission_tenant")
+    {
         if !has_matching_following_invocation(&invalidation, &tenant_notifications) {
             violations.push(format!(
                 "{relative_path}:{}: tenant invalidation must emit tenant permission_changed with matching tenant",
@@ -1097,7 +2259,7 @@ fn permission_invalidation_violations(relative_path: &str, source: &str) -> Vec<
         }
     }
 
-    for invalidation in extract_method_invocations(source, &lexical, "invalidate_user") {
+    for invalidation in extract_method_invocations(source, &lexical, "invalidate_permission_user") {
         if !has_matching_following_invocation(&invalidation, &user_notifications) {
             violations.push(format!(
                 "{relative_path}:{}: user invalidation must emit tenant permission_changed with matching tenant and user",
@@ -1110,9 +2272,14 @@ fn permission_invalidation_violations(relative_path: &str, source: &str) -> Vec<
 }
 
 fn backend_rs_files() -> Vec<PathBuf> {
-    list_files(manifest_dir().join("src"), |path| {
-        path.extension().is_some_and(|ext| ext == "rs") && !is_rust_test_module(path)
-    })
+    [manifest_dir().join("src"), manifest_dir().join("crates")]
+        .into_iter()
+        .flat_map(|root| {
+            list_files(root, |path| {
+                path.extension().is_some_and(|ext| ext == "rs") && !is_rust_test_module(path)
+            })
+        })
+        .collect()
 }
 
 fn module_rs_files() -> Vec<PathBuf> {
@@ -1145,8 +2312,10 @@ fn strip_cfg_test_modules(source: &str) -> String {
             cursor = after_marker;
             continue;
         }
-        let closing = balanced_delimiter_end(structural, opening, b'{', b'}')
-            .expect("cfg(test) module must have balanced braces");
+        let closing =
+            balanced_delimiter_end(structural, opening, b'{', b'}').unwrap_or_else(|| {
+                panic!("cfg(test) module at byte {start} must have balanced braces")
+            });
         for byte in &mut runtime[start..=closing] {
             if *byte != b'\n' && *byte != b'\r' {
                 *byte = b' ';
@@ -1419,7 +2588,7 @@ fn certificate_runtime_keeps_handlers_thin_proofs_private_and_renders_ephemeral(
     let handlers_path = manifest_dir().join("src/modules/certificates/handlers.rs");
     let handlers = strip_comments(&read_source(&handlers_path));
     let certificate_services = list_files(
-        manifest_dir().join("src/modules/certificates/services"),
+        workspace_crate_dir("school-certificates").join("src/services"),
         |path| {
             path.extension().is_some_and(|extension| extension == "rs")
                 && !is_rust_test_module(path)
@@ -1490,8 +2659,12 @@ fn certificate_runtime_keeps_handlers_thin_proofs_private_and_renders_ephemeral(
             "pub async fn import_certificate_candidates",
             false,
         ),
-        read_source(manifest_dir().join("src/modules/certificates/services/import_validation.rs")),
-        read_source(manifest_dir().join("src/modules/certificates/services/candidate_service.rs")),
+        read_source(
+            workspace_crate_dir("school-certificates").join("src/services/import_validation.rs"),
+        ),
+        read_source(
+            workspace_crate_dir("school-certificates").join("src/services/candidate_service.rs"),
+        ),
     ]
     .join("\n");
     let sensitive_candidate_structure = lexical_mask(&sensitive_candidate_boundary, false);
@@ -1519,7 +2692,7 @@ const AFTER: &str = "certificate.issue.school";
     assert_eq!(raw_permission.find_iter(&stripped_fixture).count(), 2);
     assert!(!stripped_fixture.contains("certificate.read.own"));
     for file in backend_rs_files() {
-        if relative(&file) == "src/permissions/registry_generated.rs" {
+        if relative(&file) == "crates/school-permissions/src/registry_generated.rs" {
             continue;
         }
         let source = read_source(&file);
@@ -1586,7 +2759,8 @@ const AFTER: &str = "certificate.issue.school";
         "certificate layouts intentionally update in place; no template history table is allowed"
     );
 
-    let file_purposes = read_source(manifest_dir().join("src/modules/files/platform_types.rs"));
+    let file_purposes =
+        read_source(workspace_crate_dir("school-file-platform").join("src/platform_types.rs"));
     for required in [
         "CertificateTemplateBackground",
         "CertificateTemplateImage",
@@ -1762,7 +2936,8 @@ fn organization_permission_grant_baseline_is_deterministic() {
 
 #[test]
 fn effective_permissions_do_not_inherit_child_organization_grants() {
-    let permission_middleware = read_source(manifest_dir().join("src/middleware/permission.rs"));
+    let permission_middleware =
+        read_source(workspace_crate_dir("school-authorization").join("src/permissions.rs"));
 
     assert!(
         !permission_middleware.contains("Parent-leader inheritance"),
@@ -1781,7 +2956,7 @@ fn effective_permissions_do_not_inherit_child_organization_grants() {
 #[test]
 fn academic_curriculum_tree_scope_is_explicitly_registered() {
     let backend_registry =
-        read_source(manifest_dir().join("src/permissions/registry_generated.rs"));
+        read_source(manifest_dir().join("crates/school-permissions/src/registry_generated.rs"));
     let frontend_registry = read_source(
         repo_root()
             .join("frontend-school")
@@ -1809,10 +2984,10 @@ fn academic_assessment_plans_are_offering_and_term_scoped() {
         .join("043_academic_consumer_cutover.sql");
     let migration = read_source(&migration_path);
     let service = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/services/assessment_service.rs"),
+        manifest_dir().join("crates/school-academic-assessment/src/assessment/services.rs"),
     ));
     let models = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/models/assessment.rs"),
+        manifest_dir().join("crates/school-academic-assessment/src/assessment/models.rs"),
     ));
 
     for required_fragment in [
@@ -1848,13 +3023,13 @@ fn academic_assessment_plans_are_offering_and_term_scoped() {
 #[test]
 fn academic_assessment_supports_resource_and_assigned_group_scope() {
     let service = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/services/assessment_service.rs"),
+        manifest_dir().join("crates/school-academic-assessment/src/assessment/services.rs"),
     ));
     let models = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/models/assessment.rs"),
+        manifest_dir().join("crates/school-academic-assessment/src/assessment/models.rs"),
     ));
     let backend_registry = strip_comments(&read_source(
-        manifest_dir().join("src/permissions/registry_generated.rs"),
+        manifest_dir().join("crates/school-permissions/src/registry_generated.rs"),
     ));
 
     assert!(
@@ -1877,7 +3052,7 @@ fn academic_assessment_supports_resource_and_assigned_group_scope() {
 #[test]
 fn academic_assessment_teacher_scope_uses_learning_group_teachers() {
     let service = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/services/assessment_service.rs"),
+        manifest_dir().join("crates/school-academic-assessment/src/assessment/services.rs"),
     ));
 
     assert!(
@@ -1899,7 +3074,7 @@ fn academic_assessment_save_is_statusless_and_optimistically_versioned() {
         .join("056_assessment_phase_gradebook_foundation.sql");
     let migration = read_source(&migration_path);
     let service = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/services/assessment_service.rs"),
+        manifest_dir().join("crates/school-academic-assessment/src/assessment/services.rs"),
     ));
 
     assert!(
@@ -1927,7 +3102,7 @@ fn academic_assessment_save_is_statusless_and_optimistically_versioned() {
 #[test]
 fn academic_assessment_list_prioritizes_current_coordinator_then_has_stable_offering_order() {
     let service = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/services/assessment_service.rs"),
+        manifest_dir().join("crates/school-academic-assessment/src/assessment/services.rs"),
     ));
 
     assert!(
@@ -1943,7 +3118,7 @@ fn academic_assessment_list_prioritizes_current_coordinator_then_has_stable_offe
 }
 
 #[test]
-fn operational_bins_use_central_tenant_migration_runner() {
+fn production_targets_use_the_workspace_migration_runner() {
     let bin_files = list_files(manifest_dir().join("src/bin"), |path| {
         path.extension().and_then(|extension| extension.to_str()) == Some("rs")
     });
@@ -1952,19 +3127,32 @@ fn operational_bins_use_central_tenant_migration_runner() {
             .expect("valid regex");
     let mut violations = Vec::new();
 
-    for file in bin_files {
-        let source = strip_comments(&read_source(&file));
+    for file in &bin_files {
+        let source = strip_comments(&read_source(file));
+        let lines = source.lines().collect::<Vec<_>>();
+        for (index, line) in lines.iter().enumerate() {
+            if line.trim_start().starts_with("#[path =")
+                && lines[..index]
+                    .iter()
+                    .rev()
+                    .find(|candidate| !candidate.trim().is_empty())
+                    .is_none_or(|previous| previous.trim() != "#[cfg(test)]")
+            {
+                violations.push(format!("{}: {}", relative(file), line.trim()));
+            }
+        }
         if direct_migrate_pattern.is_match(&source) {
-            violations.push(relative(&file));
+            violations.push(format!("{}: direct sqlx migrator", relative(file)));
         }
     }
 
-    let seed_sandbox = read_source(manifest_dir().join("src/bin/seed_sandbox.rs"));
     assert_eq!(violations, Vec::<String>::new());
-    assert!(
-        seed_sandbox.contains("migration::run_tenant_migrations(&pool)"),
-        "seed_sandbox must use the same migration runner as tenant runtime"
-    );
+    for binary in ["migrate_tenant_schema.rs", "seed_sandbox.rs"] {
+        let source = read_source(manifest_dir().join("src/bin").join(binary));
+        assert!(source.contains("school_migrations::run_tenant_migrations(&pool)"));
+        assert!(!source.contains("pub mod migration"));
+        assert!(!source.contains("permission_sync"));
+    }
 }
 
 #[test]
@@ -2000,13 +3188,14 @@ fn staff_list_uses_resource_aware_access_scope() {
         manifest_dir().join("src/modules/staff/handlers/staff.rs"),
     ));
     let staff_service = strip_comments(&read_source(
-        manifest_dir().join("src/modules/staff/services/staff_service.rs"),
+        manifest_dir().join("crates/school-staff/src/services/staff_service.rs"),
     ));
 
     assert!(staff_handler.contains("staff_access_policy::resolve_staff_profile_list_access"));
     assert!(staff_handler.contains("staff_service::list_staff(&pool, filter, access)"));
     assert!(!staff_handler.contains("actor.require_any_permission(&["));
-    assert!(staff_service.contains("UserResourceListAccess"));
+    assert!(staff_handler.contains("staff_list_access"));
+    assert!(staff_service.contains("StaffListAccess"));
     assert!(staff_service.contains("push_staff_list_access_filter"));
 }
 
@@ -2017,7 +3206,7 @@ fn staff_dashboard_endpoint_is_staff_scoped_and_aggregate_only() {
         manifest_dir().join("src/modules/staff/handlers/staff.rs"),
     ));
     let dashboard_service = strip_comments(&read_source(
-        manifest_dir().join("src/modules/staff/services/dashboard_service.rs"),
+        manifest_dir().join("crates/school-staff/src/services/dashboard_service.rs"),
     ));
 
     assert!(routes.contains("\"/api/staff/dashboard\""));
@@ -2064,9 +3253,10 @@ fn daily_teaching_overview_endpoint_is_read_only_and_pii_safe() {
         manifest_dir().join("src/modules/academic/handlers/timetable_blocks.rs"),
     ));
     let service = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/services/daily_teaching_service.rs"),
+        manifest_dir().join("crates/school-academic-timetable/src/services/daily_teaching.rs"),
     ));
-    let registry = read_source(manifest_dir().join("src/permissions/registry_generated.rs"));
+    let registry =
+        read_source(manifest_dir().join("crates/school-permissions/src/registry_generated.rs"));
     let daily_handler =
         extract_braced_block(&handler, "pub async fn daily_teaching_overview", false);
 
@@ -2119,7 +3309,7 @@ fn academic_core_handlers_are_thin_authorized_and_signal_only_after_mutation() {
         manifest_dir().join("src/modules/academic/core/handlers.rs"),
     ));
     let context_service = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/core/services/context.rs"),
+        workspace_crate_dir("school-academic-core").join("src/services/context.rs"),
     ));
 
     assert!(handlers.contains("actor_tenant_context_from_session(&state, &session).await?"));
@@ -2527,7 +3717,7 @@ fn academic_curriculum_permission_decisions_live_in_policy_layer() {
         manifest_dir().join("src/modules/academic/core/handlers.rs"),
     ));
     let catalog_service = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/core/services/catalog.rs"),
+        workspace_crate_dir("school-academic-core").join("src/services/catalog.rs"),
     ));
 
     assert!(policies_root.contains("pub mod academic_catalog_access_policy;"));
@@ -2549,7 +3739,10 @@ fn academic_curriculum_permission_decisions_live_in_policy_layer() {
 fn academic_core_resource_policies_preserve_independent_scopes() {
     let policies_root = read_source(manifest_dir().join("src/policies.rs"));
     let shared_policy = strip_comments(&read_source(
-        manifest_dir().join("src/policies/resource_access_policy.rs"),
+        workspace_crate_dir("school-authorization").join("src/academic_resource.rs"),
+    ));
+    let exact_unit_policy = strip_comments(&read_source(
+        workspace_crate_dir("school-authorization").join("src/organization_scope.rs"),
     ));
     let catalog_policy = strip_comments(&read_source(
         manifest_dir().join("src/policies/academic_catalog_access_policy.rs"),
@@ -2579,7 +3772,7 @@ fn academic_core_resource_policies_preserve_independent_scopes() {
 
     assert!(shared_policy.contains("accessible_exact_units_for_permission"));
     assert!(shared_policy.contains("accessible_tree_units_for_permission"));
-    assert!(shared_policy.contains("p.is_active = true"));
+    assert!(exact_unit_policy.contains("p.is_active = true"));
     assert!(offering_policy.contains("JOIN learning_group_teachers teacher"));
     assert!(offering_policy.contains("teacher.teacher_id = $2"));
 }
@@ -2587,7 +3780,7 @@ fn academic_core_resource_policies_preserve_independent_scopes() {
 #[test]
 fn academic_subject_catalog_uses_versioned_stable_identity() {
     let catalog = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/core/services/catalog.rs"),
+        workspace_crate_dir("school-academic-core").join("src/services/catalog.rs"),
     ));
 
     for required in [
@@ -2610,7 +3803,7 @@ fn academic_subject_catalog_uses_versioned_stable_identity() {
 #[test]
 fn academic_subject_default_instructors_live_in_catalog_junction() {
     let catalog = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/core/services/catalog.rs"),
+        workspace_crate_dir("school-academic-core").join("src/services/catalog.rs"),
     ));
     let drop_migration = read_source(
         manifest_dir()
@@ -2641,10 +3834,10 @@ fn student_profile_access_uses_resource_policy_and_separate_pii_scope() {
         manifest_dir().join("src/modules/students/handlers.rs"),
     ));
     let student_service = strip_comments(&read_source(
-        manifest_dir().join("src/modules/students/services.rs"),
+        manifest_dir().join("crates/school-students/src/services.rs"),
     ));
     let backend_registry =
-        read_source(manifest_dir().join("src/permissions/registry_generated.rs"));
+        read_source(manifest_dir().join("crates/school-permissions/src/registry_generated.rs"));
     let frontend_registry = read_source(
         repo_root()
             .join("frontend-school")
@@ -2656,7 +3849,8 @@ fn student_profile_access_uses_resource_policy_and_separate_pii_scope() {
     assert!(student_handler.contains("student_access_policy::can_read_student_pii"));
     assert!(student_handler.contains("student_access_policy::resolve_student_list_access"));
     assert!(!student_handler.contains("actor.require_permission(codes::STUDENT_READ"));
-    assert!(student_service.contains("UserResourceListAccess"));
+    assert!(student_handler.contains("student_list_access"));
+    assert!(student_service.contains("StudentListAccess"));
     assert!(student_service.contains("include_pii: bool"));
     assert!(student_service.contains("hide_student_pii_fields"));
 
@@ -2695,7 +3889,7 @@ fn activity_offerings_use_the_shared_delivery_resource_policy() {
         manifest_dir().join("src/modules/academic/delivery/handlers.rs"),
     ));
     let offerings = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/delivery/services/offerings.rs"),
+        manifest_dir().join("crates/school-academic-delivery/src/services/offerings.rs"),
     ));
 
     assert!(policies_root.contains("pub mod learning_offering_access_policy;"));
@@ -2726,7 +3920,7 @@ fn activity_delivery_routes_use_offerings_and_learning_groups() {
 #[test]
 fn activity_delivery_requests_use_strict_typed_snapshots() {
     let models = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/delivery/models.rs"),
+        manifest_dir().join("crates/school-academic-delivery/src/models.rs"),
     ));
 
     for required in [
@@ -2768,7 +3962,7 @@ fn organization_delegation_handlers_use_policy_layer_for_authorization() {
 #[test]
 fn organization_delegation_authorizing_positions_are_explicit() {
     let delegation_service = strip_comments(&read_source(
-        manifest_dir().join("src/modules/staff/services/organization_delegation_service.rs"),
+        manifest_dir().join("crates/school-staff/src/services/organization_delegation_service.rs"),
     ));
 
     assert!(delegation_service
@@ -2784,7 +3978,7 @@ fn organization_delegation_authorizing_positions_are_explicit() {
 #[test]
 fn organization_delegatable_permissions_are_unique_across_position_grants() {
     let delegation_service = strip_comments(&read_source(
-        manifest_dir().join("src/modules/staff/services/organization_delegation_service.rs"),
+        manifest_dir().join("crates/school-staff/src/services/organization_delegation_service.rs"),
     ));
 
     assert!(
@@ -2913,7 +4107,7 @@ fn module_handlers_use_central_api_response_envelope() {
         for pattern in legacy_envelope_patterns {
             if source.contains(pattern) {
                 violations.push(format!(
-                    "{}: use crate::api_response::ApiResponse instead of local/ad-hoc envelopes ({pattern})",
+                    "{}: use school_http::ApiResponse instead of local/ad-hoc envelopes ({pattern})",
                     relative(&file)
                 ));
             }
@@ -3051,7 +4245,12 @@ fn structured_logging_violations(file_name: &str, source: &str) -> Vec<String> {
         return Vec::new();
     }
 
-    let source = if file_name == "src/main.rs" {
+    let source = if file_name.ends_with("/build.rs") {
+        Regex::new(r#"(?m)^[ \t]*println\s*!\s*\(\s*"cargo:[^"\r\n]*"\s*\)\s*;[ \t]*$"#)
+            .expect("literal Cargo directive pattern should compile")
+            .replace_all(source, "")
+            .into_owned()
+    } else if file_name == "src/main.rs" {
         mask_export_openapi_cli_block(source)
     } else {
         source.to_owned()
@@ -3137,7 +4336,7 @@ fn module_handlers_use_typed_api_dtos_instead_of_raw_json_values() {
 fn known_shape_jsonb_api_arrays_use_typed_boundaries() {
     let forbidden_fields = [
         (
-            "src/modules/admission/models/rounds.rs",
+            "crates/school-admission/src/models/rounds.rs",
             "scoring_subject_ids: serde_json::Value",
         ),
         (
@@ -3145,15 +4344,15 @@ fn known_shape_jsonb_api_arrays_use_typed_boundaries() {
             "data_categories: serde_json::Value",
         ),
         (
-            "src/modules/academic/services/timetable_template_service.rs",
+            "crates/school-academic-timetable/src/services/timetable_template_service.rs",
             "grade_level_ids: serde_json::Value",
         ),
         (
-            "src/modules/academic/services/timetable_template_service.rs",
+            "crates/school-academic-timetable/src/services/timetable_template_service.rs",
             "classroom_ids: serde_json::Value",
         ),
         (
-            "src/modules/academic/services/timetable_template_service.rs",
+            "crates/school-academic-timetable/src/services/timetable_template_service.rs",
             "instructor_ids: serde_json::Value",
         ),
         (
@@ -3161,23 +4360,23 @@ fn known_shape_jsonb_api_arrays_use_typed_boundaries() {
             "advisors: serde_json::Value",
         ),
         (
-            "src/modules/admission/models/rounds.rs",
+            "crates/school-admission/src/models/rounds.rs",
             "selection_settings: Option<serde_json::Value",
         ),
         (
-            "src/modules/admission/models/rounds.rs",
+            "crates/school-admission/src/models/rounds.rs",
             "subjects_by_track: Option<serde_json::Value",
         ),
         (
-            "src/modules/admission/models/rounds.rs",
+            "crates/school-admission/src/models/rounds.rs",
             "method_by_track: Option<serde_json::Value",
         ),
         (
-            "src/modules/admission/services/portal_service.rs",
+            "crates/school-admission/src/services/portal_service.rs",
             "selection_settings: Option<serde_json::Value",
         ),
         (
-            "src/modules/admission/models/applications.rs",
+            "crates/school-admission/src/models/applications.rs",
             "parent_status: Option<serde_json::Value",
         ),
     ];
@@ -3213,31 +4412,31 @@ fn known_shape_jsonb_api_arrays_use_typed_boundaries() {
 fn remaining_raw_json_values_are_explicit_dynamic_payloads() {
     let allowed_dynamic_value_patterns = [
         (
-            "src/modules/admission/models/applications.rs",
+            "crates/school-admission/src/models/applications.rs",
             "pub metadata: serde_json::Value",
         ),
         (
-            "src/modules/admission/models/applications.rs",
+            "crates/school-admission/src/models/applications.rs",
             "pub form_data: serde_json::Value",
         ),
         (
-            "src/modules/admission/models/applications.rs",
+            "crates/school-admission/src/models/applications.rs",
             "pub form_data: Option<serde_json::Value>",
         ),
         (
-            "src/modules/admission/models/rounds.rs",
+            "crates/school-admission/src/models/rounds.rs",
             "pub report_config: Option<serde_json::Value>",
         ),
         (
-            "src/modules/admission/services/application_service.rs",
+            "crates/school-admission/src/services/application_service.rs",
             "pub form_data: Option<serde_json::Value>",
         ),
         (
-            "src/modules/admission/services/application_service.rs",
+            "crates/school-admission/src/services/application_service.rs",
             "let form_data: Option<serde_json::Value>",
         ),
         (
-            "src/modules/auth/models.rs",
+            "crates/school-auth/src/models.rs",
             "pub metadata: serde_json::Value",
         ),
         (
@@ -3345,7 +4544,7 @@ fn permission_checks_use_registry_constants() {
 
 #[test]
 fn permission_registry_wraps_generated_contract() {
-    let wrapper = read_source(manifest_dir().join("src/permissions/registry.rs"));
+    let wrapper = read_source(manifest_dir().join("crates/school-permissions/src/registry.rs"));
 
     assert!(wrapper.contains("include!(\"registry_generated.rs\")"));
     assert!(!wrapper.contains("pub const STAFF_READ_ALL"));
@@ -3354,7 +4553,8 @@ fn permission_registry_wraps_generated_contract() {
 
 #[test]
 fn permission_registry_codes_match_declared_module_action_scope() {
-    let registry = read_source(manifest_dir().join("src/permissions/registry_generated.rs"));
+    let registry =
+        read_source(manifest_dir().join("crates/school-permissions/src/registry_generated.rs"));
     let permission_const_pattern =
         Regex::new(r#"pub const (?P<constant>[A-Z0-9_]+):\s*&str\s*=\s*"(?P<code>[^"]+)";"#)
             .expect("valid regex");
@@ -3420,7 +4620,8 @@ fn permission_registry_codes_match_declared_module_action_scope() {
 
 #[test]
 fn permission_registry_uses_canonical_action_and_scope_vocabulary() {
-    let registry = read_source(manifest_dir().join("src/permissions/registry_generated.rs"));
+    let registry =
+        read_source(manifest_dir().join("crates/school-permissions/src/registry_generated.rs"));
     let permission_def_pattern = Regex::new(
         r#"(?s)PermissionDef\s*\{.*?code:\s*codes::(?P<constant>[A-Z0-9_]+).*?action:\s*"(?P<action>[^"]+)".*?scope:\s*"(?P<scope>[^"]+)""#,
     )
@@ -3765,10 +4966,7 @@ fn module_handlers_use_actor_context_instead_of_raw_permission_lists() {
     let mut violations = Vec::new();
 
     for file in module_rs_files() {
-        if matches!(
-            relative(&file).as_str(),
-            "src/modules/auth/handlers.rs" | "src/modules/auth/session_service.rs"
-        ) {
+        if matches!(relative(&file).as_str(), "src/modules/auth/handlers.rs") {
             continue;
         }
 
@@ -3784,7 +4982,8 @@ fn module_handlers_use_actor_context_instead_of_raw_permission_lists() {
 #[test]
 fn auth_responses_use_shared_effective_permission_resolver() {
     let auth_handler = read_source(manifest_dir().join("src/modules/auth/handlers.rs"));
-    let session_service = read_source(manifest_dir().join("src/modules/auth/session_service.rs"));
+    let session_service =
+        read_source(workspace_crate_dir("school-auth").join("src/session_service.rs"));
     let login_snapshot =
         extract_braced_block(&session_service, "async fn load_login_snapshot", false);
     let current_snapshot = extract_braced_block(
@@ -3994,6 +5193,36 @@ fn structured_logging_guard_detects_spaced_macro_tokens() {
 }
 
 #[test]
+fn structured_logging_guard_allows_only_literal_cargo_build_directives() {
+    let directive_only = r#"
+        fn main() {
+            println!("cargo:rerun-if-changed=../../migrations");
+        }
+    "#;
+    let directive_with_plain_output = r#"
+        fn main() {
+            println!("cargo:rerun-if-changed=../../migrations");
+            println!("runtime stdout");
+        }
+    "#;
+
+    assert_eq!(
+        structured_logging_violations("crates/school-migrations/build.rs", directive_only),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        structured_logging_violations(
+            "crates/school-migrations/build.rs",
+            directive_with_plain_output
+        ),
+        vec![
+            "crates/school-migrations/build.rs: use tracing macros instead of println! in runtime code"
+                .to_string()
+        ]
+    );
+}
+
+#[test]
 fn timetable_websocket_handler_orders_session_auth_before_room_state() {
     let source = read_source(manifest_dir().join("src/modules/academic/websockets.rs"));
     let params = extract_braced_block(&source, "pub struct WsParams", false);
@@ -4115,7 +5344,8 @@ fn timetable_websocket_handler_orders_session_auth_before_room_state() {
 #[test]
 fn timetable_websocket_authorization_authenticates_active_user_before_permissions() {
     let service = read_source(
-        manifest_dir().join("src/modules/academic/services/timetable_realtime_service.rs"),
+        manifest_dir()
+            .join("crates/school-academic-timetable/src/services/timetable_realtime_service.rs"),
     );
     let authorize = extract_braced_block(&service, "pub async fn authorize_socket", false);
     let active_user_lookup = authorize
@@ -4146,7 +5376,8 @@ fn timetable_websocket_authorization_authenticates_active_user_before_permission
 fn auth_me_rejects_inactive_users_before_loading_roles_or_permissions() {
     let handler_source = read_source(manifest_dir().join("src/modules/auth/session_handlers.rs"));
     let handler = extract_braced_block(&handler_source, "pub async fn me", false);
-    let session_service = read_source(manifest_dir().join("src/modules/auth/session_service.rs"));
+    let session_service =
+        read_source(workspace_crate_dir("school-auth").join("src/session_service.rs"));
     let load_current =
         extract_braced_block(&session_service, "pub async fn load_current_user", false);
     let snapshot = extract_braced_block(
@@ -4154,7 +5385,7 @@ fn auth_me_rejects_inactive_users_before_loading_roles_or_permissions() {
         "async fn load_active_shell_snapshot",
         false,
     );
-    let auth_services = read_source(manifest_dir().join("src/modules/auth/services.rs"));
+    let auth_services = read_source(workspace_crate_dir("school-auth").join("src/services.rs"));
     let active_lookup = extract_braced_block(
         &auth_services,
         "pub async fn find_active_user_shell_by_id",
@@ -4193,7 +5424,7 @@ fn deleting_staff_revokes_cached_and_active_permissions_after_soft_delete() {
         .find("staff_service::soft_delete_staff(&pool, staff_id).await?")
         .expect("delete_staff must soft-delete the user");
     let invalidate = handler
-        .find("state.permission_cache.invalidate_user(&tenant, staff_id)")
+        .find("state.invalidate_permission_user(&tenant, staff_id)")
         .expect("delete_staff must invalidate the deleted user's cached permissions");
     let notify = handler
         .find("state.notify_permission_changed(&tenant, staff_id)")
@@ -4233,8 +5464,8 @@ fn timetable_websocket_proxy_does_not_log_query_identity() {
 
 #[test]
 fn permission_cache_and_process_events_are_tenant_explicit() {
-    let cache = read_source(manifest_dir().join("src/db/permission_cache.rs"));
-    let events = read_source(manifest_dir().join("src/modules/notification/events.rs"));
+    let cache = read_source(workspace_crate_dir("school-authorization").join("src/cache.rs"));
+    let events = read_source(workspace_crate_dir("school-auth").join("src/events.rs"));
     let main = read_source(manifest_dir().join("src/main.rs"));
 
     assert!(cache.contains("TenantUserKey"));
@@ -4264,7 +5495,8 @@ fn permission_cache_and_process_events_are_tenant_explicit() {
             .is_match(&main)
     );
 
-    let permission_middleware = read_source(manifest_dir().join("src/middleware/permission.rs"));
+    let permission_middleware =
+        read_source(workspace_crate_dir("school-authorization").join("src/permissions.rs"));
     let load = extract_braced_block(
         &permission_middleware,
         "pub async fn get_cached_user_permissions",
@@ -4336,11 +5568,12 @@ fn public_and_protected_routes_are_explicitly_partitioned() {
 fn permission_cache_invalidations_notify_active_clients() {
     let mut violations = Vec::new();
 
-    for file in backend_rs_files() {
-        if relative(&file) == "src/db/permission_cache.rs" {
+    for file in list_files(manifest_dir().join("src"), |path| {
+        path.extension().is_some_and(|extension| extension == "rs") && !is_rust_test_module(path)
+    }) {
+        if matches!(relative(&file).as_str(), "src/main.rs") {
             continue;
         }
-
         violations.extend(permission_invalidation_violations(
             &relative(&file),
             &read_source(&file),
@@ -4355,13 +5588,13 @@ fn permission_invalidation_guard_rejects_mismatched_notification_arguments() {
     let violations = permission_invalidation_violations(
         "src/modules/example.rs",
         r#"
-            alternate_cache.invalidate_user(&tenant_a, user_a);
+            state.invalidate_permission_user(&tenant_a, user_a);
             state.notify_permission_changed(&tenant_b, user_a);
 
-            alternate_cache.invalidate_user(&tenant_a, user_a);
+            state.invalidate_permission_user(&tenant_a, user_a);
             state.notify_permission_changed(&tenant_a, user_b);
 
-            alternate_cache.invalidate_tenant(&tenant_a);
+            state.invalidate_permission_tenant(&tenant_a);
             state.notify_all_permissions_changed(&tenant_b);
         "#,
     );
@@ -4374,7 +5607,7 @@ fn permission_invalidation_guard_parses_multiline_and_nested_arguments() {
     let mismatched = permission_invalidation_violations(
         "src/modules/multiline_mismatch.rs",
         r#"
-            alternate_cache.invalidate_user(
+            state.invalidate_permission_user(
                 tenant_for(&tenant_a, region("north,west")),
                 user_for((user_a, fallback(user_b, user_c))),
             );
@@ -4383,7 +5616,7 @@ fn permission_invalidation_guard_parses_multiline_and_nested_arguments() {
                 user_for((user_a, fallback(user_b, user_c))),
             );
 
-            alternate_cache.invalidate_user(
+            state.invalidate_permission_user(
                 tenant_for(&tenant_a, region("north,west")),
                 user_for((user_a, fallback(user_b, user_c))),
             );
@@ -4398,7 +5631,7 @@ fn permission_invalidation_guard_parses_multiline_and_nested_arguments() {
     let matching = permission_invalidation_violations(
         "src/modules/multiline_match.rs",
         r#"
-            alternate_cache.invalidate_user(
+            state.invalidate_permission_user(
                 tenant_for(&tenant_a, region("north,west")),
                 user_for((user_a, fallback(user_b, user_c))),
             );
@@ -4407,7 +5640,7 @@ fn permission_invalidation_guard_parses_multiline_and_nested_arguments() {
                 user_for((user_a, fallback(user_b, user_c))),
             );
 
-            alternate_cache.invalidate_tenant(
+            state.invalidate_permission_tenant(
                 tenant_for(&tenant_a, region("north,west")),
             );
             state.notify_all_permissions_changed(
@@ -4423,10 +5656,10 @@ fn permission_invalidation_guard_ignores_comment_and_string_decoys() {
     let violations = permission_invalidation_violations(
         "src/modules/decoys.rs",
         r##"
-            let normal = ".invalidate_user(&tenant_a, user_a);";
-            let raw = r#".invalidate_tenant(&tenant_a);"#;
-            // alternate_cache.invalidate_user(&tenant_a, user_a);
-            /* alternate_cache.invalidate_tenant(&tenant_a); */
+            let normal = ".invalidate_permission_user(&tenant_a, user_a);";
+            let raw = r#".invalidate_permission_tenant(&tenant_a);"#;
+            // state.invalidate_permission_user(&tenant_a, user_a);
+            /* state.invalidate_permission_tenant(&tenant_a); */
         "##,
     );
 
@@ -4435,7 +5668,7 @@ fn permission_invalidation_guard_ignores_comment_and_string_decoys() {
 
 #[test]
 fn permission_change_sse_supports_user_targeted_and_broadcast_invalidation() {
-    let event_source = read_source(manifest_dir().join("src/modules/notification/events.rs"));
+    let event_source = read_source(workspace_crate_dir("school-auth").join("src/events.rs"));
     let notification_handler =
         read_source(manifest_dir().join("src/modules/notification/handlers.rs"));
     let app_state = read_source(manifest_dir().join("src/main.rs"));
@@ -4517,7 +5750,8 @@ fn work_change_sse_supports_work_item_and_window_refresh_signals() {
 
 #[test]
 fn teaching_supervision_registry_and_module_are_registered() {
-    let registry = read_source(manifest_dir().join("src/permissions/registry_generated.rs"));
+    let registry =
+        read_source(manifest_dir().join("crates/school-permissions/src/registry_generated.rs"));
     let modules = read_source(manifest_dir().join("src/modules.rs"));
 
     for expected in [
@@ -4635,13 +5869,13 @@ fn teaching_supervision_observation_detail_actions_are_registered() {
         manifest_dir().join("src/modules/supervision/handlers.rs"),
     ));
     let models = strip_comments(&read_source(
-        manifest_dir().join("src/modules/supervision/models.rs"),
+        manifest_dir().join("crates/school-supervision/src/models.rs"),
     ));
     let service = strip_comments(
         &[
-            "src/modules/supervision/services/shared.rs",
-            "src/modules/supervision/services/observations.rs",
-            "src/modules/supervision/services/evaluations.rs",
+            "crates/school-supervision/src/services/shared.rs",
+            "crates/school-supervision/src/services/observations.rs",
+            "crates/school-supervision/src/services/evaluations.rs",
         ]
         .into_iter()
         .map(|path| read_source(manifest_dir().join(path)))
@@ -4690,8 +5924,8 @@ fn teaching_supervision_observation_detail_actions_are_registered() {
 fn teaching_supervision_services_use_bulk_mutations_for_multi_row_writes() {
     let service = strip_comments(
         &[
-            "src/modules/supervision/services/templates.rs",
-            "src/modules/supervision/services/evaluations.rs",
+            "crates/school-supervision/src/services/templates.rs",
+            "crates/school-supervision/src/services/evaluations.rs",
         ]
         .into_iter()
         .map(|path| read_source(manifest_dir().join(path)))
@@ -4722,7 +5956,7 @@ fn teaching_supervision_services_use_bulk_mutations_for_multi_row_writes() {
 fn mutation_performance_foundation_services_use_bulk_helpers() {
     let checked = [
         (
-            "src/modules/admission/services/score_service.rs",
+            "crates/school-admission/src/services/score_service.rs",
             [
                 "upsert_application_scores",
                 "score_entries_to_bulk_rows",
@@ -4732,7 +5966,7 @@ fn mutation_performance_foundation_services_use_bulk_helpers() {
             ["for entry in scores"].as_slice(),
         ),
         (
-            "src/modules/admission/services/exam_room_service.rs",
+            "crates/school-admission/src/services/exam_room_service.rs",
             ["insert_exam_seat_assignments"].as_slice(),
             [
                 "for (app_id, rid, seat, eid) in &new_assignments",
@@ -4741,7 +5975,7 @@ fn mutation_performance_foundation_services_use_bulk_helpers() {
             .as_slice(),
         ),
         (
-            "src/modules/admission/services/application_service.rs",
+            "crates/school-admission/src/services/application_service.rs",
             [
                 "student_id_assignment_rows",
                 "bulk_update_assigned_student_ids",
@@ -4755,32 +5989,32 @@ fn mutation_performance_foundation_services_use_bulk_helpers() {
             ["for (id, display_order) in &groups"].as_slice(),
         ),
         (
-            "src/modules/supervision/services/evaluations.rs",
+            "crates/school-supervision/src/services/evaluations.rs",
             ["insert_supervision_evaluators"].as_slice(),
             ["for evaluator in input.evaluators"].as_slice(),
         ),
         (
-            "src/modules/supervision/services/cycles.rs",
+            "crates/school-supervision/src/services/cycles.rs",
             ["Failed to insert supervision cycle targets"].as_slice(),
             ["Failed to insert supervision cycle target:"].as_slice(),
         ),
         (
-            "src/modules/supervision/services/templates.rs",
+            "crates/school-supervision/src/services/templates.rs",
             ["Failed to insert supervision template steps"].as_slice(),
             ["Failed to insert supervision template step:"].as_slice(),
         ),
         (
-            "src/modules/staff/services/organization_permission_service.rs",
+            "crates/school-staff/src/services/organization_permission_service.rs",
             ["bulk_insert_organization_permission_grants"].as_slice(),
             ["for grant in unique_permission_grants"].as_slice(),
         ),
         (
-            "src/modules/staff/services/role_service.rs",
+            "crates/school-staff/src/services/role_service.rs",
             ["insert_role_permissions"].as_slice(),
             ["for perm_id in perm_ids"].as_slice(),
         ),
         (
-            "src/modules/staff/services/staff_service.rs",
+            "crates/school-staff/src/services/staff_service.rs",
             [
                 "insert_user_roles",
                 "insert_organization_memberships",
@@ -4795,7 +6029,7 @@ fn mutation_performance_foundation_services_use_bulk_helpers() {
             .as_slice(),
         ),
         (
-            "src/modules/work/services.rs",
+            "crates/school-workflow/src/work.rs",
             ["insert_work_item_assignees"].as_slice(),
             ["for assignee in assignees"].as_slice(),
         ),
@@ -4855,7 +6089,7 @@ fn internal_api_secrets_use_constant_time_comparison_and_caller_headers() {
     }
 
     let backend_school_client =
-        read_source(repo_root().join("backend-school/src/db/admin_client.rs"));
+        read_source(repo_root().join("backend-school/crates/school-tenancy/src/admin_client.rs"));
     let backend_admin_client =
         read_source(repo_root().join("backend-admin/src/clients/backend_school_client.rs"));
 
@@ -4923,7 +6157,7 @@ fn backend_school_registers_separate_liveness_and_readiness_routes() {
 fn school_session_runtime_is_deployment_owned() {
     let main = read_source(repo_root().join("backend-school/src/main.rs"));
     let session_config = main
-        .find("modules::auth::config::SessionConfig::from_env()")
+        .find("school_auth::config::SessionConfig::from_env()")
         .expect("backend-school must initialize session configuration");
     let app = main
         .find("app::build_app(state.clone())")
@@ -5123,7 +6357,7 @@ fn academic_core_smoke_is_private_authenticated_read_only_and_precedes_go_live()
 fn learning_group_teacher_endpoint_accepts_a_typed_put_body() {
     let routes = read_source(manifest_dir().join("src/modules/academic/delivery.rs"));
     let handlers = read_source(manifest_dir().join("src/modules/academic/delivery/handlers.rs"));
-    let models = read_source(manifest_dir().join("src/modules/academic/delivery/models.rs"));
+    let models = read_source(manifest_dir().join("crates/school-academic-delivery/src/models.rs"));
 
     assert!(routes.contains("\"/learning-groups/{id}/teachers\""));
     assert!(routes.contains("put(handlers::replace_group_teachers)"));
@@ -5171,7 +6405,7 @@ fn learning_delivery_handlers_enforce_policy_and_service_boundaries() {
 #[test]
 fn learning_group_team_changes_are_versioned_and_serialized() {
     let service = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/delivery/services/groups.rs"),
+        manifest_dir().join("crates/school-academic-delivery/src/services/groups.rs"),
     ));
 
     // The structural extractor masks SQL literals. Use its balanced boundary
@@ -5213,7 +6447,7 @@ fn calendar_schema_routes_and_permissions_are_registered() {
     let migration = read_source(manifest_dir().join("migrations/018_school_calendar.sql"));
     let tags_migration = read_source(manifest_dir().join("migrations/026_calendar_event_tags.sql"));
     let backend_registry =
-        read_source(manifest_dir().join("src/permissions/registry_generated.rs"));
+        read_source(manifest_dir().join("crates/school-permissions/src/registry_generated.rs"));
     let frontend_registry = read_source(
         repo_root()
             .join("frontend-school")
@@ -5284,7 +6518,7 @@ fn calendar_schema_routes_and_permissions_are_registered() {
 #[test]
 fn calendar_handlers_stay_thin_and_services_own_sql() {
     let models = strip_comments(&read_source(
-        manifest_dir().join("src/modules/calendar/models.rs"),
+        workspace_crate_dir("school-calendar").join("src/models.rs"),
     ));
     let handlers = strip_comments(&read_source(
         manifest_dir().join("src/modules/calendar/handlers.rs"),
@@ -5292,12 +6526,12 @@ fn calendar_handlers_stay_thin_and_services_own_sql() {
     let services = strip_comments(
         &[
             "src/modules/calendar/services.rs",
-            "src/modules/calendar/services/categories_and_tags.rs",
-            "src/modules/calendar/services/events.rs",
+            "crates/school-calendar/src/services/categories_and_tags.rs",
+            "crates/school-calendar/src/services/events.rs",
             "src/modules/calendar/services/notifications.rs",
             "src/modules/calendar/services/reminders.rs",
-            "src/modules/calendar/services/shared.rs",
-            "src/modules/calendar/services/visibility.rs",
+            "crates/school-calendar/src/services/shared.rs",
+            "crates/school-calendar/src/services/visibility.rs",
         ]
         .into_iter()
         .map(|path| read_source(manifest_dir().join(path)))
@@ -5346,18 +6580,16 @@ fn calendar_handlers_stay_thin_and_services_own_sql() {
 
 #[test]
 fn question_bank_authorization_lives_in_policy_and_supports_team_teaching() {
-    let policies_root = strip_comments(&read_source(manifest_dir().join("src/policies.rs")));
     let policy = strip_comments(&read_source(
-        manifest_dir().join("src/policies/question_bank_access_policy.rs"),
+        workspace_crate_dir("school-question-bank").join("src/access_policy.rs"),
     ));
     let handlers = strip_comments(&read_source(
         manifest_dir().join("src/modules/question_bank/handlers.rs"),
     ));
     let services = strip_comments(&read_source(
-        manifest_dir().join("src/modules/question_bank/services.rs"),
+        workspace_crate_dir("school-question-bank").join("src/services.rs"),
     ));
 
-    assert!(policies_root.contains("pub mod question_bank_access_policy;"));
     assert!(handlers.contains("question_bank_access_policy::resolve_access"));
     assert!(services.contains("question_bank_access_policy::require_question_read_access"));
     assert!(services.contains("question_bank_access_policy::require_question_manage_access"));
@@ -5382,10 +6614,10 @@ fn question_bank_subject_contract_and_temporary_file_lifecycle_are_explicit() {
             .join("024_question_bank_subject_contract_and_search.sql"),
     );
     let registry = strip_comments(&read_source(
-        manifest_dir().join("src/modules/files/purpose_registry.rs"),
+        workspace_crate_dir("school-file-platform").join("src/purpose_registry.rs"),
     ));
     let repository = strip_comments(&read_source(
-        manifest_dir().join("src/modules/files/repository.rs"),
+        workspace_crate_dir("school-file-platform").join("src/repository.rs"),
     ));
     let cleaner = strip_comments(&read_source(manifest_dir().join("src/services/cleaner.rs")));
     let routes = strip_comments(&read_source(
@@ -5411,10 +6643,10 @@ fn question_bank_rich_content_is_versioned_typed_and_searchable() {
             .join("025_question_bank_rich_document.sql"),
     );
     let models = strip_comments(&read_source(
-        manifest_dir().join("src/modules/question_bank/models.rs"),
+        workspace_crate_dir("school-question-bank").join("src/models.rs"),
     ));
     let services = strip_comments(&read_source(
-        manifest_dir().join("src/modules/question_bank/services.rs"),
+        workspace_crate_dir("school-question-bank").join("src/services.rs"),
     ));
 
     assert!(models.contains("pub struct RichContent"));
@@ -5443,7 +6675,7 @@ fn role_and_organization_system_flags_are_migration_owned() {
     assert!(normalized.contains("WHERE code = 'ADMIN'"));
     assert!(normalized.contains("WHERE code = 'SCHOOL'"));
 
-    let models = read_source(manifest_dir().join("src/modules/staff/models.rs"));
+    let models = read_source(manifest_dir().join("crates/school-staff/src/models.rs"));
     for response_model in ["pub struct Role {", "pub struct OrganizationUnit {"] {
         let definition = extract_braced_block(&models, response_model, false);
         assert!(
@@ -5468,7 +6700,8 @@ fn role_and_organization_system_flags_are_migration_owned() {
 
 #[test]
 fn inactive_authorization_sources_are_filtered() {
-    let permissions = read_source(manifest_dir().join("src/middleware/permission.rs"));
+    let permissions =
+        read_source(workspace_crate_dir("school-authorization").join("src/permissions.rs"));
     let normalized_permissions = permissions.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
         normalized_permissions.contains("JOIN roles r ON ur.role_id = r.id AND r.is_active = true")
@@ -5482,12 +6715,12 @@ fn inactive_authorization_sources_are_filtered() {
     assert!(normalized_permissions
         .contains("opd.organization_unit_id IS NULL OR delegated_ou.is_active = true"));
 
-    let auth = read_source(manifest_dir().join("src/modules/auth/services.rs"));
+    let auth = read_source(workspace_crate_dir("school-auth").join("src/services.rs"));
     let normalized_auth = auth.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(normalized_auth.contains("AND r.is_active = true"));
 
     let user_roles =
-        read_source(manifest_dir().join("src/modules/staff/services/user_role_service.rs"));
+        read_source(manifest_dir().join("crates/school-staff/src/services/user_role_service.rs"));
     let normalized_user_roles = user_roles.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(normalized_user_roles.contains(
         "JOIN roles r ON ur.role_id = r.id AND r.is_active = true JOIN role_permissions"
@@ -5503,7 +6736,7 @@ fn inactive_authorization_sources_are_filtered() {
     );
 
     let staff_service =
-        read_source(manifest_dir().join("src/modules/staff/services/staff_service.rs"));
+        read_source(manifest_dir().join("crates/school-staff/src/services/staff_service.rs"));
     assert!(staff_service.contains("active_actor_unit.is_active = true"));
     assert!(staff_service.contains("active_root.is_active = true"));
 }
@@ -5574,7 +6807,7 @@ fn file_platform_blocks_new_provider_coupling_and_locator_responses() {
 
     for file in backend_rs_files() {
         let file_name = relative(&file);
-        if file_name == "src/modules/files/r2_storage_provider.rs" {
+        if file_name == "crates/school-file-platform/src/r2_storage_provider.rs" {
             continue;
         }
 
@@ -5642,10 +6875,10 @@ fn file_platform_domain_relationships_own_attachment_and_lifecycle_deletion() {
 
     for relative_path in [
         "src/modules/school/services.rs",
-        "src/modules/admission/services/application_service.rs",
-        "src/modules/question_bank/services.rs",
-        "src/modules/auth/services.rs",
-        "src/modules/staff/services/staff_service.rs",
+        "crates/school-admission/src/services/application_service.rs",
+        "crates/school-question-bank/src/services.rs",
+        "crates/school-file-platform/src/profile_relationships.rs",
+        "crates/school-staff/src/services/staff_service.rs",
         "src/modules/achievement/services.rs",
     ] {
         let source = strip_comments(&read_source(manifest_dir().join(relative_path)));
@@ -5665,7 +6898,7 @@ fn file_platform_domain_relationships_own_attachment_and_lifecycle_deletion() {
         "src/modules/admission/handlers/portal.rs",
         "src/modules/admission/handlers/rounds.rs",
         "src/modules/question_bank/handlers.rs",
-        "src/modules/auth/handlers.rs",
+        "src/modules/auth/profile_orchestrator.rs",
         "src/modules/staff/handlers/staff.rs",
         "src/modules/achievement/handlers.rs",
     ] {
@@ -5681,13 +6914,13 @@ fn file_platform_domain_relationships_own_attachment_and_lifecycle_deletion() {
 fn file_platform_runtime_uses_only_canonical_schema_columns() {
     for relative_path in [
         "src/services/cleaner.rs",
-        "src/modules/files/repository.rs",
+        "crates/school-file-platform/src/repository.rs",
         "src/modules/school/services.rs",
-        "src/modules/admission/services/application_service.rs",
-        "src/modules/admission/services/portal_service.rs",
-        "src/modules/question_bank/services.rs",
-        "src/modules/auth/services.rs",
-        "src/modules/staff/services/staff_service.rs",
+        "crates/school-admission/src/services/application_service.rs",
+        "crates/school-admission/src/services/portal_service.rs",
+        "crates/school-question-bank/src/services.rs",
+        "crates/school-auth/src/services.rs",
+        "crates/school-staff/src/services/staff_service.rs",
         "src/modules/achievement/services.rs",
     ] {
         let source = strip_comments(&read_source(manifest_dir().join(relative_path)));
@@ -5712,8 +6945,9 @@ fn file_platform_runtime_uses_only_canonical_schema_columns() {
 
 #[test]
 fn file_platform_object_keys_can_only_be_constructed_by_the_purpose_registry() {
-    let platform_types = read_source(manifest_dir().join("src/modules/files/platform_types.rs"));
-    let registry_path = manifest_dir().join("src/modules/files/purpose_registry.rs");
+    let platform_types =
+        read_source(workspace_crate_dir("school-file-platform").join("src/platform_types.rs"));
+    let registry_path = workspace_crate_dir("school-file-platform").join("src/purpose_registry.rs");
     let registry = read_source(&registry_path);
 
     assert!(
@@ -5726,7 +6960,7 @@ fn file_platform_object_keys_can_only_be_constructed_by_the_purpose_registry() {
     );
 
     let storage_provider =
-        read_source(manifest_dir().join("src/modules/files/storage_provider.rs"));
+        read_source(workspace_crate_dir("school-file-platform").join("src/storage_provider.rs"));
     assert!(
         !storage_provider.contains("pub storage_class: StorageClass"),
         "stored objects must derive storage class from registry-created object keys"
@@ -5750,10 +6984,12 @@ fn file_platform_object_keys_can_only_be_constructed_by_the_purpose_registry() {
 
 #[test]
 fn file_platform_derivatives_require_the_validated_payload_boundary() {
-    let inspector = read_source(manifest_dir().join("src/modules/files/file_inspector.rs"));
-    let processor = read_source(manifest_dir().join("src/utils/file_processor.rs"));
+    let inspector =
+        read_source(workspace_crate_dir("school-file-platform").join("src/file_inspector.rs"));
+    let processor =
+        read_source(workspace_crate_dir("school-file-platform").join("src/file_processor.rs"));
     let platform_service =
-        read_source(manifest_dir().join("src/modules/files/platform_service.rs"));
+        read_source(workspace_crate_dir("school-file-platform").join("src/platform_service.rs"));
 
     assert!(
         inspector.contains("pub struct ValidatedFile<'a>"),
@@ -5772,7 +7008,7 @@ fn file_platform_derivatives_require_the_validated_payload_boundary() {
 
     for file in backend_rs_files() {
         let file_name = relative(&file);
-        if file_name == "src/modules/files/file_inspector.rs" {
+        if file_name == "crates/school-file-platform/src/file_inspector.rs" {
             continue;
         }
         let source = strip_comments(&read_source(&file));
@@ -6284,7 +7520,7 @@ fn operational_academic_changes_register_authorized_contract_routes() {
 #[test]
 fn learning_delivery_contract_is_strictly_tagged_idempotent_and_pii_safe() {
     let models = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/delivery/models.rs"),
+        manifest_dir().join("crates/school-academic-delivery/src/models.rs"),
     ));
     let websockets = strip_comments(&read_source(
         manifest_dir().join("src/modules/academic/websockets.rs"),
@@ -6353,16 +7589,21 @@ fn converted_academic_consumers_cannot_reintroduce_legacy_runtime_identity() {
         manifest_dir().join("src/modules/academic/handlers/exam_schedule.rs"),
         manifest_dir().join("src/modules/academic/handlers/timetable_blocks.rs"),
         manifest_dir().join("src/modules/academic/handlers/timetable_templates.rs"),
-        manifest_dir().join("src/modules/academic/models/assessment.rs"),
+        manifest_dir().join("crates/school-academic-assessment/src/assessment/models.rs"),
         manifest_dir().join("src/modules/academic/models/exam_schedule.rs"),
-        manifest_dir().join("src/modules/academic/models/timetable.rs"),
-        manifest_dir().join("src/modules/academic/services/assessment_service.rs"),
-        manifest_dir().join("src/modules/academic/services/daily_teaching_service.rs"),
-        manifest_dir().join("src/modules/academic/services/timetable_block_queries.rs"),
-        manifest_dir().join("src/modules/academic/services/timetable_block_service.rs"),
-        manifest_dir().join("src/modules/academic/services/timetable_block_sync.rs"),
-        manifest_dir().join("src/modules/academic/services/timetable_realtime_service.rs"),
-        manifest_dir().join("src/modules/academic/services/timetable_template_service.rs"),
+        manifest_dir().join("crates/school-academic-timetable/src/models/timetable.rs"),
+        manifest_dir().join("crates/school-academic-assessment/src/assessment/services.rs"),
+        manifest_dir().join("crates/school-academic-timetable/src/services/daily_teaching.rs"),
+        manifest_dir()
+            .join("crates/school-academic-timetable/src/services/timetable_block_queries.rs"),
+        manifest_dir()
+            .join("crates/school-academic-timetable/src/services/timetable_block_service.rs"),
+        manifest_dir()
+            .join("crates/school-academic-timetable/src/services/timetable_block_sync.rs"),
+        manifest_dir()
+            .join("crates/school-academic-timetable/src/services/timetable_realtime_service.rs"),
+        manifest_dir()
+            .join("crates/school-academic-timetable/src/services/timetable_template_service.rs"),
         manifest_dir().join("src/modules/academic/websockets.rs"),
     ];
     runtime_files.extend(list_files(
@@ -6446,39 +7687,39 @@ fn academic_result_runtime_has_no_legacy_storage_or_wire_boundary() {
 fn cross_module_academic_consumers_use_only_canonical_runtime_identity() {
     let mut runtime_files = vec![
         manifest_dir().join("src/bin/seed_sandbox.rs"),
-        manifest_dir().join("src/modules/admission/models/rounds.rs"),
-        manifest_dir().join("src/modules/admission/services/application_service.rs"),
-        manifest_dir().join("src/modules/admission/services/portal_service.rs"),
-        manifest_dir().join("src/modules/admission/services/round_service.rs"),
-        manifest_dir().join("src/modules/admission/services/selection_service.rs"),
+        manifest_dir().join("crates/school-admission/src/models/rounds.rs"),
+        manifest_dir().join("crates/school-admission/src/services/application_service.rs"),
+        manifest_dir().join("crates/school-admission/src/services/portal_service.rs"),
+        manifest_dir().join("crates/school-admission/src/services/round_service.rs"),
+        manifest_dir().join("crates/school-admission/src/services/selection_service.rs"),
         manifest_dir().join("src/modules/academic/reconciliation.rs"),
-        manifest_dir().join("src/modules/calendar/models.rs"),
-        manifest_dir().join("src/modules/calendar/services/events.rs"),
+        manifest_dir().join("crates/school-calendar/src/models.rs"),
+        manifest_dir().join("crates/school-calendar/src/services/events.rs"),
         manifest_dir().join("src/modules/calendar/services/notifications.rs"),
-        manifest_dir().join("src/modules/calendar/services/shared.rs"),
-        manifest_dir().join("src/modules/calendar/services/visibility.rs"),
+        manifest_dir().join("crates/school-calendar/src/services/shared.rs"),
+        manifest_dir().join("crates/school-calendar/src/services/visibility.rs"),
         manifest_dir().join("src/modules/lookup/handlers.rs"),
         manifest_dir().join("src/modules/lookup/models.rs"),
         manifest_dir().join("src/modules/lookup/services.rs"),
         manifest_dir().join("src/modules/parents/handlers.rs"),
         manifest_dir().join("src/modules/parents/models.rs"),
         manifest_dir().join("src/modules/parents/services.rs"),
-        manifest_dir().join("src/modules/question_bank/models.rs"),
-        manifest_dir().join("src/modules/question_bank/services.rs"),
+        workspace_crate_dir("school-question-bank").join("src/models.rs"),
+        workspace_crate_dir("school-question-bank").join("src/services.rs"),
         manifest_dir().join("src/modules/staff/handlers/staff.rs"),
-        manifest_dir().join("src/modules/staff/models.rs"),
-        manifest_dir().join("src/modules/staff/services/dashboard_service.rs"),
-        manifest_dir().join("src/modules/staff/services/staff_service.rs"),
+        manifest_dir().join("crates/school-staff/src/models.rs"),
+        manifest_dir().join("crates/school-staff/src/services/dashboard_service.rs"),
+        manifest_dir().join("crates/school-staff/src/services/staff_service.rs"),
         manifest_dir().join("src/modules/students/handlers.rs"),
-        manifest_dir().join("src/modules/students/models.rs"),
-        manifest_dir().join("src/modules/students/services.rs"),
+        manifest_dir().join("crates/school-students/src/models.rs"),
+        manifest_dir().join("crates/school-students/src/services.rs"),
         manifest_dir().join("src/modules/supervision/handlers.rs"),
-        manifest_dir().join("src/modules/supervision/models.rs"),
-        manifest_dir().join("src/policies/question_bank_access_policy.rs"),
+        manifest_dir().join("crates/school-supervision/src/models.rs"),
+        workspace_crate_dir("school-question-bank").join("src/access_policy.rs"),
         manifest_dir().join("src/policies/student_access_policy.rs"),
     ];
     runtime_files.extend(list_files(
-        manifest_dir().join("src/modules/supervision/services"),
+        manifest_dir().join("crates/school-supervision/src/services"),
         |path| path.extension().and_then(|extension| extension.to_str()) == Some("rs"),
     ));
 
@@ -6523,10 +7764,11 @@ fn cross_module_academic_consumers_use_only_canonical_runtime_identity() {
 #[test]
 fn academic_list_hydration_does_not_issue_one_query_per_response_item() {
     let offerings = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/delivery/services/offerings.rs"),
+        manifest_dir().join("crates/school-academic-delivery/src/services/offerings.rs"),
     ));
     let timetable = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/services/timetable_block_queries.rs"),
+        manifest_dir()
+            .join("crates/school-academic-timetable/src/services/timetable_block_queries.rs"),
     ));
     let offering_n_plus_one =
         Regex::new(r"(?s)for\s+row\s+in\s+rows\s*\{.{0,200}hydrate\(pool,\s*row\)\.await").unwrap();
@@ -6547,7 +7789,7 @@ fn academic_list_hydration_does_not_issue_one_query_per_response_item() {
 #[test]
 fn learning_group_collection_hydrators_are_set_based() {
     let groups = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/delivery/services/groups.rs"),
+        manifest_dir().join("crates/school-academic-delivery/src/services/groups.rs"),
     ));
     let list_n_plus_one =
         Regex::new(r"(?s)for\s+row\s+in\s+rows\s*\{.{0,240}hydrate\(pool,\s*row\)\.await").unwrap();
@@ -6569,16 +7811,18 @@ fn learning_group_collection_hydrators_are_set_based() {
 #[test]
 fn academic_delivery_and_timetable_collection_reads_are_set_based() {
     let offerings = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/delivery/services/offerings.rs"),
+        manifest_dir().join("crates/school-academic-delivery/src/services/offerings.rs"),
     ));
     let delivery_handlers = strip_comments(&read_source(
         manifest_dir().join("src/modules/academic/delivery/handlers.rs"),
     ));
     let timetable = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/services/timetable_block_queries.rs"),
+        manifest_dir()
+            .join("crates/school-academic-timetable/src/services/timetable_block_queries.rs"),
     ));
     let templates = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/services/timetable_template_service.rs"),
+        manifest_dir()
+            .join("crates/school-academic-timetable/src/services/timetable_template_service.rs"),
     ));
 
     let preview = extract_braced_block(
@@ -6625,10 +7869,10 @@ fn academic_delivery_and_timetable_collection_reads_are_set_based() {
 #[test]
 fn supervision_collection_hydrators_are_set_based() {
     let templates = strip_comments(&read_source(
-        manifest_dir().join("src/modules/supervision/services/templates.rs"),
+        manifest_dir().join("crates/school-supervision/src/services/templates.rs"),
     ));
     let observations = strip_comments(&read_source(
-        manifest_dir().join("src/modules/supervision/services/observations.rs"),
+        manifest_dir().join("crates/school-supervision/src/services/observations.rs"),
     ));
     let template_list = extract_braced_block(&templates, "pub async fn list_templates", false);
     let observation_list =
@@ -6694,7 +7938,7 @@ fn promotion_impact_resolutions_are_forward_only_immutable_receipts() {
     }
     let service = read_source(
         manifest_dir()
-            .join("src/modules/academic/lifecycle/services/promotion_impact_resolutions.rs"),
+            .join("crates/school-academic-lifecycle/src/services/promotion_impact_resolutions.rs"),
     );
     assert!(service.contains("codes::ACADEMIC_PROMOTION_READ_SCHOOL"));
     assert!(service.contains("codes::ACADEMIC_PROMOTION_CORRECT_SCHOOL"));

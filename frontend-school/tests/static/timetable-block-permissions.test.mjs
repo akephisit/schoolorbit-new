@@ -21,8 +21,12 @@ const timetableCodes = [
 test('timetable owns a generated permission boundary independent from Delivery', async () => {
 	const permissionContract = JSON.parse(await readProjectFile('../contracts/permissions.json'));
 	const generatedRegistry = await readProjectFile('src/lib/permissions/registry.generated.ts');
-	const policy = await readProjectFile('../backend-school/src/policies/timetable_access_policy.rs');
-	const policyModules = await readProjectFile('../backend-school/src/policies.rs');
+	const policy = await readProjectFile(
+		'../backend-school/crates/school-academic-timetable/src/policy.rs'
+	);
+	const policyModules = await readProjectFile(
+		'../backend-school/crates/school-academic-timetable/src/lib.rs'
+	);
 	const route = await readProjectFile('src/routes/(app)/staff/academic/timetable/+page.ts');
 	const page = await readProjectFile('src/routes/(app)/staff/academic/timetable/+page.svelte');
 	const handlers = await readProjectFile(
@@ -37,7 +41,7 @@ test('timetable owns a generated permission boundary independent from Delivery',
 		assert.match(generatedRegistry, new RegExp(code.replaceAll('.', '\\.')));
 	}
 
-	assert.match(policyModules, /pub mod timetable_access_policy;/);
+	assert.match(policyModules, /pub mod policy;/);
 	assert.match(policy, /enum TimetableAction[\s\S]*Read[\s\S]*Manage[\s\S]*Publish/);
 	assert.match(policy, /struct TimetableResourceSet/);
 	assert.match(policy, /require_timetable_resources/);

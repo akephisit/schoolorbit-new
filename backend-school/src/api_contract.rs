@@ -1,29 +1,4 @@
-use crate::api_response::{
-    ApiErrorResponse, ApiErrorResponseWithData, ApiErrorResponseWithOptionalData, ApiResponse,
-    EmptyData, UuidIdData,
-};
-use crate::modules::academic::core::models::*;
-use crate::modules::academic::delivery::models::*;
-use crate::modules::academic::gradebook::models::*;
-use crate::modules::academic::learner_evaluation::models::*;
-use crate::modules::academic::lifecycle::models::*;
-use crate::modules::academic::models::assessment::*;
 use crate::modules::academic::models::exam_schedule::*;
-use crate::modules::academic::models::timetable::{
-    ApplyTemplateRequest, ClearTimetableRequest, CreateTemplateRequest, FromCurrentRequest,
-    TemplateApplyResult, TemplateWithEntries, TimetableTemplate, TimetableTemplateEntry,
-    TimetableTemplateTargetSelector, UpdateTemplateRequest,
-};
-use crate::modules::academic::models::timetable_block::*;
-use crate::modules::academic::models::timetable_version::{
-    CloneTimetableVersionRequest, TimetableVersion, TimetableVersionDisplayState,
-    TimetableVersionStatus, TimetableVersionTarget,
-};
-use crate::modules::academic::results::models::*;
-use crate::modules::academic::services::daily_teaching_service::{
-    DailyTeachingEntry, DailyTeachingOverview, DailyTeachingPeriod, DailyTeachingPeriodCell,
-    DailyTeachingSummary, DailyTeachingTeacher,
-};
 use crate::modules::achievement::models::{
     Achievement, AchievementListFilter, CreateAchievementRequest, UpdateAchievementRequest,
 };
@@ -31,17 +6,77 @@ use crate::modules::admission::handlers::applications::StaffDocumentMultipart;
 use crate::modules::admission::handlers::portal::{
     PortalDocumentMultipart, PortalUploadDocumentData,
 };
-use crate::modules::admission::models::applications::PortalCredentials;
-use crate::modules::admission::services::application_service::DocumentUploadResponse;
-use crate::modules::auth::models::{
+use crate::modules::facility::models::Room;
+use crate::modules::files::models::{
+    FileDeleteResult, FileDownloadGrantResponse, FileMetadata, FileUploadMultipart,
+    PublicFileDeliveryResponse,
+};
+use crate::modules::lookup::models::{
+    HomeroomLookupItem, LookupItem, OrganizationUnitLookupItem, RoleLookupItem, StaffLookupItem,
+    StudentLookupItem,
+};
+use crate::modules::menu::handlers::admin::{
+    ApplyAcademicMenuTemplateRequest, CreateMenuGroupRequest, CreateMenuItemRequest,
+    CreateMenuWorkspaceRequest, MoveItemToGroupRequest, MovedCountData, ReorderGroupsRequest,
+    ReorderItem, ReorderRequest, ReorderWorkspacesRequest, UpdateMenuGroupRequest,
+    UpdateMenuItemRequest, UpdateMenuWorkspaceRequest,
+};
+use crate::modules::menu::handlers::public::UserMenuData;
+use crate::modules::menu::models::{
+    AcademicMenuTemplateApplyResult, AcademicMenuTemplateMove, AcademicMenuTemplatePreview,
+    AcademicMenuTemplateSection, FeatureToggle, MenuGroup, MenuGroupResponse, MenuItem,
+    MenuItemResponse, MenuWorkspace,
+};
+use crate::modules::notification::models::{ListNotificationsResponse, Notification};
+use crate::modules::parents::models::{ChildDto, ParentProfile};
+use crate::modules::school::handlers::PublicSchoolInfoData;
+use crate::modules::school::models::SchoolSettingsResponse;
+use crate::modules::staff::handlers::organization_delegations::{
+    CreateDelegationRequest, DelegationIdData,
+};
+use crate::modules::staff::handlers::organization_members::{
+    AddMemberRequest, ListMembersQuery, UpdateMemberRequest,
+};
+use crate::modules::staff::handlers::staff::StaffListData;
+use crate::modules::supervision::handlers::{ItemsData, ListObservationsQuery};
+use crate::modules::system::handlers::feature_toggles::{
+    FeatureListResponse, FeatureToggleResponse,
+};
+use school_academic_assessment::assessment::models::*;
+use school_academic_assessment::gradebook::models::*;
+use school_academic_assessment::learner_evaluation::models::*;
+use school_academic_core::models::*;
+use school_academic_core::ports::{
+    TermPreparationContext, TermPreparationMappingKind, TermPreparationModule,
+    TermPreparationModuleOutcome,
+};
+use school_academic_delivery::models::*;
+use school_academic_lifecycle::models::*;
+use school_academic_results::models::*;
+use school_academic_timetable::models::timetable::{
+    ApplyTemplateRequest, ClearTimetableRequest, CreateTemplateRequest, FromCurrentRequest,
+    TemplateApplyResult, TemplateWithEntries, TimetableTemplate, TimetableTemplateEntry,
+    TimetableTemplateTargetSelector, UpdateTemplateRequest,
+};
+use school_academic_timetable::models::timetable_block::*;
+use school_academic_timetable::models::timetable_version::{
+    CloneTimetableVersionRequest, TimetableVersion, TimetableVersionDisplayState,
+    TimetableVersionStatus, TimetableVersionTarget,
+};
+use school_academic_timetable::services::daily_teaching::{
+    DailyTeachingEntry, DailyTeachingOverview, DailyTeachingPeriod, DailyTeachingPeriodCell,
+    DailyTeachingSummary, DailyTeachingTeacher,
+};
+use school_admission::applications::{DocumentUploadResponse, PortalCredentials};
+use school_auth::models::{
     ChangePasswordRequest, CurrentUserResponse, LoginData, LoginRequest, ProfileResponse,
     SessionListData, SessionResponse, UpdateProfileRequest,
 };
-use crate::modules::calendar::models::{
+use school_calendar::models::{
     CalendarAudienceType, CalendarCategory, CalendarEvent, CalendarEventReminder, CalendarEventTag,
     CalendarEventTarget, CalendarPublicEvent, CalendarTag, CalendarViewerEvent, CalendarVisibility,
 };
-use crate::modules::certificates::models::{
+use school_certificates::models::{
     AttachCertificateAssetRequest, AttachCertificateBackgroundRequest, CandidateMatchStatus,
     CandidateNameSource, CandidateValidationCode, CandidateValidationStatus,
     CertificateAccountSearchQuery, CertificateBuiltInFont, CertificateCampaignCapabilities,
@@ -76,75 +111,44 @@ use crate::modules::certificates::models::{
     UpdateCertificateCampaignRequest, UpdateCertificateCandidateRequest,
     UpdateCertificateTemplateRequest,
 };
-use crate::modules::facility::models::Room;
-use crate::modules::files::models::{
-    FileDeleteResult, FileDownloadGrantResponse, FileMetadata, FileUploadMultipart,
-    PublicFileDeliveryResponse,
+use school_file_platform::platform_types::{FileLifecycleStatus, FilePurpose};
+use school_fonts::models::{
+    AttachSchoolFontBatchRequest, InspectSchoolFontUploadsRequest, SchoolFontDeleteConflict,
+    SchoolFontListResponse, SchoolFontStyle, SchoolFontSummary, SchoolFontUploadInspection,
+    SchoolFontUploadInspectionFile, SchoolFontUploadStatus,
 };
-use crate::modules::files::platform_types::{FileLifecycleStatus, FilePurpose};
-use crate::modules::lookup::models::{
-    AcademicYearLookupItem, GradeLevelLookupItem, HomeroomLookupItem, LookupItem,
-    OrganizationUnitLookupItem, RoleLookupItem, StaffLookupItem, StudentLookupItem,
+use school_http::{
+    ApiErrorResponse, ApiErrorResponseWithData, ApiErrorResponseWithOptionalData, ApiResponse,
+    EmptyData, UuidIdData,
 };
-use crate::modules::menu::handlers::admin::{
-    ApplyAcademicMenuTemplateRequest, CreateMenuGroupRequest, CreateMenuItemRequest,
-    CreateMenuWorkspaceRequest, MoveItemToGroupRequest, MovedCountData, ReorderGroupsRequest,
-    ReorderItem, ReorderRequest, ReorderWorkspacesRequest, UpdateMenuGroupRequest,
-    UpdateMenuItemRequest, UpdateMenuWorkspaceRequest,
-};
-use crate::modules::menu::handlers::public::UserMenuData;
-use crate::modules::menu::models::{
-    AcademicMenuTemplateApplyResult, AcademicMenuTemplateMove, AcademicMenuTemplatePreview,
-    AcademicMenuTemplateSection, FeatureToggle, MenuGroup, MenuGroupResponse, MenuItem,
-    MenuItemResponse, MenuWorkspace,
-};
-use crate::modules::notification::models::{ListNotificationsResponse, Notification};
-use crate::modules::parents::models::{ChildDto, ParentProfile};
-use crate::modules::question_bank::models::{
+use school_question_bank::models::{
     ImageAlignment, ImageNodeAttributes, MathNodeAttributes, QuestionBankExportDataRequest,
     QuestionBankListQuery, QuestionBankOptions, QuestionBankPage, QuestionBankSubjectOption,
     QuestionBankSummary, QuestionChoice, QuestionDetail, QuestionFile, QuestionSummary,
     RichBlockNode, RichContent, RichDocument, RichInlineNode, RichTextMark,
     UpsertQuestionChoiceRequest, UpsertQuestionRequest,
 };
-use crate::modules::school::handlers::PublicSchoolInfoData;
-use crate::modules::school::models::SchoolSettingsResponse;
-use crate::modules::school_fonts::models::{
-    AttachSchoolFontBatchRequest, InspectSchoolFontUploadsRequest, SchoolFontDeleteConflict,
-    SchoolFontListResponse, SchoolFontStyle, SchoolFontSummary, SchoolFontUploadInspection,
-    SchoolFontUploadInspectionFile, SchoolFontUploadStatus,
-};
-use crate::modules::staff::handlers::organization_delegations::{
-    CreateDelegationRequest, DelegationIdData, DelegationItem,
-};
-use crate::modules::staff::handlers::organization_members::{
-    AddMemberRequest, ListMembersQuery, OrganizationMemberItem, UpdateMemberRequest,
-};
-use crate::modules::staff::handlers::staff::StaffListData;
-use crate::modules::staff::models::{
+use school_staff::models::{
     AdvisorHomeroomItem, AssignRoleRequest, CreateOrganizationUnitRequest, CreateRoleRequest,
-    CreateStaffInfoRequest, CreateStaffRequest, OrganizationAssignment,
-    OrganizationPermissionGrantInput, OrganizationUnit, OrganizationUnitResponse, Permission, Role,
-    RoleResponse, StaffInfoResponse, StaffListItem, StaffProfileResponse, TeachingAssignmentItem,
-    UpdateOrganizationPermissionsRequest, UpdateOrganizationUnitRequest, UpdateRoleRequest,
-    UpdateStaffRequest, UserRoleAssignmentResponse,
+    CreateStaffInfoRequest, CreateStaffRequest, DelegationItem, OrganizationAssignment,
+    OrganizationMemberItem, OrganizationPermissionGrantInput, OrganizationUnit,
+    OrganizationUnitResponse, Permission, Role, RoleResponse, StaffInfoResponse, StaffListItem,
+    StaffProfileResponse, TeachingAssignmentItem, UpdateOrganizationPermissionsRequest,
+    UpdateOrganizationUnitRequest, UpdateRoleRequest, UpdateStaffRequest,
+    UserRoleAssignmentResponse,
 };
-use crate::modules::staff::services::dashboard_service::StaffDashboardOverview;
-use crate::modules::staff::services::organization_delegation_service::DelegatablePermission;
-use crate::modules::staff::services::organization_permission_service::OrganizationPermissionGrant;
-use crate::modules::staff::services::staff_service::{
+use school_staff::services::dashboard_service::StaffDashboardOverview;
+use school_staff::services::organization_delegation_service::DelegatablePermission;
+use school_staff::services::organization_permission_service::OrganizationPermissionGrant;
+use school_staff::services::staff_service::{
     PublicStaffOrganizationUnit, PublicStaffProfile, PublicStaffRole,
 };
-use crate::modules::students::models::{
+use school_students::models::{
     CreateParentRequest, CreateStudentRequest, CreateStudentResponse, ParentDto, StudentDbRow,
     StudentListItem, StudentListResponse, StudentProfile, UpdateOwnProfileRequest,
     UpdateStudentRequest,
 };
-use crate::modules::supervision::handlers::{ItemsData, ListObservationsQuery};
-use crate::modules::supervision::models::*;
-use crate::modules::system::handlers::feature_toggles::{
-    FeatureListResponse, FeatureToggleResponse,
-};
+use school_supervision::models::*;
 use serde_json::Value;
 use utoipa::OpenApi;
 
@@ -5438,7 +5442,7 @@ mod tests {
 
     #[test]
     fn documents_year_reopening_with_reason_and_a_separate_command() {
-        use crate::modules::academic::core::models::YearReopeningRequest;
+        use crate::modules::academic::lifecycle::models::YearReopeningRequest;
         let document = school_api_value().unwrap();
         let path = "/api/academic/lifecycle/years/{year_id}/reopening";
         assert_operations(

@@ -1,0 +1,43 @@
+[package]
+name = "school-auth"
+version.workspace = true
+edition.workspace = true
+
+[features]
+test-support = []
+
+[dependencies]
+base64 = { workspace = true }
+bcrypt = { workspace = true }
+chrono = { workspace = true }
+dotenvy = { workspace = true }
+hmac = { workspace = true }
+ipnet = { workspace = true }
+rand = { workspace = true }
+school-authorization = { workspace = true }
+school-crypto = { workspace = true }
+school-errors = { workspace = true }
+school-tenancy = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+sqlx = { workspace = true }
+subtle = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }
+utoipa = { workspace = true }
+uuid = { workspace = true }
+zeroize = { workspace = true }
+
+[dev-dependencies]
+axum = { workspace = true }
+school-crypto = { workspace = true, features = ["test-support"] }
+school-http = { workspace = true }
+school-test-db = { workspace = true }
+school-tenancy = { workspace = true, features = ["test-support"] }
+hex = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[lints]
+workspace = true

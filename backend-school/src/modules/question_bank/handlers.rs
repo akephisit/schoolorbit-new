@@ -6,22 +6,21 @@ use axum::{
 };
 use uuid::Uuid;
 
-use crate::api_response::{ApiErrorResponse, ApiResponse, EmptyData};
-use crate::error::AppError;
-use crate::modules::auth::session_service::AuthenticatedSession;
-use crate::modules::files::{
-    consumer_service::{map_platform_error, request_deletions},
-    platform_types::DownloadGrant,
-    repository::SqlFileRepository,
-};
-use crate::modules::question_bank::models::{
+use crate::modules::files::consumer_service::{map_platform_error, request_deletions};
+use crate::policies::file_access_policy;
+use crate::utils::request_context::actor_tenant_context_from_session;
+use crate::AppState;
+use school_auth::session_service::AuthenticatedSession;
+use school_file_platform::{platform_types::DownloadGrant, repository::SqlFileRepository};
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse, EmptyData};
+use school_question_bank::models::{
     QuestionBankExportDataRequest, QuestionBankListQuery, QuestionBankOptions, QuestionBankPage,
     QuestionDetail, UpsertQuestionRequest,
 };
-use crate::modules::question_bank::services as question_bank_service;
-use crate::policies::{file_access_policy, question_bank_access_policy};
-use crate::utils::request_context::actor_tenant_context_from_session;
-use crate::AppState;
+use school_question_bank::{
+    access_policy as question_bank_access_policy, services as question_bank_service,
+};
 
 #[utoipa::path(
     get,

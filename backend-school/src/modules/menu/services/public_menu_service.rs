@@ -1,6 +1,6 @@
-use crate::error::AppError;
-use crate::middleware::permission::ActorContext;
 use crate::modules::menu::models::{MenuGroupResponse, MenuItemResponse};
+use school_authorization::ActorContext;
+use school_errors::AppError;
 use sqlx::FromRow;
 use sqlx::PgPool;
 use std::collections::HashMap;
@@ -226,7 +226,7 @@ mod tests {
 
         let groups = group_and_filter_menu(
             rows,
-            &actor(&[crate::permissions::registry::codes::ACADEMIC_CURRICULUM_READ_SCHOOL]),
+            &actor(&[school_permissions::registry::codes::ACADEMIC_CURRICULUM_READ_SCHOOL]),
         );
 
         assert_eq!(groups.len(), 1);
@@ -259,8 +259,8 @@ mod tests {
         let required = "certificate.read.organization_unit|certificate.read.school";
 
         for permission in [
-            crate::permissions::registry::codes::CERTIFICATE_READ_ORGANIZATION_UNIT,
-            crate::permissions::registry::codes::CERTIFICATE_READ_SCHOOL,
+            school_permissions::registry::codes::CERTIFICATE_READ_ORGANIZATION_UNIT,
+            school_permissions::registry::codes::CERTIFICATE_READ_SCHOOL,
         ] {
             let groups = group_and_filter_menu(
                 vec![menu_row(
@@ -288,7 +288,7 @@ mod tests {
                 20,
                 10,
             )],
-            &actor(&[crate::permissions::registry::codes::CERTIFICATE_READ_OWN]),
+            &actor(&[school_permissions::registry::codes::CERTIFICATE_READ_OWN]),
         );
 
         assert!(own_only.is_empty());

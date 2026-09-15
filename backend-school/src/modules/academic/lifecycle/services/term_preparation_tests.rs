@@ -1,21 +1,20 @@
+use school_authorization::ActorContext;
 use std::collections::HashSet;
 
 use uuid::Uuid;
 
 use super::term_preparation::{apply, normalize_input, preview, validate_checksum};
-use crate::{
-    middleware::permission::ActorContext,
-    modules::academic::{
-        core,
-        cutover_test_support::apply_migrations_through,
-        delivery::services::offerings,
-        lifecycle::models::{
-            ApplyTermPreparationInput, PreviewTermPreparationInput, TermPreparationEntityMapping,
-            TermPreparationMappingKind, TermPreparationMappings, TermPreparationModule,
-        },
+use crate::modules::academic::{
+    core,
+    cutover_test_support::apply_migrations_through,
+    delivery::services::offerings,
+    lifecycle::models::{
+        ApplyTermPreparationInput, PreviewTermPreparationInput, TermPreparationEntityMapping,
+        TermPreparationMappings,
     },
-    permissions::registry::codes,
 };
+use school_academic_core::ports::{TermPreparationMappingKind, TermPreparationModule};
+use school_permissions::registry::codes;
 
 #[test]
 fn preparation_input_requires_unique_modules_and_bounded_unambiguous_mappings() {
@@ -270,7 +269,7 @@ async fn preparation_requires_a_future_term_in_an_open_target_year() {
         .unwrap();
     assert!(matches!(
         preview(&pool, &actor, request.clone()).await,
-        Err(crate::error::AppError::Conflict(_))
+        Err(school_errors::AppError::Conflict(_))
     ));
 
     sqlx::query("UPDATE academic_terms SET start_date=$2,planned_end_date=$3 WHERE id=$1")
@@ -293,7 +292,7 @@ async fn preparation_requires_a_future_term_in_an_open_target_year() {
         .unwrap();
     assert!(matches!(
         preview(&pool, &actor, request).await,
-        Err(crate::error::AppError::Conflict(_))
+        Err(school_errors::AppError::Conflict(_))
     ));
 }
 
@@ -503,7 +502,7 @@ async fn selected_module_preparation_is_atomic_replay_safe_and_omits_operational
     let different_actor_error = apply(&pool, &different_actor, request).await.unwrap_err();
     assert!(matches!(
         different_actor_error,
-        crate::error::AppError::Conflict(ref message) if message.contains("requestId")
+        school_errors::AppError::Conflict(ref message) if message.contains("requestId")
     ));
 
     let target_drafts: (i64, i64, i64, i64, i64) = sqlx::query_as(
@@ -571,7 +570,7 @@ async fn preparation_rejects_stale_preview_and_rolls_every_draft_back_when_audit
         },
     )
     .await;
-    assert!(matches!(stale, Err(crate::error::AppError::Conflict(_))));
+    assert!(matches!(stale, Err(school_errors::AppError::Conflict(_))));
 
     let workspace = preview(&pool, &actor, preview_input.clone()).await.unwrap();
     sqlx::raw_sql(
@@ -664,5 +663,5 @@ async fn preparation_preview_requires_school_manage_permission() {
         },
     )
     .await;
-    assert!(matches!(denied, Err(crate::error::AppError::Forbidden(_))));
+    assert!(matches!(denied, Err(school_errors::AppError::Forbidden(_))));
 }

@@ -114,7 +114,9 @@ test('question search uses the plain-text projection added by a new migration', 
 	const migration = await readProjectFile(
 		'../backend-school/migrations/025_question_bank_rich_document.sql'
 	);
-	const services = await readProjectFile('../backend-school/src/modules/question_bank/services.rs');
+	const services = await readProjectFile(
+		'../backend-school/crates/school-question-bank/src/services.rs'
+	);
 
 	assert.match(migration, /ADD COLUMN search_text TEXT NOT NULL/);
 	assert.match(migration, /idx_question_bank_questions_search_trgm/);
@@ -165,7 +167,7 @@ test('question bank exports selected questions with editable native Word Math eq
 		'../backend-school/src/modules/question_bank/handlers.rs'
 	);
 	const backendServices = await readProjectFile(
-		'../backend-school/src/modules/question_bank/services.rs'
+		'../backend-school/crates/school-question-bank/src/services.rs'
 	);
 
 	assert.match(packageJson, /"docx":/);

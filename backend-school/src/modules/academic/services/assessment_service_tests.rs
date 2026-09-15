@@ -1,22 +1,23 @@
 use uuid::Uuid;
 
-use super::assessment_service;
-use crate::error::AppError;
-use crate::middleware::permission::ActorContext;
+use crate::modules::academic::assessment_adapter;
 use crate::modules::academic::cutover_test_support::{
     apply_migrations_through, record_passing_phase_a_reconciliation_marker,
     seed_academic_cutover_fixture, CutoverFixture,
 };
-use crate::modules::academic::models::assessment::{
+use school_academic_assessment::assessment::models::{
     AssessmentPhaseCode, AssessmentPlanListQuery, SaveAssessmentPhaseRequest,
     SaveAssessmentPlanRequest, UpdateAssessmentPhaseControlRequest,
 };
-use crate::permissions::registry::codes;
-use crate::policies::assessment_access_policy::{
+use school_academic_assessment::assessment::services as assessment_service;
+use school_academic_assessment::policy::assessment::{
     require_assessment_plan_list_access, AssessmentAction,
 };
-use crate::policies::resource_access_policy::AcademicResourceListFilter;
-use crate::test_helpers::create_named_test_pool;
+use school_authorization::AcademicResourceListFilter;
+use school_authorization::ActorContext;
+use school_errors::AppError;
+use school_permissions::registry::codes;
+use school_test_db::create_named_test_pool;
 use sqlx::postgres::PgPoolOptions;
 
 async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
@@ -57,7 +58,7 @@ async fn assessment_lifecycle_guard_blocks_structure_and_window_changes() {
             .bind(term).bind(term_status).execute(&pool).await.unwrap();
         for admin in [true, false] {
             assert!(matches!(
-                assessment_service::save_plan(&pool, offering, actor, admin, save_payload(&before))
+                assessment_adapter::save_plan(&pool, offering, actor, admin, save_payload(&before))
                     .await,
                 Err(AppError::Conflict(_))
             ));
@@ -230,7 +231,7 @@ async fn school_wide_assessment_list_prioritizes_the_current_coordinator() {
 }
 
 fn save_payload(
-    detail: &crate::modules::academic::models::assessment::AssessmentPlanDetail,
+    detail: &school_academic_assessment::assessment::models::AssessmentPlanDetail,
 ) -> SaveAssessmentPlanRequest {
     SaveAssessmentPlanRequest {
         row_version: detail.row_version,
@@ -339,7 +340,7 @@ async fn auto_save_derives_readiness_and_rejects_stale_versions() {
     let payload = save_payload(&detail);
     assert!(payload.assessment_coordinator_id.is_some());
 
-    let saved = assessment_service::save_plan(&pool, offering_id, actor_id, true, payload)
+    let saved = assessment_adapter::save_plan(&pool, offering_id, actor_id, true, payload)
         .await
         .unwrap();
     assert!(saved.readiness.ready);
@@ -348,13 +349,13 @@ async fn auto_save_derives_readiness_and_rejects_stale_versions() {
     let mut stale_payload = save_payload(&saved);
     stale_payload.row_version = Some(original_version);
     let stale =
-        assessment_service::save_plan(&pool, offering_id, actor_id, true, stale_payload).await;
+        assessment_adapter::save_plan(&pool, offering_id, actor_id, true, stale_payload).await;
     assert!(matches!(stale, Err(AppError::Conflict(_))));
 
     let mut reallocation = save_payload(&saved);
     reallocation.phases[0].max_score = "70.00".to_string();
     let incomplete =
-        assessment_service::save_plan(&pool, offering_id, actor_id, true, reallocation)
+        assessment_adapter::save_plan(&pool, offering_id, actor_id, true, reallocation)
             .await
             .unwrap();
     assert!(!incomplete.readiness.ready);
@@ -398,7 +399,7 @@ async fn assigned_coordinator_cannot_change_a_locked_plan_phase() {
     before_midterm.max_score = "71.00".to_string();
 
     let result =
-        assessment_service::save_plan(&pool, offering_id, coordinator_id, false, payload).await;
+        assessment_adapter::save_plan(&pool, offering_id, coordinator_id, false, payload).await;
 
     assert!(matches!(result, Err(AppError::Forbidden(message)) if message.contains("ก่อนกลางภาค")));
 }
@@ -457,7 +458,7 @@ async fn assigned_coordinator_changes_only_an_enabled_plan_phase() {
         .unwrap()
         .max_score = "71.00".to_string();
 
-    let saved = assessment_service::save_plan(&pool, offering_id, coordinator_id, false, payload)
+    let saved = assessment_adapter::save_plan(&pool, offering_id, coordinator_id, false, payload)
         .await
         .unwrap();
 
@@ -578,7 +579,7 @@ async fn unchanged_phase_autosave_preserves_phase_versions_and_metadata() {
         "SELECT id, row_version, updated_by, updated_at FROM course_assessment_phases WHERE plan_id = $1 ORDER BY id",
     ).bind(detail.id).fetch_all(&pool).await.unwrap();
     let saved =
-        assessment_service::save_plan(&pool, offering_id, actor_id, true, save_payload(&detail))
+        assessment_adapter::save_plan(&pool, offering_id, actor_id, true, save_payload(&detail))
             .await
             .unwrap();
     let after: Vec<(Uuid, i64, Option<Uuid>, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
@@ -654,7 +655,7 @@ async fn locked_course_result_makes_assessment_plan_read_only() {
     let mut payload = save_payload(&detail);
     payload.phases[0].max_score = "21.00".into();
     let result =
-        assessment_service::save_plan(&pool, offering_id, coordinator, true, payload).await;
+        assessment_adapter::save_plan(&pool, offering_id, coordinator, true, payload).await;
     assert!(matches!(result, Err(AppError::Conflict(_))));
     assert_eq!(
         assessment_service::get_plan_detail(&pool, offering_id)

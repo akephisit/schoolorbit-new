@@ -1,0 +1,629 @@
+use crate::models::rounds::*;
+use chrono::{DateTime, Utc};
+use school_errors::AppError;
+use sqlx::{types::Json, FromRow, PgPool};
+use uuid::Uuid;
+
+const ROUND_GRADE_LEVEL_CASE: &str = r#"CASE gl.level_type
+    WHEN 'kindergarten' THEN CONCAT('อ.', gl.year)
+    WHEN 'primary'      THEN CONCAT('ป.', gl.year)
+    WHEN 'secondary'    THEN CONCAT('ม.', gl.year)
+    ELSE CONCAT('?.', gl.year)
+END"#;
+
+#[derive(Debug, FromRow)]
+struct AdmissionTrackRow {
+    id: Uuid,
+    admission_round_id: Uuid,
+    study_program_id: Uuid,
+    name: String,
+    capacity_override: Option<i32>,
+    scoring_subject_ids: Json<Vec<Uuid>>,
+    tiebreak_method: String,
+    display_order: i32,
+    created_at: DateTime<Utc>,
+    study_program_name: Option<String>,
+    computed_capacity: Option<i64>,
+    room_count: Option<i64>,
+    application_count: Option<i64>,
+}
+
+impl From<AdmissionTrackRow> for AdmissionTrack {
+    fn from(row: AdmissionTrackRow) -> Self {
+        Self {
+            id: row.id,
+            admission_round_id: row.admission_round_id,
+            study_program_id: row.study_program_id,
+            name: row.name,
+            capacity_override: row.capacity_override,
+            scoring_subject_ids: row.scoring_subject_ids.0,
+            tiebreak_method: row.tiebreak_method,
+            display_order: row.display_order,
+            created_at: row.created_at,
+            study_program_name: row.study_program_name,
+            computed_capacity: row.computed_capacity,
+            room_count: row.room_count,
+            application_count: row.application_count,
+        }
+    }
+}
+
+pub async fn list_public_rounds(pool: &PgPool) -> Result<Vec<AdmissionRound>, AppError> {
+    sqlx::query_as::<_, AdmissionRound>(&format!(
+        r#"SELECT ar.*, ay.name AS academic_year_name,
+                  {grade_case} AS grade_level_name,
+                  0::bigint AS application_count
+           FROM admission_rounds ar
+           JOIN academic_years ay ON ar.academic_year_id = ay.id
+           JOIN grade_levels gl ON ar.grade_level_id = gl.id
+           WHERE ar.is_visible = true
+           ORDER BY ar.apply_start_date ASC"#,
+        grade_case = ROUND_GRADE_LEVEL_CASE
+    ))
+    .fetch_all(pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to fetch public rounds: {}", e);
+        AppError::InternalServerError("Database error".to_string())
+    })
+}
+
+pub async fn get_public_round_info(
+    pool: &PgPool,
+    id: Uuid,
+) -> Result<(AdmissionRound, Vec<AdmissionTrack>), AppError> {
+    let round = sqlx::query_as::<_, AdmissionRound>(&format!(
+        r#"SELECT ar.*, ay.name AS academic_year_name,
+                  {grade_case} AS grade_level_name,
+                  0::bigint AS application_count
+           FROM admission_rounds ar
+           JOIN academic_years ay ON ar.academic_year_id = ay.id
+           JOIN grade_levels gl ON ar.grade_level_id = gl.id
+           WHERE ar.id = $1 AND ar.is_visible = true"#,
+        grade_case = ROUND_GRADE_LEVEL_CASE
+    ))
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to fetch public round: {}", e);
+        AppError::InternalServerError("Database error".to_string())
+    })?
+    .ok_or_else(|| AppError::NotFound("ไม่พบรอบรับสมัคร หรือไม่ได้เปิดรับสมัครในขณะนี้".to_string()))?;
+
+    let track_rows = sqlx::query_as::<_, AdmissionTrackRow>(
+        r#"SELECT at2.id, at2.admission_round_id, at2.study_program_id, at2.name,
+                  at2.capacity_override, at2.scoring_subject_ids, at2.tiebreak_method,
+                  at2.display_order, at2.created_at,
+                  program.name_th AS study_program_name,
+                  0::bigint AS computed_capacity, 0::bigint AS room_count, 0::bigint AS application_count
+           FROM admission_tracks at2
+           JOIN study_programs program ON program.id = at2.study_program_id
+           WHERE at2.admission_round_id = $1
+           ORDER BY at2.display_order ASC"#
+    )
+    .bind(id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to fetch public tracks: {}", e);
+        AppError::InternalServerError("Database error".to_string())
+    })?;
+
+    Ok((
+        round,
+        track_rows.into_iter().map(AdmissionTrack::from).collect(),
+    ))
+}
+
+pub async fn list_rounds(
+    pool: &PgPool,
+    academic_year_id: Uuid,
+) -> Result<Vec<AdmissionRound>, AppError> {
+    sqlx::query_as::<_, AdmissionRound>(&format!(
+        r#"SELECT ar.*, ay.name AS academic_year_name,
+                  {grade_case} AS grade_level_name,
+                  (SELECT COUNT(*) FROM admission_applications aa WHERE aa.admission_round_id = ar.id) AS application_count
+           FROM admission_rounds ar
+           JOIN academic_years ay ON ar.academic_year_id = ay.id
+           JOIN grade_levels gl ON ar.grade_level_id = gl.id
+           WHERE ar.academic_year_id = $1
+           ORDER BY ar.created_at DESC"#,
+        grade_case = ROUND_GRADE_LEVEL_CASE
+    ))
+    .bind(academic_year_id)
+    .fetch_all(pool).await
+    .map_err(|e| {
+        tracing::error!("Failed to fetch admission rounds: {}", e);
+        AppError::InternalServerError("Failed to fetch rounds".to_string())
+    })
+}
+
+pub async fn get_round(pool: &PgPool, id: Uuid) -> Result<AdmissionRound, AppError> {
+    sqlx::query_as::<_, AdmissionRound>(&format!(
+        r#"SELECT ar.*, ay.name AS academic_year_name,
+                  {grade_case} AS grade_level_name,
+                  (SELECT COUNT(*) FROM admission_applications aa WHERE aa.admission_round_id = ar.id) AS application_count
+           FROM admission_rounds ar
+           JOIN academic_years ay ON ar.academic_year_id = ay.id
+           JOIN grade_levels gl ON ar.grade_level_id = gl.id
+           WHERE ar.id = $1"#,
+        grade_case = ROUND_GRADE_LEVEL_CASE
+    ))
+    .bind(id).fetch_optional(pool).await
+    .map_err(|e| {
+        tracing::error!("Failed to fetch round {}: {}", id, e);
+        AppError::InternalServerError("Failed to fetch round".to_string())
+    })?
+    .ok_or_else(|| AppError::NotFound("ไม่พบรอบรับสมัคร".to_string()))
+}
+
+pub async fn create_round(
+    pool: &PgPool,
+    payload: CreateAdmissionRoundRequest,
+) -> Result<AdmissionRound, AppError> {
+    sqlx::query_as::<_, AdmissionRound>(
+        r#"INSERT INTO admission_rounds (
+               academic_year_id, grade_level_id, name, description,
+               apply_start_date, apply_end_date, exam_date,
+               result_announce_date, enrollment_start_date, enrollment_end_date
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+           RETURNING *,
+               (SELECT name FROM academic_years WHERE id = $1) AS academic_year_name,
+               (SELECT CASE level_type
+                           WHEN 'kindergarten' THEN CONCAT('อ.', year)
+                           WHEN 'primary'      THEN CONCAT('ป.', year)
+                           WHEN 'secondary'    THEN CONCAT('ม.', year)
+                           ELSE CONCAT('?.', year)
+                       END FROM grade_levels WHERE id = $2) AS grade_level_name,
+               0::bigint AS application_count"#,
+    )
+    .bind(payload.academic_year_id)
+    .bind(payload.grade_level_id)
+    .bind(&payload.name)
+    .bind(&payload.description)
+    .bind(payload.apply_start_date)
+    .bind(payload.apply_end_date)
+    .bind(payload.exam_date)
+    .bind(payload.result_announce_date)
+    .bind(payload.enrollment_start_date)
+    .bind(payload.enrollment_end_date)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to create round: {}", e);
+        AppError::InternalServerError("Failed to create round".to_string())
+    })
+}
+
+pub async fn update_round(
+    pool: &PgPool,
+    id: Uuid,
+    payload: UpdateAdmissionRoundRequest,
+) -> Result<AdmissionRound, AppError> {
+    sqlx::query_as::<_, AdmissionRound>(
+        r#"UPDATE admission_rounds SET
+               name = COALESCE($1, name), description = COALESCE($2, description),
+               apply_start_date = COALESCE($3, apply_start_date),
+               apply_end_date = COALESCE($4, apply_end_date),
+               exam_date = COALESCE($5, exam_date),
+               result_announce_date = COALESCE($6, result_announce_date),
+               enrollment_start_date = COALESCE($7, enrollment_start_date),
+               enrollment_end_date = COALESCE($8, enrollment_end_date),
+               report_config = COALESCE($9, report_config),
+               updated_at = NOW()
+           WHERE id = $10
+           RETURNING *,
+               (SELECT name FROM academic_years WHERE id = academic_year_id) AS academic_year_name,
+               (SELECT CASE level_type
+                           WHEN 'kindergarten' THEN CONCAT('อ.', year)
+                           WHEN 'primary'      THEN CONCAT('ป.', year)
+                           WHEN 'secondary'    THEN CONCAT('ม.', year)
+                           ELSE CONCAT('?.', year)
+                       END FROM grade_levels WHERE id = grade_level_id) AS grade_level_name,
+               (SELECT COUNT(*) FROM admission_applications WHERE admission_round_id = $10) AS application_count"#
+    )
+    .bind(&payload.name).bind(&payload.description)
+    .bind(payload.apply_start_date).bind(payload.apply_end_date)
+    .bind(payload.exam_date).bind(payload.result_announce_date)
+    .bind(payload.enrollment_start_date).bind(payload.enrollment_end_date)
+    .bind(payload.report_config.map(sqlx::types::Json))
+    .bind(id).fetch_one(pool).await
+    .map_err(|e| {
+        tracing::error!("Failed to update round {}: {}", id, e);
+        AppError::InternalServerError("Failed to update round".to_string())
+    })
+}
+
+pub async fn update_round_status(pool: &PgPool, id: Uuid, status: &str) -> Result<(), AppError> {
+    validate_round_status(status)?;
+
+    let exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM admission_rounds WHERE id = $1)")
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .unwrap_or(false);
+    if !exists {
+        return Err(AppError::NotFound("ไม่พบรอบรับสมัคร".to_string()));
+    }
+
+    sqlx::query("UPDATE admission_rounds SET status = $1, updated_at = NOW() WHERE id = $2")
+        .bind(status)
+        .bind(id)
+        .execute(pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to update round status: {}", e);
+            AppError::InternalServerError("Failed to update status".to_string())
+        })?;
+    Ok(())
+}
+
+pub async fn delete_round(pool: &PgPool, id: Uuid) -> Result<Vec<Uuid>, AppError> {
+    let mut transaction = pool.begin().await.map_err(|error| {
+        tracing::error!("Failed to start round deletion transaction: {}", error);
+        AppError::InternalServerError("Failed to delete round".to_string())
+    })?;
+    let file_ids: Vec<Uuid> = sqlx::query_scalar(
+        r#"SELECT f.id
+           FROM admission_applications aa
+           JOIN admission_application_documents aad ON aad.application_id = aa.id
+           JOIN files f ON f.id = aad.file_id
+           WHERE aa.admission_round_id = $1 AND aad.deleted_at IS NULL"#,
+    )
+    .bind(id)
+    .fetch_all(&mut *transaction)
+    .await
+    .map_err(|error| {
+        tracing::error!("Failed to list round document files: {}", error);
+        AppError::InternalServerError("Failed to delete round".to_string())
+    })?;
+
+    sqlx::query("DELETE FROM admission_applications WHERE admission_round_id = $1")
+        .bind(id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to delete applications: {}", e);
+            AppError::InternalServerError("Failed to delete applications".to_string())
+        })?;
+
+    sqlx::query("DELETE FROM admission_rounds WHERE id = $1")
+        .bind(id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to delete round: {}", e);
+            AppError::InternalServerError("Failed to delete round".to_string())
+        })?;
+    transaction.commit().await.map_err(|error| {
+        tracing::error!("Failed to commit round deletion: {}", error);
+        AppError::InternalServerError("Failed to delete round".to_string())
+    })?;
+    Ok(file_ids)
+}
+
+pub async fn toggle_round_visibility(
+    pool: &PgPool,
+    id: Uuid,
+    is_visible: bool,
+) -> Result<bool, AppError> {
+    sqlx::query_scalar::<_, bool>(
+        "UPDATE admission_rounds SET is_visible = $1, updated_at = NOW() WHERE id = $2 RETURNING is_visible"
+    )
+    .bind(is_visible).bind(id).fetch_optional(pool).await
+    .map_err(|e| {
+        tracing::error!("Failed to update round visibility: {}", e);
+        AppError::InternalServerError("Failed to update visibility".to_string())
+    })?
+    .ok_or_else(|| AppError::NotFound("ไม่พบรอบรับสมัคร".to_string()))
+}
+
+// --- Exam Subjects ---
+
+pub async fn list_exam_subjects(
+    pool: &PgPool,
+    round_id: Uuid,
+) -> Result<Vec<AdmissionExamSubject>, AppError> {
+    sqlx::query_as::<_, AdmissionExamSubject>(
+        "SELECT id, admission_round_id, name, code, max_score::FLOAT8 AS max_score, display_order, created_at FROM admission_exam_subjects WHERE admission_round_id = $1 ORDER BY display_order ASC, created_at ASC"
+    )
+    .bind(round_id).fetch_all(pool).await
+    .map_err(|e| {
+        tracing::error!("Failed to fetch subjects: {}", e);
+        AppError::InternalServerError("Failed to fetch subjects".to_string())
+    })
+}
+
+pub async fn create_exam_subject(
+    pool: &PgPool,
+    round_id: Uuid,
+    payload: CreateExamSubjectRequest,
+) -> Result<AdmissionExamSubject, AppError> {
+    sqlx::query_as::<_, AdmissionExamSubject>(
+        r#"INSERT INTO admission_exam_subjects (admission_round_id, name, code, max_score, display_order)
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING id, admission_round_id, name, code, max_score::FLOAT8 AS max_score, display_order, created_at"#
+    )
+    .bind(round_id).bind(&payload.name).bind(&payload.code)
+    .bind(exam_subject_max_score_or_default(payload.max_score))
+    .bind(display_order_or_default(payload.display_order))
+    .fetch_one(pool).await
+    .map_err(|e| {
+        tracing::error!("Failed to create subject: {}", e);
+        AppError::InternalServerError("Failed to create subject".to_string())
+    })
+}
+
+pub async fn update_exam_subject(
+    pool: &PgPool,
+    id: Uuid,
+    payload: UpdateExamSubjectRequest,
+) -> Result<AdmissionExamSubject, AppError> {
+    sqlx::query_as::<_, AdmissionExamSubject>(
+        r#"UPDATE admission_exam_subjects SET
+               name = COALESCE($1, name), code = COALESCE($2, code),
+               max_score = COALESCE($3, max_score), display_order = COALESCE($4, display_order)
+           WHERE id = $5
+           RETURNING id, admission_round_id, name, code, max_score::FLOAT8 AS max_score, display_order, created_at"#
+    )
+    .bind(&payload.name).bind(&payload.code)
+    .bind(payload.max_score).bind(payload.display_order)
+    .bind(id).fetch_one(pool).await
+    .map_err(|e| {
+        tracing::error!("Failed to update subject: {}", e);
+        AppError::InternalServerError("Failed to update subject".to_string())
+    })
+}
+
+pub async fn delete_exam_subject(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
+    sqlx::query("DELETE FROM admission_exam_subjects WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await
+        .map_err(|_| AppError::InternalServerError("Failed to delete subject".to_string()))?;
+    Ok(())
+}
+
+// --- Admission Tracks ---
+
+pub async fn list_tracks(pool: &PgPool, round_id: Uuid) -> Result<Vec<AdmissionTrack>, AppError> {
+    let rows = sqlx::query_as::<_, AdmissionTrackRow>(
+        r#"SELECT t.id, t.admission_round_id, t.study_program_id, t.name,
+                  t.capacity_override, t.scoring_subject_ids, t.tiebreak_method,
+                  t.display_order, t.created_at,
+                  program.name_th AS study_program_name,
+               (SELECT COUNT(DISTINCT homeroom.id)
+                FROM homerooms homeroom
+                WHERE homeroom.study_program_id = t.study_program_id
+                  AND homeroom.academic_year_id = t.academic_year_id
+                  AND homeroom.grade_level_id = round.grade_level_id
+               ) AS room_count,
+               COALESCE(
+                   t.capacity_override::bigint,
+                   (SELECT SUM(homeroom.capacity)
+                    FROM homerooms homeroom
+                    WHERE homeroom.study_program_id = t.study_program_id
+                      AND homeroom.academic_year_id = t.academic_year_id
+                      AND homeroom.grade_level_id = round.grade_level_id
+                   )
+               ) AS computed_capacity,
+               (SELECT COUNT(*) FROM admission_applications aa WHERE aa.admission_track_id = t.id) AS application_count
+           FROM admission_tracks t
+           JOIN admission_rounds round ON round.id = t.admission_round_id
+           JOIN study_programs program ON program.id = t.study_program_id
+           WHERE t.admission_round_id = $1
+           ORDER BY t.display_order ASC, t.created_at ASC"#
+    )
+    .bind(round_id).fetch_all(pool).await
+    .map_err(|e| {
+        tracing::error!("Failed to fetch tracks: {}", e);
+        AppError::InternalServerError("Failed to fetch tracks".to_string())
+    })?;
+
+    Ok(rows.into_iter().map(AdmissionTrack::from).collect())
+}
+
+pub async fn create_track(
+    pool: &PgPool,
+    round_id: Uuid,
+    payload: CreateAdmissionTrackRequest,
+) -> Result<AdmissionTrack, AppError> {
+    let scoring_ids = scoring_subject_ids_json(payload.scoring_subject_ids);
+
+    sqlx::query_as::<_, AdmissionTrackRow>(
+        r#"INSERT INTO admission_tracks (
+               admission_round_id, academic_year_id, study_program_id, name,
+               capacity_override, scoring_subject_ids, tiebreak_method, display_order
+           )
+           SELECT round.id, round.academic_year_id, $2, $3, $4, $5, $6, $7
+           FROM admission_rounds round
+           WHERE round.id = $1
+           RETURNING id, admission_round_id, study_program_id, name,
+               capacity_override, scoring_subject_ids, tiebreak_method, display_order, created_at,
+               (SELECT name_th FROM study_programs WHERE id = $2) AS study_program_name,
+               0::bigint AS room_count,
+               NULL::bigint AS computed_capacity,
+               0::bigint AS application_count"#,
+    )
+    .bind(round_id)
+    .bind(payload.study_program_id)
+    .bind(&payload.name)
+    .bind(payload.capacity_override)
+    .bind(scoring_ids)
+    .bind(track_tiebreak_method_or_default(payload.tiebreak_method))
+    .bind(display_order_or_default(payload.display_order))
+    .fetch_one(pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to create track: {}", e);
+        AppError::InternalServerError("Failed to create track".to_string())
+    })
+    .map(AdmissionTrack::from)
+}
+
+pub async fn update_track(
+    pool: &PgPool,
+    id: Uuid,
+    payload: UpdateAdmissionTrackRequest,
+) -> Result<AdmissionTrack, AppError> {
+    let scoring_ids = payload
+        .scoring_subject_ids
+        .map(|v| scoring_subject_ids_json(Some(v)));
+
+    sqlx::query_as::<_, AdmissionTrackRow>(
+        r#"UPDATE admission_tracks SET
+               name = COALESCE($1, name),
+               capacity_override = COALESCE($2, capacity_override),
+               scoring_subject_ids = COALESCE($3, scoring_subject_ids),
+               tiebreak_method = COALESCE($4, tiebreak_method),
+               display_order = COALESCE($5, display_order)
+           WHERE id = $6
+           RETURNING id, admission_round_id, study_program_id, name,
+               capacity_override, scoring_subject_ids, tiebreak_method, display_order, created_at,
+               (SELECT name_th FROM study_programs WHERE id = study_program_id) AS study_program_name,
+               NULL::bigint AS room_count,
+               NULL::bigint AS computed_capacity,
+               (SELECT COUNT(*) FROM admission_applications WHERE admission_track_id = $6) AS application_count"#
+    )
+    .bind(&payload.name).bind(payload.capacity_override).bind(scoring_ids)
+    .bind(&payload.tiebreak_method).bind(payload.display_order)
+    .bind(id).fetch_one(pool).await
+    .map_err(|e| {
+        tracing::error!("Failed to update track: {}", e);
+        AppError::InternalServerError("Failed to update track".to_string())
+    })
+    .map(AdmissionTrack::from)
+}
+
+pub async fn delete_track(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM admission_applications WHERE admission_track_id = $1",
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0);
+
+    if count > 0 {
+        return Err(AppError::BadRequest(format!(
+            "ไม่สามารถลบสายที่มีใบสมัครอยู่แล้ว ({} ใบ)",
+            count
+        )));
+    }
+
+    sqlx::query("DELETE FROM admission_tracks WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await
+        .map_err(|_| AppError::InternalServerError("Failed to delete track".to_string()))?;
+    Ok(())
+}
+
+#[derive(sqlx::FromRow, serde::Serialize)]
+pub struct RoomCapacityRow {
+    pub room_id: Uuid,
+    pub room_name: String,
+    pub room_code: String,
+}
+
+pub async fn get_track_capacity(pool: &PgPool, id: Uuid) -> Result<Vec<RoomCapacityRow>, AppError> {
+    sqlx::query_as::<_, RoomCapacityRow>(
+        r#"SELECT homeroom.id AS room_id, homeroom.name AS room_name, homeroom.code AS room_code
+           FROM admission_tracks t
+           JOIN admission_rounds round ON round.id = t.admission_round_id
+           JOIN homerooms homeroom
+             ON homeroom.study_program_id = t.study_program_id
+            AND homeroom.academic_year_id = t.academic_year_id
+            AND homeroom.grade_level_id = round.grade_level_id
+           WHERE t.id = $1
+           ORDER BY homeroom.name ASC"#,
+    )
+    .bind(id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to fetch track capacity: {}", e);
+        AppError::InternalServerError("Failed to fetch capacity".to_string())
+    })
+}
+
+fn validate_round_status(status: &str) -> Result<(), AppError> {
+    let valid = [
+        "draft",
+        "open",
+        "exam_announced",
+        "announced",
+        "enrolling",
+        "closed",
+    ];
+    if !valid.contains(&status) {
+        return Err(AppError::BadRequest(format!("สถานะ '{}' ไม่ถูกต้อง", status)));
+    }
+    if status == "draft" {
+        return Err(AppError::BadRequest(
+            "ไม่สามารถเปลี่ยนกลับไปสถานะ 'ร่าง' ได้".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn exam_subject_max_score_or_default(max_score: Option<f64>) -> f64 {
+    max_score.unwrap_or(100.0)
+}
+
+fn display_order_or_default(display_order: Option<i32>) -> i32 {
+    display_order.unwrap_or(0)
+}
+
+fn track_tiebreak_method_or_default(tiebreak_method: Option<String>) -> String {
+    tiebreak_method.unwrap_or_else(|| "applied_at".to_string())
+}
+
+fn scoring_subject_ids_json(scoring_subject_ids: Option<Vec<Uuid>>) -> Json<Vec<Uuid>> {
+    Json(scoring_subject_ids.unwrap_or_default())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_round_status_accepts_forward_statuses_but_rejects_draft() {
+        assert!(validate_round_status("open").is_ok());
+        assert!(matches!(
+            validate_round_status("draft"),
+            Err(AppError::BadRequest(message)) if message.contains("ร่าง")
+        ));
+        assert!(matches!(
+            validate_round_status("archived"),
+            Err(AppError::BadRequest(message)) if message.contains("ไม่ถูกต้อง")
+        ));
+    }
+
+    #[test]
+    fn exam_subject_defaults_are_stable() {
+        assert_eq!(exam_subject_max_score_or_default(None), 100.0);
+        assert_eq!(exam_subject_max_score_or_default(Some(80.0)), 80.0);
+        assert_eq!(display_order_or_default(None), 0);
+        assert_eq!(display_order_or_default(Some(3)), 3);
+    }
+
+    #[test]
+    fn track_defaults_use_applied_at_tiebreak_and_empty_scoring_ids() {
+        assert_eq!(track_tiebreak_method_or_default(None), "applied_at");
+        assert_eq!(
+            track_tiebreak_method_or_default(Some("score".to_string())),
+            "score"
+        );
+
+        assert_eq!(scoring_subject_ids_json(None).0, Vec::<Uuid>::new());
+        let subject_id = Uuid::new_v4();
+        assert_eq!(
+            scoring_subject_ids_json(Some(vec![subject_id])).0,
+            vec![subject_id]
+        );
+    }
+}

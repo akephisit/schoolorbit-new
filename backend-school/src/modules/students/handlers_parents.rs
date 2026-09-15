@@ -6,15 +6,15 @@ use axum::{
 };
 use uuid::Uuid;
 
-use crate::api_response::{ApiErrorResponse, ApiResponse};
-use crate::error::AppError;
-use crate::modules::auth::session_service::AuthenticatedSession;
-use crate::modules::students::services as student_service;
-use crate::permissions::registry::codes;
 use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
+use school_auth::session_service::AuthenticatedSession;
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse};
+use school_permissions::registry::codes;
+use school_students::services as student_service;
 
-use super::models::CreateParentRequest;
+use school_students::models::CreateParentRequest;
 
 // -----------------------------------------------------------------------------
 // Parent Management Handlers (New)
@@ -29,7 +29,7 @@ use super::models::CreateParentRequest;
     params(("id" = Uuid, Path, description = "Student user ID")),
     request_body = CreateParentRequest,
     responses(
-        (status = 200, description = "Parent linked to student", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 200, description = "Parent linked to student", body = ApiResponse<school_http::EmptyData>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Student update permission denied", body = ApiErrorResponse),
         (status = 404, description = "Student not found", body = ApiErrorResponse)
@@ -66,7 +66,7 @@ pub async fn add_parent_to_student(
         ("parent_id" = Uuid, Path, description = "Parent user ID")
     ),
     responses(
-        (status = 200, description = "Parent link removed", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 200, description = "Parent link removed", body = ApiResponse<school_http::EmptyData>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Student update permission denied", body = ApiErrorResponse),
         (status = 404, description = "Parent relationship not found", body = ApiErrorResponse)

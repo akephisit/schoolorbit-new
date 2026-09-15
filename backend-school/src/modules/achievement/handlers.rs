@@ -1,8 +1,5 @@
-use crate::api_response::{ApiErrorResponse, ApiResponse};
-use crate::error::AppError;
 use crate::modules::achievement::models::*;
 use crate::modules::achievement::services as achievement_service;
-use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 use axum::{
@@ -11,6 +8,9 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use school_auth::session_service::AuthenticatedSession;
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse};
 use uuid::Uuid;
 
 #[utoipa::path(
@@ -106,7 +106,7 @@ pub async fn update_achievement(
     tag = "achievement",
     params(("id" = Uuid, Path, description = "Achievement ID")),
     responses(
-        (status = 200, description = "Achievement deleted", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 200, description = "Achievement deleted", body = ApiResponse<school_http::EmptyData>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Achievement deletion permission denied", body = ApiErrorResponse),
         (status = 404, description = "Achievement not found", body = ApiErrorResponse)

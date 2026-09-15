@@ -1,0 +1,33 @@
+[package]
+name = "school-academic-lifecycle"
+version.workspace = true
+edition.workspace = true
+
+[features]
+integration-test-support = []
+
+[dependencies]
+async-trait = { workspace = true }
+chrono = { workspace = true }
+hex = { workspace = true }
+school-academic-assessment = { workspace = true }
+school-academic-core = { workspace = true }
+school-academic-delivery = { workspace = true }
+school-academic-results = { workspace = true }
+school-academic-timetable = { workspace = true }
+school-authorization = { workspace = true }
+school-errors = { workspace = true }
+school-permissions = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+sqlx = { workspace = true }
+utoipa = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+school-test-db = { workspace = true }
+tokio = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,11 +1,7 @@
-use crate::api_response::ApiResponse;
-use crate::error::AppError;
-use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::modules::facility::models::{
     CreateBuildingRequest, CreateRoomRequest, RoomFilter, UpdateBuildingRequest, UpdateRoomRequest,
 };
 use crate::modules::facility::services;
-use crate::permissions::registry::codes;
 use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 use axum::{
@@ -15,6 +11,10 @@ use axum::{
     routing::{get, put},
     Json, Router,
 };
+use school_auth::session_service::AuthenticatedSession;
+use school_http::ApiResponse;
+use school_http::HttpError as AppError;
+use school_permissions::registry::codes;
 use uuid::Uuid;
 
 // ----------------------

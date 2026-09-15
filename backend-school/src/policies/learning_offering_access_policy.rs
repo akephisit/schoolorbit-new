@@ -1,12 +1,13 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::error::AppError;
-use crate::middleware::permission::ActorContext;
-use crate::permissions::registry::codes;
-use crate::policies::resource_access_policy::{
-    self, AcademicResourceAccess, AcademicResourceListFilter, AcademicResourcePermissions,
+use school_authorization::ActorContext;
+use school_authorization::{
+    self as resource_access_policy, AcademicResourceAccess, AcademicResourceListFilter,
+    AcademicResourcePermissions,
 };
+use school_errors::AppError;
+use school_permissions::registry::codes;
 
 const OFFERING_READ_ASSIGNED_PERMISSIONS: &[&str] = &[
     codes::LEARNING_OFFERING_READ_ASSIGNED,
@@ -226,10 +227,10 @@ mod tests {
         apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
         seed_learning_offering_policy_science_course, CutoverFixture,
     };
-    use crate::modules::academic::delivery::models::LearningOfferingQuery;
     use crate::modules::academic::delivery::services::offerings;
-    use crate::permissions::registry::codes;
-    use crate::test_helpers::{create_named_test_pool, run_test_migrations};
+    use school_academic_delivery::models::LearningOfferingQuery;
+    use school_permissions::registry::codes;
+    use school_test_db::{create_named_test_pool, run_test_migrations};
 
     const ACTOR_ID: &str = "50000000-0000-0000-0000-000000000002";
     const ROOT_UNIT_ID: &str = "c5e06a47-ebf6-40f6-bbf9-59c509e842f2";

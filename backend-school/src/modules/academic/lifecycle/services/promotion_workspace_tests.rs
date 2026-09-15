@@ -1,12 +1,12 @@
-use super::super::{
+use super::*;
+use super::{
     promotion_run_review::{
         review_item,
         tests::{hold, ready_run},
     },
     promotion_runs::{create_run, tests::fixture},
 };
-use super::*;
-use crate::permissions::registry::codes;
+use school_permissions::registry::codes;
 
 #[tokio::test]
 async fn promotion_workspace_reader_lists_exact_years_and_cannot_borrow_a_foreign_cursor() {
@@ -118,7 +118,7 @@ async fn promotion_workspace_rehydrates_student_names_and_exact_approval_intent_
     assert!(workspace.students[0].receipt.is_none());
     assert_eq!(
         workspace.approval_checksum,
-        super::super::promotion_approval::intent_checksum(&calc.run, &calc.items).unwrap()
+        super::promotion_approval::intent_checksum(&calc.run, &calc.items).unwrap()
     );
     let review = review_item(&pool, &reviewer, calc.run.id, calc.items[0].id, hold(1))
         .await

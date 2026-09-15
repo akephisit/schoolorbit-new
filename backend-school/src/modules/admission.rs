@@ -1,6 +1,7 @@
 pub mod handlers;
-pub mod models;
-pub mod services;
+
+#[cfg(test)]
+mod application_service_tests;
 
 use crate::AppState;
 use axum::{

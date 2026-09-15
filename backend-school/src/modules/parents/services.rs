@@ -2,16 +2,16 @@ use chrono::NaiveDate;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::error::AppError;
-use crate::modules::academic::core::models::AcademicContextOptions;
-use crate::modules::academic::core::services::context as academic_context_service;
 use crate::modules::academic::models::exam_schedule::PersonalExamScheduleRound;
-use crate::modules::academic::models::timetable_block::TimetableBlock;
 use crate::modules::academic::services::exam_schedule_service;
-use crate::modules::academic::services::{timetable_block_service, timetable_version_service};
-use crate::modules::calendar::models::{CalendarEventQuery, CalendarViewerEvent};
-use crate::modules::students::models::{ParentDto, StudentDbRow, StudentProfile};
-use crate::utils::field_encryption;
+use school_academic_core::models::AcademicContextOptions;
+use school_academic_core::services::context as academic_context_service;
+use school_academic_timetable::models::timetable_block::TimetableBlock;
+use school_academic_timetable::services::{timetable_block_service, timetable_version_service};
+use school_calendar::models::{CalendarEventQuery, CalendarViewerEvent};
+use school_crypto as field_encryption;
+use school_errors::AppError;
+use school_students::models::{ParentDto, StudentDbRow, StudentProfile};
 
 use super::models::{ChildDto, ParentDbRow, ParentProfile};
 
@@ -179,7 +179,7 @@ pub async fn get_child_calendar_events(
     ensure_parent_user(pool, parent_id).await?;
     ensure_parent_student_link(pool, parent_id, student_id).await?;
 
-    crate::modules::calendar::services::list_child_events(pool, parent_id, student_id, query).await
+    school_calendar::services::list_child_events(pool, parent_id, student_id, query).await
 }
 
 async fn ensure_parent_user(pool: &PgPool, parent_id: Uuid) -> Result<(), AppError> {
@@ -328,13 +328,11 @@ fn parent_user_access(user_type: Option<&str>) -> Result<(), AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        modules::academic::cutover_test_support::{
-            apply_migrations_through, apply_phase_b_runtime_migrations,
-            seed_academic_cutover_fixture, CutoverFixture,
-        },
-        test_helpers::{create_named_test_pool, create_test_user},
+    use crate::modules::academic::cutover_test_support::{
+        apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
+        CutoverFixture,
     };
+    use school_test_db::{create_named_test_pool, create_test_user};
 
     #[tokio::test]
     async fn parent_profile_lists_child_in_the_caller_selected_academic_year() {

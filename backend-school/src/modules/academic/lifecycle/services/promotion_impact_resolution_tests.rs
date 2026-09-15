@@ -1,12 +1,10 @@
 use super::*;
-use crate::{
-    middleware::permission::ActorContext,
-    modules::academic::{
-        lifecycle::models::*,
-        results::{models as rm, services as rs},
-    },
-    permissions::registry::codes,
+use crate::modules::academic::{
+    lifecycle::models::*,
+    results::{models as rm, services as rs},
 };
+use school_authorization::ActorContext;
+use school_permissions::registry::codes;
 use uuid::Uuid;
 
 #[tokio::test]
@@ -101,7 +99,7 @@ async fn authorized_keep_existing_resolves_only_the_exact_impact_and_replays() {
                 request.clone(),
             )
             .await,
-            Err(crate::error::AppError::Forbidden(_))
+            Err(school_errors::AppError::Forbidden(_))
         ));
     }
     let mut invalid_reason = request.clone();
@@ -116,20 +114,20 @@ async fn authorized_keep_existing_resolves_only_the_exact_impact_and_replays() {
             invalid_reason,
         )
         .await,
-        Err(crate::error::AppError::ValidationError(_))
+        Err(school_errors::AppError::ValidationError(_))
     ));
     let mut stale = request.clone();
     stale.request_id = Uuid::new_v4();
     stale.source_checksum = "0".repeat(64);
     assert!(matches!(
         resolve_promotion_impact(&pool, &actor, calc.run.id, impact.impacts[0].id, stale,).await,
-        Err(crate::error::AppError::Conflict(_))
+        Err(school_errors::AppError::Conflict(_))
     ));
     let mut foreign_impact = request.clone();
     foreign_impact.request_id = Uuid::new_v4();
     assert!(matches!(
         resolve_promotion_impact(&pool, &actor, calc.run.id, Uuid::new_v4(), foreign_impact,).await,
-        Err(crate::error::AppError::NotFound(_))
+        Err(school_errors::AppError::NotFound(_))
     ));
     let (resolved, replay) = tokio::join!(
         resolve_promotion_impact(
@@ -169,7 +167,7 @@ async fn authorized_keep_existing_resolves_only_the_exact_impact_and_replays() {
             request_collision,
         )
         .await,
-        Err(crate::error::AppError::Conflict(_))
+        Err(school_errors::AppError::Conflict(_))
     ));
     let after = get_promotion_impacts(
         &pool,
@@ -210,7 +208,7 @@ async fn authorized_keep_existing_resolves_only_the_exact_impact_and_replays() {
             already_resolved.clone(),
         )
         .await,
-        Err(crate::error::AppError::Conflict(_))
+        Err(school_errors::AppError::Conflict(_))
     ));
     // A newer official correction is new evidence and must not inherit the old
     // resolution merely because it belongs to the same student and run item.

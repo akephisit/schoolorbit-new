@@ -2,13 +2,13 @@ use chrono::{Days, NaiveDate};
 use uuid::Uuid;
 
 use super::timetable_version_service;
-use crate::error::AppError;
 use crate::modules::academic::cutover_test_support::{
     apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
     CutoverFixture,
 };
-use crate::modules::academic::models::timetable_version::CloneTimetableVersionRequest;
-use crate::test_helpers::create_named_test_pool;
+use school_academic_timetable::models::timetable_version::CloneTimetableVersionRequest;
+use school_errors::AppError;
+use school_test_db::create_named_test_pool;
 
 async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
     let pool = create_named_test_pool(test_name).await;

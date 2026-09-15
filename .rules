@@ -82,6 +82,36 @@ Feature toggles are optional. Add one only for staged rollout or operational con
 
 ## 3. Backend: Rust, Axum, SQLx
 
+### Backend-school Cargo workspace
+
+- `backend-school/Cargo.toml` is both the application package and the non-virtual workspace root.
+  The application package owns startup, the router, full `AppState`, OpenAPI composition,
+  schedulers, and cross-domain adapters; an internal crate must not depend on the root package or
+  accept the full `AppState`.
+- Evaluate crate placement whenever a capability is added or an existing capability materially
+  expands. Create a crate only for a cohesive owner with a public interface materially narrower
+  than its implementation, acyclic and intentionally directed dependencies, meaningful focused
+  tests, and expected compile-scope value.
+- When those admission criteria and compile-scope evidence show that a crate will materially
+  improve ownership or invalidation scope, implement the crate boundary in the same change; crate
+  evaluation is not optional. Otherwise keep the capability with its existing owner and record the
+  reasoning in the approved design or review context.
+- Keep small code with the same owner and lifecycle as an existing domain as a module in that
+  owner. File count alone never justifies a crate.
+- Prefer the smallest useful crate set. Do not create catch-all `common`, `shared`, or `utils`
+  crates, and do not move unrelated code into a lower layer to conceal a dependency cycle.
+- Internal crates receive only the state, typed data, or narrow port they require. Cross-domain
+  behavior goes through a provider-owned public operation or an application-owned adapter.
+- Centralize shared dependency versions and deny-level lints in the workspace manifest. Every
+  internal crate opts into workspace dependencies and lints; the application retains its existing
+  crate-level deny lints and also opts into the workspace policy.
+- Support a new crate boundary with before-and-after compile evidence on the same toolchain,
+  machine, Cargo configuration, and dependency state. A split must improve expected invalidation
+  scope and must not weaken runtime, API/OpenAPI, permission, migration, security, test, or
+  deployment guarantees.
+- Run focused checks for every affected package and finish backend-school verification with
+  `cargo check --workspace --all-targets`.
+
 ### Request context and architecture
 
 - Share pools and configuration through `Arc<AppState>`.
@@ -132,7 +162,7 @@ Use `ApiResponse` and `ApiErrorResponse`; do not return raw feature DTOs or ad-h
   2. Add a new tenant migration to insert/rename/deactivate DB permission data and grants when applicable.
   3. From `frontend-school`, run `npm run generate:permissions`.
   4. Commit the contract lock and both generated registries.
-  5. Use backend constants from `backend-school/src/permissions/registry.rs` and frontend constants from `frontend-school/src/lib/permissions/registry.ts`.
+  5. Use backend constants from `backend-school/crates/school-permissions/src/registry.rs` and frontend constants from `frontend-school/src/lib/permissions/registry.ts`.
   6. Add backend enforcement, resource-policy tests, route metadata, and capability-level UI checks.
   7. Run `npm run check:permissions` and `npm run test:permissions`.
 - Generated files are artifacts; do not edit generated files directly.
@@ -174,7 +204,7 @@ Use `ApiResponse` and `ApiErrorResponse`; do not return raw feature DTOs or ad-h
 - Runtime tenant migrations start at `backend-school/migrations/001_baseline.sql`. `backend-school/migrations_legacy/` is audit history only.
 - Once any live tenant has applied the baseline, do not edit it; continue with `002_*.sql`, `003_*.sql`, and so on.
 - Never point a clean-baseline release at a tenant whose `_sqlx_migrations` still contains the legacy timeline.
-- New tenant provisioning and release deployments use the centralized runner in `backend-school/src/db/migration.rs`; do not introduce a second tenant migration path.
+- New tenant provisioning and release deployments use `school_migrations::run_tenant_migrations` from `backend-school/crates/school-migrations/src/lib.rs`; do not introduce a second tenant migration path.
 - The legacy rebaseline workflow is retired. If a tenant with legacy `_sqlx_migrations` history is discovered, stop and create a new reviewed recovery plan instead of reusing one-time tooling or improvising a cutover.
 - For destructive or semantic replacements, use `expand → migrate/backfill → reconcile → switch consumers → contract/cleanup`, scaled to the affected data and runtime risk. Use new sequential forward migrations for every database-changing phase; implement reconciliation and consumer switching as explicit executable gates in the migration and deployment flow.
 - Make transformations deterministic and safely retryable under the migration runner and recovery design. Before destructive cleanup, verify current aggregate counts, stable identities, relationships, appropriate checksums, and business invariants.
@@ -243,7 +273,8 @@ Use `ApiResponse` and `ApiErrorResponse`; do not return raw feature DTOs or ad-h
 ## 9. Security, PDPA, and Logging
 
 - Never store or log a national ID in plaintext.
-- Encrypt readable `national_id` values app-side with AES-256-GCM through `backend-school/src/utils/field_encryption.rs` and `ENCRYPTION_KEY`.
+- Encrypt readable `national_id` values app-side with AES-256-GCM through the canonical
+  `backend-school/crates/school-crypto/src/lib.rs` APIs and `ENCRYPTION_KEY`.
 - Store searchable `*_national_id_hash` values as keyed HMAC-SHA256 blind indexes using `BLIND_INDEX_KEY`.
 - Keep both keys stable after data exists. Rotation requires a dedicated, reviewed re-encryption/reindex operation.
 - Do not reintroduce PostgreSQL `pgcrypto` helpers or database-role encryption settings for application fields.
@@ -320,7 +351,7 @@ For backend-school changes:
 ```bash
 cargo fmt --all -- --check
 cargo test --test static_architecture
-cargo check
+cargo check --workspace --all-targets
 ```
 
 For school authentication, session, or realtime identity changes, also run the focused Rust auth/realtime tests, `frontend-school` auth/session static tests, session Playwright discovery or execution with a dedicated disposable account, and `scripts/smoke_test.sh` through the deployed proxy path as described in `docs/TESTING.md`.

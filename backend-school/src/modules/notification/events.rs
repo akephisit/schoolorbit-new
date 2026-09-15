@@ -22,36 +22,6 @@ impl TenantNotificationEvent {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct PermissionChangeEvent {
-    pub tenant: String,
-    pub target_user_id: Option<Uuid>,
-}
-
-impl PermissionChangeEvent {
-    pub fn for_user(tenant: &str, user_id: Uuid) -> Self {
-        Self {
-            tenant: tenant.to_string(),
-            target_user_id: Some(user_id),
-        }
-    }
-
-    pub fn for_all_users(tenant: &str) -> Self {
-        Self {
-            tenant: tenant.to_string(),
-            target_user_id: None,
-        }
-    }
-
-    pub fn applies_to(&self, tenant: &str, user_id: Uuid) -> bool {
-        self.tenant == tenant
-            && self
-                .target_user_id
-                .map(|target_user_id| target_user_id == user_id)
-                .unwrap_or(true)
-    }
-}
-
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum WorkChangeKind {
     WorkItemsChanged,
@@ -106,17 +76,6 @@ mod tests {
             read_at: None,
             created_at: Utc::now(),
         }
-    }
-
-    #[test]
-    fn permission_events_match_tenant_and_optional_user() {
-        let user = Uuid::new_v4();
-        assert!(PermissionChangeEvent::for_user("tenant-a", user).applies_to("tenant-a", user));
-        assert!(!PermissionChangeEvent::for_user("tenant-a", user).applies_to("tenant-b", user));
-        assert!(
-            PermissionChangeEvent::for_all_users("tenant-a").applies_to("tenant-a", Uuid::new_v4())
-        );
-        assert!(!PermissionChangeEvent::for_all_users("tenant-a").applies_to("tenant-b", user));
     }
 
     #[test]

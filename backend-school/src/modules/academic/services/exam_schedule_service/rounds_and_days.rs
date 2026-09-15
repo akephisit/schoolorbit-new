@@ -2,8 +2,7 @@ pub(crate) async fn pending_term_work(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     year: uuid::Uuid,
     term: uuid::Uuid,
-) -> Result<Vec<crate::modules::academic::lifecycle::models::PendingTermWork>, crate::error::AppError>
-{
+) -> Result<Vec<school_academic_core::ports::PendingTermWork>, school_errors::AppError> {
     Ok(sqlx::query_as(
         "SELECT round.id,md5(to_jsonb(round)::text
          || COALESCE((SELECT jsonb_agg(to_jsonb(day) ORDER BY day.id)::text FROM academic_exam_days day WHERE day.exam_round_id=round.id),'[]')
@@ -25,12 +24,12 @@ use chrono::NaiveTime;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use crate::error::AppError;
 use crate::modules::academic::models::exam_schedule::{
     BlockedWindow, BlockedWindowInput, CreateExamRoundRequest, ExamDay, ExamDayDetail,
     ExamDayRoomAssignmentView, ExamInvigilatorView, ExamRound, UpdateExamRoundRequest,
     UpsertExamDayRequest,
 };
+use school_errors::AppError;
 
 use super::invigilation::fetch_invigilators_by_assignment_ids;
 use super::shared::{require_exam_write, unique_uuids, ExamWriteTarget};

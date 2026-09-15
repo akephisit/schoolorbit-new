@@ -6,8 +6,10 @@ use crate::modules::academic::results::{
     models::{EffectiveResultValue, ResultContext, ResultCorrectionInput},
     services::correct_result,
 };
-use crate::test_helpers::create_named_test_pool_with_max_connections;
-use crate::{error::AppError, middleware::permission::ActorContext, permissions::registry::codes};
+use school_authorization::ActorContext;
+use school_errors::AppError;
+use school_permissions::registry::codes;
+use school_test_db::create_named_test_pool_with_max_connections;
 use uuid::Uuid;
 const DC: LearnerEvaluationDomain = LearnerEvaluationDomain::DesirableCharacteristic;
 const RTW: LearnerEvaluationDomain = LearnerEvaluationDomain::ReadingThinkingWriting;

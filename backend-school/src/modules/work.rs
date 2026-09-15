@@ -1,5 +1,4 @@
 pub mod handlers;
-pub mod services;
 
 use crate::AppState;
 use axum::Router;

@@ -3,8 +3,8 @@ use std::sync::Arc;
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use crate::modules::certificates::services::purge_service;
-use crate::modules::files::{
+use school_certificates::services::purge_service;
+use school_file_platform::{
     platform_service::FilePlatform, reconciler::reconcile_due_operations,
     repository::SqlFileRepository,
 };

@@ -1,23 +1,17 @@
 use crate::{
-    api_response::{ApiErrorResponse, ApiResponse},
-    error::AppError,
-    modules::{
-        academic::{
-            core::{
-                models::{YearReopeningOutcome, YearReopeningRequest},
-                services::year_reopening,
-            },
-            lifecycle::{models::YearReopeningWorkspace, services},
-        },
-        auth::session_service::AuthenticatedSession,
-    },
-    utils::request_context::actor_tenant_context_from_session,
-    AppState,
+    modules::academic::lifecycle::services,
+    utils::request_context::actor_tenant_context_from_session, AppState,
 };
 use axum::{
     extract::{Extension, Path, State},
     Json,
 };
+use school_academic_lifecycle::models::{
+    YearReopeningOutcome, YearReopeningRequest, YearReopeningWorkspace,
+};
+use school_auth::session_service::AuthenticatedSession;
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse};
 use uuid::Uuid;
 
 #[utoipa::path(get,path="/api/academic/lifecycle/years/{year_id}/reopening",operation_id="getYearReopeningWorkspace",tag="academic",
@@ -44,8 +38,13 @@ pub async fn reopen_year(
     Json(input): Json<YearReopeningRequest>,
 ) -> Result<Json<ApiResponse<YearReopeningOutcome>>, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    let outcome =
-        year_reopening::reopen_year(&context.tenant.pool, &context.actor, year, input).await?;
+    let outcome = services::year_reopening_command::reopen_year(
+        &context.tenant.pool,
+        &context.actor,
+        year,
+        input,
+    )
+    .await?;
     state.websocket_manager.broadcast_academic_core_changed(
         session.tenant.subdomain.clone(),
         session.user_id,

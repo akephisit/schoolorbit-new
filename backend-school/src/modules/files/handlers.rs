@@ -5,30 +5,34 @@ use axum::{
     Json,
 };
 use bytes::{Bytes, BytesMut};
+use school_auth::session_service::AuthenticatedSession;
+use school_certificates::file_relationships::{
+    record_school_font_upload as record_certificate_school_font_upload,
+    record_template_upload as record_certificate_template_upload,
+};
+use school_file_platform::{
+    platform_service::{FilePlatform, FilePlatformError, UploadCommand},
+    platform_types::FilePurpose,
+    purpose_registry::{purpose_definition, purpose_from_code},
+    repository::{PlatformFile, SqlFileRepository},
+};
+use school_fonts::file_relationships::record_upload as record_school_font_upload;
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse};
 use uuid::Uuid;
 
 use crate::{
-    api_response::{ApiErrorResponse, ApiResponse},
-    error::AppError,
-    modules::auth::session_service::AuthenticatedSession,
     policies::file_access_policy::{self, FilePolicyAction},
     utils::{request_context::actor_tenant_context_from_session, tenant::tenant_context},
     AppState,
 };
 
 use super::{
-    consumer_service::{
-        map_platform_error, record_certificate_school_font_upload,
-        record_certificate_template_upload, record_school_font_upload, request_deletions,
-    },
+    consumer_service::{map_platform_error, request_deletions},
     models::{
         FileAccessQuery, FileDeleteResult, FileDownloadGrantResponse, FileMetadata,
         FileUploadMultipart, PublicFileDeliveryResponse,
     },
-    platform_service::{FilePlatform, FilePlatformError, UploadCommand},
-    platform_types::FilePurpose,
-    purpose_registry::{purpose_definition, purpose_from_code},
-    repository::SqlFileRepository,
 };
 
 const MAX_CONTROL_FIELD_BYTES: usize = 128;
@@ -201,7 +205,7 @@ async fn record_upload_relation_or_request_cleanup(
                 "File Platform compensation needs temporary-retention fallback"
             );
         }
-        return Err(error);
+        return Err(error.into());
     }
     Ok(())
 }
@@ -365,7 +369,10 @@ pub async fn delete_file(
             .await
             .map_err(FilePlatformError::from)
             .map_err(map_platform_error)?;
-        guard.commit().await?;
+        guard
+            .commit()
+            .await
+            .map_err(school_errors::AppError::from)?;
         state
             .file_platform
             .complete_prepared_delete(&repository, work)
@@ -471,12 +478,12 @@ async fn read_file_field(mut field: Field<'_>, max_bytes: u64) -> Result<Bytes, 
     Ok(bytes.freeze())
 }
 
-fn map_public_platform_error(error: super::platform_service::FilePlatformError) -> AppError {
+fn map_public_platform_error(error: FilePlatformError) -> AppError {
     match error {
         FilePlatformError::NotFound
         | FilePlatformError::NotReady
         | FilePlatformError::VisibilityMismatch => AppError::NotFound("ไม่พบไฟล์".to_string()),
-        other => map_platform_error(other),
+        other => map_platform_error(other).into(),
     }
 }
 
@@ -484,11 +491,7 @@ fn invalid_multipart() -> AppError {
     AppError::BadRequest("multipart ไม่ถูกต้อง".to_string())
 }
 
-fn audit_allowed(
-    actor_user_id: Uuid,
-    file: &super::repository::PlatformFile,
-    action: &'static str,
-) {
+fn audit_allowed(actor_user_id: Uuid, file: &PlatformFile, action: &'static str) {
     tracing::info!(
         file_id = %file.id,
         actor_user_id = %actor_user_id,
@@ -508,18 +511,16 @@ mod tests {
     use url::Url;
 
     use super::*;
-    use crate::{
-        modules::files::{
-            consumer_service::tests::{
-                file_lifecycle_status, insert_file, insert_template, school_font_upload_relations,
-            },
-            malware_scanner::{MalwareScanner, ScanOutcome},
-            platform_service::FilePlatform,
-            platform_types::DownloadGrant,
-            storage_provider::{ObjectMetadata, StorageError, StorageProvider, StoredObject},
-        },
-        test_helpers::{create_named_test_pool, create_test_user, run_test_migrations},
+    use crate::modules::files::consumer_service::tests::{
+        file_lifecycle_status, insert_file, insert_template, school_font_upload_relations,
     };
+    use school_file_platform::{
+        malware_scanner::{MalwareScanner, ScanOutcome},
+        platform_service::FilePlatform,
+        platform_types::DownloadGrant,
+        storage_provider::{ObjectMetadata, StorageError, StorageProvider, StoredObject},
+    };
+    use school_test_db::{create_named_test_pool, create_test_user, run_test_migrations};
 
     struct UnexpectedStorageProvider;
 
@@ -654,8 +655,9 @@ mod tests {
         .expect_err("a missing exact template must reject relation recording");
 
         assert!(matches!(
-            error,
-            AppError::NotFound(message) if message == "ไม่พบแม่แบบเกียรติบัตร"
+            error.as_domain(),
+            school_errors::AppError::NotFound(message)
+                if message == "ไม่พบแม่แบบเกียรติบัตร"
         ));
         assert_eq!(
             file_lifecycle_status(repository.pool(), file_id).await,

@@ -1,13 +1,11 @@
 use super::*;
-use crate::{
-    error::AppError,
-    middleware::permission::ActorContext,
-    modules::academic::{
-        core::services_tests::prepare_core_fixture, cutover_test_support::apply_migrations_through,
-        lifecycle::models::*,
-    },
-    permissions::registry::codes,
+use crate::modules::academic::{
+    core::services_tests::prepare_core_fixture, cutover_test_support::apply_migrations_through,
+    lifecycle::models::*,
 };
+use school_authorization::ActorContext;
+use school_errors::AppError;
+use school_permissions::registry::codes;
 use sqlx::PgPool;
 use uuid::Uuid;
 

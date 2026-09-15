@@ -9,19 +9,17 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::api_response::ApiResponse;
-use crate::error::AppError;
-use crate::modules::auth::session_service::AuthenticatedSession;
-use crate::modules::workflow::models::{
-    WorkflowWindow, WorkflowWindowMetadata, WorkflowWindowStatus,
-};
-use crate::modules::workflow::services::{
-    self, CreateWorkflowWindowInput, WorkflowWindowFilter, WorkflowWindowSchedule,
-    WorkflowWindowTimeState,
-};
-use crate::policies::workflow_access_policy;
 use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
+use school_auth::session_service::AuthenticatedSession;
+use school_http::ApiResponse;
+use school_http::HttpError as AppError;
+use school_workflow::models::{WorkflowWindow, WorkflowWindowMetadata, WorkflowWindowStatus};
+use school_workflow::policy as workflow_access_policy;
+use school_workflow::workflow::{
+    self as services, CreateWorkflowWindowInput, WorkflowWindowFilter, WorkflowWindowSchedule,
+    WorkflowWindowTimeState,
+};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -4,12 +4,12 @@ use chrono::NaiveTime;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use crate::error::AppError;
 use crate::modules::academic::models::exam_schedule::{
     DayRoomAssignmentView, ExamInvigilatorAssignmentSummary, ExamInvigilatorDayWorkload,
     ExamInvigilatorStaffOption, ExamInvigilatorStaffWorkload, ExamInvigilatorView,
     ExamInvigilatorWorkspace, InvigilatorView, UpdateExamInvigilatorsRequest,
 };
+use school_errors::AppError;
 
 use super::room_assignments::{
     fetch_day_room_assignment_view, fetch_seat_assignment_context,

@@ -45,7 +45,7 @@ This file is the single active backlog for verified, unfinished technical work t
   - Done when a browser-storage inspection after each workflow contains no password, national ID, birth date, or private document identifier.
 
 - [ ] **SEC-007: Replace predictable student and guardian passwords.**
-  - Remove password derivation from student codes and phone numbers in the [admission application service](./backend-school/src/modules/admission/services/application_service.rs).
+  - Remove password derivation from student codes and phone numbers in the [admission application service](./backend-school/crates/school-admission/src/services/application_service.rs).
   - Use random, expiring, single-use activation tokens and require the user to set a policy-compliant password.
   - Force a safe reset for existing accounts created by predictable schemes.
   - Add rate limiting, progressive delay or lockout, enumeration-resistant errors, and MFA for control-plane administrators.
@@ -81,7 +81,7 @@ This file is the single active backlog for verified, unfinished technical work t
   - Verify parent identity before linking an existing account by a shared or reused phone number.
 
 - [ ] **ADM-004: Correct admission round ordering and state constraints.**
-  - Calculate round ordering before filtering to one round in the [application service](./backend-school/src/modules/admission/services/application_service.rs).
+  - Calculate round ordering before filtering to one round in the [application service](./backend-school/crates/school-admission/src/services/application_service.rs).
   - Add focused integration tests for second and later rounds.
   - Add forward database constraints for valid round/application statuses and application-window invariants.
 

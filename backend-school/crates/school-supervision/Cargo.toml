@@ -1,0 +1,23 @@
+[package]
+name = "school-supervision"
+version.workspace = true
+edition.workspace = true
+
+[features]
+integration-test-support = []
+
+[dependencies]
+chrono = { workspace = true }
+chrono-tz = { workspace = true }
+school-academic-core = { workspace = true }
+school-academic-timetable = { workspace = true }
+school-errors = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+tracing = { workspace = true }
+utoipa = { workspace = true }
+uuid = { workspace = true }
+
+[lints]
+workspace = true

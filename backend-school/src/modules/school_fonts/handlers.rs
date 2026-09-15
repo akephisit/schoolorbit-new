@@ -4,19 +4,17 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use school_auth::session_service::AuthenticatedSession;
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiErrorResponseWithData, ApiResponse, EmptyData};
 use uuid::Uuid;
 
 use crate::{
-    api_response::{ApiErrorResponse, ApiErrorResponseWithData, ApiResponse, EmptyData},
-    error::AppError,
-    modules::{
-        auth::session_service::AuthenticatedSession, files::consumer_service::request_deletions,
-    },
-    utils::request_context::actor_tenant_context_from_session,
-    AppState,
+    modules::files::consumer_service::request_deletions,
+    utils::request_context::actor_tenant_context_from_session, AppState,
 };
 
-use super::{
+use school_fonts::{
     models::{
         AttachSchoolFontBatchRequest, InspectSchoolFontUploadsRequest, SchoolFontDeleteConflict,
         SchoolFontListResponse, SchoolFontUploadInspection,

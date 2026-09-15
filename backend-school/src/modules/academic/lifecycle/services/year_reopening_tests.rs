@@ -1,9 +1,7 @@
-use crate::{
-    error::AppError,
-    middleware::permission::ActorContext,
-    modules::academic::{core, cutover_test_support::apply_migrations_through},
-    permissions::registry::codes,
-};
+use crate::modules::academic::{core, cutover_test_support::apply_migrations_through};
+use school_authorization::ActorContext;
+use school_errors::AppError;
+use school_permissions::registry::codes;
 use sqlx::PgPool;
 use uuid::Uuid;
 

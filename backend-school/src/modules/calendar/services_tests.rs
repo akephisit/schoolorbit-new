@@ -5,17 +5,17 @@ use sqlx::PgPool;
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
-use crate::error::AppError;
 use crate::modules::academic::cutover_test_support::{
     apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
     CutoverFixture,
 };
-use crate::modules::calendar::models::{
+use crate::modules::notification::events::TenantNotificationEvent;
+use school_calendar::models::{
     CalendarAudienceType, CalendarEventQuery, CalendarEventTargetInput,
     UpsertCalendarCategoryRequest, UpsertCalendarEventRequest, UpsertCalendarTagRequest,
 };
-use crate::modules::notification::events::TenantNotificationEvent;
-use crate::test_helpers::create_named_test_pool_with_max_connections;
+use school_errors::AppError;
+use school_test_db::create_named_test_pool_with_max_connections;
 
 use super::services;
 
@@ -800,7 +800,7 @@ async fn management_self_child_and_public_views_enforce_current_audiences() {
     )
     .await
     .expect("student events should list");
-    let child = services::list_child_events(
+    let child = school_calendar::services::list_child_events(
         &pool,
         fixture.parent_user_id,
         fixture.student_user_id,
@@ -812,7 +812,7 @@ async fn management_self_child_and_public_views_enforce_current_audiences() {
         .await
         .expect("public events should list");
 
-    let ids = |events: &[crate::modules::calendar::models::CalendarEvent]| {
+    let ids = |events: &[school_calendar::models::CalendarEvent]| {
         events.iter().map(|event| event.id).collect::<Vec<_>>()
     };
     let management_ids = ids(&management);

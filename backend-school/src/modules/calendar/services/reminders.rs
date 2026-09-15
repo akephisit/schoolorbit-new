@@ -6,13 +6,12 @@ use sqlx::{PgPool, Postgres};
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
-use crate::db::{admin_client::AdminClient, pool_manager::PoolManager};
-use crate::error::AppError;
 use crate::modules::notification::events::TenantNotificationEvent;
+use school_calendar::services::{get_event_for_response, tenant_today, CalendarNotificationKind};
+use school_errors::AppError;
+use school_tenancy::{AdminClient, PoolManager};
 
-use super::notifications::{send_event_notification, CalendarNotificationKind};
-use super::shared::tenant_today;
-use super::visibility::get_event_for_response;
+use super::notifications::send_event_notification;
 
 const SELECT_DUE_CALENDAR_REMINDER_CANDIDATES_SQL: &str = r#"
 SELECT id, event_id, days_before

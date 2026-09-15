@@ -4,12 +4,12 @@ use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::error::AppError;
 use crate::modules::academic::models::exam_schedule::{
     PersonalExamScheduleRound, PersonalExamSessionView, StaffPublishedExamDay,
     StaffPublishedExamInvigilator, StaffPublishedExamRoomAssignment,
     StaffPublishedExamScheduleRound, StaffPublishedExamSession,
 };
+use school_errors::AppError;
 
 use super::shared::minutes_between_times;
 

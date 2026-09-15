@@ -1,23 +1,19 @@
 use super::*;
-use crate::{
-    middleware::permission::ActorContext,
-    modules::academic::{
-        core::{
-            self,
-            models::{AcademicTermStatus, TermTransitionAction, TermTransitionRequest},
-            services::{
-                activation_context_tests::{
-                    empty_school, ready_term_for_existing_year, ready_year,
-                },
-                term_transitions,
-            },
+use crate::modules::academic::{
+    core::{
+        self,
+        models::{AcademicTermStatus, TermTransitionAction, TermTransitionRequest},
+        services::{
+            activation_context_tests::{empty_school, ready_term_for_existing_year, ready_year},
+            term_transitions,
         },
-        cutover_test_support::apply_migrations_through,
-        lifecycle::models::{ExecutePromotionRunInput, PromotionDecisionOutcome},
     },
-    permissions::registry::codes,
+    cutover_test_support::apply_migrations_through,
+    lifecycle::models::{ExecutePromotionRunInput, PromotionDecisionOutcome},
 };
 use chrono::Duration;
+use school_authorization::ActorContext;
+use school_permissions::registry::codes;
 use uuid::Uuid;
 
 #[tokio::test]
@@ -272,7 +268,7 @@ async fn lifecycle_transition_rechecks_versions_replays_exact_receipt_and_keeps_
         .is_empty());
     assert!(matches!(
         term_transitions::transition_term(&pool, &reader, term, request.clone()).await,
-        Err(crate::error::AppError::Forbidden(_))
+        Err(school_errors::AppError::Forbidden(_))
     ));
     let teacher = ActorContext {
         user_id: id,
@@ -280,7 +276,7 @@ async fn lifecycle_transition_rechecks_versions_replays_exact_receipt_and_keeps_
     };
     assert!(matches!(
         get_workspace(&pool, &teacher, year, term).await,
-        Err(crate::error::AppError::Forbidden(_))
+        Err(school_errors::AppError::Forbidden(_))
     ));
     assert!(get_workspace(&pool, &actor, Uuid::new_v4(), term)
         .await
@@ -294,7 +290,7 @@ async fn lifecycle_transition_rechecks_versions_replays_exact_receipt_and_keeps_
     close.closed_on = Some(latest.context.term_start_date);
     assert!(matches!(
         term_transitions::transition_term(&pool, &actor, term, close.clone()).await,
-        Err(crate::error::AppError::Forbidden(_))
+        Err(school_errors::AppError::Forbidden(_))
     ));
     let mut closer = actor;
     closer
@@ -302,7 +298,7 @@ async fn lifecycle_transition_rechecks_versions_replays_exact_receipt_and_keeps_
         .push(codes::ACADEMIC_LIFECYCLE_CLOSE_SCHOOL.into());
     assert!(matches!(
         term_transitions::transition_term(&pool, &closer, term, close).await,
-        Err(crate::error::AppError::Conflict(_))
+        Err(school_errors::AppError::Conflict(_))
     ));
 }
 
@@ -435,7 +431,7 @@ async fn activation_opens_promoted_enrollment_and_placement_atomically_and_repla
     assert!(matches!(
         term_transitions::transition_term(&pool, &actor, term.id, stale_policy_request.clone())
             .await,
-        Err(crate::error::AppError::Conflict(_))
+        Err(school_errors::AppError::Conflict(_))
     ));
     let workspace =
         get_activation_workspace(&pool, &actor, calculation.run.target_year_id, term.id)
@@ -456,7 +452,7 @@ async fn activation_opens_promoted_enrollment_and_placement_atomically_and_repla
     .unwrap();
     assert!(matches!(
         term_transitions::transition_term(&pool, &actor, term.id, stale_room_request.clone()).await,
-        Err(crate::error::AppError::Conflict(_))
+        Err(school_errors::AppError::Conflict(_))
     ));
     let workspace =
         get_activation_workspace(&pool, &actor, calculation.run.target_year_id, term.id)
@@ -619,7 +615,7 @@ async fn activation_opens_promoted_enrollment_and_placement_atomically_and_repla
     };
     assert!(matches!(
         term_transitions::transition_term(&pool, &foreign, term.id, request).await,
-        Err(crate::error::AppError::Conflict(_))
+        Err(school_errors::AppError::Conflict(_))
     ));
 }
 

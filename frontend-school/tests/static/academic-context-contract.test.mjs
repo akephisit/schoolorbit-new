@@ -425,7 +425,7 @@ test('student and parent history selectors use learner-scoped academic context e
 		'utf8'
 	);
 	const coreService = await readFile(
-		path.join(repoRoot, 'backend-school/src/modules/academic/core/services/context.rs'),
+		path.join(repoRoot, 'backend-school/crates/school-academic-core/src/services/context.rs'),
 		'utf8'
 	);
 	const parentHandlers = await readFile(
@@ -467,7 +467,7 @@ test('admission round listing is scoped by the selected academic year', async ()
 		'utf8'
 	);
 	const service = await readFile(
-		path.join(repoRoot, 'backend-school/src/modules/admission/services/round_service.rs'),
+		path.join(repoRoot, 'backend-school/crates/school-admission/src/services/round_service.rs'),
 		'utf8'
 	);
 

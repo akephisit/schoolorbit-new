@@ -1,22 +1,20 @@
-use crate::{
-    modules::academic::{
-        cutover_test_preflight::run_academic_core_preflight,
-        cutover_test_support::{
-            apply_migrations_through, apply_phase_b_runtime_migrations,
-            seed_academic_cutover_fixture, CutoverFixture,
-        },
-        models::{
-            timetable_block::{
-                CreateOrdinaryTimetableBlockRequest, TimetableBlockWorkspaceQuery,
-                UpdateTimetableBlockRequest,
-            },
-            timetable_version::CloneTimetableVersionRequest,
-        },
-        services::{timetable_block_service, timetable_version_service},
+use crate::modules::academic::{
+    cutover_test_preflight::run_academic_core_preflight,
+    cutover_test_support::{
+        apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
+        CutoverFixture,
     },
-    test_helpers::{create_named_test_pool, create_named_test_pool_with_max_connections},
+    models::{
+        timetable_block::{
+            CreateOrdinaryTimetableBlockRequest, TimetableBlockWorkspaceQuery,
+            UpdateTimetableBlockRequest,
+        },
+        timetable_version::CloneTimetableVersionRequest,
+    },
+    services::{timetable_block_service, timetable_version_service},
 };
 use chrono::{Duration, NaiveDate, Utc};
+use school_test_db::{create_named_test_pool, create_named_test_pool_with_max_connections};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -44,8 +42,8 @@ use super::{
         activities, change_sets, groups, offerings, roster_memberships, teacher_handoff, workspaces,
     },
 };
-use crate::error::AppError;
-use crate::policies::resource_access_policy::AcademicResourceListFilter;
+use school_authorization::AcademicResourceListFilter;
+use school_errors::AppError;
 
 const ACADEMIC_CORE_NAMESPACE: Uuid = Uuid::from_u128(0x5c33_b984_10df_58db_bf80_62db_c4a0_3d1b);
 
@@ -614,8 +612,12 @@ async fn lifecycle_delivery_closure_checks_the_year_and_keeps_closing_editable()
             .bind(context.term_id).bind(term_status).execute(&pool).await.unwrap();
         for exclusive in [false, true] {
             let mut tx = pool.begin().await.unwrap();
-            let result =
-                super::services::require_writable_term(&mut tx, context.term_id, exclusive).await;
+            let result = school_academic_delivery::services::ensure_writable_term(
+                &mut tx,
+                context.term_id,
+                exclusive,
+            )
+            .await;
             assert_eq!(
                 result.is_ok(),
                 writable,
@@ -2015,7 +2017,7 @@ async fn teacher_handoff_preview_and_apply_replace_exact_instructors_atomically(
             academic_term_id: changed.academic_term_id,
             timetable_version_id: changed.target_timetable_version_id,
         },
-        &crate::policies::timetable_access_policy::TimetableAccessFilter {
+        &school_academic_timetable::policy::TimetableAccessFilter {
             includes_school_owned: true,
             ..Default::default()
         },
@@ -4647,7 +4649,7 @@ async fn course_offering_persists_exact_assessment_total() {
         .bind(offering.id).fetch_one(&pool).await.unwrap();
     assert_eq!(stored, "120.50");
     let plan =
-        crate::modules::academic::services::assessment_service::get_plan_detail(&pool, offering.id)
+        school_academic_assessment::assessment::services::get_plan_detail(&pool, offering.id)
             .await
             .unwrap();
     assert_eq!(plan.assessment_total_score, "120.5");
@@ -6317,7 +6319,7 @@ async fn active_homeroom_workspace_projects_the_effective_version_targets() {
     assert_eq!(
         workspace.timetable_version_status,
         Some(
-            crate::modules::academic::models::timetable_version::TimetableVersionStatus::Published
+            school_academic_timetable::models::timetable_version::TimetableVersionStatus::Published
         )
     );
     assert!(workspace
@@ -6347,7 +6349,7 @@ async fn homeroom_alignment_uses_the_explicit_timetable_version_target() {
         .into_iter()
         .find(|version| {
             version.status
-                == crate::modules::academic::models::timetable_version::TimetableVersionStatus::Published
+                == school_academic_timetable::models::timetable_version::TimetableVersionStatus::Published
         })
         .expect("active fixture must have a published timetable version");
     let effective_from = source.effective_from + Duration::days(1);
@@ -6516,7 +6518,7 @@ async fn homeroom_alignment_reports_missing_and_extra_delivery_per_room() {
         .into_iter()
         .find(|version| {
             version.status
-                == crate::modules::academic::models::timetable_version::TimetableVersionStatus::Published
+                == school_academic_timetable::models::timetable_version::TimetableVersionStatus::Published
         })
         .expect("test setup must have a published timetable version");
     let effective_from = source.effective_from + Duration::days(7);

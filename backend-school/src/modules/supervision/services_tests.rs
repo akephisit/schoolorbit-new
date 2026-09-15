@@ -1,12 +1,12 @@
-use super::models::*;
-use super::services;
-use crate::error::AppError;
 use crate::modules::academic::cutover_test_support::{
     apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
     CutoverFixture,
 };
-use crate::test_helpers::{create_named_test_pool_with_max_connections, create_test_user};
 use chrono::{DateTime, Duration, Utc};
+use school_errors::AppError;
+use school_supervision::models::*;
+use school_supervision::services;
+use school_test_db::{create_named_test_pool_with_max_connections, create_test_user};
 use sqlx::PgPool;
 use uuid::Uuid;
 

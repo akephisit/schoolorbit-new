@@ -1,9 +1,9 @@
-use crate::error::AppError;
 use crate::modules::menu::models::{
     AcademicMenuTemplateApplyResult, AcademicMenuTemplateMove, AcademicMenuTemplatePreview,
     AcademicMenuTemplateSection,
 };
 use chrono::{DateTime, SecondsFormat, Utc};
+use school_errors::AppError;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use sqlx::{FromRow, PgConnection, PgPool};
@@ -443,8 +443,8 @@ async fn load_target_group_ids(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::AppError;
-    use crate::test_helpers::{create_named_test_pool, run_test_migrations};
+    use school_errors::AppError;
+    use school_test_db::{create_named_test_pool, run_test_migrations};
     use sqlx::PgPool;
     use uuid::Uuid;
 

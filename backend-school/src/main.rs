@@ -1,28 +1,26 @@
 #![deny(dead_code, unused_imports)]
 
 pub mod api_contract;
-pub mod api_response;
 mod app;
 mod db;
-pub mod error;
 mod middleware;
 mod modules;
-mod permissions;
 mod policies;
 mod scheduling;
 mod services;
 mod utils;
 
-#[cfg(test)]
-mod test_helpers;
-
-use crate::modules::notification::events::{
-    PermissionChangeEvent, TenantNotificationEvent, WorkChangeEvent,
-};
-use db::admin_client::{AdminClient, AdminClientConfig};
-use db::permission_cache::PermissionCache;
-use db::pool_manager::PoolManager;
+use crate::modules::notification::events::{TenantNotificationEvent, WorkChangeEvent};
 use dotenvy::dotenv;
+use school_auth::events::PermissionChangeEvent;
+use school_authorization::PermissionCache;
+use school_file_platform::{
+    malware_scanner::{ClamdConfig, ClamdScanner},
+    platform_service::FilePlatform,
+    r2_storage_provider::R2StorageProvider,
+    runtime_config::FilePlatformRuntimeConfig,
+};
+use school_tenancy::{AdminClient, AdminClientConfig, PoolManager};
 use std::{env, net::SocketAddr, sync::Arc};
 use tokio::sync::broadcast;
 use tokio_cron_scheduler::JobScheduler;
@@ -38,13 +36,22 @@ pub struct AppState {
     pub permission_event_channel: broadcast::Sender<PermissionChangeEvent>,
     pub work_event_channel: broadcast::Sender<WorkChangeEvent>,
     pub permission_cache: Arc<PermissionCache>,
-    pub file_platform: Arc<modules::files::platform_service::FilePlatform>,
+    pub file_platform: Arc<FilePlatform>,
     pub certificate_verification_limiter:
-        Arc<modules::certificates::verification_limiter::CertificateVerificationLimiter>,
-    pub auth_runtime: modules::auth::runtime::AuthRuntime,
+        Arc<school_certificates::verification_limiter::CertificateVerificationLimiter>,
+    pub auth_runtime: school_auth::runtime::AuthRuntime,
 }
 
 impl AppState {
+    pub fn invalidate_permission_user(&self, tenant: &str, target_user_id: Uuid) {
+        self.auth_runtime
+            .invalidate_permission_user(tenant, target_user_id);
+    }
+
+    pub fn invalidate_permission_tenant(&self, tenant: &str) {
+        self.auth_runtime.invalidate_permission_tenant(tenant);
+    }
+
     pub fn notify_permission_changed(&self, tenant: &str, target_user_id: Uuid) {
         let _ = self
             .permission_event_channel
@@ -147,8 +154,7 @@ async fn main() {
     tracing::info!("ℹ️  Multi-tenant architecture ready");
     tracing::info!("ℹ️  Each school has its own database connection pool (cached)");
 
-    let storage_provider = match modules::files::r2_storage_provider::R2StorageProvider::new().await
-    {
+    let storage_provider = match R2StorageProvider::new().await {
         Ok(provider) => Arc::new(provider),
         Err(error) => {
             tracing::error!(
@@ -158,33 +164,30 @@ async fn main() {
             std::process::exit(1);
         }
     };
-    let scanner_config = match modules::files::malware_scanner::ClamdConfig::from_env() {
+    let scanner_config = match ClamdConfig::from_env() {
         Ok(config) => config,
         Err(_) => {
             tracing::error!("File Platform malware scanner configuration is invalid");
             std::process::exit(1);
         }
     };
-    let file_runtime_config =
-        match modules::files::runtime_config::FilePlatformRuntimeConfig::from_env() {
-            Ok(config) => config,
-            Err(error) => {
-                tracing::error!(
-                    error_code = error.log_safe_code(),
-                    "File Platform runtime configuration is invalid"
-                );
-                std::process::exit(1);
-            }
-        };
-    let file_platform = Arc::new(modules::files::platform_service::FilePlatform::with_config(
+    let file_runtime_config = match FilePlatformRuntimeConfig::from_env() {
+        Ok(config) => config,
+        Err(error) => {
+            tracing::error!(
+                error_code = error.log_safe_code(),
+                "File Platform runtime configuration is invalid"
+            );
+            std::process::exit(1);
+        }
+    };
+    let file_platform = Arc::new(FilePlatform::with_config(
         storage_provider,
-        Arc::new(modules::files::malware_scanner::ClamdScanner::new(
-            scanner_config,
-        )),
+        Arc::new(ClamdScanner::new(scanner_config)),
         file_runtime_config,
     ));
 
-    let session_config = match modules::auth::config::SessionConfig::from_env() {
+    let session_config = match school_auth::config::SessionConfig::from_env() {
         Ok(config) => Arc::new(config),
         Err(_) => {
             tracing::error!(reason = "session_config_invalid");
@@ -192,9 +195,11 @@ async fn main() {
         }
     };
     let permission_cache = Arc::new(PermissionCache::new());
-    let auth_runtime = modules::auth::runtime::AuthRuntime {
+    let identity_cache = Arc::new(school_auth::session_cache::SessionCache::new());
+    let auth_runtime = school_auth::runtime::AuthRuntime {
         admin_client: Arc::clone(&admin_client),
         pool_manager: Arc::clone(&pool_manager),
+        identity_cache,
         permission_cache: Arc::clone(&permission_cache),
         config: session_config,
         session_events: session_event_tx,
@@ -211,7 +216,7 @@ async fn main() {
         permission_cache,
         file_platform,
         certificate_verification_limiter: Arc::new(
-            modules::certificates::verification_limiter::CertificateVerificationLimiter::new(),
+            school_certificates::verification_limiter::CertificateVerificationLimiter::new(),
         ),
         auth_runtime,
     };

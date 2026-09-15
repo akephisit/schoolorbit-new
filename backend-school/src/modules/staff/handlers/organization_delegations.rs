@@ -9,32 +9,14 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::api_response::{ApiErrorResponse, ApiResponse, EmptyData};
-use crate::error::AppError;
-use crate::modules::auth::session_service::AuthenticatedSession;
-use crate::modules::staff::services::organization_delegation_service::{
-    self, DelegatablePermission,
-};
 use crate::policies::organization_access_policy;
 use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
-
-#[derive(Serialize, ToSchema)]
-pub struct DelegationItem {
-    pub id: Uuid,
-    pub from_user_id: Uuid,
-    pub from_user_name: String,
-    pub to_user_id: Uuid,
-    pub to_user_name: String,
-    pub permission_id: Uuid,
-    pub permission_code: String,
-    pub permission_name: String,
-    #[schema(required = true)]
-    pub reason: Option<String>,
-    pub started_at: DateTime<Utc>,
-    #[schema(required = true)]
-    pub expires_at: Option<DateTime<Utc>>,
-}
+use school_auth::session_service::AuthenticatedSession;
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse, EmptyData};
+use school_staff::models::DelegationItem;
+use school_staff::services::organization_delegation_service::{self, DelegatablePermission};
 
 #[derive(Deserialize, ToSchema)]
 pub struct CreateDelegationRequest {
@@ -173,7 +155,7 @@ pub async fn create_delegation(
     .await?;
 
     let user_id = body.to_user_id;
-    state.permission_cache.invalidate_user(&tenant, user_id);
+    state.invalidate_permission_user(&tenant, user_id);
     state.notify_permission_changed(&tenant, user_id);
 
     Ok(Json(ApiResponse::ok(DelegationIdData { delegation_id: id })).into_response())
@@ -223,7 +205,7 @@ pub async fn revoke_delegation(
     }
 
     organization_delegation_service::revoke_delegation(&pool, delegation_id).await?;
-    state.permission_cache.invalidate_user(&tenant, to_user_id);
+    state.invalidate_permission_user(&tenant, to_user_id);
     state.notify_permission_changed(&tenant, to_user_id);
 
     Ok(Json(ApiResponse::empty()).into_response())

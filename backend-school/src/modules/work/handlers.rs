@@ -8,17 +8,16 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::api_response::ApiResponse;
-use crate::error::AppError;
-use crate::modules::auth::session_service::AuthenticatedSession;
-use crate::modules::work::services::{
-    self, CreateWorkItemInput, WorkItem, WorkItemAssigneeTargetInput, WorkItemFilter,
-    WorkItemMetadata, WorkItemState,
-};
-use crate::modules::workflow;
-use crate::policies::workflow_access_policy;
 use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
+use school_auth::session_service::AuthenticatedSession;
+use school_http::ApiResponse;
+use school_http::HttpError as AppError;
+use school_workflow::work::{
+    self as services, CreateWorkItemInput, WorkItem, WorkItemAssigneeTargetInput, WorkItemFilter,
+    WorkItemMetadata, WorkItemState,
+};
+use school_workflow::{policy as workflow_access_policy, workflow};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -90,8 +89,7 @@ pub async fn create_work_item(
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let window =
-        workflow::services::get_workflow_window(&context.tenant.pool, payload.workflow_window_id)
-            .await?;
+        workflow::get_workflow_window(&context.tenant.pool, payload.workflow_window_id).await?;
     workflow_access_policy::require_workflow_window_manage_permission(
         &context.actor,
         &window.managed_by_permission,

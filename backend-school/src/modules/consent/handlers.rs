@@ -9,14 +9,14 @@ use axum::{
 use serde::Serialize;
 use uuid::Uuid;
 
-use crate::api_response::ApiResponse;
-use crate::error::AppError;
-use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::modules::consent::models::CreateConsentRequest;
 use crate::modules::consent::services::{self as consent_service, ConsentRequestContext};
 use crate::utils::request_context::current_user_tenant_context_from_session;
 use crate::utils::tenant::tenant_pool;
 use crate::AppState;
+use school_auth::session_service::AuthenticatedSession;
+use school_http::ApiResponse;
+use school_http::HttpError as AppError;
 
 #[derive(Debug, Serialize)]
 struct CreateConsentData {

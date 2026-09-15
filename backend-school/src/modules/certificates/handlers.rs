@@ -1,3 +1,41 @@
+use school_certificates::{
+    models::{
+        AttachCertificateAssetRequest, AttachCertificateBackgroundRequest,
+        CertificateAccountSearchQuery, CertificateCampaignDetail, CertificateCampaignListQuery,
+        CertificateCampaignPurgeImpact, CertificateCampaignPurgeStatus, CertificateCampaignSummary,
+        CertificateCandidateAccount, CertificateCandidateBulkRequest,
+        CertificateCandidateBulkResult, CertificateCandidateDetail,
+        CertificateCandidateImportResult, CertificateCandidateListQuery,
+        CertificateCandidateListResponse, CertificateImportRequest, CertificateIssueRequestDetail,
+        CertificateIssueRequestListQuery, CertificateIssueRequestSummary,
+        CertificatePreviewManifestRequest, CertificateRenderManifest,
+        CertificateRenderManifestBatchRequest, CertificateResourceLockCode,
+        CertificateResourceLocked, CertificateTemplateDeleteResult, CertificateTemplateDetail,
+        CertificateTemplateVariableCatalog, ChangeCertificateCampaignStatusRequest,
+        CreateAccountCertificateCandidateRequest, CreateCertificateCampaignRequest,
+        CreateCertificateTemplateRequest, CreateManualExternalCandidateRequest,
+        IssueCertificateOutcome, IssueCertificateRequest, IssuedCertificateDetail,
+        IssuedCertificateListQuery, IssuedCertificateSummary, ManualCertificateVerificationRequest,
+        PublicCertificateRenderRequest, PublicCertificateVerificationData,
+        QrCertificateVerificationRequest, ReturnCertificateIssueRequest, RevokeCertificateRequest,
+        RevokeCertificateResult, StartCertificateCampaignPurgeRequest,
+        SubmitCertificateIssueRequest, UpdateCertificateCampaignRequest,
+        UpdateCertificateCandidateRequest, UpdateCertificateTemplateRequest,
+    },
+    services::{
+        campaign_service, candidate_service, issuance_service, purge_service, render_service,
+        request_service, template_service, verification_service,
+    },
+};
+use school_errors::AppError as DomainError;
+use school_fonts::models::{
+    AttachSchoolFontBatchRequest, InspectSchoolFontUploadsRequest, SchoolFontListResponse,
+    SchoolFontUploadInspection,
+};
+use school_http::HttpError as AppError;
+use school_http::{
+    ApiErrorResponse, ApiErrorResponseWithData, ApiErrorResponseWithOptionalData, ApiResponse,
+};
 use std::net::SocketAddr;
 
 use axum::{
@@ -6,59 +44,68 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use school_auth::session_service::AuthenticatedSession;
 use uuid::Uuid;
 
 use crate::{
-    api_response::{ApiErrorResponse, ApiErrorResponseWithOptionalData, ApiResponse},
-    error::AppError,
     modules::{
-        auth::session_service::AuthenticatedSession,
-        certificates::{
-            models::{
-                AttachCertificateAssetRequest, AttachCertificateBackgroundRequest,
-                CertificateAccountSearchQuery, CertificateCampaignDetail,
-                CertificateCampaignListQuery, CertificateCampaignPurgeImpact,
-                CertificateCampaignPurgeStatus, CertificateCampaignSummary,
-                CertificateCandidateAccount, CertificateCandidateBulkRequest,
-                CertificateCandidateBulkResult, CertificateCandidateDetail,
-                CertificateCandidateImportResult, CertificateCandidateListQuery,
-                CertificateCandidateListResponse, CertificateImportRequest,
-                CertificateIssueRequestDetail, CertificateIssueRequestListQuery,
-                CertificateIssueRequestSummary, CertificatePreviewManifestRequest,
-                CertificateRenderManifest, CertificateRenderManifestBatchRequest,
-                CertificateResourceLocked, CertificateTemplateDeleteResult,
-                CertificateTemplateDetail, CertificateTemplateVariableCatalog,
-                ChangeCertificateCampaignStatusRequest, CreateAccountCertificateCandidateRequest,
-                CreateCertificateCampaignRequest, CreateCertificateTemplateRequest,
-                CreateManualExternalCandidateRequest, IssueCertificateOutcome,
-                IssueCertificateRequest, IssuedCertificateDetail, IssuedCertificateListQuery,
-                IssuedCertificateSummary, ManualCertificateVerificationRequest,
-                PublicCertificateRenderRequest, PublicCertificateVerificationData,
-                QrCertificateVerificationRequest, ReturnCertificateIssueRequest,
-                RevokeCertificateRequest, RevokeCertificateResult,
-                StartCertificateCampaignPurgeRequest, SubmitCertificateIssueRequest,
-                UpdateCertificateCampaignRequest, UpdateCertificateCandidateRequest,
-                UpdateCertificateTemplateRequest,
-            },
-            services::{
-                campaign_service, candidate_service, issuance_service, purge_service,
-                render_service, request_service, template_service, verification_service,
-            },
-        },
-        files::consumer_service::request_deletions,
-        lookup::models::OrganizationUnitLookupItem,
-        school_fonts::models::{
-            AttachSchoolFontBatchRequest, InspectSchoolFontUploadsRequest, SchoolFontListResponse,
-            SchoolFontUploadInspection,
-        },
+        files::consumer_service::request_deletions, lookup::models::OrganizationUnitLookupItem,
     },
-    permissions::registry::codes,
     utils::{
         client_address::client_address, request_context::actor_tenant_context_from_session,
         tenant::tenant_context,
     },
     AppState,
 };
+use school_permissions::registry::codes;
+
+#[derive(Debug)]
+pub(crate) enum CertificateHttpError {
+    Application(AppError),
+    ResourceLocked { request_id: Option<Uuid> },
+}
+
+impl From<AppError> for CertificateHttpError {
+    fn from(error: AppError) -> Self {
+        Self::Application(error)
+    }
+}
+
+impl From<DomainError> for CertificateHttpError {
+    fn from(error: DomainError) -> Self {
+        Self::Application(error.into())
+    }
+}
+
+impl From<request_service::CertificateServiceError> for CertificateHttpError {
+    fn from(error: request_service::CertificateServiceError) -> Self {
+        match error {
+            request_service::CertificateServiceError::Application(error) => error.into(),
+            request_service::CertificateServiceError::ResourceLocked { request_id } => {
+                Self::ResourceLocked { request_id }
+            }
+        }
+    }
+}
+
+impl IntoResponse for CertificateHttpError {
+    fn into_response(self) -> axum::response::Response {
+        match self {
+            Self::Application(error) => error.into_response(),
+            Self::ResourceLocked { request_id } => (
+                StatusCode::CONFLICT,
+                Json(ApiErrorResponseWithData::new(
+                    "ทรัพยากรนี้อยู่ในคำขอออกเกียรติบัตรที่กำลังตรวจสอบ",
+                    CertificateResourceLocked {
+                        code: CertificateResourceLockCode::ResourceLocked,
+                        request_id,
+                    },
+                )),
+            )
+                .into_response(),
+        }
+    }
+}
 
 pub(crate) struct PublicCertificateError(AppError);
 
@@ -68,10 +115,16 @@ impl From<AppError> for PublicCertificateError {
     }
 }
 
+impl From<DomainError> for PublicCertificateError {
+    fn from(error: DomainError) -> Self {
+        Self(error.into())
+    }
+}
+
 impl IntoResponse for PublicCertificateError {
     fn into_response(self) -> axum::response::Response {
-        match self.0 {
-            AppError::RateLimited {
+        match self.0.as_domain() {
+            DomainError::RateLimited {
                 retry_after_seconds,
             } => {
                 let mut response = (
@@ -81,11 +134,11 @@ impl IntoResponse for PublicCertificateError {
                     .into_response();
                 response.headers_mut().insert(
                     RETRY_AFTER,
-                    HeaderValue::from(retry_after_seconds.clamp(1, 30)),
+                    HeaderValue::from((*retry_after_seconds).clamp(1, 30)),
                 );
                 response
             }
-            error => error.into_response(),
+            _ => self.0.into_response(),
         }
     }
 }
@@ -386,7 +439,7 @@ pub async fn update_certificate_campaign(
     Extension(session): Extension<AuthenticatedSession>,
     Path(campaign_id): Path<Uuid>,
     Json(payload): Json<UpdateCertificateCampaignRequest>,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<impl IntoResponse, CertificateHttpError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let campaign = campaign_service::update_campaign(
         &context.tenant.pool,
@@ -419,7 +472,7 @@ pub async fn change_certificate_campaign_status(
     Extension(session): Extension<AuthenticatedSession>,
     Path(campaign_id): Path<Uuid>,
     Json(payload): Json<ChangeCertificateCampaignStatusRequest>,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<impl IntoResponse, CertificateHttpError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let campaign = campaign_service::change_campaign_status(
         &context.tenant.pool,
@@ -556,6 +609,22 @@ pub async fn list_certificate_owner_options(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let options =
         campaign_service::list_owner_options(&context.tenant.pool, &context.actor).await?;
+    let options = options
+        .into_iter()
+        .map(|option| OrganizationUnitLookupItem {
+            id: option.id,
+            code: option.code,
+            name: option.name,
+            name_en: option.name_en,
+            description: option.description,
+            category: option.category,
+            display_order: option.display_order,
+            is_active: option.is_active,
+            parent_unit_id: option.parent_unit_id,
+            unit_type: option.unit_type,
+            subject_group_id: option.subject_group_id,
+        })
+        .collect::<Vec<_>>();
     Ok((StatusCode::OK, Json(ApiResponse::ok(options))).into_response())
 }
 
@@ -660,7 +729,7 @@ pub async fn update_certificate_template(
     Extension(session): Extension<AuthenticatedSession>,
     Path(template_id): Path<Uuid>,
     Json(payload): Json<UpdateCertificateTemplateRequest>,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<impl IntoResponse, CertificateHttpError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let outcome = template_service::update_template(
         &context.tenant.pool,
@@ -696,7 +765,7 @@ pub async fn delete_certificate_template(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(template_id): Path<Uuid>,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<impl IntoResponse, CertificateHttpError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let outcome =
         template_service::delete_template(&context.tenant.pool, &context.actor, template_id)
@@ -730,7 +799,7 @@ pub async fn attach_certificate_template_background(
     Extension(session): Extension<AuthenticatedSession>,
     Path(template_id): Path<Uuid>,
     Json(payload): Json<AttachCertificateBackgroundRequest>,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<impl IntoResponse, CertificateHttpError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let outcome = template_service::attach_background(
         &context.tenant.pool,
@@ -768,7 +837,7 @@ pub async fn attach_certificate_template_asset(
     Extension(session): Extension<AuthenticatedSession>,
     Path(template_id): Path<Uuid>,
     Json(payload): Json<AttachCertificateAssetRequest>,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<impl IntoResponse, CertificateHttpError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let template =
         template_service::attach_asset(&context.tenant.pool, &context.actor, template_id, payload)
@@ -884,7 +953,7 @@ pub async fn delete_certificate_template_asset(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path((template_id, asset_id)): Path<(Uuid, Uuid)>,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<impl IntoResponse, CertificateHttpError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let outcome =
         template_service::delete_asset(&context.tenant.pool, &context.actor, template_id, asset_id)
@@ -1151,7 +1220,7 @@ pub async fn bulk_update_certificate_candidates(
     Extension(session): Extension<AuthenticatedSession>,
     Path(campaign_id): Path<Uuid>,
     Json(payload): Json<CertificateCandidateBulkRequest>,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<impl IntoResponse, CertificateHttpError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let candidates = candidate_service::bulk_update_for_campaign(
         &context.tenant.pool,
@@ -1209,7 +1278,7 @@ pub async fn update_certificate_candidate(
     Extension(session): Extension<AuthenticatedSession>,
     Path(candidate_id): Path<Uuid>,
     Json(payload): Json<UpdateCertificateCandidateRequest>,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<impl IntoResponse, CertificateHttpError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let candidate = candidate_service::update_candidate(
         &context.tenant.pool,
@@ -1239,7 +1308,7 @@ pub async fn delete_certificate_candidate(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(candidate_id): Path<Uuid>,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<impl IntoResponse, CertificateHttpError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let candidate =
         candidate_service::delete_candidate(&context.tenant.pool, &context.actor, candidate_id)
@@ -1284,7 +1353,7 @@ pub async fn list_certificate_campaign_issue_requests(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Exact-scope certificate submit permission denied", body = ApiErrorResponse),
         (status = 404, description = "Campaign or selected candidate not found", body = ApiErrorResponse),
-        (status = 409, description = "Selected candidate is already locked", body = crate::api_response::ApiErrorResponseWithData<CertificateResourceLocked>),
+        (status = 409, description = "Selected candidate is already locked", body = school_http::ApiErrorResponseWithData<CertificateResourceLocked>),
         (status = 422, description = "Campaign or selected candidate is not ready", body = ApiErrorResponse)
     )
 )]
@@ -1293,7 +1362,7 @@ pub async fn submit_certificate_issue_request(
     Extension(session): Extension<AuthenticatedSession>,
     Path(campaign_id): Path<Uuid>,
     Json(payload): Json<SubmitCertificateIssueRequest>,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<impl IntoResponse, CertificateHttpError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let request = request_service::submit_issue_request(
         &context.tenant.pool,
@@ -1661,9 +1730,41 @@ mod tests {
         error: String,
     }
 
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct TestResourceLockedData {
+        code: String,
+        request_id: Option<Uuid>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct TestResourceLockedResponse {
+        success: bool,
+        error: String,
+        data: TestResourceLockedData,
+    }
+
+    #[tokio::test]
+    async fn certificate_resource_lock_mapping_preserves_the_wire_contract() {
+        let request_id = Uuid::new_v4();
+        let response =
+            CertificateHttpError::from(request_service::CertificateServiceError::ResourceLocked {
+                request_id: Some(request_id),
+            })
+            .into_response();
+
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        let body = to_bytes(response.into_body(), 4_096).await.unwrap();
+        let payload: TestResourceLockedResponse = serde_json::from_slice(&body).unwrap();
+        assert!(!payload.success);
+        assert_eq!(payload.error, "ทรัพยากรนี้อยู่ในคำขอออกเกียรติบัตรที่กำลังตรวจสอบ");
+        assert_eq!(payload.data.code, "resource_locked");
+        assert_eq!(payload.data.request_id, Some(request_id));
+    }
+
     #[tokio::test]
     async fn public_rate_limit_keeps_retry_metadata_but_uses_the_generic_failure_body() {
-        let response = PublicCertificateError::from(AppError::RateLimited {
+        let response = PublicCertificateError::from(DomainError::RateLimited {
             retry_after_seconds: 17,
         })
         .into_response();

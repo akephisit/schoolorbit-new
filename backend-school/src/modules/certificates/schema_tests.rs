@@ -3,12 +3,10 @@ use std::{borrow::Cow, fs, path::Path};
 use sqlx::{migrate::Migrator, PgPool};
 use uuid::Uuid;
 
-use crate::{
-    modules::academic::cutover_test_support::{
-        apply_migrations_through, seed_academic_cutover_fixture, CutoverFixture,
-    },
-    test_helpers::{create_named_test_pool, create_test_user},
+use crate::modules::academic::cutover_test_support::{
+    apply_migrations_through, seed_academic_cutover_fixture, CutoverFixture,
 };
+use school_test_db::{create_named_test_pool, create_test_user};
 
 #[test]
 fn certificate_migration_is_forward_only_and_complete() {
@@ -438,7 +436,7 @@ async fn run_certificate_test_migrations(pool: &PgPool) {
     apply_migrations_through(pool, 44)
         .await
         .expect("apply certificate academic cutover migrations");
-    crate::utils::permission_sync::sync_permissions(pool)
+    school_migrations::sync_permissions(pool)
         .await
         .expect("sync certificate fixture permissions");
 }

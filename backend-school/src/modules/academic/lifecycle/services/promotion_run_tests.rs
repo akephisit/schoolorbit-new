@@ -1,12 +1,10 @@
 use super::*;
-use crate::{
-    modules::academic::{
-        core,
-        cutover_test_support::apply_migrations_through,
-        lifecycle::models::{PromotionRuleInput, PromotionRunStatus, PromotionSuccessOutcome},
-    },
-    permissions::registry::codes,
+use crate::modules::academic::{
+    core,
+    cutover_test_support::apply_migrations_through,
+    lifecycle::models::{PromotionRuleInput, PromotionRunStatus, PromotionSuccessOutcome},
 };
+use school_permissions::registry::codes;
 use uuid::Uuid;
 
 pub(crate) async fn fixture(name: &str) -> (PgPool, ActorContext, CreatePromotionRunInput) {

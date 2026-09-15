@@ -1,10 +1,10 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::error::AppError;
-use crate::middleware::permission::ActorContext;
-use crate::modules::staff::services::organization_delegation_service;
-use crate::permissions::registry::codes;
+use school_authorization::ActorContext;
+use school_errors::AppError;
+use school_permissions::registry::codes;
+use school_staff::services::organization_delegation_service;
 
 pub async fn can_approve_organization_work(
     pool: &PgPool,

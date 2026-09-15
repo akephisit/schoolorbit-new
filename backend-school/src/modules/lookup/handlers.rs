@@ -6,22 +6,22 @@ use axum::{
 };
 use uuid::Uuid;
 
-use crate::api_response::{ApiErrorResponse, ApiResponse};
-use crate::error::AppError;
-use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::modules::facility::models::Room;
 use crate::modules::lookup::models::{
-    AcademicLookupQuery, AcademicYearLookupItem, GradeLevelLookupItem, HomeroomLookupItem,
-    LookupItem, LookupQuery, OrganizationUnitLookupItem, RoleLookupItem, StaffLookupItem,
-    StudentLookupItem,
+    AcademicLookupQuery, HomeroomLookupItem, LookupItem, LookupQuery, OrganizationUnitLookupItem,
+    RoleLookupItem, StaffLookupItem, StudentLookupItem,
 };
 use crate::modules::lookup::services as lookup_service;
-use crate::permissions::registry::codes;
 use crate::utils::request_context::{
     actor_tenant_context_from_session, current_user_tenant_context_from_session,
     CurrentUserTenantContext,
 };
 use crate::AppState;
+use school_academic_core::models::{AcademicYearLookupItem, GradeLevelLookupItem};
+use school_auth::session_service::AuthenticatedSession;
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse};
+use school_permissions::registry::codes;
 
 async fn active_lookup_context(
     session: &AuthenticatedSession,

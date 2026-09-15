@@ -1,12 +1,11 @@
-use super::super::promotion_run_review::{
+use super::promotion_approval::intent_checksum;
+use super::promotion_run_review::{
     review_item,
     tests::{hold, ready_run},
 };
 use super::*;
-use crate::{
-    modules::academic::results::{models as rm, services as rs},
-    permissions::registry::codes,
-};
+use crate::modules::academic::results::{models as rm, services as rs};
+use school_permissions::registry::codes;
 
 fn approver(actor: &ActorContext) -> ActorContext {
     ActorContext {
@@ -40,7 +39,7 @@ async fn promotion_approval_request_collision_with_calculation_is_a_conflict_not
     let approved = approve_run(&pool, &actor, calc.run.id, input.clone())
         .await
         .unwrap();
-    let calculate_collision = super::super::calculate_run(
+    let calculate_collision = super::calculate_run(
         &pool,
         &reviewer,
         calc.run.id,

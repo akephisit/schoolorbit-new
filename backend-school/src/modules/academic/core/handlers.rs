@@ -8,11 +8,6 @@ use chrono::Utc;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::api_response::{ApiErrorResponse, ApiResponse, EmptyData};
-use crate::error::AppError;
-use crate::middleware::permission::ActorContext;
-use crate::modules::auth::session_service::AuthenticatedSession;
-use crate::permissions::registry::codes;
 use crate::policies::{
     academic_catalog_access_policy::{self, CatalogAction, CatalogResourceRef},
     academic_curriculum_access_policy::{self, CurriculumAction},
@@ -21,9 +16,14 @@ use crate::scheduling::SCHOOL_TIMEZONE;
 use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::utils::tenant::tenant_context;
 use crate::AppState;
+use school_auth::session_service::AuthenticatedSession;
+use school_authorization::ActorContext;
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse, EmptyData};
+use school_permissions::registry::codes;
 
-use super::models::*;
-use super::services::{
+use school_academic_core::models::*;
+use school_academic_core::services::{
     bell_schedules, catalog, context, curriculum, curriculum_structure, progressions,
     student_years, workspaces, years_terms,
 };

@@ -1,3 +1,4 @@
+pub(crate) mod assessment_adapter;
 pub mod core;
 #[cfg(test)]
 pub mod cutover_test_preflight;
@@ -10,8 +11,10 @@ pub mod gradebook;
 pub mod handlers;
 pub mod learner_evaluation;
 pub mod lifecycle;
+pub(crate) mod lifecycle_provider_adapter;
 pub mod models;
 pub mod reconciliation;
+pub(crate) mod result_lock_adapter;
 pub mod results;
 pub mod services;
 pub mod websockets;

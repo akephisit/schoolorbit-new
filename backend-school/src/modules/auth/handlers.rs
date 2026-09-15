@@ -1,8 +1,3 @@
-use super::models::{ProfileResponse, UpdateProfileRequest};
-use super::services;
-use crate::api_response::{ApiErrorResponse, ApiResponse};
-use crate::error::AppError;
-use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::utils::request_context::current_user_tenant_context_from_session;
 use crate::AppState;
 use axum::{
@@ -11,6 +6,15 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use school_auth::{
+    models::{ProfileResponse, UpdateProfileRequest},
+    services,
+    session_service::AuthenticatedSession,
+};
+
+use super::profile_orchestrator;
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse};
 
 /// Get full profile handler (GET /me/profile).
 #[utoipa::path(
@@ -63,16 +67,9 @@ pub async fn update_profile(
     let pool = context.tenant.pool;
     let user_id = context.user_id;
 
-    let result = services::update_profile(&pool, user_id, payload).await?;
-    if let Some(file_id) = result.replaced_file_id {
-        crate::modules::files::consumer_service::request_deletions(
-            state.file_platform.as_ref(),
-            &pool,
-            [file_id],
-        )
-        .await?;
-    }
-    let user = result.user;
+    let user =
+        profile_orchestrator::update_profile(state.file_platform.as_ref(), &pool, user_id, payload)
+            .await?;
     let primary_role_name = services::get_primary_role_name(&pool, user.id).await?;
 
     let mut profile_response = ProfileResponse::from(user);

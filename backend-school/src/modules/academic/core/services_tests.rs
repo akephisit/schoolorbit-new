@@ -1,4 +1,9 @@
-use super::models::{
+use crate::modules::academic::cutover_test_support::{
+    apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
+    CutoverFixture,
+};
+use chrono::{NaiveDate, NaiveTime};
+use school_academic_core::models::{
     AcademicTermStatus, AcademicTermType, AcademicYearStatus, BellSchedulePeriodInput,
     CatalogDisplayState, CloneCurriculumVersionRequest, CreateAcademicTermRequest,
     CreateActivityVersionRequest, CreateBellScheduleRequest, CreateCatalogActivityRequest,
@@ -14,21 +19,15 @@ use super::models::{
     UpdateCatalogActivityRequest, UpdateCatalogSubjectRequest, UpdateStudyProgramRequest,
     UpdateSubjectGroupRequest, UpdateSubjectVersionRequest, VersionStatus,
 };
-use super::services::{
+use school_academic_core::services::{
     bell_schedules, catalog, context, curriculum, curriculum_structure, ensure_draft_version,
     ensure_planning_delete, parse_row_version, progressions, student_years,
     validate_canonical_decimal, validate_date_containment, workspaces, years_terms,
 };
-use crate::policies::resource_access_policy::AcademicResourceListFilter;
-use crate::{
-    middleware::permission::ActorContext,
-    modules::academic::cutover_test_support::{
-        apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
-        CutoverFixture,
-    },
-    permissions::registry::codes,
-};
-use chrono::{NaiveDate, NaiveTime};
+use school_authorization::AcademicResourceListFilter;
+use school_authorization::ActorContext;
+use school_http::AppErrorHttpExt;
+use school_permissions::registry::codes;
 use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -38,7 +37,7 @@ const FUTURE_YEAR_ID: Uuid = Uuid::from_u128(0x1000_0000_0000_0000_0000_0000_000
 const DEFAULT_SUBJECT_GROUP_ID: Uuid = Uuid::from_u128(0x783a_4a9d_9ff1_4eac_b370_06b5_8daa_1eb7);
 
 pub(crate) async fn prepare_core_fixture(name: &str) -> PgPool {
-    let pool = crate::test_helpers::create_named_test_pool_with_max_connections(name, 3).await;
+    let pool = school_test_db::create_named_test_pool_with_max_connections(name, 3).await;
     apply_migrations_through(&pool, 40).await.unwrap();
     seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
         .await
@@ -68,10 +67,10 @@ async fn promotion_policy_repeat_progression_accepts_the_same_existing_grade() {
         actor,
         ReplaceGradeProgressionsRequest {
             row_version: 1,
-            progressions: vec![super::models::GradeProgressionInput {
+            progressions: vec![school_academic_core::models::GradeProgressionInput {
                 from_grade_level_id: grade,
                 to_grade_level_id: Some(grade),
-                transition_kind: super::models::GradeProgressionKind::Repeat,
+                transition_kind: school_academic_core::models::GradeProgressionKind::Repeat,
                 curriculum_id: None,
                 is_active: true,
             }],
@@ -133,7 +132,7 @@ async fn lifecycle_student_deactivation_preserves_closed_and_archived_year_histo
         let current_version: i64 = sqlx::query_scalar("SELECT row_version FROM student_academic_years WHERE student_id=$1 AND academic_year_id=$2")
             .bind(student).bind(CURRENT_YEAR_ID).fetch_one(&pool).await.unwrap();
         let actor = fixture_actor(&pool).await;
-        crate::modules::students::services::delete_student(&pool, student, actor)
+        school_students::services::delete_student(&pool, student, actor)
             .await
             .unwrap();
         assert_eq!(
@@ -159,7 +158,7 @@ async fn lifecycle_student_deactivation_ends_future_placements_without_invalid_d
         deactivation_lifecycle_fixture("deactivation_future", "closed", true).await;
     let before = student_year_history(&pool, student, history_year).await;
     let actor = fixture_actor(&pool).await;
-    crate::modules::students::services::delete_student(&pool, student, actor)
+    school_students::services::delete_student(&pool, student, actor)
         .await
         .expect("a future placement must not prevent account deactivation");
     assert_eq!(
@@ -185,12 +184,15 @@ async fn lifecycle_student_deactivation_coordinates_before_user_locks() {
         .fetch_one(&mut *source)
         .await
         .unwrap();
-    super::services::lifecycle_guard::require_year_write_exclusive(&mut source, future.unwrap())
-        .await
-        .unwrap();
+    school_academic_core::services::lifecycle_guard::require_year_write_exclusive(
+        &mut source,
+        future.unwrap(),
+    )
+    .await
+    .unwrap();
     let worker_pool = pool.clone();
     let worker = tokio::spawn(async move {
-        crate::modules::students::services::delete_student(&worker_pool, student, actor).await
+        school_students::services::delete_student(&worker_pool, student, actor).await
     });
     let mut waiting = false;
     for _ in 0..200 {
@@ -243,7 +245,7 @@ async fn lifecycle_student_deactivation_rolls_back_account_and_academic_records_
             .unwrap();
     sqlx::raw_sql("CREATE FUNCTION fail_deactivation_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'DEACTIVATION_TEST_AUDIT_FAILURE'; END $$; CREATE TRIGGER fail_deactivation_audit BEFORE INSERT ON academic_audit_events FOR EACH ROW EXECUTE FUNCTION fail_deactivation_audit();").execute(&pool).await.unwrap();
     assert!(
-        crate::modules::students::services::delete_student(&pool, student, actor)
+        school_students::services::delete_student(&pool, student, actor)
             .await
             .is_err()
     );
@@ -264,7 +266,7 @@ async fn lifecycle_student_deactivation_rolls_back_account_and_academic_records_
         .execute(&pool)
         .await
         .unwrap();
-    crate::modules::students::services::delete_student(&pool, student, actor)
+    school_students::services::delete_student(&pool, student, actor)
         .await
         .unwrap();
     let audits: Vec<(Uuid, serde_json::Value)> = sqlx::query_as("SELECT actor_user_id,payload FROM academic_audit_events WHERE event_code='student_academic_year.withdrawn_for_deactivation' AND entity_id=$1")
@@ -286,7 +288,7 @@ async fn lifecycle_student_deactivation_rolls_back_account_and_academic_records_
 
 #[tokio::test]
 async fn lifecycle_year_advisor_replacement_rejects_closed_years_and_retains_history() {
-    use super::models::ReplaceHomeroomAdvisorsRequest;
+    use school_academic_core::models::ReplaceHomeroomAdvisorsRequest;
     let pool = prepare_core_fixture("lifecycle_year_advisors").await;
     let homeroom: Uuid = sqlx::query_scalar(
         "SELECT id FROM homerooms WHERE academic_year_id=$1 ORDER BY id LIMIT 1",
@@ -315,7 +317,7 @@ async fn lifecycle_year_advisor_replacement_rejects_closed_years_and_retains_his
         )
         .await;
         assert!(
-            matches!(result, Err(crate::error::AppError::Conflict(_))),
+            matches!(result, Err(school_errors::AppError::Conflict(_))),
             "{result:?}"
         );
         assert_eq!(
@@ -393,7 +395,7 @@ async fn lifecycle_year_advisor_replacement_rejects_closed_years_and_retains_his
 
 #[tokio::test]
 async fn lifecycle_guard_rejects_closed_contexts_without_an_admin_override() {
-    use super::services::lifecycle_guard::require_term_write;
+    use school_academic_core::services::lifecycle_guard::require_term_write;
     let pool = prepare_core_fixture("lifecycle_guard_states").await;
     let term: Uuid = sqlx::query_scalar(
         "SELECT id FROM academic_terms WHERE academic_year_id=$1 AND status='active'",
@@ -442,14 +444,12 @@ async fn lifecycle_guard_rejects_closed_contexts_without_an_admin_override() {
 
 #[tokio::test]
 async fn lifecycle_guard_serializes_source_writes_and_transitions_in_both_orders() {
-    use super::services::lifecycle_guard::{
+    use school_academic_core::services::lifecycle_guard::{
         lock_transition, require_term_write, TRANSITION_KEY, TRANSITION_NAMESPACE,
     };
-    let pool = crate::test_helpers::create_named_test_pool_with_max_connections(
-        "lifecycle_guard_locking",
-        2,
-    )
-    .await;
+    let pool =
+        school_test_db::create_named_test_pool_with_max_connections("lifecycle_guard_locking", 2)
+            .await;
     crate::modules::academic::cutover_test_support::seed_release_two_predecessor(&pool)
         .await
         .unwrap();
@@ -519,12 +519,12 @@ async fn lifecycle_guard_serializes_source_writes_and_transitions_in_both_orders
 
 #[tokio::test]
 async fn lifecycle_exclusive_term_writers_serialize_without_shared_lock_upgrades() {
-    use super::services::lifecycle_guard::{require_term_write, require_term_write_exclusive};
-    let pool = crate::test_helpers::create_named_test_pool_with_max_connections(
-        "lifecycle_exclusive_term",
-        2,
-    )
-    .await;
+    use school_academic_core::services::lifecycle_guard::{
+        require_term_write, require_term_write_exclusive,
+    };
+    let pool =
+        school_test_db::create_named_test_pool_with_max_connections("lifecycle_exclusive_term", 2)
+            .await;
     crate::modules::academic::cutover_test_support::seed_release_two_predecessor(&pool)
         .await
         .unwrap();
@@ -554,7 +554,7 @@ async fn lifecycle_exclusive_term_writers_serialize_without_shared_lock_upgrades
         let error = require_term_write_exclusive(&mut second, CURRENT_YEAR_ID, term)
             .await
             .unwrap_err();
-        let crate::error::AppError::DbError(error) = error else {
+        let school_errors::AppError::DbError(error) = error else {
             panic!("expected lock contention");
         };
         assert_eq!(
@@ -933,7 +933,7 @@ async fn published_curriculum_clone_copies_the_complete_structure_into_a_future_
     )
     .await
     .expect_err("stale source row version must be rejected");
-    assert!(matches!(stale, crate::error::AppError::Conflict(_)));
+    assert!(matches!(stale, school_errors::AppError::Conflict(_)));
 
     let cloned = curriculum::clone_version_draft(
         &pool,
@@ -1061,7 +1061,7 @@ async fn published_curriculum_clone_copies_the_complete_structure_into_a_future_
     .expect_err("a draft cannot be cloned as the permanent-change source");
     assert!(matches!(
         draft_source_error,
-        crate::error::AppError::Conflict(_)
+        school_errors::AppError::Conflict(_)
     ));
 }
 
@@ -1321,7 +1321,7 @@ async fn curriculum_term_slots_are_draft_only_and_cannot_remove_a_referenced_slo
         },
     )
     .await;
-    assert!(matches!(removal, Err(crate::error::AppError::Conflict(_))));
+    assert!(matches!(removal, Err(school_errors::AppError::Conflict(_))));
 }
 
 #[test]
@@ -1839,7 +1839,7 @@ async fn future_term_planning_in_active_year_does_not_activate_or_open_windows()
         },
     )
     .await;
-    assert!(matches!(denied, Err(crate::error::AppError::Conflict(_))));
+    assert!(matches!(denied, Err(school_errors::AppError::Conflict(_))));
     assert_eq!(
         years_terms::get_term(&pool, active.id)
             .await
@@ -1904,7 +1904,7 @@ async fn future_term_annual_inclusion_requires_closure_and_repairs_existing_flag
     };
     assert!(matches!(
         years_terms::create_term(&pool, actor, request.clone()).await,
-        Err(crate::error::AppError::ValidationError(_))
+        Err(school_errors::AppError::ValidationError(_))
     ));
     let created = years_terms::create_term(
         &pool,
@@ -1928,7 +1928,7 @@ async fn future_term_annual_inclusion_requires_closure_and_repairs_existing_flag
     };
     assert!(matches!(
         years_terms::update_term(&pool, actor, created.id, invalid_update).await,
-        Err(crate::error::AppError::ValidationError(_))
+        Err(school_errors::AppError::ValidationError(_))
     ));
     // Reproduce an inconsistent pre-067 configuration, then exercise the forward repair.
     sqlx::query("UPDATE academic_terms SET included_in_year_result=true WHERE id=$1")
@@ -1988,7 +1988,7 @@ async fn future_term_configuration_rejects_ready_closing_closed_and_archived_yea
         assert!(
             matches!(
                 years_terms::create_term(&pool, actor, request.clone()).await,
-                Err(crate::error::AppError::Conflict(_))
+                Err(school_errors::AppError::Conflict(_))
             ),
             "{status}"
         );
@@ -2010,14 +2010,14 @@ async fn future_term_configuration_rejects_ready_closing_closed_and_archived_yea
                     }
                 )
                 .await,
-                Err(crate::error::AppError::Conflict(_))
+                Err(school_errors::AppError::Conflict(_))
             ),
             "{status}"
         );
         assert!(
             matches!(
                 years_terms::delete_term(&pool, actor, created.id).await,
-                Err(crate::error::AppError::Conflict(_))
+                Err(school_errors::AppError::Conflict(_))
             ),
             "{status}"
         );
@@ -2348,7 +2348,7 @@ async fn bell_schedule_period_replacement_is_atomic_and_rejects_stale_revisions(
         replacement.row_version = current.row_version;
         assert!(matches!(
             bell_schedules::replace_periods(&pool, actor, schedule.id, replacement).await,
-            Err(crate::error::AppError::Conflict(_))
+            Err(school_errors::AppError::Conflict(_))
         ));
         assert_eq!(
             bell_schedules::get(&pool, schedule.id)
@@ -2367,7 +2367,7 @@ async fn bell_schedule_period_replacement_is_atomic_and_rejects_stale_revisions(
         let current = bell_schedules::get(&pool, schedule.id).await.unwrap();
         let mut replacement = request.clone();
         replacement.row_version = current.row_version;
-        let update = super::models::UpdateBellScheduleRequest {
+        let update = school_academic_core::models::UpdateBellScheduleRequest {
             name: current.name,
             is_default: current.is_default,
             owning_organization_unit_id: current.owning_organization_unit_id,
@@ -2630,7 +2630,7 @@ async fn lifecycle_year_future_student_preparation_preserves_current_year_and_id
     )
     .await;
     assert!(
-        matches!(blocked_placement, Err(crate::error::AppError::Conflict(_))),
+        matches!(blocked_placement, Err(school_errors::AppError::Conflict(_))),
         "{blocked_placement:?}"
     );
     sqlx::query("UPDATE academic_years SET status='planning' WHERE id=$1")
@@ -2690,7 +2690,7 @@ async fn lifecycle_year_future_student_preparation_preserves_current_year_and_id
         student_years::transfer_placement(&pool, actor, placement.id, transfer_request.clone())
             .await;
     assert!(
-        matches!(blocked_transfer, Err(crate::error::AppError::Conflict(_))),
+        matches!(blocked_transfer, Err(school_errors::AppError::Conflict(_))),
         "{blocked_transfer:?}"
     );
     sqlx::query("UPDATE academic_years SET status='planning' WHERE id=$1")
@@ -2887,11 +2887,11 @@ async fn year_relationship_collections_do_not_leak_across_years() {
     let unknown_year_id = Uuid::new_v4();
     assert!(matches!(
         student_years::list_placements_for_year(&pool, unknown_year_id).await,
-        Err(crate::error::AppError::NotFound(_))
+        Err(school_errors::AppError::NotFound(_))
     ));
     assert!(matches!(
         student_years::list_advisors_for_year(&pool, unknown_year_id).await,
-        Err(crate::error::AppError::NotFound(_))
+        Err(school_errors::AppError::NotFound(_))
     ));
 }
 
@@ -2977,11 +2977,11 @@ async fn year_relationship_collections_reject_oversized_workspaces() {
     let placements = student_years::list_placements_for_year(&pool, CURRENT_YEAR_ID).await;
     assert!(matches!(
         advisors,
-        Err(crate::error::AppError::ValidationError(_))
+        Err(school_errors::AppError::ValidationError(_))
     ));
     assert!(matches!(
         placements,
-        Err(crate::error::AppError::ValidationError(_))
+        Err(school_errors::AppError::ValidationError(_))
     ));
 }
 
@@ -3181,7 +3181,7 @@ async fn study_program_options_are_published_effective_and_authorized() {
             },
         )
         .await,
-        Err(crate::error::AppError::NotFound(_))
+        Err(school_errors::AppError::NotFound(_))
     ));
 }
 
@@ -3426,7 +3426,7 @@ async fn activity_catalog_requires_total_hours_before_publishing_a_new_version()
     .await;
     assert!(matches!(
         result,
-        Err(crate::error::AppError::ValidationError(message))
+        Err(school_errors::AppError::ValidationError(message))
             if message.contains("ชั่วโมงรวมต่อภาคเรียน")
     ));
 }
@@ -4265,7 +4265,7 @@ async fn curriculum_management_options_are_published_scoped_and_ordered() {
             &AcademicResourceListFilter::default(),
         )
         .await,
-        Err(crate::error::AppError::Forbidden(_))
+        Err(school_errors::AppError::Forbidden(_))
     ));
 }
 
@@ -4633,7 +4633,7 @@ async fn curriculum_program_workspace_resolves_requirement_labels() {
         };
         assert!(matches!(
             workspaces::setup_workspace(&pool, &incomplete_actor).await,
-            Err(crate::error::AppError::Forbidden(_))
+            Err(school_errors::AppError::Forbidden(_))
         ));
     }
 }

@@ -1,17 +1,15 @@
 use super::super::models::*;
 use super::{bell_schedules, years_terms};
-use crate::{
-    error::AppError,
-    modules::academic::cutover_test_support::{
-        apply_migrations_through, apply_phase_b_runtime_migrations,
-    },
+use crate::modules::academic::cutover_test_support::{
+    apply_migrations_through, apply_phase_b_runtime_migrations,
 };
 use chrono::{Duration, NaiveDate, NaiveTime};
+use school_errors::AppError;
 use sqlx::PgPool;
 use uuid::Uuid;
 
 pub(crate) async fn empty_school(name: &str) -> (PgPool, Uuid) {
-    let pool = crate::test_helpers::create_named_test_pool_with_max_connections(name, 3).await;
+    let pool = school_test_db::create_named_test_pool_with_max_connections(name, 3).await;
     apply_migrations_through(&pool, 40).await.unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
     apply_migrations_through(&pool, 77).await.unwrap();

@@ -1,15 +1,13 @@
+use school_errors::AppError;
 use std::collections::HashMap;
 
 use chrono::{NaiveDate, NaiveTime};
 use sqlx::{FromRow, Postgres, Transaction};
 use uuid::Uuid;
 
-use crate::{
-    error::AppError,
-    modules::academic::lifecycle::models::{
-        TermPreparationContext, TermPreparationMappingKind, TermPreparationModule,
-        TermPreparationModuleOutcome,
-    },
+use school_academic_core::ports::{
+    TermPreparationContext, TermPreparationMappingKind, TermPreparationModule,
+    TermPreparationModuleOutcome,
 };
 
 #[derive(FromRow)]

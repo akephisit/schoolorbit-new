@@ -98,14 +98,14 @@ test('backend auth success handlers return enveloped data', async () => {
 });
 
 test('backend app errors return the shared error envelope', async () => {
-	const errorSource = await readRepoFile('backend-school/src/error.rs');
-	const responseSource = await readRepoFile('backend-school/src/api_response.rs');
+	const errorSource = await readRepoFile('backend-school/crates/school-errors/src/lib.rs');
+	const responseSource = await readRepoFile('backend-school/crates/school-http/src/lib.rs');
 
 	assert.match(responseSource, /struct\s+ApiErrorResponse/);
 	assert.match(responseSource, /success:\s*false/);
 	assert.match(responseSource, /pub\s+error:\s+String/);
-	assert.match(errorSource, /ApiErrorResponse::new\(self\.public_message\(\)\.to_string\(\)\)/);
-	assert.doesNotMatch(errorSource, /json!\s*\(\s*\{/);
+	assert.match(responseSource, /ApiErrorResponse::new\(self\.public_message\(\)\.to_string\(\)\)/);
+	assert.doesNotMatch(errorSource, /\b(?:axum|Json|json!)\b/);
 });
 
 test('frontend API client preserves typed error data on thrown errors', async () => {
@@ -510,15 +510,15 @@ test('API contract CI protects the offline exporter boundary', async () => {
 });
 
 test('user role assignment API contract stays aligned across backend and frontend', async () => {
-	const backendModels = await readRepoFile('backend-school/src/modules/staff/models.rs');
+	const backendModels = await readRepoFile('backend-school/crates/school-staff/src/models.rs');
 	const backendService = await readRepoFile(
-		'backend-school/src/modules/staff/services/user_role_service.rs'
+		'backend-school/crates/school-staff/src/services/user_role_service.rs'
 	);
 	const delegationService = await readRepoFile(
-		'backend-school/src/modules/staff/services/organization_delegation_service.rs'
+		'backend-school/crates/school-staff/src/services/organization_delegation_service.rs'
 	);
 	const staffService = await readRepoFile(
-		'backend-school/src/modules/staff/services/staff_service.rs'
+		'backend-school/crates/school-staff/src/services/staff_service.rs'
 	);
 	const frontendApi = await readRepoFile('frontend-school/src/lib/api/roles.ts');
 	const generated = await readRepoFile('frontend-school/src/lib/api/generated/school-api.ts');
@@ -593,7 +593,7 @@ test('staff dashboard API uses a typed aggregate response scoped to the selected
 	const frontendStaffApi = await readRepoFile('frontend-school/src/lib/api/staff.ts');
 	const generated = await readRepoFile('frontend-school/src/lib/api/generated/school-api.ts');
 	const backendService = await readRepoFile(
-		'backend-school/src/modules/staff/services/dashboard_service.rs'
+		'backend-school/crates/school-staff/src/services/dashboard_service.rs'
 	);
 	const backendHandler = await readRepoFile('backend-school/src/modules/staff/handlers/staff.rs');
 
@@ -625,7 +625,7 @@ test('daily teaching overview API uses typed response contracts', async () => {
 	const generated = await readRepoFile('frontend-school/src/lib/api/generated/school-api.ts');
 	const frontendTimetableApi = await readRepoFile('frontend-school/src/lib/api/timetable.ts');
 	const backendService = await readRepoFile(
-		'backend-school/src/modules/academic/services/daily_teaching_service.rs'
+		'backend-school/crates/school-academic-timetable/src/services/daily_teaching.rs'
 	);
 	const backendHandler = await readRepoFile(
 		'backend-school/src/modules/academic/handlers/timetable_blocks.rs'
@@ -667,16 +667,16 @@ test('admission application detail contract returns application and documents in
 		'backend-school/src/modules/admission/handlers/applications.rs'
 	);
 	const examRoomService = await readRepoFile(
-		'backend-school/src/modules/admission/services/exam_room_service.rs'
+		'backend-school/crates/school-admission/src/services/exam_room_service.rs'
 	);
 	const selectionService = await readRepoFile(
-		'backend-school/src/modules/admission/services/selection_service.rs'
+		'backend-school/crates/school-admission/src/services/selection_service.rs'
 	);
 	const portalService = await readRepoFile(
-		'backend-school/src/modules/admission/services/portal_service.rs'
+		'backend-school/crates/school-admission/src/services/portal_service.rs'
 	);
 	const applicationService = await readRepoFile(
-		'backend-school/src/modules/admission/services/application_service.rs'
+		'backend-school/crates/school-admission/src/services/application_service.rs'
 	);
 	const frontendApi = await readRepoFile('frontend-school/src/lib/api/admission.ts');
 	const portalStatusPage = await readRepoFile(
@@ -1234,7 +1234,7 @@ test('timetable API exposes typed loaded responses and conflict unions without r
 	const timetableApi = await readRepoFile('frontend-school/src/lib/api/timetable.ts');
 	const generated = await readRepoFile('frontend-school/src/lib/api/generated/school-api.ts');
 	const timetableService = await readRepoFile(
-		'backend-school/src/modules/academic/services/timetable_block_service.rs'
+		'backend-school/crates/school-academic-timetable/src/services/timetable_block_service.rs'
 	);
 	const timetablePage = await readRepoFile(
 		'frontend-school/src/routes/(app)/staff/academic/timetable/+page.svelte'

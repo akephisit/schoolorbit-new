@@ -1,32 +1,6 @@
 use sqlx::postgres::PgPoolOptions;
 use std::{env, error::Error, time::Duration};
 
-#[path = "../permissions/registry.rs"]
-pub mod permission_registry;
-
-pub mod permissions {
-    pub use crate::permission_registry as registry;
-}
-
-#[path = "../utils/permission_sync.rs"]
-pub mod permission_sync;
-
-pub mod utils {
-    pub use crate::permission_sync;
-}
-
-#[path = "../db/migration.rs"]
-pub mod migration;
-
-#[cfg(test)]
-pub mod db {
-    pub use crate::migration;
-}
-
-#[cfg(test)]
-#[path = "../test_helpers.rs"]
-mod test_helpers;
-
 type MigrationResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
 #[tokio::main]
@@ -55,7 +29,7 @@ async fn main() -> MigrationResult<()> {
         .connect(&database_url)
         .await?;
 
-    migration::run_tenant_migrations(&pool).await?;
+    school_migrations::run_tenant_migrations(&pool).await?;
     pool.close().await;
 
     Ok(())

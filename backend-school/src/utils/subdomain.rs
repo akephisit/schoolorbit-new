@@ -1,5 +1,5 @@
-use crate::error::AppError;
 use axum::http::HeaderMap;
+use school_errors::AppError;
 use std::collections::HashSet;
 use url::Url;
 

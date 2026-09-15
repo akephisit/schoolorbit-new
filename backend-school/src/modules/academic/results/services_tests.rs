@@ -9,13 +9,14 @@ use crate::modules::academic::{
         },
         services::{groups as delivery_groups, roster_memberships},
     },
-    gradebook::{models as gm, services as gb},
-};
-use crate::{
-    error::AppError, middleware::permission::ActorContext, permissions::registry::codes,
-    test_helpers::create_named_test_pool_with_max_connections,
+    gradebook::{models as gm, services as gradebook_adapter},
 };
 use chrono::NaiveDate;
+use school_academic_assessment::gradebook::services as gb;
+use school_authorization::ActorContext;
+use school_errors::AppError;
+use school_permissions::registry::codes;
+use school_test_db::create_named_test_pool_with_max_connections;
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -278,7 +279,7 @@ async fn prepare_phases(
         let ws = gb::get_group_phase_workspace(pool, actor, group, phase, &context)
             .await
             .unwrap();
-        gb::create_item(
+        gradebook_adapter::create_item(
             pool,
             actor,
             group,
@@ -296,7 +297,7 @@ async fn prepare_phases(
         let ws = gb::get_group_phase_workspace(pool, actor, group, phase, &context)
             .await
             .unwrap();
-        gb::confirm_phase(
+        gradebook_adapter::confirm_phase(
             pool,
             actor,
             group,

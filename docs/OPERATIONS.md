@@ -130,10 +130,14 @@ but it cannot avoid every changed-crate compile or the final link. If two ordina
 no useful hits or increase total duration, remove the sccache integration while retaining the pinned
 toolchain, Cargo timing artifact, and BuildKit cache.
 
-School uses plain Cargo for the final binary build: two source-changing CI runs reported zero
-compiler-cache hits and non-cacheable `crate-type` calls. Dependency layers and timing artifacts
-remain enabled. This removes unused compiler-cache machinery; it does not eliminate application
-compilation or promise a faster final link.
+School uses plain Cargo for the final binary build. Two source-changing CI runs before the internal
+workspace split reported zero compiler-cache hits and non-cacheable `crate-type` calls, so that
+evidence does not establish whether the new library crates are worth caching. Dependency layers
+and timing artifacts remain enabled. Do not enable school sccache from local benchmarks alone:
+first observe two ordinary, source-changing, warm CI builds after the workspace graph is stable,
+then enable it only when useful hits also reduce end-to-end duration. Plain Cargo remains canonical
+until that evidence exists; this does not eliminate application compilation or promise a faster
+final link.
 
 The school Dockerfile uses `cargo rustc` with `-C lto=off` only for the final application
 crate to reduce source-changing release build work. Dependencies retain their existing
@@ -237,7 +241,7 @@ Session policy is fixed in backend-school:
 
 Replacement cookies never outlive the remaining absolute lifetime. SSE and WebSocket authentication use touch-only maintenance; the next ordinary request performs any due credential rotation. Login, creation, revocation, rotation failure, CSRF/origin rejection, and realtime disconnect logs use structured event/reason fields. Never log passwords, raw session credentials, cookies, CSRF values, request bodies, or database URLs.
 
-Run exactly one backend-school process: [the session cache](../backend-school/src/modules/auth/session_cache.rs)
+Run exactly one backend-school process: [the session cache](../backend-school/crates/school-auth/src/session_cache.rs)
 and revocation/permission events are process-local. API authentication reuses a successful database
 check for up to 60 seconds, bounded by session expiry and due maintenance. Realtime connections
 share database validation for up to five minutes per tenant/session/user; their 30-second heartbeat
@@ -421,7 +425,7 @@ proxied to the checkpointed Tunnel UUID, direct access to `<target-ip>:9090` fai
 
 Active tenant migrations begin at `backend-school/migrations/001_baseline.sql`. Do not modify an applied migration or hide a checksum mismatch.
 
-New tenant provisioning calls the centralized runner in [`backend-school/src/db/migration.rs`](../backend-school/src/db/migration.rs), applies every pending active migration, and synchronizes the permission contract before creating the tenant administrator.
+New tenant provisioning calls the centralized runner in [`backend-school/crates/school-migrations/src/lib.rs`](../backend-school/crates/school-migrations/src/lib.rs), applies every pending active migration, and synchronizes the permission contract before creating the tenant administrator.
 
 The coordinated school release keeps the school API in maintenance mode while it calls
 `/internal/migrate-all`. It then verifies `/internal/migration-status` reports every tenant at the

@@ -19,7 +19,7 @@ async fn year_lifecycle_closes_current_annual_results_only_after_exact_warning_a
         .unwrap();
     actor
         .permissions
-        .push(crate::permissions::registry::codes::WILDCARD.into());
+        .push(school_permissions::registry::codes::WILDCARD.into());
     sqlx::query("UPDATE academic_terms SET included_in_year_result=(id=$2),status=CASE WHEN id=$2 THEN 'closed' ELSE 'planning' END,closed_on=CASE WHEN id=$2 THEN start_date ELSE NULL END,blocks_year_closure=(id=$2) WHERE academic_year_id=$1").bind(ctx.academic_year_id).bind(ctx.academic_term_id).execute(&pool).await.unwrap();
     let policy = create_aggregate_policy(
         &pool,
@@ -121,7 +121,7 @@ async fn year_lifecycle_closes_current_annual_results_only_after_exact_warning_a
     };
     assert!(matches!(
         year_transitions::transition_year(&pool, &actor, ctx.academic_year_id, input.clone()).await,
-        Err(crate::error::AppError::Conflict(_))
+        Err(school_errors::AppError::Conflict(_))
     ));
     input.acknowledged_warning_codes = vec!["year.optional_terms".into(), "unknown".into()];
     assert!(
@@ -154,7 +154,7 @@ async fn lifecycle_closure_requires_current_complete_aggregates_and_exact_warnin
         .unwrap();
     actor
         .permissions
-        .push(crate::permissions::registry::codes::WILDCARD.into());
+        .push(school_permissions::registry::codes::WILDCARD.into());
     let policy = create_aggregate_policy(
         &pool,
         &actor,
@@ -259,7 +259,7 @@ async fn lifecycle_closure_requires_current_complete_aggregates_and_exact_warnin
     assert_eq!(closed.context.closed_on, request.closed_on);
     let mut tx = pool.begin().await.unwrap();
     assert!(
-        crate::modules::academic::core::services::lifecycle_guard::require_term_write(
+        school_academic_core::services::lifecycle_guard::require_term_write(
             &mut tx,
             ctx.academic_year_id,
             ctx.academic_term_id
@@ -296,7 +296,7 @@ async fn aggregate_batch_providers_preserve_student_boundaries_and_existing_chec
         .await
         .unwrap();
     actor.permissions.push(
-        crate::permissions::registry::codes::ACADEMIC_LEARNER_EVALUATION_MANAGE_SCHOOL.into(),
+        school_permissions::registry::codes::ACADEMIC_LEARNER_EVALUATION_MANAGE_SCHOOL.into(),
     );
     let policy = create_aggregate_policy(
         &pool,
@@ -461,7 +461,7 @@ pub(crate) async fn ready_aggregate_fixture(
     name: &str,
 ) -> (
     sqlx::PgPool,
-    crate::middleware::permission::ActorContext,
+    school_authorization::ActorContext,
     ResultContext,
     Uuid,
 ) {
@@ -473,12 +473,13 @@ pub(crate) async fn ready_aggregate_fixture_with_cohort(
     extra_student: bool,
 ) -> (
     sqlx::PgPool,
-    crate::middleware::permission::ActorContext,
+    school_authorization::ActorContext,
     ResultContext,
     Uuid,
 ) {
     use crate::modules::academic::learner_evaluation::models as lm;
-    use crate::{middleware::permission::ActorContext, permissions::registry::codes};
+    use school_authorization::ActorContext;
+    use school_permissions::registry::codes;
     let (pool, mut actor, ctx, group) = fixture(name).await;
     crate::modules::academic::cutover_test_support::apply_migrations_through(&pool, 66)
         .await
@@ -595,7 +596,7 @@ pub(crate) async fn ready_aggregate_fixture_with_cohort(
 
 #[tokio::test]
 async fn aggregate_revisions_retain_history_retry_safely_and_detect_corrections() {
-    use crate::error::AppError;
+    use school_errors::AppError;
     let (pool, actor, ctx, student) = ready_aggregate_fixture("aggregate_revision_history").await;
     let policy = create_aggregate_policy(
         &pool,
@@ -851,7 +852,7 @@ async fn aggregate_revisions_retain_history_retry_safely_and_detect_corrections(
 
 #[tokio::test]
 async fn aggregate_concurrent_locks_cannot_both_accept_the_same_revision() {
-    use crate::error::AppError;
+    use school_errors::AppError;
     let (pool, actor, ctx, student) = ready_aggregate_fixture("aggregate_concurrent_locks").await;
     let policy = create_aggregate_policy(
         &pool,
@@ -936,7 +937,8 @@ fn aggregate_policy_requires_explicit_valid_thresholds() {
 
 #[tokio::test]
 async fn aggregate_preview_missing_results_cannot_be_locked_even_with_a_hold() {
-    use crate::{error::AppError, permissions::registry::codes};
+    use school_errors::AppError;
+    use school_permissions::registry::codes;
     let (pool, mut actor, ctx, group) = fixture("aggregate_missing_results").await;
     crate::modules::academic::cutover_test_support::apply_migrations_through(&pool, 66)
         .await

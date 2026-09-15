@@ -6,7 +6,10 @@ on:
       - "contracts/permissions*.json"
       - "scripts/generate-permissions.mjs"
       - "scripts/tests/generate-permissions.test.mjs"
-      - "backend-school/src/permissions/registry*.rs"
+      - "backend-school/crates/school-permissions/**"
+      - "backend-school/crates/school-migrations/**"
+      - "backend-school/Cargo.toml"
+      - "backend-school/Cargo.lock"
       - "backend-school/tests/static_architecture.rs"
       - "frontend-school/src/lib/permissions/registry*.ts"
       - "frontend-school/tests/static/**"
@@ -20,7 +23,10 @@ on:
       - "contracts/permissions*.json"
       - "scripts/generate-permissions.mjs"
       - "scripts/tests/generate-permissions.test.mjs"
-      - "backend-school/src/permissions/registry*.rs"
+      - "backend-school/crates/school-permissions/**"
+      - "backend-school/crates/school-migrations/**"
+      - "backend-school/Cargo.toml"
+      - "backend-school/Cargo.lock"
       - "backend-school/tests/static_architecture.rs"
       - "frontend-school/src/lib/permissions/registry*.ts"
       - "frontend-school/tests/static/**"
@@ -86,7 +92,7 @@ jobs:
 
       - name: Check backend
         working-directory: backend-school
-        run: cargo check --bin backend-school
+        run: cargo check --workspace --all-targets
 
       - name: Test backend architecture
         working-directory: backend-school

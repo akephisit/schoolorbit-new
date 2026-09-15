@@ -6,18 +6,32 @@ use axum::{
 };
 use uuid::Uuid;
 
-use super::models::{
+use crate::policies::{resource_access_policy::UserResourceListAccess, student_access_policy};
+use crate::utils::request_context::actor_tenant_context_from_session;
+use crate::AppState;
+use school_auth::session_service::AuthenticatedSession;
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse};
+use school_permissions::registry::codes;
+use school_students::models::{
     CreateStudentRequest, ListStudentsQuery, StudentAcademicYearQuery, StudentProfile,
     UpdateOwnProfileRequest, UpdateStudentRequest,
 };
-use super::services as student_service;
-use crate::api_response::{ApiErrorResponse, ApiResponse};
-use crate::error::AppError;
-use crate::modules::auth::session_service::AuthenticatedSession;
-use crate::permissions::registry::codes;
-use crate::policies::student_access_policy;
-use crate::utils::request_context::actor_tenant_context_from_session;
-use crate::AppState;
+use school_students::services::{self as student_service, StudentListAccess};
+
+fn student_list_access(access: UserResourceListAccess) -> StudentListAccess {
+    match access {
+        UserResourceListAccess::Own(user_id) => StudentListAccess::Own(user_id),
+        UserResourceListAccess::Assigned(user_id) => StudentListAccess::Assigned(user_id),
+        UserResourceListAccess::OrganizationUnit(user_id) => {
+            StudentListAccess::OrganizationUnit(user_id)
+        }
+        UserResourceListAccess::OrganizationTree(user_id) => {
+            StudentListAccess::OrganizationTree(user_id)
+        }
+        UserResourceListAccess::School => StudentListAccess::School,
+    }
+}
 
 /// GET /api/student/profile - นักเรียนดูข้อมูลตนเอง
 #[utoipa::path(
@@ -59,7 +73,7 @@ pub async fn get_own_profile(
     tag = "student",
     request_body = UpdateOwnProfileRequest,
     responses(
-        (status = 200, description = "Current student profile updated", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 200, description = "Current student profile updated", body = ApiResponse<school_http::EmptyData>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Student profile access denied", body = ApiErrorResponse)
     )
@@ -88,7 +102,7 @@ pub async fn update_own_profile(
     tag = "student",
     params(ListStudentsQuery),
     responses(
-        (status = 200, description = "Students in the selected academic year", body = ApiResponse<crate::modules::students::models::StudentListResponse>),
+        (status = 200, description = "Students in the selected academic year", body = ApiResponse<school_students::models::StudentListResponse>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Student list access denied", body = ApiErrorResponse)
     )
@@ -103,7 +117,8 @@ pub async fn list_students(
     let actor = context.actor;
     let access = student_access_policy::resolve_student_list_access(&actor)?;
 
-    let students = student_service::list_students(&pool, filter, access).await?;
+    let students =
+        student_service::list_students(&pool, filter, student_list_access(access)).await?;
 
     Ok((StatusCode::OK, Json(ApiResponse::ok(students))))
 }
@@ -116,7 +131,7 @@ pub async fn list_students(
     tag = "student",
     request_body = CreateStudentRequest,
     responses(
-        (status = 201, description = "Student created", body = ApiResponse<crate::modules::students::models::CreateStudentResponse>),
+        (status = 201, description = "Student created", body = ApiResponse<school_students::models::CreateStudentResponse>),
         (status = 400, description = "Invalid or duplicate student data", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Student creation permission denied", body = ApiErrorResponse)
@@ -186,7 +201,7 @@ pub async fn get_student(
     params(("id" = Uuid, Path, description = "Student user ID")),
     request_body = UpdateStudentRequest,
     responses(
-        (status = 200, description = "Student updated", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 200, description = "Student updated", body = ApiResponse<school_http::EmptyData>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Student update permission denied", body = ApiErrorResponse),
         (status = 404, description = "Student not found", body = ApiErrorResponse)
@@ -219,7 +234,7 @@ pub async fn update_student(
     tag = "student",
     params(("id" = Uuid, Path, description = "Student user ID")),
     responses(
-        (status = 200, description = "Student deactivated", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 200, description = "Student deactivated", body = ApiResponse<school_http::EmptyData>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Student deletion permission denied", body = ApiErrorResponse),
         (status = 404, description = "Student not found", body = ApiErrorResponse)
@@ -237,7 +252,7 @@ pub async fn delete_student(
     actor.require_permission(codes::STUDENT_DELETE_ALL)?;
 
     student_service::delete_student(&pool, student_id, actor.user_id).await?;
-    state.permission_cache.invalidate_user(&tenant, student_id);
+    state.invalidate_permission_user(&tenant, student_id);
     state.notify_permission_changed(&tenant, student_id);
 
     Ok((

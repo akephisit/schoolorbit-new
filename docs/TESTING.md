@@ -31,27 +31,110 @@ From `backend-school`:
 ```bash
 cargo fmt --all -- --check
 cargo test --test static_architecture
-cargo check
+cargo check --workspace --all-targets
 RUSTFLAGS='-D warnings' cargo check --locked --bin backend-school
 ```
 
-Run focused unit or integration tests for changed modules as well. For API-contract work:
+Run `cargo test -p <package>` for each changed internal crate and focused unit or integration tests
+for changed application modules. For API-contract work:
 
 ```bash
 cargo test api_contract::tests -- --nocapture
 ```
 
+Foundation ownership can be checked independently:
+
+```bash
+cargo test -p school-errors
+cargo test -p school-http
+cargo test -p school-authorization
+cargo test -p school-auth -- --test-threads=8
+cargo test -p school-academic-core -- --test-threads=8
+cargo test -p school-academic-delivery -- --test-threads=8
+cargo test -p school-academic-timetable -- --test-threads=8
+cargo test -p school-academic-assessment -- --test-threads=8
+cargo test -p school-academic-results -- --test-threads=8
+cargo test -p school-academic-lifecycle -- --test-threads=8
+cargo test -p school-workflow
+cargo test -p school-question-bank -- --test-threads=8
+cargo test -p school-admission -- --test-threads=8
+cargo test -p school-supervision -- --test-threads=8
+cargo test -p school-students -- --test-threads=8
+cargo test -p school-staff -- --test-threads=8
+cargo test -p school-calendar -- --test-threads=8
+cargo test -p school-tenancy
+cargo test -p school-file-platform
+cargo test -p school-crypto
+cargo test -p school-fonts -- --test-threads=8
+cargo test -p school-certificates -- --test-threads=8
+cargo test -p school-test-db
+```
+
+`school-test-db` is a development dependency only. Database-backed root tests import its helpers
+directly and still run through `scripts/test_backend_school.sh`; production code and the runtime
+dependency graph must never depend on it. Permission-authority tests must preserve the application
+ordering of session-identity invalidation, permission-cache invalidation, and only then realtime
+notification.
+
+`school-tenancy` owns backend-admin retry behavior and tenant pool/lazy-migration coordination.
+Its package tests include disposable-database coverage through its dev-only `school-test-db` edge;
+normal release dependency trees must expose neither `test-support` nor `school-test-db`.
+
+`school-auth` owns session credentials, policy, persistence, throttling, audit events, the identity
+cache, user-profile domain operations, and the root-independent auth runtime. Its package tests use
+dev-only database and test-support edges. The application package retains Axum handlers,
+cookie/CSRF and origin adapters, File Platform profile-image orchestration, and deliberate
+cross-domain tests such as staff soft-delete followed by session invalidation.
+
+The six `school-academic-*` crates own Core, Delivery, Timetable, Assessment, Results, and
+Lifecycle respectively. Lifecycle and Supervision expose dev-only integration-support features
+only for root tests that intentionally span domain owners; the normal release graph must keep
+those features disabled. The application supplies external readiness, timetable consequence,
+result-lock, notification, cache, and realtime adapters without duplicating crate-owned SQL.
+
+`school-workflow`, `school-question-bank`, `school-admission`, `school-supervision`,
+`school-students`, `school-staff`, and `school-calendar` own their domain models, policies where
+applicable, persistence, business rules, and focused tests. Root keeps HTTP/OpenAPI composition,
+cross-domain deletion and side-effect orchestration, Calendar notification scheduling, and Parent
+aggregate views. Keep database-heavy package suites at no more than eight threads when they share
+a disposable PostgreSQL instance.
+
+`school-file-platform` owns provider-neutral file inspection, purpose/object-key policy, repository,
+storage and malware-scanner implementations, lifecycle operations, runtime configuration, and
+reconciliation. Its package tests exercise canonical migrations through a dev-only
+`school-test-db` edge. Axum handlers, wire models, tenant/actor resolution, cross-domain
+relationships, and cross-domain file authorization remain in the application package.
+
+`school-crypto` is the only application-field encryption and blind-index implementation.
+`school-fonts` owns the school font library and its typed staging relationships.
+`school-certificates` owns certificate policy, layout, issuance, rendering, verification, rate
+limiting, and purge behavior. Their Axum handlers, request context, OpenAPI composition, and
+cross-domain deletion orchestration remain in the application package. Use at most eight test
+threads for the database-heavy font and certificate package suites so concurrent migration
+fixtures do not exhaust the disposable PostgreSQL instance.
+
 The static architecture suite owns backend-only boundaries such as tenant request context, thin handlers, service/database separation, permission invalidation, structured logging, and realtime identity.
 
 ### School session authentication
 
-Session changes require the schema, repository, service, HTTP/middleware, and realtime boundaries—not only a login happy path. From the repository root, use the disposable local PostgreSQL runner:
+Session changes require the schema, repository, service, HTTP/middleware, and realtime
+boundaries—not only a login happy path. From the repository root, run the crate-owned schema,
+repository, cache, and service tests against disposable PostgreSQL:
 
 ```bash
-./scripts/test_backend_school.sh modules::auth::session_schema_tests -- --nocapture
-./scripts/test_backend_school.sh modules::auth::session_repository_tests -- --nocapture
-./scripts/test_backend_school.sh modules::auth::session_service_tests -- --nocapture
+./scripts/test_backend_school.sh --package school-auth session_schema_tests -- --nocapture --test-threads=8
+./scripts/test_backend_school.sh --package school-auth session_repository_tests -- --nocapture --test-threads=8
+./scripts/test_backend_school.sh --package school-auth session_cache_tests -- --nocapture --test-threads=8
+./scripts/test_backend_school.sh --package school-auth session_service_tests -- --nocapture --test-threads=8
+```
+
+From the repository root, use the disposable local PostgreSQL runner for application-owned HTTP,
+realtime, profile/File Platform, and cross-domain behavior:
+
+```bash
 ./scripts/test_backend_school.sh modules::auth::session_http_tests -- --nocapture
+./scripts/test_backend_school.sh modules::auth::profile_integration_tests -- --nocapture
+./scripts/test_backend_school.sh modules::auth::staff_integration_tests -- --nocapture
 ./scripts/test_backend_school.sh modules::academic::websockets::security_tests -- --nocapture
 ```
 
@@ -219,17 +302,30 @@ Never edit an applied migration. Add a new sequential file and test it against i
 Routine backend-school database tests run on the developer's computer. From the repository root:
 
 ```bash
-# Complete backend-school binary suite; PostgreSQL runs in rootless Podman on this computer.
+# Complete root application binary suite; PostgreSQL runs in rootless Podman on this computer.
 ./scripts/test_backend_school.sh
 
 # Focused database-backed test.
-./scripts/test_backend_school.sh \
-  modules::auth::session_repository_tests -- --nocapture
+./scripts/test_backend_school.sh --package school-auth \
+  session_repository_tests -- --nocapture
+
+# Database-backed seed utility test against the same disposable PostgreSQL boundary.
+BACKEND_SCHOOL_TEST_BIN=seed_sandbox ./scripts/test_backend_school.sh \
+  tests::canonical_seed_is_idempotent_across_student_year_and_placement \
+  -- --exact --nocapture --test-threads=1
 ```
 
 The runner requires the local rootless Podman engine and rejects `CONTAINER_HOST` or `CONTAINER_CONNECTION`, so it cannot accidentally select a remote runtime. Cargo and its compilation cache stay on the computer, while PostgreSQL uses a fresh anonymous disk-backed volume so the complete migration-backed suite is not capped by a 5 GiB data tmpfs. Ensure the local Podman storage has sufficient free disk space. The runner removes its uniquely named PostgreSQL container and associated anonymous volume after success, failure, `INT`, `TERM`, or `HUP`; it never reuses a named volume or prunes unrelated resources. An uncatchable termination such as `SIGKILL` or a host crash can leave these test resources behind and requires exact-target cleanup. It replaces any inherited `TEST_DATABASE_URL` only for the Cargo child and never uses `DATABASE_URL`. Direct Cargo against a persistent Neon URL is not the routine test recipe.
 
 Tests continue to isolate their schema/data within the disposable database. The local runner removes the whole database container and its anonymous data volume after the command, including on test failure.
+
+`BACKEND_SCHOOL_TEST_BIN` defaults to `backend-school`; set it to another local package binary only
+when that binary's tests require the disposable PostgreSQL instance. The value is passed as one
+quoted Cargo `--bin` argument and never changes the container or connection boundary. Use
+`--package <internal-crate>` instead to test a crate-owned suite; the runner validates the name
+against `backend-school/crates/<internal-crate>/Cargo.toml` before starting Podman. A focused filter
+must execute at least one test, otherwise the runner fails instead of accepting Cargo's zero-match
+success.
 
 Permission reconciliation regressions can be checked with
 `./scripts/test_backend_school.sh --release --locked batch_ -- --test-threads=1`.
@@ -372,9 +468,9 @@ The backend static architecture suite validates that active migrations remain a 
 For changes to encryption, national IDs, blind indexes, or admission PII, from `backend-school`:
 
 ```bash
-cargo test utils::field_encryption::tests --bin backend-school
-cargo test modules::admission::services::pii::tests --bin backend-school
-cargo check
+cargo test -p school-crypto
+./scripts/test_backend_school.sh --package school-admission services::pii::tests
+cargo check --workspace --all-targets
 ```
 
 These focused tests use test-only keys. Never put a real national ID, `ENCRYPTION_KEY`, or `BLIND_INDEX_KEY` in source, fixtures, command output, screenshots, or logs.
@@ -479,12 +575,10 @@ For scanner failure behavior in a non-production environment:
 Run the focused adapter tests as well:
 
 ```bash
-cd backend-school
-cargo test modules::files::runtime_config --bin backend-school -- --nocapture
-cargo test modules::files::malware_scanner --bin backend-school -- --nocapture
-cargo test modules::files::r2_storage_provider --bin backend-school -- --nocapture
-cargo test modules::files::platform_service --bin backend-school -- --nocapture
-cargo test modules::files::reconciler --bin backend-school -- --nocapture
+./scripts/test_backend_school.sh --package school-file-platform runtime_config::tests -- --nocapture
+./scripts/test_backend_school.sh --package school-file-platform malware_scanner::tests -- --nocapture
+./scripts/test_backend_school.sh --package school-file-platform r2_storage_provider::tests -- --nocapture
+./scripts/test_backend_school.sh --package school-file-platform platform_service::tests -- --nocapture
 ```
 
 ## Browser E2E
@@ -532,8 +626,9 @@ Set `E2E_OTHER_TENANT_URL` to another tenant when tenant-isolation proof is avai
 Run central authorization, inspection, atomic attach, reference-safe delete, and File Platform relationship checks from the repository root:
 
 ```bash
-./scripts/test_backend_school.sh modules::school_fonts -- --nocapture --test-threads=1
-./scripts/test_backend_school.sh modules::certificates -- --nocapture --test-threads=1
+./scripts/test_backend_school.sh --package school-fonts -- --nocapture --test-threads=1
+./scripts/test_backend_school.sh --package school-certificates -- --nocapture --test-threads=1
+./scripts/test_backend_school.sh modules::certificates::handlers::tests -- --nocapture --test-threads=1
 ```
 
 Run the generated-contract, reusable-uploader, manager-only route, upload retry/cleanup, and delete-conflict coverage from `frontend-school`:
@@ -552,7 +647,8 @@ The non-live browser suites use local harnesses and do not mutate a tenant. The 
 Run the complete certificate lifecycle against an isolated tenant with dedicated preparer, issuer, and student accounts. From the repository root, run the focused backend checks first:
 
 ```bash
-./scripts/test_backend_school.sh modules::certificates -- --nocapture --test-threads=1
+./scripts/test_backend_school.sh --package school-certificates -- --nocapture --test-threads=1
+./scripts/test_backend_school.sh modules::certificates::handlers::tests -- --nocapture --test-threads=1
 CARGO_BUILD_JOBS=1 cargo test --manifest-path backend-school/Cargo.toml --test static_architecture certificate_runtime_keeps_handlers_thin_proofs_private_and_renders_ephemeral -- --exact --test-threads=1
 ```
 

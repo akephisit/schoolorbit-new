@@ -4,13 +4,13 @@ use sha2::{Digest, Sha256};
 use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use crate::error::AppError;
 use crate::modules::academic::models::exam_schedule::{
     ExamPaperReceiptItem, ExamScheduleItemView, ExamScheduleReadiness, ExamScheduleReadinessCode,
     ExamScheduleReadinessFinding, ExamScheduleWorkspace, ExamSessionView, ExamSourceChange,
     ExamSourceChangeKind, ExamSourcePreview, ExamSourceSyncItemResult, ExamSourceSyncItemStatus,
     SyncExamSourcesRequest, SyncExamSourcesResult,
 };
+use school_errors::AppError;
 
 use super::invigilation::{fetch_invigilators_by_assignment_ids, invigilators_for_assignment};
 use super::rounds_and_days::{

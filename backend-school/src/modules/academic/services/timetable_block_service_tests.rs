@@ -2,20 +2,20 @@ use chrono::NaiveDate;
 use uuid::Uuid;
 
 use super::timetable_block_service;
-use crate::error::AppError;
 use crate::modules::academic::cutover_test_support::{
     apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
     CutoverFixture,
 };
-use crate::modules::academic::models::timetable_block::{
+use school_academic_timetable::models::timetable_block::{
     CreateOrdinaryTimetableBlockRequest, CreateStructuralTimetableBlocksRequest,
     CreateSynchronizedTimetableBlockRequest, RemoveTimetableBlockTargetRequest,
     RestoreTimetableBlockGroupRequest, RetryTimetableBlockSyncRequest, TimetableBlockSyncStatus,
     TimetableBlockWorkspaceQuery, TimetableStructuralKind, TimetableStructuralSlotInput,
     TimetableTargetKind, UpdateTimetableBlockRequest,
 };
-use crate::policies::timetable_access_policy::TimetableAccessFilter;
-use crate::test_helpers::create_named_test_pool_with_max_connections;
+use school_academic_timetable::policy::TimetableAccessFilter;
+use school_errors::AppError;
+use school_test_db::create_named_test_pool_with_max_connections;
 
 const ACTOR_ID: &str = "50000000-0000-0000-0000-000000000002";
 
@@ -109,7 +109,7 @@ async fn timetable_lifecycle_preserves_closed_blocks_and_individual_targets() {
             timetable_block_service::swap_blocks(
                 &pool,
                 actor,
-                crate::modules::academic::models::timetable_block::SwapTimetableBlocksRequest {
+                school_academic_timetable::models::timetable_block::SwapTimetableBlocksRequest {
                     timetable_version_id: version,
                     block_a_id: block.id,
                     block_a_row_version: block.row_version,

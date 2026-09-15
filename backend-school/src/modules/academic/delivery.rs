@@ -1,6 +1,13 @@
+pub(crate) mod adapters;
 pub mod handlers;
-pub mod models;
-pub mod services;
+
+#[cfg(test)]
+pub(crate) mod models {
+    pub use school_academic_delivery::models::*;
+}
+
+#[cfg(test)]
+pub(crate) mod services;
 
 use axum::routing::{delete, get, post, put};
 use axum::Router;

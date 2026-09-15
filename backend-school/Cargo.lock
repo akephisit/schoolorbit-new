@@ -801,12 +801,8 @@ dependencies = [
 name = "backend-school"
 version = "0.1.0"
 dependencies = [
- "aes-gcm",
  "async-stream",
  "async-trait",
- "aws-config",
- "aws-credential-types",
- "aws-sdk-s3",
  "axum",
  "base64 0.22.1",
  "bcrypt",
@@ -820,34 +816,52 @@ dependencies = [
  "hex",
  "hmac",
  "http-body-util",
- "image",
  "ipnet",
- "lopdf",
- "mime_guess",
  "rand 0.9.4",
  "regex",
  "reqwest",
+ "school-academic-assessment",
+ "school-academic-core",
+ "school-academic-delivery",
+ "school-academic-lifecycle",
+ "school-academic-results",
+ "school-academic-timetable",
+ "school-admission",
+ "school-auth",
+ "school-authorization",
+ "school-calendar",
+ "school-certificates",
+ "school-crypto",
+ "school-errors",
+ "school-file-platform",
+ "school-fonts",
+ "school-http",
+ "school-migrations",
+ "school-permissions",
+ "school-question-bank",
+ "school-staff",
+ "school-students",
+ "school-supervision",
+ "school-tenancy",
+ "school-test-db",
+ "school-workflow",
  "serde",
  "serde_json",
  "sha2",
- "sha256",
  "sqlx",
  "subtle",
  "thiserror 2.0.18",
  "tokio",
  "tokio-cron-scheduler",
- "tokio-stream",
  "tokio-test",
  "tower",
  "tracing",
  "tracing-subscriber",
- "ttf-parser",
  "unicode-normalization",
  "url",
  "utoipa",
  "uuid",
  "web-push",
- "zeroize",
 ]
 
 [[package]]
@@ -3004,16 +3018,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
 
 [[package]]
-name = "mime_guess"
-version = "2.0.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f7c44f8e672c00fe5308fa235f821cb4198414e1c77935c1ab6948d3fd78550e"
-dependencies = [
- "mime",
- "unicase",
-]
-
-[[package]]
 name = "miniz_oxide"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4040,6 +4044,470 @@ dependencies = [
 ]
 
 [[package]]
+name = "school-academic-assessment"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bigdecimal",
+ "school-academic-core",
+ "school-authorization",
+ "school-errors",
+ "school-permissions",
+ "school-test-db",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "school-academic-core"
+version = "0.1.0"
+dependencies = [
+ "bigdecimal",
+ "chrono",
+ "hex",
+ "school-authorization",
+ "school-errors",
+ "school-permissions",
+ "school-test-db",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "school-academic-delivery"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bigdecimal",
+ "chrono",
+ "hex",
+ "school-academic-core",
+ "school-authorization",
+ "school-errors",
+ "school-permissions",
+ "school-test-db",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "school-academic-lifecycle"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "hex",
+ "school-academic-assessment",
+ "school-academic-core",
+ "school-academic-delivery",
+ "school-academic-results",
+ "school-academic-timetable",
+ "school-authorization",
+ "school-errors",
+ "school-permissions",
+ "school-test-db",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlx",
+ "tokio",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "school-academic-results"
+version = "0.1.0"
+dependencies = [
+ "bigdecimal",
+ "chrono",
+ "school-academic-assessment",
+ "school-academic-core",
+ "school-authorization",
+ "school-errors",
+ "school-permissions",
+ "school-test-db",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlx",
+ "tokio",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "school-academic-timetable"
+version = "0.1.0"
+dependencies = [
+ "bigdecimal",
+ "chrono",
+ "hex",
+ "school-academic-core",
+ "school-academic-delivery",
+ "school-authorization",
+ "school-errors",
+ "school-permissions",
+ "school-test-db",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "school-admission"
+version = "0.1.0"
+dependencies = [
+ "bcrypt",
+ "chrono",
+ "school-academic-core",
+ "school-crypto",
+ "school-errors",
+ "school-file-platform",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tracing",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "school-auth"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "bcrypt",
+ "chrono",
+ "dotenvy",
+ "hex",
+ "hmac",
+ "ipnet",
+ "rand 0.9.4",
+ "school-authorization",
+ "school-crypto",
+ "school-errors",
+ "school-http",
+ "school-tenancy",
+ "school-test-db",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlx",
+ "subtle",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "utoipa",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
+name = "school-authorization"
+version = "0.1.0"
+dependencies = [
+ "dashmap",
+ "school-errors",
+ "school-permissions",
+ "sqlx",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "school-calendar"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "school-academic-core",
+ "school-errors",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "school-certificates"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "base64 0.22.1",
+ "bytes",
+ "chrono",
+ "chrono-tz",
+ "dashmap",
+ "rand 0.9.4",
+ "school-authorization",
+ "school-crypto",
+ "school-errors",
+ "school-file-platform",
+ "school-fonts",
+ "school-http",
+ "school-permissions",
+ "school-test-db",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlx",
+ "subtle",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "unicode-normalization",
+ "url",
+ "utoipa",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
+name = "school-crypto"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "base64 0.22.1",
+ "hex",
+ "hmac",
+ "rand 0.9.4",
+ "sha2",
+]
+
+[[package]]
+name = "school-errors"
+version = "0.1.0"
+dependencies = [
+ "sqlx",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "school-file-platform"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "aws-config",
+ "aws-credential-types",
+ "aws-sdk-s3",
+ "bytes",
+ "chrono",
+ "dotenvy",
+ "hex",
+ "image",
+ "lopdf",
+ "regex",
+ "school-test-db",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "ttf-parser",
+ "url",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "school-fonts"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "school-authorization",
+ "school-errors",
+ "school-file-platform",
+ "school-permissions",
+ "school-test-db",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "unicode-normalization",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "school-http"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "http-body-util",
+ "school-errors",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "school-migrations"
+version = "0.1.0"
+dependencies = [
+ "dashmap",
+ "school-permissions",
+ "sqlx",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "school-permissions"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "school-question-bank"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "school-authorization",
+ "school-errors",
+ "school-file-platform",
+ "school-permissions",
+ "school-test-db",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "school-staff"
+version = "0.1.0"
+dependencies = [
+ "bcrypt",
+ "chrono",
+ "school-authorization",
+ "school-crypto",
+ "school-errors",
+ "school-test-db",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "school-students"
+version = "0.1.0"
+dependencies = [
+ "bcrypt",
+ "chrono",
+ "school-academic-core",
+ "school-crypto",
+ "school-errors",
+ "serde",
+ "sqlx",
+ "tracing",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "school-supervision"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "chrono-tz",
+ "school-academic-core",
+ "school-academic-timetable",
+ "school-errors",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tracing",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "school-tenancy"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "dashmap",
+ "reqwest",
+ "school-migrations",
+ "school-test-db",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "school-test-db"
+version = "0.1.0"
+dependencies = [
+ "bcrypt",
+ "dotenvy",
+ "school-migrations",
+ "sha2",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "school-workflow"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "school-authorization",
+ "school-errors",
+ "school-permissions",
+ "school-test-db",
+ "serde",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4215,19 +4683,6 @@ dependencies = [
  "cfg-if",
  "cpufeatures 0.2.17",
  "digest",
-]
-
-[[package]]
-name = "sha256"
-version = "1.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f880fc8562bdeb709793f00eb42a2ad0e672c4f883bbe59122b926eca935c8f6"
-dependencies = [
- "async-trait",
- "bytes",
- "hex",
- "sha2",
- "tokio",
 ]
 
 [[package]]
@@ -5128,12 +5583,6 @@ name = "typenum"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
-
-[[package]]
-name = "unicase"
-version = "2.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dbc4bc3a9f746d862c45cb89d705aa10f187bb96c76001afab07a0d35ce60142"
 
 [[package]]
 name = "unicode-bidi"

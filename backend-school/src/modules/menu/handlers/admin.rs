@@ -1,14 +1,14 @@
-use crate::api_response::{ApiErrorResponse, ApiResponse, EmptyData};
-use crate::error::AppError;
-use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::modules::menu::models::{
     AcademicMenuTemplateApplyResult, AcademicMenuTemplatePreview, MenuGroup, MenuItem,
     MenuWorkspace,
 };
 use crate::modules::menu::services::{academic_template_service, menu_service};
-use crate::permissions::registry::codes;
 use crate::utils::request_context::{actor_tenant_context_from_session, ActorTenantContext};
 use crate::AppState;
+use school_auth::session_service::AuthenticatedSession;
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse, EmptyData};
+use school_permissions::registry::codes;
 
 use axum::{
     extract::{Extension, Path, Query, State},

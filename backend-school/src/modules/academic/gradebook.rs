@@ -1,5 +1,8 @@
 pub mod handlers;
-pub mod models;
+#[cfg(test)]
+pub mod models {
+    pub use school_academic_assessment::gradebook::models::*;
+}
 pub mod services;
 #[cfg(test)]
 mod services_tests;

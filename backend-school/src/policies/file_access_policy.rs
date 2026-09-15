@@ -1,22 +1,17 @@
+use school_authorization::ActorContext;
+use school_certificates::access_policy::{self as certificate_access_policy, CertificateAction};
+use school_errors::AppError;
+use school_file_platform::{
+    platform_types::{FilePurpose, FileVisibility},
+    repository::PlatformFile,
+};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use crate::{
-    error::AppError,
-    middleware::permission::ActorContext,
-    modules::{
-        files::{
-            platform_types::{FilePurpose, FileVisibility},
-            repository::PlatformFile,
-        },
-        question_bank::services as question_bank_service,
-    },
-    permissions::registry::codes,
-    policies::{
-        achievement_access_policy,
-        certificate_access_policy::{self, CertificateAction},
-        question_bank_access_policy, staff_access_policy, student_access_policy,
-    },
+use crate::policies::{achievement_access_policy, staff_access_policy, student_access_policy};
+use school_permissions::registry::codes;
+use school_question_bank::{
+    access_policy as question_bank_access_policy, services as question_bank_service,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -835,8 +830,8 @@ fn explicit_domain_policy_required() -> AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::permissions::registry::codes;
-    use crate::test_helpers::{
+    use school_permissions::registry::codes;
+    use school_test_db::{
         create_named_test_pool, create_named_test_pool_with_max_connections, create_test_user,
         run_test_migrations,
     };
@@ -1112,7 +1107,7 @@ mod tests {
             owner_user_id: Some(actor_id),
             purpose: FilePurpose::SchoolFont,
             visibility: FileVisibility::Private,
-            lifecycle_status: crate::modules::files::platform_types::FileLifecycleStatus::Ready,
+            lifecycle_status: school_file_platform::platform_types::FileLifecycleStatus::Ready,
             current_version: None,
             display_filename: "school-font-delete-guard.ttf".to_string(),
             detected_mime_type: "font/ttf".to_string(),
@@ -1248,7 +1243,7 @@ mod tests {
             owner_user_id: Some(actor_id),
             purpose: FilePurpose::SchoolFont,
             visibility: FileVisibility::Private,
-            lifecycle_status: crate::modules::files::platform_types::FileLifecycleStatus::Ready,
+            lifecycle_status: school_file_platform::platform_types::FileLifecycleStatus::Ready,
             current_version: None,
             display_filename: "certificate-school-font-delete-guard.ttf".to_string(),
             detected_mime_type: "font/ttf".to_string(),

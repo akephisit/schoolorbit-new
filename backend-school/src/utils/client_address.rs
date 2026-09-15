@@ -3,7 +3,7 @@ use std::net::{IpAddr, SocketAddr};
 use axum::http::HeaderMap;
 use ipnet::IpNet;
 
-use crate::modules::auth::session_crypto::normalize_ip;
+use school_auth::session_crypto::normalize_ip;
 
 pub fn client_address(
     peer: SocketAddr,

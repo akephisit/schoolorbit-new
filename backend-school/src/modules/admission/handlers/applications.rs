@@ -8,22 +8,19 @@ use serde::Serialize;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::api_response::{ApiErrorResponse, ApiResponse};
-use crate::error::AppError;
-use crate::modules::admission::models::applications::*;
-use crate::modules::admission::services::application_service;
-use crate::modules::auth::session_service::AuthenticatedSession;
-use crate::modules::files::{
-    consumer_service::{map_platform_error, request_deletions},
-    platform_service::UploadCommand,
-    platform_types::FilePurpose,
-    repository::SqlFileRepository,
-};
-use crate::permissions::registry::codes;
+use crate::modules::files::consumer_service::{map_platform_error, request_deletions};
 use crate::policies::file_access_policy;
 use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::utils::tenant::tenant_pool;
 use crate::AppState;
+use school_admission::applications::{self as application_service, *};
+use school_auth::session_service::AuthenticatedSession;
+use school_file_platform::{
+    platform_service::UploadCommand, platform_types::FilePurpose, repository::SqlFileRepository,
+};
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse};
+use school_permissions::registry::codes;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -424,7 +421,7 @@ pub async fn staff_upload_document(
             Ok(result) => result,
             Err(error) => {
                 request_deletions(state.file_platform.as_ref(), &pool, [file.id]).await?;
-                return Err(error);
+                return Err(error.into());
             }
         };
     if let Some(old_file_id) = result.replaced_file_id {
@@ -445,7 +442,7 @@ pub async fn staff_upload_document(
         ("doc_type" = String, Path, description = "Admission document type")
     ),
     responses(
-        (status = 200, description = "Document detached and deletion requested", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 200, description = "Document detached and deletion requested", body = ApiResponse<school_http::EmptyData>),
         (status = 400, description = "Invalid document type", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Admission verification permission required", body = ApiErrorResponse),

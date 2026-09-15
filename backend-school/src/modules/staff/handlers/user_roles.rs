@@ -6,14 +6,14 @@ use axum::{
 };
 use uuid::Uuid;
 
-use crate::api_response::{ApiErrorResponse, ApiResponse, EmptyData, IdData, UuidIdData};
-use crate::error::AppError;
-use crate::modules::auth::session_service::AuthenticatedSession;
-use crate::modules::staff::models::*;
-use crate::modules::staff::services::user_role_service::{self, AssignRoleOutcome};
-use crate::permissions::registry::codes;
 use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
+use school_auth::session_service::AuthenticatedSession;
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse, EmptyData, IdData, UuidIdData};
+use school_permissions::registry::codes;
+use school_staff::models::*;
+use school_staff::services::user_role_service::{self, AssignRoleOutcome};
 
 #[utoipa::path(
     get,
@@ -39,7 +39,7 @@ pub async fn get_user_roles(
     Ok(
         match user_role_service::get_user_roles(&pool, user_id).await {
             Ok(roles) => (StatusCode::OK, Json(ApiResponse::ok(roles))).into_response(),
-            Err(e) => return Err(e),
+            Err(e) => return Err(e.into()),
         },
     )
 }
@@ -74,7 +74,7 @@ pub async fn assign_user_role(
     Ok(
         match user_role_service::assign_user_role(&pool, user_id, payload).await {
             Ok(AssignRoleOutcome::Created(id)) => {
-                state.permission_cache.invalidate_user(&tenant, user_id);
+                state.invalidate_permission_user(&tenant, user_id);
                 state.notify_permission_changed(&tenant, user_id);
                 (
                     StatusCode::CREATED,
@@ -108,7 +108,7 @@ pub async fn assign_user_role(
                 ))),
             )
                 .into_response(),
-            Err(e) => return Err(e),
+            Err(e) => return Err(e.into()),
         },
     )
 }
@@ -143,7 +143,7 @@ pub async fn remove_user_role(
     Ok(
         match user_role_service::remove_user_role(&pool, user_id, role_id).await {
             Ok(true) => {
-                state.permission_cache.invalidate_user(&tenant, user_id);
+                state.invalidate_permission_user(&tenant, user_id);
                 state.notify_permission_changed(&tenant, user_id);
                 (
                     StatusCode::OK,
@@ -156,7 +156,7 @@ pub async fn remove_user_role(
                 Json(ApiErrorResponse::new("ไม่พบการมอบหมายบทบาท")),
             )
                 .into_response(),
-            Err(e) => return Err(e),
+            Err(e) => return Err(e.into()),
         },
     )
 }
@@ -185,7 +185,7 @@ pub async fn get_user_permissions(
     Ok(
         match user_role_service::get_user_permissions(&pool, user_id).await {
             Ok(perms) => (StatusCode::OK, Json(ApiResponse::ok(perms))).into_response(),
-            Err(e) => return Err(e),
+            Err(e) => return Err(e.into()),
         },
     )
 }

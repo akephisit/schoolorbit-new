@@ -6,10 +6,12 @@ use axum::{
 };
 use uuid::Uuid;
 
-use crate::api_response::{ApiErrorResponse, ApiResponse};
-use crate::error::AppError;
-use crate::modules::academic::models::timetable::PersonalTimetableQuery;
-use crate::modules::academic::models::timetable_block::{
+use crate::modules::academic::websockets::TimetableEvent;
+use crate::utils::request_context::{actor_tenant_context_from_session, ActorTenantContext};
+use crate::utils::subdomain::extract_subdomain_from_request;
+use crate::AppState;
+use school_academic_timetable::models::timetable::PersonalTimetableQuery;
+use school_academic_timetable::models::timetable_block::{
     CreateOrdinaryTimetableBlockRequest, CreateStructuralTimetableBlocksRequest,
     CreateSynchronizedTimetableBlockRequest, DeleteTimetableBlockQuery,
     DeleteTimetableBlockSeriesQuery, RemoveTimetableBlockTargetRequest,
@@ -17,18 +19,16 @@ use crate::modules::academic::models::timetable_block::{
     TimetableBlock, TimetableBlockKind, TimetableBlockPlacementPreviewRequest,
     TimetableBlockWorkspaceQuery, TimetableTargetKind, UpdateTimetableBlockRequest,
 };
-use crate::modules::academic::services::{
-    daily_teaching_service, timetable_block_service, timetable_version_service,
-};
-use crate::modules::academic::websockets::TimetableEvent;
-use crate::modules::auth::session_service::AuthenticatedSession;
-use crate::policies::timetable_access_policy::{
+use school_academic_timetable::policy::{
     require_timetable_list_access, require_timetable_resources, TimetableAction,
     TimetableResourceSet,
 };
-use crate::utils::request_context::{actor_tenant_context_from_session, ActorTenantContext};
-use crate::utils::subdomain::extract_subdomain_from_request;
-use crate::AppState;
+use school_academic_timetable::services::{
+    daily_teaching as daily_teaching_service, timetable_block_service, timetable_version_service,
+};
+use school_auth::session_service::AuthenticatedSession;
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse};
 
 #[utoipa::path(
     get,
@@ -36,7 +36,7 @@ use crate::AppState;
     operation_id = "getTimetableBlockWorkspace",
     params(TimetableBlockWorkspaceQuery),
     responses(
-        (status = 200, body = ApiResponse<crate::modules::academic::models::timetable_block::TimetableBlockWorkspace>),
+        (status = 200, body = ApiResponse<school_academic_timetable::models::timetable_block::TimetableBlockWorkspace>),
         (status = 400, body = ApiErrorResponse),
         (status = 401, body = ApiErrorResponse),
         (status = 403, body = ApiErrorResponse),
@@ -64,7 +64,7 @@ pub async fn get_workspace(
     operation_id = "previewTimetableBlockPlacement",
     request_body = TimetableBlockPlacementPreviewRequest,
     responses(
-        (status = 200, body = ApiResponse<crate::modules::academic::models::timetable_block::TimetableBlockPlacementPreview>),
+        (status = 200, body = ApiResponse<school_academic_timetable::models::timetable_block::TimetableBlockPlacementPreview>),
         (status = 400, body = ApiErrorResponse),
         (status = 401, body = ApiErrorResponse),
         (status = 403, body = ApiErrorResponse),
@@ -476,7 +476,7 @@ pub async fn delete_series(
     operation_id = "swapTimetableBlocks",
     request_body = SwapTimetableBlocksRequest,
     responses(
-        (status = 200, body = ApiResponse<crate::modules::academic::models::timetable_block::SwapTimetableBlocksResponse>),
+        (status = 200, body = ApiResponse<school_academic_timetable::models::timetable_block::SwapTimetableBlocksResponse>),
         (status = 409, body = ApiErrorResponse)
     ),
     tag = "academic"
@@ -641,6 +641,7 @@ async fn require_existing_block_manage_access(
         &resources,
     )
     .await
+    .map_err(Into::into)
 }
 
 fn broadcast_changed(state: &AppState, headers: &HeaderMap, user_id: Uuid, block: &TimetableBlock) {

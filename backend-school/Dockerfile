@@ -17,8 +17,9 @@ FROM base AS builder
 COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 COPY . .
-# This binary-only build cannot reuse sccache outputs (crate-type); dependency
-# reuse remains owned by the cargo-chef layer above.
+# Workspace libraries are potentially compiler-cacheable, but school sccache remains disabled
+# until two ordinary post-split warm CI builds prove useful hits and lower total build time.
+# Dependency reuse remains owned by the cargo-chef layer above.
 # Disable local ThinLTO only for the final application crate. Dependencies keep
 # their existing release settings and cargo-chef cache; opt-level is unchanged.
 RUN cargo rustc --release --locked --bin backend-school --timings -- -C lto=off

@@ -2,26 +2,18 @@ use sqlx::PgPool;
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
-use crate::error::AppError;
-use crate::modules::calendar::models::CalendarEvent;
 use crate::modules::notification::events::TenantNotificationEvent;
 use crate::services::notification::{
     NotificationService, NotificationType, TenantNotificationPublisher,
 };
-
-use super::shared::dedupe_user_ids;
+use school_calendar::models::CalendarEvent;
+use school_calendar::services::{dedupe_user_ids, CalendarNotificationKind};
+use school_errors::AppError;
 
 #[derive(sqlx::FromRow)]
 struct NotificationRecipientRow {
     id: Uuid,
     user_type: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CalendarNotificationKind {
-    Created,
-    Updated,
-    Reminder { days_before: i32 },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

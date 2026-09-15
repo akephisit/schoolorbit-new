@@ -92,7 +92,9 @@ test('generated contract publishes every assessment operation and DTO', async ()
 });
 
 test('backend assessment model is term and offering scoped with optimistic locking', async () => {
-	const model = await readRepoFile('backend-school/src/modules/academic/models/assessment.rs');
+	const model = await readRepoFile(
+		'backend-school/crates/school-academic-assessment/src/assessment/models.rs'
+	);
 
 	assert.match(model, /pub academic_term_id: Uuid/);
 	assert.match(model, /pub offering_id: Uuid/);
@@ -196,7 +198,7 @@ test('assessment save sends rowVersion and keeps dirty draft on conflicts', asyn
 	const api = await readProjectFile('src/lib/api/academicAssessments.ts');
 	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
 	const service = await readRepoFile(
-		'backend-school/src/modules/academic/services/assessment_service.rs'
+		'backend-school/crates/school-academic-assessment/src/assessment/services.rs'
 	);
 
 	assert.match(page, /rowVersion:\s*detail\.rowVersion \?\? null/);
@@ -220,10 +222,10 @@ test('assessment phase controls own plan editing while gradebook controls score 
 	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
 	const gradebookApi = await readProjectFile('src/lib/api/academicGradebook.ts');
 	const service = await readRepoFile(
-		'backend-school/src/modules/academic/services/assessment_service.rs'
+		'backend-school/crates/school-academic-assessment/src/assessment/services.rs'
 	);
 	const gradebookControls = await readRepoFile(
-		'backend-school/src/modules/academic/gradebook/services/controls.rs'
+		'backend-school/crates/school-academic-assessment/src/gradebook/services/controls.rs'
 	);
 	const capabilityBlock = page.slice(
 		page.indexOf('const canRead'),

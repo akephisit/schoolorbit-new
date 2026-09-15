@@ -1,8 +1,135 @@
 use crate::modules::academic::{
-    core, delivery,
+    core,
     services::{exam_schedule_service, timetable_version_service},
 };
+use async_trait::async_trait;
+use school_academic_core::ports::{
+    PendingTermWork, TermPreparationContext, TermPreparationMappingKind,
+    TermPreparationModuleOutcome,
+};
+use school_academic_lifecycle::ports::ExternalLifecyclePort;
+use school_errors::AppError;
+use sqlx::{Postgres, Transaction};
+use std::collections::HashMap;
 use uuid::Uuid;
+
+struct StubExternalLifecyclePort {
+    exam_revision: &'static str,
+    fail_exams: bool,
+}
+
+#[async_trait]
+impl ExternalLifecyclePort for StubExternalLifecyclePort {
+    async fn pending_exam_work(
+        &self,
+        _transaction: &mut Transaction<'_, Postgres>,
+        _academic_year_id: Uuid,
+        _academic_term_id: Uuid,
+    ) -> Result<Vec<PendingTermWork>, AppError> {
+        if self.fail_exams {
+            return Err(AppError::Conflict("exam provider failed".into()));
+        }
+        Ok(vec![PendingTermWork {
+            id: Uuid::from_u128(1),
+            revision: self.exam_revision.into(),
+            blocks_closure: false,
+        }])
+    }
+
+    async fn pending_supervision_work(
+        &self,
+        _transaction: &mut Transaction<'_, Postgres>,
+        _academic_year_id: Uuid,
+        _academic_term_id: Uuid,
+    ) -> Result<Vec<PendingTermWork>, AppError> {
+        Ok(Vec::new())
+    }
+
+    async fn apply_exam_preparation(
+        &self,
+        _transaction: &mut Transaction<'_, Postgres>,
+        _actor_user_id: Uuid,
+        _context: &TermPreparationContext,
+        _entity_mappings: &HashMap<(TermPreparationMappingKind, Uuid), Uuid>,
+        _date_mappings: &HashMap<chrono::NaiveDate, chrono::NaiveDate>,
+    ) -> Result<TermPreparationModuleOutcome, AppError> {
+        Err(AppError::Conflict("unused exam preparation stub".into()))
+    }
+
+    async fn apply_supervision_preparation(
+        &self,
+        _transaction: &mut Transaction<'_, Postgres>,
+        _actor_user_id: Uuid,
+        _context: &TermPreparationContext,
+        _entity_mappings: &HashMap<(TermPreparationMappingKind, Uuid), Uuid>,
+        _date_mappings: &HashMap<chrono::NaiveDate, chrono::NaiveDate>,
+    ) -> Result<TermPreparationModuleOutcome, AppError> {
+        Err(AppError::Conflict(
+            "unused supervision preparation stub".into(),
+        ))
+    }
+}
+
+#[tokio::test]
+async fn lifecycle_external_port_failures_propagate_and_evidence_changes_the_checksum() {
+    let pool = core::services_tests::prepare_core_fixture("lifecycle_external_port_contract").await;
+    crate::modules::academic::cutover_test_support::apply_migrations_through(&pool, 69)
+        .await
+        .unwrap();
+    let (year, term): (Uuid, Uuid) =
+        sqlx::query_as("SELECT academic_year_id,id FROM academic_terms WHERE status='active'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let actor = school_authorization::ActorContext {
+        user_id: sqlx::query_scalar("SELECT id FROM users WHERE user_type='staff' LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        permissions: vec![school_permissions::registry::codes::WILDCARD.into()],
+    };
+    let mut transaction = pool.begin().await.unwrap();
+    let failure = school_academic_lifecycle::services::readiness::workspace_in_transaction(
+        &StubExternalLifecyclePort {
+            exam_revision: "ignored",
+            fail_exams: true,
+        },
+        &mut transaction,
+        &actor,
+        year,
+        term,
+    )
+    .await;
+    assert!(
+        matches!(failure, Err(AppError::Conflict(message)) if message == "exam provider failed")
+    );
+
+    let before = school_academic_lifecycle::services::readiness::workspace_in_transaction(
+        &StubExternalLifecyclePort {
+            exam_revision: "revision-1",
+            fail_exams: false,
+        },
+        &mut transaction,
+        &actor,
+        year,
+        term,
+    )
+    .await
+    .unwrap();
+    let after = school_academic_lifecycle::services::readiness::workspace_in_transaction(
+        &StubExternalLifecyclePort {
+            exam_revision: "revision-2",
+            fail_exams: false,
+        },
+        &mut transaction,
+        &actor,
+        year,
+        term,
+    )
+    .await
+    .unwrap();
+    assert_ne!(before.source_checksum, after.source_checksum);
+}
 
 #[tokio::test]
 async fn lifecycle_exam_readiness_changes_when_child_assignments_change() {
@@ -85,7 +212,7 @@ async fn lifecycle_providers_report_only_selected_term_drafts_and_consequential_
     let change:Uuid = sqlx::query_scalar("INSERT INTO academic_term_change_sets(academic_year_id,academic_term_id,effective_from,reason,idempotency_key,creation_request_hash,created_by) VALUES($1,$2,$3,'E2E-LIFECYCLE-change','lifecycle-provider',repeat('a',64),$4) RETURNING id")
         .bind(year).bind(term).bind(start).bind(actor).fetch_one(&pool).await.unwrap();
     let mut tx = pool.begin().await.unwrap();
-    let pending = delivery::services::pending_term_work(&mut tx, year, term)
+    let pending = school_academic_delivery::services::pending_term_work(&mut tx, year, term)
         .await
         .unwrap();
     let before = pending
@@ -96,7 +223,7 @@ async fn lifecycle_providers_report_only_selected_term_drafts_and_consequential_
     let before_revision = before.revision.clone();
     sqlx::query("INSERT INTO academic_term_change_items(change_set_id,academic_year_id,academic_term_id,action_kind,learning_offering_id,created_by) VALUES($1,$2,$3,'stop_offering',$4,$5)")
         .bind(change).bind(year).bind(term).bind(offering).bind(actor).execute(&mut *tx).await.unwrap();
-    let pending = delivery::services::pending_term_work(&mut tx, year, term)
+    let pending = school_academic_delivery::services::pending_term_work(&mut tx, year, term)
         .await
         .unwrap();
     let after = pending.iter().find(|row| row.id == change).unwrap();
@@ -117,7 +244,7 @@ async fn lifecycle_providers_report_only_selected_term_drafts_and_consequential_
             .any(|row| row.id == timetable && !row.blocks_closure)
     );
     assert!(
-        delivery::services::pending_term_work(&mut tx, Uuid::new_v4(), term)
+        school_academic_delivery::services::pending_term_work(&mut tx, Uuid::new_v4(), term)
             .await
             .unwrap()
             .is_empty()
@@ -134,9 +261,9 @@ async fn lifecycle_providers_report_only_selected_term_drafts_and_consequential_
             .unwrap()
             .is_empty()
     );
-    let reader = crate::middleware::permission::ActorContext {
+    let reader = school_authorization::ActorContext {
         user_id: actor,
-        permissions: vec![crate::permissions::registry::codes::WILDCARD.into()],
+        permissions: vec![school_permissions::registry::codes::WILDCARD.into()],
     };
     let workspace = super::workspace_in_transaction(&mut tx, &reader, year, term)
         .await
@@ -167,11 +294,11 @@ async fn lifecycle_providers_report_only_selected_term_drafts_and_consequential_
             .as_str()
         )
     );
-    let partial_reader = crate::middleware::permission::ActorContext {
+    let partial_reader = school_authorization::ActorContext {
         user_id: actor,
         permissions: vec![
-            crate::permissions::registry::codes::ACADEMIC_LIFECYCLE_READ_SCHOOL.into(),
-            crate::permissions::registry::codes::ACADEMIC_RESULT_READ_SCHOOL.into(),
+            school_permissions::registry::codes::ACADEMIC_LIFECYCLE_READ_SCHOOL.into(),
+            school_permissions::registry::codes::ACADEMIC_RESULT_READ_SCHOOL.into(),
         ],
     };
     let partial = super::workspace_in_transaction(&mut tx, &partial_reader, year, term)
@@ -186,7 +313,7 @@ async fn lifecycle_providers_report_only_selected_term_drafts_and_consequential_
 
 #[tokio::test]
 async fn lifecycle_permission_defaults_only_grant_verified_system_administrators() {
-    use crate::permissions::registry::codes;
+    use school_permissions::registry::codes;
     let pool = core::services_tests::prepare_core_fixture("lifecycle_permission_defaults").await;
     crate::modules::academic::cutover_test_support::apply_migrations_through(&pool, 68)
         .await

@@ -7,13 +7,13 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::api_response::ApiErrorResponse;
-use crate::error::AppError;
-use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::modules::menu::models::FeatureToggle;
 use crate::modules::system::services::feature_toggle_service;
 use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
+use school_auth::session_service::AuthenticatedSession;
+use school_http::ApiErrorResponse;
+use school_http::HttpError as AppError;
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateFeatureRequest {

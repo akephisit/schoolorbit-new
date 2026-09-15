@@ -8,20 +8,20 @@ use serde::Serialize;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::api_response::{ApiErrorResponse, ApiResponse};
-use crate::error::AppError;
-use crate::modules::admission::models::applications::*;
-use crate::modules::admission::services::{application_service, portal_service};
 use crate::modules::files::{
     consumer_service::{map_platform_error, request_deletions},
     models::FileDownloadGrantResponse,
-    platform_service::UploadCommand,
-    platform_types::FilePurpose,
-    repository::SqlFileRepository,
 };
 use crate::policies::file_access_policy;
 use crate::utils::tenant::{tenant_context, tenant_pool};
 use crate::AppState;
+use school_admission::applications::{self as application_service, *};
+use school_admission::portal as portal_service;
+use school_file_platform::{
+    platform_service::UploadCommand, platform_types::FilePurpose, repository::SqlFileRepository,
+};
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse};
 
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -233,7 +233,7 @@ pub async fn portal_upload_document(
             Ok(result) => result,
             Err(error) => {
                 request_deletions(state.file_platform.as_ref(), &pool, [file.id]).await?;
-                return Err(error);
+                return Err(error.into());
             }
         };
     if let Some(old_file_id) = result.replaced_file_id {
@@ -257,7 +257,7 @@ pub async fn portal_upload_document(
     params(("doc_type" = String, Path, description = "Admission document type")),
     request_body = PortalCredentials,
     responses(
-        (status = 200, description = "Applicant document detached and deletion requested", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 200, description = "Applicant document detached and deletion requested", body = ApiResponse<school_http::EmptyData>),
         (status = 400, description = "Invalid document state or type", body = ApiErrorResponse),
         (status = 401, description = "Applicant credentials rejected", body = ApiErrorResponse),
         (status = 404, description = "Application document not found", body = ApiErrorResponse)

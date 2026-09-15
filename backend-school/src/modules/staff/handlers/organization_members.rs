@@ -4,36 +4,20 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use chrono::NaiveDate;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::api_response::{ApiErrorResponse, ApiResponse, EmptyData};
-use crate::error::AppError;
-use crate::modules::auth::session_service::AuthenticatedSession;
-use crate::modules::staff::services::organization_member_service;
-use crate::permissions::registry::codes;
 use crate::utils::request_context::{
     actor_tenant_context_from_session, current_user_tenant_context_from_session,
 };
 use crate::AppState;
-
-#[derive(Serialize, ToSchema)]
-pub struct OrganizationMemberItem {
-    pub user_id: Uuid,
-    pub organization_unit_id: Uuid,
-    pub organization_unit_name: String,
-    pub name: String,
-    pub title: String,
-    pub position_code: String,
-    #[schema(required = true)]
-    pub position_title: Option<String>,
-    pub is_primary: bool,
-    #[schema(required = true)]
-    pub responsibilities: Option<String>,
-    pub started_at: NaiveDate,
-}
+use school_auth::session_service::AuthenticatedSession;
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse, EmptyData};
+use school_permissions::registry::codes;
+use school_staff::models::OrganizationMemberItem;
+use school_staff::services::organization_member_service;
 
 #[derive(Deserialize, ToSchema)]
 pub struct ListMembersQuery {
@@ -136,7 +120,7 @@ pub async fn add_member(
     .await?;
 
     let user_id = body.user_id;
-    state.permission_cache.invalidate_user(&tenant, user_id);
+    state.invalidate_permission_user(&tenant, user_id);
     state.notify_permission_changed(&tenant, user_id);
     Ok(Json(ApiResponse::empty()).into_response())
 }
@@ -196,7 +180,7 @@ pub async fn update_member(
             .into_response());
     }
 
-    state.permission_cache.invalidate_user(&tenant, user_id);
+    state.invalidate_permission_user(&tenant, user_id);
     state.notify_permission_changed(&tenant, user_id);
     Ok(Json(ApiResponse::empty()).into_response())
 }
@@ -227,7 +211,7 @@ pub async fn remove_member(
     let actor = context.actor;
     actor.require_permission(codes::ROLES_ASSIGN_ALL)?;
     organization_member_service::remove_member(&pool, organization_unit_id, user_id).await?;
-    state.permission_cache.invalidate_user(&tenant, user_id);
+    state.invalidate_permission_user(&tenant, user_id);
     state.notify_permission_changed(&tenant, user_id);
     Ok(Json(ApiResponse::empty()).into_response())
 }

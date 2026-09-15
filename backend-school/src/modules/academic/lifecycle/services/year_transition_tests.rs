@@ -1,16 +1,14 @@
 use super::*;
-use crate::{
-    middleware::permission::ActorContext,
-    modules::academic::{
-        core::{
-            self,
-            models::{AcademicYearStatus, YearTransitionAction, YearTransitionRequest},
-            services::year_transitions,
-        },
-        cutover_test_support::apply_migrations_through,
+use crate::modules::academic::{
+    core::{
+        self,
+        models::{AcademicYearStatus, YearTransitionAction, YearTransitionRequest},
+        services::year_transitions,
     },
-    permissions::registry::codes,
+    cutover_test_support::apply_migrations_through,
 };
+use school_authorization::ActorContext;
+use school_permissions::registry::codes;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -72,7 +70,7 @@ async fn year_lifecycle_transition_is_actor_bound_and_does_not_close_missing_res
     changed.action = YearTransitionAction::CancelClosing;
     assert!(matches!(
         year_transitions::transition_year(&pool, &actor, year, changed).await,
-        Err(crate::error::AppError::Conflict(_))
+        Err(school_errors::AppError::Conflict(_))
     ));
     let other = ActorContext {
         user_id: Uuid::new_v4(),
@@ -80,7 +78,7 @@ async fn year_lifecycle_transition_is_actor_bound_and_does_not_close_missing_res
     };
     assert!(matches!(
         year_transitions::transition_year(&pool, &other, year, request.clone()).await,
-        Err(crate::error::AppError::Conflict(_))
+        Err(school_errors::AppError::Conflict(_))
     ));
     let reader = ActorContext {
         user_id: actor.user_id,
@@ -88,12 +86,12 @@ async fn year_lifecycle_transition_is_actor_bound_and_does_not_close_missing_res
     };
     assert!(matches!(
         year_transitions::transition_year(&pool, &reader, year, request).await,
-        Err(crate::error::AppError::Forbidden(_))
+        Err(school_errors::AppError::Forbidden(_))
     ));
     let close = input(&pool, &actor, year, YearTransitionAction::Close).await;
     assert!(matches!(
         year_transitions::transition_year(&pool, &actor, year, close).await,
-        Err(crate::error::AppError::Conflict(_))
+        Err(school_errors::AppError::Conflict(_))
     ));
     let cancel = input(&pool, &actor, year, YearTransitionAction::CancelClosing).await;
     let outcome = year_transitions::transition_year(&pool, &actor, year, cancel)
@@ -110,7 +108,7 @@ async fn year_lifecycle_transition_is_actor_bound_and_does_not_close_missing_res
         }
         assert!(matches!(
             year_transitions::transition_year(&pool, &actor, year, invalid).await,
-            Err(crate::error::AppError::ValidationError(_))
+            Err(school_errors::AppError::ValidationError(_))
         ));
     }
     assert!(
@@ -132,13 +130,13 @@ async fn year_lifecycle_transition_rolls_back_on_audit_failure_and_rejects_stale
     request.readiness_checksum = "0".repeat(64);
     assert!(matches!(
         year_transitions::transition_year(&pool, &actor, year, request).await,
-        Err(crate::error::AppError::Conflict(_))
+        Err(school_errors::AppError::Conflict(_))
     ));
     let request = input(&pool, &actor, year, YearTransitionAction::BeginClosing).await;
     sqlx::raw_sql("CREATE FUNCTION fail_year_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'YEAR_TEST_AUDIT_FAILURE'; END $$; CREATE TRIGGER fail_year_audit BEFORE INSERT ON academic_audit_events FOR EACH ROW EXECUTE FUNCTION fail_year_audit();").execute(&pool).await.unwrap();
     assert!(matches!(
         year_transitions::transition_year(&pool, &actor, year, request.clone()).await,
-        Err(crate::error::AppError::DbError(_))
+        Err(school_errors::AppError::DbError(_))
     ));
     let ws = get_year_workspace(&pool, &actor, year).await.unwrap();
     assert_eq!(ws.context.status, AcademicYearStatus::Active);
@@ -162,7 +160,7 @@ async fn year_lifecycle_parallel_requests_accept_only_one_revision() {
     );
     assert_eq!(usize::from(a.is_ok()) + usize::from(b.is_ok()), 1);
     let failed = if a.is_err() { a } else { b };
-    assert!(matches!(failed, Err(crate::error::AppError::Conflict(_))));
+    assert!(matches!(failed, Err(school_errors::AppError::Conflict(_))));
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM academic_year_transition_receipts")
         .fetch_one(&pool)
         .await

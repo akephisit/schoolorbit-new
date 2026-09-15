@@ -1,0 +1,568 @@
+use crate::models::applications::*;
+use crate::models::rounds::SelectionSettings;
+use crate::services::pii;
+use school_errors::AppError;
+use serde_json::json;
+use sqlx::{types::Json, PgPool};
+use uuid::Uuid;
+
+fn pii_error(context: &str, error: String) -> AppError {
+    tracing::error!("Admission portal PII {} failed: {}", context, error);
+    AppError::InternalServerError("ไม่สามารถประมวลผลข้อมูลส่วนบุคคลได้".to_string())
+}
+
+fn decrypt_application(
+    mut application: AdmissionApplication,
+) -> Result<AdmissionApplication, AppError> {
+    pii::decrypt_application_pii(&mut application)
+        .map_err(|error| pii_error("decrypt application", error))?;
+    Ok(application)
+}
+
+pub const VALID_DOC_TYPES: &[&str] = &[
+    "photo_1_5inch",
+    "transcript_por",
+    "certificate_por7",
+    "id_card_student",
+    "id_card_father",
+    "id_card_mother",
+    "id_card_guardian",
+    "house_reg_student",
+    "house_reg_father",
+    "house_reg_mother",
+    "house_reg_guardian",
+    "name_change_doc",
+    "birth_cert",
+];
+
+pub async fn verify_credentials(
+    pool: &PgPool,
+    national_id: &str,
+    date_of_birth: &str,
+) -> Result<Uuid, AppError> {
+    let dob = parse_portal_birth_date(date_of_birth)?;
+    let national_id_hash =
+        pii::hash_required(national_id).map_err(|error| pii_error("hash credential", error))?;
+    sqlx::query_scalar(
+        "SELECT id FROM admission_applications WHERE national_id_hash = $1 AND date_of_birth = $2 ORDER BY created_at DESC LIMIT 1"
+    )
+    .bind(national_id_hash).bind(dob)
+    .fetch_optional(pool).await
+    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?
+    .ok_or_else(|| AppError::AuthError("ไม่พบข้อมูลผู้สมัคร กรุณาตรวจสอบเลขบัตรประชาชนและวันเกิด".to_string()))
+}
+
+pub async fn get_round_status(pool: &PgPool, application_id: Uuid) -> Result<String, AppError> {
+    sqlx::query_scalar(
+        r#"SELECT ar.status FROM admission_applications aa
+           JOIN admission_rounds ar ON ar.id = aa.admission_round_id
+           WHERE aa.id = $1"#,
+    )
+    .bind(application_id)
+    .fetch_one(pool)
+    .await
+    .map_err(|_| AppError::InternalServerError("Database error".to_string()))
+}
+
+#[derive(sqlx::FromRow, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckStatusRow {
+    pub id: Uuid,
+    pub application_number: Option<String>,
+    pub first_name: String,
+    pub last_name: String,
+    pub status: String,
+    pub track_name: Option<String>,
+    pub round_name: Option<String>,
+    pub round_status: Option<String>,
+}
+
+#[derive(sqlx::FromRow, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortalAssignment {
+    pub rank_in_track: Option<i32>,
+    pub rank_in_room: Option<i32>,
+    pub total_score: Option<f64>,
+    pub room_name: Option<String>,
+    pub student_confirmed: bool,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortalStatusResult {
+    pub application: AdmissionApplication,
+    pub round_status: String,
+    pub assignment_mode: String,
+    pub assignment: Option<PortalAssignment>,
+    pub scores: Option<Vec<ExamScore>>,
+    pub enrollment_form: Option<EnrollmentForm>,
+    pub documents: Vec<ApplicationDocument>,
+}
+
+pub async fn check_application(
+    pool: &PgPool,
+    payload: PortalCredentials,
+) -> Result<CheckStatusRow, AppError> {
+    let application_id =
+        verify_credentials(pool, &payload.national_id, &payload.date_of_birth).await?;
+    let round_status = get_round_status(pool, application_id).await?;
+    if round_status == "draft" {
+        return Err(AppError::BadRequest("รอบการสมัครยังไม่เปิดเผยข้อมูล".to_string()));
+    }
+    sqlx::query_as::<_, CheckStatusRow>(
+        r#"SELECT aa.id, aa.application_number, aa.first_name, aa.last_name, aa.status,
+                  at2.name AS track_name, ar.name AS round_name, ar.status AS round_status
+           FROM admission_applications aa
+           LEFT JOIN admission_tracks at2 ON aa.admission_track_id = at2.id
+           LEFT JOIN admission_rounds ar ON aa.admission_round_id = ar.id
+           WHERE aa.id = $1"#,
+    )
+    .bind(application_id)
+    .fetch_one(pool)
+    .await
+    .map_err(|_| AppError::InternalServerError("Database error".to_string()))
+}
+
+pub async fn get_status(
+    pool: &PgPool,
+    payload: PortalCredentials,
+) -> Result<PortalStatusResult, AppError> {
+    let application_id =
+        verify_credentials(pool, &payload.national_id, &payload.date_of_birth).await?;
+    let round_status = get_round_status(pool, application_id).await?;
+    if round_status == "draft" {
+        return Err(AppError::BadRequest("รอบการสมัครยังไม่เปิดเผยข้อมูล".to_string()));
+    }
+
+    let selection_settings: Option<Json<SelectionSettings>> = sqlx::query_scalar(
+        "SELECT selection_settings FROM admission_rounds WHERE id = (SELECT admission_round_id FROM admission_applications WHERE id = $1)"
+    ).bind(application_id).fetch_optional(pool).await.unwrap_or(None).flatten();
+
+    let show_scores = selection_settings
+        .as_ref()
+        .and_then(|Json(settings)| settings.show_scores)
+        .unwrap_or(false);
+    let assignment_mode = selection_settings
+        .as_ref()
+        .and_then(|Json(settings)| settings.assignment_mode.clone())
+        .unwrap_or_else(|| "per_track".to_string());
+    let show_assignment = ["announced", "enrolling", "closed"].contains(&round_status.as_str());
+    let show_form = ["enrolling", "closed"].contains(&round_status.as_str());
+
+    let application = sqlx::query_as::<_, AdmissionApplication>(
+        r#"SELECT aa.*, at2.name AS track_name, at_asgn.name AS assigned_track_name, ar.name AS round_name
+           FROM admission_applications aa
+           LEFT JOIN admission_tracks at2 ON at2.id = aa.admission_track_id
+           LEFT JOIN admission_tracks at_asgn ON at_asgn.id = aa.room_assignment_track_id
+           LEFT JOIN admission_rounds ar ON aa.admission_round_id = ar.id
+           WHERE aa.id = $1"#,
+    )
+    .bind(application_id).fetch_one(pool).await
+    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
+    let application = decrypt_application(application)?;
+
+    let assignment = sqlx::query_as::<_, PortalAssignment>(
+        r#"SELECT ara.rank_in_track, ara.rank_in_room, ara.total_score,
+                  cr.name AS room_name, ara.student_confirmed
+           FROM admission_room_assignments ara
+           LEFT JOIN homerooms cr ON ara.homeroom_id = cr.id
+           WHERE ara.application_id = $1"#,
+    )
+    .bind(application_id)
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None);
+
+    let scores: Vec<ExamScore> = if show_scores {
+        sqlx::query_as::<_, ExamScore>(
+            r#"SELECT esc.id, esc.application_id, esc.exam_subject_id, esc.score,
+                      esc.entered_by, esc.entered_at, esc.updated_at,
+                      aes.name AS subject_name, aes.code AS subject_code,
+                      aes.max_score::FLOAT8 AS max_score
+               FROM admission_exam_subjects aes
+               LEFT JOIN admission_exam_scores esc ON esc.exam_subject_id = aes.id AND esc.application_id = $1
+               WHERE aes.admission_round_id = $2
+               ORDER BY aes.display_order ASC"#,
+        )
+        .bind(application_id).bind(application.admission_round_id)
+        .fetch_all(pool).await.unwrap_or_default()
+    } else {
+        vec![]
+    };
+
+    let form = sqlx::query_as::<_, EnrollmentForm>(
+        "SELECT * FROM admission_enrollment_forms WHERE application_id = $1",
+    )
+    .bind(application_id)
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None);
+
+    let documents = sqlx::query_as::<_, ApplicationDocument>(
+        r#"SELECT d.id, d.application_id, d.file_id, d.doc_type, d.created_at, d.deleted_at,
+                  f.display_filename AS original_filename,
+                  v.byte_size AS file_size,
+                  v.detected_mime_type AS mime_type
+           FROM admission_application_documents d
+           JOIN files f ON f.id = d.file_id
+           JOIN file_versions v
+             ON v.id = f.current_version_id AND v.file_id = f.id
+           WHERE d.application_id = $1 AND d.deleted_at IS NULL
+           ORDER BY d.created_at ASC"#,
+    )
+    .bind(application_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    Ok(PortalStatusResult {
+        application,
+        round_status,
+        assignment_mode,
+        assignment: if show_assignment { assignment } else { None },
+        scores: if show_scores { Some(scores) } else { None },
+        enrollment_form: if show_form { form } else { None },
+        documents,
+    })
+}
+
+pub async fn confirm_enrollment(
+    pool: &PgPool,
+    payload: PortalConfirmRequest,
+) -> Result<(), AppError> {
+    let application_id =
+        verify_credentials(pool, &payload.national_id, &payload.date_of_birth).await?;
+    let round_status = get_round_status(pool, application_id).await?;
+    if round_status != "enrolling" {
+        return Err(AppError::BadRequest("ยังไม่ถึงช่วงเวลารายงานตัว".to_string()));
+    }
+    let status: String =
+        sqlx::query_scalar("SELECT status FROM admission_applications WHERE id = $1")
+            .bind(application_id)
+            .fetch_one(pool)
+            .await
+            .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
+    if status != "accepted" {
+        return Err(AppError::BadRequest(format!(
+            "ไม่สามารถยืนยันได้ (สถานะปัจจุบัน: {})",
+            status
+        )));
+    }
+    sqlx::query("UPDATE admission_room_assignments SET student_confirmed = true, student_confirmed_at = NOW() WHERE application_id = $1")
+        .bind(application_id).execute(pool).await
+        .map_err(|_| AppError::InternalServerError("Failed to confirm".to_string()))?;
+    Ok(())
+}
+
+pub async fn get_enrollment_form(
+    pool: &PgPool,
+    payload: PortalCredentials,
+) -> Result<Option<EnrollmentForm>, AppError> {
+    let application_id =
+        verify_credentials(pool, &payload.national_id, &payload.date_of_birth).await?;
+    let round_status = get_round_status(pool, application_id).await?;
+    if !["enrolling", "closed"].contains(&round_status.as_str()) {
+        return Err(AppError::BadRequest("ยังไม่ถึงช่วงเวลารายงานตัว".to_string()));
+    }
+    sqlx::query_as::<_, EnrollmentForm>(
+        "SELECT * FROM admission_enrollment_forms WHERE application_id = $1",
+    )
+    .bind(application_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|_| AppError::InternalServerError("Database error".to_string()))
+}
+
+pub async fn submit_enrollment_form(
+    pool: &PgPool,
+    payload: PortalFormRequest,
+) -> Result<(), AppError> {
+    let application_id =
+        verify_credentials(pool, &payload.national_id, &payload.date_of_birth).await?;
+    let round_status = get_round_status(pool, application_id).await?;
+    if round_status != "enrolling" {
+        return Err(AppError::BadRequest(
+            "ยังไม่ถึงช่วงเวลารายงานตัว หรือหมดเขตแล้ว".to_string(),
+        ));
+    }
+    let status: String =
+        sqlx::query_scalar("SELECT status FROM admission_applications WHERE id = $1")
+            .bind(application_id)
+            .fetch_one(pool)
+            .await
+            .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
+    if status != "accepted" {
+        return Err(AppError::BadRequest(format!(
+            "ไม่สามารถยืนยันได้ (สถานะปัจจุบัน: {})",
+            status
+        )));
+    }
+    sqlx::query("UPDATE admission_room_assignments SET student_confirmed = true, student_confirmed_at = NOW() WHERE application_id = $1")
+        .bind(application_id).execute(pool).await
+        .map_err(|_| AppError::InternalServerError("Failed to confirm".to_string()))?;
+
+    let form_data = payload.form_data.unwrap_or(json!({}));
+    sqlx::query(
+        r#"INSERT INTO admission_enrollment_forms (application_id, form_data, pre_submitted_at)
+           VALUES ($1, $2, NOW())
+           ON CONFLICT (application_id) DO UPDATE SET form_data = $2, pre_submitted_at = NOW()"#,
+    )
+    .bind(application_id)
+    .bind(form_data)
+    .execute(pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to submit enrollment form: {}", e);
+        AppError::InternalServerError("ไม่สามารถบันทึกแบบฟอร์มได้".to_string())
+    })?;
+    Ok(())
+}
+
+pub async fn update_application(
+    pool: &PgPool,
+    payload: UpdatePortalApplicationRequest,
+) -> Result<(), AppError> {
+    let application_id =
+        verify_credentials(pool, &payload.auth_national_id, &payload.auth_date_of_birth).await?;
+    let round_status = get_round_status(pool, application_id).await?;
+    if round_status != "open" {
+        return Err(AppError::BadRequest(
+            "ไม่สามารถแก้ไขใบสมัครได้ในช่วงเวลานี้".to_string(),
+        ));
+    }
+    let status: String =
+        sqlx::query_scalar("SELECT status FROM admission_applications WHERE id = $1")
+            .bind(application_id)
+            .fetch_one(pool)
+            .await
+            .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
+    if status == "enrolled" || status == "withdrawn" {
+        return Err(AppError::BadRequest(format!(
+            "ไม่สามารถแก้ไขใบสมัครได้เนื่องจากอยู่ในสถานะ '{}'",
+            status
+        )));
+    }
+
+    let encrypted_pii = pii::encrypt_application_pii(
+        &payload.data.national_id,
+        payload.data.father_national_id.as_deref(),
+        payload.data.mother_national_id.as_deref(),
+        payload.data.guardian_national_id.as_deref(),
+    )
+    .map_err(|error| pii_error("encrypt update application", error))?;
+
+    if payload.data.national_id != payload.auth_national_id {
+        let round_id: Uuid = sqlx::query_scalar(
+            "SELECT admission_round_id FROM admission_applications WHERE id = $1",
+        )
+        .bind(application_id)
+        .fetch_one(pool)
+        .await
+        .unwrap_or_default();
+        let already: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM admission_applications WHERE national_id_hash = $1 AND admission_round_id = $2 AND id != $3)"
+        ).bind(&encrypted_pii.national_id_hash).bind(round_id).bind(application_id)
+        .fetch_one(pool).await.unwrap_or(false);
+        if already {
+            return Err(AppError::BadRequest(
+                "เลขบัตรประชาชนใหม่ที่กรอกได้สมัครรอบนี้ไปแล้ว (ซ้ำ)".to_string(),
+            ));
+        }
+    }
+
+    sqlx::query(
+        r#"UPDATE admission_applications SET
+            admission_track_id = $1, title = $2, first_name = $3, last_name = $4,
+            gender = $5, phone = $6, email = $7,
+            address_line = $8, sub_district = $9, district = $10, province = $11, postal_code = $12,
+            previous_school = $13, previous_grade = $14, previous_gpa = $15,
+            father_name = $16, father_phone = $17, father_occupation = $18, father_national_id = $19,
+            mother_name = $20, mother_phone = $21, mother_occupation = $22, mother_national_id = $23,
+            guardian_name = $24, guardian_phone = $25, guardian_relation = $26, guardian_national_id = $27,
+            national_id = $28, date_of_birth = $29,
+            guardian_occupation = $30, guardian_income = $31, guardian_is = $32,
+            religion = $33, ethnicity = $34, nationality = $35,
+            home_house_no = $36, home_moo = $37, home_soi = $38, home_road = $39, home_phone = $40,
+            current_house_no = $41, current_moo = $42, current_soi = $43, current_road = $44,
+            current_sub_district = $45, current_district = $46, current_province = $47,
+            current_postal_code = $48, current_phone = $49,
+            previous_study_year = $50, previous_school_province = $51,
+            father_income = $52, mother_income = $53,
+            parent_status = $54, parent_status_other = $55,
+            national_id_hash = $56, father_national_id_hash = $57,
+            mother_national_id_hash = $58, guardian_national_id_hash = $59,
+            status = 'submitted', rejection_reason = NULL, updated_at = NOW()
+           WHERE id = $60"#,
+    )
+    .bind(payload.data.admission_track_id).bind(&payload.data.title).bind(&payload.data.first_name).bind(&payload.data.last_name)
+    .bind(&payload.data.gender).bind(&payload.data.phone).bind(&payload.data.email)
+    .bind(&payload.data.address_line).bind(&payload.data.sub_district).bind(&payload.data.district)
+    .bind(&payload.data.province).bind(&payload.data.postal_code)
+    .bind(&payload.data.previous_school).bind(&payload.data.previous_grade).bind(payload.data.previous_gpa)
+    .bind(&payload.data.father_name).bind(&payload.data.father_phone).bind(&payload.data.father_occupation).bind(&encrypted_pii.father_national_id)
+    .bind(&payload.data.mother_name).bind(&payload.data.mother_phone).bind(&payload.data.mother_occupation).bind(&encrypted_pii.mother_national_id)
+    .bind(&payload.data.guardian_name).bind(&payload.data.guardian_phone).bind(&payload.data.guardian_relation).bind(&encrypted_pii.guardian_national_id)
+    .bind(&encrypted_pii.national_id).bind(payload.data.date_of_birth)
+    .bind(&payload.data.guardian_occupation).bind(payload.data.guardian_income).bind(&payload.data.guardian_is)
+    .bind(&payload.data.religion).bind(&payload.data.ethnicity).bind(&payload.data.nationality)
+    .bind(&payload.data.home_house_no).bind(&payload.data.home_moo).bind(&payload.data.home_soi).bind(&payload.data.home_road).bind(&payload.data.home_phone)
+    .bind(&payload.data.current_house_no).bind(&payload.data.current_moo).bind(&payload.data.current_soi).bind(&payload.data.current_road)
+    .bind(&payload.data.current_sub_district).bind(&payload.data.current_district).bind(&payload.data.current_province)
+    .bind(&payload.data.current_postal_code).bind(&payload.data.current_phone)
+    .bind(&payload.data.previous_study_year).bind(&payload.data.previous_school_province)
+    .bind(payload.data.father_income).bind(payload.data.mother_income)
+    .bind(payload.data.parent_status.clone().map(Json)).bind(&payload.data.parent_status_other)
+    .bind(&encrypted_pii.national_id_hash)
+    .bind(&encrypted_pii.father_national_id_hash)
+    .bind(&encrypted_pii.mother_national_id_hash)
+    .bind(&encrypted_pii.guardian_national_id_hash)
+    .bind(application_id)
+    .execute(pool).await
+    .map_err(|e| {
+        tracing::error!("Failed to update application: {}", e);
+        AppError::InternalServerError("ไม่สามารถแก้ไขใบสมัครได้".to_string())
+    })?;
+    Ok(())
+}
+
+pub async fn authorize_document_change(
+    pool: &PgPool,
+    national_id: &str,
+    date_of_birth: &str,
+) -> Result<Uuid, AppError> {
+    let application_id = verify_credentials(pool, national_id, date_of_birth).await?;
+    let round_status = get_round_status(pool, application_id).await?;
+    if !["open", "enrolling"].contains(&round_status.as_str()) {
+        return Err(AppError::BadRequest(
+            "ไม่สามารถแก้ไขเอกสารได้ในช่วงเวลานี้".to_string(),
+        ));
+    }
+    Ok(application_id)
+}
+
+pub async fn authorize_document_download(
+    pool: &PgPool,
+    national_id: &str,
+    date_of_birth: &str,
+    file_id: Uuid,
+) -> Result<Uuid, AppError> {
+    let application_id = verify_credentials(pool, national_id, date_of_birth).await?;
+    let related = sqlx::query_scalar::<_, bool>(
+        r#"
+SELECT EXISTS(
+    SELECT 1
+    FROM admission_application_documents
+    WHERE application_id = $1 AND file_id = $2 AND deleted_at IS NULL
+)
+"#,
+    )
+    .bind(application_id)
+    .bind(file_id)
+    .fetch_one(pool)
+    .await
+    .map_err(|error| {
+        tracing::error!("Failed to verify portal document relationship: {}", error);
+        AppError::InternalServerError("ไม่สามารถตรวจสอบเอกสารได้".to_string())
+    })?;
+    if related {
+        Ok(application_id)
+    } else {
+        Err(AppError::NotFound("ไม่พบเอกสาร".to_string()))
+    }
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortalExamSeatRequest {
+    pub national_id: String,
+    pub date_of_birth: String,
+}
+
+#[derive(sqlx::FromRow, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExamSeatInfo {
+    pub seat_number: i32,
+    pub exam_id: Option<String>,
+    pub room_name: String,
+    pub building_name: Option<String>,
+    pub exam_date: Option<chrono::NaiveDate>,
+}
+
+pub async fn get_exam_seat(
+    pool: &PgPool,
+    national_id: &str,
+    date_of_birth: &str,
+) -> Result<Option<ExamSeatInfo>, AppError> {
+    let application_id = verify_credentials(pool, national_id, date_of_birth).await?;
+    let round_status = get_round_status(pool, application_id).await?;
+    let allowed = ["exam_announced", "announced", "enrolling", "closed"];
+    if !allowed.contains(&round_status.as_str()) {
+        return Err(AppError::BadRequest("ยังไม่ถึงเวลาดูข้อมูลห้องสอบ".to_string()));
+    }
+    sqlx::query_as::<_, ExamSeatInfo>(
+        r#"SELECT sa.seat_number, sa.exam_id,
+                  COALESCE(er.custom_name, r.name_th, r.name_en, 'ห้องสอบ') AS room_name,
+                  b.name_th AS building_name, ar.exam_date
+           FROM admission_exam_seat_assignments sa
+           JOIN admission_exam_rooms er ON er.id = sa.exam_room_id
+           JOIN admission_rounds ar ON ar.id = er.admission_round_id
+           LEFT JOIN rooms r ON r.id = er.room_id
+           LEFT JOIN buildings b ON b.id = r.building_id
+           WHERE sa.application_id = $1"#,
+    )
+    .bind(application_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|_| AppError::InternalServerError("Database error".to_string()))
+}
+
+fn parse_portal_birth_date(date_of_birth: &str) -> Result<chrono::NaiveDate, AppError> {
+    if date_of_birth.len() != 8 || !date_of_birth.chars().all(|char| char.is_ascii_digit()) {
+        return Err(AppError::BadRequest(
+            "รูปแบบวันเกิดไม่ถูกต้อง (ต้องกรอก 8 หลัก ววดดปปปป เช่น 20082543)".to_string(),
+        ));
+    }
+    let year_be: i32 = date_of_birth[4..].parse().unwrap_or(0);
+    let year_ce = year_be - 543;
+    chrono::NaiveDate::parse_from_str(
+        &format!(
+            "{}/{}/{}",
+            &date_of_birth[0..2],
+            &date_of_birth[2..4],
+            year_ce
+        ),
+        "%d/%m/%Y",
+    )
+    .map_err(|_| {
+        AppError::BadRequest("รูปแบบวันเกิดไม่ถูกต้อง (กรอก ววดดปปปป พ.ศ. เช่น 20082543)".to_string())
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_portal_birth_date_accepts_ddmmyyyy_buddhist_year() {
+        assert_eq!(
+            parse_portal_birth_date("20082543").unwrap(),
+            chrono::NaiveDate::from_ymd_opt(2000, 8, 20).unwrap()
+        );
+    }
+
+    #[test]
+    fn parse_portal_birth_date_rejects_non_eight_digit_input() {
+        assert!(matches!(
+            parse_portal_birth_date("200825"),
+            Err(AppError::BadRequest(message)) if message.contains("8 หลัก")
+        ));
+    }
+
+    #[test]
+    fn parse_portal_birth_date_rejects_invalid_calendar_dates() {
+        assert!(matches!(
+            parse_portal_birth_date("32082543"),
+            Err(AppError::BadRequest(message)) if message.contains("ววดดปปปป")
+        ));
+    }
+}

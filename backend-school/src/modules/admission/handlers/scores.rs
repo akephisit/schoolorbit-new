@@ -6,14 +6,14 @@ use axum::{
 use serde::Serialize;
 use uuid::Uuid;
 
-use crate::api_response::ApiResponse;
-use crate::error::AppError;
-use crate::modules::admission::models::applications::*;
-use crate::modules::admission::services::score_service;
-use crate::modules::auth::session_service::AuthenticatedSession;
-use crate::permissions::registry::codes;
 use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
+use school_admission::applications::*;
+use school_admission::scores as score_service;
+use school_auth::session_service::AuthenticatedSession;
+use school_http::ApiResponse;
+use school_http::HttpError as AppError;
+use school_permissions::registry::codes;
 
 #[derive(Debug, Serialize)]
 struct UpdatedCountData<T> {

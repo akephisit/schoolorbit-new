@@ -432,7 +432,7 @@ async function main() {
 		lockPath: path.join(repositoryRoot, 'contracts/permissions.lock.json'),
 		rustOutputPath: path.join(
 			repositoryRoot,
-			'backend-school/src/permissions/registry_generated.rs'
+			'backend-school/crates/school-permissions/src/registry_generated.rs'
 		),
 		typeScriptOutputPath: path.join(
 			repositoryRoot,

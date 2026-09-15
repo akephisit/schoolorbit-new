@@ -5,23 +5,23 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use chrono::Utc;
+use school_http::HttpError as AppError;
 use uuid::Uuid;
 
 use crate::{
-    error::AppError,
-    modules::auth::{
-        audit::{self, SessionFailureReason},
-        config::CSRF_HEADER_NAME,
-        http::{
-            append_response_cookie, csrf_response_header, presented_session_token,
-            set_session_cookie, validate_csrf,
-        },
-        runtime::AuthRuntime,
-        session_crypto::RawSessionToken,
-        session_repository::SessionMaintenanceMode,
-        session_service,
+    modules::auth::http::{
+        append_response_cookie, csrf_response_header, presented_session_token, set_session_cookie,
+        validate_csrf,
     },
     utils::{subdomain::parse_realtime_tenant_hint, tenant::resolve_auth_tenant_context},
+};
+use school_auth::{
+    audit::{self, SessionFailureReason},
+    config::CSRF_HEADER_NAME,
+    runtime::AuthRuntime,
+    session_crypto::RawSessionToken,
+    session_repository::SessionMaintenanceMode,
+    session_service,
 };
 
 pub async fn session_middleware(
@@ -123,21 +123,18 @@ fn is_unsafe_method(method: &Method) -> bool {
     )
 }
 
-fn insert_csrf_header(
-    response: &mut Response,
-    token: &crate::modules::auth::session_crypto::CsrfToken,
-) {
+fn insert_csrf_header(response: &mut Response, token: &school_auth::session_crypto::CsrfToken) {
     response.headers_mut().insert(
         HeaderName::from_static(CSRF_HEADER_NAME),
         csrf_response_header(token),
     );
 }
 
-fn audit_origin_rejection(error: AppError) -> AppError {
-    if matches!(error, AppError::Forbidden(_)) {
+fn audit_origin_rejection(error: school_errors::AppError) -> AppError {
+    if matches!(error, school_errors::AppError::Forbidden(_)) {
         audit::origin_rejected(SessionFailureReason::InvalidOrigin);
     }
-    error
+    error.into()
 }
 
 fn authentication_required() -> AppError {

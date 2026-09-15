@@ -1,12 +1,12 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::error::AppError;
-use crate::middleware::permission::ActorContext;
-use crate::permissions::registry::codes;
 use crate::policies::resource_access_policy::{
     self, ResourceAccessPermissions, ResourceAccessTarget, UserResourceListAccess,
 };
+use school_authorization::ActorContext;
+use school_errors::AppError;
+use school_permissions::registry::codes;
 
 const STUDENT_PROFILE_ACCESS: ResourceAccessPermissions = ResourceAccessPermissions {
     own: Some(codes::STUDENT_READ_OWN),

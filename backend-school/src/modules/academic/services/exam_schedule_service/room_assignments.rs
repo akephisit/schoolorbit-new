@@ -1,11 +1,11 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::error::AppError;
 use crate::modules::academic::models::exam_schedule::{
     DayRoomAssignmentView, GenerateSeatsRequest, InvigilatorView, SeatAssignmentView,
     UpsertDayRoomAssignmentRequest,
 };
+use school_errors::AppError;
 
 use super::invigilation::{
     fetch_invigilator_views_by_assignment_ids, lock_exam_invigilator_staff_conflict_scope,

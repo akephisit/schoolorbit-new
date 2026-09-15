@@ -5,39 +5,13 @@ use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::{env, error::Error, time::Duration};
 use uuid::Uuid;
 
-#[path = "../permissions/registry.rs"]
-pub mod permission_registry;
-
-pub mod permissions {
-    pub use crate::permission_registry as registry;
-}
-
-#[path = "../utils/permission_sync.rs"]
-pub mod permission_sync;
-
-pub mod utils {
-    pub use crate::permission_sync;
-}
-
-#[path = "../db/migration.rs"]
-pub mod migration;
-
-#[cfg(test)]
-pub mod db {
-    pub use crate::migration;
-}
-
-#[cfg(test)]
-#[path = "../test_helpers.rs"]
-mod test_helpers;
-
 #[cfg(test)]
 #[path = "../modules/academic/cutover_test_preflight.rs"]
-mod cutover_test_preflight;
+pub mod cutover_test_preflight;
 
 #[cfg(test)]
 #[path = "../modules/academic/cutover_test_support.rs"]
-mod cutover_test_support;
+pub mod cutover_test_support;
 
 type SeedResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
@@ -103,7 +77,7 @@ async fn main() -> SeedResult<()> {
 
     if config.run_migrations {
         println!("Running tenant migrations...");
-        migration::run_tenant_migrations(&pool).await?;
+        school_migrations::run_tenant_migrations(&pool).await?;
     }
 
     let summary = seed_database(&pool, &config).await?;
@@ -1060,6 +1034,9 @@ mod tests {
         cutover_test_support::apply_phase_b_runtime_migrations(&pool)
             .await
             .expect("apply academic cutover migrations");
+        school_migrations::run_tenant_migrations(&pool)
+            .await
+            .expect("apply remaining active migrations");
 
         let config = test_config();
         let first = seed_database(&pool, &config).await.expect("first seed");

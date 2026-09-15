@@ -4,9 +4,9 @@ use chrono::{Duration, NaiveTime, Timelike};
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
-use crate::error::AppError;
-use crate::modules::academic::core::services::lifecycle_guard;
 use crate::modules::academic::models::exam_schedule::BlockedWindow;
+use school_academic_core::services::lifecycle_guard;
+use school_errors::AppError;
 
 const EXAM_SESSION_SLOT_MINUTES: u32 = 5;
 const EXAM_SESSION_CLASSROOM_LOCK_NAMESPACE: i64 = 0x4558_5343_4C52_0000;

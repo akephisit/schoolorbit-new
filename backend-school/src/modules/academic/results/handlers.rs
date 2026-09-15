@@ -1,15 +1,13 @@
-use super::{models::*, services};
-use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::utils::request_context::actor_tenant_context_from_session;
-use crate::{
-    api_response::{ApiErrorResponse, ApiResponse},
-    error::AppError,
-    AppState,
-};
+use crate::AppState;
 use axum::{
     extract::{Extension, Path, Query, State},
     Json,
 };
+use school_academic_results::{models::*, services};
+use school_auth::session_service::AuthenticatedSession;
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse};
 use uuid::Uuid;
 
 #[utoipa::path(get,path="/api/academic/results/annual-students",operation_id="listAnnualResultStudents",tag="academic",params(AnnualResultContext),responses((status=200,body=ApiResponse<Vec<AnnualResultStudent>>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse)))]

@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use sqlx::{types::Json, PgPool};
 use uuid::Uuid;
 
-use crate::error::AppError;
+use school_errors::AppError;
 
 use super::models::{
     ConsentRecord, ConsentRecordResponse, ConsentSummary, ConsentType, ConsentTypeResponse,

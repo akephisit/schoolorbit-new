@@ -1,0 +1,24 @@
+[package]
+name = "school-admission"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bcrypt = { workspace = true }
+chrono = { workspace = true }
+school-academic-core = { workspace = true }
+school-crypto = { workspace = true }
+school-errors = { workspace = true }
+school-file-platform = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+tracing = { workspace = true }
+utoipa = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+school-crypto = { workspace = true, features = ["test-support"] }
+
+[lints]
+workspace = true

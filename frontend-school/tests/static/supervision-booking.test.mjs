@@ -12,13 +12,13 @@ async function readRepoFile(relativePath) {
 }
 
 const supervisionServiceFiles = [
-	'backend-school/src/modules/supervision/services.rs',
-	'backend-school/src/modules/supervision/services/cycles.rs',
-	'backend-school/src/modules/supervision/services/evaluations.rs',
-	'backend-school/src/modules/supervision/services/observations.rs',
-	'backend-school/src/modules/supervision/services/reviews_and_reports.rs',
-	'backend-school/src/modules/supervision/services/shared.rs',
-	'backend-school/src/modules/supervision/services/templates.rs'
+	'backend-school/crates/school-supervision/src/services.rs',
+	'backend-school/crates/school-supervision/src/services/cycles.rs',
+	'backend-school/crates/school-supervision/src/services/evaluations.rs',
+	'backend-school/crates/school-supervision/src/services/observations.rs',
+	'backend-school/crates/school-supervision/src/services/reviews_and_reports.rs',
+	'backend-school/crates/school-supervision/src/services/shared.rs',
+	'backend-school/crates/school-supervision/src/services/templates.rs'
 ];
 
 async function readSupervisionServices() {
@@ -26,7 +26,9 @@ async function readSupervisionServices() {
 }
 
 test('teaching supervision names canonical timetable block-group references end to end', async () => {
-	const supervisionModels = await readRepoFile('backend-school/src/modules/supervision/models.rs');
+	const supervisionModels = await readRepoFile(
+		'backend-school/crates/school-supervision/src/models.rs'
+	);
 	const supervisionServices = await readSupervisionServices();
 	const generatedSchoolApi = await readRepoFile(
 		'frontend-school/src/lib/api/generated/school-api.ts'
@@ -45,7 +47,9 @@ test('teaching supervision booking uses a weekly timetable grid with exact obser
 	const supervisionPage = await readRepoFile(
 		'frontend-school/src/lib/components/supervision/SupervisionWorkspace.svelte'
 	);
-	const supervisionModels = await readRepoFile('backend-school/src/modules/supervision/models.rs');
+	const supervisionModels = await readRepoFile(
+		'backend-school/crates/school-supervision/src/models.rs'
+	);
 	const supervisionService = await readSupervisionServices();
 	const migration = await readRepoFile('backend-school/migrations/008_supervision_observed_at.sql');
 
@@ -338,7 +342,9 @@ test('teaching supervision approval review shows completed rubric before approvi
 	const supervisionHandlers = await readRepoFile(
 		'backend-school/src/modules/supervision/handlers.rs'
 	);
-	const supervisionModels = await readRepoFile('backend-school/src/modules/supervision/models.rs');
+	const supervisionModels = await readRepoFile(
+		'backend-school/crates/school-supervision/src/models.rs'
+	);
 	const supervisionService = await readSupervisionServices();
 
 	assert.match(supervisionApi, /SupervisionObservationReview/);

@@ -1,13 +1,4 @@
-use crate::api_response::{ApiErrorResponse, ApiResponse};
-use crate::error::AppError;
-use crate::modules::auth::{
-    audit::{self, SessionFailureReason},
-    events::SessionRevocationEvent,
-    session_service::{self, AuthenticatedSession},
-};
-use crate::modules::notification::events::{
-    PermissionChangeEvent, TenantNotificationEvent, WorkChangeEvent,
-};
+use crate::modules::notification::events::{TenantNotificationEvent, WorkChangeEvent};
 use crate::modules::notification::models::{
     CreateNotificationRequest, ListNotificationsQuery, SubscribePushRequest,
 };
@@ -23,6 +14,13 @@ use axum::{
 };
 use chrono::Utc;
 use futures::{stream::Stream, StreamExt};
+use school_auth::{
+    audit::{self, SessionFailureReason},
+    events::{PermissionChangeEvent, SessionRevocationEvent},
+    session_service::{self, AuthenticatedSession},
+};
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse};
 use std::{convert::Infallible, future::Future, time::Duration};
 use tokio::{
     sync::broadcast,
@@ -63,7 +61,7 @@ fn audit_session_stream_disconnect(session: &AuthenticatedSession, reason: Sessi
     );
 }
 
-fn session_bound_notification_stream<F, Fut>(
+fn session_bound_notification_stream<F, Fut, E>(
     session: AuthenticatedSession,
     mut notification_rx: broadcast::Receiver<TenantNotificationEvent>,
     mut permission_rx: broadcast::Receiver<PermissionChangeEvent>,
@@ -74,7 +72,8 @@ fn session_bound_notification_stream<F, Fut>(
 ) -> impl Stream<Item = NotificationStreamEvent>
 where
     F: FnMut() -> Fut + Send + 'static,
-    Fut: Future<Output = Result<bool, AppError>> + Send + 'static,
+    Fut: Future<Output = Result<bool, E>> + Send + 'static,
+    E: Send + 'static,
 {
     let tenant = session.tenant.subdomain.clone();
     let user_id = session.user_id;
@@ -315,37 +314,35 @@ pub async fn subscribe_push(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::modules::auth::events::SessionRevocationEvent;
-    use crate::utils::tenant::TenantContext;
     use futures::StreamExt;
+    use school_auth::events::SessionRevocationEvent;
+    use school_tenancy::TenantContext;
     use sqlx::postgres::PgPoolOptions;
     use std::future;
     use std::time::Duration;
     use tokio::time::{interval_at, Instant};
 
     fn authenticated_session(tenant: &str) -> AuthenticatedSession {
-        AuthenticatedSession {
-            identity_cache: std::sync::Arc::new(
-                crate::modules::auth::session_cache::SessionCache::new(),
-            ),
-            tenant: TenantContext {
+        AuthenticatedSession::for_tests(
+            std::sync::Arc::new(school_auth::session_cache::SessionCache::new()),
+            TenantContext {
                 tenant_id: Uuid::new_v4(),
                 subdomain: tenant.to_string(),
                 pool: PgPoolOptions::new()
                     .connect_lazy("postgres://invalid:invalid@127.0.0.1:1/invalid")
                     .unwrap(),
             },
-            session_id: Uuid::new_v4(),
-            user_id: Uuid::new_v4(),
-            user_type: "staff".to_string(),
-        }
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            "staff",
+        )
     }
 
     fn event_receivers() -> (
         broadcast::Sender<crate::modules::notification::events::TenantNotificationEvent>,
         broadcast::Receiver<crate::modules::notification::events::TenantNotificationEvent>,
-        broadcast::Sender<crate::modules::notification::events::PermissionChangeEvent>,
-        broadcast::Receiver<crate::modules::notification::events::PermissionChangeEvent>,
+        broadcast::Sender<school_auth::events::PermissionChangeEvent>,
+        broadcast::Receiver<school_auth::events::PermissionChangeEvent>,
         broadcast::Sender<crate::modules::notification::events::WorkChangeEvent>,
         broadcast::Receiver<crate::modules::notification::events::WorkChangeEvent>,
         broadcast::Sender<SessionRevocationEvent>,
@@ -391,7 +388,7 @@ mod tests {
                     Instant::now() + Duration::from_secs(3600),
                     Duration::from_secs(3600),
                 ),
-                || future::ready(Ok(true)),
+                || future::ready(Ok::<bool, school_errors::AppError>(true)),
             );
             futures::pin_mut!(stream);
             for _ in 0..9 {
@@ -437,7 +434,7 @@ mod tests {
                 Instant::now() + Duration::from_secs(3600),
                 Duration::from_secs(3600),
             ),
-            || future::ready(Ok(false)),
+            || future::ready(Ok::<bool, school_errors::AppError>(false)),
         );
         futures::pin_mut!(stream);
         permission_tx
@@ -474,7 +471,7 @@ mod tests {
                 Instant::now() + Duration::from_secs(3600),
                 Duration::from_secs(3600),
             ),
-            || future::ready(Ok(true)),
+            || future::ready(Ok::<bool, school_errors::AppError>(true)),
         );
         futures::pin_mut!(stream);
         session_tx
@@ -516,7 +513,7 @@ mod tests {
                 Instant::now() + Duration::from_secs(3600),
                 Duration::from_secs(3600),
             ),
-            || future::ready(Ok(true)),
+            || future::ready(Ok::<bool, school_errors::AppError>(true)),
         );
         futures::pin_mut!(stream);
         session_tx
@@ -562,7 +559,7 @@ mod tests {
             work_rx,
             session_rx,
             interval_at(Instant::now(), Duration::from_secs(3600)),
-            || future::ready(Ok(false)),
+            || future::ready(Ok::<bool, school_errors::AppError>(false)),
         );
         futures::pin_mut!(stream);
 
