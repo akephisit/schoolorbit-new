@@ -185,7 +185,8 @@ For coordinated school release behavior, run:
 ```bash
 node --test tests/runtime/maintenance-controller.test.mjs \
   tests/static/school-release-deployment.test.mjs
-node --test ../scripts/tests/school-release-scope.test.mjs
+node --test ../scripts/tests/school-release-scope.test.mjs \
+  ../scripts/tests/school-release-replay.test.mjs
 node --test ../scripts/tests/worker-release-candidates.test.mjs
 ```
 
@@ -207,6 +208,7 @@ When the VPS installer, canonical Compose runtime, Nginx templates, deployment w
 ```bash
 node --test scripts/tests/backend-school-test-database.test.mjs
 node --test scripts/tests/school-release-scope.test.mjs \
+  scripts/tests/school-release-replay.test.mjs \
   scripts/tests/worker-release-candidates.test.mjs
 shellcheck scripts/schoolorbit-installer scripts/render_nginx_config.sh \
   scripts/prune_runtime_images.sh scripts/clamd_runtime_matches.sh \

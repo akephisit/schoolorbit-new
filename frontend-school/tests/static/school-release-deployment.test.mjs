@@ -42,6 +42,51 @@ test('one serialized workflow owns every school production release scope', async
 	assert.doesNotMatch(source, /BEFORE_SHA/);
 });
 
+test('an accepted run rerun becomes a no-op and restores its accepted state', async () => {
+	const workflow = parseYaml(await readFile(workflowPath, 'utf8'));
+	const resolve = workflow.jobs['resolve-scope'];
+	const replay = resolve.steps.find(
+		(step) => step.name === 'Detect a previously accepted run attempt'
+	);
+	const scope = resolve.steps.find((step) => step.name === 'Resolve and validate release scope');
+	const acceptedState = workflow.jobs['accept-release'].steps.find(
+		(step) => step.name === 'Create accepted release state'
+	);
+	const releaseSummary = workflow.jobs['release-summary'].steps.find(
+		(step) => step.name === 'Report bounded release outcome'
+	);
+
+	assert.equal(resolve.outputs.already_deployed, '${{ steps.replay.outputs.already_deployed }}');
+	assert.equal(resolve.outputs.accepted_attempt, '${{ steps.replay.outputs.accepted_attempt }}');
+	assert.equal(replay.env.GH_TOKEN, '${{ github.token }}');
+	assert.match(replay.run, /jobs\?filter=all&per_page=100/);
+	assert.match(replay.run, /jq -s '\[\.\[\] \| \.jobs\[\]\]'/);
+	assert.match(replay.run, /resolve_school_release_replay\.mjs/);
+	assert.equal(scope.env.ALREADY_DEPLOYED, '${{ steps.replay.outputs.already_deployed }}');
+	assert.equal(scope.env.REPLAY_SCOPE, '${{ steps.replay.outputs.accepted_scope }}');
+	assert.match(scope.run, /if \[ "\$ALREADY_DEPLOYED" = true \]/);
+	assert.match(scope.run, /needs_frontend=false/);
+	assert.match(scope.run, /needs_backend=false/);
+	assert.equal(
+		acceptedState.env.ALREADY_DEPLOYED,
+		'${{ needs.resolve-scope.outputs.already_deployed }}'
+	);
+	assert.equal(
+		acceptedState.env.REPLAY_FRONTEND,
+		'${{ needs.resolve-scope.outputs.accepted_frontend }}'
+	);
+	assert.equal(
+		acceptedState.env.REPLAY_BACKEND,
+		'${{ needs.resolve-scope.outputs.accepted_backend }}'
+	);
+	assert.match(acceptedState.run, /if \[ "\$ALREADY_DEPLOYED" = true \]/);
+	assert.equal(
+		releaseSummary.env.ALREADY_DEPLOYED,
+		'${{ needs.resolve-scope.outputs.already_deployed }}'
+	);
+	assert.match(releaseSummary.run, /already accepted in run attempt/);
+});
+
 test('full preparation stages every Worker before backend maintenance can begin', async () => {
 	const source = await readFile(workflowPath, 'utf8');
 	const workflow = parseYaml(source);

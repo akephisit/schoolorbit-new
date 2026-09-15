@@ -13,6 +13,7 @@ on:
       - "scripts/discover_school_tenants.sh"
       - "scripts/find_worker_release_candidates.mjs"
       - "scripts/resolve_school_release_scope.sh"
+      - "scripts/resolve_school_release_replay.mjs"
       - "scripts/lib/schoolorbit-installer/configure_pre_cutover_origin.sh"
       - "scripts/render_nginx_config.sh"
       - "scripts/smoke_test.sh"
@@ -69,11 +70,33 @@ jobs:
       frontend_baseline: ${{ steps.release-state.outputs.frontend_sha }}
       backend_baseline: ${{ steps.release-state.outputs.backend_sha }}
       state_run_id: ${{ steps.accepted-state.outputs.run_id }}
+      already_deployed: ${{ steps.replay.outputs.already_deployed }}
+      accepted_attempt: ${{ steps.replay.outputs.accepted_attempt }}
+      accepted_frontend: ${{ steps.replay.outputs.accepted_frontend }}
+      accepted_backend: ${{ steps.replay.outputs.accepted_backend }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Detect a previously accepted run attempt
+        id: replay
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          jobs="$RUNNER_TEMP/school-release-jobs.json"
+          gh api --paginate \
+            "/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?filter=all&per_page=100" |
+            jq -s '[.[] | .jobs[]]' >"$jobs"
+          node scripts/resolve_school_release_replay.mjs \
+            "$GITHUB_RUN_ATTEMPT" "$GITHUB_SHA" "$jobs" >>"$GITHUB_OUTPUT"
 
       - name: Locate latest trusted accepted release state
         id: accepted-state
@@ -205,15 +228,22 @@ jobs:
           FRONTEND_ACCEPTED_SHA: ${{ steps.release-state.outputs.frontend_sha }}
           BACKEND_ACCEPTED_SHA: ${{ steps.release-state.outputs.backend_sha }}
           FORCE_FULL: ${{ steps.release-state.outputs.force_full }}
+          ALREADY_DEPLOYED: ${{ steps.replay.outputs.already_deployed }}
+          REPLAY_SCOPE: ${{ steps.replay.outputs.accepted_scope }}
           RUNTIME_DEPLOY_ENABLED: ${{ vars.RUNTIME_DEPLOY_ENABLED }}
           FRONTEND_DEPLOY_ENABLED: ${{ vars.FRONTEND_DEPLOY_ENABLED }}
         run: |
           set -euo pipefail
-          resolution="$(
-            bash scripts/resolve_school_release_scope.sh \
-              "$REQUESTED_SCOPE" "$GITHUB_SHA" \
-              "$FRONTEND_ACCEPTED_SHA" "$BACKEND_ACCEPTED_SHA" "$FORCE_FULL"
-          )"
+          if [ "$ALREADY_DEPLOYED" = true ]; then
+            resolution="$(printf 'scope=%s\nneeds_frontend=false\nneeds_backend=false\nrelease_id=%s\n' \
+              "$REPLAY_SCOPE" "$GITHUB_SHA")"
+          else
+            resolution="$(
+              bash scripts/resolve_school_release_scope.sh \
+                "$REQUESTED_SCOPE" "$GITHUB_SHA" \
+                "$FRONTEND_ACCEPTED_SHA" "$BACKEND_ACCEPTED_SHA" "$FORCE_FULL"
+            )"
+          fi
           scope="$(sed -n 's/^scope=//p' <<<"$resolution")"
           needs_frontend="$(sed -n 's/^needs_frontend=//p' <<<"$resolution")"
           needs_backend="$(sed -n 's/^needs_backend=//p' <<<"$resolution")"
@@ -1631,14 +1661,29 @@ jobs:
           PREVIOUS_BACKEND_SHA: ${{ needs.resolve-scope.outputs.backend_baseline }}
           NEEDS_FRONTEND: ${{ needs.resolve-scope.outputs.needs_frontend }}
           NEEDS_BACKEND: ${{ needs.resolve-scope.outputs.needs_backend }}
+          ALREADY_DEPLOYED: ${{ needs.resolve-scope.outputs.already_deployed }}
+          REPLAY_FRONTEND: ${{ needs.resolve-scope.outputs.accepted_frontend }}
+          REPLAY_BACKEND: ${{ needs.resolve-scope.outputs.accepted_backend }}
         run: |
           set -euo pipefail
           frontend_sha=$PREVIOUS_FRONTEND_SHA
           backend_sha=$PREVIOUS_BACKEND_SHA
-          if [ "$NEEDS_FRONTEND" = true ]; then
+          accepted_frontend=$NEEDS_FRONTEND
+          accepted_backend=$NEEDS_BACKEND
+          if [ "$ALREADY_DEPLOYED" = true ]; then
+            accepted_frontend=$REPLAY_FRONTEND
+            accepted_backend=$REPLAY_BACKEND
+          fi
+          if [[ ! $accepted_frontend =~ ^(true|false)$ ]] ||
+            [[ ! $accepted_backend =~ ^(true|false)$ ]]
+          then
+            echo "Accepted component selection is invalid"
+            exit 1
+          fi
+          if [ "$accepted_frontend" = true ]; then
             frontend_sha=$RELEASE_ID
           fi
-          if [ "$NEEDS_BACKEND" = true ]; then
+          if [ "$accepted_backend" = true ]; then
             backend_sha=$RELEASE_ID
           fi
           if ! printf '%s' "$frontend_sha" | grep -Eq '^$|^[0-9a-f]{40}$' ||
@@ -1669,9 +1714,16 @@ jobs:
         env:
           RELEASE_SCOPE: ${{ needs.resolve-scope.outputs.scope }}
           RELEASE_ID: ${{ needs.resolve-scope.outputs.release_id }}
+          ALREADY_DEPLOYED: ${{ needs.resolve-scope.outputs.already_deployed }}
+          ACCEPTED_ATTEMPT: ${{ needs.resolve-scope.outputs.accepted_attempt }}
         run: |
-          printf 'School release accepted: scope=%s release=%s\n' "$RELEASE_SCOPE" "$RELEASE_ID" \
-            >>"$GITHUB_STEP_SUMMARY"
+          if [ "$ALREADY_DEPLOYED" = true ]; then
+            printf 'School release %s was already accepted in run attempt %s; deployment was not repeated.\n' \
+              "$RELEASE_ID" "$ACCEPTED_ATTEMPT" >>"$GITHUB_STEP_SUMMARY"
+          else
+            printf 'School release accepted: scope=%s release=%s\n' "$RELEASE_SCOPE" "$RELEASE_ID" \
+              >>"$GITHUB_STEP_SUMMARY"
+          fi
 
   release-summary:
     needs: [resolve-scope, stage-frontends, deploy-backend, promote-frontends, accept-release]
@@ -1685,11 +1737,16 @@ jobs:
           BACKEND_RESULT: ${{ needs.deploy-backend.result }}
           FRONTEND_RESULT: ${{ needs.promote-frontends.result }}
           ACCEPT_RESULT: ${{ needs.accept-release.result }}
+          ALREADY_DEPLOYED: ${{ needs.resolve-scope.outputs.already_deployed }}
+          ACCEPTED_ATTEMPT: ${{ needs.resolve-scope.outputs.accepted_attempt }}
         run: |
           set -euo pipefail
           printf 'scope=%s release=%s backend=%s frontend=%s accepted=%s\n' \
             "$RELEASE_SCOPE" "$RELEASE_ID" "$BACKEND_RESULT" "$FRONTEND_RESULT" "$ACCEPT_RESULT" \
             >>"$GITHUB_STEP_SUMMARY"
-          if [ "$ACCEPT_RESULT" != success ] && [ "$BACKEND_RESULT" != skipped ]; then
+          if [ "$ALREADY_DEPLOYED" = true ]; then
+            printf 'Release already accepted in run attempt %s; build and deployment jobs were skipped.\n' \
+              "$ACCEPTED_ATTEMPT" >>"$GITHUB_STEP_SUMMARY"
+          elif [ "$ACCEPT_RESULT" != success ] && [ "$BACKEND_RESULT" != skipped ]; then
             echo "School API remains in maintenance for the failed release" >>"$GITHUB_STEP_SUMMARY"
           fi

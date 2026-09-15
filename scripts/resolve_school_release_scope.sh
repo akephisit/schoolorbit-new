@@ -42,7 +42,8 @@ if [[ $scope == auto ]]; then
                     needs_frontend=true
                     ;;
                 .github/workflows/deploy-school-release.yml | \
-                    scripts/resolve_school_release_scope.sh)
+                    scripts/resolve_school_release_scope.sh | \
+                    scripts/resolve_school_release_replay.mjs)
                     needs_frontend=true
                     needs_backend=true
                     ;;
@@ -60,7 +61,8 @@ if [[ $scope == auto ]]; then
                     needs_backend=true
                     ;;
                 .github/workflows/deploy-school-release.yml | \
-                    scripts/resolve_school_release_scope.sh)
+                    scripts/resolve_school_release_scope.sh | \
+                    scripts/resolve_school_release_replay.mjs)
                     needs_frontend=true
                     needs_backend=true
                     ;;
