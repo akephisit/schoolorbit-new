@@ -52,15 +52,22 @@ test('an accepted run rerun becomes a no-op and restores its accepted state', as
 	const acceptedState = workflow.jobs['accept-release'].steps.find(
 		(step) => step.name === 'Create accepted release state'
 	);
+	const persistedState = workflow.jobs['accept-release'].steps.find(
+		(step) => step.name === 'Persist accepted release state'
+	);
 	const releaseSummary = workflow.jobs['release-summary'].steps.find(
 		(step) => step.name === 'Report bounded release outcome'
 	);
 
 	assert.equal(resolve.outputs.already_deployed, '${{ steps.replay.outputs.already_deployed }}');
 	assert.equal(resolve.outputs.accepted_attempt, '${{ steps.replay.outputs.accepted_attempt }}');
+	assert.equal(resolve.outputs.restore_state, '${{ steps.replay.outputs.restore_state }}');
 	assert.equal(replay.env.GH_TOKEN, '${{ github.token }}');
 	assert.match(replay.run, /jobs\?filter=all&per_page=100/);
-	assert.match(replay.run, /jq -s '\[\.\[\] \| \.jobs\[\]\]'/);
+	assert.match(replay.run, /actions\/runs\/\$\{GITHUB_RUN_ID\}/);
+	assert.match(replay.run, /actions\/workflows\/\$\{workflow_id\}\/runs/);
+	assert.match(replay.run, /created=>=/);
+	assert.match(replay.run, /jq -s '\.'/);
 	assert.match(replay.run, /resolve_school_release_replay\.mjs/);
 	assert.equal(scope.env.ALREADY_DEPLOYED, '${{ steps.replay.outputs.already_deployed }}');
 	assert.equal(scope.env.REPLAY_SCOPE, '${{ steps.replay.outputs.accepted_scope }}');
@@ -80,6 +87,7 @@ test('an accepted run rerun becomes a no-op and restores its accepted state', as
 		'${{ needs.resolve-scope.outputs.accepted_backend }}'
 	);
 	assert.match(acceptedState.run, /if \[ "\$ALREADY_DEPLOYED" = true \]/);
+	assert.match(String(persistedState.if), /restore_state == 'true'/);
 	assert.equal(
 		releaseSummary.env.ALREADY_DEPLOYED,
 		'${{ needs.resolve-scope.outputs.already_deployed }}'

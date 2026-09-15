@@ -74,6 +74,7 @@ jobs:
       accepted_attempt: ${{ steps.replay.outputs.accepted_attempt }}
       accepted_frontend: ${{ steps.replay.outputs.accepted_frontend }}
       accepted_backend: ${{ steps.replay.outputs.accepted_backend }}
+      restore_state: ${{ steps.replay.outputs.restore_state }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -91,12 +92,22 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          jobs="$RUNNER_TEMP/school-release-jobs.json"
+          current_run="$RUNNER_TEMP/school-release-current-run.json"
+          job_pages="$RUNNER_TEMP/school-release-job-pages.json"
+          run_pages="$RUNNER_TEMP/school-release-run-pages.json"
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >"$current_run"
+          workflow_id="$(jq -er '.workflow_id | select(type == "number" and . > 0)' "$current_run")"
+          created_at="$(jq -er '.created_at | select(type == "string")' "$current_run")"
           gh api --paginate \
             "/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?filter=all&per_page=100" |
-            jq -s '[.[] | .jobs[]]' >"$jobs"
+            jq -s '.' >"$job_pages"
+          gh api --paginate --method GET \
+            "/repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_id}/runs" \
+            -f branch=main -F per_page=100 -f "created=>=${created_at}" |
+            jq -s '.' >"$run_pages"
           node scripts/resolve_school_release_replay.mjs \
-            "$GITHUB_RUN_ATTEMPT" "$GITHUB_SHA" "$jobs" >>"$GITHUB_OUTPUT"
+            "$GITHUB_RUN_ATTEMPT" "$GITHUB_SHA" \
+            "$current_run" "$job_pages" "$run_pages" >>"$GITHUB_OUTPUT"
 
       - name: Locate latest trusted accepted release state
         id: accepted-state
@@ -1702,7 +1713,10 @@ jobs:
             >"$RUNNER_TEMP/school-release-state.json"
 
       - name: Persist accepted release state
-        if: needs.resolve-scope.outputs.state_run_id != github.run_id
+        if: >-
+          ${{ (needs.resolve-scope.outputs.already_deployed != 'true' ||
+               needs.resolve-scope.outputs.restore_state == 'true') &&
+              needs.resolve-scope.outputs.state_run_id != github.run_id }}
         uses: actions/upload-artifact@v6
         with:
           name: school-release-state
@@ -1716,10 +1730,17 @@ jobs:
           RELEASE_ID: ${{ needs.resolve-scope.outputs.release_id }}
           ALREADY_DEPLOYED: ${{ needs.resolve-scope.outputs.already_deployed }}
           ACCEPTED_ATTEMPT: ${{ needs.resolve-scope.outputs.accepted_attempt }}
+          RESTORE_STATE: ${{ needs.resolve-scope.outputs.restore_state }}
         run: |
           if [ "$ALREADY_DEPLOYED" = true ]; then
-            printf 'School release %s was already accepted in run attempt %s; deployment was not repeated.\n' \
+            printf 'School release %s was already accepted in run attempt %s; deployment was not repeated' \
               "$RELEASE_ID" "$ACCEPTED_ATTEMPT" >>"$GITHUB_STEP_SUMMARY"
+            if [ "$RESTORE_STATE" = true ]; then
+              echo ', and its accepted state was restored.' >>"$GITHUB_STEP_SUMMARY"
+            else
+              echo '; a newer workflow run exists, so accepted state was left unchanged.' \
+                >>"$GITHUB_STEP_SUMMARY"
+            fi
           else
             printf 'School release accepted: scope=%s release=%s\n' "$RELEASE_SCOPE" "$RELEASE_ID" \
               >>"$GITHUB_STEP_SUMMARY"
@@ -1739,14 +1760,20 @@ jobs:
           ACCEPT_RESULT: ${{ needs.accept-release.result }}
           ALREADY_DEPLOYED: ${{ needs.resolve-scope.outputs.already_deployed }}
           ACCEPTED_ATTEMPT: ${{ needs.resolve-scope.outputs.accepted_attempt }}
+          RESTORE_STATE: ${{ needs.resolve-scope.outputs.restore_state }}
         run: |
           set -euo pipefail
           printf 'scope=%s release=%s backend=%s frontend=%s accepted=%s\n' \
             "$RELEASE_SCOPE" "$RELEASE_ID" "$BACKEND_RESULT" "$FRONTEND_RESULT" "$ACCEPT_RESULT" \
             >>"$GITHUB_STEP_SUMMARY"
           if [ "$ALREADY_DEPLOYED" = true ]; then
-            printf 'Release already accepted in run attempt %s; build and deployment jobs were skipped.\n' \
+            printf 'Release already accepted in run attempt %s; build and deployment jobs were skipped' \
               "$ACCEPTED_ATTEMPT" >>"$GITHUB_STEP_SUMMARY"
+            if [ "$RESTORE_STATE" = true ]; then
+              echo ', and the current accepted state was restored.' >>"$GITHUB_STEP_SUMMARY"
+            else
+              echo '; newer workflow history was not changed.' >>"$GITHUB_STEP_SUMMARY"
+            fi
           elif [ "$ACCEPT_RESULT" != success ] && [ "$BACKEND_RESULT" != skipped ]; then
             echo "School API remains in maintenance for the failed release" >>"$GITHUB_STEP_SUMMARY"
           fi

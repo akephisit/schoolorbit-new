@@ -104,7 +104,9 @@ recovery manifest, and applies its routes. Acceptance verifies that exact active
 bounded condition-based retries for its complete immutable JavaScript/CSS assets and a real browser
 mount so Cloudflare propagation delay does not fail an otherwise healthy release. Re-running a workflow
 run that already reached release acceptance is an idempotent no-op: build and deployment jobs are skipped,
-the accepted component baselines are restored as a fresh state artifact, and the run finishes successfully.
+and the run finishes successfully. If it is still the newest workflow run, its accepted component baselines
+are restored as a fresh state artifact. Replaying an older accepted run never overwrites state from a newer
+successful or failed run; use a reviewed manual dispatch when an intentional rollback or recovery is required.
 A same-SHA retry of an unaccepted attempt reuses the original Worker recovery manifest and backend image
 digest; it refuses to replace an orphaned candidate when the original rollback boundary cannot be proven.
 When a manifest is absent, the workflow scans the
