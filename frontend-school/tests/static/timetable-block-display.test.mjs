@@ -78,7 +78,7 @@ test('shared scheduler blocks compact long teacher and homeroom lists', () => {
 	assert.deepEqual(result, {
 		shared: true,
 		contextLabel: 'กิจกรรมรวม',
-		teacherLabel: 'ครูหนึ่ง, ครูสอง +อีก 2 คน',
+		teacherLabel: 'ครูหนึ่ง +3',
 		scopeLabel: '6 ห้อง',
 		groupLabel: null,
 		roomLabel: null
@@ -130,6 +130,21 @@ test('personal timetable hides shared activity classroom and room lists', () => 
 	assert.equal(result?.roomLabel, null);
 });
 
+test('personal timetable preserves its wider teacher summary', () => {
+	const result = displayModule.buildTimetableBlockDisplay?.(
+		block({
+			teachers: [
+				teacher('teacher-1', 'ครูหนึ่ง'),
+				teacher('teacher-2', 'ครูสอง'),
+				teacher('teacher-3', 'ครูสาม')
+			]
+		}),
+		'personal'
+	);
+
+	assert.equal(result?.teacherLabel, 'ครูหนึ่ง, ครูสอง +อีก 1 คน');
+});
+
 test('ordinary course keeps the teacher classroom and room information', () => {
 	const result = displayModule.buildTimetableBlockDisplay?.(
 		block({
@@ -161,4 +176,64 @@ test('ordinary course keeps the teacher classroom and room information', () => {
 		groupLabel: 'ม.1/1 คณิตศาสตร์',
 		roomLabel: '101'
 	});
+});
+
+test('scheduler target label omits a redundant homeroom label in homeroom view', () => {
+	const timetableBlock = block({
+		groups: [
+			{
+				id: 'target-group-1',
+				learningGroupId: 'group-1',
+				learningOfferingId: 'offering-1',
+				code: 'M1-1-HISTORY',
+				name: 'ม.1/1 ประวัติศาสตร์',
+				homeroomIds: ['homeroom-1'],
+				instructors: [teacher('teacher-1', 'ครูหนึ่ง')],
+				roomId: 'room-1',
+				roomCode: '101',
+				isActive: true,
+				rowVersion: 1,
+				syncStatus: null
+			}
+		]
+	});
+
+	assert.equal(
+		displayModule.buildSchedulerTargetLabel?.(
+			timetableBlock,
+			'homeroom',
+			new Map([['homeroom-1', 'ม.1/1']])
+		),
+		null
+	);
+});
+
+test('scheduler target label shows only homerooms in teacher view', () => {
+	const timetableBlock = block({
+		groups: [
+			{
+				id: 'target-group-1',
+				learningGroupId: 'group-1',
+				learningOfferingId: 'offering-1',
+				code: 'M1-1-HISTORY',
+				name: 'ม.1/1 ประวัติศาสตร์',
+				homeroomIds: ['homeroom-1'],
+				instructors: [teacher('teacher-1', 'ครูหนึ่ง')],
+				roomId: 'room-1',
+				roomCode: '101',
+				isActive: true,
+				rowVersion: 1,
+				syncStatus: null
+			}
+		]
+	});
+
+	assert.equal(
+		displayModule.buildSchedulerTargetLabel?.(
+			timetableBlock,
+			'teacher',
+			new Map([['homeroom-1', 'ม.1/1']])
+		),
+		'ม.1/1'
+	);
 });

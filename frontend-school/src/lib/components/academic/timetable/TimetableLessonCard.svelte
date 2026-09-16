@@ -8,6 +8,7 @@
 	let {
 		block,
 		rowId,
+		targetLabel,
 		selected = false,
 		canEdit = false,
 		onSelect,
@@ -17,6 +18,7 @@
 	}: {
 		block: TimetableBlock;
 		rowId: string;
+		targetLabel?: string | null;
 		selected?: boolean;
 		canEdit?: boolean;
 		onSelect?: (block: TimetableBlock) => void;
@@ -40,6 +42,9 @@
 		].filter((name, index, names) => names.indexOf(name) === index)
 	);
 	const display = $derived(buildTimetableBlockDisplay(block, 'scheduler'));
+	const resolvedTargetLabel = $derived(
+		targetLabel === undefined ? display.groupLabel : targetLabel
+	);
 	const accessibleLabel = $derived(
 		`${code} ${title} ${allTargetNames.join(', ')} ครู ${allTeacherNames.join(', ') || 'ยังไม่ระบุ'}`
 	);
@@ -66,7 +71,7 @@
 	data-row-id={rowId}
 	draggable={canEdit}
 	class={[
-		'group flex h-full flex-col rounded-lg border bg-background p-2 text-left shadow-xs transition',
+		'group flex min-h-full flex-col rounded-lg border bg-background p-1.5 text-left shadow-xs transition',
 		canEdit && 'cursor-grab active:cursor-grabbing',
 		selected ? 'border-primary ring-2 ring-primary/20' : 'hover:border-primary/45',
 		block.blockKind === 'activity' && 'border-l-4 border-l-violet-500',
@@ -76,10 +81,10 @@
 	ondragstart={dragStart}
 	ondragend={() => onDragEnd?.()}
 >
-	<div class="flex items-start gap-2">
+	<div class="flex min-w-0 items-start gap-1">
 		{#if canEdit}
 			<span data-timetable-drag-handle="true" aria-hidden="true">
-				<GripVertical class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+				<GripVertical class="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
 			</span>
 		{/if}
 		<button
@@ -88,54 +93,66 @@
 			aria-label={`ดูรายละเอียด ${accessibleLabel}`}
 			onclick={() => onSelect?.(block)}
 		>
-			<p class="truncate font-mono text-[0.68rem] font-semibold text-primary">{code}</p>
-			<h4 class="line-clamp-2 text-xs font-semibold leading-4">{title}</h4>
+			<p
+				data-timetable-card-line
+				class="truncate font-mono text-[0.62rem] font-semibold leading-3.5 text-primary"
+			>
+				{code}
+			</p>
+			<h4 data-timetable-card-line class="truncate text-[0.68rem] font-semibold leading-3.5">
+				{title}
+			</h4>
 			{#if display.contextLabel || display.scopeLabel}
-				<div class="mt-1 flex flex-wrap gap-1">
+				<div class="mt-0.5 flex min-w-0 flex-nowrap gap-0.5 overflow-hidden">
 					{#if display.contextLabel}
-						<Badge variant="outline" class="h-5 px-1.5 text-[0.62rem] font-medium">
+						<Badge variant="outline" class="h-4 min-w-0 truncate px-1 text-[0.58rem] font-medium">
 							{display.contextLabel}
 						</Badge>
 					{/if}
 					{#if display.scopeLabel}
-						<Badge variant="secondary" class="h-5 px-1.5 text-[0.62rem] font-medium">
+						<Badge variant="secondary" class="h-4 min-w-0 truncate px-1 text-[0.58rem] font-medium">
 							{display.scopeLabel}
 						</Badge>
 					{/if}
 				</div>
-			{:else if display.groupLabel}
-				<p class="mt-0.5 truncate text-[0.68rem] text-muted-foreground">
-					{display.groupLabel}
+			{:else if resolvedTargetLabel}
+				<p
+					data-timetable-card-line
+					class="mt-0.5 truncate text-[0.62rem] leading-3.5 text-muted-foreground"
+				>
+					{resolvedTargetLabel}
 				</p>
 			{/if}
 		</button>
 	</div>
-	<div class="mt-2 space-y-1 text-[0.68rem] text-muted-foreground">
+	<div class="mt-1 min-w-0 space-y-0.5 text-[0.62rem] leading-3.5 text-muted-foreground">
 		<p class="flex min-w-0 items-center gap-1.5">
 			<Users class="size-3 shrink-0" />
-			<span class="line-clamp-2">{display.teacherLabel ?? 'ยังไม่ระบุครู'}</span>
+			<span data-timetable-card-line class="min-w-0 truncate"
+				>{display.teacherLabel ?? 'ยังไม่ระบุครู'}</span
+			>
 		</p>
 		{#if display.roomLabel}
-			<p class="flex items-center gap-1.5">
+			<p class="flex min-w-0 items-center gap-1.5">
 				<DoorOpen class="size-3 shrink-0" />
-				<span class="truncate">{display.roomLabel}</span>
+				<span data-timetable-card-line class="min-w-0 truncate">{display.roomLabel}</span>
 			</p>
 		{/if}
 	</div>
 	{#if canEdit}
-		<div class="mt-auto flex justify-end border-t pt-1">
+		<div class="mt-auto flex justify-end border-t pt-0.5">
 			<Button
 				type="button"
 				size="icon"
 				variant="ghost"
-				class="size-7 text-destructive"
+				class="size-6 text-destructive"
 				aria-label={`นำ ${title} ออกจากตาราง`}
 				onclick={(event) => {
 					event.stopPropagation();
 					onRemove?.(block);
 				}}
 			>
-				<Trash2 class="size-3.5" />
+				<Trash2 class="size-3" />
 			</Button>
 		</div>
 	{/if}

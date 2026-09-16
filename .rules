@@ -52,6 +52,7 @@ Do not trust sweeping analysis without verifying it against the current tree. In
 - Rerun affected checks when the base advanced, conflicts were resolved, the integrated tree differs, required coverage was incomplete or failed, or the relevant toolchain, dependencies, or external test environment changed. GitHub Actions triggered by a push remain separate CI and deployment verification; they do not require duplicating an already-valid local suite immediately before the push.
 - Feature branches may contain multiple focused or checkpoint commits. Integrate an approved feature into `main` with a squash merge so `main` receives one coherent commit for that feature.
 - Update local `main` to the fetched `origin/main` before the squash merge. Push normally; never force-push `main`.
+- For user-requested code or documentation changes, after the required focused and matrix checks pass, commit the completed branch, squash-merge it into `main`, and push `origin/main` without waiting for another instruction. Stop and report instead of pushing if verification fails, the remote advanced with unresolved conflicts, or the push would require a force push.
 - Keep the feature branch and any worktree until the required deployment and acceptance checks pass. Remove them only after confirming no session or recovery work still depends on them.
 
 ## 2. Adding or Changing a Feature

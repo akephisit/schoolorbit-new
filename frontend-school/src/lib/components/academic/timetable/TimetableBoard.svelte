@@ -6,6 +6,7 @@
 	} from '$lib/academic/timetable/board-state';
 	import { blocksForTimetableCell } from '$lib/academic/timetable/board-state';
 	import type { TimetableBlock } from '$lib/api/timetable';
+	import { buildSchedulerTargetLabel } from '$lib/academic/timetable/block-display';
 
 	import TimetableCell, { type TimetableCellState } from './TimetableCell.svelte';
 	import TimetableLessonCard from './TimetableLessonCard.svelte';
@@ -49,6 +50,9 @@
 		{ id: 'THU', label: 'วันพฤหัสบดี', shortLabel: 'พฤ.' },
 		{ id: 'FRI', label: 'วันศุกร์', shortLabel: 'ศ.' }
 	];
+	const homeroomNamesById = $derived(
+		new Map(state.workspace.homerooms.map((homeroom) => [homeroom.id, homeroom.name]))
+	);
 
 	function periodLabel(period: TimetableBoardState['workspace']['bellPeriods'][number]): string {
 		return period.name ?? `คาบที่ ${period.orderIndex}`;
@@ -121,6 +125,7 @@
 									<TimetableLessonCard
 										{block}
 										rowId={row.id}
+										targetLabel={buildSchedulerTargetLabel(block, view, homeroomNamesById)}
 										selected={selectedBlockId === block.id}
 										{canEdit}
 										onSelect={onSelectBlock}

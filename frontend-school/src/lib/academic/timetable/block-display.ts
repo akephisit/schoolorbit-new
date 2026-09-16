@@ -17,8 +17,11 @@ function unique(values: Array<string | null | undefined>): string[] {
 	);
 }
 
-function compactNames(names: string[]): string | null {
+function compactNames(names: string[], surface: TimetableBlockDisplaySurface): string | null {
 	if (names.length === 0) return null;
+	if (surface === 'scheduler') {
+		return names.length === 1 ? names[0] : `${names[0]} +${names.length - 1}`;
+	}
 	if (names.length <= 2) return names.join(', ');
 	return `${names.slice(0, 2).join(', ')} +อีก ${names.length - 2} คน`;
 }
@@ -64,10 +67,30 @@ export function buildTimetableBlockDisplay(
 	return {
 		shared,
 		contextLabel,
-		teacherLabel: compactNames(teacherNames(block)),
+		teacherLabel: compactNames(teacherNames(block), surface),
 		scopeLabel:
 			surface === 'scheduler' && shared && homeroomCount > 0 ? `${homeroomCount} ห้อง` : null,
 		groupLabel: shared ? null : groupNames.join(', ') || null,
 		roomLabel: shared ? null : roomCodes.join(', ') || null
 	};
+}
+
+export function buildSchedulerTargetLabel(
+	block: TimetableBlock,
+	view: 'homeroom' | 'learning_group' | 'teacher',
+	homeroomNamesById: ReadonlyMap<string, string>
+): string | null {
+	if (block.blockKind === 'structural' || block.schedulingMode === 'synchronized') return null;
+	if (view === 'homeroom') return null;
+	if (view === 'teacher') {
+		return (
+			unique([
+				...block.groups.flatMap((group) =>
+					group.homeroomIds.map((homeroomId) => homeroomNamesById.get(homeroomId))
+				),
+				...block.homerooms.map((homeroom) => homeroom.name)
+			]).join(', ') || null
+		);
+	}
+	return unique(block.groups.map((group) => group.name)).join(', ') || null;
 }

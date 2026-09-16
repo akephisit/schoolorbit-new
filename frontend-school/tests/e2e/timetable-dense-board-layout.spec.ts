@@ -21,13 +21,23 @@ function wholeSchoolUrl(): string {
 	);
 }
 
+function teacherBoardUrl(): string {
+	return (
+		`/staff/academic/timetable?academicYearId=${timetableIds.year}` +
+		`&academicTermId=${timetableIds.term}` +
+		`&timetableVersionId=${timetableIds.draftVersion}` +
+		`&view=teacher&ownerId=${timetableIds.teacherA}`
+	);
+}
+
 async function installDenseWorkspace(page: Parameters<typeof installTimetableMock>[0]) {
 	const shortBlock = makeTimetableBlock(timetableIds.blockA, timetableIds.period1);
 	const tallBlock = makeTimetableBlock(timetableIds.blockB, timetableIds.period2, {
 		groupId: timetableIds.groupB,
 		offeringId: timetableIds.offeringB,
 		code: 'ว21101',
-		name: 'วิทยาศาสตร์พื้นฐานและการออกแบบเทคโนโลยีแบบบูรณาการ'
+		name: 'วิทยาศาสตร์พื้นฐานและการออกแบบเทคโนโลยีแบบบูรณาการ',
+		instructorIds: [timetableIds.teacherA, timetableIds.teacherB]
 	});
 	tallBlock.groups[0].instructors[0].displayName =
 		'คุณครูผู้สอนวิทยาศาสตร์และเทคโนโลยีชื่อยาวสำหรับทดสอบ';
@@ -130,4 +140,67 @@ test('stretches a shorter lesson card to fill the timetable row', async ({ page 
 	expect(cellBox).not.toBeNull();
 	expect(cardBox).not.toBeNull();
 	expect(cardBox!.height).toBeGreaterThanOrEqual(cellBox!.height - 14);
+});
+
+test('keeps every lesson field on one line and the card inside its timetable row', async ({
+	page
+}) => {
+	await installDenseBoard(page);
+
+	const board = page.getByRole('region', { name: 'ตารางของ ม.1/1' });
+	const tallCell = board.locator(
+		`td[data-timetable-day="MON"][data-timetable-period-id="${timetableIds.period2}"]`
+	);
+	const nextRowCell = board.locator(
+		`td[data-timetable-day="TUE"][data-timetable-period-id="${timetableIds.period2}"]`
+	);
+	const tallCard = tallCell.locator(`[data-block-id="${timetableIds.blockB}"]`);
+	const lines = tallCard.locator('[data-timetable-card-line]');
+
+	await expect(lines).toHaveCount(4);
+	const lineMetrics = await lines.evaluateAll((elements) =>
+		elements.map((element) => {
+			const style = getComputedStyle(element);
+			return {
+				height: element.getBoundingClientRect().height,
+				lineHeight: Number.parseFloat(style.lineHeight),
+				overflow: style.overflow,
+				whiteSpace: style.whiteSpace
+			};
+		})
+	);
+	for (const metric of lineMetrics) {
+		expect(metric.height).toBeLessThanOrEqual(metric.lineHeight + 1);
+		expect(metric.overflow).toBe('hidden');
+		expect(metric.whiteSpace).toBe('nowrap');
+	}
+	await expect(tallCard.getByText(/\+1$/)).toBeVisible();
+
+	const [cellBox, nextRowBox, cardBox] = await Promise.all([
+		tallCell.boundingBox(),
+		nextRowCell.boundingBox(),
+		tallCard.boundingBox()
+	]);
+	expect(cellBox).not.toBeNull();
+	expect(nextRowBox).not.toBeNull();
+	expect(cardBox).not.toBeNull();
+	expect(cardBox!.y + cardBox!.height).toBeLessThanOrEqual(cellBox!.y + cellBox!.height - 5);
+	expect(cardBox!.y + cardBox!.height).toBeLessThanOrEqual(nextRowBox!.y);
+});
+
+test('shows only context that adds information for homeroom and teacher views', async ({
+	page
+}) => {
+	await installDenseWorkspace(page);
+	await page.goto(boardUrl());
+
+	let card = page.locator(`[data-block-id="${timetableIds.blockB}"]`);
+	await expect(card).toBeVisible();
+	await expect(card.getByText('ม.1/1 วิทยาศาสตร์', { exact: true })).toHaveCount(0);
+
+	await page.goto(teacherBoardUrl());
+	card = page.locator(`[data-block-id="${timetableIds.blockB}"]`);
+	await expect(card).toBeVisible();
+	await expect(card.getByText('ม.1/1', { exact: true })).toBeVisible();
+	await expect(card.getByText('ม.1/1 วิทยาศาสตร์', { exact: true })).toHaveCount(0);
 });
