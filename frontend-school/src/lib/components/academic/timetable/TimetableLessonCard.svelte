@@ -9,6 +9,7 @@
 		block,
 		rowId,
 		targetLabel,
+		showTeacher = true,
 		selected = false,
 		canEdit = false,
 		onSelect,
@@ -19,6 +20,7 @@
 		block: TimetableBlock;
 		rowId: string;
 		targetLabel?: string | null;
+		showTeacher?: boolean;
 		selected?: boolean;
 		canEdit?: boolean;
 		onSelect?: (block: TimetableBlock) => void;
@@ -42,11 +44,19 @@
 		].filter((name, index, names) => names.indexOf(name) === index)
 	);
 	const display = $derived(buildTimetableBlockDisplay(block, 'scheduler'));
+	const showCode = $derived(block.blockKind === 'course');
 	const resolvedTargetLabel = $derived(
 		targetLabel === undefined ? display.groupLabel : targetLabel
 	);
 	const accessibleLabel = $derived(
-		`${code} ${title} ${allTargetNames.join(', ')} ครู ${allTeacherNames.join(', ') || 'ยังไม่ระบุ'}`
+		[
+			showCode ? code : null,
+			title,
+			allTargetNames.join(', '),
+			showTeacher ? `ครู ${allTeacherNames.join(', ') || 'ยังไม่ระบุ'}` : null
+		]
+			.filter(Boolean)
+			.join(' ')
 	);
 
 	function structuralLabel(kind: TimetableBlock['structuralKind']): string {
@@ -73,9 +83,7 @@
 	class={[
 		'group flex min-h-full w-full min-w-0 max-w-full flex-col overflow-hidden rounded-lg border bg-background p-1.5 text-left shadow-xs transition',
 		canEdit && 'cursor-grab active:cursor-grabbing',
-		selected ? 'border-primary ring-2 ring-primary/20' : 'hover:border-primary/45',
-		block.blockKind === 'activity' && 'border-l-4 border-l-violet-500',
-		block.blockKind === 'structural' && 'border-l-4 border-l-amber-500'
+		selected ? 'border-primary ring-2 ring-primary/20' : 'hover:border-primary/45'
 	]}
 	aria-label={accessibleLabel}
 	ondragstart={dragStart}
@@ -93,24 +101,32 @@
 			aria-label={`ดูรายละเอียด ${accessibleLabel}`}
 			onclick={() => onSelect?.(block)}
 		>
-			<p
-				data-timetable-card-line
-				class="truncate font-mono text-[0.56rem] font-semibold leading-3 text-primary"
-			>
-				{code}
-			</p>
-			<h4 data-timetable-card-line class="truncate text-[0.62rem] font-semibold leading-3">
+			{#if showCode}
+				<p
+					data-timetable-card-line
+					class="truncate font-mono text-[8px] leading-[14px] font-semibold text-primary"
+				>
+					{code}
+				</p>
+			{/if}
+			<h4 data-timetable-card-line class="truncate text-[9px] leading-[14px] font-semibold">
 				{title}
 			</h4>
 			{#if display.contextLabel || display.scopeLabel}
-				<div class="mt-0.5 flex min-w-0 flex-nowrap gap-0.5 overflow-hidden">
+				<div class="mt-1 flex min-w-0 flex-nowrap gap-0.5 overflow-hidden">
 					{#if display.contextLabel}
-						<Badge variant="outline" class="h-4 min-w-0 truncate px-1 text-[0.54rem] font-medium">
+						<Badge
+							variant="outline"
+							class="h-4 min-w-0 truncate px-1 text-[8px] leading-[14px] font-medium"
+						>
 							{display.contextLabel}
 						</Badge>
 					{/if}
 					{#if display.scopeLabel}
-						<Badge variant="secondary" class="h-4 min-w-0 truncate px-1 text-[0.54rem] font-medium">
+						<Badge
+							variant="secondary"
+							class="h-4 min-w-0 truncate px-1 text-[8px] leading-[14px] font-medium"
+						>
 							{display.scopeLabel}
 						</Badge>
 					{/if}
@@ -118,20 +134,22 @@
 			{:else if resolvedTargetLabel}
 				<p
 					data-timetable-card-line
-					class="mt-0.5 truncate text-[0.58rem] leading-3 text-muted-foreground"
+					class="mt-1 truncate text-[8px] leading-[14px] text-muted-foreground"
 				>
 					{resolvedTargetLabel}
 				</p>
 			{/if}
 		</button>
 	</div>
-	<div class="mt-1 min-w-0 space-y-0.5 text-[0.58rem] leading-3 text-muted-foreground">
-		<p class="flex min-w-0 items-center gap-1.5">
-			<Users class="size-3 shrink-0" />
-			<span data-timetable-card-line class="min-w-0 truncate"
-				>{display.teacherLabel ?? 'ยังไม่ระบุครู'}</span
-			>
-		</p>
+	<div class="mt-1 min-w-0 space-y-1 text-[8px] leading-[14px] text-muted-foreground">
+		{#if showTeacher}
+			<p class="flex min-w-0 items-center gap-1.5">
+				<Users class="size-3 shrink-0" />
+				<span data-timetable-card-line class="min-w-0 truncate"
+					>{display.teacherLabel ?? 'ยังไม่ระบุครู'}</span
+				>
+			</p>
+		{/if}
 		{#if display.roomLabel}
 			<p class="flex min-w-0 items-center gap-1.5">
 				<DoorOpen class="size-3 shrink-0" />

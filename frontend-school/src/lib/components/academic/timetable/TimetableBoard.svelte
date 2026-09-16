@@ -126,6 +126,7 @@
 										{block}
 										rowId={row.id}
 										targetLabel={buildSchedulerTargetLabel(block, view, homeroomNamesById)}
+										showTeacher={view !== 'teacher'}
 										selected={selectedBlockId === block.id}
 										{canEdit}
 										onSelect={onSelectBlock}

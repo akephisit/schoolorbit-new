@@ -4,6 +4,8 @@ import { installTimetableMock, makeTimetableBlock, timetableIds } from './timeta
 
 test.use({ serviceWorkers: 'block', viewport: { width: 1920, height: 1080 } });
 
+const activityBlockId = 'c1000000-0000-4000-8000-000000000204';
+
 function boardUrl(): string {
 	return (
 		`/staff/academic/timetable?academicYearId=${timetableIds.year}` +
@@ -41,9 +43,15 @@ async function installDenseWorkspace(page: Parameters<typeof installTimetableMoc
 	});
 	tallBlock.groups[0].instructors[0].displayName =
 		'คุณครูผู้สอนวิทยาศาสตร์และเทคโนโลยีชื่อยาวสำหรับทดสอบ';
+	const activityBlock = makeTimetableBlock(activityBlockId, timetableIds.period3, {
+		code: 'ACTIVITY-HOMEROOM',
+		name: 'โฮมรูม',
+		instructorIds: [timetableIds.teacherA]
+	});
+	activityBlock.blockKind = 'activity';
 
 	await installTimetableMock(page, {
-		blocks: [shortBlock, tallBlock],
+		blocks: [shortBlock, tallBlock, activityBlock],
 		periodCount: 10,
 		requiredPeriods: 2
 	});
@@ -218,18 +226,58 @@ test('keeps teacher-view card typography compact and inside its period column', 
 	const card = cell.locator(`[data-block-id="${timetableIds.blockB}"]`);
 	await expect(card).toBeVisible();
 
-	const [cellBox, cardBox, fontSizes] = await Promise.all([
+	const [cellBox, cardBox, textMetrics] = await Promise.all([
 		cell.boundingBox(),
 		card.boundingBox(),
-		card
-			.locator('[data-timetable-card-line]')
-			.evaluateAll((elements) =>
-				elements.map((element) => Number.parseFloat(getComputedStyle(element).fontSize))
-			)
+		card.locator('[data-timetable-card-line]').evaluateAll((elements) =>
+			elements.map((element) => {
+				const style = getComputedStyle(element);
+				return {
+					fontSize: Number.parseFloat(style.fontSize),
+					lineHeight: Number.parseFloat(style.lineHeight)
+				};
+			})
+		)
 	]);
 	expect(cellBox).not.toBeNull();
 	expect(cardBox).not.toBeNull();
 	expect(cardBox!.x).toBeGreaterThanOrEqual(cellBox!.x + 5);
 	expect(cardBox!.x + cardBox!.width).toBeLessThanOrEqual(cellBox!.x + cellBox!.width - 5);
-	expect(Math.max(...fontSizes)).toBeLessThanOrEqual(10);
+	expect(Math.max(...textMetrics.map((metric) => metric.fontSize))).toBeLessThanOrEqual(9);
+	for (const metric of textMetrics) {
+		expect(metric.lineHeight - metric.fontSize).toBeGreaterThanOrEqual(4);
+	}
+});
+
+test('hides activity codes and uses a neutral card border', async ({ page }) => {
+	await installDenseBoard(page);
+
+	const card = page.locator(`[data-block-id="${activityBlockId}"]`);
+	await expect(card).toBeVisible();
+	await expect(card.getByText('ACTIVITY-HOMEROOM', { exact: true })).toHaveCount(0);
+	await expect(card.getByText('โฮมรูม', { exact: true })).toHaveCount(1);
+	const borders = await card.evaluate((element) => {
+		const style = getComputedStyle(element);
+		return {
+			leftColor: style.borderLeftColor,
+			topColor: style.borderTopColor,
+			leftWidth: style.borderLeftWidth,
+			topWidth: style.borderTopWidth
+		};
+	});
+	expect(borders.leftColor).toBe(borders.topColor);
+	expect(borders.leftWidth).toBe(borders.topWidth);
+});
+
+test('hides the redundant teacher row only in teacher view', async ({ page }) => {
+	await installDenseWorkspace(page);
+	await page.goto(boardUrl());
+
+	let card = page.locator(`[data-block-id="${timetableIds.blockA}"]`);
+	await expect(card.getByText('ครูคณิตศาสตร์ A', { exact: true })).toBeVisible();
+
+	await page.goto(teacherBoardUrl());
+	card = page.locator(`[data-block-id="${timetableIds.blockA}"]`);
+	await expect(card).toBeVisible();
+	await expect(card.getByText('ครูคณิตศาสตร์ A', { exact: true })).toHaveCount(0);
 });
